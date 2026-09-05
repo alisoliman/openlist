@@ -1,0 +1,130 @@
+//
+//  AppSettings.swift
+//  openlist
+//
+
+import Foundation
+import SwiftUI
+
+/// User preferences, persisted in `UserDefaults`.
+@Observable
+@MainActor
+final class AppSettings {
+    enum Appearance: String, CaseIterable, Identifiable {
+        case system, light, dark
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .system: "System"
+            case .light: "Light"
+            case .dark: "Dark"
+            }
+        }
+        var colorScheme: ColorScheme? {
+            switch self {
+            case .system: nil
+            case .light: .light
+            case .dark: .dark
+            }
+        }
+    }
+
+    /// Where a brand-new task from ⌘N or quick capture is filed.
+    enum DefaultDestination: String, CaseIterable, Identifiable {
+        case inbox, today
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .inbox: "Inbox"
+            case .today: "Today (due today)"
+            }
+        }
+    }
+
+    var appearance: Appearance {
+        didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
+    }
+    var showsCompletedTasks: Bool {
+        didSet { defaults.set(showsCompletedTasks, forKey: Key.showsCompleted) }
+    }
+    var parsesNaturalLanguageDates: Bool {
+        didSet { defaults.set(parsesNaturalLanguageDates, forKey: Key.naturalLanguage) }
+    }
+    var defaultDestination: DefaultDestination {
+        didSet { defaults.set(defaultDestination.rawValue, forKey: Key.defaultDestination) }
+    }
+    var showsMenuBarExtra: Bool {
+        didSet { defaults.set(showsMenuBarExtra, forKey: Key.menuBarExtra) }
+    }
+    var quickCaptureHotKeyEnabled: Bool {
+        didSet { defaults.set(quickCaptureHotKeyEnabled, forKey: Key.quickCaptureHotKey) }
+    }
+    var showsDockBadge: Bool {
+        didSet { defaults.set(showsDockBadge, forKey: Key.dockBadge) }
+    }
+    /// Play a subtle sound when a task is ticked off.
+    var playsCompletionSound: Bool {
+        didSet { defaults.set(playsCompletionSound, forKey: Key.completionSound) }
+    }
+    var confirmsBeforeDeletingLists: Bool {
+        didSet { defaults.set(confirmsBeforeDeletingLists, forKey: Key.confirmDelete) }
+    }
+    /// 1 = Sunday, 2 = Monday. Zero means follow the locale.
+    var firstWeekday: Int {
+        didSet { defaults.set(firstWeekday, forKey: Key.firstWeekday) }
+    }
+    var hasSeededSampleData: Bool {
+        didSet { defaults.set(hasSeededSampleData, forKey: Key.seeded) }
+    }
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        defaults.register(defaults: [
+            Key.showsCompleted: true,
+            Key.naturalLanguage: true,
+            Key.menuBarExtra: true,
+            Key.quickCaptureHotKey: true,
+            Key.dockBadge: true,
+            Key.completionSound: true,
+            Key.confirmDelete: true,
+            Key.firstWeekday: 0,
+        ])
+
+        appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
+        showsCompletedTasks = defaults.bool(forKey: Key.showsCompleted)
+        parsesNaturalLanguageDates = defaults.bool(forKey: Key.naturalLanguage)
+        defaultDestination = DefaultDestination(rawValue: defaults.string(forKey: Key.defaultDestination) ?? "") ?? .inbox
+        showsMenuBarExtra = defaults.bool(forKey: Key.menuBarExtra)
+        quickCaptureHotKeyEnabled = defaults.bool(forKey: Key.quickCaptureHotKey)
+        showsDockBadge = defaults.bool(forKey: Key.dockBadge)
+        playsCompletionSound = defaults.bool(forKey: Key.completionSound)
+        confirmsBeforeDeletingLists = defaults.bool(forKey: Key.confirmDelete)
+        firstWeekday = defaults.integer(forKey: Key.firstWeekday)
+        hasSeededSampleData = defaults.bool(forKey: Key.seeded)
+    }
+
+    /// A calendar honouring the user's chosen first day of the week.
+    var calendar: Calendar {
+        var calendar = Calendar.current
+        if firstWeekday >= 1, firstWeekday <= 7 {
+            calendar.firstWeekday = firstWeekday
+        }
+        return calendar
+    }
+
+    private enum Key {
+        static let appearance = "settings.appearance"
+        static let showsCompleted = "settings.showsCompleted"
+        static let naturalLanguage = "settings.naturalLanguage"
+        static let defaultDestination = "settings.defaultDestination"
+        static let menuBarExtra = "settings.menuBarExtra"
+        static let quickCaptureHotKey = "settings.quickCaptureHotKey"
+        static let dockBadge = "settings.dockBadge"
+        static let completionSound = "settings.completionSound"
+        static let confirmDelete = "settings.confirmDelete"
+        static let firstWeekday = "settings.firstWeekday"
+        static let seeded = "settings.hasSeededSampleData"
+    }
+}

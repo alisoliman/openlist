@@ -1,0 +1,252 @@
+//
+//  MarkdownInputRules.swift
+//  openlist
+//
+
+import AppKit
+import Foundation
+
+/// Type-to-format rules applied as the user writes.
+///
+/// Two families: block prefixes (`## `, `- `, `[] `) that change the whole
+/// block's kind, and inline pairs (`**bold**`, `` `code` ``) that restyle a
+/// span the moment the closing delimiter is typed.
+enum MarkdownInputRules {
+    struct BlockPrefixMatch {
+        /// The characters to delete, including the trailing space.
+        var range: NSRange
+        var kind: BlockKind
+    }
+
+    /// Block-level prefixes, longest first so `###` beats `#`.
+    private static let blockPrefixes: [(String, BlockKind)] = [
+        ("### ", .heading3),
+        ("## ", .heading2),
+        ("# ", .heading1),
+        ("[] ", .task),
+        ("[ ] ", .task),
+        ("- [ ] ", .task),
+        ("- [] ", .task),
+        ("* ", .bullet),
+        ("- ", .bullet),
+        ("+ ", .bullet),
+        ("> ", .quote),
+        ("``` ", .code),
+        ("1. ", .numbered),
+        ("1) ", .numbered),
+        ("--- ", .divider),
+    ]
+
+    /// Detects a markdown prefix the user just *typed* at the start of a block.
+    ///
+    /// Two guards matter. The caret must sit immediately after the prefix, so
+    /// pasting a paragraph beginning "- " converts nothing. And the change must
+    /// have been an insertion — otherwise backspacing the "x" out of
+    /// `--- xSection` would leave `--- Section`, match the divider rule, and
+    /// silently destroy the rest of the line.
+    static func matchBlockPrefix(
+        in storage: NSTextStorage,
+        caret: Int,
+        wasInsertion: Bool,
+        kind: BlockKind
+    ) -> BlockPrefixMatch? {
+        guard wasInsertion, kind != .code else { return nil }
+
+        let text = storage.string as NSString
+        guard text.length > 0 else { return nil }
+
+        for (prefix, kind) in blockPrefixes {
+            let prefixLength = (prefix as NSString).length
+            guard caret == prefixLength, text.length >= prefixLength else { continue }
+            if text.substring(to: prefixLength).lowercased() == prefix {
+                return BlockPrefixMatch(range: NSRange(location: 0, length: prefixLength), kind: kind)
+            }
+        }
+        return nil
+    }
+
+    /// Where the active `/` menu trigger starts, or `nil` if there isn't one.
+    ///
+    /// A trigger is a `/` at the start of the block or after whitespace, with
+    /// no whitespace between it and the caret.
+    static func slashTriggerIndex(in text: NSString, caret: Int) -> Int? {
+        guard caret > 0, caret <= text.length else { return nil }
+
+        var index = caret - 1
+        while index >= 0 {
+            let scalar = text.character(at: index)
+            let character = Character(UnicodeScalar(scalar) ?? " ")
+
+            if character == "/" {
+                // Must start the block or follow whitespace.
+                if index == 0 { return index }
+                let previous = Character(UnicodeScalar(text.character(at: index - 1)) ?? " ")
+                return previous.isWhitespace ? index : nil
+            }
+            if character.isWhitespace || character.isNewline { return nil }
+            // A long run without a slash is ordinary text.
+            if caret - index > 24 { return nil }
+            index -= 1
+        }
+        return nil
+    }
+
+    // MARK: - Inline rules
+
+    private struct InlineRule {
+        var pattern: String
+        var apply: (NSMutableAttributedString, NSRange, BlockKind) -> Void
+    }
+
+    /// `**bold**`, `__bold__`, `*italic*`, `_italic_`, `~~strike~~`, `` `code` ``.
+    ///
+    /// Patterns capture the inner text in group 1 so the delimiters can be
+    /// dropped and the styling applied to what remains.
+    private static let inlineRules: [InlineRule] = [
+        InlineRule(pattern: "\\*\\*(.+?)\\*\\*") { storage, range, kind in
+            RichTextCodec.toggleTrait(.boldFontMask, in: storage, range: range, kind: kind)
+        },
+        InlineRule(pattern: "__(.+?)__") { storage, range, kind in
+            RichTextCodec.toggleTrait(.boldFontMask, in: storage, range: range, kind: kind)
+        },
+        InlineRule(pattern: "~~(.+?)~~") { storage, range, _ in
+            RichTextCodec.toggleStrikethrough(in: storage, range: range)
+        },
+        InlineRule(pattern: "(?<![\\*\\w])\\*(?!\\*)(.+?)(?<!\\*)\\*(?![\\*\\w])") { storage, range, kind in
+            RichTextCodec.toggleTrait(.italicFontMask, in: storage, range: range, kind: kind)
+        },
+        InlineRule(pattern: "(?<![_\\w])_(?!_)(.+?)(?<!_)_(?![_\\w])") { storage, range, kind in
+            RichTextCodec.toggleTrait(.italicFontMask, in: storage, range: range, kind: kind)
+        },
+        InlineRule(pattern: "`([^`]+?)`") { storage, range, kind in
+            RichTextCodec.toggleInlineCode(in: storage, range: range, kind: kind)
+        },
+    ]
+
+    private static let regexCache = RegexCache()
+
+    /// Characters that can close an inline rule. Typing anything else cannot
+    /// complete one, so the scan is skipped entirely.
+    private static let closingDelimiters: Set<Character> = ["*", "_", "~", "`"]
+
+    /// Applies any inline rule whose closing delimiter sits just before the caret.
+    ///
+    /// - Returns: `true` when the storage was rewritten.
+    @discardableResult
+    static func applyInlineRules(in storage: NSTextStorage, view: NSTextView, kind: BlockKind) -> Bool {
+        let caret = view.selectedRange().location
+        guard caret > 0, view.selectedRange().length == 0 else { return false }
+
+        let text = storage.string
+        let ns = text as NSString
+
+        // Only a match ending exactly at the caret can fire, so unless the
+        // character just typed closes a rule there is nothing to find. This
+        // skips six full-text regex scans on the vast majority of keystrokes.
+        guard let lastCharacter = Character(UnicodeScalar(ns.character(at: caret - 1)) ?? " ") as Character?,
+              closingDelimiters.contains(lastCharacter)
+        else { return false }
+
+        for rule in inlineRules {
+            guard let regex = regexCache.regex(for: rule.pattern) else { continue }
+            let searchRange = NSRange(location: 0, length: ns.length)
+
+            for match in regex.matches(in: text, options: [], range: searchRange) {
+                // Only fire for the delimiter the user just completed.
+                guard NSMaxRange(match.range) == caret, match.numberOfRanges > 1 else { continue }
+
+                let innerRange = match.range(at: 1)
+                let inner = storage.attributedSubstring(from: innerRange)
+
+                let mutable = NSMutableAttributedString(attributedString: inner)
+                rule.apply(mutable, NSRange(location: 0, length: mutable.length), kind)
+
+                storage.replaceCharacters(in: match.range, with: mutable)
+
+                let newCaret = match.range.location + mutable.length
+                view.setSelectedRange(NSRange(location: newCaret, length: 0))
+                // Reset typing attributes so continued typing is unstyled.
+                view.typingAttributes = RichTextCodec.baseAttributes(for: kind)
+                return true
+            }
+        }
+        return false
+    }
+
+    // MARK: - Paste conversion
+
+    /// Parses pasted Markdown into a list of block descriptors.
+    ///
+    /// Used when the user pastes multiple lines: each becomes its own block,
+    /// with indentation preserved as nesting depth.
+    struct ParsedLine {
+        var kind: BlockKind
+        var text: String
+        var depth: Int
+        var isCompleted: Bool
+    }
+
+    static func parseMarkdown(_ source: String) -> [ParsedLine] {
+        var results: [ParsedLine] = []
+
+        for rawLine in source.components(separatedBy: .newlines) {
+            let leadingSpaces = rawLine.prefix { $0 == " " || $0 == "\t" }
+            let depth = leadingSpaces.reduce(0) { $0 + ($1 == "\t" ? 1 : 0) } + (leadingSpaces.filter { $0 == " " }.count / 2)
+            var line = rawLine.trimmingCharacters(in: .whitespaces)
+
+            guard !line.isEmpty else { continue }
+
+            var kind = BlockKind.paragraph
+            var isCompleted = false
+
+            if line == "---" || line == "***" || line == "___" {
+                results.append(ParsedLine(kind: .divider, text: "", depth: depth, isCompleted: false))
+                continue
+            }
+
+            if line.hasPrefix("### ") {
+                kind = .heading3
+                line.removeFirst(4)
+            } else if line.hasPrefix("## ") {
+                kind = .heading2
+                line.removeFirst(3)
+            } else if line.hasPrefix("# ") {
+                kind = .heading1
+                line.removeFirst(2)
+            } else if line.hasPrefix("> ") {
+                kind = .quote
+                line.removeFirst(2)
+            } else if let taskMatch = matchTaskLine(line) {
+                kind = .task
+                isCompleted = taskMatch.isCompleted
+                line = taskMatch.text
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ") {
+                kind = .bullet
+                line.removeFirst(2)
+            } else if let range = line.range(of: "^\\d+[.)]\\s+", options: .regularExpression) {
+                kind = .numbered
+                line.removeSubrange(range)
+            }
+
+            results.append(
+                ParsedLine(
+                    kind: kind,
+                    text: line.trimmingCharacters(in: .whitespaces),
+                    depth: depth,
+                    isCompleted: isCompleted
+                )
+            )
+        }
+
+        return results
+    }
+
+    private static func matchTaskLine(_ line: String) -> (text: String, isCompleted: Bool)? {
+        let patterns = ["- [ ] ", "- [x] ", "- [X] ", "* [ ] ", "* [x] ", "[] ", "[ ] ", "[x] "]
+        for pattern in patterns where line.hasPrefix(pattern) {
+            let completed = pattern.lowercased().contains("[x]")
+            return (String(line.dropFirst(pattern.count)), completed)
+        }
+        return nil
+    }
+}
