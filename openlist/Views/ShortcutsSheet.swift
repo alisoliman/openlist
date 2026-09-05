@@ -105,6 +105,7 @@ struct ShortcutsSheet: View {
                         .foregroundStyle(Theme.tertiaryText)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close keyboard shortcuts")
                 .keyboardShortcut(.escape, modifiers: [])
             }
             .padding(.horizontal, 18)
@@ -146,8 +147,12 @@ struct ShortcutsSheet: View {
                                                 .fill(Theme.chipFill)
                                         )
                                 }
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel("\(shortcut.action), \(shortcut.keys)")
                             }
                         }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(group.title)
                     }
                 }
                 .padding(18)

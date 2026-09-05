@@ -106,27 +106,54 @@ extension Store {
     /// Sharing the filename would let deleting either copy blank the other.
     @discardableResult
     func duplicateBlock(_ block: Block) -> Block {
-        let copy = insertBlock(kind: block.kind, after: block)
-        copy.copyPayload(from: block)
-
-        if let filename = block.mediaFilename {
-            copy.mediaFilename = MediaStore.shared.duplicate(filename: filename) ?? filename
+        var stagedFiles: [String] = []
+        func stageCopy(of source: URL) throws -> String {
+            let ext = source.pathExtension
+            let filename = UUID().uuidString + (ext.isEmpty ? "" : "." + ext)
+            // Register before copying so even a partial failed write is removed.
+            stagedFiles.append(filename)
+            try FileManager.default.copyItem(at: source, to: MediaStore.shared.url(for: filename))
+            return filename
         }
-        for attachment in attachments(for: block.id) {
-            guard let copied = MediaStore.shared.duplicate(filename: attachment.filename) else { continue }
-            context.insert(
-                Attachment(
-                    blockID: copy.id,
-                    filename: copied,
+        do {
+            var mediaFilename: String?
+            if let filename = block.mediaFilename {
+                mediaFilename = try stageCopy(of: MediaStore.shared.url(for: filename))
+            }
+            let blockID = block.id
+            let originals = try context.fetch(FetchDescriptor<Attachment>(
+                predicate: #Predicate { $0.blockID == blockID },
+                sortBy: [SortDescriptor(\.sortIndex)]
+            ))
+            var copiedAttachments: [Attachment] = []
+            for attachment in originals {
+                let copiedFilename = try stageCopy(of: attachment.url)
+                let copied = Attachment(
+                    blockID: block.id,
+                    filename: copiedFilename,
                     displayName: attachment.displayName,
                     contentType: attachment.contentType,
                     byteCount: attachment.byteCount,
                     sortIndex: attachment.sortIndex
                 )
-            )
+                copied.createdAt = attachment.createdAt
+                copiedAttachments.append(copied)
+            }
+            // No model changes occur until every file has been copied.
+            let copy = insertBlock(kind: block.kind, after: block)
+            copy.copyPayload(from: block)
+            copy.mediaFilename = mediaFilename
+            for attachment in copiedAttachments {
+                attachment.blockID = copy.id
+                context.insert(attachment)
+            }
+            save()
+            return copy
+        } catch {
+            for filename in stagedFiles { MediaStore.shared.delete(filename: filename) }
+            editorNotice = "The block was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
+            return block
         }
-        save()
-        return copy
     }
 
     // MARK: - Deleting
@@ -428,7 +455,7 @@ extension Store {
 
         guard position > 0 else {
             // First row: demote a styled block back to plain text before giving up.
-            if block.kind != .paragraph {
+            if block.kind != .paragraph, !block.isTask {
                 changeKind(block, to: .paragraph)
                 return .outdented
             }
@@ -440,6 +467,43 @@ extension Store {
             // Backspacing into a divider or image removes that block instead.
             deleteBlock(previous, liftChildren: true)
             return .removed(focus: block)
+        }
+
+        // Joining text must not silently discard the removed task's payload.
+        // Conflicting schedules/status need an explicit choice in the inspector.
+        let incomingAttachments = attachments(for: block.id)
+        let hasTaskPayload = block.isCompleted || block.dueDate != nil || block.reminderAt != nil
+            || block.recurrenceData != nil || block.isStarred || block.priorityRaw != 0
+            || !block.labelIDs.isEmpty || !block.note.isEmpty || !incomingAttachments.isEmpty
+        let conflicts = (previous.isTask && block.isTask && previous.isCompleted != block.isCompleted)
+            || (previous.dueDate != nil && block.dueDate != nil
+                && (previous.dueDate != block.dueDate || previous.includesTime != block.includesTime))
+            || (previous.reminderAt != nil && block.reminderAt != nil && previous.reminderAt != block.reminderAt)
+            || (previous.recurrenceData != nil && block.recurrenceData != nil && previous.recurrenceData != block.recurrenceData)
+        guard !(hasTaskPayload && !previous.isTask), !conflicts else {
+            editorNotice = "These rows have different task details. Review their status and dates before merging, or keep them as separate rows."
+            return .noop
+        }
+
+        if previous.isTask {
+            if previous.dueDate == nil, block.dueDate != nil {
+                previous.dueDate = block.dueDate
+                previous.includesTime = block.includesTime
+            }
+            if previous.reminderAt == nil { previous.reminderAt = block.reminderAt }
+            if previous.recurrenceData == nil { previous.recurrenceData = block.recurrenceData }
+            previous.isStarred = previous.isStarred || block.isStarred
+            previous.priorityRaw = max(previous.priorityRaw, block.priorityRaw)
+            previous.labelIDs.append(contentsOf: block.labelIDs.filter { !previous.labelIDs.contains($0) })
+            if !block.note.isEmpty {
+                previous.note = previous.note.isEmpty ? block.note : previous.note + "\n\n" + block.note
+            }
+            var attachmentIndex = (attachments(for: previous.id).last?.sortIndex ?? 0) + BlockTree.indexStep
+            for attachment in incomingAttachments {
+                attachment.blockID = previous.id
+                attachment.sortIndex = attachmentIndex
+                attachmentIndex += BlockTree.indexStep
+            }
         }
 
         let previousContent = attributedContent(of: previous)
@@ -462,6 +526,7 @@ extension Store {
         }
 
         deleteBlock(block, liftChildren: false)
+        scheduleReminderIfNeeded(for: previous)
         return .merged(into: previous, caret: caret)
     }
 
@@ -507,10 +572,10 @@ extension Store {
 
     func purgeMediaAndAttachments(for block: Block) {
         if let filename = block.mediaFilename {
-            MediaStore.shared.delete(filename: filename)
+            removeEditorMedia(filename: filename)
         }
         for attachment in attachments(for: block.id) {
-            MediaStore.shared.delete(filename: attachment.filename)
+            removeEditorMedia(filename: attachment.filename)
             context.delete(attachment)
         }
     }

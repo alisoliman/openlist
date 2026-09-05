@@ -67,11 +67,16 @@ struct TasksScreen: View {
                 controls
             }
         } content: {
+            activeConstraints
+                .padding(.bottom, 12)
+
             if matching.isEmpty {
                 EmptyStateView(
                     icon: "tray",
                     title: "No tasks match",
-                    message: "Try a different filter, or add a task from any list."
+                    message: "Try a different filter, or add a task to an active list.",
+                    actionTitle: hasCustomFilters ? "Reset filters" : nil,
+                    action: { resetFilters() }
                 )
             } else {
                 ForEach(groups(for: matching)) { group in
@@ -84,6 +89,49 @@ struct TasksScreen: View {
                     )
                 }
             }
+        }
+        .onChange(of: activeListIDs) { _, ids in
+            if let selectedID = listFilter, !ids.contains(selectedID) { listFilter = nil }
+        }
+    }
+
+    private var activeLists: [TaskList] { allLists.filter { !$0.isArchived } }
+    private var activeListIDs: [UUID] { activeLists.map(\.id) }
+    private var hasCustomFilters: Bool { filter != .open || listFilter != nil }
+
+    private func resetFilters() {
+        filter = .open
+        listFilter = nil
+    }
+
+    /// Keep the constraints visible even when they produce an empty result.
+    private var activeConstraints: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { constraintLabels }
+            VStack(alignment: .leading, spacing: 6) { constraintLabels }
+        }
+        .font(Theme.Font.metadata)
+    }
+
+    @ViewBuilder
+    private var constraintLabels: some View {
+        HStack(spacing: 6) {
+            Text(filter.title).chipStyle()
+            if let listFilter, let list = allLists.first(where: { $0.id == listFilter }) {
+                Text("\(list.icon) \(list.displayTitle)")
+                    .lineLimit(1)
+                    .chipStyle(accent: list.accent.color)
+                    .help(list.displayTitle)
+            } else {
+                Text("Active lists").foregroundStyle(Theme.secondaryText)
+            }
+        }
+        Text("Grouped by \(grouping.title.lowercased())")
+            .foregroundStyle(Theme.secondaryText)
+        if hasCustomFilters {
+            Button("Reset filters", action: resetFilters)
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accent)
         }
     }
 
@@ -103,8 +151,8 @@ struct TasksScreen: View {
                 }
 
                 Section("List") {
-                    CheckmarkMenuItem("All lists", isSelected: listFilter == nil) { listFilter = nil }
-                    ForEach(allLists) { list in
+                    CheckmarkMenuItem("All active lists", isSelected: listFilter == nil) { listFilter = nil }
+                    ForEach(activeLists) { list in
                         CheckmarkMenuItem("\(list.icon)  \(list.displayTitle)", isSelected: listFilter == list.id) {
                             listFilter = list.id
                         }
@@ -118,13 +166,14 @@ struct TasksScreen: View {
             .menuIndicator(.hidden)
             .frame(width: 26)
             .help("Filter and group")
+            .accessibilityLabel("Filter and group tasks")
         }
     }
 
     // MARK: - Filtering
 
     private var filtered: [Block] {
-        tasks.filter { task in
+        ActiveTaskPolicy(lists: allLists).tasks(in: tasks).filter { task in
             if let listFilter, task.listID != listFilter { return false }
             switch filter {
             case .open: return !task.isCompleted
@@ -317,6 +366,7 @@ struct LabelScreen: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .frame(width: 26)
+                .accessibilityLabel("Options for label \(label.name)")
             }
         } content: {
             if open.isEmpty && done.isEmpty {
@@ -343,7 +393,9 @@ struct LabelScreen: View {
         }
     }
 
-    private var tagged: [Block] { tasks.filter { $0.labelIDs.contains(label.id) } }
+    private var tagged: [Block] {
+        ActiveTaskPolicy(lists: allLists).tasks(in: tasks).filter { $0.labelIDs.contains(label.id) }
+    }
     private var open: [Block] { tagged.filter { !$0.isCompleted } }
     private var done: [Block] {
         tagged.filter(\.isCompleted).sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
@@ -364,16 +416,17 @@ struct CompletedScreen: View {
     private var allLabels: [TaskLabel]
 
     var body: some View {
+        let visibleTasks = ActiveTaskPolicy(lists: allLists).tasks(in: tasks)
         let context = TaskRowContext(tasks: tasks, lists: allLists, labels: allLabels)
 
         return ScreenScaffold {
             ScreenHeader(
                 icon: "checkmark.circle",
                 title: "Completed",
-                subtitle: "\(tasks.count) finished"
+                subtitle: "\(visibleTasks.count) finished in active lists"
             )
         } content: {
-            if tasks.isEmpty {
+            if visibleTasks.isEmpty {
                 EmptyStateView(
                     icon: "checkmark.circle",
                     title: "Nothing completed yet",
@@ -403,7 +456,7 @@ struct CompletedScreen: View {
 
     private var days: [Day] {
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: tasks) { task in
+        let grouped = Dictionary(grouping: ActiveTaskPolicy(lists: allLists).tasks(in: tasks)) { task in
             calendar.startOfDay(for: task.completedAt ?? task.updatedAt)
         }
         return grouped.keys.sorted(by: >).map { date in
@@ -415,5 +468,3 @@ struct CompletedScreen: View {
         }
     }
 }
-
-

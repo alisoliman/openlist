@@ -32,7 +32,7 @@ struct ListsScreen: View {
             ScreenHeader(
                 icon: "square.stack",
                 title: "Lists",
-                subtitle: "\(visibleLists.count) \(visibleLists.count == 1 ? "list" : "lists")"
+                subtitle: "\(visibleLists.count) \(visibleLists.count == 1 ? "list" : "lists")\(showsArchived ? " · including archived" : " · active")"
             ) {
                 HStack(spacing: 4) {
                     Menu {
@@ -46,6 +46,7 @@ struct ListsScreen: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .frame(width: 26)
+                    .accessibilityLabel("List gallery options")
 
                     Button {
                         let list = env.store.createList(in: env.store.defaultSection())
@@ -105,7 +106,11 @@ struct ListCard: View {
 
                     Spacer()
 
-                    if list.isSystemInbox {
+                    if list.isArchived {
+                        Label("Archived", systemImage: "archivebox")
+                            .font(Theme.Font.metadata)
+                            .foregroundStyle(Theme.secondaryText)
+                    } else if list.isSystemInbox {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(Theme.tertiaryText)
@@ -146,11 +151,14 @@ struct ListCard: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .help(list.isArchived ? "\(list.displayTitle) · Archived; excluded from active tasks and reminders" : list.displayTitle)
         .contextMenu {
             Button("Open") { env.navigator.go(to: .list(list.id)) }
             Divider()
-            Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") {
-                env.store.setPinned(!list.isPinned, for: list)
+            if !list.isArchived {
+                Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") {
+                    env.store.setPinned(!list.isPinned, for: list)
+                }
             }
             Button("Duplicate") {
                 let copy = env.store.duplicateList(list)
@@ -160,9 +168,10 @@ struct ListCard: View {
                 MarkdownExporter.presentSavePanel(for: list, store: env.store)
             }
             if !list.isSystemInbox {
-                Button(list.isArchived ? "Unarchive" : "Archive") {
+                Button(list.isArchived ? "Unarchive List" : "Archive List") {
                     env.store.setArchived(!list.isArchived, for: list)
                 }
+                .help("Archived lists stay available here and stop contributing tasks or reminders.")
                 Divider()
                 Button("Delete List", role: .destructive) {
                     env.requestDeleteList(list)

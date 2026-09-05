@@ -1,0 +1,70 @@
+import Foundation
+import SwiftData
+
+var checks = 0
+
+@MainActor
+func check(_ condition: @autoclosure () -> Bool, _ message: String) {
+    checks += 1
+    guard condition() else { fatalError("FAIL: \(message)") }
+}
+
+let directory = FileManager.default.temporaryDirectory.appendingPathComponent("openlist-visibility-\(UUID())")
+try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+defer { try? FileManager.default.removeItem(at: directory) }
+let schema = Schema([TaskList.self, Block.self])
+let configuration = ModelConfiguration(schema: schema, url: directory.appendingPathComponent("test.store"))
+let archivedListID: UUID
+let taskID: UUID
+
+do {
+    let container = try ModelContainer(for: schema, configurations: [configuration])
+    let context = ModelContext(container)
+    let active = TaskList(title: "Active")
+    let archived = TaskList(title: "Retained archive")
+    let inbox = TaskList(title: "Inbox", isSystemInbox: true)
+    archived.isArchived = true
+    archivedListID = archived.id
+    for list in [active, archived, inbox] { context.insert(list) }
+
+    let activeTask = Block(kind: .task, text: "Visible", listID: active.id)
+    let archivedTask = Block(kind: .task, text: "Archived task", listID: archived.id)
+    archivedTask.dueDate = .now
+    archivedTask.isStarred = true
+    archivedTask.note = "Preserve this note"
+    archivedTask.reminderAt = Date.now.addingTimeInterval(3_600)
+    taskID = archivedTask.id
+    let child = Block(kind: .task, text: "Archived child", listID: archived.id, parentID: archivedTask.id)
+    let inboxTask = Block(kind: .task, text: "Inbox task", listID: inbox.id)
+    let paragraph = Block(kind: .paragraph, text: "Context", listID: active.id)
+    let orphan = Block(kind: .task, text: "Orphan", listID: UUID())
+    let tasks = [activeTask, archivedTask, child, inboxTask, paragraph, orphan]
+    for task in tasks { context.insert(task) }
+    try context.save()
+
+    let policy = ActiveTaskPolicy(lists: [active, archived, inbox])
+    check(Set(policy.tasks(in: tasks).map(\.id)) == Set([activeTask.id, inboxTask.id]), "active work excludes archived parents, children, non-tasks and missing lists")
+    check(policy.includes(activeTask), "unpinned lists still contribute active work")
+    check(policy.includes(inboxTask), "Inbox tasks remain active")
+    activeTask.isCompleted = true
+    check(policy.includes(activeTask), "completion filtering remains a surface choice")
+    check(archivedTask.dueDate != nil && archivedTask.reminderAt != nil && archivedTask.isStarred, "archiving hides tasks without clearing scheduling or flags")
+}
+
+do {
+    let container = try ModelContainer(for: schema, configurations: [configuration])
+    let context = ModelContext(container)
+    let lists = try context.fetch(FetchDescriptor<TaskList>())
+    let tasks = try context.fetch(FetchDescriptor<Block>())
+    let archive = lists.first { $0.id == archivedListID }!
+    let task = tasks.first { $0.id == taskID }!
+    check(archive.isArchived && !ActiveTaskPolicy(lists: lists).includes(task), "archive visibility survives reopening a disk store")
+    check(task.note == "Preserve this note" && task.reminderAt != nil, "archived content and reminder intent survive reopening")
+    check(tasks.contains { $0.parentID == task.id }, "archived subtask relationship survives reopening")
+    archive.isArchived = false
+    try context.save()
+    check(ActiveTaskPolicy(lists: lists).includes(task), "unarchiving immediately restores active task membership")
+    check(ActiveTaskPolicy(lists: lists).tasks(in: tasks).contains { $0.parentID == task.id }, "unarchiving restores subtasks too")
+}
+
+print("✅ \(checks) visibility and persistence checks passed")

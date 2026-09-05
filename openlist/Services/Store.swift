@@ -38,6 +38,13 @@ final class Store {
 
     private var pendingSave: Task<Void, Never>?
 
+    // Structural editor edits retain media deleted during the operation so
+    // Undo can restore the original attachment and image contents as well.
+    var isRecordingEditorEdit = false
+    var editorMediaBackups: [String: Data] = [:]
+    var persistenceError: String?
+    var editorNotice: String?
+
     /// Called after every successful save, so downstream caches — currently the
     /// widget snapshot — can refresh themselves.
     var onDidSave: (() -> Void)?
@@ -177,51 +184,75 @@ final class Store {
     }
 
     func duplicateList(_ list: TaskList) -> TaskList {
-        let copy = TaskList(title: "\(list.displayTitle) copy", icon: list.icon, accent: list.accent)
-        copy.summary = list.summary
-        copy.sectionID = list.sectionID
-        copy.isPinned = list.isPinned
-        copy.sortingRaw = list.sortingRaw
-        copy.sortIndex = list.sortIndex + 1
-        copy.sidebarIndex = list.sidebarIndex + 1
-        context.insert(copy)
+        var stagedFiles: [String] = []
+        func stageCopy(of source: URL) throws -> String {
+            let ext = source.pathExtension
+            let filename = UUID().uuidString + (ext.isEmpty ? "" : "." + ext)
+            // Register before copying so even a partial failed write is removed.
+            stagedFiles.append(filename)
+            try FileManager.default.copyItem(at: source, to: MediaStore.shared.url(for: filename))
+            return filename
+        }
+        do {
+            let copy = TaskList(title: "\(list.displayTitle) copy", icon: list.icon, accent: list.accent)
+            copy.summary = list.summary
+            copy.sectionID = list.sectionID
+            copy.isPinned = list.isPinned
+            copy.sortingRaw = list.sortingRaw
+            copy.showsCompleted = list.showsCompleted
+            copy.sortIndex = list.sortIndex + 1
+            copy.sidebarIndex = list.sidebarIndex + 1
 
-        // Re-key the tree so parent pointers land on the new blocks.
-        let originals = blocks(inList: list.id)
-        var idMap: [UUID: UUID] = [:]
-        for original in originals { idMap[original.id] = UUID() }
-
-        for original in originals {
-            let clone = Block(kind: original.kind, listID: copy.id)
-            clone.id = idMap[original.id] ?? UUID()
-            clone.parentID = original.parentID.flatMap { idMap[$0] }
-            clone.sortIndex = original.sortIndex
-            clone.copyPayload(from: original)
-
-            // Give the copy its own file, or deleting either list would take
-            // the shared asset out from under the other.
-            if let filename = original.mediaFilename {
-                clone.mediaFilename = MediaStore.shared.duplicate(filename: filename) ?? filename
-            }
-            context.insert(clone)
-
-            for attachment in attachments(for: original.id) {
-                guard let copiedName = MediaStore.shared.duplicate(filename: attachment.filename) else { continue }
-                context.insert(
-                    Attachment(
+            // Prepare the whole tree and its independently owned media before
+            // inserting anything. A failed copy must never leave a partial list
+            // or point the duplicate at a file owned by the original.
+            let listID = list.id
+            let originals = try context.fetch(FetchDescriptor<Block>(
+                predicate: #Predicate { $0.listID == listID },
+                sortBy: [SortDescriptor(\.sortIndex)]
+            ))
+            let idMap = Dictionary(uniqueKeysWithValues: originals.map { ($0.id, UUID()) })
+            var clones: [Block] = []
+            var clonedAttachments: [Attachment] = []
+            for original in originals {
+                let clone = Block(kind: original.kind, listID: copy.id)
+                clone.id = idMap[original.id] ?? UUID()
+                clone.parentID = original.parentID.flatMap { idMap[$0] }
+                clone.sortIndex = original.sortIndex
+                clone.copyPayload(from: original)
+                if let filename = original.mediaFilename {
+                    clone.mediaFilename = try stageCopy(of: MediaStore.shared.url(for: filename))
+                }
+                let originalID = original.id
+                let originalsAttachments = try context.fetch(FetchDescriptor<Attachment>(
+                    predicate: #Predicate { $0.blockID == originalID },
+                    sortBy: [SortDescriptor(\.sortIndex)]
+                ))
+                for attachment in originalsAttachments {
+                    let copiedFilename = try stageCopy(of: attachment.url)
+                    let cloned = Attachment(
                         blockID: clone.id,
-                        filename: copiedName,
+                        filename: copiedFilename,
                         displayName: attachment.displayName,
                         contentType: attachment.contentType,
                         byteCount: attachment.byteCount,
                         sortIndex: attachment.sortIndex
                     )
-                )
+                    cloned.createdAt = attachment.createdAt
+                    clonedAttachments.append(cloned)
+                }
+                clones.append(clone)
             }
+            context.insert(copy)
+            for clone in clones { context.insert(clone) }
+            for attachment in clonedAttachments { context.insert(attachment) }
+            save()
+            return copy
+        } catch {
+            for filename in stagedFiles { MediaStore.shared.delete(filename: filename) }
+            editorNotice = "The list was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
+            return list
         }
-
-        save()
-        return copy
     }
 
     func setPinned(_ pinned: Bool, for list: TaskList, section: SidebarSection? = nil) {
@@ -306,10 +337,11 @@ final class Store {
             do {
                 try context.save()
             } catch {
-                assertionFailure("Failed to save: \(error)")
+                persistenceError = "Your latest changes could not be saved. \(error.localizedDescription)"
                 return
             }
         }
+        persistenceError = nil
         onDidSave?()
     }
 
@@ -356,10 +388,15 @@ final class Store {
     }
 
     func clearActivity() {
-        for event in recentActivity(limit: 10_000) {
-            context.delete(event)
+        do {
+            // The Updates view is paginated; clearing history must also remove
+            // events older than its fetch limit.
+            let events = try context.fetch(FetchDescriptor<ActivityEvent>())
+            for event in events { context.delete(event) }
+            save()
+        } catch {
+            persistenceError = "Activity history could not be cleared. \(error.localizedDescription)"
         }
-        save()
     }
 
     // MARK: - List properties
@@ -398,8 +435,10 @@ final class Store {
     }
 
     func setArchived(_ archived: Bool, for list: TaskList) {
+        guard !list.isSystemInbox else { return }
         list.isArchived = archived
         list.touch()
+        refreshAllReminders()
         save()
     }
 

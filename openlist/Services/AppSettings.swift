@@ -79,7 +79,7 @@ final class AppSettings {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ReviewSession.defaults) {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.showsCompleted: true,

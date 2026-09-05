@@ -83,9 +83,15 @@ struct TodayWidgetView: View {
         Array(entry.snapshot.todayItems.prefix(maxRows))
     }
 
+    private var remainingCount: Int {
+        max(0, entry.snapshot.overdueCount + entry.snapshot.dueTodayCount - items.count)
+    }
+
     private var maxRows: Int {
         switch family {
-        case .systemSmall: 3
+        // Two readable titles and their metadata fit the small family; a
+        // third squeezed row hides the very information the widget is for.
+        case .systemSmall: 2
         case .systemMedium: 4
         default: 9
         }
@@ -117,8 +123,8 @@ struct TodayWidgetView: View {
                     }
                 }
 
-                if entry.snapshot.todayItems.count > items.count {
-                    Text("+\(entry.snapshot.todayItems.count - items.count) more")
+                if remainingCount > 0 {
+                    Text("+\(remainingCount) more")
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                 }
@@ -169,21 +175,32 @@ struct WidgetTaskRow: View {
                 .frame(width: 10, height: 10)
                 .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: isCompact ? 11 : 12, weight: .medium))
-                    .lineLimit(isCompact ? 1 : 2)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: isCompact)
 
-                if !isCompact, !item.listName.isEmpty {
+                if isCompact {
+                    metadata
+                } else if !item.listName.isEmpty {
                     Text("\(item.listIcon) \(item.listName)")
                         .font(.system(size: 9.5))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
-            Spacer(minLength: 3)
+            if !isCompact { metadata }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(item.title), \(item.dueText)\(item.isStarred ? ", starred" : "")\(item.hasRepeat ? ", repeating" : "")")
+    }
 
+    private var metadata: some View {
+        HStack(spacing: 4) {
             if item.hasRepeat {
                 Image(systemName: "repeat")
                     .font(.system(size: 8, weight: .semibold))
@@ -202,7 +219,8 @@ struct WidgetTaskRow: View {
                 Text(item.dueText)
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(item.isOverdue ? ListAccent.red.color : .secondary)
-                    .padding(.top, 2)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -253,21 +271,23 @@ struct SummaryWidgetView: View {
 
     private func stat(_ title: String, _ value: Int, _ accent: ListAccent, _ symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             HStack(spacing: 3) {
                 Image(systemName: symbol)
                     .font(.system(size: 8.5))
                     .foregroundStyle(accent.color)
-                Text(title)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Text("\(value)")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(value == 0 ? Color.secondary : Color.primary)
             }
-            Text("\(value)")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(value == 0 ? Color.secondary : Color.primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(value)")
     }
 }
 

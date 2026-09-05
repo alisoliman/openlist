@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import AppKit
 import SwiftData
 import SwiftUI
 import UserNotifications
@@ -107,11 +108,20 @@ struct TasksSettingsTab: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
 
-                if notificationStatus != .authorized {
+                if notificationStatus == .denied {
+                    Button("Open Notification Settings…") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    Text("Select Openlist in System Settings, then turn on Allow Notifications.")
+                        .font(Theme.Font.metadata)
+                        .foregroundStyle(Theme.secondaryText)
+                } else if notificationStatus == .notDetermined {
                     Button("Allow notifications") {
                         Task {
                             _ = await NotificationService.shared.requestAuthorization()
-                            notificationStatus = await NotificationService.shared.authorizationStatus()
+                            await refreshNotificationStatus()
                         }
                     }
                 }
@@ -122,14 +132,24 @@ struct TasksSettingsTab: View {
             }
         }
         .formStyle(.grouped)
-        .task {
-            notificationStatus = await NotificationService.shared.authorizationStatus()
+        .task { await refreshNotificationStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await refreshNotificationStatus() }
+        }
+    }
+
+    private func refreshNotificationStatus() async {
+        let previous = notificationStatus
+        notificationStatus = await NotificationService.shared.authorizationStatus()
+        if notificationStatus != previous,
+           [.authorized, .provisional].contains(notificationStatus) {
+            env.store.refreshAllReminders()
         }
     }
 
     private var statusText: String {
         switch notificationStatus {
-        case .authorized, .provisional, .ephemeral: "Enabled"
+        case .authorized, .provisional: "Enabled"
         case .denied: "Turned off in System Settings"
         default: "Not requested yet"
         }
@@ -205,10 +225,14 @@ struct LabelSettingsRow: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 16)
+            .accessibilityLabel("Color for label \(label.name)")
+            .accessibilityValue(label.accent.title)
+            .help("Change color for \(label.name)")
 
             TextField("Name", text: $draftName)
                 .textFieldStyle(.plain)
                 .focused($isEditing)
+                .accessibilityLabel("Label name")
                 .onSubmit(commit)
                 .onChange(of: isEditing) { _, editing in
                     if editing { draftName = label.name } else { commit() }
@@ -229,6 +253,8 @@ struct LabelSettingsRow: View {
                     .foregroundStyle(Theme.tertiaryText)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Delete label \(label.name)")
+            .help("Delete label \(label.name)")
         }
         .onAppear { draftName = label.name }
     }
@@ -262,7 +288,7 @@ struct DataSettingsTab: View {
 
             Section("Export") {
                 Button("Export every list as Markdown…") { exportAll() }
-                Text("Writes one .md file per list into a folder you choose.")
+                Text("Writes one Markdown file per list, with images and attachments in sibling assets folders. Existing files are kept.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }
@@ -302,24 +328,21 @@ struct DataSettingsTab: View {
         panel.prompt = "Export"
         guard panel.runModal() == .OK, let folder = panel.url else { return }
 
-        // Two lists can share a title, so names are de-duplicated rather than
-        // silently overwriting one another.
-        var used: Set<String> = []
-        for list in env.store.allLists(includeArchived: true) {
-            let markdown = MarkdownExporter.markdown(for: list, store: env.store)
-            let base = list.displayTitle.replacingOccurrences(of: "/", with: "-")
-            var name = base
-            var suffix = 2
-            while used.contains(name.lowercased()) {
-                name = "\(base) \(suffix)"
-                suffix += 1
+        var exported = 0
+        do {
+            for list in env.store.allLists(includeArchived: true) {
+                let filename = MarkdownExportPackage.safeFilename(list.displayTitle) + ".md"
+                let destination = MarkdownExportPackage.availableURL(in: folder, filename: filename)
+                try MarkdownExporter.write(list: list, store: env.store, to: destination)
+                exported += 1
             }
-            used.insert(name.lowercased())
-            try? markdown.write(
-                to: folder.appendingPathComponent("\(name).md"),
-                atomically: true,
-                encoding: .utf8
-            )
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Export stopped"
+            alert.informativeText = "\(exported) list(s) were exported. The remaining lists were not exported.\n\n\(error.localizedDescription)"
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 

@@ -132,7 +132,9 @@ extension Block {
     /// Due today or already past — the set Today surfaces.
     var isDueOnOrBeforeToday: Bool {
         guard let dueDate else { return false }
-        return dueDate < Calendar.current.startOfDay(for: .now).addingTimeInterval(86_400)
+        let calendar = Calendar.current
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)) else { return false }
+        return dueDate < tomorrow
     }
 
     func touch() { updatedAt = .now }

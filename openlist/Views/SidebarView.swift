@@ -26,11 +26,16 @@ struct SidebarView: View {
     @State private var renamingText = ""
     @FocusState private var isRenamingFocused: Bool
     @State private var dropTargetSectionID: UUID?
+    @State private var renamingListID: UUID?
+    @State private var listNameDraft = ""
 
     var body: some View {
         // The sidebar is always on screen and re-renders on every task change,
         // so counts are accumulated in one pass rather than one scan per row.
-        let counts = Counts(openTasks: openTasks, inboxID: env.store.inboxList()?.id)
+        let counts = Counts(
+            openTasks: ActiveTaskPolicy(lists: lists).tasks(in: openTasks),
+            inboxID: lists.first(where: \.isSystemInbox)?.id
+        )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 2) {
@@ -45,6 +50,20 @@ struct SidebarView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.chrome)
         .safeAreaInset(edge: .bottom) { footer }
+        .alert("Rename list", isPresented: Binding(
+            get: { renamingListID != nil },
+            set: { if !$0 { renamingListID = nil } }
+        )) {
+            TextField("List name", text: $listNameDraft)
+            Button("Cancel", role: .cancel) { renamingListID = nil }
+            Button("Rename") {
+                if let list = env.store.list(id: renamingListID) {
+                    env.store.rename(list, to: listNameDraft.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                renamingListID = nil
+            }
+            .keyboardShortcut(.defaultAction)
+        }
     }
 
     // MARK: - Fixed destinations
@@ -108,14 +127,15 @@ struct SidebarView: View {
 
         init(openTasks: [Block], inboxID: UUID?) {
             // Hoisted: `isDueOnOrBeforeToday` builds a Calendar per call.
-            let cutoff = Calendar.current.startOfDay(for: .now).addingTimeInterval(86_400)
+            let calendar = Calendar.current
+            let cutoff = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)) ?? .now
 
             for task in openTasks {
                 if let listID = task.listID {
                     byList[listID, default: 0] += 1
                     if listID == inboxID { inbox += 1 }
                 }
-                if let due = task.dueDate, due < cutoff { today += 1 }
+                if task.isStarred || (task.dueDate.map { $0 < cutoff } ?? false) { today += 1 }
                 for labelID in task.labelIDs { byLabel[labelID, default: 0] += 1 }
             }
         }
@@ -233,6 +253,10 @@ struct SidebarView: View {
             openCount: count,
             isSelected: env.navigator.route == .list(list.id),
             onOpen: { env.navigator.go(to: .list(list.id)) },
+            onRename: {
+                listNameDraft = list.title
+                renamingListID = list.id
+            },
             onUnpin: { env.store.setPinned(false, for: list) },
             onDuplicate: {
                 let copy = env.store.duplicateList(list)
@@ -383,6 +407,7 @@ struct SidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .help(title)
     }
 }
 
@@ -392,6 +417,7 @@ struct SidebarListRow: View {
     let openCount: Int
     let isSelected: Bool
     let onOpen: () -> Void
+    let onRename: () -> Void
     let onUnpin: () -> Void
     let onDuplicate: () -> Void
     let onExport: () -> Void
@@ -433,6 +459,9 @@ struct SidebarListRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .help(list.displayTitle)
+        .accessibilityLabel(list.displayTitle)
+        .accessibilityValue("\(openCount) open tasks")
         .overlay(alignment: .top) {
             if isDropTarget {
                 Capsule()
@@ -449,6 +478,7 @@ struct SidebarListRow: View {
         } isTargeted: { isDropTarget = $0 }
         .contextMenu {
             Button("Open") { onOpen() }
+            Button("Rename List…") { onRename() }
             Divider()
             Button("Duplicate") { onDuplicate() }
             Button("Export as Markdown…") { onExport() }
@@ -484,6 +514,8 @@ struct SidebarSectionHeader: View {
             .buttonStyle(.plain)
             .disabled(!canEdit)
             .opacity(canEdit ? 1 : 0)
+            .accessibilityLabel("\(isCollapsed ? "Expand" : "Collapse") \(title) section")
+            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
 
             Text(title)
                 .font(Theme.Font.sectionHeader)
@@ -503,6 +535,7 @@ struct SidebarSectionHeader: View {
                 }
                 .buttonStyle(.plain)
                 .help("Add a list to this section")
+                .accessibilityLabel("Add list to \(title)")
             }
         }
         .padding(.horizontal, 8)
