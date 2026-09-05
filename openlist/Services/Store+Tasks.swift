@@ -1,0 +1,391 @@
+//
+//  Store+Tasks.swift
+//  openlist
+//
+
+import Foundation
+import SwiftData
+
+extension Store {
+    // MARK: - Completion
+
+    /// Toggles a task, rolling repeating tasks forward to their next occurrence.
+    func toggleCompletion(_ block: Block) {
+        guard block.isTask else { return }
+
+        if block.isCompleted {
+            reopen(block)
+        } else {
+            complete(block)
+        }
+        save()
+    }
+
+    private func complete(_ block: Block) {
+        let now = Date.now
+
+        if var rule = block.recurrence,
+           let next = RecurrenceEngine.nextDate(rule: rule, dueDate: block.dueDate, completedAt: now) {
+            // Repeating tasks never sit in the completed state: they advance.
+            rule.completedOccurrences += 1
+            let previousDue = block.dueDate
+            block.recurrence = rule.isFinished ? nil : rule
+            block.dueDate = rule.isFinished ? nil : next
+            block.isCompleted = false
+            block.completedAt = nil
+            // The reminder has to travel with the occurrence, or it stays in
+            // the past and every future repeat is silently unreminded.
+            shiftReminder(on: block, fromDue: previousDue)
+
+            // Subtasks reset so the next occurrence starts fresh.
+            resetSubtasks(of: block)
+
+            log(
+                .completed,
+                title: block.displayTitle,
+                detail: rule.isFinished
+                    ? "Finished repeating"
+                    : "Repeats \(Self.relativeDateText(next))",
+                block: block
+            )
+            scheduleReminderIfNeeded(for: block)
+            block.touch()
+            return
+        }
+
+        block.isCompleted = true
+        block.completedAt = now
+        block.touch()
+        onDidCompleteTask?(block)
+        NotificationService.shared.cancelReminder(for: block.id)
+
+        // Ticking a parent ticks everything under it.
+        if let listID = block.listID {
+            for descendant in BlockTree.descendants(of: block.id, in: blocks(inList: listID)) where descendant.isTask {
+                if !descendant.isCompleted {
+                    descendant.isCompleted = true
+                    descendant.completedAt = now
+                    descendant.touch()
+                    NotificationService.shared.cancelReminder(for: descendant.id)
+                }
+            }
+        }
+
+        log(.completed, title: block.displayTitle, block: block)
+    }
+
+    private func reopen(_ block: Block) {
+        block.isCompleted = false
+        block.completedAt = nil
+        block.touch()
+        scheduleReminderIfNeeded(for: block)
+        log(.reopened, title: block.displayTitle, block: block)
+    }
+
+    private func resetSubtasks(of block: Block) {
+        guard let listID = block.listID else { return }
+        for descendant in BlockTree.descendants(of: block.id, in: blocks(inList: listID)) where descendant.isTask {
+            descendant.isCompleted = false
+            descendant.completedAt = nil
+            descendant.touch()
+        }
+    }
+
+    /// Fraction of a task's subtasks that are done, for the progress pill.
+    ///
+    /// Fetches the owning list, so this is for one-off use. Views that render
+    /// many rows should build `BlockTree.subtaskCounts(in:)` once instead.
+    func subtaskProgress(for block: Block) -> (done: Int, total: Int)? {
+        guard let listID = block.listID else { return nil }
+        let counts = BlockTree.subtaskCounts(in: blocks(inList: listID))
+        guard let entry = counts[block.id], entry.total > 0 else { return nil }
+        return entry
+    }
+
+    // MARK: - Scheduling
+
+    func setDueDate(_ date: Date?, includesTime: Bool = false, for block: Block) {
+        let previousDue = block.dueDate
+        block.dueDate = date
+        block.includesTime = date == nil ? false : includesTime
+        if date != nil { shiftReminder(on: block, fromDue: previousDue) }
+        block.touch()
+
+        if date == nil {
+            block.reminderAt = nil
+            NotificationService.shared.cancelReminder(for: block.id)
+            log(.unscheduled, title: block.displayTitle, block: block)
+        } else {
+            log(.scheduled, title: block.displayTitle, detail: Self.relativeDateText(date!), block: block)
+            scheduleReminderIfNeeded(for: block)
+        }
+        save()
+    }
+
+    func setDueToday(_ block: Block) {
+        setDueDate(Calendar.current.startOfDay(for: .now), includesTime: false, for: block)
+    }
+
+    func setDueTomorrow(_ block: Block) {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
+        setDueDate(tomorrow, includesTime: false, for: block)
+    }
+
+    func setDueNextWeek(_ block: Block) {
+        let next = Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: .now))
+        setDueDate(next, includesTime: false, for: block)
+    }
+
+    func setReminder(_ date: Date?, for block: Block) {
+        block.reminderAt = date
+        block.touch()
+        if date == nil {
+            NotificationService.shared.cancelReminder(for: block.id)
+        } else {
+            scheduleReminderIfNeeded(for: block)
+        }
+        save()
+    }
+
+    func setRecurrence(_ rule: Recurrence?, for block: Block) {
+        // A repeating task needs a date to repeat from.
+        if rule != nil, block.dueDate == nil {
+            block.dueDate = Calendar.current.startOfDay(for: .now)
+        }
+        block.recurrence = rule?.anchored(to: block.dueDate)
+        block.touch()
+        save()
+    }
+
+    /// Moves a reminder by the same amount the due date moved.
+    ///
+    /// A reminder is meaningful relative to its occurrence ("15 minutes
+    /// before"), so rescheduling the task has to carry it along.
+    private func shiftReminder(on block: Block, fromDue previousDue: Date?) {
+        guard
+            let reminder = block.reminderAt,
+            let previousDue,
+            let newDue = block.dueDate
+        else { return }
+        block.reminderAt = newDue.addingTimeInterval(reminder.timeIntervalSince(previousDue))
+    }
+
+    func scheduleReminderIfNeeded(for block: Block) {
+        guard block.isTask, !block.isCompleted else {
+            NotificationService.shared.cancelReminder(for: block.id)
+            return
+        }
+        let fireDate = block.reminderAt ?? (block.includesTime ? block.dueDate : nil)
+        guard let fireDate, fireDate > .now else {
+            NotificationService.shared.cancelReminder(for: block.id)
+            return
+        }
+        NotificationService.shared.scheduleReminder(
+            id: block.id,
+            title: block.displayTitle,
+            listName: list(id: block.listID)?.displayTitle ?? "",
+            at: fireDate
+        )
+    }
+
+    /// Re-registers every pending reminder, run once at launch.
+    func refreshAllReminders() {
+        NotificationService.shared.cancelAll()
+        let descriptor = FetchDescriptor<Block>(
+            predicate: #Predicate { $0.kindRaw == "task" && !$0.isCompleted }
+        )
+        let tasks = (try? context.fetch(descriptor)) ?? []
+        // `cancelAll` already cleared everything, so only tasks that will
+        // actually schedule something need to go through the notification
+        // centre — otherwise each one costs two pointless XPC round trips.
+        for task in tasks where task.reminderAt != nil || (task.includesTime && task.dueDate != nil) {
+            scheduleReminderIfNeeded(for: task)
+        }
+    }
+
+    // MARK: - Flags
+
+    func toggleStar(_ block: Block) {
+        block.isStarred.toggle()
+        block.touch()
+        if block.isStarred {
+            log(.starred, title: block.displayTitle, block: block)
+        }
+        save()
+    }
+
+    func setPriority(_ priority: TaskPriority, for block: Block) {
+        block.priority = priority
+        block.touch()
+        save()
+    }
+
+    // MARK: - Labels
+
+    /// Finds an existing label by name or creates one with a derived colour.
+    @discardableResult
+    func findOrCreateLabel(named rawName: String) -> TaskLabel? {
+        let name = TaskLabel.normalize(rawName)
+        guard !name.isEmpty else { return nil }
+
+        if let existing = allLabels().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            return existing
+        }
+        let label = TaskLabel(
+            name: name,
+            accent: TaskLabel.suggestedAccent(for: name),
+            sortIndex: (allLabels().map(\.sortIndex).max() ?? 0) + BlockTree.indexStep
+        )
+        context.insert(label)
+        return label
+    }
+
+    func addLabel(_ label: TaskLabel, to block: Block) {
+        guard !block.labelIDs.contains(label.id) else { return }
+        block.labelIDs.append(label.id)
+        block.touch()
+        log(.labeled, title: block.displayTitle, detail: label.name, block: block)
+        save()
+    }
+
+    func removeLabel(_ label: TaskLabel, from block: Block) {
+        block.labelIDs.removeAll { $0 == label.id }
+        block.touch()
+        save()
+    }
+
+    func toggleLabel(_ label: TaskLabel, on block: Block) {
+        if block.labelIDs.contains(label.id) {
+            removeLabel(label, from: block)
+        } else {
+            addLabel(label, to: block)
+        }
+    }
+
+    func clearLabels(on block: Block) {
+        guard !block.labelIDs.isEmpty else { return }
+        block.labelIDs.removeAll()
+        block.touch()
+        save()
+    }
+
+    func renameLabel(_ label: TaskLabel, to newName: String) {
+        let name = TaskLabel.normalize(newName)
+        guard !name.isEmpty else { return }
+        label.name = name
+        save()
+    }
+
+    func deleteLabel(_ label: TaskLabel) {
+        let labelID = label.id
+        let descriptor = FetchDescriptor<Block>()
+        let all = (try? context.fetch(descriptor)) ?? []
+        for block in all where block.labelIDs.contains(labelID) {
+            block.labelIDs.removeAll { $0 == labelID }
+        }
+        context.delete(label)
+        save()
+    }
+
+    func blockCount(for label: TaskLabel) -> Int {
+        let labelID = label.id
+        let descriptor = FetchDescriptor<Block>(predicate: #Predicate { !$0.isCompleted })
+        let all = (try? context.fetch(descriptor)) ?? []
+        return all.filter { $0.labelIDs.contains(labelID) }.count
+    }
+
+    // MARK: - Moving between lists
+
+    /// Moves a task (and its subtree) to the root of another list.
+    func moveToList(_ block: Block, list destination: TaskList) {
+        let previousList = list(id: block.listID)
+        guard previousList?.id != destination.id || block.parentID != nil else { return }
+
+        _ = move(block, toParent: nil, above: nil, in: destination.id)
+        log(
+            .moved,
+            title: block.displayTitle,
+            detail: "to \(destination.displayTitle)",
+            block: block,
+            list: destination
+        )
+        save()
+    }
+
+    /// ⌘⇧I — file a task into the Inbox.
+    func moveToInbox(_ block: Block) {
+        guard let inbox = inboxList() else { return }
+        moveToList(block, list: inbox)
+    }
+
+    /// ⌘⇧R — detach a task from its list, sending it back to the Inbox.
+    func removeFromList(_ block: Block) {
+        guard let inbox = inboxList(), block.listID != inbox.id else { return }
+        moveToInbox(block)
+    }
+
+    // MARK: - Text formatting
+
+    /// How much detail a relative date string carries.
+    enum DateStyle {
+        /// "today", "Tue", "12 Mar" — for chips.
+        case short
+        /// "Today", "Tuesday", "Tue 12 March" — for section headings.
+        case long
+    }
+
+    static func relativeDateText(_ date: Date, style: DateStyle = .short) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "today" }
+        if calendar.isDateInTomorrow(date) { return "tomorrow" }
+        if calendar.isDateInYesterday(date) { return "yesterday" }
+
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: .now),
+            to: calendar.startOfDay(for: date)
+        ).day ?? 0
+
+        // Within a week either way, the weekday name is the clearest label.
+        if abs(days) < 7 {
+            return date.formatted(.dateTime.weekday(style == .long ? .wide : .abbreviated))
+        }
+        if calendar.component(.year, from: date) == calendar.component(.year, from: .now) {
+            return style == .long
+                ? date.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
+                : date.formatted(.dateTime.day().month(.abbreviated))
+        }
+        return style == .long
+            ? date.formatted(.dateTime.day().month(.wide).year())
+            : date.formatted(.dateTime.day().month(.abbreviated).year())
+    }
+
+    /// Short chip text such as "Today", "Tue", "12 Mar", with an optional time.
+    static func dueChipText(for block: Block) -> String {
+        guard let dueDate = block.dueDate else { return "" }
+        var text = relativeDateText(dueDate).capitalizedFirstLetter
+        if block.includesTime {
+            text += " \(dueDate.formatted(date: .omitted, time: .shortened))"
+        }
+        return text
+    }
+
+    /// Unambiguous "12 Mar 2026, 6:00 PM" form used by pickers and export.
+    static func absoluteDateText(_ date: Date, includesTime: Bool) -> String {
+        includesTime
+            ? date.formatted(date: .abbreviated, time: .shortened)
+            : date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    /// "Today" / "Yesterday" / "Tue 12 March" headings for day-grouped lists.
+    static func dayHeading(for date: Date) -> String {
+        relativeDateText(date, style: .long).capitalizedFirstLetter
+    }
+}
+
+extension String {
+    var capitalizedFirstLetter: String {
+        guard let first else { return self }
+        return String(first).uppercased() + dropFirst()
+    }
+}
