@@ -15,9 +15,11 @@ struct RootView: View {
     /// The route whose unwanted initial focus has already been cleared, so the
     /// clear happens once per navigation and never steals a later click.
     @State private var focusClearedFor: AppRoute?
+    @State private var hostWindow = RootWindowReference()
 
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
+    @Query private var allLists: [TaskList]
 
     var body: some View {
         @Bindable var navigator = env.navigator
@@ -58,14 +60,70 @@ struct RootView: View {
             Text("Its tasks and notes will be deleted too. This cannot be undone.")
         }
         .background(Theme.canvas)
+        .background {
+            RootWindowReader { window in
+                hostWindow.window = window
+                clearInitialFocus(for: env.navigator.route)
+            }
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+        }
+        .safeAreaInset(edge: .top) {
+            VStack(spacing: 0) {
+                if let notice = env.store.editorNotice {
+                    HStack(alignment: .top, spacing: 12) {
+                        Label(notice, systemImage: "info.circle")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Button("Dismiss") { env.store.editorNotice = nil }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(ListAccent.blue.softBackground)
+                }
+                if let error = env.store.persistenceError {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Changes are not saved", systemImage: "exclamationmark.triangle.fill")
+                            .font(.headline)
+                        Text(error).font(.callout)
+                        Button("Retry saving") { env.store.save() }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(ListAccent.red.softBackground)
+                }
+                if let warning = env.storageWarning {
+                    Label(warning, systemImage: "externaldrive.badge.exclamationmark")
+                        .font(.callout)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(ListAccent.orange.softBackground)
+                }
+            }
+        }
         .task { installQuickCapture() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            guard let window = notification.object as? NSWindow,
+                  window === hostWindow.window else { return }
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
             clearInitialFocus(for: env.navigator.route)
         }
         .onChange(of: dockBadgeCount) { _, _ in updateDockBadge() }
         .onChange(of: env.settings.showsDockBadge) { _, _ in updateDockBadge() }
+        .onChange(of: openTasks.map(\.id)) { _, _ in
+            // Models can arrive after the first window/layout pass. An empty
+            // pre-render pass must not disable protection for their first row.
+            clearInitialFocus(for: env.navigator.route)
+        }
+        .onChange(of: env.navigator.selection) { _, _ in
+            // Smart rows report focus through the selection. This also catches
+            // AppKit assigning a responder after the first query/layout pass.
+            clearInitialFocus(for: env.navigator.route)
+        }
         .onAppear(perform: updateDockBadge)
         .onChange(of: env.navigator.route) { _, route in
             focusClearedFor = nil
@@ -85,6 +143,10 @@ struct RootView: View {
             // the "+" buttons stay dead.
             if newValue == nil, !env.navigator.route.hasDocumentEditor {
                 env.activeDocument = nil
+                // Dismissing the inspector lets SwiftUI assign the first smart
+                // row as responder again, often with its entire title selected.
+                focusClearedFor = nil
+                clearInitialFocus(for: env.navigator.route)
             }
         }
         .onChange(of: env.commandToken) { _, newValue in
@@ -136,7 +198,8 @@ struct RootView: View {
     /// ⌘N from a smart view files a task into the Inbox, pre-filled with
     /// whatever that view implies — due today in Today, tagged in a label view.
     private func createTaskFromSmartView() {
-        guard let inbox = env.store.inboxList() else { return }
+        let destination = env.navigator.route.listID.flatMap { env.store.list(id: $0) } ?? env.store.inboxList()
+        guard let destination else { return }
 
         var defaults = CaptureDefaults(
             parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates,
@@ -151,7 +214,8 @@ struct RootView: View {
             break
         }
 
-        let block = env.store.captureTask(text: "", in: inbox, defaults: defaults)
+        let block = env.store.captureTask(text: "", in: destination, defaults: defaults)
+        env.beginTaskTitleCapture(block)
         env.navigator.openTask(block.id)
     }
 
@@ -167,17 +231,33 @@ struct RootView: View {
     /// takes a caret rather than a selection, and on a brand-new list it is the
     /// title field, which is exactly where you want to be typing.
     private func clearInitialFocus(for route: AppRoute) {
-        guard !route.hasDocumentEditor, focusClearedFor != route else { return }
+        guard !route.hasDocumentEditor, focusClearedFor != route,
+              !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
+              !env.navigator.isShortcutSheetOpen, env.navigator.openTaskID == nil,
+              let initialWindow = hostWindow.window, initialWindow.isKeyWindow
+        else { return }
 
         // Deferred because AppKit assigns the initial first responder after the
         // window becomes key. Recorded per route so this runs once per
         // navigation and cannot steal focus the user establishes afterwards.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            guard let window = NSApp.keyWindow,
-                  window.firstResponder is NSTextView || window.firstResponder is NSTextField
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak initialWindow] in
+            guard env.navigator.route == route, focusClearedFor != route,
+                  !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
+                  !env.navigator.isShortcutSheetOpen, env.navigator.openTaskID == nil,
+                  let window = initialWindow, window === hostWindow.window,
+                  window === NSApp.keyWindow, window.sheetParent == nil, window.attachedSheet == nil
             else { return }
-            window.makeFirstResponder(nil)
+            let editor = (window.firstResponder as? NSTextView)
+                ?? ((window.firstResponder as? NSTextField)?.currentEditor() as? NSTextView)
+            // Keep waiting for the query/layout pass if no field exists yet.
+            // A deliberately placed caret or partial selection is safe and
+            // settles this guard without taking the user's focus away.
+            guard let editor else { return }
             focusClearedFor = route
+            let length = (editor.string as NSString).length
+            if length > 0, editor.selectedRange() == NSRange(location: 0, length: length) {
+                window.makeFirstResponder(nil)
+            }
         }
     }
 
@@ -193,7 +273,8 @@ struct RootView: View {
 
     /// Overdue plus due-today work — the number worth surfacing on the Dock.
     private var dockBadgeCount: Int {
-        openTasks.filter(\.isDueOnOrBeforeToday).count
+        ActiveTaskPolicy(lists: allLists).tasks(in: openTasks)
+            .filter { $0.isDueOnOrBeforeToday || $0.isStarred }.count
     }
 
     private func updateDockBadge() {
@@ -408,5 +489,38 @@ struct EmptyStateView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 56)
+    }
+}
+
+/// Weak ownership prevents the hosted SwiftUI view from retaining its window.
+private final class RootWindowReference {
+    weak var window: NSWindow?
+}
+
+/// Identifies this RootView's window without relying on SwiftUI's generated
+/// window identifiers or accidentally targeting Quick Add and Settings.
+private struct RootWindowReader: NSViewRepresentable {
+    let onChange: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> WindowProbe {
+        let view = WindowProbe()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ nsView: WindowProbe, context: Context) {
+        nsView.onChange = onChange
+    }
+
+    final class WindowProbe: NSView {
+        var onChange: ((NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                onChange?(window)
+            }
+        }
     }
 }

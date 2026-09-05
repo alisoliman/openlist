@@ -171,7 +171,8 @@ extension Store {
     }
 
     func scheduleReminderIfNeeded(for block: Block) {
-        guard block.isTask, !block.isCompleted else {
+        guard block.isTask, !block.isCompleted,
+              let owningList = list(id: block.listID), !owningList.isArchived else {
             NotificationService.shared.cancelReminder(for: block.id)
             return
         }
@@ -183,7 +184,7 @@ extension Store {
         NotificationService.shared.scheduleReminder(
             id: block.id,
             title: block.displayTitle,
-            listName: list(id: block.listID)?.displayTitle ?? "",
+            listName: owningList.displayTitle,
             at: fireDate
         )
     }

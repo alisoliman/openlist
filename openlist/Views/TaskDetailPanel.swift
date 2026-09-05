@@ -16,10 +16,6 @@ import UniformTypeIdentifiers
 struct TaskDetailPanel: View {
     @Environment(AppEnvironment.self) private var env
 
-    @State private var openPicker: DetailPicker?
-    @State private var noteDraft = ""
-    @FocusState private var isTitleFocused: Bool
-
     private var block: Block? {
         env.store.block(id: env.navigator.openTaskID)
     }
@@ -27,7 +23,8 @@ struct TaskDetailPanel: View {
     var body: some View {
         Group {
             if let block, block.isTask {
-                content(for: block)
+                TaskDetailContent(block: block)
+                    .id(block.id)
             } else if block != nil {
                 MissingContentView(message: "Only tasks have a detail page.")
             } else {
@@ -35,6 +32,30 @@ struct TaskDetailPanel: View {
             }
         }
         .background(Theme.chrome)
+    }
+}
+
+/// Each inspected task owns its drafts and focus. Changing the task starts a
+/// fresh editor, so a previous note or pending capture cannot leak into it.
+private struct TaskDetailContent: View {
+    let block: Block
+    private let taskID: UUID
+
+    init(block: Block) {
+        self.block = block
+        taskID = block.id
+    }
+
+    @Environment(AppEnvironment.self) private var env
+    @State private var openPicker: DetailPicker?
+    @State private var noteDraft = ""
+    @State private var isCapturingTitle = false
+    @State private var captureCancellationArmed = false
+    @FocusState private var isTitleFocused: Bool
+    @FocusState private var isNoteFocused: Bool
+
+    var body: some View {
+        content(for: block)
     }
 
     private func content(for block: Block) -> some View {
@@ -54,10 +75,9 @@ struct TaskDetailPanel: View {
             adoptRequestedPicker()
             focusTitleIfNew(block)
         }
-        .onChange(of: env.navigator.openTaskID) { _, _ in
-            noteDraft = self.block?.note ?? ""
-            adoptRequestedPicker()
-            if let block = self.block { focusTitleIfNew(block) }
+        .onDisappear {
+            commitTitle()
+            env.finishTaskTitleCapture(taskID, discardEmpty: true)
         }
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
     }
@@ -70,33 +90,54 @@ struct TaskDetailPanel: View {
                 isCompleted: block.isCompleted,
                 accent: env.store.list(id: block.listID)?.accent.color ?? Theme.accent,
                 priority: block.priority,
-                action: { env.store.toggleCompletion(block) }
+                action: {
+                    claimParentCommands()
+                    env.store.toggleCompletion(block)
+                }
             )
             .padding(.top, 3)
 
-            TextField(
-                "Task name",
-                text: Binding(
-                    get: { block.text },
-                    // Splices the edit into the existing content, so renaming a
-                    // task here keeps any bold, code or link it already had.
-                    set: { env.store.setText($0, for: block) }
-                ),
-                axis: .vertical
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(block.isCompleted ? Theme.tertiaryText : Color.primary)
-            .strikethrough(block.isCompleted, color: Theme.tertiaryText)
-            .lineLimit(1...6)
-            .focused($isTitleFocused)
-            .onSubmit { env.store.save() }
-            .onChange(of: isTitleFocused) { _, focused in
-                if !focused { env.store.save() }
+            VStack(alignment: .leading, spacing: 6) {
+                TextField(
+                    "Task name",
+                    text: Binding(
+                        get: { block.text },
+                        // Splices the edit into the existing content, so renaming a
+                        // task here keeps any bold, code or link it already had.
+                        set: { env.store.setText($0, for: block) }
+                    ),
+                    axis: .vertical
+                )
+                .textFieldStyle(.plain)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(block.isCompleted ? Theme.tertiaryText : Color.primary)
+                .strikethrough(block.isCompleted, color: Theme.tertiaryText)
+                .lineLimit(1...6)
+                .focused($isTitleFocused)
+                .onSubmit(commitTitle)
+                .onChange(of: isTitleFocused) { _, focused in
+                    if focused { claimParentCommands() } else { commitTitle() }
+                }
+                .onKeyPress(.escape) {
+                    cancelAndClose()
+                    return .handled
+                }
+                .accessibilityLabel("Task name")
+
+                capturePreview
             }
 
             Button {
-                env.navigator.closeTask()
+                // The button's keyboard equivalent can run before the field's
+                // key handler. Both Escape paths must cancel the same way.
+                if NSApp.currentEvent?.type == .keyDown,
+                   NSApp.currentEvent?.charactersIgnoringModifiers == "\u{1b}" {
+                    cancelAndClose()
+                } else {
+                    commitTitle()
+                    env.finishTaskTitleCapture(taskID, discardEmpty: true)
+                    env.navigator.closeTask()
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
@@ -107,6 +148,7 @@ struct TaskDetailPanel: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.escape, modifiers: [])
             .help("Close (Esc)")
+            .accessibilityLabel("Close task details")
         }
     }
 
@@ -131,7 +173,7 @@ struct TaskDetailPanel: View {
                 }
 
                 if block.dueDate != nil {
-                    ClearButton { env.store.setDueDate(nil, for: block) }
+                    ClearButton(label: "Clear due date") { env.store.setDueDate(nil, for: block) }
                 }
             }
 
@@ -149,7 +191,7 @@ struct TaskDetailPanel: View {
                 }
 
                 if block.recurrence != nil {
-                    ClearButton { env.store.setRecurrence(nil, for: block) }
+                    ClearButton(label: "Clear repeat rule") { env.store.setRecurrence(nil, for: block) }
                 }
             }
 
@@ -167,7 +209,7 @@ struct TaskDetailPanel: View {
                 }
 
                 if block.reminderAt != nil {
-                    ClearButton { env.store.setReminder(nil, for: block) }
+                    ClearButton(label: "Clear reminder") { env.store.setReminder(nil, for: block) }
                 }
             }
 
@@ -212,7 +254,7 @@ struct TaskDetailPanel: View {
 
             DetailRow(icon: "star", title: "Star") {
                 Toggle(
-                    "",
+                    "Star task",
                     isOn: Binding(
                         get: { block.isStarred },
                         set: { _ in env.store.toggleStar(block) }
@@ -221,6 +263,7 @@ struct TaskDetailPanel: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .labelsHidden()
+                .accessibilityLabel("Star task")
             }
 
             DetailRow(icon: "folder", title: "List") {
@@ -241,6 +284,7 @@ struct TaskDetailPanel: View {
                 .fixedSize()
             }
         }
+        .simultaneousGesture(TapGesture().onEnded { claimParentCommands() })
     }
 
     /// Consumes a picker requested by ⌃D / ⌃L.
@@ -253,7 +297,77 @@ struct TaskDetailPanel: View {
     /// A task created by ⌘N arrives empty, so put the caret in its title.
     private func focusTitleIfNew(_ block: Block) {
         guard block.text.isEmpty else { return }
+        isCapturingTitle = true
         DispatchQueue.main.async { isTitleFocused = true }
+    }
+
+    private func claimParentCommands() {
+        env.activeDocument = nil
+        env.navigator.selection = [block.id]
+    }
+
+    /// Newly created titles use the same metadata parser as outline capture.
+    /// Existing names remain literal when the inspector is used to rename them.
+    private func commitTitle() {
+        guard !captureCancellationArmed else { return }
+        // Deleting an inspected task also dismisses its content. Never touch
+        // the invalidated model as that view disappears.
+        guard let block = env.store.block(id: taskID) else { return }
+        if isCapturingTitle, !block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            isCapturingTitle = false
+            env.store.applyInlineMetadata(
+                to: block,
+                parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates
+            )
+            env.finishTaskTitleCapture(taskID)
+        }
+        env.store.save()
+    }
+
+    private func cancelAndClose() {
+        isCapturingTitle = false
+        env.finishTaskTitleCapture(taskID, discardEmpty: true)
+        env.store.save()
+        env.navigator.closeTask()
+    }
+
+    private func keepTitleAsText() {
+        isCapturingTitle = false
+        env.finishTaskTitleCapture(taskID)
+        env.store.save()
+        isTitleFocused = true
+    }
+
+    @ViewBuilder
+    private var capturePreview: some View {
+        if isCapturingTitle, env.settings.parsesNaturalLanguageDates {
+            let parsed = DateParser.parse(block.text)
+            if !parsed.cleanedText.isEmpty, !parsed.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let date = parsed.date {
+                        Label(
+                            date.formatted(date: .abbreviated, time: parsed.includesTime ? .shortened : .omitted),
+                            systemImage: "calendar"
+                        )
+                    }
+                    if let recurrence = parsed.recurrence {
+                        Label(recurrence.displayText, systemImage: "repeat")
+                    }
+                    CaptureLiteralButton(
+                        onPressBegan: { captureCancellationArmed = true },
+                        onPressEnded: {
+                            captureCancellationArmed = false
+                            if !isTitleFocused { commitTitle() }
+                        },
+                        action: keepTitleAsText
+                    )
+                    .fixedSize()
+                    .help("Keep the typed date phrase without scheduling the task")
+                }
+                .font(Theme.Font.metadata)
+                .foregroundStyle(Theme.accent)
+            }
+        }
     }
 
     /// Presents `kind` while it is the open picker.
@@ -276,6 +390,11 @@ struct TaskDetailPanel: View {
             SectionLabel("Note")
 
             TextEditor(text: $noteDraft)
+                .focused($isNoteFocused)
+                .accessibilityLabel("Task note")
+                .onChange(of: isNoteFocused) { _, focused in
+                    if focused { claimParentCommands() }
+                }
                 .font(Theme.Font.body)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 54, maxHeight: 160)
@@ -358,7 +477,8 @@ struct TaskDetailPanel: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
                 .buttonStyle(.plain)
-                .help("Attach a file")
+                .help("Attach files")
+                .accessibilityLabel("Attach files to task")
             }
 
             if attachments.isEmpty {
@@ -404,18 +524,22 @@ struct TaskDetailPanel: View {
     }
 
     private func attach(url: URL, to block: Block) {
-        guard let media = try? MediaStore.shared.importFile(at: url) else { return }
-        let existing = env.store.attachments(for: block.id)
-        let attachment = Attachment(
-            blockID: block.id,
-            filename: media.filename,
-            displayName: media.displayName,
-            contentType: media.contentType,
-            byteCount: media.byteCount,
-            sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep
-        )
-        env.store.context.insert(attachment)
-        env.store.save()
+        do {
+            let media = try MediaStore.shared.importFile(at: url)
+            let existing = env.store.attachments(for: block.id)
+            let attachment = Attachment(
+                blockID: block.id,
+                filename: media.filename,
+                displayName: media.displayName,
+                contentType: media.contentType,
+                byteCount: media.byteCount,
+                sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep
+            )
+            env.store.context.insert(attachment)
+            env.store.save()
+        } catch {
+            MarkdownExporter.presentError(error, operation: "Import attachment")
+        }
     }
 
     // MARK: - Footer
@@ -489,6 +613,7 @@ struct DetailRow<Content: View>: View {
 }
 
 struct ClearButton: View {
+    var label: String = "Clear"
     let action: () -> Void
 
     var body: some View {
@@ -498,7 +623,8 @@ struct ClearButton: View {
                 .foregroundStyle(Theme.tertiaryText)
         }
         .buttonStyle(.plain)
-        .help("Clear")
+        .help(label)
+        .accessibilityLabel(label)
     }
 }
 
@@ -545,6 +671,7 @@ struct AttachmentRow: View {
                         .foregroundStyle(Theme.tertiaryText)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Remove attachment \(attachment.displayName)")
             }
         }
         .padding(.horizontal, 6)
@@ -556,7 +683,56 @@ struct AttachmentRow: View {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture(count: 2) {
-            NSWorkspace.shared.open(attachment.url)
+            if !NSWorkspace.shared.open(attachment.url) {
+                MarkdownExporter.presentError(
+                    CocoaError(.fileReadUnknown),
+                    operation: "Open attachment \(attachment.displayName)"
+                )
+            }
+        }
+    }
+}
+
+
+/// Arms the literal-text choice before AppKit changes first responder on mouse
+/// down. A queued blur commit could otherwise run before a held click releases.
+private struct CaptureLiteralButton: NSViewRepresentable {
+    let onPressBegan: () -> Void
+    let onPressEnded: () -> Void
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> LiteralButton {
+        let button = LiteralButton(title: "Keep as text", target: nil, action: nil)
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.font = .systemFont(ofSize: 11)
+        button.contentTintColor = .controlAccentColor
+        button.setAccessibilityLabel("Keep task title as text")
+        button.target = button
+        button.action = #selector(LiteralButton.activate(_:))
+        updateNSView(button, context: context)
+        return button
+    }
+
+    func updateNSView(_ button: LiteralButton, context: Context) {
+        button.onPressBegan = onPressBegan
+        button.onPressEnded = onPressEnded
+        button.onActivate = action
+    }
+
+    final class LiteralButton: NSButton {
+        var onPressBegan: (() -> Void)?
+        var onPressEnded: (() -> Void)?
+        var onActivate: (() -> Void)?
+
+        override func mouseDown(with event: NSEvent) {
+            onPressBegan?()
+            defer { onPressEnded?() }
+            super.mouseDown(with: event)
+        }
+
+        @objc func activate(_ sender: Any?) {
+            onActivate?()
         }
     }
 }

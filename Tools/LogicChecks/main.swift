@@ -36,6 +36,20 @@ func describe(_ date: Date?) -> String {
     return date.formatted(date: .abbreviated, time: .shortened)
 }
 
+// Weekend presets and free-text capture must agree, including both days
+// of the current weekend rather than silently deferring a week.
+do {
+    for (referenceDay, expectedThis, expectedNext) in [(3, 6, 13), (6, 6, 13), (7, 7, 13)] {
+        let current = calendar.date(bySetting: .day, value: referenceDay, of: reference)!
+        let thisWeekend = DateParser.parse("plan this weekend", reference: current)
+        let nextWeekend = DateParser.parse("plan next weekend", reference: current)
+        check(day(thisWeekend.date)?.day == expectedThis,
+              "this weekend from June \(referenceDay) resolves June \(expectedThis)", describe(thisWeekend.date))
+        check(day(nextWeekend.date)?.day == expectedNext,
+              "next weekend from June \(referenceDay) resolves June \(expectedNext)", describe(nextWeekend.date))
+    }
+}
+
 // MARK: - DateParser
 
 print("── DateParser ──")

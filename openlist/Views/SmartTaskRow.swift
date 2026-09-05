@@ -77,6 +77,7 @@ struct SmartTaskRow: View {
                 action: { env.store.toggleCompletion(block) }
             )
             .padding(.top, 1)
+            .accessibilityLabel("\(block.isCompleted ? "Reopen" : "Complete") \(block.displayTitle)")
 
             VStack(alignment: .leading, spacing: 3) {
                 title
@@ -126,6 +127,7 @@ struct SmartTaskRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open details (⌘↩)")
+                .accessibilityLabel("Open details for \(block.displayTitle)")
             }
         }
         .padding(.horizontal, 8)
@@ -172,6 +174,8 @@ struct SmartTaskRow: View {
                 .onChange(of: isEditing) { _, editing in
                     if editing {
                         draftText = block.text
+                        env.navigator.selection = [block.id]
+                        env.activeDocument = nil
                     } else {
                         commit()
                     }
@@ -276,6 +280,8 @@ struct TaskGroupSection<Footer: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(title), \(tasks.count) tasks")
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
 
             if isExpanded {
                 // Lazy so a long group only realizes the rows on screen.

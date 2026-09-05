@@ -14,7 +14,13 @@ nonisolated enum AppGroup {
 
     /// Root of the shared container, or `nil` when the entitlement is missing.
     static var containerURL: URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
+        guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) else { return nil }
+        if let session = ReviewSession.identifier {
+            let review = root.appendingPathComponent("UIReviews/\(session)", isDirectory: true)
+            try? FileManager.default.createDirectory(at: review, withIntermediateDirectories: true)
+            return review
+        }
+        return root
     }
 
     /// Where the widget snapshot is written.

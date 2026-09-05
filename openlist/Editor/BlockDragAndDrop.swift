@@ -24,6 +24,7 @@ struct BlockDragAndDrop: ViewModifier {
     let onDropText: (String) -> Void
 
     @State private var indicator: DropPosition?
+    @State private var rowHeight: CGFloat = 28
 
     func body(content: Content) -> some View {
         if isEnabled {
@@ -31,6 +32,11 @@ struct BlockDragAndDrop: ViewModifier {
                 .overlay(alignment: .top) { indicatorLine(for: .before) }
                 .overlay(alignment: .bottom) { indicatorLine(for: .after) }
                 .overlay { nestingHighlight }
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.size.height
+                } action: { height in
+                    rowHeight = height
+                }
                 .onDrag {
                     NSItemProvider(object: DragPayload.block.encode(row.id) as NSString)
                 }
@@ -38,6 +44,7 @@ struct BlockDragAndDrop: ViewModifier {
                     of: [.text, .plainText, .utf8PlainText],
                     delegate: RowDropDelegate(
                         row: row,
+                        rowHeight: rowHeight,
                         indicator: $indicator,
                         onMove: onMove,
                         onDropText: onDropText
@@ -72,6 +79,7 @@ struct BlockDragAndDrop: ViewModifier {
 /// Resolves the drop position from the pointer's location within the row.
 private struct RowDropDelegate: DropDelegate {
     let row: BlockRow
+    let rowHeight: CGFloat
     @Binding var indicator: DropPosition?
     let onMove: (UUID, DropPosition) -> Void
     let onDropText: (String) -> Void
@@ -121,7 +129,4 @@ private struct RowDropDelegate: DropDelegate {
         return row.block.kind.acceptsChildren ? .inside : .after
     }
 
-    /// `DropInfo` gives no size, so fall back to a typical row height. The
-    /// thresholds only need to be roughly right to feel correct.
-    private var rowHeight: CGFloat { 28 }
 }

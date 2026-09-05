@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import AppKit
 import SwiftUI
 import UserNotifications
 
@@ -18,9 +19,6 @@ struct DueDatePicker: View {
     @State private var includesTime = false
     @State private var timeValue: Date = .now
     @State private var typedPhrase = ""
-    /// Set once `load()` has run, so hydrating the mirrors below does not
-    /// immediately look like a user edit and schedule the task.
-    @State private var isLoaded = false
 
     private var calendar: Calendar { env.settings.calendar }
 
@@ -31,27 +29,24 @@ struct DueDatePicker: View {
             presets
             Divider()
 
-            DatePicker("", selection: $selectedDate, displayedComponents: .date)
+            DatePicker("Due date", selection: dateBinding, displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .labelsHidden()
                 .frame(width: 260)
-                .onChange(of: selectedDate) { _, _ in if isLoaded { apply() } }
 
             Divider()
 
             HStack {
-                Toggle("Include a time", isOn: $includesTime)
+                Toggle("Include a time", isOn: includesTimeBinding)
                     .toggleStyle(.checkbox)
                     .font(Theme.Font.body)
-                    .onChange(of: includesTime) { _, _ in if isLoaded { apply() } }
 
                 Spacer()
 
                 if includesTime {
-                    DatePicker("", selection: $timeValue, displayedComponents: .hourAndMinute)
+                    DatePicker("Due time", selection: timeBinding, displayedComponents: .hourAndMinute)
                         .labelsHidden()
                         .frame(width: 90)
-                        .onChange(of: timeValue) { _, _ in if isLoaded { apply() } }
                 }
             }
 
@@ -130,7 +125,7 @@ struct DueDatePicker: View {
                 env.store.setDueTomorrow(block)
             }
             presetRow("This weekend", symbol: "beach.umbrella", detail: weekendDetail) {
-                if let date = nextWeekday(7) {
+                if let date = weekendDate {
                     env.store.setDueDate(date, for: block)
                 }
             }
@@ -170,16 +165,12 @@ struct DueDatePicker: View {
     }
 
     private var weekendDetail: String {
-        guard let date = nextWeekday(7) else { return "" }
+        guard let date = weekendDate else { return "" }
         return date.formatted(.dateTime.day().month(.abbreviated))
     }
 
-    private func nextWeekday(_ weekday: Int) -> Date? {
-        let today = calendar.startOfDay(for: .now)
-        let current = calendar.component(.weekday, from: today)
-        var delta = weekday - current
-        if delta <= 0 { delta += 7 }
-        return calendar.date(byAdding: .day, value: delta, to: today)
+    private var weekendDate: Date? {
+        DateParser.parse("this weekend").date
     }
 
     // MARK: - State sync
@@ -188,7 +179,20 @@ struct DueDatePicker: View {
         selectedDate = block.dueDate ?? calendar.startOfDay(for: .now)
         includesTime = block.includesTime
         timeValue = block.dueDate ?? calendar.date(bySettingHour: 9, minute: 0, second: 0, of: .now) ?? .now
-        isLoaded = true
+    }
+
+    // Hydration writes only the state above. Bindings persist actual control
+    // edits, so opening or dismissing this popover can never assign a date.
+    private var dateBinding: Binding<Date> {
+        Binding(get: { selectedDate }, set: { selectedDate = $0; apply() })
+    }
+
+    private var includesTimeBinding: Binding<Bool> {
+        Binding(get: { includesTime }, set: { includesTime = $0; apply() })
+    }
+
+    private var timeBinding: Binding<Date> {
+        Binding(get: { timeValue }, set: { timeValue = $0; apply() })
     }
 
     private func apply() {
@@ -216,7 +220,6 @@ struct RecurrencePicker: View {
     @State private var ending: Ending = .never
     @State private var endDate: Date = .now
     @State private var occurrenceLimit = 10
-    @State private var isLoaded = false
 
     /// How a repeat series stops. The model and engine already honour both an
     /// end date and an occurrence count; this is the missing way to set them.
@@ -234,14 +237,10 @@ struct RecurrencePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle("Repeat this task", isOn: $isEnabled)
+            Toggle("Repeat this task", isOn: enabledBinding)
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .font(Theme.Font.body)
-                .onChange(of: isEnabled) { _, enabled in
-                    guard isLoaded else { return }
-                    if enabled { apply() } else { env.store.setRecurrence(nil, for: block) }
-                }
 
             if isEnabled {
                 Divider()
@@ -253,22 +252,20 @@ struct RecurrencePicker: View {
                     Text("Every")
                         .font(Theme.Font.body)
 
-                    Stepper(value: $interval, in: 1...52) {
+                    Stepper(value: editing($interval), in: 1...52) {
                         Text("\(interval)")
                             .font(Theme.Font.body)
                             .monospacedDigit()
                             .frame(minWidth: 18)
                     }
-                    .onChange(of: interval) { _, _ in if isLoaded { apply() } }
 
-                    Picker("", selection: $frequency) {
+                    Picker("Repeat frequency", selection: editing($frequency)) {
                         ForEach(Recurrence.Frequency.allCases, id: \.self) { option in
                             Text(interval == 1 ? option.singular : option.plural).tag(option)
                         }
                     }
                     .labelsHidden()
                     .frame(width: 96)
-                    .onChange(of: frequency) { _, _ in if isLoaded { apply() } }
                 }
 
                 if frequency == .weekly {
@@ -278,14 +275,13 @@ struct RecurrencePicker: View {
                 Divider()
                 endCondition
 
-                Picker("Count from", selection: $anchor) {
+                Picker("Count from", selection: editing($anchor)) {
                     ForEach(Recurrence.Anchor.allCases, id: \.self) { option in
                         Text(option.title).tag(option)
                     }
                 }
                 .pickerStyle(.radioGroup)
                 .font(Theme.Font.body)
-                .onChange(of: anchor) { _, _ in if isLoaded { apply() } }
 
                 if let rule = block.recurrence {
                     Divider()
@@ -312,29 +308,26 @@ struct RecurrencePicker: View {
     @ViewBuilder
     private var endCondition: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Picker("Ends", selection: $ending) {
+            Picker("Ends", selection: editing($ending)) {
                 ForEach(Ending.allCases) { option in
                     Text(option.title).tag(option)
                 }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .onChange(of: ending) { _, _ in if isLoaded { apply() } }
 
             switch ending {
             case .never:
                 EmptyView()
             case .onDate:
-                DatePicker("", selection: $endDate, displayedComponents: .date)
+                DatePicker("Repeat end date", selection: editing($endDate), displayedComponents: .date)
                     .labelsHidden()
-                    .onChange(of: endDate) { _, _ in if isLoaded { apply() } }
             case .afterCount:
-                Stepper(value: $occurrenceLimit, in: 1...365) {
+                Stepper(value: editing($occurrenceLimit), in: 1...365) {
                     Text("\(occurrenceLimit) times")
                         .font(Theme.Font.body)
                         .monospacedDigit()
                 }
-                .onChange(of: occurrenceLimit) { _, _ in if isLoaded { apply() } }
             }
         }
     }
@@ -388,6 +381,8 @@ struct RecurrencePicker: View {
                         .foregroundStyle(weekdays.contains(day) ? Color.white : Theme.secondaryText)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Recurrence.shortWeekdayName(day))
+                .accessibilityValue(weekdays.contains(day) ? "Selected" : "Not selected")
             }
         }
     }
@@ -416,10 +411,24 @@ struct RecurrencePicker: View {
             anchor = .dueDate
             ending = .never
         }
-        isLoaded = true
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(get: { isEnabled }, set: { enabled in
+            isEnabled = enabled
+            if enabled { apply() } else { env.store.setRecurrence(nil, for: block) }
+        })
+    }
+
+    private func editing<Value>(_ binding: Binding<Value>) -> Binding<Value> {
+        Binding(get: { binding.wrappedValue }, set: { value in
+            binding.wrappedValue = value
+            apply()
+        })
     }
 
     private func apply() {
+        guard isEnabled else { return }
         // Start from the stored rule so fields this form does not expose —
         // day-of-month, end date, occurrence limit and the count so far —
         // survive an edit.
@@ -493,9 +502,16 @@ struct ReminderPicker: View {
 
             if authorizationDenied {
                 Text("Notifications are turned off for Openlist. Enable them in System Settings to get reminders.")
-                    .font(.system(size: 10))
+                    .font(Theme.Font.metadata)
                     .foregroundStyle(ListAccent.orange.color)
                     .fixedSize(horizontal: false, vertical: true)
+                Button("Open Notification Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.link)
+                .font(Theme.Font.metadata)
             }
         }
         .padding(14)

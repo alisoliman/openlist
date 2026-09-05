@@ -19,9 +19,10 @@ nonisolated enum StoreLocation {
             if ensureDirectory(url) { return url }
         }
 
-        let fallback = (FileManager.default
+        let base = (FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? URL.temporaryDirectory)
+        let fallback = (ReviewSession.identifier.map { base.appendingPathComponent("Openlist-Review-\($0)") } ?? base)
             .appendingPathComponent("Openlist", isDirectory: true)
         _ = ensureDirectory(fallback)
         return fallback

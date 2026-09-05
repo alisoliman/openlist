@@ -44,6 +44,7 @@ final class AppEnvironment {
     let store: Store
     let navigator: Navigator
     let settings: AppSettings
+    var storageWarning: String?
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
     /// Retained so the notification centre keeps a live delegate.
@@ -67,6 +68,11 @@ final class AppEnvironment {
     /// screen at once — a list plus an open task's detail page — so exactly one
     /// of them claims each command.
     var activeDocument: DocumentContext?
+
+    /// Only captures created by the empty-title flow can be removed on cancel.
+    /// Keeping their inherited defaults distinguishes them from existing blank
+    /// tasks and from a new task the user has already given meaningful details.
+    @ObservationIgnored private var pendingTitleCaptures: [UUID: PendingTitleCapture] = [:]
 
     init(context: ModelContext) {
         let store = Store(context: context)
@@ -153,11 +159,69 @@ extension AppEnvironment {
         navigator.openTask(id)
     }
 
+    func beginTaskTitleCapture(_ block: Block) {
+        guard block.text.isEmpty else { return }
+        pendingTitleCaptures[block.id] = PendingTitleCapture(block)
+    }
+
+    /// Ends one pending capture. Cancellation only removes a still-empty task
+    /// whose data matches its initial defaults; existing tasks never enter here.
+    func finishTaskTitleCapture(_ id: UUID, discardEmpty: Bool = false) {
+        guard let initial = pendingTitleCaptures.removeValue(forKey: id),
+              let block = store.block(id: id) else { return }
+        let events = (try? store.context.fetch(FetchDescriptor<ActivityEvent>(
+            predicate: #Predicate { $0.blockID == id }
+        ))) ?? []
+        if discardEmpty, initial.canDiscard(block, store: store) {
+            store.deleteBlock(block)
+            for event in events { store.context.delete(event) }
+            navigator.selection.remove(id)
+        } else {
+            // The empty capture's creation event should display its final name.
+            for event in events where event.kind == .created {
+                event.title = block.displayTitle
+            }
+        }
+        store.save()
+    }
+
     /// Capture behaviour implied by the user's settings.
     var captureDefaults: CaptureDefaults {
         CaptureDefaults(
             parsesNaturalLanguage: settings.parsesNaturalLanguageDates,
             dueTodayWhenUndated: settings.defaultDestination == .today
         )
+    }
+}
+
+
+private struct PendingTitleCapture {
+    let listID: UUID?
+    let parentID: UUID?
+    let sortIndex: Double
+    let dueDate: Date?
+    let includesTime: Bool
+    let labelIDs: [UUID]
+
+    init(_ block: Block) {
+        listID = block.listID
+        parentID = block.parentID
+        sortIndex = block.sortIndex
+        dueDate = block.dueDate
+        includesTime = block.includesTime
+        labelIDs = block.labelIDs
+    }
+
+    func canDiscard(_ block: Block, store: Store) -> Bool {
+        guard block.isTask, block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              block.listID == listID, block.parentID == parentID, block.sortIndex == sortIndex,
+              block.dueDate == dueDate, block.includesTime == includesTime, block.labelIDs == labelIDs,
+              !block.isCompleted, block.completedAt == nil, !block.isStarred, block.priorityRaw == 0,
+              block.reminderAt == nil, block.recurrenceData == nil, block.note.isEmpty,
+              block.mediaFilename == nil, block.mediaCaption.isEmpty,
+              store.attachments(for: block.id).isEmpty,
+              let listID, store.children(of: block.id, listID: listID).isEmpty
+        else { return false }
+        return true
     }
 }

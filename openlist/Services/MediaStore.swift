@@ -22,7 +22,8 @@ nonisolated final class MediaStore: @unchecked Sendable {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? URL.temporaryDirectory
-        directory = base
+        let mediaBase = ReviewSession.identifier.map { base.appendingPathComponent("Openlist-Review-\($0)", isDirectory: true) } ?? base
+        directory = mediaBase
             .appendingPathComponent("Openlist", isDirectory: true)
             .appendingPathComponent("Media", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -64,6 +65,17 @@ nonisolated final class MediaStore: @unchecked Sendable {
     func delete(filename: String) {
         queue.async { [directory] in
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(filename))
+        }
+    }
+
+    func fileContents(filename: String) -> Data? {
+        queue.sync { try? Data(contentsOf: url(for: filename)) }
+    }
+
+    func restoreFile(_ data: Data, filename: String) throws {
+        try queue.sync {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: url(for: filename), options: .atomic)
         }
     }
 

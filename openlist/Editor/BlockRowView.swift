@@ -96,6 +96,7 @@ struct BlockRowView: View {
                 .buttonStyle(.plain)
                 .opacity(isHovering || row.isCollapsed ? 1 : 0)
                 .help(row.isCollapsed ? "Expand" : "Collapse")
+                .accessibilityLabel("\(row.isCollapsed ? "Expand" : "Collapse") \(block.displayTitle)")
             } else {
                 Color.clear.frame(width: 14, height: 1)
             }
@@ -113,6 +114,7 @@ struct BlockRowView: View {
                 priority: block.priority,
                 action: actions.onToggleCompletion
             )
+            .accessibilityLabel("\(block.isCompleted ? "Reopen" : "Complete") \(block.displayTitle)")
             .padding(.trailing, 6)
             .padding(.top, 1)
 
@@ -261,6 +263,7 @@ struct BlockRowView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Open details (⌘↩)")
+                    .accessibilityLabel("Open details for \(block.displayTitle)")
                 }
 
                 Menu {
@@ -273,6 +276,7 @@ struct BlockRowView: View {
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
+                .accessibilityLabel("Actions for \(block.displayTitle)")
                 .menuIndicator(.hidden)
                 .frame(width: 20)
             }
@@ -303,6 +307,7 @@ struct BlockContextMenu: View {
     let actions: BlockRowActions
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         if block.isTask {
@@ -347,20 +352,29 @@ struct BlockContextMenu: View {
             Menu("Move to List") {
                 ForEach(env.store.allLists()) { list in
                     Button("\(list.icon)  \(list.displayTitle)") {
-                        env.store.moveToList(block, list: list)
+                        edit("Move block", including: list.id) { current in
+                            env.store.moveToList(current, list: list)
+                        }
                     }
                     .disabled(list.id == block.listID && block.parentID == nil)
                 }
             }
-            Button("Add to Inbox") { env.store.moveToInbox(block) }
+            Button("Add to Inbox") {
+                guard let inbox = env.store.inboxList() else { return }
+                edit("Move to Inbox", including: inbox.id) { current in
+                    env.store.moveToInbox(current)
+                }
+            }
             Divider()
         }
 
         Menu("Turn Into") {
             ForEach(BlockKind.allCases.filter { $0 != .image }, id: \.self) { kind in
                 Button(kind.title) {
-                    env.store.changeKind(block, to: kind)
-                    env.store.save()
+                    edit("Change block type") { current in
+                        env.store.changeKind(current, to: kind)
+                        env.store.save()
+                    }
                 }
                 .disabled(kind == block.kind)
             }
@@ -374,12 +388,30 @@ struct BlockContextMenu: View {
 
         Divider()
         Button("Delete", role: .destructive) {
-            env.store.deleteBlock(block)
-            env.store.save()
+            edit("Delete block") { current in
+                env.store.deleteBlock(current)
+                env.store.save()
+            }
         }
     }
 
     private func duplicate() {
-        env.store.duplicateBlock(block)
+        edit("Duplicate block") { current in
+            env.store.duplicateBlock(current)
+        }
+    }
+
+    /// Menu actions share the outline's structural undo history. A move needs
+    /// both lists in the snapshot so Undo returns its whole subtree home.
+    private func edit(_ name: String, including destinationID: UUID? = nil, _ mutation: (Block) -> Void) {
+        guard let current = env.store.block(id: block.id) else { return }
+        let listIDs = Set([current.listID, destinationID].compactMap { $0 })
+        env.store.undoableEditorEdit(
+            in: listIDs,
+            name: name,
+            undoManager: undoManager ?? NSApp.keyWindow?.undoManager
+        ) {
+            mutation(current)
+        }
     }
 }

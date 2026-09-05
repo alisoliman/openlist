@@ -27,6 +27,7 @@ struct openlistApp: App {
         let configuration = ModelConfiguration(schema: schema, url: StoreLocation.storeURL)
 
         let container: ModelContainer
+        var storageWarning: String?
         do {
             container = try ModelContainer(for: schema, configurations: [configuration])
         } catch {
@@ -36,6 +37,7 @@ struct openlistApp: App {
                 for: schema,
                 configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
             )
+            storageWarning = "Openlist could not open its saved data. This session is temporary: changes will be lost when you quit. Export any new work before closing. Your existing store has been left intact."
         }
         self.container = container
 
@@ -47,6 +49,7 @@ struct openlistApp: App {
         let context = container.mainContext
         context.autosaveEnabled = true
         _env = State(initialValue: AppEnvironment(context: context))
+        env.storageWarning = storageWarning
     }
 
     var body: some Scene {

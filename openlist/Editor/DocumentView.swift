@@ -61,7 +61,8 @@ struct DocumentView: View {
     /// Order applied to top-level blocks. `.manual` keeps the stored order and
     /// is the only mode where drag-to-reorder makes sense.
     var sorting: ListSorting = .manual
-    /// Creates a first block automatically when the document is empty.
+    /// Shows the empty-document capture affordance. It never persists a task
+    /// until the user clicks it or asks to create a task.
     var seedsEmptyBlock: Bool = true
     /// Height of the click-to-append area below the last block. A full page
     /// wants a generous target; an inspector panel would just show a gap.
@@ -126,9 +127,25 @@ struct DocumentView: View {
         case .manual: { _, _ in false }
         }
 
-        return chunks
-            .sorted { comparator($0[0].block, $1[0].block) }
-            .flatMap { $0 }
+        // Prose and headings define the reading order. Sort only contiguous
+        // runs of top-level tasks, keeping each task's subtree with it.
+        var result: [[BlockRow]] = []
+        var taskRun: [[BlockRow]] = []
+        func flush() {
+            result += taskRun.enumerated().sorted {
+                let left = $0.element[0].block, right = $1.element[0].block
+                if comparator(left, right) { return true }
+                if comparator(right, left) { return false }
+                return $0.offset < $1.offset
+            }.map(\.element)
+            taskRun = []
+        }
+        for chunk in chunks {
+            if chunk[0].block.isTask { taskRun.append(chunk) }
+            else { flush(); result.append(chunk) }
+        }
+        flush()
+        return result.flatMap { $0 }
     }
 
     /// Rows after hiding completed tasks (and everything nested under them).
@@ -185,10 +202,12 @@ struct DocumentView: View {
             // Only the document the user is actually working in should respond,
             // otherwise ⌘N would fire in both the list and the open task panel.
             guard env.activeDocument == document else { return }
-            handleCommand()
+            let structural: [EditorCommand] = [.newTask, .indent, .outdent, .moveUp, .moveDown, .deleteSelection]
+            if let command = env.pendingCommand, structural.contains(command) {
+                editorEdit("Edit outline") { handleCommand() }
+            } else { handleCommand() }
         }
         .onAppear {
-            seedIfNeeded()
             // A list document claims focus on appear; a task's detail page
             // waits until the user actually edits inside it.
             if document.rootBlockID == nil { env.activeDocument = document }
@@ -196,13 +215,17 @@ struct DocumentView: View {
         .onChange(of: document) { _, _ in
             focus = EditorFocus()
             slash = nil
-            seedIfNeeded()
             if document.rootBlockID == nil { env.activeDocument = document }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
             // Closing the detail panel hands control back to the list.
             if newValue == nil, document.rootBlockID == nil {
                 env.activeDocument = document
+            }
+        }
+        .onChange(of: blocks.map(\.id)) { _, ids in
+            if let focused = focus.blockID, !ids.contains(focused) {
+                focus.request(rows.first(where: { !$0.block.kind.isVoid })?.id, caret: -1)
             }
         }
     }
@@ -236,7 +259,7 @@ struct DocumentView: View {
                 row: row,
                 isEnabled: sorting == .manual,
                 onMove: { draggedID, position in move(draggedID, relativeTo: row, position: position) },
-                onDropText: { text in insertPastedText(text, after: row.block) }
+                onDropText: { text in editorEdit("Drop text") { insertPastedText(text, after: row.block) } }
             )
         )
     }
@@ -246,7 +269,20 @@ struct DocumentView: View {
     private var trailingTapTarget: some View {
         Color.clear
             .frame(height: trailingSpace)
+            .overlay(alignment: .topLeading) {
+                if rows.isEmpty, seedsEmptyBlock {
+                    Label(emptyPlaceholder, systemImage: "plus.circle")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.secondaryText)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                }
+            }
             .contentShape(Rectangle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(rows.isEmpty ? emptyPlaceholder : "Add a task")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { appendTask() }
             .onTapGesture {
                 if let last = rows.last?.block, last.text.isEmpty, last.kind == .task {
                     focus.request(last.id, caret: -1)
@@ -309,6 +345,10 @@ struct DocumentView: View {
     }
 
     private func applySlashSelection(_ kind: BlockKind) {
+        editorEdit("Change block type") { applySlashSelectionContents(kind) }
+    }
+
+    private func applySlashSelectionContents(_ kind: BlockKind) {
         guard let state = slash, let block = env.store.block(id: state.blockID) else { return }
         slash = nil
 
@@ -365,6 +405,7 @@ struct DocumentView: View {
         } catch {
             env.store.changeKind(block, to: .paragraph)
             env.store.save()
+            MarkdownExporter.presentError(error, operation: "Import image")
         }
     }
 
@@ -372,26 +413,30 @@ struct DocumentView: View {
 
     private func actions(for row: BlockRow) -> BlockRowActions {
         let block = row.block
+        let blockID = block.id
 
         return BlockRowActions(
             onChange: { attributed in
-                env.store.setContent(block, attributed: attributed)
+                // A native text undo can outlive a structural delete/recreate.
+                // Resolve by identity instead of writing a deleted model.
+                guard let current = env.store.block(id: blockID) else { return }
+                env.store.setContent(current, attributed: attributed)
                 // Typing only mutates the model; without this the save that
                 // fires `onDidSave` never happens, so the widget snapshot
                 // would stay stale until some other action saved.
                 env.store.scheduleSave()
             },
             onReturn: { caret, content in
-                handleReturn(block: block, caret: caret, content: content)
+                editorEdit("Split block") { handleReturn(block: block, caret: caret, content: content) }
             },
             onTab: { isBacktab in
-                handleTab(block: block, isBacktab: isBacktab)
+                editorEdit(isBacktab ? "Outdent block" : "Indent block") { handleTab(block: block, isBacktab: isBacktab) }
             },
             onBackspaceAtStart: { content in
-                handleBackspace(block: block, content: content)
+                editorEdit("Merge blocks") { handleBackspace(block: block, content: content) }
             },
             onDeleteAtEnd: {
-                handleForwardDelete(block: block)
+                editorEdit("Merge blocks") { handleForwardDelete(block: block) }
             },
             onArrowOut: { direction, caret in
                 handleArrow(from: block, direction: direction, caret: caret)
@@ -428,10 +473,10 @@ struct DocumentView: View {
                 }
             },
             onMarkdownPrefix: { kind in
-                applyMarkdownPrefix(kind, to: block)
+                editorEdit("Change block type") { applyMarkdownPrefix(kind, to: block) }
             },
             onPasteMultiline: { text in
-                insertPastedText(text, after: block)
+                editorEdit("Paste blocks") { insertPastedText(text, after: block) }
                 return true
             },
             onSetCaption: { caption in
@@ -621,18 +666,26 @@ struct DocumentView: View {
     // MARK: - Structure changes
 
     private func appendTask() {
-        let created = env.store.appendBlock(kind: .task, to: document)
-        env.store.save()
-        focus.request(created.id, caret: 0)
+        editorEdit("New task") {
+            let created = env.store.appendBlock(kind: .task, to: document)
+            env.store.save()
+            focus.request(created.id, caret: 0)
+        }
     }
 
-    private func seedIfNeeded() {
-        guard seedsEmptyBlock, allRows.isEmpty else { return }
-        _ = env.store.appendBlock(kind: .task, to: document)
-        env.store.save()
+    @discardableResult
+    private func editorEdit<T>(_ name: String, _ body: () -> T) -> T {
+        env.store.undoableEditorEdit(in: document.listID, name: name, undoManager: NSApp.keyWindow?.undoManager, body)
     }
 
     private func move(_ draggedID: UUID, relativeTo target: BlockRow, position: DropPosition) {
+        let listIDs = Set([document.listID, env.store.block(id: draggedID)?.listID].compactMap { $0 })
+        env.store.undoableEditorEdit(in: listIDs, name: "Move block", undoManager: NSApp.keyWindow?.undoManager) {
+            moveContents(draggedID, relativeTo: target, position: position)
+        }
+    }
+
+    private func moveContents(_ draggedID: UUID, relativeTo target: BlockRow, position: DropPosition) {
         guard
             draggedID != target.id,
             let dragged = env.store.block(id: draggedID)

@@ -14,6 +14,9 @@ struct MenuBarView: View {
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
 
+    @Query(filter: #Predicate<TaskList> { !$0.isArchived })
+    private var activeLists: [TaskList]
+
     @State private var draft = ""
     @FocusState private var isFieldFocused: Bool
 
@@ -49,6 +52,7 @@ struct MenuBarView: View {
             footer
         }
         .frame(width: 320)
+        .onAppear { isFieldFocused = true }
     }
 
     private var captureField: some View {
@@ -81,7 +85,7 @@ struct MenuBarView: View {
 
             Spacer()
 
-            Text("\(openTasks.count) open")
+            Text("\(activeOpenTasks.count) open")
                 .font(Theme.Font.metadata)
                 .foregroundStyle(Theme.tertiaryText)
 
@@ -100,8 +104,12 @@ struct MenuBarView: View {
     }
 
     /// Overdue and due-today work, soonest first.
+    private var activeOpenTasks: [Block] {
+        ActiveTaskPolicy(lists: activeLists).tasks(in: openTasks)
+    }
+
     private var dueSoon: [Block] {
-        openTasks
+        activeOpenTasks
             .filter(\.isDueOnOrBeforeToday)
             .sorted { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }
             .prefix(8)
@@ -133,6 +141,7 @@ struct MenuBarTaskRow: View {
                 priority: block.priority,
                 action: { env.store.toggleCompletion(block) }
             )
+            .accessibilityLabel("\(block.isCompleted ? "Reopen" : "Complete") \(block.displayTitle)")
 
             Text(block.displayTitle)
                 .font(Theme.Font.body)

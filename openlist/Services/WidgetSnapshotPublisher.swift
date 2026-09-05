@@ -57,10 +57,10 @@ final class WidgetSnapshotPublisher {
 
     // MARK: - Building
 
-    private func buildSnapshot() -> WidgetSnapshot {
+    func buildSnapshot() -> WidgetSnapshot {
         let descriptor = FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == "task" })
-        let tasks = (try? store.context.fetch(descriptor)) ?? []
         let lists = store.allLists()
+        let tasks = ActiveTaskPolicy(lists: lists).tasks(in: (try? store.context.fetch(descriptor)) ?? [])
         var listsByID: [UUID: TaskList] = [:]
         for list in lists { listsByID[list.id] = list }
         let inboxID = lists.first(where: \.isSystemInbox)?.id
@@ -68,7 +68,7 @@ final class WidgetSnapshotPublisher {
         // One pass fills every counter; `isOverdue` and friends each build a
         // Calendar, so the day boundary is computed once up front.
         let todayStart = Calendar.current.startOfDay(for: .now)
-        let tomorrowStart = todayStart.addingTimeInterval(86_400)
+        let tomorrowStart = Calendar.current.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
         let now = Date.now
 
         var dueSoon: [Block] = []

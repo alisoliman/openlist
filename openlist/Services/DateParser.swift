@@ -457,10 +457,16 @@ enum DateParser {
     }
 
     private static func upcomingWeekend(from date: Date, calendar: Calendar) -> Date? {
-        nextOccurrence(of: 7, from: date, calendar: calendar, skipToday: false)
+        let weekday = calendar.component(.weekday, from: date)
+        // During the weekend, "this weekend" still includes today.
+        if weekday == 7 || weekday == 1 { return date }
+        return nextOccurrence(of: 7, from: date, calendar: calendar, skipToday: false)
     }
 
     private static func nextWeekend(after date: Date, calendar: Calendar) -> Date? {
+        if calendar.component(.weekday, from: date) == 1 {
+            return nextOccurrence(of: 7, from: date, calendar: calendar, skipToday: false)
+        }
         guard let thisWeekend = upcomingWeekend(from: date, calendar: calendar) else { return nil }
         return calendar.date(byAdding: .day, value: 7, to: thisWeekend)
     }

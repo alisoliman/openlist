@@ -16,7 +16,13 @@ struct SearchView: View {
 
     @State private var query = ""
     @State private var scope: Scope = .everything
+    @State private var selectedResult: SearchDestination?
     @FocusState private var isFieldFocused: Bool
+
+    private enum SearchDestination: Hashable {
+        case list(UUID)
+        case block(UUID)
+    }
 
     enum Scope: String, CaseIterable, Identifiable {
         case everything, tasks, notes, lists
@@ -37,9 +43,11 @@ struct SearchView: View {
         let blockHits = matchingBlocks
         let listHits = matchingLists
         let listsByID = Dictionary(lists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let destinations = listHits.map { SearchDestination.list($0.id) }
+            + blockHits.map { SearchDestination.block($0.id) }
 
         return VStack(spacing: 0) {
-            header
+            header(destinations: destinations)
             Divider()
 
             if query.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -58,14 +66,35 @@ struct SearchView: View {
                 .frame(maxHeight: .infinity)
             } else {
                 resultsList(blockHits: blockHits, listHits: listHits, listsByID: listsByID)
+                Divider()
+                HStack {
+                    Text("\(destinations.count) results")
+                    Spacer()
+                    Text("↑↓ to choose · Return to open · Esc to close")
+                }
+                .font(Theme.Font.metadata)
+                .foregroundStyle(Theme.secondaryText)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
             }
         }
         .frame(width: 640, height: 480)
         .background(.regularMaterial)
-        .onAppear { isFieldFocused = true }
+        .task {
+            // A sheet's initial responder is assigned after it appears.
+            await Task.yield()
+            isFieldFocused = true
+        }
+        .onChange(of: query) { _, _ in selectedResult = destinations.first }
+        .onChange(of: scope) { _, _ in selectedResult = destinations.first }
+        .onChange(of: destinations, initial: true) { _, updated in
+            if selectedResult.map({ !updated.contains($0) }) ?? true {
+                selectedResult = updated.first
+            }
+        }
     }
 
-    private var header: some View {
+    private func header(destinations: [SearchDestination]) -> some View {
         VStack(spacing: 8) {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
@@ -76,6 +105,15 @@ struct SearchView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
                     .focused($isFieldFocused)
+                    .onSubmit { activate(selectedResult ?? destinations.first) }
+                    .onKeyPress(.upArrow) {
+                        moveSelection(by: -1, in: destinations)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        moveSelection(by: 1, in: destinations)
+                        return .handled
+                    }
                     .onKeyPress(.escape) {
                         dismiss()
                         return .handled
@@ -89,10 +127,11 @@ struct SearchView: View {
                             .foregroundStyle(Theme.tertiaryText)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
 
-            Picker("", selection: $scope) {
+            Picker("Search scope", selection: $scope) {
                 ForEach(Scope.allCases) { option in
                     Text(option.title).tag(option)
                 }
@@ -109,52 +148,88 @@ struct SearchView: View {
         listHits: [TaskList],
         listsByID: [UUID: TaskList]
     ) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 1) {
-                if !listHits.isEmpty {
-                    SectionLabel("Lists")
-                        .padding(.horizontal, 10)
-                        .padding(.top, 8)
-                        .padding(.bottom, 3)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    if !listHits.isEmpty {
+                        SectionLabel("Lists")
+                            .padding(.horizontal, 10)
+                            .padding(.top, 8)
+                            .padding(.bottom, 3)
 
-                    ForEach(listHits) { list in
-                        SearchResultRow(
-                            symbol: nil,
-                            emoji: list.icon,
-                            title: list.displayTitle,
-                            subtitle: list.summary.isEmpty ? "List" : list.summary,
-                            accent: list.accent,
-                            highlight: query
-                        ) {
-                            env.navigator.go(to: .list(list.id))
-                            dismiss()
+                        ForEach(listHits) { list in
+                            SearchResultRow(
+                                symbol: nil,
+                                emoji: list.icon,
+                                title: list.displayTitle,
+                                subtitle: list.summary.isEmpty
+                                    ? (list.isArchived ? "Archived list" : "List")
+                                    : list.summary + (list.isArchived ? " · Archived" : ""),
+                                accent: list.accent,
+                                highlight: query,
+                                isSelected: selectedResult == .list(list.id)
+                            ) {
+                                activate(.list(list.id))
+                            }
+                            .id(SearchDestination.list(list.id))
+                            .onHover { if $0 { selectedResult = .list(list.id) } }
+                        }
+                    }
+
+                    if !blockHits.isEmpty {
+                        SectionLabel("Content")
+                            .padding(.horizontal, 10)
+                            .padding(.top, 10)
+                            .padding(.bottom, 3)
+
+                        ForEach(blockHits) { block in
+                            SearchResultRow(
+                                symbol: block.isTask
+                                    ? (block.isCompleted ? "checkmark.circle.fill" : "circle")
+                                    : block.kind.symbol,
+                                emoji: nil,
+                                title: block.displayTitle,
+                                subtitle: subtitle(for: block, list: block.listID.flatMap { listsByID[$0] }),
+                                accent: block.listID.flatMap { listsByID[$0] }?.accent ?? .graphite,
+                                highlight: query,
+                                isSelected: selectedResult == .block(block.id)
+                            ) {
+                                activate(.block(block.id))
+                            }
+                            .id(SearchDestination.block(block.id))
+                            .onHover { if $0 { selectedResult = .block(block.id) } }
                         }
                     }
                 }
-
-                if !blockHits.isEmpty {
-                    SectionLabel("Content")
-                        .padding(.horizontal, 10)
-                        .padding(.top, 10)
-                        .padding(.bottom, 3)
-
-                    ForEach(blockHits) { block in
-                        SearchResultRow(
-                            symbol: block.isTask
-                                ? (block.isCompleted ? "checkmark.circle.fill" : "circle")
-                                : block.kind.symbol,
-                            emoji: nil,
-                            title: block.displayTitle,
-                            subtitle: subtitle(for: block, list: block.listID.flatMap { listsByID[$0] }),
-                            accent: block.listID.flatMap { listsByID[$0] }?.accent ?? .graphite,
-                            highlight: query
-                        ) {
-                            open(block)
-                        }
-                    }
+                .padding(6)
+            }
+            .onChange(of: selectedResult) { _, destination in
+                guard let destination else { return }
+                withAnimation(.easeOut(duration: 0.1)) {
+                    proxy.scrollTo(destination, anchor: .center)
                 }
             }
-            .padding(6)
+        }
+    }
+
+    private func moveSelection(by offset: Int, in destinations: [SearchDestination]) {
+        guard !destinations.isEmpty else { selectedResult = nil; return }
+        guard let selectedResult, let index = destinations.firstIndex(of: selectedResult) else {
+            self.selectedResult = offset < 0 ? destinations.last : destinations.first
+            return
+        }
+        self.selectedResult = destinations[min(destinations.count - 1, max(0, index + offset))]
+    }
+
+    private func activate(_ destination: SearchDestination?) {
+        switch destination {
+        case let .list(id):
+            env.navigator.go(to: .list(id))
+            dismiss()
+        case let .block(id):
+            if let block = env.store.block(id: id) { open(block) }
+        case nil:
+            break
         }
     }
 
@@ -170,6 +245,7 @@ struct SearchView: View {
             $0.title.localizedCaseInsensitiveContains(needle)
                 || $0.summary.localizedCaseInsensitiveContains(needle)
         }
+        .sorted { $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending }
     }
 
     private var matchingBlocks: [Block] {
@@ -202,6 +278,7 @@ struct SearchView: View {
         var parts: [String] = []
         if let list {
             parts.append("\(list.icon) \(list.displayTitle)")
+            if list.isArchived { parts.append("Archived") }
         }
         if block.isTask, let dueDate = block.dueDate {
             parts.append(Store.relativeDateText(dueDate).capitalizedFirstLetter)
@@ -216,6 +293,7 @@ struct SearchView: View {
         if let listID = block.listID, env.store.list(id: listID) != nil {
             env.navigator.go(to: .list(listID))
         }
+        env.navigator.selection = [block.id]
         if block.isTask {
             env.navigator.openTask(block.id)
         }
@@ -231,6 +309,7 @@ struct SearchResultRow: View {
     let subtitle: String
     let accent: ListAccent
     let highlight: String
+    var isSelected: Bool = false
     let action: () -> Void
 
     @State private var isHovering = false
@@ -272,11 +351,12 @@ struct SearchResultRow: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovering ? Theme.rowHover : Color.clear)
+                    .fill(isSelected ? Theme.accent.opacity(0.12) : (isHovering ? Theme.rowHover : Color.clear))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .onHover { isHovering = $0 }
     }
 

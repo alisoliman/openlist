@@ -25,7 +25,7 @@ struct TodayScreen: View {
     var body: some View {
         // Bucketed once per render; each `body` read of a computed property
         // would otherwise re-scan every task.
-        let buckets = Buckets(tasks: tasks)
+        let buckets = Buckets(tasks: ActiveTaskPolicy(lists: lists).tasks(in: tasks))
         let context = TaskRowContext(tasks: tasks, lists: lists, labels: labels)
 
         return ScreenScaffold {
@@ -53,11 +53,11 @@ struct TodayScreen: View {
                 }
             }
         } content: {
-            if buckets.isEmpty {
+            if buckets.isEmpty(showsCompleted: showsCompletedNow) {
                 EmptyStateView(
                     icon: "checkmark.circle",
                     title: "Nothing due today",
-                    message: "Tasks with a date land here. Add one, or schedule something from a list.",
+                    message: "Scheduled and starred tasks from active lists land here. Add one, or schedule something from a list.",
                     actionTitle: "Add a task",
                     action: { env.send(.newTask) }
                 )
@@ -127,8 +127,9 @@ struct TodayScreen: View {
         var starred: [Block] = []
         var completedToday: [Block] = []
 
-        var isEmpty: Bool {
-            overdue.isEmpty && dueToday.isEmpty && starred.isEmpty && completedToday.isEmpty
+        func isEmpty(showsCompleted: Bool) -> Bool {
+            overdue.isEmpty && dueToday.isEmpty && starred.isEmpty
+                && (!showsCompleted || completedToday.isEmpty)
         }
 
         init(tasks: [Block]) {
