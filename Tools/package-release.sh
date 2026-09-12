@@ -1,10 +1,11 @@
 #!/bin/bash
-# Requires a Developer ID identity and either a notarytool profile or API key.
+# Requires a Developer ID identity, app provisioning profile, and notary credentials.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=${1:?Usage: package-release.sh VERSION BUILD_NUMBER}
 BUILD_NUMBER=${2:?Missing build number}
 : "${SIGNING_IDENTITY:?Set SIGNING_IDENTITY to a Developer ID Application identity}"
+: "${APP_PROVISION_PROFILE:?Set APP_PROVISION_PROFILE to the original Developer ID app .provisionprofile}"
 APP=build/release/DerivedData/Build/Products/Release/openlist.app
 ./Tools/verify-release.sh "$APP" "$VERSION" "$BUILD_NUMBER"
 NOTARY_ARGS=()
@@ -16,11 +17,18 @@ else
     : "${NOTARY_ISSUER_ID:?Set NOTARY_ISSUER_ID}"
     NOTARY_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
 fi
+SIGNING_DIR=build/release/signing
+python3 -B Tools/prepare-release-signing.py prepare \
+    --profile "$APP_PROVISION_PROFILE" \
+    --source-entitlements Config/openlist.entitlements \
+    --app "$APP" --output-entitlements "$SIGNING_DIR/openlist.entitlements"
 for component in OpenlistWidget openlist; do
     bundle="$APP"
+    entitlements="$SIGNING_DIR/openlist.entitlements"
     [[ "$component" == openlist ]] || bundle="$APP/Contents/PlugIns/OpenlistWidget.appex"
+    [[ "$component" == openlist ]] || entitlements="Config/OpenlistWidget.entitlements"
     codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" \
-        --entitlements "Config/$component.entitlements" "$bundle"
+        --entitlements "$entitlements" "$bundle"
 done
 codesign --verify --deep --strict --verbose=2 "$APP"
 # Refuse development/ad-hoc signatures even when an incorrect identity was supplied.
@@ -28,6 +36,14 @@ SIGNATURE_INFO=$(codesign -dvv "$APP" 2>&1)
 [[ "$SIGNATURE_INFO" == *"Authority=Developer ID Application:"* ]] || {
     echo "Release requires a Developer ID Application signature" >&2; exit 1
 }
+codesign --display --entitlements - --xml "$APP" > "$SIGNING_DIR/signed-entitlements.plist"
+# This option's optional argument requires '='; a separate prefix is a code path.
+codesign --display --extract-certificates="$SIGNING_DIR/signing-cert-" "$APP"
+python3 -B Tools/prepare-release-signing.py verify \
+    --profile "$APP/Contents/embedded.provisionprofile" \
+    --source-entitlements Config/openlist.entitlements \
+    --signed-entitlements "$SIGNING_DIR/signed-entitlements.plist" \
+    --signing-certificate "$SIGNING_DIR/signing-cert-0"
 mkdir -p dist
 STEM="Openlist-$VERSION-macos-arm64"
 SUBMISSION="build/release/notarization.zip"

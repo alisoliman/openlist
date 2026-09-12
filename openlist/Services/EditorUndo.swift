@@ -25,6 +25,7 @@ private struct EditorBlockRecord: Equatable {
     var labelIDs: [UUID]
     var note: String
     var mediaFilename: String?
+    var mediaData: Data?
     var mediaWidth: Double
     var mediaHeight: Double
     var mediaCaption: String
@@ -50,6 +51,7 @@ private struct EditorBlockRecord: Equatable {
         labelIDs = model.labelIDs
         note = model.note
         mediaFilename = model.mediaFilename
+        mediaData = model.mediaData
         mediaWidth = model.mediaWidth
         mediaHeight = model.mediaHeight
         mediaCaption = model.mediaCaption
@@ -76,6 +78,7 @@ private struct EditorBlockRecord: Equatable {
         if old == nil || old?.labelIDs != labelIDs { model.labelIDs = labelIDs }
         if old == nil || old?.note != note { model.note = note }
         if old == nil || old?.mediaFilename != mediaFilename { model.mediaFilename = mediaFilename }
+        if old == nil || old?.mediaData != mediaData { model.mediaData = mediaData }
         if old == nil || old?.mediaWidth != mediaWidth { model.mediaWidth = mediaWidth }
         if old == nil || old?.mediaHeight != mediaHeight { model.mediaHeight = mediaHeight }
         if old == nil || old?.mediaCaption != mediaCaption { model.mediaCaption = mediaCaption }
@@ -86,6 +89,7 @@ private struct EditorAttachmentRecord: Equatable {
     var id: UUID
     var blockID: UUID?
     var filename: String
+    var contentData: Data?
     var displayName: String
     var contentType: String
     var byteCount: Int
@@ -95,6 +99,7 @@ private struct EditorAttachmentRecord: Equatable {
         id = model.id
         blockID = model.blockID
         filename = model.filename
+        contentData = model.contentData
         displayName = model.displayName
         contentType = model.contentType
         byteCount = model.byteCount
@@ -105,6 +110,7 @@ private struct EditorAttachmentRecord: Equatable {
         if old == nil || old?.id != id { model.id = id }
         if old == nil || old?.blockID != blockID { model.blockID = blockID }
         if old == nil || old?.filename != filename { model.filename = filename }
+        if old == nil || old?.contentData != contentData { model.contentData = contentData }
         if old == nil || old?.displayName != displayName { model.displayName = displayName }
         if old == nil || old?.contentType != contentType { model.contentType = contentType }
         if old == nil || old?.byteCount != byteCount { model.byteCount = byteCount }
@@ -119,8 +125,8 @@ private struct EditorSnapshot {
     var attachments: [UUID: EditorAttachmentRecord]
 
     init(store: Store, listIDs: Set<UUID>) {
-        self.listIDs = listIDs
-        let models = listIDs.flatMap { store.blocks(inList: $0) }
+        self.listIDs = Set(listIDs.map { store.resolvedListID($0) ?? $0 })
+        let models = self.listIDs.flatMap { store.blocks(inList: $0) }
         blocks = Dictionary(uniqueKeysWithValues: models.map { ($0.id, EditorBlockRecord($0)) })
         attachments = Dictionary(uniqueKeysWithValues: models.flatMap { store.attachments(for: $0.id) }.map { ($0.id, EditorAttachmentRecord($0)) })
     }
@@ -209,6 +215,8 @@ extension Store {
                 let model = existing ?? Block()
                 if existing == nil { context.insert(model) }
                 record.apply(to: model, replacing: existing == nil ? nil : source.blocks[id])
+                let listID = resolvedListID(model.listID)
+                if model.listID != listID { model.listID = listID }
             } else if let existing {
                 NotificationService.shared.cancelReminder(for: id)
                 context.delete(existing)

@@ -153,4 +153,55 @@ store.setArchived(true, for: list)
 check(!NotificationService.shared.scheduled.contains(secondID), "Archiving cancels reminders")
 store.setArchived(false, for: list)
 check(NotificationService.shared.scheduled.contains(secondID), "Unarchiving restores future reminders")
+
+let plain = RichTextCodec.decode(nil, plainText: "Remote formatting", kind: .task)
+let formatted = NSMutableAttributedString(attributedString: plain)
+RichTextCodec.toggleTrait(.boldFontMask, in: formatted, range: NSRange(location: 0, length: 6), kind: .task)
+let plainSignature = BlockTextView.ContentSignature(attributedText: plain, kind: .task, isCompleted: false)
+let formattedSignature = BlockTextView.ContentSignature(attributedText: formatted, kind: .task, isCompleted: false)
+check(plainSignature != formattedSignature, "Formatting-only imports invalidate the native editor content signature")
+let decoded = RichTextCodec.decode(RichTextCodec.encode(formatted, kind: .task), plainText: formatted.string, kind: .task)
+check(formattedSignature == BlockTextView.ContentSignature(attributedText: decoded, kind: .task, isCompleted: false), "A local formatting round trip does not unnecessarily rewrite native text storage")
+formatted.replaceCharacters(in: NSRange(location: 0, length: 6), with: "Edited")
+check(formattedSignature.attributedText.string == "Remote formatting", "Editor signatures retain immutable content snapshots")
+
+let editor = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, attributedText: plain, isFocused: false, focusToken: 0, callbacks: BlockEditorCallbacks())
+let coordinator = editor.makeCoordinator()
+let native = BlockNSTextView(frame: .zero)
+coordinator.apply(plain, to: native, kind: .task, isCompleted: false)
+native.setSelectedRange(NSRange(location: 3, length: 2))
+coordinator.apply(decoded, to: native, kind: .task, isCompleted: false)
+let remoteFont = native.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+check(remoteFont.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == true, "The native text storage receives imported formatting")
+check(native.selectedRange() == NSRange(location: 3, length: 2), "Applying remote formatting preserves the user's selection")
+
+native.coordinator = coordinator
+var editedArchive: Data?
+coordinator.parent.callbacks.onChange = { editedArchive = RichTextCodec.encode($0, kind: .task) }
+coordinator.apply(plain, to: native, kind: .task, isCompleted: false)
+native.setSelectedRange(NSRange(location: 0, length: 6))
+native.toggleBold(nil)
+let formattingEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
+check(coordinator.signature == BlockTextView.ContentSignature(attributedText: formattingEcho, kind: .task, isCompleted: false), "Native formatting updates its signature before the model echo, avoiding a redundant restyle")
+native.textStorage?.append(NSAttributedString(string: "!", attributes: RichTextCodec.baseAttributes(for: .task)))
+native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
+coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
+let typingEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
+check(coordinator.signature == BlockTextView.ContentSignature(attributedText: typingEcho, kind: .task, isCompleted: false), "Ordinary typing still produces a matching model echo without resetting native editing")
+
+let inlineRange = NSRange(location: 0, length: 6)
+let inlineEdits: [(String, (NSMutableAttributedString) -> Void)] = [
+    ("italic", { RichTextCodec.toggleTrait(.italicFontMask, in: $0, range: inlineRange, kind: .task) }),
+    ("strikethrough", { RichTextCodec.toggleStrikethrough(in: $0, range: inlineRange) }),
+    ("inline code", { RichTextCodec.toggleInlineCode(in: $0, range: inlineRange, kind: .task) }),
+    ("link", { RichTextCodec.setLink(URL(string: "https://example.invalid"), in: $0, range: inlineRange) }),
+]
+for (name, edit) in inlineEdits {
+    let content = NSMutableAttributedString(attributedString: plain)
+    edit(content)
+    let signature = BlockTextView.ContentSignature(attributedText: content, kind: .task, isCompleted: false)
+    let roundTrip = RichTextCodec.decode(RichTextCodec.encode(content, kind: .task), plainText: content.string, kind: .task)
+    check(signature != plainSignature, "Remote \(name) changes invalidate the editor signature")
+    check(signature == BlockTextView.ContentSignature(attributedText: roundTrip, kind: .task, isCompleted: false), "Local \(name) echoes preserve native editing without a redundant restyle")
+}
 print("✅ \(checks) editor/store checks passed")

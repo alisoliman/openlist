@@ -22,6 +22,38 @@ choose your signing team for both targets. Forks should use their own bundle
 IDs and matching App Group in `Shared/AppGroup.swift` and both entitlements.
 The committed team and identifiers are public app identities, not credentials.
 
+### Developing iCloud sync
+
+The main app needs the iCloud/CloudKit and Push Notifications capabilities, an
+associated `iCloud.solimanali.openlist` container, and an authorized development
+provisioning profile. Xcode can update development provisioning when the signed-in
+developer has permission (`xcodebuild -allowProvisioningUpdates`). Forks must
+also change the container identifier in `Config/openlist.entitlements` and
+`openlist/Services/ICloudConfiguration.swift`. Do not add CloudKit to the
+snapshot-only widget.
+
+Debug signatures select CloudKit `Development` and APNs `development`; Release
+signatures select `Production` and `production`. Native macOS uses the
+`com.apple.developer.aps-environment` entitlement, not iOS's `aps-environment`
+or `UIBackgroundModes`. Unsigned builds and `OpenlistReviewSession` fixtures
+always disable CloudKit, even on a Mac signed in to iCloud.
+
+Run `./Tools/run-sync-checks.sh` for offline migration and synchronization
+regressions. For real service verification, use
+`Tools/run-cloud-sync-checks.sh /path/to/Debug/openlist.app --account-only`,
+then `--connection`, `--initialize-schema` and `--run`. These commands require a matching
+development signing identity in the Keychain, use only synthetic data and
+temporary stores, and refuse Production. If a live check cannot confirm cloud
+cleanup, it reports the synthetic IDs and retains its isolated databases for
+diagnosis. Once connectivity returns, `--cleanup /path/to/OpenlistCloudCheck-UUID`
+removes only that fixture and verifies its cloud deletion; do not reset the
+user's cloud database.
+
+Before publishing, initialize the complete development schema, deploy it to
+Production in CloudKit Console, and configure the Developer ID provisioning
+profile described in [release maintenance](docs/RELEASING.md). Compiling or
+notarizing an app does not establish that its container or schema is usable.
+
 Run `./Tools/check.sh` before submitting. Add regression checks when changing
 logic, persistence, exports or editing behavior. For UI changes, exercise the
 actual native app and explain what you verified. See `Tools/screenshot.sh` for

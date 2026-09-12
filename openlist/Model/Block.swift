@@ -64,6 +64,8 @@ final class Block {
 
     /// Relative filename inside the app's media directory.
     var mediaFilename: String?
+    /// The local file is a cache; these bytes travel with the record in iCloud.
+    @Attribute(.externalStorage) var mediaData: Data?
     var mediaWidth: Double = 0
     var mediaHeight: Double = 0
     var mediaCaption: String = ""
@@ -179,6 +181,7 @@ extension Block {
         labelIDs = source.labelIDs
         note = source.note
         mediaFilename = source.mediaFilename
+        mediaData = source.mediaData
         mediaWidth = source.mediaWidth
         mediaHeight = source.mediaHeight
         mediaCaption = source.mediaCaption

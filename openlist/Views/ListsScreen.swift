@@ -10,7 +10,7 @@ import SwiftUI
 struct ListsScreen: View {
     @Environment(AppEnvironment.self) private var env
 
-    @Query(sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var lists: [TaskList]
 
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })

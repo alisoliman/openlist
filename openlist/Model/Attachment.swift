@@ -6,15 +6,15 @@
 import Foundation
 import SwiftData
 
-/// A file attached to a task's detail page. The file itself is copied into the
-/// app's Application Support directory so the reference survives the original
-/// being moved or deleted.
+/// An imported file, stored with its record for iCloud and cached locally for
+/// opening and export. Moving the original file does not affect the attachment.
 @Model
 final class Attachment {
     var id: UUID = UUID()
     /// The task block this file hangs off.
     var blockID: UUID?
     var filename: String = ""
+    @Attribute(.externalStorage) var contentData: Data?
     var displayName: String = ""
     var contentType: String = ""
     var byteCount: Int = 0
@@ -27,11 +27,13 @@ final class Attachment {
         displayName: String,
         contentType: String,
         byteCount: Int,
-        sortIndex: Double = 0
+        sortIndex: Double = 0,
+        contentData: Data? = nil
     ) {
         self.id = UUID()
         self.blockID = blockID
         self.filename = filename
+        self.contentData = contentData
         self.displayName = displayName
         self.contentType = contentType
         self.byteCount = byteCount
@@ -41,7 +43,9 @@ final class Attachment {
 }
 
 extension Attachment {
-    var url: URL { MediaStore.shared.url(for: filename) }
+    func fileURL() throws -> URL {
+        try MediaStore.shared.materialize(filename: filename, data: contentData)
+    }
 
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)

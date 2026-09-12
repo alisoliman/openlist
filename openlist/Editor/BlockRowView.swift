@@ -205,7 +205,7 @@ struct BlockRowView: View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
                 if let filename = block.mediaFilename,
-                   let image = MediaStore.shared.image(named: filename) {
+                   let image = MediaStore.shared.image(named: filename, data: block.mediaData) {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)

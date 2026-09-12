@@ -63,7 +63,7 @@ struct SmartTaskRow: View {
 
     @Environment(AppEnvironment.self) private var env
     @State private var isHovering = false
-    @State private var draftText: String = ""
+    @State private var titleDraft = SyncedTextDraft()
     @FocusState private var isEditing: Bool
 
     private var owningList: TaskList? { context.list(for: block) }
@@ -139,9 +139,9 @@ struct SmartTaskRow: View {
                 .onTapGesture { env.navigator.selection = [block.id] }
         )
         .onHover { isHovering = $0 }
-        .onAppear { draftText = block.text }
+        .onAppear { titleDraft.reset(to: block.text) }
         .onChange(of: block.text) { _, newValue in
-            if !isEditing { draftText = newValue }
+            titleDraft.receive(newValue)
         }
         .contextMenu {
             BlockContextMenu(block: block, actions: contextActions)
@@ -165,7 +165,7 @@ struct SmartTaskRow: View {
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            TextField("Task", text: $draftText, axis: .vertical)
+            TextField("Task", text: $titleDraft.value, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(Theme.Font.body)
                 .focused($isEditing)
@@ -173,7 +173,7 @@ struct SmartTaskRow: View {
                 .onSubmit(commit)
                 .onChange(of: isEditing) { _, editing in
                     if editing {
-                        draftText = block.text
+                        titleDraft.reset(to: block.text)
                         env.navigator.selection = [block.id]
                         env.activeDocument = nil
                     } else {
@@ -199,17 +199,21 @@ struct SmartTaskRow: View {
         // Blurring happens after a ⌘⌫ delete too, and the block is gone by then.
         guard !block.isDeleted, block.modelContext != nil else { return }
 
-        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         // Compare trimmed-to-trimmed: otherwise a title that merely ends in a
         // space looks "edited" on every blur and `setPlainText` would drop the
         // block's inline formatting without the user touching anything.
-        guard trimmed != block.text.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        guard let trimmed = titleDraft.editedValue(normalize: { $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
+              trimmed != block.text.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            titleDraft.reset(to: block.text)
+            return
+        }
         env.store.setText(trimmed, for: block)
         env.store.applyInlineMetadata(
             to: block,
             parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates
         )
         env.store.save()
+        titleDraft.reset(to: block.text)
     }
 }
 

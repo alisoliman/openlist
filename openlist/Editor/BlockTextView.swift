@@ -116,7 +116,7 @@ struct BlockTextView: NSViewRepresentable {
         // Only touch the storage when something actually changed underneath us,
         // otherwise every keystroke would reset the caret.
         let signature = ContentSignature(
-            text: attributedText.string,
+            attributedText: attributedText,
             kind: kind,
             isCompleted: isCompleted
         )
@@ -135,9 +135,15 @@ struct BlockTextView: NSViewRepresentable {
     // MARK: - Coordinator
 
     struct ContentSignature: Equatable {
-        var text: String
-        var kind: BlockKind
-        var isCompleted: Bool
+        let attributedText: NSAttributedString
+        let kind: BlockKind
+        let isCompleted: Bool
+
+        init(attributedText: NSAttributedString, kind: BlockKind, isCompleted: Bool) {
+            self.attributedText = NSAttributedString(attributedString: attributedText)
+            self.kind = kind
+            self.isCompleted = isCompleted
+        }
     }
 
     @MainActor
@@ -182,7 +188,7 @@ struct BlockTextView: NSViewRepresentable {
             view.invalidateIntrinsicContentSize()
             view.needsDisplay = true
 
-            signature = ContentSignature(text: attributed.string, kind: kind, isCompleted: isCompleted)
+            signature = ContentSignature(attributedText: attributed, kind: kind, isCompleted: isCompleted)
             previousLength = attributed.length
         }
 
@@ -238,7 +244,7 @@ struct BlockTextView: NSViewRepresentable {
                 // model keeps the "## " the user just consumed.
                 parent.callbacks.onChange(NSAttributedString(attributedString: storage))
                 signature = ContentSignature(
-                    text: storage.string,
+                    attributedText: storage,
                     kind: parent.kind,
                     isCompleted: parent.isCompleted
                 )
@@ -255,7 +261,7 @@ struct BlockTextView: NSViewRepresentable {
             }
 
             signature = ContentSignature(
-                text: storage.string,
+                attributedText: storage,
                 kind: parent.kind,
                 isCompleted: parent.isCompleted
             )
@@ -594,7 +600,12 @@ final class BlockNSTextView: NSTextView {
 
         storage.setAttributedString(mutable)
         setSelectedRange(range)
-        coordinator?.parent.callbacks.onChange(NSAttributedString(attributedString: storage))
+        if let coordinator {
+            coordinator.signature = BlockTextView.ContentSignature(
+                attributedText: storage, kind: blockKind, isCompleted: coordinator.parent.isCompleted
+            )
+            coordinator.parent.callbacks.onChange(NSAttributedString(attributedString: storage))
+        }
         invalidateIntrinsicContentSize()
     }
 

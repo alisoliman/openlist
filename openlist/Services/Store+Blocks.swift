@@ -24,7 +24,7 @@ extension Store {
         let block = Block(
             kind: kind,
             text: text,
-            listID: reference.listID,
+            listID: resolvedListID(reference.listID),
             parentID: reference.parentID,
             sortIndex: BlockTree.index(after: reference.sortIndex, before: next)
         )
@@ -58,7 +58,7 @@ extension Store {
         let block = Block(
             kind: kind,
             text: text,
-            listID: parent.listID,
+            listID: resolvedListID(parent.listID),
             parentID: parent.id,
             sortIndex: sortIndex
         )
@@ -73,11 +73,12 @@ extension Store {
         text: String = "",
         to document: DocumentContext
     ) -> Block {
-        let siblings = children(of: document.rootBlockID, listID: document.listID)
+        let listID = resolvedListID(document.listID) ?? document.listID
+        let siblings = children(of: document.rootBlockID, listID: listID)
         let block = Block(
             kind: kind,
             text: text,
-            listID: document.listID,
+            listID: listID,
             parentID: document.rootBlockID,
             sortIndex: (siblings.last?.sortIndex ?? 0) + BlockTree.indexStep
         )
@@ -89,11 +90,12 @@ extension Store {
     /// and Inbox where the newest item should be immediately visible.
     @discardableResult
     func prependTask(text: String = "", to document: DocumentContext) -> Block {
-        let siblings = children(of: document.rootBlockID, listID: document.listID)
+        let listID = resolvedListID(document.listID) ?? document.listID
+        let siblings = children(of: document.rootBlockID, listID: listID)
         let block = Block(
             kind: .task,
             text: text,
-            listID: document.listID,
+            listID: listID,
             parentID: document.rootBlockID,
             sortIndex: BlockTree.index(after: nil, before: siblings.first?.sortIndex)
         )
@@ -118,7 +120,7 @@ extension Store {
         do {
             var mediaFilename: String?
             if let filename = block.mediaFilename {
-                mediaFilename = try stageCopy(of: MediaStore.shared.url(for: filename))
+                mediaFilename = try stageCopy(of: MediaStore.shared.materialize(filename: filename, data: block.mediaData))
             }
             let blockID = block.id
             let originals = try context.fetch(FetchDescriptor<Attachment>(
@@ -127,14 +129,15 @@ extension Store {
             ))
             var copiedAttachments: [Attachment] = []
             for attachment in originals {
-                let copiedFilename = try stageCopy(of: attachment.url)
+                let copiedFilename = try stageCopy(of: attachment.fileURL())
                 let copied = Attachment(
                     blockID: block.id,
                     filename: copiedFilename,
                     displayName: attachment.displayName,
                     contentType: attachment.contentType,
                     byteCount: attachment.byteCount,
-                    sortIndex: attachment.sortIndex
+                    sortIndex: attachment.sortIndex,
+                    contentData: attachment.contentData
                 )
                 copied.createdAt = attachment.createdAt
                 copiedAttachments.append(copied)
@@ -197,8 +200,17 @@ extension Store {
         let all = blocks(inList: listID)
         let selectedIDs = Set(selection.map(\.id))
 
-        let roots = selection.filter { block in
-            !BlockTree.ancestors(of: block, in: all).contains { selectedIDs.contains($0.id) }
+        var roots: [Block] = []
+        var selectedDepth: Int?
+        // Use the rendered tree so a cycle cannot make every selected block
+        // appear to have another selected ancestor.
+        for row in BlockTree.flatten(all, respectCollapse: false) {
+            if let depth = selectedDepth, row.depth > depth { continue }
+            selectedDepth = nil
+            if selectedIDs.contains(row.id) {
+                roots.append(row.block)
+                selectedDepth = row.depth
+            }
         }
         for block in roots {
             deleteBlock(block)
@@ -322,6 +334,7 @@ extension Store {
     /// block inside its own subtree.
     @discardableResult
     func move(_ block: Block, toParent parentID: UUID?, above target: Block?, in listID: UUID) -> Bool {
+        let listID = resolvedListID(listID) ?? listID
         // The subtree still lives in the block's CURRENT list; reading the
         // destination would return nothing and silently orphan every child.
         let sourceListID = block.listID ?? listID

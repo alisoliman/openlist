@@ -37,13 +37,7 @@ struct BlockRow: Identifiable, Hashable {
 enum BlockTree {
     /// Children of `parentID`, ordered by `sortIndex`.
     static func children(of parentID: UUID?, in blocks: [Block]) -> [Block] {
-        blocks
-            .filter { $0.parentID == parentID }
-            .sorted { lhs, rhs in
-                lhs.sortIndex == rhs.sortIndex
-                    ? lhs.createdAt < rhs.createdAt
-                    : lhs.sortIndex < rhs.sortIndex
-            }
+        childIndex(of: blocks, root: parentID)[parentID] ?? []
     }
 
     /// Depth-first flattening of the whole outline.
@@ -59,7 +53,7 @@ enum BlockTree {
         respectCollapse: Bool = true
     ) -> [BlockRow] {
         // Bucket by parent once so the recursion is linear rather than O(n²).
-        let byParent = childIndex(of: blocks)
+        let byParent = childIndex(of: blocks, root: root)
 
         var rows: [BlockRow] = []
         rows.reserveCapacity(blocks.count)
@@ -103,16 +97,45 @@ enum BlockTree {
     ///
     /// Callers that need more than one tree query should build this once and
     /// pass it in, rather than paying for it per lookup.
-    static func childIndex(of blocks: [Block]) -> [UUID?: [Block]] {
+    static func childIndex(of blocks: [Block], root: UUID? = nil) -> [UUID?: [Block]] {
+        let knownIDs = Set(blocks.map(\.id))
+        var parents: [UUID: UUID] = [:]
+        for block in blocks {
+            if let parent = block.parentID, parent != block.id,
+               knownIDs.contains(parent) || parent == root {
+                parents[block.id] = parent
+            }
+        }
+        // Concurrent moves can form a cycle even though each Mac validated its
+        // own move. Break a deterministic edge in the projection, not in stored
+        // data; incomplete imports must never cause destructive "repairs".
+        var visited: Set<UUID> = []
+        for block in blocks where !visited.contains(block.id) {
+            var path: [UUID] = []
+            var positions: [UUID: Int] = [:]
+            var current: UUID? = block.id
+            while let id = current, !visited.contains(id) {
+                if let start = positions[id] {
+                    if let anchor = path[start...].min(by: { $0.uuidString < $1.uuidString }) {
+                        parents[anchor] = nil
+                    }
+                    break
+                }
+                positions[id] = path.count
+                path.append(id)
+                current = parents[id]
+            }
+            visited.formUnion(path)
+        }
         var byParent: [UUID?: [Block]] = [:]
         for block in blocks {
-            byParent[block.parentID, default: []].append(block)
+            byParent[parents[block.id], default: []].append(block)
         }
         for key in byParent.keys {
             byParent[key]?.sort { lhs, rhs in
-                lhs.sortIndex == rhs.sortIndex
-                    ? lhs.createdAt < rhs.createdAt
-                    : lhs.sortIndex < rhs.sortIndex
+                if lhs.sortIndex != rhs.sortIndex { return lhs.sortIndex < rhs.sortIndex }
+                if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+                return lhs.id.uuidString < rhs.id.uuidString
             }
         }
         return byParent
@@ -124,15 +147,16 @@ enum BlockTree {
     /// walking many blocks prefer ``subtaskCounts(in:)`` or hoist
     /// ``childIndex(of:)`` and use ``descendants(of:using:)``.
     static func descendants(of blockID: UUID, in blocks: [Block]) -> [Block] {
-        descendants(of: blockID, using: childIndex(of: blocks))
+        descendants(of: blockID, using: childIndex(of: blocks, root: blockID))
     }
 
     /// Descendants resolved against a pre-built index.
     static func descendants(of blockID: UUID, using childIndex: [UUID?: [Block]]) -> [Block] {
         var result: [Block] = []
         var queue: [UUID] = [blockID]
+        var visited: Set<UUID> = [blockID]
         while let current = queue.popLast() {
-            let kids = childIndex[current] ?? []
+            let kids = (childIndex[current] ?? []).filter { visited.insert($0.id).inserted }
             result.append(contentsOf: kids)
             queue.append(contentsOf: kids.map(\.id))
         }

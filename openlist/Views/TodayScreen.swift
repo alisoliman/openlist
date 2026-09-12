@@ -13,7 +13,7 @@ struct TodayScreen: View {
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })
     private var tasks: [Block]
 
-    @Query(sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var lists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])

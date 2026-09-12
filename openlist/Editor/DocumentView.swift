@@ -396,6 +396,7 @@ struct DocumentView: View {
         do {
             let media = try MediaStore.shared.importFile(at: url)
             block.mediaFilename = media.filename
+            block.mediaData = media.data
             block.mediaWidth = media.pixelSize.width
             block.mediaHeight = media.pixelSize.height
             block.mediaCaption = ""
