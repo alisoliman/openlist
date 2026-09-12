@@ -22,6 +22,8 @@ struct SettingsView: View {
                 .tabItem { Label("Labels", systemImage: "tag") }
             ICloudSettingsTab()
                 .tabItem { Label("iCloud", systemImage: "icloud") }
+            MCPSettingsTab()
+                .tabItem { Label("AI Agents", systemImage: "terminal") }
             DataSettingsTab()
                 .tabItem { Label("Data", systemImage: "externaldrive") }
         }

@@ -25,6 +25,7 @@ SOURCE_ENTITLEMENTS = {
     "com.apple.security.app-sandbox": True,
     "com.apple.security.files.user-selected.read-write": True,
     "com.apple.security.network.client": True,
+    "com.apple.security.network.server": True,
     "com.apple.security.application-groups": [APP_GROUP],
     CONTAINERS: [CONTAINER_ID],
     SERVICES: ["CloudKit"],

@@ -36,6 +36,7 @@ def source_fixture():
         "com.apple.security.app-sandbox": True,
         "com.apple.security.files.user-selected.read-write": True,
         "com.apple.security.network.client": True,
+        "com.apple.security.network.server": True,
         "com.apple.security.application-groups": [GROUP],
         "com.apple.developer.icloud-container-identifiers": [CONTAINER],
         "com.apple.developer.icloud-services": ["CloudKit"],
@@ -91,6 +92,7 @@ class EntitlementChecks(unittest.TestCase):
         self.assertEqual(result[signing.SERVICES], ["CloudKit"])
         self.assertIs(result["com.apple.security.app-sandbox"], True)
         self.assertIs(result["com.apple.security.network.client"], True)
+        self.assertIs(result["com.apple.security.network.server"], True)
         self.assertIs(result["com.apple.security.files.user-selected.read-write"], True)
         self.assertEqual(result["com.apple.security.application-groups"], [GROUP])
         self.assertEqual(set(result), set(self.source) | {signing.APP_IDENTIFIER, signing.TEAM_IDENTIFIER})
@@ -127,6 +129,7 @@ class EntitlementChecks(unittest.TestCase):
         cases = {
             "com.apple.security.app-sandbox": [False, 1],
             "com.apple.security.network.client": [False, "true"],
+            "com.apple.security.network.server": [False, "true"],
             "com.apple.security.files.user-selected.read-write": [False],
             "com.apple.security.application-groups": [["other.group"], [GROUP, "other.group"]],
             signing.CONTAINERS: [["iCloud.wrong"], [CONTAINER, "iCloud.extra"], CONTAINER],
@@ -476,11 +479,15 @@ class PipelineChecks(unittest.TestCase):
         self.assertEqual(resolved[signing.CONTAINERS], [CONTAINER])
         self.assertEqual(resolved[signing.CLOUD_ENVIRONMENT], "Production")
         self.assertEqual(resolved[signing.PUSH_ENVIRONMENT], "production")
+        self.assertIs(resolved["com.apple.security.network.server"], True)
 
     def test_packaging_prepares_before_signing_and_verifies_before_notarization(self):
         script = (TOOLS / "package-release.sh").read_text()
         self.assertIn('${APP_PROVISION_PROFILE:?', script)
         self.assertLess(script.index("prepare-release-signing.py prepare"), script.index("for component in"))
+        helper = script.index('"$APP/Contents/MacOS/openlist-mcp"')
+        self.assertLess(script.index("prepare-release-signing.py prepare"), helper)
+        self.assertLess(helper, script.index("for component in"))
         self.assertLess(script.index("prepare-release-signing.py verify"), script.index("xcrun notarytool submit"))
         self.assertIn('--profile "$APP/Contents/embedded.provisionprofile"', script)
         self.assertIn('--signing-certificate "$SIGNING_DIR/signing-cert-0"', script)

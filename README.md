@@ -46,7 +46,7 @@ For running from Xcode, configure signing for the app and widget as described in
 [CONTRIBUTING.md](CONTRIBUTING.md). They share the App Group
 `Y5UE64R7TQ.solimanali.openlist`.
 
-See [release maintenance](docs/RELEASING.md), [security reporting](SECURITY.md),
+See [contributing and releases](CONTRIBUTING.md), [security reporting](SECURITY.md),
 and the [MIT license](LICENSE).
 
 ---
@@ -150,6 +150,24 @@ Sidebar sections (create, rename, collapse, drag lists between them), list icons
 and colours, per-list sort order, Markdown export, light/dark/system appearance,
 Dock badge, and local-first storage with native SwiftData/CloudKit sync.
 
+### AI clients through MCP
+
+Openlist ships a native MCP server and stdio launcher. Enable it in
+**Settings > AI Agents**, copy a client configuration, and keep Openlist running.
+Agents can read lists, tasks and notes, or optionally create, edit, complete,
+move and archive them. Access is off by default, read-only unless you allow
+changes, and protected by a Keychain-backed token on a localhost-only endpoint.
+No Node/Python runtime or cloud service is required.
+
+Choose **Claude Desktop / stdio** or **VS Code / HTTP** in Settings, merge the
+copied configuration into your client's MCP settings, and reconnect. Other local
+clients can use the bundled stdio launcher or the Streamable HTTP endpoint with
+its bearer token.
+
+Keep copied configurations private: they contain your access token. Turning MCP
+off disconnects clients; resetting the token revokes old configurations. Connected
+AI clients may send the content they read to their own model providers.
+
 Per-list *grouping* was cut rather than shipped half-working: grouping a rich
 document that mixes headings, notes and tasks has no well-defined meaning, and
 the Tasks screen already groups across every list by date, list, label or
@@ -187,6 +205,8 @@ openlist/
   Design/      Theme
 Shared/        ListAccent, WidgetSnapshot, AppGroup   (app + widget)
 OpenlistWidget/  WidgetKit extension
+MCPTransport/   Local Swift package: authenticated MCP/HTTP transport
+OpenlistMCPHelper/  Bundled native stdio-to-localhost launcher
 Config/          entitlements and the extension Info.plist
 Tools/           regression suites, live CloudSyncChecks, release tooling
 ```
@@ -263,11 +283,17 @@ fixtures, so a deletion timeout can be resumed without waiting for a removed tas
 Use `--resume /path/to/OpenlistCloudCheck-UUID` to continue a
 retained fixture without creating new test data.
 Production schema deployment and Developer ID provisioning
-are documented in [release maintenance](docs/RELEASING.md).
+are documented in [release maintenance](CONTRIBUTING.md#releases).
 If a network failure prevents confirming fixture deletion, rerun with
 `--cleanup /path/to/the/reported/OpenlistCloudCheck-UUID` once iCloud is
 reachable. Recovery reads record identifiers only, deletes only that fixture's
 UUIDs, confirms their absence, and removes its isolated local stores.
+
+MCP checks exercise the official protocol client, authentication and loopback
+boundaries, the bundled stdio bridge, and real Store operations against isolated
+disk fixtures, including permission changes, recurring completion, failed-save
+rollback and separate-process reopening. Swift package dependencies are fetched
+on the first build or check; no extra runtime is needed by the installed app.
 
 `Tools/screenshot.sh out.png ['keystroke "2" using command down' ...]` captures
 the running app's window and can drive it with keystrokes first, so UI changes

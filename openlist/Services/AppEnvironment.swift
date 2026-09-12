@@ -45,6 +45,7 @@ final class AppEnvironment {
     let navigator: Navigator
     let settings: AppSettings
     let sync: ICloudSyncMonitor
+    let mcp: MCPIntegration
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
     /// Retained so the notification centre keeps a live delegate.
@@ -81,6 +82,7 @@ final class AppEnvironment {
         self.store = store
         self.settings = settings
         self.sync = sync
+        mcp = MCPIntegration(store: store, settings: settings)
         navigator = Navigator()
         widgetPublisher = WidgetSnapshotPublisher(store: store)
 
@@ -137,6 +139,7 @@ final class AppEnvironment {
         widgetPublisher.refreshNow()
         sync.checkAccount()
         if sync.state.isEnabled { NSApplication.shared.registerForRemoteNotifications() }
+        mcp.start(storageAvailable: store.persistenceError == nil)
     }
 
     private func refreshAfterRemoteChange() {

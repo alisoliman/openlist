@@ -45,6 +45,9 @@ final class Store {
     var persistenceError: String?
     var editorNotice: String?
     var syncPreparationError: String?
+    /// Smart rows commit local title drafts on blur. External writes must not
+    /// overwrite those drafts or be overwritten by their later commit.
+    @ObservationIgnored var activeTitleDrafts: [UUID: UUID] = [:]
 
     /// Called after every successful save, so downstream caches — currently the
     /// widget snapshot — can refresh themselves.
@@ -355,18 +358,23 @@ final class Store {
 
     func save() {
         guard !isSavingSuspended else { return }
+        do {
+            try persistChanges()
+        } catch {
+            persistenceError = "Your latest changes could not be saved. \(error.localizedDescription)"
+        }
+    }
+
+    /// External callers must acknowledge a write only after it reaches disk.
+    /// Unlike `save()`, this propagates failures so an MCP mutation can roll back.
+    func persistChanges() throws {
         pendingSave?.cancel()
         pendingSave = nil
 
         // `onDidSave` fires even when SwiftData's autosave already flushed the
         // change, because downstream caches still need to know it happened.
         if context.hasChanges {
-            do {
-                try context.save()
-            } catch {
-                persistenceError = "Your latest changes could not be saved. \(error.localizedDescription)"
-                return
-            }
+            try context.save()
         }
         persistenceError = nil
         onDidSave?()

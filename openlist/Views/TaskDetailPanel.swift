@@ -36,7 +36,7 @@ struct TaskDetailPanel: View {
 }
 
 /// Each inspected task owns its focus and pending capture. Note text binds to
-/// the model so an open inspector also reflects changes arriving from iCloud.
+/// the model so an open inspector reflects both iCloud and MCP changes.
 private struct TaskDetailContent: View {
     let block: Block
     private let taskID: UUID

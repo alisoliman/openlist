@@ -8,8 +8,9 @@ import Foundation
 /// Decides where the SwiftData store file lives.
 ///
 /// Retains the original App Group location across the iCloud upgrade. Only the
-/// app opens this database; the widget reads a separate JSON snapshot. If the
-/// group is unavailable, the existing private Application Support path is used.
+/// app opens this database, including MCP operations; widgets read a separate
+/// JSON snapshot. If the group is unavailable, the existing private Application
+/// Support path is used.
 nonisolated enum StoreLocation {
     /// Directory holding `Openlist.store`, creating it if needed.
     static var directory: URL {

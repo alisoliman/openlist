@@ -22,6 +22,8 @@ python3 -B Tools/prepare-release-signing.py prepare \
     --profile "$APP_PROVISION_PROFILE" \
     --source-entitlements Config/openlist.entitlements \
     --app "$APP" --output-entitlements "$SIGNING_DIR/openlist.entitlements"
+codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" \
+    "$APP/Contents/MacOS/openlist-mcp"
 for component in OpenlistWidget openlist; do
     bundle="$APP"
     entitlements="$SIGNING_DIR/openlist.entitlements"
@@ -55,7 +57,8 @@ xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=2 "$APP"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "dist/$STEM.zip"
-STAGING=$(mktemp -d)
+STAGING="build/release/dmg-staging.$$"
+mkdir "$STAGING"
 trap 'rm -rf "$STAGING"' EXIT
 ditto "$APP" "$STAGING/openlist.app"
 ln -s /Applications "$STAGING/Applications"

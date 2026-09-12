@@ -64,6 +64,7 @@ struct SmartTaskRow: View {
     @Environment(AppEnvironment.self) private var env
     @State private var isHovering = false
     @State private var titleDraft = SyncedTextDraft()
+    @State private var editSessionID = UUID()
     @FocusState private var isEditing: Bool
 
     private var owningList: TaskList? { context.list(for: block) }
@@ -140,6 +141,10 @@ struct SmartTaskRow: View {
         )
         .onHover { isHovering = $0 }
         .onAppear { titleDraft.reset(to: block.text) }
+        .onDisappear {
+            if env.store.activeTitleDrafts[editSessionID] != nil { commit() }
+            env.store.activeTitleDrafts.removeValue(forKey: editSessionID)
+        }
         .onChange(of: block.text) { _, newValue in
             titleDraft.receive(newValue)
         }
@@ -173,11 +178,13 @@ struct SmartTaskRow: View {
                 .onSubmit(commit)
                 .onChange(of: isEditing) { _, editing in
                     if editing {
+                        env.store.activeTitleDrafts[editSessionID] = block.id
                         titleDraft.reset(to: block.text)
                         env.navigator.selection = [block.id]
                         env.activeDocument = nil
                     } else {
                         commit()
+                        env.store.activeTitleDrafts.removeValue(forKey: editSessionID)
                     }
                 }
         }

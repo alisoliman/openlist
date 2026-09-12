@@ -76,6 +76,15 @@ final class AppSettings {
     var hasSeededSampleData: Bool {
         didSet { defaults.set(hasSeededSampleData, forKey: Key.seeded) }
     }
+    var mcpEnabled: Bool {
+        didSet { defaults.set(mcpEnabled, forKey: Key.mcpEnabled) }
+    }
+    var mcpAllowsWrites: Bool {
+        didSet { defaults.set(mcpAllowsWrites, forKey: Key.mcpAllowsWrites) }
+    }
+    var mcpPort: Int {
+        didSet { defaults.set(mcpPort, forKey: Key.mcpPort) }
+    }
 
     private let defaults: UserDefaults
 
@@ -90,6 +99,9 @@ final class AppSettings {
             Key.completionSound: true,
             Key.confirmDelete: true,
             Key.firstWeekday: 0,
+            Key.mcpEnabled: false,
+            Key.mcpAllowsWrites: false,
+            Key.mcpPort: 45873,
         ])
 
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -103,6 +115,9 @@ final class AppSettings {
         confirmsBeforeDeletingLists = defaults.bool(forKey: Key.confirmDelete)
         firstWeekday = defaults.integer(forKey: Key.firstWeekday)
         hasSeededSampleData = defaults.bool(forKey: Key.seeded)
+        mcpEnabled = defaults.bool(forKey: Key.mcpEnabled)
+        mcpAllowsWrites = defaults.bool(forKey: Key.mcpAllowsWrites)
+        mcpPort = defaults.integer(forKey: Key.mcpPort)
     }
 
     /// A calendar honouring the user's chosen first day of the week.
@@ -126,5 +141,8 @@ final class AppSettings {
         static let confirmDelete = "settings.confirmDelete"
         static let firstWeekday = "settings.firstWeekday"
         static let seeded = "settings.hasSeededSampleData"
+        static let mcpEnabled = "settings.mcpEnabled"
+        static let mcpAllowsWrites = "settings.mcpAllowsWrites"
+        static let mcpPort = "settings.mcpPort"
     }
 }
