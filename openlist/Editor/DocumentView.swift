@@ -119,7 +119,7 @@ struct DocumentView: View {
             }
         }
 
-        let comparator: (Block, Block) -> Bool = switch sorting {
+        let comparator: @MainActor (Block, Block) -> Bool = switch sorting {
         case .dueDate: Block.byDueDate
         case .createdAt: { $0.createdAt < $1.createdAt }
         case .alphabetical: { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
