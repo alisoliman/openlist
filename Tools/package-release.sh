@@ -24,7 +24,10 @@ for component in OpenlistWidget openlist; do
 done
 codesign --verify --deep --strict --verbose=2 "$APP"
 # Refuse development/ad-hoc signatures even when an incorrect identity was supplied.
-codesign -dv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application:'
+SIGNATURE_INFO=$(codesign -dvv "$APP" 2>&1)
+[[ "$SIGNATURE_INFO" == *"Authority=Developer ID Application:"* ]] || {
+    echo "Release requires a Developer ID Application signature" >&2; exit 1
+}
 mkdir -p dist
 STEM="Openlist-$VERSION-macos-arm64"
 SUBMISSION="build/release/notarization.zip"
