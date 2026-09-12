@@ -22,8 +22,8 @@ struct openlistApp: App {
             Attachment.self,
             ActivityEvent.self,
         ])
-        // The store lives in the App Group container so the widget extension
-        // can read the same database.
+        // Only the app opens this store. Widgets read a published snapshot,
+        // and MCP calls use the app's own context.
         let configuration = ModelConfiguration(schema: schema, url: StoreLocation.storeURL)
 
         let container: ModelContainer

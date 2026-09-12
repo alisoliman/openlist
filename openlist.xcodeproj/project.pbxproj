@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		41362FFB304B659900C93862 /* OpenlistWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 41362FF3304B659900C93862 /* OpenlistWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4D435048000000000000000B /* openlist-mcp in Embed MCP Helper */ = {isa = PBXBuildFile; fileRef = 4D4350480000000000000002 /* openlist-mcp */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		4D4350480000000000000010 /* OpenlistMCP in Frameworks */ = {isa = PBXBuildFile; productRef = 4D435048000000000000000F /* OpenlistMCP */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -17,6 +19,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 41362FF2304B659900C93862;
 			remoteInfo = OpenlistWidget;
+		};
+		4D435048000000000000000C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 41362FCD304B659900C93862 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D4350480000000000000001;
+			remoteInfo = "openlist-mcp";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -32,11 +41,23 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4D435048000000000000000A /* Embed MCP Helper */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				4D435048000000000000000B /* openlist-mcp in Embed MCP Helper */,
+			);
+			name = "Embed MCP Helper";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		41362FD5304B659900C93862 /* openlist.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = openlist.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		41362FF3304B659900C93862 /* OpenlistWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenlistWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D4350480000000000000002 /* openlist-mcp */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "openlist-mcp"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -55,6 +76,11 @@
 			path = OpenlistWidget;
 			sourceTree = "<group>";
 		};
+		4D4350480000000000000003 /* OpenlistMCPHelper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OpenlistMCPHelper;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,10 +88,18 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4D4350480000000000000010 /* OpenlistMCP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		41362FF5304B659900C93862 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4D4350480000000000000005 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -81,6 +115,7 @@
 				41362FD7304B659900C93862 /* openlist */,
 				41362FF0304B659900C93862 /* Shared */,
 				41362FF1304B659900C93862 /* OpenlistWidget */,
+				4D4350480000000000000003 /* OpenlistMCPHelper */,
 				41362FD6304B659900C93862 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +125,7 @@
 			children = (
 				41362FD5304B659900C93862 /* openlist.app */,
 				41362FF3304B659900C93862 /* OpenlistWidget.appex */,
+				4D4350480000000000000002 /* openlist-mcp */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -105,11 +141,13 @@
 				41362FD2304B659900C93862 /* Frameworks */,
 				41362FD3304B659900C93862 /* Resources */,
 				41362FFA304B659900C93862 /* Embed Foundation Extensions */,
+				4D435048000000000000000A /* Embed MCP Helper */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				41362FFC304B659900C93862 /* PBXTargetDependency */,
+				4D435048000000000000000D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				41362FD7304B659900C93862 /* openlist */,
@@ -117,6 +155,7 @@
 			);
 			name = openlist;
 			packageProductDependencies = (
+				4D435048000000000000000F /* OpenlistMCP */,
 			);
 			productName = openlist;
 			productReference = 41362FD5304B659900C93862 /* openlist.app */;
@@ -145,6 +184,27 @@
 			productReference = 41362FF3304B659900C93862 /* OpenlistWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		4D4350480000000000000001 /* openlist-mcp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D4350480000000000000007 /* Build configuration list for PBXNativeTarget "openlist-mcp" */;
+			buildPhases = (
+				4D4350480000000000000004 /* Sources */,
+				4D4350480000000000000005 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4D4350480000000000000003 /* OpenlistMCPHelper */,
+			);
+			name = "openlist-mcp";
+			packageProductDependencies = (
+			);
+			productName = "openlist-mcp";
+			productReference = 4D4350480000000000000002 /* openlist-mcp */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -161,6 +221,9 @@
 					41362FF2304B659900C93862 = {
 						CreatedOnToolsVersion = 26.6;
 					};
+					4D4350480000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 				};
 			};
 			buildConfigurationList = 41362FD0304B659900C93862 /* Build configuration list for PBXProject "openlist" */;
@@ -172,6 +235,9 @@
 			);
 			mainGroup = 41362FCC304B659900C93862;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4D435048000000000000000E /* XCLocalSwiftPackageReference "." */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 41362FD6304B659900C93862 /* Products */;
 			projectDirPath = "";
@@ -179,6 +245,7 @@
 			targets = (
 				41362FD4304B659900C93862 /* openlist */,
 				41362FF2304B659900C93862 /* OpenlistWidget */,
+				4D4350480000000000000001 /* openlist-mcp */,
 			);
 		};
 /* End PBXProject section */
@@ -215,6 +282,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4D4350480000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -222,6 +296,11 @@
 			isa = PBXTargetDependency;
 			target = 41362FF2304B659900C93862 /* OpenlistWidget */;
 			targetProxy = 41362FFD304B659900C93862 /* PBXContainerItemProxy */;
+		};
+		4D435048000000000000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D4350480000000000000001 /* openlist-mcp */;
+			targetProxy = 4D435048000000000000000C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -481,6 +560,32 @@
 			};
 			name = Release;
 		};
+		4D4350480000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = solimanali.openlist.mcp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		4D4350480000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = solimanali.openlist.mcp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -511,7 +616,31 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		4D4350480000000000000007 /* Build configuration list for PBXNativeTarget "openlist-mcp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4D4350480000000000000008 /* Debug */,
+				4D4350480000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4D435048000000000000000E /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ".";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4D435048000000000000000F /* OpenlistMCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4D435048000000000000000E /* XCLocalSwiftPackageReference "." */;
+			productName = OpenlistMCP;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 41362FCD304B659900C93862 /* Project object */;
 }

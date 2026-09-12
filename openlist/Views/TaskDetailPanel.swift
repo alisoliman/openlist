@@ -35,7 +35,7 @@ struct TaskDetailPanel: View {
     }
 }
 
-/// Each inspected task owns its drafts and focus. Changing the task starts a
+/// Each inspected task owns its capture state and focus. Changing the task starts a
 /// fresh editor, so a previous note or pending capture cannot leak into it.
 private struct TaskDetailContent: View {
     let block: Block
@@ -48,7 +48,6 @@ private struct TaskDetailContent: View {
 
     @Environment(AppEnvironment.self) private var env
     @State private var openPicker: DetailPicker?
-    @State private var noteDraft = ""
     @State private var isCapturingTitle = false
     @State private var captureCancellationArmed = false
     @FocusState private var isTitleFocused: Bool
@@ -71,7 +70,6 @@ private struct TaskDetailContent: View {
             .padding(16)
         }
         .onAppear {
-            noteDraft = block.note
             adoptRequestedPicker()
             focusTitleIfNew(block)
         }
@@ -389,7 +387,10 @@ private struct TaskDetailContent: View {
         VStack(alignment: .leading, spacing: 5) {
             SectionLabel("Note")
 
-            TextEditor(text: $noteDraft)
+            TextEditor(text: Binding(
+                get: { block.note },
+                set: { env.store.setNote($0, for: block) }
+            ))
                 .focused($isNoteFocused)
                 .accessibilityLabel("Task note")
                 .onChange(of: isNoteFocused) { _, focused in
@@ -404,7 +405,7 @@ private struct TaskDetailContent: View {
                         .fill(Theme.chipFill.opacity(0.6))
                 )
                 .overlay(alignment: .topLeading) {
-                    if noteDraft.isEmpty {
+                    if block.note.isEmpty {
                         Text("Add extra context…")
                             .font(Theme.Font.body)
                             .foregroundStyle(Theme.tertiaryText)
@@ -412,9 +413,6 @@ private struct TaskDetailContent: View {
                             .padding(.vertical, 12)
                             .allowsHitTesting(false)
                     }
-                }
-                .onChange(of: noteDraft) { _, newValue in
-                    env.store.setNote(newValue, for: block)
                 }
         }
     }

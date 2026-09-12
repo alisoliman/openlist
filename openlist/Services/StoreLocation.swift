@@ -7,9 +7,9 @@ import Foundation
 
 /// Decides where the SwiftData store file lives.
 ///
-/// The store sits in the App Group container so the widget extension — which
-/// runs in its own sandbox — can open the same database read-only. If the
-/// group container is unavailable for any reason, the app falls back to its
+/// The app owns the store in its App Group; widgets consume only a JSON
+/// snapshot, and agent operations run inside the app. If the group container
+/// is unavailable for any reason, the app falls back to its
 /// private Application Support directory rather than failing to launch.
 nonisolated enum StoreLocation {
     /// Directory holding `Openlist.store`, creating it if needed.
