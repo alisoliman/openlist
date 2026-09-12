@@ -1,6 +1,8 @@
 # Xcode
 build/
 DerivedData/
+.build/
+.swiftpm/
 *.xcuserstate
 xcuserdata/
 *.moved-aside

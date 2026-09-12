@@ -16,6 +16,8 @@ else
     : "${NOTARY_ISSUER_ID:?Set NOTARY_ISSUER_ID}"
     NOTARY_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
 fi
+codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" \
+    "$APP/Contents/MacOS/openlist-mcp"
 for component in OpenlistWidget openlist; do
     bundle="$APP"
     [[ "$component" == openlist ]] || bundle="$APP/Contents/PlugIns/OpenlistWidget.appex"
@@ -39,7 +41,8 @@ xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=2 "$APP"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "dist/$STEM.zip"
-STAGING=$(mktemp -d)
+STAGING="build/release/dmg-staging.$$"
+mkdir "$STAGING"
 trap 'rm -rf "$STAGING"' EXIT
 ditto "$APP" "$STAGING/openlist.app"
 ln -s /Applications "$STAGING/Applications"

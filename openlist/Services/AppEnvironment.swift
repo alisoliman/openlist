@@ -44,11 +44,13 @@ final class AppEnvironment {
     let store: Store
     let navigator: Navigator
     let settings: AppSettings
+    let mcp: MCPIntegration
     var storageWarning: String?
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
     /// Retained so the notification centre keeps a live delegate.
     private let notificationDelegate = NotificationDelegate()
+    private var hasBootstrapped = false
 
     /// A command awaiting pickup by the focused document view.
     var pendingCommand: EditorCommand?
@@ -79,6 +81,7 @@ final class AppEnvironment {
         let settings = AppSettings()
         self.store = store
         self.settings = settings
+        mcp = MCPIntegration(store: store, settings: settings)
         navigator = Navigator()
         widgetPublisher = WidgetSnapshotPublisher(store: store)
 
@@ -117,6 +120,8 @@ final class AppEnvironment {
     /// First-launch setup: system list, default section, sample content and
     /// re-registration of any reminders that survived a relaunch.
     func bootstrap() {
+        guard !hasBootstrapped else { return }
+        hasBootstrapped = true
         store.bootstrap()
         if !settings.hasSeededSampleData {
             SampleData.seed(into: store)
@@ -126,6 +131,7 @@ final class AppEnvironment {
         store.refreshAllReminders()
         navigator.replace(with: .today)
         widgetPublisher.refreshNow()
+        mcp.start(storageAvailable: storageWarning == nil && store.persistenceError == nil)
     }
 }
 

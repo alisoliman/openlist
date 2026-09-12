@@ -346,8 +346,9 @@ extension Store {
         }
 
         // The subtree follows, so descendants need their list key updated too.
-        for descendant in BlockTree.descendants(of: block.id, in: source) {
+        for descendant in BlockTree.descendants(of: block.id, in: source) where descendant.listID != listID {
             descendant.listID = listID
+            descendant.touch()
         }
 
         block.touch()

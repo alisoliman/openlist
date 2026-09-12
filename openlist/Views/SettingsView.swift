@@ -20,6 +20,8 @@ struct SettingsView: View {
                 .tabItem { Label("Tasks", systemImage: "checkmark.circle") }
             LabelsSettingsTab()
                 .tabItem { Label("Labels", systemImage: "tag") }
+            MCPSettingsTab()
+                .tabItem { Label("AI Agents", systemImage: "terminal") }
             DataSettingsTab()
                 .tabItem { Label("Data", systemImage: "externaldrive") }
         }

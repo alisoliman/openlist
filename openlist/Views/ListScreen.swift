@@ -35,6 +35,9 @@ struct ListScreen: View {
                 DispatchQueue.main.async { isTitleFocused = true }
             }
         }
+        .onChange(of: list.summary) { old, new in
+            if old.isEmpty && !new.isEmpty { isSummaryVisible = true }
+        }
     }
 
     // MARK: - Header
