@@ -24,12 +24,15 @@ Downloads include `SHA256SUMS.txt`. To check both downloaded packages:
 shasum -a 256 -c SHA256SUMS.txt
 ```
 
-Your lists and attachments stay on your Mac; no account or server is required.
-Before installing an update, quit Openlist. Existing local data is preserved.
+Your lists and attachments are saved on your Mac. iCloud-enabled builds also sync
+them privately through your Apple Account; there is no separate Openlist account.
+You can keep working offline. Before installing an update, quit Openlist.
+Existing local data is preserved.
 
 ## Build from source
 
-Requires Xcode 26.5 or later and macOS 26.5 or later. CI uses Xcode 26.6.
+Requires Xcode 26.5 or later and macOS 26.5 or later. CI and release builds use
+`macos-latest` and the newest stable Xcode installed on that Apple Silicon image.
 
 ```sh
 git clone https://github.com/alisoliman/openlist.git
@@ -101,11 +104,52 @@ JSON snapshot into the shared App Group container and reloads timelines on save;
 the widget never opens the SwiftData store, which keeps cross-process access out
 of the picture entirely.
 
+### iCloud
+
+Provisioned builds automatically sync lists, nested tasks, notes, formatting,
+labels, sections, activity, images and attachments with your private iCloud
+database. Use the same Apple Account on your Macs and enable Openlist in iCloud
+settings. **Settings > iCloud** shows account availability, transfer activity,
+the last upload/download in this session, and actionable errors.
+
+The existing SQLite store stays in place. The first sync uploads existing local
+content, and an additive migration copies imported files into synced binary
+attributes without removing the originals. Downloads can recreate local files
+for opening, duplication and portable Markdown export. Imported attachments are
+snapshots: reattach a file to sync changes made to it in another application.
+
+Transfers run on Apple's schedule, not immediately. Offline edits are saved
+locally and sync when iCloud becomes available. macOS can postpone discretionary
+CloudKit transfers on low battery, even while charging; connect to power and
+allow the battery to recover for the initial sync.
+CloudKit resolves record conflicts; simultaneous edits to the same field can
+replace one another. Open editors reflect incoming formatting, and untouched
+title drafts follow remote changes without overwriting them on blur.
+In-progress title edits are kept until committed.
+System Inboxes and default sections created independently on different Macs converge,
+keeping the oldest record and retaining aliases so later-arriving tasks still
+find their destination. A fresh Mac's defaults do not replace existing custom
+Inbox and section settings.
+Ordinary user-created lists and sections are never merged by name. Incomplete
+parent downloads and cycles from concurrent moves remain visible in a stable
+outline without rewriting their stored parent links.
+
+**Deletions sync too**, including clearing activity and resetting all data.
+iCloud sync is not a backup; export important lists separately. App-wide
+preferences remain per-Mac, and reminders and widget snapshots are refreshed
+locally after imports. Widgets do not run their own sync engine.
+
+New installs start without sample lists to avoid uploading a fresh set of demo
+content from every Mac. Existing content is not removed. Unsigned builds and
+isolated review fixtures explicitly use local-only storage. If a database cannot
+be opened, the app reports the failure rather than opening a disposable empty
+database.
+
 ### Also
 
 Sidebar sections (create, rename, collapse, drag lists between them), list icons
 and colours, per-list sort order, Markdown export, light/dark/system appearance,
-Dock badge, and full local-first storage.
+Dock badge, and local-first storage with native SwiftData/CloudKit sync.
 
 ### AI clients through MCP
 
@@ -134,7 +178,7 @@ priority.
 
 ## Deliberately excluded
 
-Openlist focuses on personal, local workflows. These features are outside its current scope:
+Openlist focuses on personal, local-first workflows. These features are outside its current scope:
 
 | Feature | Why |
 |---|---|
@@ -154,7 +198,8 @@ openlist/
                ActivityEvent, Recurrence
   Services/    Store (+Blocks, +Tasks), BlockTree, DateParser,
                RecurrenceEngine, RichTextCodec, MediaStore, MarkdownExporter,
-               NotificationService, QuickCaptureHotKey, WidgetSnapshotPublisher
+               NotificationService, QuickCaptureHotKey, WidgetSnapshotPublisher,
+               ICloudConfiguration, ICloudSyncMonitor, ICloudSyncState
   Editor/      BlockTextView (AppKit-backed), DocumentView, BlockRowView,
                SlashMenuView, MarkdownInputRules, BlockDragAndDrop
   Views/       RootView, SidebarView, screens, pickers, palette, settings
@@ -164,7 +209,7 @@ OpenlistWidget/  WidgetKit extension
 MCPTransport/   Local Swift package: authenticated MCP/HTTP transport
 OpenlistMCPHelper/  Bundled native stdio-to-localhost launcher
 Config/          entitlements and the extension Info.plist
-Tools/           LogicChecks/ and TextChecks/, widget-target generator
+Tools/           regression suites, live CloudSyncChecks, release tooling
 ```
 
 ### One store, one context
@@ -203,6 +248,47 @@ across a 53-week year.
 A second suite compiles `RichTextCodec` itself and checks the prefix/suffix
 splice that lets a plain text field retitle a task without dropping its inline
 styling — including typing *inside* a bold word.
+
+The iCloud suite writes a pre-sync SQLite schema in one process and migrates and
+reopens it in separate processes. It checks CloudKit schema constraints, media
+backfill and recovery, downloaded-file export/duplication/undo, system-record
+convergence and out-of-order references, unavailable accounts, operation errors,
+remote-change notifications, and preservation of unreadable stores. These
+regressions are offline and do not access an Apple Account.
+
+Live development-container verification is separate and requires a
+development-signed app with an embedded iCloud provisioning profile:
+
+```sh
+./Tools/run-cloud-sync-checks.sh /path/to/Debug/openlist.app --account-only
+./Tools/run-cloud-sync-checks.sh /path/to/Debug/openlist.app --connection
+./Tools/run-cloud-sync-checks.sh /path/to/Debug/openlist.app --initialize-schema
+./Tools/run-cloud-sync-checks.sh /path/to/Debug/openlist.app --run
+```
+
+Connect the Mac to AC power and let it recover from low battery before running
+the live checks. A diagnostic deadline is not proof of a failed migration:
+macOS may defer the underlying
+background network operation without sending it while battery power is low.
+
+The live check runs a headless native app with independent stores in an isolated
+App Group subdirectory. Each replica runs in its own process, matching separate
+app launches rather than concurrent stacks in one app. It waits for actual server records, compares imported
+content and 2 MiB assets, and checks remote edits and deletion using synthetic
+UUID-tagged fixtures. It never opens the personal database and refuses Production
+signatures. Transfers are asynchronous and a one-Mac check cannot establish
+cross-device push delivery; test the UI on two physical Macs before release.
+Each transfer has a ten-minute diagnostic deadline and completed phases are
+checkpointed. The verified return import is checkpointed before deleting local
+fixtures, so a deletion timeout can be resumed without waiting for a removed task.
+Use `--resume /path/to/OpenlistCloudCheck-UUID` to continue a
+retained fixture without creating new test data.
+Production schema deployment and Developer ID provisioning
+are documented in [release maintenance](CONTRIBUTING.md#releases).
+If a network failure prevents confirming fixture deletion, rerun with
+`--cleanup /path/to/the/reported/OpenlistCloudCheck-UUID` once iCloud is
+reachable. Recovery reads record identifiers only, deletes only that fixture's
+UUIDs, confirms their absence, and removes its isolated local stores.
 
 MCP checks exercise the official protocol client, authentication and loopback
 boundaries, the bundled stdio bridge, and real Store operations against isolated

@@ -35,8 +35,8 @@ struct TaskDetailPanel: View {
     }
 }
 
-/// Each inspected task owns its capture state and focus. Changing the task starts a
-/// fresh editor, so a previous note or pending capture cannot leak into it.
+/// Each inspected task owns its focus and pending capture. Note text binds to
+/// the model so an open inspector reflects both iCloud and MCP changes.
 private struct TaskDetailContent: View {
     let block: Block
     private let taskID: UUID
@@ -531,7 +531,8 @@ private struct TaskDetailContent: View {
                 displayName: media.displayName,
                 contentType: media.contentType,
                 byteCount: media.byteCount,
-                sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep
+                sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep,
+                contentData: media.data
             )
             env.store.context.insert(attachment)
             env.store.save()
@@ -634,7 +635,7 @@ struct AttachmentRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if attachment.isImage, let image = MediaStore.shared.image(named: attachment.filename) {
+            if attachment.isImage, let image = MediaStore.shared.image(named: attachment.filename, data: attachment.contentData) {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -681,11 +682,12 @@ struct AttachmentRow: View {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture(count: 2) {
-            if !NSWorkspace.shared.open(attachment.url) {
-                MarkdownExporter.presentError(
-                    CocoaError(.fileReadUnknown),
-                    operation: "Open attachment \(attachment.displayName)"
-                )
+            do {
+                guard NSWorkspace.shared.open(try attachment.fileURL()) else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+            } catch {
+                MarkdownExporter.presentError(error, operation: "Open attachment \(attachment.displayName)")
             }
         }
     }

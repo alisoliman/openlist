@@ -10,10 +10,10 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(AppEnvironment.self) private var env
 
-    @Query(sort: [SortDescriptor(\SidebarSection.sortIndex)])
+    @Query(filter: #Predicate<SidebarSection> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\SidebarSection.sortIndex)])
     private var sections: [SidebarSection]
 
-    @Query(filter: #Predicate<TaskList> { !$0.isArchived }, sort: [SortDescriptor(\TaskList.sidebarIndex)])
+    @Query(filter: #Predicate<TaskList> { !$0.isArchived && $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sidebarIndex)])
     private var lists: [TaskList]
 
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
@@ -23,11 +23,11 @@ struct SidebarView: View {
     private var labels: [TaskLabel]
 
     @State private var renamingSectionID: UUID?
-    @State private var renamingText = ""
+    @State private var sectionNameDraft = SyncedTextDraft()
     @FocusState private var isRenamingFocused: Bool
     @State private var dropTargetSectionID: UUID?
     @State private var renamingListID: UUID?
-    @State private var listNameDraft = ""
+    @State private var listNameDraft = SyncedTextDraft()
 
     var body: some View {
         // The sidebar is always on screen and re-renders on every task change,
@@ -54,15 +54,19 @@ struct SidebarView: View {
             get: { renamingListID != nil },
             set: { if !$0 { renamingListID = nil } }
         )) {
-            TextField("List name", text: $listNameDraft)
+            TextField("List name", text: $listNameDraft.value)
             Button("Cancel", role: .cancel) { renamingListID = nil }
             Button("Rename") {
-                if let list = env.store.list(id: renamingListID) {
-                    env.store.rename(list, to: listNameDraft.trimmingCharacters(in: .whitespacesAndNewlines))
+                if let list = env.store.list(id: renamingListID),
+                   let title = listNameDraft.editedValue(normalize: { $0.trimmingCharacters(in: .whitespacesAndNewlines) }) {
+                    env.store.rename(list, to: title)
                 }
                 renamingListID = nil
             }
             .keyboardShortcut(.defaultAction)
+        }
+        .onChange(of: env.store.list(id: renamingListID)?.title) { _, title in
+            if let title { listNameDraft.receive(title) }
         }
     }
 
@@ -180,7 +184,7 @@ struct SidebarView: View {
 
         VStack(alignment: .leading, spacing: 1) {
             if renamingSectionID == section.id {
-                TextField("Section name", text: $renamingText)
+                TextField("Section name", text: $sectionNameDraft.value)
                     .textFieldStyle(.plain)
                     .font(Theme.Font.sectionHeader)
                     .textCase(.uppercase)
@@ -206,7 +210,7 @@ struct SidebarView: View {
                         env.store.setCollapsed(!section.isCollapsed, for: section)
                     },
                     onRename: {
-                        renamingText = section.title
+                        sectionNameDraft.reset(to: section.title)
                         renamingSectionID = section.id
                     },
                     onDelete: { env.store.deleteSection(section) },
@@ -232,6 +236,9 @@ struct SidebarView: View {
             }
         }
         .padding(.bottom, 10)
+        .onChange(of: section.title) { _, title in
+            if renamingSectionID == section.id { sectionNameDraft.receive(title) }
+        }
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                 .fill(dropTargetSectionID == section.id ? Theme.accent.opacity(0.1) : Color.clear)
@@ -254,7 +261,7 @@ struct SidebarView: View {
             isSelected: env.navigator.route == .list(list.id),
             onOpen: { env.navigator.go(to: .list(list.id)) },
             onRename: {
-                listNameDraft = list.title
+                listNameDraft.reset(to: list.title)
                 renamingListID = list.id
             },
             onUnpin: { env.store.setPinned(false, for: list) },
@@ -272,7 +279,10 @@ struct SidebarView: View {
     }
 
     private func commitRename(_ section: SidebarSection) {
-        env.store.rename(section, to: renamingText)
+        if !section.isDeleted, section.modelContext != nil,
+           let title = sectionNameDraft.editedValue(normalize: { $0.trimmingCharacters(in: .whitespacesAndNewlines) }) {
+            env.store.rename(section, to: title)
+        }
         renamingSectionID = nil
     }
 

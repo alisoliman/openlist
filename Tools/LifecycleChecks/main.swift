@@ -149,7 +149,7 @@ if phase == "prepare" {
     // destructive confirmation and navigation are covered separately by UI QA.
     for list in store.allLists(includeArchived: true) where !list.isSystemInbox { store.deleteList(list) }
     if let inbox = store.inboxList() {
-        for block in store.blocks(inList: inbox.id) where block.parentID == nil { store.deleteBlock(block) }
+        store.deleteBlocks(store.blocks(inList: inbox.id))
     }
     for label in store.allLabels() { store.context.delete(label) }
     store.clearActivity()

@@ -12,7 +12,7 @@ struct SearchView: View {
     @Environment(\.dismiss) private var dismiss
 
     @Query private var blocks: [Block]
-    @Query private var lists: [TaskList]
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }) private var lists: [TaskList]
 
     @State private var query = ""
     @State private var scope: Scope = .everything

@@ -10,95 +10,102 @@ import SwiftUI
 
 @main
 struct openlistApp: App {
-    private let container: ModelContainer
-    @State private var env: AppEnvironment
+    @NSApplicationDelegateAdaptor(OpenlistApplicationDelegate.self) private var applicationDelegate
+    private let container: ModelContainer?
+    private let startupError: String?
+    @State private var env: AppEnvironment?
 
     init() {
-        let schema = Schema([
-            TaskList.self,
-            Block.self,
-            SidebarSection.self,
-            TaskLabel.self,
-            Attachment.self,
-            ActivityEvent.self,
-        ])
-        // Only the app opens this store. Widgets read a published snapshot,
-        // and MCP calls use the app's own context.
-        let configuration = ModelConfiguration(schema: schema, url: StoreLocation.storeURL)
-
-        let container: ModelContainer
-        var storageWarning: String?
+        // Observe before opening the store so early CloudKit setup errors are
+        // visible. Review/unsigned builds explicitly opt out, not into another DB.
+        let reason = ICloudConfiguration.unavailableReason
+        let sync = ICloudSyncMonitor(unavailableReason: reason)
         do {
-            container = try ModelContainer(for: schema, configurations: [configuration])
-        } catch {
-            // A schema the store cannot migrate would otherwise brick launch;
-            // fall back to memory so the app still opens and can be reset.
-            container = try! ModelContainer(
-                for: schema,
-                configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
-            )
-            storageWarning = "Openlist could not open its saved data. This session is temporary: changes will be lost when you quit. Export any new work before closing. Your existing store has been left intact."
-        }
-        self.container = container
+            let loaded = try AppPersistence.open(at: StoreLocation.storeURL, iCloudUnavailableReason: reason)
+            container = loaded.container
+            startupError = nil
+            sync.state.unavailableReason = loaded.iCloudUnavailableReason
+            if reason == nil { sync.startupWarning = loaded.iCloudUnavailableReason }
 
-        // The store MUST share the container's main context. `@Query` hands
-        // views objects registered there, and those objects are passed straight
-        // into store mutations — with a second context the edits would land in
-        // mainContext while `Store.save()` checked its own (always clean) one,
-        // so nothing would ever persist or refresh the widget.
-        let context = container.mainContext
-        context.autosaveEnabled = true
-        _env = State(initialValue: AppEnvironment(context: context))
-        env.storageWarning = storageWarning
+            // Store and @Query must share the main context: views pass their
+            // models into mutations, so saving a second context loses edits.
+            let context = loaded.container.mainContext
+            context.autosaveEnabled = true
+            let environment = AppEnvironment(context: context, sync: sync)
+            _env = State(initialValue: environment)
+            // Menu-bar-only launches must also migrate files and start sync.
+            applicationDelegate.onDidLaunch = { [weak environment] in environment?.bootstrap() }
+        } catch {
+            container = nil
+            _env = State(initialValue: nil)
+            startupError = error.localizedDescription
+        }
+        applicationDelegate.sync = sync
     }
 
     var body: some Scene {
         WindowGroup(id: WindowID.main) {
-            RootView()
-                .environment(env)
-                .modelContainer(container)
-                .preferredColorScheme(env.settings.appearance.colorScheme)
-                // Publishing the calendar is what makes "Week starts on" reach
-                // every date picker and formatter, not just the one grid that
-                // asked for it explicitly.
-                .environment(\.calendar, env.settings.calendar)
-                .task { env.bootstrap() }
+            if let env, let container {
+                RootView()
+                    .environment(env)
+                    .modelContainer(container)
+                    .preferredColorScheme(env.settings.appearance.colorScheme)
+                    .environment(\.calendar, env.settings.calendar)
+                    .task { env.bootstrap() }
+            } else {
+                ContentUnavailableView {
+                    Label("Your saved data could not be opened", systemImage: "externaldrive.badge.exclamationmark")
+                } description: {
+                    Text("Your existing database has not been replaced. Check available disk space and file permissions, then restart Openlist.\n\n\(startupError ?? "")")
+                        .textSelection(.enabled)
+                } actions: {
+                    Button("Quit Openlist") { NSApplication.shared.terminate(nil) }
+                }
+            }
         }
         .defaultSize(width: 1_180, height: 780)
-        .commands { AppCommands(env: env) }
+        .commands {
+            if let env { AppCommands(env: env) }
+        }
 
         Window("Quick Add", id: WindowID.quickAdd) {
-            QuickAddWindowView()
-                .environment(env)
-                .modelContainer(container)
-                .environment(\.calendar, env.settings.calendar)
-                .preferredColorScheme(env.settings.appearance.colorScheme)
+            if let env, let container {
+                QuickAddWindowView()
+                    .environment(env)
+                    .modelContainer(container)
+                    .environment(\.calendar, env.settings.calendar)
+                    .preferredColorScheme(env.settings.appearance.colorScheme)
+            }
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
         .defaultPosition(.top)
 
         Settings {
-            SettingsView()
-                .environment(env)
-                .modelContainer(container)
-                .environment(\.calendar, env.settings.calendar)
-                .preferredColorScheme(env.settings.appearance.colorScheme)
+            if let env, let container {
+                SettingsView()
+                    .environment(env)
+                    .modelContainer(container)
+                    .environment(\.calendar, env.settings.calendar)
+                    .preferredColorScheme(env.settings.appearance.colorScheme)
+            }
         }
 
         MenuBarExtra("Openlist", systemImage: "checkmark.circle", isInserted: menuBarBinding) {
-            MenuBarView()
-                .environment(env)
-                .modelContainer(container)
-                .environment(\.calendar, env.settings.calendar)
+            if let env, let container {
+                MenuBarView()
+                    .environment(env)
+                    .modelContainer(container)
+                    .environment(\.calendar, env.settings.calendar)
+            }
         }
         .menuBarExtraStyle(.window)
     }
 
     private var menuBarBinding: Binding<Bool> {
         Binding(
-            get: { env.settings.showsMenuBarExtra },
-            set: { env.settings.showsMenuBarExtra = $0 }
+            get: { env?.settings.showsMenuBarExtra ?? false },
+            set: { env?.settings.showsMenuBarExtra = $0 }
         )
     }
 }

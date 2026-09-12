@@ -5,30 +5,41 @@ import UniformTypeIdentifiers
 /// Renders list documents with stored formatting and portable media references.
 enum MarkdownExporter {
     @MainActor
-    static func markdown(for list: TaskList, store: Store) -> String {
+    static func markdown(for list: TaskList, store: Store) throws -> String {
         // Clipboard export cannot bundle files, so its media links point to the
         // actual local files instead of unusable relative storage filenames.
-        render(list: list, store: store) { MediaStore.shared.url(for: $0).absoluteString }
+        let paths = Dictionary(try assets(for: list, store: store).map { ($0.key, $0.source.absoluteString) },
+                               uniquingKeysWith: { first, _ in first })
+        return render(list: list, store: store) { paths[$0] ?? $0 }
     }
 
     @MainActor
     static func write(list: TaskList, store: Store, to destination: URL) throws {
+        try MarkdownExportPackage.write(to: destination, assets: assets(for: list, store: store)) { paths in
+            render(list: list, store: store) { paths[$0] ?? $0 }
+        }
+    }
+
+    @MainActor
+    private static func assets(for list: TaskList, store: Store) throws -> [MarkdownExportPackage.Asset] {
         var assets: [MarkdownExportPackage.Asset] = []
         for block in store.blocks(inList: list.id) {
             if let filename = block.mediaFilename {
-                assets.append(.init(key: filename, source: MediaStore.shared.url(for: filename), preferredFilename: filename))
+                assets.append(.init(
+                    key: filename,
+                    source: try MediaStore.shared.materialize(filename: filename, data: block.mediaData),
+                    preferredFilename: filename
+                ))
             }
             for attachment in store.attachments(for: block.id) {
                 assets.append(.init(
                     key: attachment.filename,
-                    source: attachment.url,
+                    source: try attachment.fileURL(),
                     preferredFilename: attachment.displayName.isEmpty ? attachment.filename : attachment.displayName
                 ))
             }
         }
-        try MarkdownExportPackage.write(to: destination, assets: assets) { paths in
-            render(list: list, store: store) { paths[$0] ?? $0 }
-        }
+        return assets
     }
 
     @MainActor
@@ -160,8 +171,13 @@ enum MarkdownExporter {
 
     @MainActor
     static func copyToPasteboard(list: TaskList, store: Store) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(markdown(for: list, store: store), forType: .string)
+        do {
+            let content = try markdown(for: list, store: store)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(content, forType: .string)
+        } catch {
+            presentError(error, operation: "Copy list as Markdown")
+        }
     }
 }

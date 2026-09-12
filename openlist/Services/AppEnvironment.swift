@@ -44,8 +44,8 @@ final class AppEnvironment {
     let store: Store
     let navigator: Navigator
     let settings: AppSettings
+    let sync: ICloudSyncMonitor
     let mcp: MCPIntegration
-    var storageWarning: String?
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
     /// Retained so the notification centre keeps a live delegate.
@@ -76,11 +76,12 @@ final class AppEnvironment {
     /// tasks and from a new task the user has already given meaningful details.
     @ObservationIgnored private var pendingTitleCaptures: [UUID: PendingTitleCapture] = [:]
 
-    init(context: ModelContext) {
+    init(context: ModelContext, sync: ICloudSyncMonitor) {
         let store = Store(context: context)
         let settings = AppSettings()
         self.store = store
         self.settings = settings
+        self.sync = sync
         mcp = MCPIntegration(store: store, settings: settings)
         navigator = Navigator()
         widgetPublisher = WidgetSnapshotPublisher(store: store)
@@ -92,6 +93,7 @@ final class AppEnvironment {
             guard settings?.playsCompletionSound == true else { return }
             NSSound(named: "Tink")?.play()
         }
+        sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
     }
 
     /// Wires notification handling once the environment is fully built.
@@ -117,21 +119,45 @@ final class AppEnvironment {
         return pendingCommand
     }
 
-    /// First-launch setup: system list, default section, sample content and
-    /// re-registration of any reminders that survived a relaunch.
+    /// Process-wide setup, including menu-bar-only launches. Samples are limited
+    /// to isolated review fixtures so another Mac cannot duplicate demo content.
     func bootstrap() {
         guard !hasBootstrapped else { return }
         hasBootstrapped = true
         store.bootstrap()
-        if !settings.hasSeededSampleData {
+        if sync.state.isEnabled {
+            store.prepareForSync()
+        } else if ReviewSession.identifier != nil, !settings.hasSeededSampleData,
+                  store.allLists(includeArchived: true).allSatisfy(\.isSystemInbox),
+                  (try? store.context.fetchCount(FetchDescriptor<Block>())) == 0 {
             SampleData.seed(into: store)
-            settings.hasSeededSampleData = true
+            if store.persistenceError == nil { settings.hasSeededSampleData = true }
         }
         installNotificationDelegate()
         store.refreshAllReminders()
         navigator.replace(with: .today)
         widgetPublisher.refreshNow()
-        mcp.start(storageAvailable: storageWarning == nil && store.persistenceError == nil)
+        sync.checkAccount()
+        if sync.state.isEnabled { NSApplication.shared.registerForRemoteNotifications() }
+        mcp.start(storageAvailable: store.persistenceError == nil)
+    }
+
+    private func refreshAfterRemoteChange() {
+        guard hasBootstrapped else { return }
+        store.context.processPendingChanges()
+        store.prepareForSync()
+        store.refreshAllReminders()
+        widgetPublisher.refreshNow()
+        if let taskID = navigator.openTaskID, store.block(id: taskID) == nil {
+            navigator.closeTask()
+        }
+        if case let .list(id) = navigator.route {
+            if let list = store.list(id: id) {
+                if list.id != id { navigator.replace(with: .list(list.id)) }
+            } else {
+                navigator.replace(with: .today)
+            }
+        }
     }
 }
 

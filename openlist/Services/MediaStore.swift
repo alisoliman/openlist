@@ -42,10 +42,11 @@ nonisolated final class MediaStore: @unchecked Sendable {
         let ext = source.pathExtension.isEmpty ? "dat" : source.pathExtension
         let filename = "\(UUID().uuidString).\(ext)"
         let destination = url(for: filename)
-        try FileManager.default.copyItem(at: source, to: destination)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try Data(contentsOf: source)
+        try data.write(to: destination, options: .atomic)
 
         let values = try? destination.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey])
-        let size = values?.fileSize ?? 0
         let type = values?.contentType ?? UTType(filenameExtension: ext) ?? .data
 
         var pixelSize = CGSize.zero
@@ -57,8 +58,9 @@ nonisolated final class MediaStore: @unchecked Sendable {
             filename: filename,
             displayName: source.lastPathComponent,
             contentType: type.preferredMIMEType ?? "application/octet-stream",
-            byteCount: size,
-            pixelSize: pixelSize
+            byteCount: data.count,
+            pixelSize: pixelSize,
+            data: data
         )
     }
 
@@ -72,10 +74,39 @@ nonisolated final class MediaStore: @unchecked Sendable {
         queue.sync { try? Data(contentsOf: url(for: filename)) }
     }
 
+    func readFile(filename: String) throws -> Data {
+        try queue.sync { try Data(contentsOf: checkedURL(for: filename)) }
+    }
+
+    /// Recreates a downloaded asset's local cache on demand. Cached files are
+    /// immutable imports; opening an external editor does not update the record.
+    func materialize(filename: String, data: Data?) throws -> URL {
+        try queue.sync {
+            let destination = try checkedURL(for: filename)
+            if let data {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                if (try? Data(contentsOf: destination)) != data {
+                    try data.write(to: destination, options: .atomic)
+                }
+            } else if !FileManager.default.fileExists(atPath: destination.path) {
+                throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: destination.path])
+            }
+            return destination
+        }
+    }
+
+    private func checkedURL(for filename: String) throws -> URL {
+        guard !filename.isEmpty, filename != ".", filename != "..",
+              (filename as NSString).lastPathComponent == filename else {
+            throw CocoaError(.fileReadInvalidFileName)
+        }
+        return url(for: filename)
+    }
+
     func restoreFile(_ data: Data, filename: String) throws {
         try queue.sync {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try data.write(to: url(for: filename), options: .atomic)
+            try data.write(to: checkedURL(for: filename), options: .atomic)
         }
     }
 
@@ -97,8 +128,9 @@ nonisolated final class MediaStore: @unchecked Sendable {
         }
     }
 
-    func image(named filename: String) -> NSImage? {
-        NSImage(contentsOf: url(for: filename))
+    func image(named filename: String, data: Data? = nil) -> NSImage? {
+        if let data { return NSImage(data: data) }
+        return NSImage(contentsOf: url(for: filename))
     }
 
     private static func pixelSize(of image: NSImage) -> CGSize {
@@ -115,4 +147,5 @@ struct ImportedMedia: Sendable {
     var contentType: String
     var byteCount: Int
     var pixelSize: CGSize
+    var data: Data
 }

@@ -20,12 +20,63 @@ struct SettingsView: View {
                 .tabItem { Label("Tasks", systemImage: "checkmark.circle") }
             LabelsSettingsTab()
                 .tabItem { Label("Labels", systemImage: "tag") }
+            ICloudSettingsTab()
+                .tabItem { Label("iCloud", systemImage: "icloud") }
             MCPSettingsTab()
                 .tabItem { Label("AI Agents", systemImage: "terminal") }
             DataSettingsTab()
                 .tabItem { Label("Data", systemImage: "externaldrive") }
         }
         .frame(width: 500, height: 420)
+    }
+}
+
+struct ICloudSettingsTab: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        Form {
+            Section("Sync with iCloud") {
+                Label(env.sync.state.title, systemImage: env.sync.state.isEnabled ? "icloud" : "icloud.slash")
+                    .font(.headline)
+                Text(env.sync.state.detail)
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(Theme.secondaryText)
+
+                if let date = env.sync.state.lastUpload {
+                    LabeledContent("Last upload", value: date.formatted(date: .abbreviated, time: .shortened))
+                }
+                if let date = env.sync.state.lastDownload {
+                    LabeledContent("Last download", value: date.formatted(date: .abbreviated, time: .shortened))
+                }
+
+                Button("Check iCloud status") {
+                    env.store.prepareForSync()
+                    env.sync.checkAccount()
+                    NSApplication.shared.registerForRemoteNotifications()
+                }
+                .disabled(!env.sync.state.isEnabled)
+            }
+            if let error = env.store.syncPreparationError {
+                Section("Files need attention") {
+                    Text(error).font(Theme.Font.metadata)
+                }
+            }
+            if let error = env.sync.pushRegistrationError {
+                Section("Background updates") {
+                    Text(error).font(Theme.Font.metadata)
+                }
+            }
+            Section("Local-first storage") {
+                Text("Use the same Apple Account on each Mac. Transfers run automatically on Apple's schedule, not immediately. Deletions sync too.")
+                Text("macOS can postpone background transfers on low battery, even while charging. Keep this Mac connected to power until its battery recovers if the initial sync is waiting.")
+                Text("Appearance, shortcuts and other app preferences stay on each Mac. Attachments are imported copies; reattach a file to sync edits made in another app.")
+            }
+            .font(Theme.Font.metadata)
+            .foregroundStyle(Theme.secondaryText)
+        }
+        .formStyle(.grouped)
+        .task { env.sync.checkAccount() }
     }
 }
 
@@ -208,7 +259,7 @@ struct LabelsSettingsTab: View {
 struct LabelSettingsRow: View {
     let label: TaskLabel
     @Environment(AppEnvironment.self) private var env
-    @State private var draftName = ""
+    @State private var nameDraft = SyncedTextDraft()
     @FocusState private var isEditing: Bool
 
     var body: some View {
@@ -231,13 +282,17 @@ struct LabelSettingsRow: View {
             .accessibilityValue(label.accent.title)
             .help("Change color for \(label.name)")
 
-            TextField("Name", text: $draftName)
+            TextField("Name", text: $nameDraft.value)
                 .textFieldStyle(.plain)
                 .focused($isEditing)
                 .accessibilityLabel("Label name")
                 .onSubmit(commit)
                 .onChange(of: isEditing) { _, editing in
-                    if editing { draftName = label.name } else { commit() }
+                    if editing {
+                        nameDraft.reset(to: label.name)
+                    } else {
+                        commit()
+                    }
                 }
 
             Spacer()
@@ -258,16 +313,23 @@ struct LabelSettingsRow: View {
             .accessibilityLabel("Delete label \(label.name)")
             .help("Delete label \(label.name)")
         }
-        .onAppear { draftName = label.name }
+        .onAppear {
+            nameDraft.reset(to: label.name)
+        }
+        .onChange(of: label.name) { _, name in
+            nameDraft.receive(name)
+        }
     }
 
     private func commit() {
-        let trimmed = TaskLabel.normalize(draftName)
-        guard !trimmed.isEmpty, trimmed != label.name else {
-            draftName = label.name
+        guard !label.isDeleted, label.modelContext != nil else { return }
+        guard let trimmed = nameDraft.editedValue(normalize: TaskLabel.normalize),
+              !trimmed.isEmpty, trimmed != label.name else {
+            nameDraft.reset(to: label.name)
             return
         }
         env.store.renameLabel(label, to: trimmed)
+        nameDraft.reset(to: label.name)
     }
 }
 
@@ -275,7 +337,7 @@ struct DataSettingsTab: View {
     @Environment(AppEnvironment.self) private var env
 
     @Query private var blocks: [Block]
-    @Query private var lists: [TaskList]
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }) private var lists: [TaskList]
 
     @State private var isConfirmingReset = false
 
@@ -299,6 +361,9 @@ struct DataSettingsTab: View {
                 Button("Clear the Updates history") {
                     env.store.clearActivity()
                 }
+                Text("Clears history on this Mac and, when connected, in iCloud.")
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(Theme.tertiaryText)
             }
 
             Section {
@@ -308,7 +373,7 @@ struct DataSettingsTab: View {
             } header: {
                 Text("Reset")
             } footer: {
-                Text("Removes all lists, tasks and labels from this Mac. This cannot be undone.")
+                Text("Removes all lists, tasks and labels. With iCloud enabled, this also deletes them on your other Macs. This cannot be undone.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }
@@ -318,7 +383,7 @@ struct DataSettingsTab: View {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) { reset() }
         } message: {
-            Text("All lists, tasks, notes and labels will be permanently removed.")
+            Text("All lists, tasks, notes and labels will be permanently removed. These deletions also sync to iCloud and your other Macs when connected.")
         }
     }
 
@@ -354,9 +419,7 @@ struct DataSettingsTab: View {
         }
         if let inbox = env.store.inboxList() {
             // Through the store so attachment rows and their files go too.
-            for block in env.store.blocks(inList: inbox.id) where block.parentID == nil {
-                env.store.deleteBlock(block)
-            }
+            env.store.deleteBlocks(env.store.blocks(inList: inbox.id))
         }
         for label in env.store.allLabels() {
             env.store.context.delete(label)

@@ -376,6 +376,24 @@ if phase == "prepare" {
     await integration.waitForTransition()
     let reloaded = AppSettings(defaults: defaults)
     check(!reloaded.mcpEnabled && reloaded.mcpAllowsWrites && reloaded.mcpPort == Int(port), "connection preferences persist across settings instances")
+    let alias = TaskList(title: "Another Mac's Inbox", isSystemInbox: true)
+    alias.createdAt = inbox.createdAt.addingTimeInterval(1000)
+    store.context.insert(alias)
+    try store.reconcileSystemRecords()
+    store.save()
+    let chainedAlias = TaskList(title: "Late Inbox alias", isSystemInbox: true)
+    chainedAlias.mergedIntoID = alias.id
+    store.context.insert(chainedAlias)
+    store.save()
+    let visibleLists = try call(.listLists, ["include_archived": true])["lists"]!.arrayValue!
+    check(visibleLists.filter { $0.objectValue?["is_inbox"] == true }.count == 1, "MCP discovery hides retained iCloud Inbox aliases")
+    check(id(try call(.getList, ["list_id": uuid(chainedAlias.id)]), "list") == inbox.id, "A cached MCP list ID resolves through chained Inbox aliases")
+    let aliasedCaptureID = id(try call(.createTask, [
+        "title": "Aliased Inbox capture", "list_id": uuid(chainedAlias.id),
+    ]), "task")
+    check(store.block(id: aliasedCaptureID)?.listID == inbox.id, "MCP writes through a stale Inbox ID use canonical ownership")
+    let aliasedTasks = try call(.listTasks, ["list_id": uuid(chainedAlias.id)])["tasks"]!.arrayValue!
+    check(aliasedTasks.contains { $0.objectValue?["id"] == uuid(aliasedCaptureID) }, "MCP task filtering resolves stale Inbox IDs before matching canonical tasks")
     check(store.persistenceError == nil, "MCP writes commit to the isolated disk store")
 } else if phase == "reopen" {
     let all = try store.context.fetch(FetchDescriptor<Block>())
@@ -384,6 +402,7 @@ if phase == "prepare" {
     let task = all.first { $0.note == "Persistent fixture note" }!
     check(task.text == "User's pending title" && task.recurrence?.frequency == .daily, "rollback and recurrence remain durable")
     check(all.contains { $0.text == "Nested context" && $0.listID == task.listID }, "subtree move remains durable")
+    check(all.contains { $0.text == "Aliased Inbox capture" && $0.listID == store.inboxList()?.id }, "MCP captures through iCloud aliases remain canonical after reopening")
     check(store.allLabels().count == 1, "label creation remains durable")
 
     let readonly = try ModelContainer(for: schema, configurations: [

@@ -9,17 +9,21 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
-    runs-on: macos-26
+    runs-on: macos-latest
     timeout-minutes: 60
     permissions:
       contents: write
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+      - name: Toolchain
+        run: xcodebuild -version && swift --version && uname -m
       - name: Validate release tag and source
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
@@ -37,17 +41,20 @@ jobs:
           CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           NOTARY_KEY: ${{ secrets.NOTARY_API_KEY_BASE64 }}
+          APP_PROFILE: ${{ secrets.MACOS_APP_PROVISION_PROFILE_BASE64 }}
         run: |
           set -euo pipefail
           : "${CERTIFICATE:?Missing MACOS_CERTIFICATE_P12_BASE64}"
           : "${CERTIFICATE_PASSWORD:?Missing MACOS_CERTIFICATE_PASSWORD}"
           : "${NOTARY_KEY:?Missing NOTARY_API_KEY_BASE64}"
+          : "${APP_PROFILE:?Missing MACOS_APP_PROVISION_PROFILE_BASE64}"
           umask 077
           KEYCHAIN="$RUNNER_TEMP/openlist-signing.keychain-db"
           PASSWORD=$(openssl rand -hex 32)
           echo "::add-mask::$PASSWORD"
           printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           printf '%s' "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          printf '%s' "$APP_PROFILE" | base64 --decode > "$RUNNER_TEMP/openlist.provisionprofile"
           security create-keychain -p "$PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
@@ -60,6 +67,7 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
           NOTARY_KEY_PATH: ${{ runner.temp }}/notary.p8
+          APP_PROVISION_PROFILE: ${{ runner.temp }}/openlist.provisionprofile
         run: ./Tools/package-release.sh "$VERSION" "$GITHUB_RUN_NUMBER"
       - name: Publish verified release
         env:
@@ -82,4 +90,4 @@ jobs:
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/openlist-signing.keychain-db" || true
-          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary.p8"
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/openlist.provisionprofile"

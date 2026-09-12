@@ -19,7 +19,7 @@ struct RootView: View {
 
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
-    @Query private var allLists: [TaskList]
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }) private var allLists: [TaskList]
 
     var body: some View {
         @Bindable var navigator = env.navigator
@@ -57,7 +57,7 @@ struct RootView: View {
                 if let list = env.listPendingDeletion { env.performDeleteList(list) }
             }
         } message: {
-            Text("Its tasks and notes will be deleted too. This cannot be undone.")
+            Text("Its tasks and notes will be deleted too, including on your other Macs when iCloud sync is available. This cannot be undone.")
         }
         .background(Theme.canvas)
         .background {
@@ -95,8 +95,8 @@ struct RootView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ListAccent.red.softBackground)
                 }
-                if let warning = env.storageWarning {
-                    Label(warning, systemImage: "externaldrive.badge.exclamationmark")
+                if let warning = syncWarning {
+                    Label(warning, systemImage: "icloud.slash")
                         .font(.callout)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -158,6 +158,11 @@ struct RootView: View {
     }
 
     // MARK: - Commands outside a document
+
+    private var syncWarning: String? {
+        env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
+            ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
+    }
 
     /// Runs menu commands on the smart views, where the selection comes from
     /// tapped rows rather than a text caret.

@@ -14,7 +14,7 @@ struct MenuBarView: View {
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
 
-    @Query(filter: #Predicate<TaskList> { !$0.isArchived })
+    @Query(filter: #Predicate<TaskList> { !$0.isArchived && $0.mergedIntoID == nil })
     private var activeLists: [TaskList]
 
     @State private var draft = ""

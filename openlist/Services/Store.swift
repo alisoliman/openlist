@@ -44,6 +44,7 @@ final class Store {
     var editorMediaBackups: [String: Data] = [:]
     var persistenceError: String?
     var editorNotice: String?
+    var syncPreparationError: String?
     /// Smart rows commit local title drafts on blur. External writes must not
     /// overwrite those drafts or be overwritten by their later commit.
     @ObservationIgnored var activeTitleDrafts: [UUID: UUID] = [:]
@@ -64,9 +65,19 @@ final class Store {
     // MARK: - Fetching
 
     func list(id: UUID?) -> TaskList? {
-        guard let id else { return nil }
-        let descriptor = FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id })
-        return try? context.fetch(descriptor).first
+        var nextID = id
+        var visited: Set<UUID> = []
+        while let id = nextID {
+            guard visited.insert(id).inserted else {
+                persistenceError = "An Inbox sync reference could not be resolved."
+                return nil
+            }
+            let descriptor = FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id })
+            guard let list = try? context.fetch(descriptor).first else { return nil }
+            guard let mergedIntoID = list.mergedIntoID else { return list }
+            nextID = mergedIntoID
+        }
+        return nil
     }
 
     func block(id: UUID?) -> Block? {
@@ -76,14 +87,18 @@ final class Store {
     }
 
     func allLists(includeArchived: Bool = false) -> [TaskList] {
-        var descriptor = FetchDescriptor<TaskList>(sortBy: [SortDescriptor(\.sortIndex)])
+        var descriptor = FetchDescriptor<TaskList>(
+            predicate: #Predicate { $0.mergedIntoID == nil },
+            sortBy: [SortDescriptor(\.sortIndex)]
+        )
         if !includeArchived {
-            descriptor.predicate = #Predicate { !$0.isArchived }
+            descriptor.predicate = #Predicate { !$0.isArchived && $0.mergedIntoID == nil }
         }
         return (try? context.fetch(descriptor)) ?? []
     }
 
     func blocks(inList listID: UUID) -> [Block] {
+        let listID = resolvedListID(listID) ?? listID
         let descriptor = FetchDescriptor<Block>(
             predicate: #Predicate { $0.listID == listID },
             sortBy: [SortDescriptor(\.sortIndex)]
@@ -118,27 +133,34 @@ final class Store {
 
     /// Creates the Inbox and the default sidebar section on first launch.
     func bootstrap() {
-        if inboxList() == nil {
-            let inbox = TaskList(title: "Inbox", icon: "📥", accent: .blue, isSystemInbox: true)
-            inbox.sortIndex = -1_000_000
-            context.insert(inbox)
+        do {
+            let inboxes = try context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.isSystemInbox }))
+            if inboxes.isEmpty {
+                let inbox = TaskList(title: "Inbox", icon: "📥", accent: .blue, isSystemInbox: true)
+                inbox.sortIndex = -1_000_000
+                context.insert(inbox)
+            }
+            let defaults = try context.fetch(FetchDescriptor<SidebarSection>(predicate: #Predicate { $0.isDefault }))
+            if defaults.isEmpty {
+                context.insert(SidebarSection(title: "My lists", sortIndex: 0, isDefault: true))
+            }
+            try reconcileSystemRecords()
+            save()
+        } catch {
+            persistenceError = "The Inbox could not be opened. \(error.localizedDescription)"
         }
-
-        let sections = allSections()
-        if sections.isEmpty {
-            let section = SidebarSection(title: "My lists", sortIndex: 0, isDefault: true)
-            context.insert(section)
-        }
-        save()
     }
 
     func inboxList() -> TaskList? {
-        let descriptor = FetchDescriptor<TaskList>(predicate: #Predicate { $0.isSystemInbox })
+        let descriptor = FetchDescriptor<TaskList>(predicate: #Predicate { $0.isSystemInbox && $0.mergedIntoID == nil })
         return try? context.fetch(descriptor).first
     }
 
     func allSections() -> [SidebarSection] {
-        let descriptor = FetchDescriptor<SidebarSection>(sortBy: [SortDescriptor(\.sortIndex)])
+        let descriptor = FetchDescriptor<SidebarSection>(
+            predicate: #Predicate { $0.mergedIntoID == nil },
+            sortBy: [SortDescriptor(\.sortIndex)]
+        )
         return (try? context.fetch(descriptor)) ?? []
     }
 
@@ -160,9 +182,9 @@ final class Store {
         list.sortIndex = (existing.map(\.sortIndex).max() ?? 0) + BlockTree.indexStep
 
         let target = section ?? defaultSection()
-        list.sectionID = target?.id
+        list.sectionID = resolvedSectionID(target?.id)
         list.isPinned = target != nil
-        let peers = existing.filter { $0.sectionID == target?.id }
+        let peers = existing.filter { $0.sectionID == list.sectionID }
         list.sidebarIndex = (peers.map(\.sidebarIndex).max() ?? 0) + BlockTree.indexStep
 
         context.insert(list)
@@ -187,6 +209,7 @@ final class Store {
     }
 
     func duplicateList(_ list: TaskList) -> TaskList {
+        let list = self.list(id: list.id) ?? list
         var stagedFiles: [String] = []
         func stageCopy(of source: URL) throws -> String {
             let ext = source.pathExtension
@@ -224,7 +247,7 @@ final class Store {
                 clone.sortIndex = original.sortIndex
                 clone.copyPayload(from: original)
                 if let filename = original.mediaFilename {
-                    clone.mediaFilename = try stageCopy(of: MediaStore.shared.url(for: filename))
+                    clone.mediaFilename = try stageCopy(of: MediaStore.shared.materialize(filename: filename, data: original.mediaData))
                 }
                 let originalID = original.id
                 let originalsAttachments = try context.fetch(FetchDescriptor<Attachment>(
@@ -232,14 +255,15 @@ final class Store {
                     sortBy: [SortDescriptor(\.sortIndex)]
                 ))
                 for attachment in originalsAttachments {
-                    let copiedFilename = try stageCopy(of: attachment.url)
+                    let copiedFilename = try stageCopy(of: attachment.fileURL())
                     let cloned = Attachment(
                         blockID: clone.id,
                         filename: copiedFilename,
                         displayName: attachment.displayName,
                         contentType: attachment.contentType,
                         byteCount: attachment.byteCount,
-                        sortIndex: attachment.sortIndex
+                        sortIndex: attachment.sortIndex,
+                        contentData: attachment.contentData
                     )
                     cloned.createdAt = attachment.createdAt
                     clonedAttachments.append(cloned)
@@ -259,11 +283,12 @@ final class Store {
     }
 
     func setPinned(_ pinned: Bool, for list: TaskList, section: SidebarSection? = nil) {
+        let list = self.list(id: list.id) ?? list
         list.isPinned = pinned
         if pinned {
             let target = section ?? defaultSection()
-            list.sectionID = target?.id
-            let peers = allLists().filter { $0.sectionID == target?.id && $0.id != list.id }
+            list.sectionID = resolvedSectionID(target?.id)
+            let peers = allLists().filter { $0.sectionID == list.sectionID && $0.id != list.id }
             list.sidebarIndex = (peers.map(\.sidebarIndex).max() ?? 0) + BlockTree.indexStep
         } else {
             list.sectionID = nil
@@ -273,6 +298,8 @@ final class Store {
     }
 
     func move(list: TaskList, toSection sectionID: UUID?, above target: TaskList?) {
+        let list = self.list(id: list.id) ?? list
+        let sectionID = resolvedSectionID(sectionID)
         list.sectionID = sectionID
         list.isPinned = sectionID != nil
 
@@ -410,6 +437,7 @@ final class Store {
     // MARK: - List properties
 
     func rename(_ list: TaskList, to title: String) {
+        let list = self.list(id: list.id) ?? list
         guard list.title != title else { return }
         list.title = title
         list.touch()
@@ -417,6 +445,7 @@ final class Store {
     }
 
     func setAppearance(icon: String? = nil, accent: ListAccent? = nil, for list: TaskList) {
+        let list = self.list(id: list.id) ?? list
         if let icon { list.icon = icon }
         if let accent { list.accent = accent }
         list.touch()
@@ -424,6 +453,7 @@ final class Store {
     }
 
     func setSummary(_ summary: String, for list: TaskList) {
+        let list = self.list(id: list.id) ?? list
         guard list.summary != summary else { return }
         list.summary = summary
         list.touch()
@@ -431,18 +461,21 @@ final class Store {
     }
 
     func setSorting(_ sorting: ListSorting, for list: TaskList) {
+        let list = self.list(id: list.id) ?? list
         list.sorting = sorting
         list.touch()
         save()
     }
 
     func setShowsCompleted(_ shows: Bool, for list: TaskList) {
+        let list = self.list(id: list.id) ?? list
         list.showsCompleted = shows
         list.touch()
         save()
     }
 
     func setArchived(_ archived: Bool, for list: TaskList) {
+        let list = self.list(id: list.id) ?? list
         guard !list.isSystemInbox else { return }
         list.isArchived = archived
         list.touch()
@@ -451,6 +484,7 @@ final class Store {
     }
 
     func markOpened(_ list: TaskList) {
+        let list = self.list(id: list.id) ?? list
         list.lastOpenedAt = .now
         save()
     }
@@ -460,11 +494,13 @@ final class Store {
     func rename(_ section: SidebarSection, to title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, section.title != trimmed else { return }
+        let section = resolvedSection(section)
         section.title = trimmed
         save()
     }
 
     func setCollapsed(_ collapsed: Bool, for section: SidebarSection) {
+        let section = resolvedSection(section)
         guard section.isCollapsed != collapsed else { return }
         section.isCollapsed = collapsed
         save()

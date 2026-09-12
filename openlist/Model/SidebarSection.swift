@@ -19,6 +19,8 @@ final class SidebarSection {
     var isCollapsed: Bool = false
     /// The section created on first launch, which cannot be deleted.
     var isDefault: Bool = false
+    /// Default sections created offline converge without discarding references.
+    var mergedIntoID: UUID?
     var createdAt: Date = Date.now
 
     init(title: String, sortIndex: Double = 0, isDefault: Bool = false) {

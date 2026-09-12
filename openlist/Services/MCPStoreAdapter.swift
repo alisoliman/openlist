@@ -74,8 +74,7 @@ final class MCPStoreAdapter {
             return .object(value)
 
         case .listTasks:
-            let listID = args.uuid("list_id")
-            if let listID { _ = try snapshot.list(listID) }
+            let listID = try args.uuid("list_id").map { try snapshot.list($0).id }
             if let labelID = args.uuid("label_id") { _ = try snapshot.label(labelID) }
             let visible = args.bool("include_archived") == true
                 ? Set(snapshot.lists.map(\.id)) : ActiveTaskPolicy(lists: snapshot.lists).activeListIDs
@@ -323,15 +322,29 @@ private struct Snapshot {
     let lists: [TaskList]
     let blocks: [Block]
     let labels: [TaskLabel]
+    private let listAliases: [UUID: UUID]
 
     init(context: ModelContext) throws {
-        lists = try context.fetch(FetchDescriptor<TaskList>(sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.id)]))
+        let records = try context.fetch(FetchDescriptor<TaskList>(sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.id)]))
+        lists = records.filter { $0.mergedIntoID == nil }
+        listAliases = Dictionary(
+            records.compactMap { record in record.mergedIntoID.map { (record.id, $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
         blocks = try context.fetch(FetchDescriptor<Block>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
         labels = try context.fetch(FetchDescriptor<TaskLabel>(sortBy: [SortDescriptor(\.name), SortDescriptor(\.id)]))
     }
 
     func list(_ id: UUID) throws -> TaskList {
-        guard let value = lists.first(where: { $0.id == id }) else { throw MCPToolFailure.missing("List not found.") }
+        var canonicalID = id
+        var visited: Set<UUID> = []
+        while let target = listAliases[canonicalID] {
+            guard visited.insert(canonicalID).inserted else {
+                throw MCPToolFailure.missing("The Inbox sync reference could not be resolved.")
+            }
+            canonicalID = target
+        }
+        guard let value = lists.first(where: { $0.id == canonicalID }) else { throw MCPToolFailure.missing("List not found.") }
         return value
     }
 

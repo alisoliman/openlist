@@ -21,6 +21,8 @@ final class TaskList {
 
     /// Inbox is a singleton system list that receives unfiled tasks.
     var isSystemInbox: Bool = false
+    /// Retained aliases route late-arriving records from another Mac's Inbox.
+    var mergedIntoID: UUID?
 
     /// Position among all lists.
     var sortIndex: Double = 0

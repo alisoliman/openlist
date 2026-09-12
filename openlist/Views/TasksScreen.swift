@@ -13,7 +13,7 @@ struct TasksScreen: View {
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })
     private var tasks: [Block]
 
-    @Query(sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var allLists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])
@@ -330,7 +330,7 @@ struct LabelScreen: View {
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })
     private var tasks: [Block]
 
-    @Query(sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var allLists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])
@@ -409,7 +409,7 @@ struct CompletedScreen: View {
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && $0.isCompleted })
     private var tasks: [Block]
 
-    @Query(sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var allLists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])
