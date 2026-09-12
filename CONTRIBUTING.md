@@ -5,7 +5,10 @@ open an issue first to discuss the user journey and scope.
 
 ## Build and check
 
-Use macOS 26.5 or later and Xcode 26.5 or later (CI uses Xcode 26.6).
+Use macOS 26.5 or later and Xcode 26.5 or later. CI and release builds run on
+`macos-latest` and select the newest stable Xcode preinstalled on that Apple
+Silicon image. Beta toolchains are not selected; each run logs the actual Xcode,
+Swift, and host architecture. The app's minimum macOS target remains 26.5.
 Clone the repository, then run:
 
 ```sh

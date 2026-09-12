@@ -31,7 +31,8 @@ Existing local data is preserved.
 
 ## Build from source
 
-Requires Xcode 26.5 or later and macOS 26.5 or later. CI uses Xcode 26.6.
+Requires Xcode 26.5 or later and macOS 26.5 or later. CI and release builds use
+`macos-latest` and the newest stable Xcode installed on that Apple Silicon image.
 
 ```sh
 git clone https://github.com/alisoliman/openlist.git

@@ -20,6 +20,10 @@ nonisolated struct ICloudSyncState {
     private(set) var lastDownload: Date?
     private var completedOperations: Set<UUID> = []
 
+    init(unavailableReason: String? = nil) {
+        self.unavailableReason = unavailableReason
+    }
+
     var isEnabled: Bool { unavailableReason == nil }
 
     var title: String {

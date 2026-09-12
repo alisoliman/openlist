@@ -343,6 +343,9 @@ import SwiftData
         delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
         check(launched, "App launch starts initialization without relying on a main-window task")
         var state = ICloudSyncState()
+        check(state.isEnabled && state.account == .checking, "Default initialization enables account checking")
+        let localOnly = ICloudSyncState(unavailableReason: "Offline fixture")
+        check(!localOnly.isEnabled && localOnly.title == "Local only" && localOnly.detail == "Offline fixture", "Explicit initialization preserves the local-only reason across supported toolchains")
         state.account = .available
         check(state.title == "iCloud available" && state.lastUpload == nil, "Account availability alone is not reported as a successful sync")
         let upload = UUID(), download = UUID()
