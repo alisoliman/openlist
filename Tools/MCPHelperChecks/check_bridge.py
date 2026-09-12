@@ -476,7 +476,7 @@ class PackagingChecks(unittest.TestCase):
     def setUp(self):
         self.fixture = WORKSPACE / self._testMethodName
         self.fixture.mkdir()
-        self.app = self.fixture / "openlist.app"
+        self.app = self.fixture / "Openlist fixture.app"
         for bundle, name, identifier in [
             (self.app, "openlist", "solimanali.openlist"),
             (self.app / "Contents/PlugIns/OpenlistWidget.appex", "OpenlistWidget", "solimanali.openlist.OpenlistWidget"),
@@ -498,18 +498,43 @@ class PackagingChecks(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.fixture)
 
-    def verify(self):
+    @staticmethod
+    def verifier_shells():
+        shells = [None, "/bin/bash"]
+        path_bash = shutil.which("bash")
+        if path_bash and not os.path.samefile(path_bash, "/bin/bash"):
+            shells.append(path_bash)
+        return shells
+
+    def verify(self, shell=None, extra_env=None):
+        command = [str(ROOT / "Tools/verify-release.sh"), str(self.app), "1.2.3", "7"]
+        env = environment("invalid-help-must-ignore-this")
+        if shell:
+            command.insert(0, shell)
+        if extra_env:
+            env.update(extra_env)
         return subprocess.run(
-            ["bash", str(ROOT / "Tools/verify-release.sh"), str(self.app), "1.2.3", "7"],
-            capture_output=True, timeout=8, env=environment("invalid-help-must-ignore-this"),
+            command, capture_output=True, timeout=8, env=env,
         )
 
     def test_valid_embedded_layout_and_offline_help(self):
-        result = self.verify()
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
-        self.assertIn(b"Verified native arm64 MCP helper and offline --help", result.stdout)
-        self.assertIn(b"Verified bundled dependency notices", result.stdout)
-        self.assertNotIn(TOKEN.encode(), result.stdout + result.stderr)
+        for shell in self.verifier_shells():
+            with self.subTest(shell=shell or "shebang"):
+                result = self.verify(shell)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertIn(b"Verified native arm64 MCP helper and offline --help", result.stdout)
+                self.assertIn(b"Verified bundled dependency notices", result.stdout)
+                self.assertNotIn(TOKEN.encode(), result.stdout + result.stderr)
+
+    def assert_invalid_bundle(self, result, bundle, diagnostic):
+        self.assertEqual(result.returncode, 1, result.stderr.decode())
+        self.assertIn(b"Invalid release bundle", result.stderr)
+        self.assertIn(str(bundle).encode(), result.stderr)
+        self.assertIn(diagnostic.encode(), result.stderr)
+        self.assertNotIn(
+            f"Verified arm64, version 1.2.3 (7), macOS 26.5: {bundle}\n".encode(),
+            result.stdout,
+        )
 
     def test_missing_dependency_notices_have_clear_diagnostic(self):
         self.notices.unlink()
@@ -558,18 +583,115 @@ class PackagingChecks(unittest.TestCase):
         self.assertIn(b"Invalid release MCP helper", result.stderr)
 
     def test_existing_release_metadata_checks_are_preserved(self):
-        plist = self.app / "Contents/Info.plist"
-        with plist.open("rb") as source:
-            original = plistlib.load(source)
-        for key, value in [
-            ("CFBundleShortVersionString", "0.0.0"), ("CFBundleVersion", "1"),
-            ("LSMinimumSystemVersion", "25.0"), ("CFBundleIdentifier", "invalid"),
-            ("OpenlistReviewSession", True),
-        ]:
-            with self.subTest(key=key):
+        for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
+            plist = bundle / "Contents/Info.plist"
+            original = plistlib.loads(plist.read_bytes())
+            for key, value in [
+                ("CFBundleShortVersionString", "0.0.0"), ("CFBundleVersion", "1"),
+                ("LSMinimumSystemVersion", "25.0"), ("CFBundleIdentifier", "invalid"),
+            ]:
                 with plist.open("wb") as output:
                     plistlib.dump({**original, key: value}, output)
-                self.assertNotEqual(self.verify().returncode, 0)
+                for shell in self.verifier_shells():
+                    with self.subTest(bundle=bundle.name, key=key, shell=shell or "shebang"):
+                        self.assert_invalid_bundle(self.verify(shell), bundle, key)
+            plist.write_bytes(plistlib.dumps(original))
+
+    def test_missing_metadata_keys_fail_closed_in_every_shell(self):
+        for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
+            plist = bundle / "Contents/Info.plist"
+            original = plistlib.loads(plist.read_bytes())
+            for key in original:
+                changed = {name: value for name, value in original.items() if name != key}
+                plist.write_bytes(plistlib.dumps(changed))
+                for shell in self.verifier_shells():
+                    with self.subTest(bundle=bundle.name, key=key, shell=shell or "shebang"):
+                        self.assert_invalid_bundle(self.verify(shell), bundle, key)
+            plist.write_bytes(plistlib.dumps(original))
+
+    def test_missing_and_malformed_plists_fail_without_success_output(self):
+        for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
+            plist = bundle / "Contents/Info.plist"
+            original = plist.read_bytes()
+            for malformed in (False, True):
+                if malformed:
+                    plist.write_bytes(b"not a property list")
+                else:
+                    plist.unlink()
+                for shell in self.verifier_shells():
+                    with self.subTest(bundle=bundle.name, malformed=malformed, shell=shell or "shebang"):
+                        self.assert_invalid_bundle(self.verify(shell), bundle, "Info.plist")
+                if not malformed:
+                    self.assertFalse(plist.exists(), "Verification must not create missing bundle metadata")
+            plist.write_bytes(original)
+
+    def test_review_fixture_marker_is_rejected_in_both_bundles(self):
+        for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
+            plist = bundle / "Contents/Info.plist"
+            original = plistlib.loads(plist.read_bytes())
+            for marker in (True, False, ""):
+                plist.write_bytes(plistlib.dumps({**original, "OpenlistReviewSession": marker}))
+                for shell in self.verifier_shells():
+                    with self.subTest(bundle=bundle.name, marker=marker, shell=shell or "shebang"):
+                        self.assert_invalid_bundle(self.verify(shell), bundle, "OpenlistReviewSession")
+            plist.write_bytes(plistlib.dumps(original))
+
+    def test_bundle_metadata_must_not_be_a_symlink(self):
+        for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
+            plist = bundle / "Contents/Info.plist"
+            original = plist.read_bytes()
+            outside = self.fixture / "outside-info.plist"
+            outside.write_bytes(original)
+            plist.unlink()
+            plist.symlink_to(outside)
+            for shell in self.verifier_shells():
+                with self.subTest(bundle=bundle.name, shell=shell or "shebang"):
+                    self.assert_invalid_bundle(self.verify(shell), bundle, "Info.plist")
+            self.assertEqual(outside.read_bytes(), original)
+            plist.unlink()
+            plist.write_bytes(original)
+
+    def test_executable_metadata_must_name_an_embedded_file(self):
+        for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
+            plist = bundle / "Contents/Info.plist"
+            original = plistlib.loads(plist.read_bytes())
+            for executable in ("", ".", "..", "../openlist-mcp", "/usr/bin/true"):
+                plist.write_bytes(plistlib.dumps({**original, "CFBundleExecutable": executable}))
+                for shell in self.verifier_shells():
+                    with self.subTest(bundle=bundle.name, executable=executable, shell=shell or "shebang"):
+                        self.assert_invalid_bundle(self.verify(shell), bundle, "CFBundleExecutable")
+            plist.write_bytes(plistlib.dumps(original))
+
+    def test_architecture_mismatches_and_probe_errors_fail_closed(self):
+        shim_dir = self.fixture / "bin"
+        shim_dir.mkdir()
+        shim = shim_dir / "lipo"
+        shim.write_text(
+            '#!/bin/sh\n'
+            'if [ "$2" = "$OPENLIST_TEST_ARCH_BINARY" ]; then\n'
+            '  printf "%s\\n" "$OPENLIST_TEST_ARCH_VALUE"\n'
+            '  exit "$OPENLIST_TEST_ARCH_STATUS"\n'
+            'fi\n'
+            'exec "$OPENLIST_TEST_REAL_LIPO" "$@"\n'
+        )
+        shim.chmod(0o755)
+        real_lipo = shutil.which("lipo")
+        self.assertIsNotNone(real_lipo)
+        for bundle, executable in (
+            (self.app, "openlist"),
+            (self.app / "Contents/PlugIns/OpenlistWidget.appex", "OpenlistWidget"),
+        ):
+            for architectures, status in (("x86_64", "0"), ("arm64 x86_64", "0"), ("arm64", "1")):
+                env = {
+                    "PATH": str(shim_dir) + os.pathsep + os.environ["PATH"],
+                    "OPENLIST_TEST_ARCH_BINARY": str(bundle / "Contents/MacOS" / executable),
+                    "OPENLIST_TEST_ARCH_VALUE": architectures,
+                    "OPENLIST_TEST_ARCH_STATUS": status,
+                    "OPENLIST_TEST_REAL_LIPO": real_lipo,
+                }
+                for shell in self.verifier_shells():
+                    with self.subTest(bundle=bundle.name, architectures=architectures, status=status, shell=shell or "shebang"):
+                        self.assert_invalid_bundle(self.verify(shell, env), bundle, "architecture")
 
     def test_xcode_links_transport_only_into_app_and_embeds_native_helper(self):
         result = subprocess.run(

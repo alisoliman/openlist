@@ -78,6 +78,11 @@ the classic SwiftPM backend used by older supported toolchains. To check the
 actual release launcher, set `OPENLIST_MCP_HELPER` to its absolute bundle path
 when running that script.
 
+Release-verifier regressions run through the script's own shebang, macOS's
+`/bin/bash`, and any distinct Bash installed on `PATH`. Keep release gates
+explicitly fail-closed: do not rely on `set -e` to reject metadata mismatches,
+especially when a `[[ ... ]]` condition contains command substitution.
+
 ## Releases
 
 Release binaries and notes belong on
