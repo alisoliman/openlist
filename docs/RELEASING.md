@@ -22,6 +22,20 @@ credentials at the end of the job. Pull-request CI does not access secrets.
 The signing identity is `Developer ID Application: Ali Soliman (Y5UE64R7TQ)`;
 forks must change it and configure their own app identifiers and entitlements.
 
+## Maintainer credentials on this Mac
+
+The local backup lives outside the repository at
+`~/.config/openlist/release/AuthKey_<KEY_ID>.p8`. The directory is readable only
+by its owner, and the key file has mode `600`. A neighboring `config.json` records
+the key ID, issuer ID, key path, repository and Keychain profile name; it contains
+no private-key contents. Keep this directory out of source control.
+
+The validated macOS Keychain profile is `openlist-notary`. Use it for local
+notarization with `NOTARY_PROFILE=openlist-notary`. GitHub-hosted runners use the
+encrypted Actions secrets above and do not depend on this Mac being online.
+When rotating the API key, update both the local Keychain profile and GitHub's
+`NOTARY_API_KEY_BASE64` / `NOTARY_KEY_ID` secrets.
+
 ## Publish
 
 1. Merge and verify CI on `main`.
