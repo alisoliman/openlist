@@ -1,0 +1,17 @@
+name: Bug report
+description: Report a reproducible problem with Openlist.
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Openlist and macOS versions
+      placeholder: Openlist 0.1.0, macOS 26.5, Apple M1
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include expected and actual behavior. Remove personal data from screenshots.
+    validations:
+      required: true

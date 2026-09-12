@@ -11,3 +11,12 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Release artifacts and private signing material
+dist/
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*

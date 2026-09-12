@@ -1,21 +1,51 @@
 # Openlist
 
-A macOS clone of the personal side of [Superlist](https://www.superlist.com), built
-with SwiftUI, SwiftData and the macOS 26 SDK (Swift 6 language mode).
+An open-source, local-first task and notes app for macOS, built with SwiftUI and
+SwiftData. Organize tasks in rich documents, capture ideas with a global shortcut,
+and keep your day in view with desktop widgets.
 
-Everything on Superlist's **Free** tier is implemented. Paid and gated features are
-deliberately left out — see [Deliberately excluded](#deliberately-excluded).
+Inspired by personal task managers including Superlist. Openlist is an independent
+project and is not affiliated with or endorsed by Superlist.
 
----
+## Download
 
-## Running it
+Download the **Apple Silicon (arm64)** DMG or ZIP from
+[GitHub Releases](https://github.com/alisoliman/openlist/releases/latest).
+Requires an **Apple Silicon Mac (M1 or newer) running macOS 26.5 or later**.
+Intel binaries are not currently published.
 
-```bash
-open openlist.xcodeproj      # then ⌘R
+Open the DMG and drag `openlist.app` to Applications, or unzip the ZIP and move
+the app there. Launch Openlist before adding its widgets. Official release
+packages are Developer ID signed and notarized by Apple.
+
+Downloads include `SHA256SUMS.txt`. To check both downloaded packages:
+
+```sh
+shasum -a 256 -c SHA256SUMS.txt
 ```
 
-Requires Xcode 26 / macOS 26. The app is sandboxed and signs against the
-`Y5UE64R7TQ.solimanali.openlist` App Group, which the widget extension shares.
+Your lists and attachments stay on your Mac; no account or server is required.
+Before installing an update, quit Openlist. Existing local data is preserved.
+
+## Build from source
+
+Requires Xcode 26.5 or later and macOS 26.5 or later. CI uses Xcode 26.6.
+
+```sh
+git clone https://github.com/alisoliman/openlist.git
+cd openlist
+./Tools/check.sh
+./Tools/build-release.sh 0.1.0 1
+open openlist.xcodeproj
+```
+
+The build script compiles an unsigned app without requiring an Apple account.
+For running from Xcode, configure signing for the app and widget as described in
+[CONTRIBUTING.md](CONTRIBUTING.md). They share the App Group
+`Y5UE64R7TQ.solimanali.openlist`.
+
+See [release maintenance](docs/RELEASING.md), [security reporting](SECURITY.md),
+and the [MIT license](LICENSE).
 
 ---
 
@@ -86,16 +116,15 @@ priority.
 
 ## Deliberately excluded
 
-These are Superlist's paid tiers or inherently collaborative, so they are out of
-scope for a personal clone:
+Openlist focuses on personal, local workflows. These features are outside its current scope:
 
 | Feature | Why |
 |---|---|
-| Voice AI ("Talk") | Basic tier and above |
-| AI Meeting Notes, AI Chat, Make AI, email/Slack summarisation | Super tier |
-| Integrations (Gmail, Slack, GitHub, Figma…) | Basic tier and above |
-| Sharing, real-time collaboration, assignees, comments, voice messages | Not the personal side |
-| Unlimited-lists / storage caps | Pricing mechanics, not features — lists here are uncapped |
+| Voice AI ("Talk") | Outside the local task-management scope |
+| AI Meeting Notes, AI Chat, Make AI, email/Slack summarisation | Requires online AI services |
+| Integrations (Gmail, Slack, GitHub, Figma…) | Outside the local task-management scope |
+| Sharing, real-time collaboration, assignees, comments, voice messages | Requires a collaborative backend |
+| Unlimited-lists / storage caps | Lists here are uncapped |
 
 ---
 
@@ -139,10 +168,10 @@ Everything else is SwiftUI.
 ## Checks
 
 ```bash
-./Tools/run-logic-checks.sh
+./Tools/check.sh
 ```
 
-Compiles the pure-logic sources against a set of assertions — 65 checks covering
+Compiles the pure-logic sources against a set of assertions — 71 checks covering
 natural-language date parsing (relative days, weekdays, times, explicit dates,
 repeat phrases, and *not* firing on ordinary prose) and the recurrence engine
 (weekday sets, month-end clamping, overdue catch-up, end conditions), plus
