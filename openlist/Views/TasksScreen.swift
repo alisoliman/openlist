@@ -115,23 +115,52 @@ struct TasksScreen: View {
 
     @ViewBuilder
     private var constraintLabels: some View {
-        HStack(spacing: 6) {
-            Text(filter.title).chipStyle()
-            if let listFilter, let list = allLists.first(where: { $0.id == listFilter }) {
-                Text("\(list.icon) \(list.displayTitle)")
+        Menu {
+            ForEach(TaskFilter.allCases) { option in
+                CheckmarkMenuItem(option.title, isSelected: filter == option) { filter = option }
+            }
+        } label: {
+            Label(filter.title, systemImage: "line.3.horizontal.decrease")
+                .chipStyle(accent: filter == .open ? nil : Theme.accent)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Show tasks: \(filter.title)")
+
+        HStack(spacing: 4) {
+            Menu {
+                CheckmarkMenuItem("All active lists", isSelected: listFilter == nil) { listFilter = nil }
+                ForEach(activeLists) { list in
+                    CheckmarkMenuItem(list.displayTitle, isSelected: listFilter == list.id) { listFilter = list.id }
+                }
+            } label: {
+                let list = allLists.first { $0.id == listFilter }
+                Text(list.map { "\($0.icon) \($0.displayTitle)" } ?? "All active lists")
                     .lineLimit(1)
-                    .chipStyle(accent: list.accent.color)
-                    .help(list.displayTitle)
-            } else {
-                Text("Active lists").foregroundStyle(Theme.secondaryText)
+                    .chipStyle(accent: list?.accent.color)
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Filter by list")
+            if listFilter != nil {
+                ClearButton(label: "Clear list filter") { listFilter = nil }
             }
         }
-        Text("Grouped by \(grouping.title.lowercased())")
-            .foregroundStyle(Theme.secondaryText)
+
+        Menu {
+            ForEach(TaskGrouping.allCases) { option in
+                CheckmarkMenuItem(option.title, isSelected: grouping == option) { grouping = option }
+            }
+        } label: {
+            Text("Group: \(grouping.title)")
+                .chipStyle()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Group tasks by \(grouping.title)")
+
         if hasCustomFilters {
             Button("Reset filters", action: resetFilters)
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.accent)
+                .buttonStyle(.borderless)
         }
     }
 

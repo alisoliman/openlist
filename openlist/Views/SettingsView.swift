@@ -14,20 +14,15 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
-            GeneralSettingsTab()
-                .tabItem { Label("General", systemImage: "gearshape") }
-            TasksSettingsTab()
-                .tabItem { Label("Tasks", systemImage: "checkmark.circle") }
-            LabelsSettingsTab()
-                .tabItem { Label("Labels", systemImage: "tag") }
-            ICloudSettingsTab()
-                .tabItem { Label("iCloud", systemImage: "icloud") }
-            MCPSettingsTab()
-                .tabItem { Label("AI Agents", systemImage: "terminal") }
-            DataSettingsTab()
-                .tabItem { Label("Data", systemImage: "externaldrive") }
+            Tab("General", systemImage: "gearshape") { GeneralSettingsTab() }
+            Tab("Tasks", systemImage: "checkmark.circle") { TasksSettingsTab() }
+            Tab("Labels", systemImage: "tag") { LabelsSettingsTab() }
+            Tab("iCloud", systemImage: "icloud") { ICloudSettingsTab() }
+            Tab("AI Agents", systemImage: "terminal") { MCPSettingsTab() }
+            Tab("Data", systemImage: "externaldrive") { DataSettingsTab() }
         }
-        .frame(width: 500, height: 420)
+        .frame(minWidth: 580, idealWidth: 640, maxWidth: .infinity,
+               minHeight: 500, idealHeight: 580, maxHeight: .infinity)
     }
 }
 
@@ -67,7 +62,7 @@ struct ICloudSettingsTab: View {
                     Text(error).font(Theme.Font.metadata)
                 }
             }
-            Section("Local-first storage") {
+            DisclosureGroup("How iCloud sync works") {
                 Text("Use the same Apple Account on each Mac. Transfers run automatically on Apple's schedule, not immediately. Deletions sync too.")
                 Text("macOS can postpone background transfers on low battery, even while charging. Keep this Mac connected to power until its battery recovers if the initial sync is waiting.")
                 Text("Appearance, shortcuts and other app preferences stay on each Mac. Attachments are imported copies; reattach a file to sync edits made in another app.")
@@ -147,8 +142,8 @@ struct TasksSettingsTab: View {
             }
 
             Section("Completed tasks") {
-                Toggle("Show completed tasks in the Inbox and Today", isOn: $settings.showsCompletedTasks)
-                Text("Every other list keeps its own setting, under the ⋯ menu in its header.")
+                Toggle("Show completed tasks by default", isOn: $settings.showsCompletedTasks)
+                Text("Applies to lists, Inbox and Today. Use the Completed control in any list to choose Show, Hide or Use app default. Preferences stay on this Mac; list overrides sync with iCloud.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }
@@ -179,8 +174,13 @@ struct TasksSettingsTab: View {
                     }
                 }
 
-                Button("Reschedule all reminders") {
-                    env.store.refreshAllReminders()
+                DisclosureGroup("Troubleshooting") {
+                    Button("Reschedule all reminders") {
+                        env.store.refreshAllReminders()
+                    }
+                    Text("Rebuilds pending notifications from your current task reminders.")
+                        .font(Theme.Font.metadata)
+                        .foregroundStyle(Theme.secondaryText)
                 }
             }
         }

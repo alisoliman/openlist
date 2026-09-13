@@ -44,6 +44,7 @@ final class AppSettings {
     var appearance: Appearance {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
     }
+    /// Default for list documents and Today; lists may explicitly override it.
     var showsCompletedTasks: Bool {
         didSet { defaults.set(showsCompletedTasks, forKey: Key.showsCompleted) }
     }

@@ -19,7 +19,7 @@ let imageBytes = Data([0, 12, 250, 255]), fileBytes = Data("Original attachment"
 try media.restoreFile(imageBytes, filename: originalImage)
 try media.restoreFile(fileBytes, filename: originalFile)
 let list = store.createList(title: "Duplication fixtures")
-list.showsCompleted = false
+list.completedVisibility = .hide
 let document = DocumentContext(listID: list.id)
 let parent = store.appendBlock(kind: .task, text: "Parent", to: document)
 parent.note = "Preserve this note"
@@ -38,6 +38,9 @@ store.save()
 
 let duplicatedList = store.duplicateList(list)
 check(duplicatedList.id != list.id && !duplicatedList.showsCompleted, "Duplicate list preserves display preferences")
+check(duplicatedList.completedVisibility == .hide && !duplicatedList.showsCompleted(default: true), "Duplicate list preserves explicit completed visibility")
+store.setCompletedVisibility(.inherit, for: duplicatedList)
+check(duplicatedList.showsCompleted(default: true) && !duplicatedList.showsCompleted(default: false), "Store can reset a list to the changing global default")
 let listCopies = store.blocks(inList: duplicatedList.id)
 check(listCopies.count == 2, "Duplicate list contains complete tree")
 let copiedParent = listCopies.first { $0.kind == .task }!

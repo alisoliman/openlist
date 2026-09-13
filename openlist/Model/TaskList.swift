@@ -36,7 +36,10 @@ final class TaskList {
 
     /// Per-list display preferences.
     var sortingRaw: String = ListSorting.manual.rawValue
+    /// Kept for migration and older app versions. Legacy hidden lists keep
+    /// their override; the historical true default adopts app inheritance.
     var showsCompleted: Bool = true
+    var completedVisibilityRaw: String?
 
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
@@ -53,12 +56,49 @@ final class TaskList {
         self.icon = icon
         self.accentRaw = accent.rawValue
         self.isSystemInbox = isSystemInbox
+        self.completedVisibilityRaw = CompletedVisibility.inherit.rawValue
         self.createdAt = .now
         self.updatedAt = .now
     }
 }
 
 extension TaskList {
+    enum CompletedVisibility: String, CaseIterable, Identifiable {
+        case inherit, show, hide
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .inherit: "Use app default"
+            case .show: "Show completed"
+            case .hide: "Hide completed"
+            }
+        }
+    }
+
+    var completedVisibility: CompletedVisibility {
+        get {
+            if let raw = completedVisibilityRaw, let value = CompletedVisibility(rawValue: raw) {
+                return value
+            }
+            // Old data cannot distinguish explicitly shown from the historical
+            // true default. Adopt inheritance for true, preserve explicit hide.
+            // Inbox previously always followed the app setting.
+            return isSystemInbox || showsCompleted ? .inherit : .hide
+        }
+        set {
+            completedVisibilityRaw = newValue.rawValue
+            if newValue != .inherit { showsCompleted = newValue == .show }
+        }
+    }
+
+    func showsCompleted(default defaultValue: Bool) -> Bool {
+        switch completedVisibility {
+        case .inherit: defaultValue
+        case .show: true
+        case .hide: false
+        }
+    }
+
     var accent: ListAccent {
         get { ListAccent(rawValue: accentRaw) ?? .graphite }
         set { accentRaw = newValue.rawValue }

@@ -226,6 +226,7 @@ final class Store {
             copy.isPinned = list.isPinned
             copy.sortingRaw = list.sortingRaw
             copy.showsCompleted = list.showsCompleted
+            copy.completedVisibilityRaw = list.completedVisibilityRaw
             copy.sortIndex = list.sortIndex + 1
             copy.sidebarIndex = list.sidebarIndex + 1
 
@@ -468,8 +469,12 @@ final class Store {
     }
 
     func setShowsCompleted(_ shows: Bool, for list: TaskList) {
+        setCompletedVisibility(shows ? .show : .hide, for: list)
+    }
+
+    func setCompletedVisibility(_ visibility: TaskList.CompletedVisibility, for list: TaskList) {
         let list = self.list(id: list.id) ?? list
-        list.showsCompleted = shows
+        list.completedVisibility = visibility
         list.touch()
         save()
     }

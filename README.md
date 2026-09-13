@@ -91,6 +91,14 @@ plus per-label views and a completed archive. Today buckets overdue / due today 
 starred; Tasks filters and groups by date, list, label or priority; Updates is a
 personal activity feed grouped by day.
 
+Each list has a **Completed (count)** control to show or hide finished tasks in
+place, preserving their notes and nested content. Settings → Tasks sets the app
+default; each list can inherit it or explicitly show/hide completed tasks. On
+upgrade, previously hidden lists stay hidden and lists using the historical
+shown default adopt inheritance. Older versions did not distinguish an explicit
+Show choice from that default. Inbox continues to inherit the app setting.
+The default stays on each Mac; explicit list overrides sync with the list.
+
 ### Capture and navigation
 
 ⌘K quick command (creates tasks, jumps to lists, runs commands), ⌘F search across

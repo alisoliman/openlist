@@ -22,7 +22,7 @@ struct ListScreen: View {
             DocumentView(
                 document: DocumentContext(listID: list.id),
                 emptyPlaceholder: "Add a task, or press / for blocks",
-                showsCompleted: list.showsCompleted,
+                showsCompleted: showsCompleted,
                 sorting: list.sorting
             )
             .id(list.id)
@@ -38,6 +38,10 @@ struct ListScreen: View {
         .onChange(of: list.summary) { old, new in
             if old.isEmpty && !new.isEmpty { isSummaryVisible = true }
         }
+    }
+
+    private var showsCompleted: Bool {
+        list.showsCompleted(default: env.settings.showsCompletedTasks)
     }
 
     // MARK: - Header
@@ -58,6 +62,7 @@ struct ListScreen: View {
                 }
                 .buttonStyle(.plain)
                 .help("Change icon and colour")
+                .accessibilityLabel("Change list icon and colour")
                 .popover(isPresented: $isIconPickerOpen, arrowEdge: .bottom) {
                     ListAppearancePicker(list: list)
                         .environment(env)
@@ -102,6 +107,9 @@ struct ListScreen: View {
 
             statsRow
                 .padding(.leading, 50)
+
+            CompletedTasksControl(list: list)
+                .padding(.top, 8)
         }
     }
 
@@ -118,8 +126,12 @@ struct ListScreen: View {
 
                 Divider()
 
-                Button(list.showsCompleted ? "Hide Completed" : "Show Completed") {
-                    env.store.setShowsCompleted(!list.showsCompleted, for: list)
+                Section("Completed tasks") {
+                    ForEach(TaskList.CompletedVisibility.allCases) { preference in
+                        CheckmarkMenuItem(preference.title, isSelected: list.completedVisibility == preference) {
+                            env.store.setCompletedVisibility(preference, for: list)
+                        }
+                    }
                 }
                 Button(isSummaryVisible ? "Hide Description" : "Add Description") {
                     isSummaryVisible.toggle()
@@ -155,6 +167,7 @@ struct ListScreen: View {
             .menuIndicator(.hidden)
             .frame(width: 26)
             .help("List options")
+            .accessibilityLabel("List options")
         }
     }
 
@@ -172,15 +185,6 @@ struct ListScreen: View {
 
                 ProgressBar(done: done, total: tasks.count, accent: list.accent)
                     .frame(width: 90)
-
-                if !list.showsCompleted, done > 0 {
-                    Button("Show \(done) completed") {
-                        env.store.setShowsCompleted(true, for: list)
-                    }
-                    .buttonStyle(.plain)
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.accent)
-                }
             }
         }
     }
@@ -246,6 +250,8 @@ struct ListAppearancePicker: View {
                     }
                     .buttonStyle(.plain)
                     .help(accent.title)
+                    .accessibilityLabel("\(accent.title) list colour")
+                    .accessibilityValue(list.accent == accent ? "Selected" : "")
                 }
             }
         }
