@@ -9,16 +9,21 @@ struct LabelMergeNotice: View {
             if let error = env.store.labelMaintenanceError {
                 HStack(alignment: .top) {
                     Label(error, systemImage: "exclamationmark.triangle")
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+                        .help(error)
                     Spacer(minLength: 8)
                     Button("Dismiss") { env.store.labelMaintenanceError = nil }
                         .fixedSize()
                 }
             }
             if let plan = env.store.labelMergeUndo {
+                let message = "Merged “\(plan.source.name)” into “\(plan.destination.name)”."
                 HStack(alignment: .top) {
-                    Text("Merged “\(plan.source.name)” into “\(plan.destination.name)”.")
+                    Text(message)
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+                        .help(message)
                     Spacer(minLength: 8)
                     Button("Undo merge") { env.store.undoLabelMerge() }
                         .fixedSize()
