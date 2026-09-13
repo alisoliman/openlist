@@ -17,7 +17,11 @@ private struct LauncherError: Error {
 }
 
 private struct Configuration {
+    #if OPENLIST_DEV
+    static let defaultURL = "http://127.0.0.1:45874/mcp"
+    #else
     static let defaultURL = "http://127.0.0.1:45873/mcp"
+    #endif
 
     let url: URL
     let token: String
@@ -345,7 +349,7 @@ private enum OpenlistMCPLauncher {
     This helper never starts the app or opens its database.
 
     Environment:
-      OPENLIST_MCP_URL    Optional; default http://127.0.0.1:45873/mcp.
+      OPENLIST_MCP_URL    Optional; default \(Configuration.defaultURL).
                          Only http://127.0.0.1:PORT/mcp or
                          http://localhost:PORT/mcp, with an explicit port.
       OPENLIST_MCP_TOKEN  Required secret from Openlist's copied client config.

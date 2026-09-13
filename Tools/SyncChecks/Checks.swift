@@ -78,7 +78,7 @@ import SwiftData
 
     @MainActor static func validateSchema(at url: URL) throws {
         let model = NSManagedObjectModel.makeManagedObjectModel(for: [
-            TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self
+            TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self, WorkSession.self, CompletionRecord.self, SchedulePlacement.self
         ])!
         for entity in model.entities {
             check(entity.uniquenessConstraints.isEmpty, "\(entity.name!) has no CloudKit-incompatible uniqueness constraints")

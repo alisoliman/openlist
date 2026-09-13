@@ -35,6 +35,8 @@ struct TodayScreen: View {
                 subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))
             ) {
                 HStack(spacing: 4) {
+                    Button { env.navigator.go(to: .calendar) } label: { Image(systemName: "calendar") }
+                        .buttonStyle(.borderless).help("Open adaptive calendar (⌘6)")
                     Button {
                         showsCompleted = !showsCompletedNow
                     } label: {
@@ -93,6 +95,16 @@ struct TodayScreen: View {
                     )
                 }
 
+                if !buckets.selected.isEmpty {
+                    TaskGroupSection(
+                        title: "Planned for today",
+                        symbol: "calendar.badge.clock",
+                        accent: .violet,
+                        tasks: buckets.selected,
+                        context: context
+                    )
+                }
+
                 if !buckets.starred.isEmpty {
                     TaskGroupSection(
                         title: "Starred",
@@ -125,10 +137,11 @@ struct TodayScreen: View {
         var overdue: [Block] = []
         var dueToday: [Block] = []
         var starred: [Block] = []
+        var selected: [Block] = []
         var completedToday: [Block] = []
 
         func isEmpty(showsCompleted: Bool) -> Bool {
-            overdue.isEmpty && dueToday.isEmpty && starred.isEmpty
+            overdue.isEmpty && dueToday.isEmpty && starred.isEmpty && selected.isEmpty
                 && (!showsCompleted || completedToday.isEmpty)
         }
 
@@ -142,6 +155,8 @@ struct TodayScreen: View {
                     overdue.append(task)
                 } else if task.isDueToday {
                     dueToday.append(task)
+                } else if task.selectedForDay.map({ Calendar.current.startOfDay(for: $0) <= Calendar.current.startOfDay(for: .now) }) == true {
+                    selected.append(task)
                 } else if task.isStarred {
                     starred.append(task)
                 }
@@ -149,6 +164,7 @@ struct TodayScreen: View {
 
             overdue.sort(by: Block.byDueDate)
             dueToday.sort(by: Self.byTimeThenPriority)
+            selected.sort(by: Self.byTimeThenPriority)
             starred.sort(by: Self.byTimeThenPriority)
             completedToday.sort(by: Block.byCompletionDate)
         }

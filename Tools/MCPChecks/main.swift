@@ -16,7 +16,7 @@ func check(_ condition: @autoclosure () throws -> Bool, _ message: String) {
 
 let storeURL = URL(fileURLWithPath: CommandLine.arguments[1])
 let phase = CommandLine.arguments[3]
-let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self])
+let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self, WorkSession.self, CompletionRecord.self, SchedulePlacement.self])
 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
 let store = Store(context: container.mainContext)
 store.context.autosaveEnabled = false
@@ -276,7 +276,14 @@ if phase == "prepare" {
     let defaults = UserDefaults(suiteName: defaultsName)!
     defer { defaults.removePersistentDomain(forName: defaultsName) }
     let settings = AppSettings(defaults: defaults)
-    check(!settings.mcpEnabled && !settings.mcpAllowsWrites && settings.mcpPort == 45873, "MCP is opt-in and read-only by default")
+    #if OPENLIST_DEV
+    let expectedPort = 45874
+    let expectedServerName = "openlist-dev"
+    #else
+    let expectedPort = 45873
+    let expectedServerName = "openlist"
+    #endif
+    check(!settings.mcpEnabled && !settings.mcpAllowsWrites && settings.mcpPort == expectedPort, "MCP is opt-in and uses the correct production or development port")
     settings.mcpPort = Int(port)
     let credential = FixtureTokenStore(token: token)
     let integration = MCPIntegration(store: store, settings: settings, tokenStore: credential)
@@ -289,11 +296,15 @@ if phase == "prepare" {
     let catalog = try await request(["jsonrpc": "2.0", "id": 3, "method": "tools/list"])
     check(catalog.objectValue!["result"]!.objectValue!["tools"]!.arrayValue!.count == 5, "read-only permission controls the real wire catalog")
     let config = try integration.configuration(for: .stdio, bundleURL: URL(fileURLWithPath: "/Applications/Openlist with spaces.app"))
-    let fields = try JSONDecoder().decode(MCPValue.self, from: Data(config.utf8)).objectValue!["mcpServers"]!.objectValue!["openlist"]!.objectValue!
+    let configServers = try JSONDecoder().decode(MCPValue.self, from: Data(config.utf8)).objectValue!["mcpServers"]!.objectValue!
+    check(Set(configServers.keys) == Set([expectedServerName]), "stdio configuration has a distinct production or development entry")
+    let fields = configServers[expectedServerName]!.objectValue!
     check(fields["command"] == "/Applications/Openlist with spaces.app/Contents/MacOS/openlist-mcp", "stdio configuration quotes paths safely, including spaces")
     check(fields["env"]!.objectValue!["OPENLIST_MCP_TOKEN"] == .string(token), "generated configuration uses the active credential")
     let httpConfig = try integration.configuration(for: .vscode)
-    let httpFields = try JSONDecoder().decode(MCPValue.self, from: Data(httpConfig.utf8)).objectValue!["servers"]!.objectValue!["openlist"]!.objectValue!
+    let httpServers = try JSONDecoder().decode(MCPValue.self, from: Data(httpConfig.utf8)).objectValue!["servers"]!.objectValue!
+    check(Set(httpServers.keys) == Set([expectedServerName]), "HTTP configuration has a distinct production or development entry")
+    let httpFields = httpServers[expectedServerName]!.objectValue!
     check(httpFields["type"] == "http" && httpFields["url"] == .string(integration.url), "VS Code configuration has the correct HTTP shape")
     integration.setAllowsWrites(true)
     await integration.waitForTransition()

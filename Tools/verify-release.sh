@@ -63,5 +63,8 @@ for bundle in "$APP" "$APP/Contents/PlugIns/OpenlistWidget.appex"; do
     if /usr/libexec/PlistBuddy -c 'Print :OpenlistReviewSession' "$plist" >/dev/null 2>&1; then
         fail_bundle "$plist: OpenlistReviewSession must not be present in a release"
     fi
+    if /usr/libexec/PlistBuddy -c 'Print :OpenlistDevelopment' "$plist" >/dev/null 2>&1; then
+        fail_bundle "$plist: OpenlistDevelopment must not be present in a release"
+    fi
     echo "Verified arm64, version $VERSION ($BUILD_NUMBER), macOS 26.5: $bundle"
 done

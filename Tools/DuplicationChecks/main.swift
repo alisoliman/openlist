@@ -6,7 +6,7 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     precondition(condition(), message)
     checks += 1
 }
-let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self])
+let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self, WorkSession.self, CompletionRecord.self, SchedulePlacement.self])
 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
 let store = Store(context: container.mainContext)
 store.context.autosaveEnabled = false
@@ -20,6 +20,7 @@ try media.restoreFile(imageBytes, filename: originalImage)
 try media.restoreFile(fileBytes, filename: originalFile)
 let list = store.createList(title: "Duplication fixtures")
 list.completedVisibility = .hide
+list.availabilityCategoryRaw = "personal"
 let document = DocumentContext(listID: list.id)
 let parent = store.appendBlock(kind: .task, text: "Parent", to: document)
 parent.note = "Preserve this note"
@@ -39,6 +40,7 @@ store.save()
 let duplicatedList = store.duplicateList(list)
 check(duplicatedList.id != list.id && !duplicatedList.showsCompleted, "Duplicate list preserves display preferences")
 check(duplicatedList.completedVisibility == .hide && !duplicatedList.showsCompleted(default: true), "Duplicate list preserves explicit completed visibility")
+check(duplicatedList.availabilityCategoryRaw == "personal", "Duplicate list preserves calendar availability alongside completed visibility")
 store.setCompletedVisibility(.inherit, for: duplicatedList)
 check(duplicatedList.showsCompleted(default: true) && !duplicatedList.showsCompleted(default: false), "Store can reset a list to the changing global default")
 let listCopies = store.blocks(inList: duplicatedList.id)

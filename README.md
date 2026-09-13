@@ -90,10 +90,35 @@ Reduce Motion uses an immediate state change without the bounce or movement.
 
 ### Views
 
-**Inbox** (⌘1) · **Today** (⌘2) · **Updates** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5),
-plus per-label views and a completed archive. Today buckets overdue / due today /
-starred; Tasks filters and groups by date, list, label or priority; Updates is a
-personal activity feed grouped by day.
+**Inbox** (⌘1) · **Today** (⌘2) · **Updates** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5) ·
+**Calendar** (⌘6), plus per-label views and a completed archive. Today groups
+overdue, due-today, planned-for-today, and starred work; Tasks filters and groups
+by date, list, label or priority; Updates is a personal activity feed grouped by day.
+
+### Adaptive calendar
+
+Calendar offers **1-day, 3-day, 1-week, and 1-month** views of a rolling four-week
+plan. Select tasks for today or give them upcoming due dates; undated backlog
+stays unscheduled. Lists inherit separate work or personal hours, with weekly
+breaks and date overrides. Estimates start at an editable 30 minutes. Work can
+split into sessions, with a 25-minute minimum by default and a per-task
+**Keep task together** option.
+
+Start work explicitly. Active overruns extend in 15-minute increments and move
+flexible tasks. Meetings, unavailable hours, lock, and sleep pause work; a task
+can opt into tracking away from the Mac. Move blocks to express a preference or
+choose **Pin time** for fixed placements. Deadline coverage distinguishes
+**Scheduled**, **Cannot fit before deadline**, and **Outside planning horizon**.
+
+Connected macOS calendars supply read-only busy time. Session and completion
+history preserve recurring occurrences, support recorded-time corrections, and
+offer duration suggestions that require approval. Only the current recurring
+occurrence is planned. Task choices and history use the existing local-first
+store and iCloud configuration; availability and calendar connections remain
+per-Mac.
+
+See the [calendar guide and developer invariants](docs/ADAPTIVE_CALENDAR.md) for
+setup, scheduling behavior, storage boundaries, and validation scope.
 
 Each list has a **Completed (count)** control to show or hide finished tasks below
 pending siblings, preserving their notes and nested content. Settings → Tasks sets the app

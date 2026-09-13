@@ -7,7 +7,7 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     checks += 1
 }
 
-let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self])
+let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self, SchedulePlacement.self, WorkSession.self, CompletionRecord.self])
 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
 let store = Store(context: container.mainContext)
 store.context.autosaveEnabled = false
@@ -59,6 +59,13 @@ do {
 let undo = UndoManager()
 undo.groupsByEvent = false
 let target = store.createList(title: "Triage")
+let planningDate = Date.now
+let plannedCapture = try store.saveCapture(TaskCaptureDraft(text: "Review integration").preview,
+                                         destinationID: target.id, selectedForDay: planningDate)
+check(plannedCapture.selectedForDay == Calendar.current.startOfDay(for: planningDate), "Calendar capture preserves its planning day")
+check(plannedCapture.dueDate == nil, "Planning a captured task does not invent a due date")
+check(!store.context.hasChanges, "Calendar capture persists planning intent in the capture transaction")
+check(task.selectedForDay == nil, "Ordinary capture leaves calendar selection unchanged")
 undo.beginUndoGrouping()
 store.undoableEditorEdit(in: Set([inbox.id, target.id]), name: "Move Inbox task", undoManager: undo) {
     store.moveToList(parsed, list: target)

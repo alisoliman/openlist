@@ -87,17 +87,24 @@ final class AppSettings {
 
     init(defaults: UserDefaults = ReviewSession.defaults) {
         self.defaults = defaults
+        #if OPENLIST_DEV
+        let defaultMCPPort = 45874
+        let defaultQuickCaptureHotKey = false
+        #else
+        let defaultMCPPort = 45873
+        let defaultQuickCaptureHotKey = true
+        #endif
         defaults.register(defaults: [
             Key.showsCompleted: true,
             Key.naturalLanguage: true,
             Key.menuBarExtra: true,
-            Key.quickCaptureHotKey: true,
+            Key.quickCaptureHotKey: defaultQuickCaptureHotKey,
             Key.dockBadge: true,
             Key.confirmDelete: true,
             Key.firstWeekday: 0,
             Key.mcpEnabled: false,
             Key.mcpAllowsWrites: false,
-            Key.mcpPort: 45873,
+            Key.mcpPort: defaultMCPPort,
         ])
 
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system

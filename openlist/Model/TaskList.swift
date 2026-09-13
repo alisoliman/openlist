@@ -40,6 +40,8 @@ final class TaskList {
     /// their override; the historical true default adopts app inheritance.
     var showsCompleted: Bool = true
     var completedVisibilityRaw: String?
+    /// The weekly availability inherited by this list's tasks.
+    var availabilityCategoryRaw: String = "work"
 
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now

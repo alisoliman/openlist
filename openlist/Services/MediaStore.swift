@@ -22,7 +22,12 @@ nonisolated final class MediaStore: @unchecked Sendable {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? URL.temporaryDirectory
-        let mediaBase = ReviewSession.identifier.map { base.appendingPathComponent("Openlist-Review-\($0)", isDirectory: true) } ?? base
+        #if OPENLIST_DEV
+        let defaultBase = AppGroup.containerURL ?? base.appendingPathComponent("Openlist Dev", isDirectory: true)
+        #else
+        let defaultBase = base
+        #endif
+        let mediaBase = ReviewSession.identifier.map { base.appendingPathComponent("Openlist-Review-\($0)", isDirectory: true) } ?? defaultBase
         directory = mediaBase
             .appendingPathComponent("Openlist", isDirectory: true)
             .appendingPathComponent("Media", isDirectory: true)

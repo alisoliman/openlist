@@ -62,7 +62,7 @@ struct TaskCaptureDraft {
 extension Store {
     /// Save a reviewed draft atomically. Failure rolls back only this capture;
     /// existing editor changes are flushed before starting the transaction.
-    func saveCapture(_ preview: TaskCaptureDraft.Preview, destinationID: UUID?) throws -> Block {
+    func saveCapture(_ preview: TaskCaptureDraft.Preview, destinationID: UUID?, selectedForDay: Date? = nil) throws -> Block {
         guard !preview.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CaptureError.emptyTitle
         }
@@ -76,6 +76,7 @@ extension Store {
             let block = prependTask(to: DocumentContext(listID: destination.id))
             setPlainText(block, preview.title)
             block.dueDate = preview.date
+            block.selectedForDay = selectedForDay.map { Calendar.current.startOfDay(for: $0) }
             block.includesTime = preview.includesTime
             block.recurrence = preview.recurrence?.anchored(to: preview.date)
             block.labelIDs = preview.labels.compactMap { findOrCreateLabel(named: $0)?.id }

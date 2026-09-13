@@ -16,6 +16,7 @@ struct SettingsView: View {
         TabView {
             Tab("General", systemImage: "gearshape") { GeneralSettingsTab() }
             Tab("Tasks", systemImage: "checkmark.circle") { TasksSettingsTab() }
+            Tab("Calendar", systemImage: "calendar") { CalendarSettingsView() }
             Tab("Labels", systemImage: "tag") { LabelsSettingsTab() }
             Tab("iCloud", systemImage: "icloud") { ICloudSettingsTab() }
             Tab("AI Agents", systemImage: "terminal") { MCPSettingsTab() }
@@ -413,6 +414,7 @@ struct DataSettingsTab: View {
     }
 
     private func reset() {
+        env.store.clearCalendarHistory()
         for list in env.store.allLists(includeArchived: true) where !list.isSystemInbox {
             env.store.deleteList(list)
         }

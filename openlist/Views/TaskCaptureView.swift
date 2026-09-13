@@ -14,6 +14,7 @@ struct TaskCaptureView: View {
     @State private var failure: String?
     @State private var savedTaskID: UUID?
     @State private var savedDestination = ""
+    @State private var plansForToday = false
     @State private var titleFocus = CaptureTitleFocus()
 
     private var destination: TaskList? {
@@ -87,6 +88,16 @@ struct TaskCaptureView: View {
                         Text("The selected list is unavailable. This task will go to Inbox.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                }
+
+                if request.plansForToday {
+                    Toggle("Plan for today", isOn: $plansForToday)
+                        .toggleStyle(.checkbox)
+                        .help("Include this task in today's calendar without setting a due date")
+                        .onChange(of: plansForToday) { _, _ in
+                            preserveTitleSelection()
+                            restoreTitleSelection()
+                        }
                 }
 
                 if showsPreview {
@@ -176,7 +187,10 @@ struct TaskCaptureView: View {
     private func save() {
         guard savedTaskID == nil else { return }
         do {
-            let block = try env.store.saveCapture(draft.preview, destinationID: destination?.id)
+            let block = try env.store.saveCapture(
+                draft.preview, destinationID: destination?.id,
+                selectedForDay: plansForToday ? .now : nil
+            )
             savedTaskID = block.id
             savedDestination = destination?.displayTitle ?? "Inbox"
             failure = nil
@@ -187,7 +201,8 @@ struct TaskCaptureView: View {
 
     private func reset(text: String = "", preservingDestination: Bool = false) {
         draft = TaskCaptureDraft(text: text, parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates,
-                                 dueTodayWhenUndated: env.settings.defaultDestination == .today)
+                                 dueTodayWhenUndated: !request.plansForToday && env.settings.defaultDestination == .today)
+        plansForToday = request.plansForToday
         if !preservingDestination { destinationID = env.store.inboxList()?.id }
         failure = nil
         savedTaskID = nil

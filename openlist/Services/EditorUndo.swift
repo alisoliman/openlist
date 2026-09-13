@@ -24,6 +24,12 @@ private struct EditorBlockRecord: Equatable {
     var recurrenceData: Data?
     var labelIDs: [UUID]
     var note: String
+    var schedulingEstimateMinutes: Int
+    var selectedForDay: Date?
+    var deferredUntil: Date?
+    var keepsSessionsTogether: Bool
+    var tracksAwayFromMac: Bool
+    var occurrenceID: UUID
     var mediaFilename: String?
     var mediaData: Data?
     var mediaWidth: Double
@@ -50,6 +56,12 @@ private struct EditorBlockRecord: Equatable {
         recurrenceData = model.recurrenceData
         labelIDs = model.labelIDs
         note = model.note
+        schedulingEstimateMinutes = model.schedulingEstimateMinutes
+        selectedForDay = model.selectedForDay
+        deferredUntil = model.deferredUntil
+        keepsSessionsTogether = model.keepsSessionsTogether
+        tracksAwayFromMac = model.tracksAwayFromMac
+        occurrenceID = model.occurrenceID
         mediaFilename = model.mediaFilename
         mediaData = model.mediaData
         mediaWidth = model.mediaWidth
@@ -77,6 +89,12 @@ private struct EditorBlockRecord: Equatable {
         if old == nil || old?.recurrenceData != recurrenceData { model.recurrenceData = recurrenceData }
         if old == nil || old?.labelIDs != labelIDs { model.labelIDs = labelIDs }
         if old == nil || old?.note != note { model.note = note }
+        if old == nil || old?.schedulingEstimateMinutes != schedulingEstimateMinutes { model.schedulingEstimateMinutes = schedulingEstimateMinutes }
+        if old == nil || old?.selectedForDay != selectedForDay { model.selectedForDay = selectedForDay }
+        if old == nil || old?.deferredUntil != deferredUntil { model.deferredUntil = deferredUntil }
+        if old == nil || old?.keepsSessionsTogether != keepsSessionsTogether { model.keepsSessionsTogether = keepsSessionsTogether }
+        if old == nil || old?.tracksAwayFromMac != tracksAwayFromMac { model.tracksAwayFromMac = tracksAwayFromMac }
+        if old == nil || old?.occurrenceID != occurrenceID { model.occurrenceID = occurrenceID }
         if old == nil || old?.mediaFilename != mediaFilename { model.mediaFilename = mediaFilename }
         if old == nil || old?.mediaData != mediaData { model.mediaData = mediaData }
         if old == nil || old?.mediaWidth != mediaWidth { model.mediaWidth = mediaWidth }

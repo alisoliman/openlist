@@ -29,6 +29,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⌘3", action: "Updates"),
             Shortcut(keys: "⌘4", action: "Tasks"),
             Shortcut(keys: "⌘5", action: "Lists"),
+            Shortcut(keys: "⌘6", action: "Calendar"),
             Shortcut(keys: "⌘[", action: "Back"),
             Shortcut(keys: "⌘]", action: "Forward"),
             Shortcut(keys: "⌘F", action: "Search"),

@@ -67,6 +67,7 @@ private struct TaskDetailContent: View {
             VStack(alignment: .leading, spacing: 20) {
                 titleSection(block)
                 metadataSection(block)
+                TaskSchedulingSection(block: block)
                 if isNoteVisible || !block.note.isEmpty {
                     noteSection(block)
                 } else {
