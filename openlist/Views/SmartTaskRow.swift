@@ -62,6 +62,7 @@ struct SmartTaskRow: View {
     var showsBreadcrumb: Bool = true
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.compactTaskRows) private var isCompact
     @State private var isHovering = false
     @State private var titleDraft = SyncedTextDraft()
     @State private var editSessionID = UUID()
@@ -80,56 +81,36 @@ struct SmartTaskRow: View {
             .padding(.top, 1)
             .accessibilityLabel("\(block.isCompleted ? "Reopen" : "Complete") \(block.displayTitle)")
 
-            VStack(alignment: .leading, spacing: 3) {
-                title
-
-                if showsBreadcrumb, let breadcrumb = context.breadcrumb(for: block) {
-                    Text(breadcrumb)
-                        .font(Theme.Font.metadata)
-                        .foregroundStyle(Theme.tertiaryText)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            TaskMetadataChips(
-                block: block,
-                labels: context.labels(for: block),
-                progress: context.subtaskProgress(for: block),
-                onTapDue: openDetails,
-                onTapLabel: { _ in openDetails() }
-            )
-            .padding(.top, 1)
-
-            if showsListBadge, let owningList, !owningList.isSystemInbox {
-                Button {
-                    env.navigator.go(to: .list(owningList.id))
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(owningList.icon)
-                            .font(.system(size: 9))
-                        Text(owningList.displayTitle)
+            let layout = isCompact
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 5))
+                : AnyLayout(HStackLayout(alignment: .top, spacing: 8))
+            layout {
+                VStack(alignment: .leading, spacing: 3) {
+                    title
+                    if showsBreadcrumb, let breadcrumb = context.breadcrumb(for: block) {
+                        Text(breadcrumb)
+                            .font(Theme.Font.metadata)
+                            .foregroundStyle(Theme.tertiaryText)
                             .lineLimit(1)
                     }
-                    .chipStyle(accent: owningList.accent.color)
                 }
-                .buttonStyle(.plain)
-                .help("Open \(owningList.displayTitle)")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+
+                metadata
+                    .fixedSize(horizontal: !isCompact, vertical: false)
             }
 
-            if isHovering {
-                Button(action: openDetails) {
-                    Image(systemName: "arrow.up.forward.square")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.tertiaryText)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
+            Button("Open details", systemImage: "arrow.up.forward.square", action: openDetails)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 12))
+                .foregroundStyle(isHovering || isSelected ? Theme.secondaryText : Theme.tertiaryText)
+                .opacity(isHovering || isSelected ? 1 : 0.45)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
                 .buttonStyle(.plain)
                 .help("Open details (⌘↩)")
                 .accessibilityLabel("Open details for \(block.displayTitle)")
-            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -150,6 +131,44 @@ struct SmartTaskRow: View {
         }
         .contextMenu {
             BlockContextMenu(block: block, actions: contextActions)
+        }
+    }
+
+    private var metadata: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 5) {
+                metadataChips
+                listBadge
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                metadataChips
+                listBadge
+            }
+        }
+    }
+
+    private var metadataChips: some View {
+        TaskMetadataChips(
+            block: block,
+            labels: context.labels(for: block),
+            progress: context.subtaskProgress(for: block),
+            onTapDue: { env.openTask(block.id, showing: .due) },
+            onTapLabel: { _ in env.openTask(block.id, showing: .labels) }
+        )
+    }
+
+    @ViewBuilder
+    private var listBadge: some View {
+        if showsListBadge, let owningList, !owningList.isSystemInbox {
+            Button {
+                env.navigator.go(to: .list(owningList.id))
+            } label: {
+                Text("\(owningList.icon) \(owningList.displayTitle)")
+                    .lineLimit(1)
+                    .chipStyle(accent: owningList.accent.color)
+            }
+            .buttonStyle(.plain)
+            .help("Open \(owningList.displayTitle)")
         }
     }
 
@@ -235,6 +254,7 @@ struct TaskGroupSection<Footer: View>: View {
     var isInitiallyExpanded: Bool = true
     @ViewBuilder var footer: () -> Footer
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded: Bool
 
     init(
@@ -261,7 +281,7 @@ struct TaskGroupSection<Footer: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right")
@@ -305,6 +325,7 @@ struct TaskGroupSection<Footer: View>: View {
             }
         }
         .padding(.bottom, 10)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: tasks.map(\.id))
     }
 }
 

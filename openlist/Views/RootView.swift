@@ -34,7 +34,7 @@ struct RootView: View {
                         .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
                 }
         }
-        .navigationTitle("")
+        .navigationTitle("Openlist")
         .toolbar { toolbarContent }
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
             CommandPaletteView()
@@ -333,43 +333,28 @@ struct RootView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button {
-                env.navigator.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-            }
+            Button("Back", systemImage: "chevron.left") { env.navigator.goBack() }
+                .labelStyle(.iconOnly)
             .disabled(!env.navigator.canGoBack)
             .help("Back (⌘[)")
 
-            Button {
-                env.navigator.goForward()
-            } label: {
-                Image(systemName: "chevron.right")
-            }
+            Button("Forward", systemImage: "chevron.right") { env.navigator.goForward() }
+                .labelStyle(.iconOnly)
             .disabled(!env.navigator.canGoForward)
             .help("Forward (⌘])")
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                env.navigator.isSearchOpen = true
-            } label: {
-                Image(systemName: "magnifyingglass")
-            }
+            Button("Search", systemImage: "magnifyingglass") { env.navigator.isSearchOpen = true }
+                .labelStyle(.iconOnly)
             .help("Search (⌘F)")
 
-            Button {
-                env.navigator.isCommandPaletteOpen = true
-            } label: {
-                Image(systemName: "command")
-            }
+            Button("Quick command", systemImage: "command") { env.navigator.isCommandPaletteOpen = true }
+                .labelStyle(.iconOnly)
             .help("Quick command (⌘K)")
 
-            Button {
-                env.send(.newTask)
-            } label: {
-                Image(systemName: "plus")
-            }
+            Button("Add task", systemImage: "plus") { env.send(.newTask) }
+                .labelStyle(.iconOnly)
             .help("New task (⌘N)")
         }
     }
@@ -403,19 +388,23 @@ struct ScreenScaffold<Header: View, Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header()
-                    .padding(.bottom, headerSpacing)
-                content()
+        GeometryReader { geometry in
+            let gutter = min(Theme.Spacing.documentGutter, max(16, geometry.size.width * 0.045))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header()
+                        .padding(.bottom, headerSpacing)
+                    content()
+                }
+                .frame(maxWidth: maxContentWidth, alignment: .leading)
+                .padding(.horizontal, gutter)
+                .padding(.top, 24)
+                .padding(.bottom, 60)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            .frame(maxWidth: maxContentWidth, alignment: .leading)
-            .padding(.horizontal, Theme.Spacing.documentGutter)
-            .padding(.top, 24)
-            .padding(.bottom, 60)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .environment(\.compactTaskRows, geometry.size.width < 620)
+            .background(Theme.canvas)
         }
-        .background(Theme.canvas)
     }
 }
 
