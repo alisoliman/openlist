@@ -465,50 +465,6 @@ struct ScreenScaffold<Header: View, Content: View>: View {
     }
 }
 
-/// The title block at the top of every screen.
-struct ScreenHeader<Trailing: View>: View {
-    let icon: String
-    let title: String
-    var subtitle: String?
-    var isEmoji: Bool = false
-    /// Lets a screen tint its icon with the thing it represents — a label's own
-    /// colour, say — rather than the app accent.
-    var accent: ListAccent?
-    @ViewBuilder var trailing: () -> Trailing
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            if isEmoji {
-                Text(icon)
-                    .font(.system(size: 24))
-            } else {
-                Image(systemName: icon)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(accent?.color ?? Theme.accent)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(Theme.Font.documentTitle)
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-            }
-
-            Spacer(minLength: 12)
-            trailing()
-        }
-    }
-}
-
-extension ScreenHeader where Trailing == EmptyView {
-    init(icon: String, title: String, subtitle: String? = nil, isEmoji: Bool = false, accent: ListAccent? = nil) {
-        self.init(icon: icon, title: title, subtitle: subtitle, isEmoji: isEmoji, accent: accent) { EmptyView() }
-    }
-}
-
 /// Empty-state placeholder used across the smart views.
 struct EmptyStateView: View {
     let icon: String
