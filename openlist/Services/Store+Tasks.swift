@@ -245,7 +245,7 @@ extension Store {
         let name = TaskLabel.normalize(rawName)
         guard !name.isEmpty else { return nil }
 
-        if let existing = allLabels().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+        if let existing = matchingLabels(named: name).first {
             return existing
         }
         let label = TaskLabel(
@@ -279,6 +279,11 @@ extension Store {
         }
     }
 
+    func toggleLabel(id: UUID, on block: Block) {
+        guard let label = label(id: id) else { return }
+        toggleLabel(label, on: block)
+    }
+
     func clearLabels(on block: Block) {
         guard !block.labelIDs.isEmpty else { return }
         block.labelIDs.removeAll()
@@ -286,11 +291,8 @@ extension Store {
         save()
     }
 
-    func renameLabel(_ label: TaskLabel, to newName: String) {
-        let name = TaskLabel.normalize(newName)
-        guard !name.isEmpty else { return }
-        label.name = name
-        save()
+    func renameLabel(_ label: TaskLabel, to newName: String) throws {
+        try renameLabel(id: label.id, to: newName)
     }
 
     func deleteLabel(_ label: TaskLabel) {

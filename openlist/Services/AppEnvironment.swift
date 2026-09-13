@@ -94,6 +94,9 @@ final class AppEnvironment {
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
 
+        store.onLabelsMerged = { [weak navigator] sourceID, destinationID in
+            navigator?.retargetLabel(from: sourceID, to: destinationID)
+        }
         store.onDidSave = { [weak widgetPublisher, weak calendar] in
             widgetPublisher?.scheduleRefresh()
             calendar?.storeDidChange()

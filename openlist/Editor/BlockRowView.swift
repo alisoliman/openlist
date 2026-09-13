@@ -337,8 +337,9 @@ struct BlockContextMenu: View {
                     Text("No labels yet")
                 } else {
                     ForEach(labels) { label in
+                        let labelID = label.id
                         CheckmarkMenuItem(label.name, isSelected: block.labelIDs.contains(label.id)) {
-                            env.store.toggleLabel(label, on: block)
+                            env.store.toggleLabel(id: labelID, on: block)
                         }
                     }
                 }

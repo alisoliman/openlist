@@ -88,6 +88,20 @@ completed tasks settle below pending siblings. Each task carries its subtasks
 and attached notes. Manual order stays stored, so reopening restores its place.
 Reduce Motion uses an immediate state change without the bounce or movement.
 
+In **Settings → Labels**, renaming into an existing name offers a merge review
+with the surviving label's name, color, and affected-task count. Matching trims
+outer whitespace and leading `#` characters and ignores case; internal spacing
+is preserved. Existing duplicate names expose **Merge duplicates**, where you
+choose which label to keep. Nothing merges until you confirm.
+
+Merging updates labels on all tasks, including nested, completed, and archived
+work, while retaining the destination identity/color and historical activity
+names. **Undo merge** stays available in Settings and the main window after
+navigation, until dismissed, another merge, or app restart. Task content and
+unrelated label edits made afterward are preserved by undo. The central merge
+path includes all stored blocks without a visibility filter; future retained
+Trash records must use that path or extend it if stored separately.
+
 ### Views
 
 **Inbox** (⌘1) · **Today** (⌘2) · **Updates** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5) ·

@@ -148,11 +148,16 @@ struct RootView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 236, max: 340)
         } detail: {
-            contentArea
-                .inspector(isPresented: taskPanelBinding) {
-                    TaskDetailPanel()
-                        .inspectorColumnWidth(min: 300, ideal: 380, max: 480)
+            VStack(spacing: 0) {
+                if env.store.labelMergeUndo != nil || env.store.labelMaintenanceError != nil {
+                    LabelMergeNotice()
                 }
+                contentArea
+            }
+            .inspector(isPresented: taskPanelBinding) {
+                TaskDetailPanel()
+                    .inspectorColumnWidth(min: 300, ideal: 380, max: 480)
+            }
         }
     }
 
