@@ -85,6 +85,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === hostWindow.window else { return }
+            env.reminderNavigation.windowReady(true)
             env.localLinks.windowReady(true)
             installCompletionUndo(in: window)
             // The real trigger: at launch the window is not key yet, so the

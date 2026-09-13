@@ -102,6 +102,53 @@ links.receive(LocalLink(libraryID: firstIdentity, target: .list(listID)).url())
 check(navigator.openTaskID == taskID, "Closed main window queues incoming delivery")
 links.windowReady(true)
 check(navigator.openTaskID == nil && navigator.contentReveal?.destination == .list(listID), "Reopened window consumes pending list link")
+
+// Both entry points share one navigator after integration. Readiness must not
+// lose either queue, replay a delivery, or let bootstrap reset a revealed item.
+let sharedNavigator = Navigator()
+let sharedLinks = LocalLinkNavigation(libraryID: firstIdentity, navigator: sharedNavigator)
+let sharedReminders = ReminderNavigation(navigator: sharedNavigator)
+var linkResolutions = 0
+var reminderResolutions = 0
+var windowOpenRequests = 0
+sharedReminders.openMainWindow = { windowOpenRequests += 1 }
+sharedLinks.receive(taskURL)
+sharedReminders.receive(duplicate.id)
+sharedLinks.windowReady(true)
+sharedReminders.windowReady(true)
+check(sharedNavigator.contentReveal == nil, "Both cold entry points wait for the shared store bootstrap")
+sharedNavigator.replace(with: .today)
+sharedReminders.storeReady { id in
+    reminderResolutions += 1
+    return try resolve(.task(id))
+}
+sharedLinks.storeReady { target in
+    linkResolutions += 1
+    return try resolve(target)
+}
+check(linkResolutions == 1 && reminderResolutions == 1 && sharedNavigator.route == .list(listID),
+      "Shared bootstrap resolves each queued entry once after the Today default")
+let sharedActivation = sharedNavigator.searchActivation
+sharedReminders.windowReady(true)
+sharedLinks.windowReady(true)
+check(sharedNavigator.searchActivation == sharedActivation && linkResolutions == 1 && reminderResolutions == 1,
+      "Repeated window attachment cannot replay either queue")
+sharedReminders.windowReady(false)
+sharedLinks.windowReady(false)
+sharedReminders.receive(duplicate.id)
+check(windowOpenRequests == 2 && reminderResolutions == 1, "Closed-window reminder requests reopening without resolving early")
+sharedReminders.windowReady(true)
+sharedLinks.windowReady(true)
+check(sharedNavigator.openTaskID == duplicate.id && reminderResolutions == 2, "Window reopening reveals the queued reminder exactly")
+sharedReminders.windowReady(false)
+sharedLinks.windowReady(false)
+sharedLinks.receive(LocalLink(libraryID: firstIdentity, target: .list(listID)).url())
+sharedReminders.windowReady(true)
+sharedLinks.windowReady(true)
+check(sharedNavigator.openTaskID == nil && sharedNavigator.contentReveal?.destination == .list(listID)
+      && linkResolutions == 2 && reminderResolutions == 2,
+      "Later closed-window list link resolves without replaying the reminder")
+
 let beforeFailure = navigator.contentReveal
 links.receive(LocalLink(libraryID: UUID(), target: .task(taskID)).url())
 check(links.error == .wrongLibrary && navigator.contentReveal == beforeFailure, "Wrong-library UUID cannot resolve coincidentally identical target IDs")
