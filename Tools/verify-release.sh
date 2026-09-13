@@ -61,7 +61,7 @@ for bundle in "$APP" "$APP/Contents/PlugIns/OpenlistWidget.appex"; do
     fi
     require_metadata "$plist" CFBundleIdentifier "$identifier"
     if [[ "$bundle" == "$APP" ]]; then
-        python3 - "$plist" <<'PY' || fail_bundle "$plist: invalid production item-link registration"
+        python3 - "$plist" <<'PY' || fail_bundle "$plist: CFBundleURLTypes: invalid production item-link registration"
 import plistlib, sys
 with open(sys.argv[1], 'rb') as source:
     info = plistlib.load(source)
