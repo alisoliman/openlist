@@ -102,6 +102,17 @@ task ordering within each section. Equal values use creation date, then task ide
 ties. This Mac remembers the choice; task membership, list documents, and synced
 list preferences stay unchanged.
 
+Tasks has a local **Filter task titles** field that combines with the selected
+status and list. It matches visible titles without case or accent differences;
+notes, labels and parent titles are not searched. **Sort tasks** independently
+orders every group by due date, title or creation date in either direction.
+Undated tasks stay last in due-date order; equal values use creation time then
+task identity for stable ties. The page count counts each matching task once,
+even when it appears under several labels. **Reset filters** clears title,
+status and list constraints while keeping grouping and sorting; **Reset sort**
+in the sort menu restores earliest due first. These Tasks choices are temporary
+screen state and reset when the app relaunches. Sorting never rewrites documents.
+
 ### Adaptive calendar
 
 Calendar offers **1-day, 3-day, 1-week, and 1-month** views of a rolling four-week
