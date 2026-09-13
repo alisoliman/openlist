@@ -5,6 +5,7 @@ private struct InboxChange {
     let id: UUID
     let before: Data?
     let after: Data?
+    let occurrenceID: UUID
 }
 
 extension Store {
@@ -76,7 +77,7 @@ extension Store {
                 var value = included ? InboxMembership.included(order: order, occurrenceID: task.occurrenceID) : InboxMembership(included: false)
                 value.decisionID = UUID()
                 let data = try value.encoded()
-                changes.append(InboxChange(id: id, before: task.inboxMembershipData, after: data))
+                changes.append(InboxChange(id: id, before: task.inboxMembershipData, after: data, occurrenceID: task.occurrenceID))
             }
             return try applyInboxChanges(changes, name: included ? "Add to Inbox" : "Remove from Inbox", undoManager: undoManager)
         } catch {
@@ -106,7 +107,7 @@ extension Store {
                 var value = try InboxMembership.decode(task.inboxMembershipData!)
                 value.order = Double(index) * BlockTree.indexStep
                 let data = try value.encoded()
-                return data == task.inboxMembershipData ? nil : InboxChange(id: task.id, before: task.inboxMembershipData, after: data)
+                return data == task.inboxMembershipData ? nil : InboxChange(id: task.id, before: task.inboxMembershipData, after: data, occurrenceID: task.occurrenceID)
             }
             return try applyInboxChanges(changes, name: "Reorder Inbox", undoManager: undoManager)
         } catch { inboxError = error.localizedDescription; return false }
@@ -124,7 +125,8 @@ extension Store {
                let liveData = task.inboxMembershipData, let expectedData = change.before,
                let live = try? InboxMembership.decode(liveData),
                var expected = try? InboxMembership.decode(expectedData),
-               live.included, expected.included, live.occurrenceID == task.occurrenceID {
+               live.included, expected.included, live.occurrenceID == task.occurrenceID,
+               expected.occurrenceID == change.occurrenceID {
                 // Completion Undo/reopen may rebind this same decision. A new
                 // decision UUID, order, or included state still conflicts.
                 expected.occurrenceID = live.occurrenceID
@@ -133,11 +135,14 @@ extension Store {
             guard matches else { throw InboxMembershipError.unavailable }
             var desired = change.after
             if rebindingOccurrence, let data = desired,
-               var selection = try? InboxMembership.decode(data), selection.included {
+               var selection = try? InboxMembership.decode(data), selection.included,
+               selection.occurrenceID == change.occurrenceID {
+                // Only carry a state that was selected when captured. A stale
+                // old-client payload must retain its prior excluded effect.
                 selection.occurrenceID = task.occurrenceID
                 desired = try selection.encoded()
             }
-            return InboxChange(id: change.id, before: task.inboxMembershipData, after: desired)
+            return InboxChange(id: change.id, before: task.inboxMembershipData, after: desired, occurrenceID: task.occurrenceID)
         }
         for change in applied { byID[change.id]?.inboxMembershipData = change.after }
         do { try persistChanges() }
@@ -150,7 +155,7 @@ extension Store {
         if let undoManager {
             undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
                 do {
-                    let inverse = applied.map { InboxChange(id: $0.id, before: $0.after, after: $0.before) }
+                    let inverse = applied.map { InboxChange(id: $0.id, before: $0.after, after: $0.before, occurrenceID: $0.occurrenceID) }
                     _ = try store.applyInboxChanges(inverse, name: name, undoManager: undoManager, rebindingOccurrence: true)
                 } catch { store.inboxError = "Inbox Undo could not be applied. \(error.localizedDescription)" }
             }

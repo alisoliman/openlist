@@ -168,6 +168,12 @@ check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Restore selecte
 let stale = recurrence.inboxMembershipData
 recurrence.occurrenceID = UUID(); store.save()
 check(InboxPolicy.selection(recurrence) == nil && recurrence.inboxMembershipData == stale, "Old-client occurrence advance cannot silently rejoin without clearing data")
+let addOverStale = nativeUndo("Add to Inbox") { check(store.setInboxMembership(true, taskIDs: [recurrence.id], undoManager: $0), "Explicit Add replaces a stale old-client selection") }
+check(InboxPolicy.selection(recurrence) != nil, "Explicit Add selects the actual current occurrence")
+addOverStale.undo()
+check(InboxPolicy.selection(recurrence) == nil && recurrence.inboxMembershipData == stale && store.inboxError == nil, "Undo Add restores stale bytes without reactivating their previous occurrence")
+addOverStale.redo()
+check(InboxPolicy.selection(recurrence) != nil && store.inboxError == nil, "Redo Add selects the current occurrence after restoring stale state")
 let duplicateID = try store.copyBlock(task, mode: .duplicate)
 check(store.block(id: duplicateID)?.inboxMembershipData == InboxMembership.excludedData, "Independent duplicate excludes source curation")
 let templateID = try store.copyBlock(task, mode: .template(keepingRecurrence: true))
