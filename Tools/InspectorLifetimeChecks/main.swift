@@ -133,6 +133,63 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     store.onEditorBlocksRemoved = nil
     window.contentView = nil
 }
+// Keep the actual outer DocumentView/@Query/ForEach alive while its inserted
+// models are invalidated. The row's own liveness guard cannot protect label
+// lookup and rich-content reads performed by this parent builder.
+let destination = store.createList(title: "Retained pasted document")
+let fragment = try FragmentContent.capture([source.id], store: store)
+let documentEnvironment = AppEnvironment(store: store)
+func documentFixture(_ identity: Int) -> some View {
+    DocumentView(document: .init(listID: destination.id))
+        .frame(width: 540, height: 600, alignment: .top)
+        .environment(documentEnvironment).modelContainer(container)
+        .environment(\.modelContext, store.context).id(identity)
+}
+let documentHost = NSHostingView(rootView: documentFixture(0))
+let documentWindow = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 540, height: 600),
+    styleMask: .borderless, backing: .buffered, defer: false)
+documentWindow.contentView = documentHost
+documentHost.layoutSubtreeIfNeeded()
+for iteration in 0..<3 {
+    let undo = UndoManager(); undo.groupsByEvent = false
+    undo.beginUndoGrouping()
+    let rootID = store.undoableEditorEdit(in: destination.id, name: "Paste content", undoManager: undo, includingNewLabels: true) {
+        try! store.pasteFragment(fragment, in: .init(listID: destination.id), after: nil)[0]
+    }
+    undo.endUndoGrouping()
+    // A hidden window has no display-link driven lazy materialization. Mount
+    // the actual query after insertion, then retain it throughout invalidation.
+    documentHost.rootView = documentFixture(iteration + 1)
+    try await Task.sleep(for: .milliseconds(100))
+    _ = documentHost.fittingSize
+    documentHost.layoutSubtreeIfNeeded()
+    _ = documentHost.accessibilityChildren()
+    func nativeTextViews(in view: NSView) -> [BlockNSTextView] {
+        (view as? BlockNSTextView).map { [$0] } ?? view.subviews.flatMap { nativeTextViews(in: $0) }
+    }
+    // NSView's subview order is not the document's reading order.
+    check(nativeTextViews(in: documentHost).contains { $0.string == fragment.blocks[0].text },
+        "Actual DocumentView materializes the pasted row before invalidation")
+    let retained = store.block(id: rootID)!
+    let row = BlockRow(block: retained, depth: 0, ordinal: 0, hasChildren: true, isCollapsed: false)
+    documentEnvironment.navigator.openTask(rootID)
+    undo.undo()
+    documentHost.layoutSubtreeIfNeeded()
+    _ = documentHost.accessibilityChildren()
+    await Task.yield()
+    documentHost.layoutSubtreeIfNeeded()
+    check(store.block(id: rootID) == nil, "Actual retained DocumentView survives pasted subtree Undo and accessibility layout")
+    check(row.id == rootID && Set([row]).contains(row), "Retained row identity and hashing require no deleted model reads")
+    undo.redo()
+    await Task.yield()
+    documentHost.layoutSubtreeIfNeeded()
+    _ = documentHost.accessibilityChildren()
+    check(store.block(id: rootID) != nil && store.attachments(for: rootID).count == 1,
+        "Retained document renders Redo's fresh model and attachment")
+    undo.undo()
+    await Task.yield()
+}
+documentWindow.contentView = nil
 // Exercise the actual native editor callbacks for typed and single-line pasted
 // capture. A private pasteboard avoids changing the user's clipboard.
 func nativeTextView(in view: NSView) -> BlockNSTextView? {
