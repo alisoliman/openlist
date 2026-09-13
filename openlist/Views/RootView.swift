@@ -151,7 +151,7 @@ struct RootView: View {
             contentArea
                 .inspector(isPresented: taskPanelBinding) {
                     TaskDetailPanel()
-                        .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
+                        .inspectorColumnWidth(min: 300, ideal: 380, max: 480)
                 }
         }
     }
@@ -322,6 +322,7 @@ struct RootView: View {
         VStack(spacing: 0) {
             CalendarWorkBanner()
             routedContent
+                .modifier(PageArrivalTransition(route: env.navigator.route))
         }
     }
 
@@ -412,6 +413,9 @@ struct MissingContentView: View {
 /// Standard page scaffold: big title, optional subtitle and trailing controls,
 /// then scrolling content constrained to a comfortable measure.
 struct ScreenScaffold<Header: View, Content: View>: View {
+    @Environment(AppEnvironment.self) private var env
+    @State private var scrollPosition = ScrollPosition(y: 0)
+    @State private var scrollRoute: AppRoute?
     var maxContentWidth: CGFloat = 820
     /// Gap between the title block and the content below it.
     var headerSpacing: CGFloat = 14
@@ -433,7 +437,17 @@ struct ScreenScaffold<Header: View, Content: View>: View {
                 .padding(.bottom, 60)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .environment(\.compactTaskRows, geometry.size.width < 620)
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, offset in
+                guard let scrollRoute, scrollRoute == env.navigator.route else { return }
+                env.navigator.rememberScrollOffset(offset, for: scrollRoute)
+            }
+            .onAppear {
+                scrollRoute = env.navigator.route
+                scrollPosition.scrollTo(y: env.navigator.scrollOffset(for: env.navigator.route))
+            }
             .background(Theme.canvas)
         }
     }

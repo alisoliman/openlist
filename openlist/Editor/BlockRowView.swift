@@ -251,25 +251,18 @@ struct BlockRowView: View {
         }
     }
 
-    @ViewBuilder
     private var hoverActions: some View {
-        // Built only while hovered — a long document would otherwise carry an
-        // AppKit-backed Menu control per row for affordances nobody can see.
-        if isHovering {
-            HStack(spacing: 2) {
-                if block.isTask {
-                    Button(action: actions.onOpenDetails) {
-                        Image(systemName: "arrow.up.forward.square")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.tertiaryText)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Open details (⌘↩)")
-                    .accessibilityLabel("Open details for \(block.displayTitle)")
-                }
-
+        HStack(spacing: 0) {
+            if block.isTask {
+                TaskDetailButton(
+                    title: block.displayTitle,
+                    isRevealed: isHovering || isFocused || isSelected,
+                    action: actions.onOpenDetails
+                )
+            }
+            // Avoid an AppKit-backed menu on every idle row. The context menu
+            // remains available, and keyboard selection reveals this control.
+            if isHovering || isFocused || isSelected {
                 Menu {
                     BlockContextMenu(block: block, actions: actions)
                 } label: {
@@ -283,8 +276,9 @@ struct BlockRowView: View {
                 .accessibilityLabel("Actions for \(block.displayTitle)")
                 .menuIndicator(.hidden)
                 .frame(width: 20)
+            } else {
+                Color.clear.frame(width: 20, height: 20)
             }
-            .transition(.opacity)
         }
     }
 

@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 ///
 /// A task's detail page behaves like a miniature list: it holds its own blocks
 /// (subtasks, text, images) rendered by the same `DocumentView` that draws a
-/// full list, plus the scheduling controls along the top.
+/// full list, with compact metadata and optional calendar planning.
 struct TaskDetailPanel: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -31,7 +31,10 @@ struct TaskDetailPanel: View {
                 MissingContentView(message: "Select a task to see its details.")
             }
         }
-        .background(Theme.chrome)
+        .background(Theme.inspector)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Theme.separator.opacity(0.65)).frame(width: 1)
+        }
     }
 }
 
@@ -48,9 +51,8 @@ private struct TaskDetailContent: View {
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var openPicker: DetailPicker?
     @State private var isCapturingTitle = false
-    @State private var showsMoreDetails = false
+    @State private var showsScheduling = false
     @State private var isNoteVisible = false
     @State private var captureCancellationArmed = false
     @FocusState private var isTitleFocused: Bool
@@ -66,8 +68,9 @@ private struct TaskDetailContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 titleSection(block)
-                metadataSection(block)
-                TaskSchedulingSection(block: block)
+                TaskInspectorMetadata(block: block)
+                    .simultaneousGesture(TapGesture().onEnded { claimParentCommands() })
+                Divider()
                 if isNoteVisible || !block.note.isEmpty {
                     noteSection(block)
                 } else {
@@ -79,19 +82,26 @@ private struct TaskDetailContent: View {
                 }
                 subtaskSection(block)
                 attachmentSection(block)
+                DisclosureGroup(isExpanded: $showsScheduling) {
+                    TaskSchedulingSection(block: block)
+                        .padding(.top, 10)
+                } label: {
+                    Label("Calendar planning", systemImage: "calendar.badge.clock")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                .transaction { if reduceMotion { $0.disablesAnimations = true } }
                 footer(block)
             }
             .padding(20)
         }
         .onAppear {
-            adoptRequestedPicker()
             focusTitleIfNew(block)
         }
         .onDisappear {
             commitTitle()
             env.finishTaskTitleCapture(taskID, discardEmpty: true)
         }
-        .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
     }
 
     // MARK: - Title
@@ -107,7 +117,7 @@ private struct TaskDetailContent: View {
                     env.store.toggleCompletion(block)
                 }
             )
-            .padding(.top, 3)
+            .padding(.top, 7)
 
             VStack(alignment: .leading, spacing: 6) {
                 TextField(
@@ -121,10 +131,11 @@ private struct TaskDetailContent: View {
                     axis: .vertical
                 )
                 .textFieldStyle(.plain)
-                .font(.title3.weight(.semibold))
+                .font(Theme.Font.inspectorTitle)
                 .foregroundStyle(block.isCompleted ? Theme.tertiaryText : Color.primary)
                 .strikethrough(block.isCompleted, color: Theme.tertiaryText)
-                .lineLimit(1...6)
+                .lineLimit(1...)
+                .fixedSize(horizontal: false, vertical: true)
                 .focused($isTitleFocused)
                 .onSubmit(commitTitle)
                 .onChange(of: isTitleFocused) { _, focused in
@@ -162,177 +173,6 @@ private struct TaskDetailContent: View {
             .help("Close (Esc)")
             .accessibilityLabel("Close task details")
         }
-    }
-
-    // MARK: - Scheduling and tags
-
-    private func metadataSection(_ block: Block) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            DetailRow(icon: "folder", title: "List") {
-                Menu {
-                    ForEach(env.store.allLists()) { list in
-                        Button("\(list.icon)  \(list.displayTitle)") {
-                            env.store.moveToList(block, list: list)
-                        }
-                    }
-                } label: {
-                    let list = env.store.list(id: block.listID)
-                    Text("\(list?.icon ?? "") \(list?.displayTitle ?? "None")")
-                        .chipStyle(accent: list?.accent.color)
-                        .lineLimit(1)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            DetailRow(icon: "calendar", title: "Due") {
-                Button {
-                    openPicker = .due
-                } label: {
-                    if block.dueDate != nil {
-                        DueDateChip(block: block)
-                    } else {
-                        Text("Add date")
-                            .chipStyle()
-                    }
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) {
-                    DueDatePicker(block: block).environment(env)
-                }
-
-                if block.dueDate != nil {
-                    ClearButton(label: "Clear due date") { env.store.setDueDate(nil, for: block) }
-                }
-            }
-
-            if !showsMoreDetails {
-                optionalMetadata(block, includeInactive: false)
-            }
-
-            DisclosureGroup("More details", isExpanded: $showsMoreDetails) {
-                VStack(alignment: .leading, spacing: 10) {
-                    optionalMetadata(block, includeInactive: true)
-                }
-                .padding(.top, 8)
-            }
-            .font(Theme.Font.metadata)
-            .transaction { transaction in
-                if reduceMotion { transaction.disablesAnimations = true }
-            }
-        }
-        .simultaneousGesture(TapGesture().onEnded { claimParentCommands() })
-    }
-
-    @ViewBuilder
-    private func optionalMetadata(_ block: Block, includeInactive: Bool) -> some View {
-        if includeInactive || block.recurrence != nil {
-            DetailRow(icon: "repeat", title: "Repeat") {
-                Button {
-                    openPicker = .repeatRule
-                } label: {
-                    Text(block.recurrence?.displayText ?? "Never")
-                        .chipStyle(accent: block.recurrence != nil ? Theme.accent : nil)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: pickerBinding(.repeatRule), arrowEdge: .bottom) {
-                    RecurrencePicker(block: block).environment(env)
-                }
-
-                if block.recurrence != nil {
-                    ClearButton(label: "Clear repeat rule") { env.store.setRecurrence(nil, for: block) }
-                }
-            }
-        }
-
-        if includeInactive || block.reminderAt != nil {
-            DetailRow(icon: "bell", title: "Remind") {
-                Button {
-                    openPicker = .reminder
-                } label: {
-                    Text(reminderText(block))
-                        .chipStyle(accent: block.reminderAt != nil ? Theme.accent : nil)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: pickerBinding(.reminder), arrowEdge: .bottom) {
-                    ReminderPicker(block: block).environment(env)
-                }
-
-                if block.reminderAt != nil {
-                    ClearButton(label: "Clear reminder") { env.store.setReminder(nil, for: block) }
-                }
-            }
-        }
-
-        if includeInactive || !block.labelIDs.isEmpty {
-            DetailRow(icon: "tag", title: "Labels") {
-                let labels = env.store.labels(for: block)
-                Button {
-                    openPicker = .labels
-                } label: {
-                    if labels.isEmpty {
-                        Text("Add label")
-                            .chipStyle()
-                    } else {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(labels) { label in
-                                Text(label.name)
-                                    .chipStyle(accent: label.accent.color)
-                            }
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: pickerBinding(.labels), arrowEdge: .bottom) {
-                    LabelPicker(block: block).environment(env)
-                }
-            }
-        }
-
-        if includeInactive || block.priority != .none {
-            DetailRow(icon: "flag", title: "Priority") {
-                Menu {
-                    ForEach(TaskPriority.allCases, id: \.self) { priority in
-                        CheckmarkMenuItem(priority.title, isSelected: block.priority == priority) {
-                            env.store.setPriority(priority, for: block)
-                        }
-                    }
-                } label: {
-                    Text(block.priority.title)
-                        .chipStyle(accent: block.priority.accent?.color)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-            }
-        }
-
-        if includeInactive || block.isStarred {
-            DetailRow(icon: "star", title: "Star") {
-                Toggle(
-                    "Star task",
-                    isOn: Binding(
-                        get: { block.isStarred },
-                        set: { _ in env.store.toggleStar(block) }
-                    )
-                )
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
-                .accessibilityLabel("Star task")
-            }
-        }
-    }
-
-    /// Consumes a picker requested by ⌃D / ⌃L.
-    private func adoptRequestedPicker() {
-        guard let requested = env.requestedPicker else { return }
-        if requested != .due { showsMoreDetails = true }
-        openPicker = requested
-        env.requestedPicker = nil
     }
 
     /// A task created by ⌘N arrives empty, so put the caret in its title.
@@ -409,19 +249,6 @@ private struct TaskDetailContent: View {
                 .foregroundStyle(Theme.accent)
             }
         }
-    }
-
-    /// Presents `kind` while it is the open picker.
-    private func pickerBinding(_ kind: DetailPicker) -> Binding<Bool> {
-        Binding(
-            get: { openPicker == kind },
-            set: { openPicker = $0 ? kind : nil }
-        )
-    }
-
-    private func reminderText(_ block: Block) -> String {
-        guard let reminder = block.reminderAt else { return "None" }
-        return Store.absoluteDateText(reminder, includesTime: true)
     }
 
     // MARK: - Note
@@ -618,40 +445,6 @@ private struct TaskDetailContent: View {
 }
 
 // MARK: - Small pieces
-
-/// Label-and-control row used throughout the inspector.
-struct DetailRow<Content: View>: View {
-    let icon: String
-    let title: String
-    let content: Content
-
-    init(icon: String, title: String, @ViewBuilder content: () -> Content) {
-        self.icon = icon
-        self.title = title
-        // Resolve model reads while the parent renders. A deferred closure can
-        // otherwise read an invalidated SwiftData task during inspector removal.
-        self.content = content()
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.tertiaryText)
-                .frame(width: 15)
-
-            Text(title)
-                .font(Theme.Font.metadata)
-                .foregroundStyle(Theme.secondaryText)
-                .frame(width: 54, alignment: .leading)
-
-            content
-
-            Spacer(minLength: 0)
-        }
-        .frame(minHeight: 22)
-    }
-}
 
 struct ClearButton: View {
     var label: String = "Clear"

@@ -59,6 +59,14 @@ final class Navigator {
 
     private var backStack: [AppRoute] = []
     private var forwardStack: [AppRoute] = []
+    @ObservationIgnored private var scrollOffsets: [AppRoute: CGFloat] = [:]
+
+    func scrollOffset(for route: AppRoute) -> CGFloat { scrollOffsets[route] ?? 0 }
+
+    func rememberScrollOffset(_ offset: CGFloat, for route: AppRoute) {
+        guard offset.isFinite else { return }
+        scrollOffsets[route] = max(0, offset)
+    }
 
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
