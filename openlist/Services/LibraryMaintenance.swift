@@ -135,7 +135,7 @@ final class LibraryMaintenance {
             }
             guard !Task.isCancelled, hasPendingRestore else { return }
             error = nil
-            NSApplication.shared.terminate(nil)
+            ApplicationQuit.request { [weak self] in self?.hasPendingRestore == true }
         }
     }
 

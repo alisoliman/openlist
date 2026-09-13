@@ -29,6 +29,11 @@ struct openlistApp: App {
             let loaded = try AppPersistence.openSelected(startup, storage: storage, iCloudUnavailableReason: reason)
             try storage.applySettings(startup, to: ReviewSession.defaults)
             try MediaStore.shared.selectStartupDirectory(startup.mediaURL)
+            if storage.needsDerivedReset(startup, defaults: ReviewSession.defaults) {
+                // No environment, foreground observer or other publisher exists
+                // yet. Submit the reset before constructing any of those paths.
+                NotificationService.shared.beginLibraryRestoreAtStartup()
+            }
             container = loaded.container
             startupError = nil
             sync.state.unavailableReason = loaded.iCloudUnavailableReason
@@ -78,7 +83,7 @@ struct openlistApp: App {
                 } actions: {
                     if (try? recoveryStorage.canCancelPending()) == true {
                         Button("Cancel pending restore and quit") {
-                            do { try recoveryStorage.cancelPending(); NSApplication.shared.terminate(nil) }
+                            do { try recoveryStorage.cancelPending(); ApplicationQuit.request() }
                             catch { showRecoveryError(error) }
                         }
                     }
@@ -90,12 +95,12 @@ struct openlistApp: App {
                             alert.addButton(withTitle: "Return to Original and Quit")
                             alert.addButton(withTitle: "Cancel")
                             if alert.runModal() == .alertFirstButtonReturn {
-                                do { try recoveryStorage.queueReturnToOriginal(); NSApplication.shared.terminate(nil) }
+                                do { try recoveryStorage.queueReturnToOriginal(); ApplicationQuit.request() }
                                 catch { showRecoveryError(error) }
                             }
                         }
                     }
-                    Button("Quit Openlist") { NSApplication.shared.terminate(nil) }
+                    Button("Quit Openlist") { ApplicationQuit.request() }
                 }
             }
         }

@@ -56,6 +56,7 @@ final class AppEnvironment {
     private let calendarNotifications: CalendarNotificationBridge
     private var hasBootstrapped = false
     @ObservationIgnored private var notificationActivityObserver: NSObjectProtocol?
+    @ObservationIgnored private var derivedRecoveryTask: Task<Void, Never>?
 
     /// A command awaiting pickup by the focused document view.
     var taskCaptureRequest: TaskCaptureRequest?
@@ -201,6 +202,17 @@ final class AppEnvironment {
         calendar.bootstrap()
         calendarNotifications.update()
         mcp.start(storageAvailable: store.persistenceError == nil)
+        if let library = libraryMaintenance,
+           library.storage.needsDerivedReset(library.startup, defaults: ReviewSession.defaults) {
+            derivedRecoveryTask = Task { [weak self] in
+                let recovery = NotificationService.shared.reminders
+                await recovery.waitUntilIdle()
+                guard let self, !Task.isCancelled else { return }
+                library.storage.finishDerivedReset(library.startup, defaults: ReviewSession.defaults,
+                    succeeded: store.persistenceError == nil && recovery.libraryReadError == nil
+                        && recovery.recoveryError == nil)
+            }
+        }
     }
 
     private func refreshAfterRemoteChange() {

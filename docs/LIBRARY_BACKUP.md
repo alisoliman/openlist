@@ -89,6 +89,11 @@ or merge the original cloud library. The staged store adopts the original
 backup's library UUID through public metadata APIs while closed, preserving
 local task/list links along with item UUIDs.
 
+The quit request waits for confirmation dismissal and enters AppKit from a
+normal run-loop callback, so the delegate can finish its asynchronous final save
+and reminder drain. Save failures keep the pending restore and show a retry or
+cancel action; they do not force the application to close.
+
 On the next launch, before any app or CloudKit container opens, the app verifies
 the staged store fingerprint, creates a logical pre-restore backup, then writes
 one atomic library-selection record. The original database and media remain
@@ -100,8 +105,16 @@ selected store cannot silently become an empty library.
 Portable preferences apply before observers are created, once per selection UUID.
 An interruption during preference application replays all keys; later ordinary
 launches preserve preference edits. The selected generation owns its media cache.
+Before any environment/publisher is constructed, a changed selection invalidates
+task reminder state and submits removal of old task and calendar notifications.
 Widgets and eligible future reminders are rebuilt from selected saved records;
-past reminders do not replay. A restored open work session is paused at its last
+past reminders do not replay. A separate selection marker is written only after
+the reminder reconciliation pass finishes without a global read/recovery error.
+An interruption after journal cleanup still repeats the reset if that marker is
+missing. OS removal APIs have no completion callback; this is an idempotent
+reset/reconciliation boundary, not a guarantee of notification display. Review
+sessions never call OS notification APIs.
+A restored open work session is paused at its last
 recorded heartbeat rather than claiming work continued after the backup. The
 original backup bytes and history are retained.
 
@@ -128,3 +141,5 @@ settings replay, original return, and recovery from a damaged generation. A
 separate process reopens the reconstructed SwiftData store and compares records
 and library identity. Native chooser, preview/cancel and actual quit/relaunch
 validation must be recorded separately from these automated checks.
+`Tools/run-application-quit-checks.sh` additionally runs real windowless AppKit
+processes to verify asynchronous termination replies, cancellation and retry.

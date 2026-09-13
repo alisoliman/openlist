@@ -35,7 +35,11 @@ if phase.hasPrefix("crash-") || phase == "resume-journal" {
         check(startup.isLocalRestore && actual.libraryID == expected, "Actual fresh process activates the intended restored identity")
         try check(opened.container.mainContext.fetchCount(FetchDescriptor<Block>()) == fixture.snapshot.blocks.count, "Actual fresh process opens the complete activated store")
         check(manager.fileExists(atPath: storage.originalStoreURL.path), "Actual process replay retains original storage")
-        print("3 process-interruption reopen checks passed")
+        check(storage.needsDerivedReset(startup, defaults: defaults), "Actual fresh process must reset derived state before an absent marker is published")
+        if root.lastPathComponent == "crash-after-journal-cleanup" {
+            check(!startup.changed, "Journal-cleanup interruption reopens with changed false and still needs reset")
+        }
+        print("\(checks) process-interruption reopen checks passed")
         exit(0)
     }
     var incoming = fixture.snapshot
@@ -50,6 +54,7 @@ if phase.hasPrefix("crash-") || phase == "resume-journal" {
         default: break
         }
     }
+    if phase == "crash-after-journal-cleanup" { kill(getpid(), SIGKILL) }
     fatalError("Crash checkpoint was not reached")
 }
 
@@ -265,6 +270,8 @@ let legacyMedia = root.appendingPathComponent("OriginalMedia")
 try manager.createDirectory(at: legacyMedia, withIntermediateDirectories: true)
 try legacyBytes.write(to: legacyMedia.appendingPathComponent(legacyImage.mediaFilename!))
 let storage = LibraryRestoreStorage(originalStoreURL: root.appendingPathComponent("Source.store"), originalMediaURL: legacyMedia)
+let originalStartup = try storage.activatePending(currentSettings: snapshot.settings, using: reader)
+check(!storage.needsDerivedReset(originalStartup, defaults: defaults), "An ordinary original-library launch needs no explicit restore reset")
 var incoming = validated.snapshot
 incoming.libraryID = UUID()
 incoming.settings.firstWeekday = 7
@@ -301,6 +308,14 @@ check(defaults.integer(forKey: "settings.firstWeekday") == 2, "Settings are not 
 let replay = try storage.activatePending(currentSettings: snapshot.settings, using: reader)
 check(replay.isLocalRestore && replay.storeURL != storage.originalStoreURL && replay.mediaURL != storage.originalMediaURL, "New process resolves a separate local-only store and media generation")
 try check(storage.pending() == nil, "Post-commit replay consumes the journal without repeating activation")
+check(storage.needsDerivedReset(replay, defaults: defaults), "A newly selected library requires derived notification reset")
+let afterJournalCleanup = try storage.activatePending(currentSettings: snapshot.settings, using: reader)
+check(!afterJournalCleanup.changed && storage.needsDerivedReset(afterJournalCleanup, defaults: defaults), "Interruption after journal cleanup still replays the missing derived reset")
+storage.finishDerivedReset(afterJournalCleanup, defaults: defaults, succeeded: false)
+check(storage.needsDerivedReset(afterJournalCleanup, defaults: defaults), "Failed saved-state reconciliation leaves the derived reset replayable")
+storage.finishDerivedReset(afterJournalCleanup, defaults: defaults, succeeded: true)
+let afterDerivedRecovery = try storage.activatePending(currentSettings: snapshot.settings, using: reader)
+check(!storage.needsDerivedReset(afterDerivedRecovery, defaults: defaults), "Completed reconciliation records the selection and skips repeated reset")
 try check(manager.contentsOfDirectory(atPath: storage.recoveryDirectory.path).count == 1, "Replay does not duplicate recovery backups")
 try storage.applySettings(replay, to: defaults)
 check(defaults.integer(forKey: "settings.firstWeekday") == 7, "New selection applies restored library preferences")
@@ -309,6 +324,9 @@ try storage.applySettings(replay, to: defaults)
 check(defaults.integer(forKey: "settings.firstWeekday") == 4, "Ordinary relaunch never overwrites later preference edits")
 try storage.queueReturnToOriginal()
 let returned = try storage.activatePending(currentSettings: .init(defaults: defaults), using: reader)
+check(storage.needsDerivedReset(returned, defaults: defaults), "Returning to original uses a new selection and resets departing-library notifications")
+storage.finishDerivedReset(returned, defaults: defaults, succeeded: true)
+check(!storage.needsDerivedReset(returned, defaults: defaults), "Returned-original recovery is also idempotent")
 try storage.applySettings(returned, to: defaults)
 check(!returned.isLocalRestore && returned.storeURL == storage.originalStoreURL && returned.mediaURL == storage.originalMediaURL, "Return selects the untouched original store and its original media")
 check(defaults.integer(forKey: "settings.firstWeekday") == 2, "Return restores original library preferences")
@@ -390,7 +408,7 @@ for entity in schema.entities {
 }
 // Abrupt process termination bypasses cleanup/defer. A new executable process
 // resumes the durable journal on both sides of the selection publication.
-for crashPhase in ["crash-before-selection", "crash-after-selection"] {
+for crashPhase in ["crash-before-selection", "crash-after-selection", "crash-after-journal-cleanup"] {
     let processRoot = root.appendingPathComponent(crashPhase)
     try manager.createDirectory(at: processRoot, withIntermediateDirectories: true)
     try manager.copyItem(at: package, to: processRoot.appendingPathComponent("Library.openlistbackup"))

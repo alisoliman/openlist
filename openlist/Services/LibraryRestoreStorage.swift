@@ -222,6 +222,20 @@ nonisolated struct LibraryRestoreStorage: Sendable {
         defaults.set(selection.id.uuidString, forKey: "libraryRestore.appliedSelection")
     }
 
+    /// Journal cleanup can precede an interrupted bootstrap. Selection identity,
+    /// rather than Startup.changed, makes the derived reset safely replayable.
+    @MainActor func needsDerivedReset(_ startup: Startup, defaults: UserDefaults) -> Bool {
+        guard let selection = startup.selection else { return false }
+        return defaults.string(forKey: "libraryRestore.derivedSelection") != selection.id.uuidString
+    }
+
+    /// Called only after the reset and saved-state reconciliation have drained.
+    /// A failed read/recovery leaves the marker absent for the next launch.
+    @MainActor func finishDerivedReset(_ startup: Startup, defaults: UserDefaults, succeeded: Bool) {
+        guard succeeded, let selection = startup.selection else { return }
+        defaults.set(selection.id.uuidString, forKey: "libraryRestore.derivedSelection")
+    }
+
     private func write<T: Encodable>(_ value: T, to url: URL) throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
