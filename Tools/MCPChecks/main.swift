@@ -160,6 +160,9 @@ if phase == "prepare" {
     let font = store.attributedContent(of: root).attribute(.font, at: 0, effectiveRange: nil) as! NSFont
     check(NSFontManager.shared.traits(of: font).contains(.boldFontMask), "remote retitling preserves inline styling")
     check(root.includesTime && MCPDates.timestamp(root.dueDate!) == "2030-03-10T14:00:00.000000000Z", "zoned timestamp resolves to the correct instant")
+    let remoteHistory = try store.taskActivity(for: rootID)
+    check(remoteHistory.contains { $0.kind == .renamed && $0.change?.before?.title == "Build prototype" && $0.change?.after?.title == "Build working prototype" }, "MCP title patch records committed old and new title")
+    check(remoteHistory.contains { $0.kind == .scheduled && $0.change?.after?.includesTime == true }, "MCP schedule patch records explicit time precision")
     _ = try call(.updateTask, ["task_id": uuid(rootID), "due_date": "2030-03-11T14:00:00Z"])
     check(MCPDates.timestamp(root.reminderAt!) == "2030-03-11T13:45:00.000000000Z", "rescheduling shifts the existing reminder")
     _ = try call(.updateTask, ["task_id": uuid(rootID), "due_date": .null, "label_ids": [], "starred": false, "priority": 0])
@@ -171,8 +174,10 @@ if phase == "prepare" {
     _ = try call(.updateTask, ["task_id": uuid(rootID), "due_date": .null])
     check(root.reminderAt == nil && !NotificationService.shared.scheduled.contains(rootID), "clearing an already-empty due date also cancels an independent reminder")
     let unchanged = root.updatedAt
+    let unchangedHistory = try store.taskActivity(for: rootID).map(\.id)
     _ = try call(.updateTask, ["task_id": uuid(rootID), "due_date": .null, "priority": 0, "label_ids": []])
     check(root.updatedAt == unchanged, "repeating an identical patch does not alter the task")
+    check(try store.taskActivity(for: rootID).map(\.id) == unchangedHistory, "MCP no-op retry adds no history")
     _ = try call(.updateTask, [
         "task_id": uuid(rootID), "due_date": .null, "reminder_at": "2030-03-12T13:45:00Z",
     ])
@@ -189,6 +194,7 @@ if phase == "prepare" {
     let noteVersionBeforeMove = MCPDates.timestamp(store.block(id: noteID)!.updatedAt)
     _ = try call(.moveTask, ["task_id": uuid(rootID), "list_id": uuid(otherID)])
     check([rootID, childID, noteID].allSatisfy { store.block(id: $0)!.listID == otherID }, "cross-list move carries the entire mixed subtree")
+    check(try store.taskActivity(for: childID).first?.change?.before?.listID == workID && store.taskActivity(for: childID).first?.change?.after?.listID == otherID, "MCP parent move records each task's actual destination")
     check(MCPDates.timestamp(store.block(id: childID)!.updatedAt) != childVersionBeforeMove, "moving a parent across lists updates its child's optimistic version")
     check(MCPDates.timestamp(store.block(id: noteID)!.updatedAt) != noteVersionBeforeMove, "moving a parent across lists also versions note descendants")
     try rejects(.updateTask, [
@@ -210,6 +216,7 @@ if phase == "prepare" {
         "task_id": uuid(rootID), "completed": true, "expected_updated_at": .string(repeatVersion),
     ])
     check(repeated["recurrence_advanced"] == true && !root.isCompleted && !store.block(id: childID)!.isCompleted, "recurrence advances and resets subtasks instead of becoming completed")
+    check(try store.taskActivity(for: rootID).first?.change?.advancesOccurrence == true, "MCP recurring completion explains the next occurrence")
     try rejects(.setTaskCompleted, ["task_id": uuid(rootID), "completed": true, "expected_updated_at": .string(repeatVersion)], code: "conflict")
     _ = try call(.updateList, ["list_id": uuid(otherID), "is_archived": true])
     check(try call(.listTasks, ["list_id": uuid(otherID)])["tasks"]!.arrayValue!.isEmpty, "archived tasks disappear from active task results")

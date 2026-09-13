@@ -86,6 +86,7 @@ extension Store {
             return block
         } catch {
             context.rollback()
+            pendingActivity.removeAll()
             throw error
         }
     }

@@ -195,9 +195,14 @@ struct ListCard: View {
 /// A personal history of what changed, grouped by day.
 struct UpdatesScreen: View {
     @Environment(AppEnvironment.self) private var env
+    @State private var confirmsClearHistory = false
 
-    @Query(sort: [SortDescriptor(\ActivityEvent.timestamp, order: .reverse)])
-    private var events: [ActivityEvent]
+    @Query(sort: [SortDescriptor(\ActivityEvent.timestamp, order: .reverse), SortDescriptor(\ActivityEvent.id)])
+    private var fetchedEvents: [ActivityEvent]
+
+    private var events: [ActivityEvent] {
+        fetchedEvents.filter { !env.store.uncommittedActivityIDs.contains($0.id) }
+    }
 
     var body: some View {
         ScreenScaffold {
@@ -209,7 +214,7 @@ struct UpdatesScreen: View {
                 if !events.isEmpty {
                     Menu {
                         Button("Clear History", role: .destructive) {
-                            env.store.clearActivity()
+                            confirmsClearHistory = true
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -243,6 +248,12 @@ struct UpdatesScreen: View {
                 }
             }
         }
+        .alert("Clear all activity history?", isPresented: $confirmsClearHistory) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear History", role: .destructive) { env.store.clearActivity() }
+        } message: {
+            Text("This removes all Updates and task Activity entries, including older events, on synced devices. Your tasks are kept.")
+        }
     }
 
     private struct Day: Identifiable {
@@ -258,7 +269,7 @@ struct UpdatesScreen: View {
             Day(
                 id: date,
                 title: Store.dayHeading(for: date),
-                events: (grouped[date] ?? []).sorted { $0.timestamp > $1.timestamp }
+                events: grouped[date] ?? []
             )
         }
     }
@@ -298,8 +309,8 @@ struct ActivityRow: View {
                                 .font(Theme.Font.metadata)
                                 .foregroundStyle(Theme.tertiaryText)
                         }
-                        if !event.detail.isEmpty {
-                            Text(event.detail)
+                        if !event.recordedDetail.isEmpty {
+                            Text(event.recordedDetail)
                                 .font(Theme.Font.metadata)
                                 .foregroundStyle(Theme.tertiaryText)
                         }
@@ -327,11 +338,15 @@ struct ActivityRow: View {
 
     private func open() {
         // Prefer the task itself; fall back to the list it belonged to.
-        if let blockID = event.blockID, env.store.block(id: blockID) != nil {
-            if let listID = event.listID, env.store.list(id: listID) != nil {
+        if let blockID = event.blockID, let block = env.store.block(id: blockID) {
+            if let listID = block.listID, env.store.list(id: listID) != nil {
                 env.navigator.go(to: .list(listID))
             }
             env.navigator.openTask(blockID)
+            return
+        }
+        if event.blockID != nil {
+            env.store.editorNotice = "This task is no longer available. Its recorded activity is retained in Updates."
             return
         }
         if let listID = event.listID, env.store.list(id: listID) != nil {

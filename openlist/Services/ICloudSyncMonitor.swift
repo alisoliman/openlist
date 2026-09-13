@@ -138,9 +138,45 @@ final class ICloudSyncMonitor {
 final class OpenlistApplicationDelegate: NSObject, NSApplicationDelegate {
     var sync: ICloudSyncMonitor?
     var onDidLaunch: (() -> Void)?
+    var persistPendingChanges: (() throws -> Void)?
+    private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         onDidLaunch?()
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        guard !isTerminating else { return }
+        commitEditingDrafts()
+        Task { @MainActor in
+            await Task.yield()
+            try? persistPendingChanges?()
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard persistPendingChanges != nil else { return .terminateNow }
+        guard !isTerminating else { return .terminateLater }
+        isTerminating = true
+        commitEditingDrafts()
+        Task { @MainActor in
+            // Allow SwiftUI blur handlers to finish before the final save.
+            await Task.yield()
+            do {
+                try persistPendingChanges?()
+                sender.reply(toApplicationShouldTerminate: true)
+            } catch {
+                // Preserve retryable edits and show the Store's save error.
+                isTerminating = false
+                sender.reply(toApplicationShouldTerminate: false)
+            }
+        }
+        return .terminateLater
+    }
+
+    private func commitEditingDrafts() {
+        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        for window in NSApplication.shared.windows { window.makeFirstResponder(nil) }
     }
 
     func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {

@@ -364,6 +364,7 @@ struct DataSettingsTab: View {
     @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }) private var lists: [TaskList]
 
     @State private var isConfirmingReset = false
+    @State private var isConfirmingClearHistory = false
 
     var body: some View {
         Form {
@@ -382,10 +383,10 @@ struct DataSettingsTab: View {
             }
 
             Section("Activity") {
-                Button("Clear the Updates history") {
-                    env.store.clearActivity()
+                Button("Clear all activity history…") {
+                    isConfirmingClearHistory = true
                 }
-                Text("Clears history on this Mac and, when connected, in iCloud.")
+                Text("Clears all Updates and per-task Activity entries on this Mac and, when connected, in iCloud. Tasks are kept.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }
@@ -403,6 +404,12 @@ struct DataSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .alert("Clear all activity history?", isPresented: $isConfirmingClearHistory) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear History", role: .destructive) { env.store.clearActivity() }
+        } message: {
+            Text("This removes all Updates and task Activity entries, including older events, on synced devices. Your tasks are kept.")
+        }
         .alert("Delete everything?", isPresented: $isConfirmingReset) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) { reset() }

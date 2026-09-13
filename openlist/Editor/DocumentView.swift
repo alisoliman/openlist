@@ -497,7 +497,7 @@ struct DocumentView: View {
                 // Typing only mutates the model; without this the save that
                 // fires `onDidSave` never happens, so the widget snapshot
                 // would stay stale until some other action saved.
-                env.store.scheduleSave()
+                env.store.scheduleSave(after: .seconds(1))
             },
             onReturn: { caret, content in
                 editorEdit("Split block") { handleReturn(block: block, caret: caret, content: content) }

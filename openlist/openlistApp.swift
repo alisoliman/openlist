@@ -30,11 +30,18 @@ struct openlistApp: App {
             // Store and @Query must share the main context: views pass their
             // models into mutations, so saving a second context loses edits.
             let context = loaded.container.mainContext
-            context.autosaveEnabled = true
             let environment = AppEnvironment(context: context, sync: sync)
             _env = State(initialValue: environment)
             // Menu-bar-only launches must also migrate files and start sync.
             applicationDelegate.onDidLaunch = { [weak environment] in environment?.bootstrap() }
+            applicationDelegate.persistPendingChanges = { [weak environment] in
+                guard let environment else { return }
+                do { try environment.store.persistChanges() }
+                catch {
+                    environment.store.persistenceError = "Your latest changes could not be saved. \(error.localizedDescription)"
+                    throw error
+                }
+            }
         } catch {
             container = nil
             _env = State(initialValue: nil)

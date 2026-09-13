@@ -109,6 +109,12 @@ Trash records must use that path or extend it if stored separately.
 overdue, due-today, planned-for-today, and starred work; Tasks filters and groups
 by date, list, label or priority; Updates is a personal activity feed grouped by day.
 
+Task details include a paginated **Activity** timeline with committed title,
+date/time, completion, recurrence, and list-move changes. It shares history with
+Updates; **Clear History** clears both after confirmation. Older entries retain
+only the facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md)
+for save, retention, and export behavior.
+
 Today's **Sort** menu orders tasks within each section by priority (highest first),
 due date (earliest first, undated last), title (A–Z), creation date (oldest first),
 or list position and stored document order. **Default** restores the original
