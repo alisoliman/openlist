@@ -34,6 +34,7 @@ struct SearchResultRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable()
         .focused(focusedResult, equals: hit.id)
         .onKeyPress(.return) { onReturn(); return .handled }
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
