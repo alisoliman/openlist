@@ -300,4 +300,35 @@ print("10k task commit elapsed: \(start.duration(to: .now))")
 check(try history(scaleTask, seeded).count == 1, "single-task edit in 10k library records only one change")
 seeded.clearActivity()
 check(try events(seeded).isEmpty && seeded.block(id: scaleTask.id) != nil, "clear removes shared history while preserving tasks")
+
+let restoreContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+var failRestoration = false
+let restoring = Store(context: restoreContainer.mainContext) { context in
+    if failRestoration { throw CocoaError(.fileWriteNoPermission) }
+    try context.save()
+}
+restoring.bootstrap()
+let restoreList = restoring.inboxList()!
+let restoreTask = restoring.appendBlock(kind: .task, text: "Restore after clear", to: .init(listID: restoreList.id))
+let restoreID = restoreTask.id
+try restoring.persistChanges()
+let restoreUndo = UndoManager()
+restoreUndo.groupsByEvent = false
+restoreUndo.beginUndoGrouping()
+restoring.undoableEditorEdit(in: restoreList.id, name: "Delete task", undoManager: restoreUndo) {
+    restoring.deleteBlock(restoreTask)
+    restoring.save()
+}
+restoreUndo.endUndoGrouping()
+restoring.clearActivity()
+check(try events(restoring).isEmpty, "clear removes all creation and deletion records before Undo")
+failRestoration = true
+restoreUndo.undo()
+check(restoring.pendingRestoredTaskIDs.contains(restoreID), "failed restoration save retains its explicit Undo identity")
+check(try restoring.taskActivity(for: restoreID).isEmpty, "failed Undo publishes no restoration history")
+failRestoration = false
+try restoring.persistChanges()
+check(try restoring.taskActivity(for: restoreID).count == 1 && restoring.taskActivity(for: restoreID).first?.kind == .restored, "Undo after clearing history records exactly one known restoration")
+check(restoring.block(id: restoreID)?.text == "Restore after clear", "Undo after clear restores the actual task")
+check(restoring.pendingRestoredTaskIDs.isEmpty, "successful save consumes the restoration signal")
 print("✅ \(checks) task history checks passed (commits, recurrence, undo, failure, paging, coalescing)")

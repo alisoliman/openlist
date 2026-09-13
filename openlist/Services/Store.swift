@@ -35,6 +35,7 @@ final class Store {
     var isLoggingSuspended = false
     @ObservationIgnored var pendingActivity: [ActivityDraft] = []
     @ObservationIgnored var activitySuppressedTaskIDs: Set<UUID> = []
+    @ObservationIgnored var pendingRestoredTaskIDs: Set<UUID> = []
     /// Failed SwiftData saves can leave inserted models in the live fetch
     /// cache even after deletion. Never publish those attempt identities, and
     /// explicitly delete them again before any subsequent commit.
@@ -432,6 +433,7 @@ final class Store {
         }
         pendingActivity.removeAll()
         activitySuppressedTaskIDs.removeAll()
+        pendingRestoredTaskIDs.removeAll()
         persistenceError = nil
         onDidSave?()
         publishPendingCompletionUndo()

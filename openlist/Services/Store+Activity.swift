@@ -88,11 +88,16 @@ extension Store {
                 continue
             }
             guard let before else {
-                // Restoring a deleted task keeps its UUID and existing history.
-                let id = task.id
-                var prior = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == id })
-                prior.fetchLimit = 1
-                append(try reader.fetch(prior).isEmpty ? .created : .restored)
+                // Editor Undo knows a restoration even if the user cleared
+                // history after deletion. Never reconstruct those old entries.
+                if pendingRestoredTaskIDs.contains(task.id) {
+                    append(.restored)
+                } else {
+                    let id = task.id
+                    var prior = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == id })
+                    prior.fetchLimit = 1
+                    append(try reader.fetch(prior).isEmpty ? .created : .restored)
+                }
                 for completion in inserted where completion.taskID == task.id { append(.completed, completion: completion) }
                 continue
             }
