@@ -93,6 +93,15 @@ struct SidebarView: View {
             ) { env.navigator.go(to: .today) }
 
             SidebarRow(
+                icon: "calendar",
+                title: "Calendar",
+                accent: .violet,
+                badge: 0,
+                isSelected: env.navigator.route == .calendar,
+                shortcutHint: "⌘6"
+            ) { env.navigator.go(to: .calendar) }
+
+            SidebarRow(
                 icon: "sparkles",
                 title: "Updates",
                 accent: .violet,
@@ -139,7 +148,8 @@ struct SidebarView: View {
                     byList[listID, default: 0] += 1
                     if listID == inboxID { inbox += 1 }
                 }
-                if task.isStarred || (task.dueDate.map { $0 < cutoff } ?? false) { today += 1 }
+                if task.isStarred || (task.dueDate.map { $0 < cutoff } ?? false)
+                    || (task.selectedForDay.map { calendar.startOfDay(for: $0) <= calendar.startOfDay(for: .now) } ?? false) { today += 1 }
                 for labelID in task.labelIDs { byLabel[labelID, default: 0] += 1 }
             }
         }

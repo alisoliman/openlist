@@ -1,0 +1,130 @@
+import EventKit
+import Foundation
+import Observation
+
+struct ExternalCalendarDescriptor: Identifiable {
+    var id: String
+    var title: String
+    var source: String
+}
+
+/// EventKit is used only to read calendars and events. There is deliberately no
+/// event-writing API in this adapter. Access and calendar IDs remain per-Mac.
+@Observable @MainActor
+final class ExternalCalendarSource {
+    private let eventStore = EKEventStore()
+    private let defaults: UserDefaults
+    private var observer: NSObjectProtocol?
+    private var range: DateInterval?
+    private let fixtureBusyTimes: [FixedBusyTime]?
+    private(set) var calendars: [ExternalCalendarDescriptor] = []
+    private(set) var selectedCalendarIDs: Set<String>
+    private(set) var busyTimes: [FixedBusyTime] = []
+    private(set) var isConnected: Bool
+    private(set) var isAuthorized = false
+    private(set) var authorizationDescription = "Connect calendars to avoid meetings."
+    private(set) var error: String?
+    var onChange: (() -> Void)?
+
+    init(defaults: UserDefaults = ReviewSession.defaults, fixtureBusyTimes: [FixedBusyTime]? = nil) {
+        self.fixtureBusyTimes = fixtureBusyTimes
+        self.defaults = defaults
+        selectedCalendarIDs = Set(defaults.stringArray(forKey: "calendar.selectedIDs") ?? [])
+        isConnected = defaults.bool(forKey: "calendar.connected")
+        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: eventStore, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.reload() }
+        }
+    }
+
+    func requestAccess() async {
+        do {
+            guard try await eventStore.requestFullAccessToEvents() else {
+                updateAuthorization()
+                error = "Calendar access was not granted. Enable it in System Settings > Privacy & Security > Calendars."
+                return
+            }
+            isConnected = true
+            defaults.set(true, forKey: "calendar.connected")
+            // An explicit empty selection must survive relaunch and reconnect.
+            if defaults.object(forKey: "calendar.selectedIDs") == nil {
+                selectedCalendarIDs = Set(eventStore.calendars(for: .event).map(\.calendarIdentifier))
+                persistSelection()
+            }
+            reload()
+        } catch {
+            self.error = error.localizedDescription
+            updateAuthorization()
+        }
+    }
+
+    func refresh(start: Date, end: Date) {
+        range = DateInterval(start: start, end: end)
+        reload()
+    }
+
+    func setCalendarEnabled(_ id: String, enabled: Bool) {
+        if enabled { selectedCalendarIDs.insert(id) } else { selectedCalendarIDs.remove(id) }
+        persistSelection()
+        reload()
+    }
+
+    func disconnect() {
+        isConnected = false
+        defaults.set(false, forKey: "calendar.connected")
+        calendars = []
+        busyTimes = []
+        error = nil
+        updateAuthorization()
+        onChange?()
+    }
+
+    private func persistSelection() {
+        defaults.set(selectedCalendarIDs.sorted(), forKey: "calendar.selectedIDs")
+    }
+
+    private func updateAuthorization() {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        isAuthorized = isConnected && status == .fullAccess
+        if !isConnected { authorizationDescription = "Connect calendars to avoid meetings." }
+        else if isAuthorized { authorizationDescription = "External events are fixed busy time. Openlist never changes them." }
+        else { authorizationDescription = "Calendar access is unavailable. Your schedule cannot account for meetings." }
+    }
+
+    private func reload() {
+        if let fixtureBusyTimes {
+            busyTimes = fixtureBusyTimes
+            authorizationDescription = "Isolated calendar fixture"
+            onChange?()
+            return
+        }
+        updateAuthorization()
+        guard isAuthorized else {
+            error = isConnected ? "Calendar access is unavailable. Allow access in System Settings to include meetings in this plan." : nil
+            calendars = []
+            busyTimes = []
+            onChange?()
+            return
+        }
+        error = nil
+        let sources = eventStore.calendars(for: .event)
+        calendars = sources.map { ExternalCalendarDescriptor(id: $0.calendarIdentifier, title: $0.title, source: $0.source.title) }
+            .sorted { ($0.source, $0.title) < ($1.source, $1.title) }
+        let selected = sources.filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
+        let unavailable = selectedCalendarIDs.subtracting(Set(sources.map(\.calendarIdentifier)))
+        if !unavailable.isEmpty { error = "Some selected calendars are unavailable. Check the connected calendar selection; their busy time is missing from this plan." }
+        guard let range, !selected.isEmpty else {
+            busyTimes = []
+            onChange?()
+            return
+        }
+        let predicate = eventStore.predicateForEvents(withStart: range.start, end: range.end, calendars: selected)
+        busyTimes = eventStore.events(matching: predicate).compactMap { event in
+            guard event.status != .canceled, event.availability != .free,
+                  !(event.attendees?.contains { $0.isCurrentUser && $0.participantStatus == .declined } ?? false),
+                  let start = event.startDate, let end = event.endDate, end > start else { return nil }
+            return FixedBusyTime(id: "\(event.calendarItemIdentifier)-\(start.timeIntervalSinceReferenceDate)",
+                                 title: event.title ?? "Busy", start: start, end: end)
+        }.sorted { $0.start < $1.start }
+        onChange?()
+    }
+}

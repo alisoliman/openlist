@@ -150,6 +150,15 @@ struct SmartTaskRow: View {
         }
         .contextMenu {
             BlockContextMenu(block: block, actions: contextActions)
+            if !block.isCompleted {
+                Divider()
+                Button("Plan for today") {
+                    env.store.selectForToday(block)
+                    env.calendar.storeDidChange()
+                }
+                Button("Start working") { _ = env.calendar.start(task: block) }
+                Button("Show calendar") { env.navigator.go(to: .calendar) }
+            }
         }
     }
 

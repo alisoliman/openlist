@@ -15,7 +15,7 @@ if phase == "cleanup" {
     exit(0)
 }
 let sentinel = storeURL.deletingLastPathComponent().appendingPathComponent("unrelated.txt")
-let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self])
+let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self, WorkSession.self, CompletionRecord.self, SchedulePlacement.self])
 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
 let store = Store(context: container.mainContext)
 store.context.autosaveEnabled = false

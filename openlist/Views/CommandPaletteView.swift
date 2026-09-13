@@ -162,6 +162,7 @@ struct CommandPaletteView: View {
             PaletteItem(id: "go-today", title: "Go to Today", subtitle: "⌘2", symbol: "sun.max", accent: .orange, kind: .navigate(.today)),
             PaletteItem(id: "go-updates", title: "Go to Updates", subtitle: "⌘3", symbol: "sparkles", accent: .violet, kind: .navigate(.updates)),
             PaletteItem(id: "go-tasks", title: "Go to Tasks", subtitle: "⌘4", symbol: "checklist", accent: .green, kind: .navigate(.tasks)),
+            PaletteItem(id: "go-calendar", title: "Go to Calendar", subtitle: "⌘6", symbol: "calendar", accent: .violet, kind: .navigate(.calendar)),
             PaletteItem(id: "go-lists", title: "Go to Lists", subtitle: "⌘5", symbol: "square.stack", accent: .indigo, kind: .navigate(.lists)),
             PaletteItem(id: "go-completed", title: "Go to Completed", subtitle: "Archive of finished tasks", symbol: "checkmark.circle", accent: .green, kind: .navigate(.completed)),
             PaletteItem(id: "new-list", title: "New List", subtitle: "⇧⌘N", symbol: "plus.rectangle.on.folder", accent: .indigo, kind: .newList),

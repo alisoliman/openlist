@@ -135,15 +135,20 @@ final class MCPIntegration {
 
     func configuration(for format: ClientFormat, bundleURL: URL = Bundle.main.bundleURL) throws -> String {
         let token = try accessToken()
+        #if OPENLIST_DEV
+        let serverName = "openlist-dev"
+        #else
+        let serverName = "openlist"
+        #endif
         let value: MCPValue
         switch format {
         case .stdio:
-            value = .object(["mcpServers": .object(["openlist": .object([
+            value = .object(["mcpServers": .object([serverName: .object([
                 "command": .string(bundleURL.appendingPathComponent("Contents/MacOS/openlist-mcp").path),
                 "env": .object(["OPENLIST_MCP_URL": .string(url), "OPENLIST_MCP_TOKEN": .string(token)]),
             ])])])
         case .vscode:
-            value = .object(["servers": .object(["openlist": .object([
+            value = .object(["servers": .object([serverName: .object([
                 "type": "http", "url": .string(url),
                 "headers": .object(["Authorization": .string("Bearer \(token)")]),
             ])])])

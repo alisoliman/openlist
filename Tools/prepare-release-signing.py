@@ -21,8 +21,12 @@ CONTAINERS = "com.apple.developer.icloud-container-identifiers"
 SERVICES = "com.apple.developer.icloud-services"
 CLOUD_ENVIRONMENT = "com.apple.developer.icloud-container-environment"
 PUSH_ENVIRONMENT = "com.apple.developer.aps-environment"
+CALENDAR_ACCESS = "com.apple.security.personal-information.calendars"
 SOURCE_ENTITLEMENTS = {
     "com.apple.security.app-sandbox": True,
+    # The main app reads EventKit events as fixed busy time for its local plan.
+    # This sandbox entitlement is app-only; the widget reads the shared snapshot.
+    CALENDAR_ACCESS: True,
     "com.apple.security.files.user-selected.read-write": True,
     "com.apple.security.network.client": True,
     "com.apple.security.network.server": True,
@@ -143,7 +147,8 @@ def prepare_entitlements(profile, source, now=None):
         if key in source and source[key] != value:
             raise SigningError(f"Source entitlement {key} conflicts with the provisioning profile.")
         resolved[key] = value
-    # Sandbox and team-prefixed macOS App Groups are unrestricted (TN3125).
+    # App Sandbox capabilities (including calendar access) and team-prefixed
+    # macOS App Groups are unrestricted (TN3125).
     # Do not copy the profile's other capabilities, wildcard grants, or metadata.
     return resolved
 

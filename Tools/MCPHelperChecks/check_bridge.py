@@ -636,6 +636,17 @@ class PackagingChecks(unittest.TestCase):
                         self.assert_invalid_bundle(self.verify(shell), bundle, "OpenlistReviewSession")
             plist.write_bytes(plistlib.dumps(original))
 
+    def test_development_marker_is_rejected_in_both_bundles(self):
+        for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
+            plist = bundle / "Contents/Info.plist"
+            original = plistlib.loads(plist.read_bytes())
+            for marker in (True, False, ""):
+                plist.write_bytes(plistlib.dumps({**original, "OpenlistDevelopment": marker}))
+                for shell in self.verifier_shells():
+                    with self.subTest(bundle=bundle.name, marker=marker, shell=shell or "shebang"):
+                        self.assert_invalid_bundle(self.verify(shell), bundle, "OpenlistDevelopment")
+            plist.write_bytes(plistlib.dumps(original))
+
     def test_bundle_metadata_must_not_be_a_symlink(self):
         for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
             plist = bundle / "Contents/Info.plist"

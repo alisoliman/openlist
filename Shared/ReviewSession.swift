@@ -16,6 +16,10 @@ nonisolated enum ReviewSession {
 
     static var defaults: UserDefaults {
         if let identifier, let suite = UserDefaults(suiteName: "solimanali.openlist.review.\(identifier)") { return suite }
+        #if OPENLIST_DEV
+        return UserDefaults(suiteName: "solimanali.openlist.dev") ?? .standard
+        #else
         return .standard
+        #endif
     }
 }

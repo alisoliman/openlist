@@ -10,6 +10,7 @@ import SwiftUI
 enum AppRoute: Hashable, Codable {
     case inbox
     case today
+    case calendar
     case updates
     case tasks
     case lists

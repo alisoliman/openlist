@@ -45,11 +45,13 @@ final class AppEnvironment {
     let navigator: Navigator
     let settings: AppSettings
     let sync: ICloudSyncMonitor
+    let calendar: CalendarCoordinator
     let mcp: MCPIntegration
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
     /// Retained so the notification centre keeps a live delegate.
     private let notificationDelegate = NotificationDelegate()
+    private let calendarNotifications: CalendarNotificationBridge
     private var hasBootstrapped = false
 
     /// A command awaiting pickup by the focused document view.
@@ -82,12 +84,17 @@ final class AppEnvironment {
         self.store = store
         self.settings = settings
         self.sync = sync
+        calendar = CalendarCoordinator(store: store)
         mcp = MCPIntegration(store: store, settings: settings)
         navigator = Navigator()
         widgetPublisher = WidgetSnapshotPublisher(store: store)
+        calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
 
-        store.onDidSave = { [weak widgetPublisher] in
+        calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
+
+        store.onDidSave = { [weak widgetPublisher, weak calendar] in
             widgetPublisher?.scheduleRefresh()
+            calendar?.storeDidChange()
         }
         store.onDidCompleteTask = { [weak settings] _ in
             guard settings?.playsCompletionSound == true else { return }
@@ -98,6 +105,9 @@ final class AppEnvironment {
 
     /// Wires notification handling once the environment is fully built.
     private func installNotificationDelegate() {
+        notificationDelegate.onCalendarAction = { [weak calendarNotifications] action, identifier, taskID, occurrenceID in
+            calendarNotifications?.handle(action: action, identifier: identifier, taskID: taskID, occurrenceID: occurrenceID)
+        }
         notificationDelegate.onOpenTask = { [weak self] id in
             guard let self, let block = store.block(id: id) else { return }
             if let listID = block.listID, store.list(id: listID) != nil {
@@ -139,6 +149,8 @@ final class AppEnvironment {
         widgetPublisher.refreshNow()
         sync.checkAccount()
         if sync.state.isEnabled { NSApplication.shared.registerForRemoteNotifications() }
+        calendar.bootstrap()
+        calendarNotifications.update()
         mcp.start(storageAvailable: store.persistenceError == nil)
     }
 
@@ -147,6 +159,7 @@ final class AppEnvironment {
         store.context.processPendingChanges()
         store.prepareForSync()
         store.refreshAllReminders()
+        calendar.storeDidChange()
         widgetPublisher.refreshNow()
         if let taskID = navigator.openTaskID, store.block(id: taskID) == nil {
             navigator.closeTask()
@@ -234,6 +247,12 @@ private struct PendingTitleCapture {
     let dueDate: Date?
     let includesTime: Bool
     let labelIDs: [UUID]
+    let selectedForDay: Date?
+    let deferredUntil: Date?
+    let estimate: Int
+    let keepTogether: Bool
+    let tracksAway: Bool
+    let occurrenceID: UUID
 
     init(_ block: Block) {
         listID = block.listID
@@ -242,6 +261,12 @@ private struct PendingTitleCapture {
         dueDate = block.dueDate
         includesTime = block.includesTime
         labelIDs = block.labelIDs
+        selectedForDay = block.selectedForDay
+        deferredUntil = block.deferredUntil
+        estimate = block.schedulingEstimateMinutes
+        keepTogether = block.keepsSessionsTogether
+        tracksAway = block.tracksAwayFromMac
+        occurrenceID = block.occurrenceID
     }
 
     func canDiscard(_ block: Block, store: Store) -> Bool {
@@ -251,6 +276,11 @@ private struct PendingTitleCapture {
               !block.isCompleted, block.completedAt == nil, !block.isStarred, block.priorityRaw == 0,
               block.reminderAt == nil, block.recurrenceData == nil, block.note.isEmpty,
               block.mediaFilename == nil, block.mediaCaption.isEmpty,
+              block.selectedForDay == selectedForDay, block.deferredUntil == deferredUntil,
+              block.schedulingEstimateMinutes == estimate, block.keepsSessionsTogether == keepTogether,
+              block.tracksAwayFromMac == tracksAway, store.workSessions(taskID: block.id).isEmpty,
+              block.occurrenceID == occurrenceID, store.completionRecords(taskID: block.id).isEmpty,
+              store.placements(taskID: block.id).isEmpty,
               store.attachments(for: block.id).isEmpty,
               let listID, store.children(of: block.id, listID: listID).isEmpty
         else { return false }

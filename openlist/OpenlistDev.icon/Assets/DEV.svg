@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect x="508" y="678" width="370" height="168" rx="44" fill="#FFB340"/>
+  <g fill="#171A20" fill-rule="evenodd">
+    <path d="M552 715 H589 C624 715 642 732 642 762 C642 792 624 809 589 809 H552 Z M576 737 V787 H587 C607 787 617 779 617 762 C617 745 607 737 587 737 Z"/>
+    <path d="M656 715 H724 V737 H680 V751 H719 V772 H680 V787 H724 V809 H656 Z"/>
+    <path d="M735 715 H761 L780 778 L799 715 H825 L792 809 H768 Z"/>
+  </g>
+</svg>
