@@ -493,16 +493,18 @@ class CommandChecks(unittest.TestCase):
 
 
 class PipelineChecks(unittest.TestCase):
-    def test_ci_and_release_select_latest_stable_hosted_xcode(self):
+    def test_ci_and_release_require_hosted_xcode_27(self):
         for name in ("ci.yml", "release.yml"):
             with self.subTest(workflow=name):
                 workflow = (TOOLS.parent / ".github/workflows" / name).read_text()
-                self.assertIn("runs-on: macos-latest", workflow)
+                self.assertIn("runs-on: xcode-27", workflow)
                 self.assertRegex(workflow, r"uses: maxim-lobanov/setup-xcode@[0-9a-f]{40}\b")
-                self.assertIn("xcode-version: latest-stable", workflow)
+                self.assertIn("xcode-version: latest", workflow)
                 self.assertNotIn("DEVELOPER_DIR:", workflow)
-                self.assertLess(workflow.index("xcode-version: latest-stable"), workflow.index("./Tools/check.sh"))
-                self.assertIn("xcodebuild -version && swift --version && uname -m", workflow)
+                self.assertLess(workflow.index("xcode-version: latest"), workflow.index("./Tools/check.sh"))
+                self.assertIn('[[ $(xcodebuild -version | head -n 1) == "Xcode 27."* ]]', workflow)
+                self.assertIn("swift --version", workflow)
+                self.assertIn("uname -m", workflow)
 
     def test_checked_in_app_entitlements_match_the_release_policy(self):
         source = plistlib.loads((TOOLS.parent / "Config/openlist.entitlements").read_bytes())
