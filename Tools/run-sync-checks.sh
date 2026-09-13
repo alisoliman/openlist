@@ -18,7 +18,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   openlist/Services/InlineMarkdown.swift openlist/Services/MarkdownExportPackage.swift openlist/Services/MarkdownExporter.swift \
   openlist/Services/SyncedTextDraft.swift \
-  openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudSyncState.swift openlist/Services/ICloudSyncMonitor.swift openlist/Services/ICloudError.swift \
+  openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudSyncState.swift openlist/Services/ICloudSyncMonitor.swift openlist/Services/TerminationDrain.swift openlist/Services/ICloudError.swift \
   openlist/Services/WidgetSnapshotPublisher.swift openlist/Services/ActiveTaskPolicy.swift \
   Tools/CloudSyncChecks/PhaseCheckpoints.swift \
   Tools/EditorChecks/Support.swift Tools/SyncChecks/Checks.swift

@@ -139,6 +139,8 @@ final class OpenlistApplicationDelegate: NSObject, NSApplicationDelegate {
     var sync: ICloudSyncMonitor?
     var onDidLaunch: (() -> Void)?
     var persistPendingChanges: (() throws -> Void)?
+    var finishPendingNotifications: (() async -> Bool)?
+    var hasPendingNotifications: (() -> Bool)?
     private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -160,11 +162,12 @@ final class OpenlistApplicationDelegate: NSObject, NSApplicationDelegate {
         isTerminating = true
         commitEditingDrafts()
         Task { @MainActor in
-            // Allow SwiftUI blur handlers to finish before the final save.
-            await Task.yield()
             do {
-                try persistPendingChanges?()
-                sender.reply(toApplicationShouldTerminate: true)
+                try await TerminationDrain.run(commitDrafts: commitEditingDrafts,
+                    persist: { try self.persistPendingChanges?() },
+                    wait: { await self.finishPendingNotifications?() ?? true },
+                    hasPendingWork: { self.hasPendingNotifications?() ?? false },
+                    finish: { sender.reply(toApplicationShouldTerminate: true) })
             } catch {
                 // Preserve retryable edits and show the Store's save error.
                 isTerminating = false

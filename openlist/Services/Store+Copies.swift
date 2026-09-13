@@ -112,8 +112,8 @@ extension Store {
         let ids = try staged.clone(originals, to: listID, store: self, mode: mode,
             rootID: source.id, parentID: source.parentID, rootIndex: index)
         try staged.commit(owningList: owningList)
-        onDidSave?()
         refreshAllReminders()
+        onDidSave?()
         return ids[source.id]!
     }
 
@@ -142,8 +142,8 @@ extension Store {
             .filter { !$0.isDeleted }
         _ = try staged.clone(originals, to: copy.id, store: self, mode: mode)
         try staged.commit(owningList: copy)
-        onDidSave?()
         refreshAllReminders()
+        onDidSave?()
         return copy.id
     }
 

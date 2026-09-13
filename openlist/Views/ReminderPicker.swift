@@ -10,7 +10,6 @@ struct ReminderPicker: View {
     @Environment(AppEnvironment.self) private var env
 
     @State private var customDate: Date = .now
-    @State private var authorizationDenied = false
 
     var body: some View {
         // SwiftUI may update this child after a saved deletion, before its
@@ -57,29 +56,14 @@ struct ReminderPicker: View {
                 .foregroundStyle(ListAccent.red.color)
             }
 
-            if authorizationDenied {
-                Text("Notifications are turned off for Openlist. Enable them in System Settings to get reminders.")
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(ListAccent.orange.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Open Notification Settings") {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .buttonStyle(.link)
-                .font(Theme.Font.metadata)
-            }
+            TaskReminderStatus(block: block)
         }
         .onChange(of: block.reminderAt) { _, date in
             customDate = date ?? block.dueDate ?? .now
         }
         .onAppear {
             customDate = block.reminderAt ?? block.dueDate ?? .now
-            Task {
-                let status = await NotificationService.shared.authorizationStatus()
-                authorizationDenied = status == .denied
-            }
+
         }
     }
 

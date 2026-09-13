@@ -243,7 +243,6 @@ extension Store {
                 let listID = resolvedListID(model.listID)
                 if model.listID != listID { model.listID = listID }
             } else if let existing {
-                NotificationService.shared.cancelReminder(for: id)
                 context.delete(existing)
             }
         }

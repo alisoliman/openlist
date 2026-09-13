@@ -88,6 +88,7 @@ private struct TaskDetailContent: View {
                     }
                 TaskInspectorMetadata(block: block)
                     .simultaneousGesture(TapGesture().onEnded { claimParentCommands() })
+                TaskReminderStatus(block: block)
                 Divider()
                 if isNoteVisible || !block.note.isEmpty {
                     noteSection(block)

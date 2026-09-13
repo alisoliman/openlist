@@ -137,16 +137,12 @@ extension Store {
             for descendant in BlockTree.descendants(of: block.id, in: all) {
                 discardTaskSchedule(for: descendant, reason: "Task deleted")
                 purgeMediaAndAttachments(for: descendant)
-                // Otherwise the notification still fires, naming a task that
-                // no longer exists.
-                NotificationService.shared.cancelReminder(for: descendant.id)
                 context.delete(descendant)
             }
         }
 
         discardTaskSchedule(for: block, reason: "Task deleted")
         purgeMediaAndAttachments(for: block)
-        NotificationService.shared.cancelReminder(for: block.id)
         let parentID = block.parentID
         context.delete(block)
         respaceIfNeeded(parentID: parentID, listID: listID)
@@ -195,7 +191,6 @@ extension Store {
             block.recurrenceData = nil
             block.isStarred = false
             block.priorityRaw = 0
-            NotificationService.shared.cancelReminder(for: block.id)
         }
         if kind.isVoid {
             block.text = ""

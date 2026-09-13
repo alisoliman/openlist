@@ -64,7 +64,6 @@ extension Store {
         block.isCompleted = true
         block.completedAt = now
         block.touch()
-        NotificationService.shared.cancelReminder(for: block.id)
 
         // Ticking a parent ticks everything under it.
         if let listID = block.listID {
@@ -74,7 +73,6 @@ extension Store {
                     descendant.isCompleted = true
                     descendant.completedAt = now
                     descendant.touch()
-                    NotificationService.shared.cancelReminder(for: descendant.id)
                 }
             }
         }
@@ -129,7 +127,6 @@ extension Store {
 
         if date == nil {
             block.reminderAt = nil
-            NotificationService.shared.cancelReminder(for: block.id)
             log(.unscheduled, title: block.displayTitle, block: block)
         } else {
             log(.scheduled, title: block.displayTitle, detail: Self.relativeDateText(date!), block: block)
@@ -155,11 +152,6 @@ extension Store {
     func setReminder(_ date: Date?, for block: Block) {
         block.reminderAt = date
         block.touch()
-        if date == nil {
-            NotificationService.shared.cancelReminder(for: block.id)
-        } else {
-            scheduleReminderIfNeeded(for: block)
-        }
         save()
     }
 
@@ -186,37 +178,41 @@ extension Store {
         block.reminderAt = newDue.addingTimeInterval(reminder.timeIntervalSince(previousDue))
     }
 
+    /// Kept as a mutation callsite marker. OS state only follows committed
+    /// data; a synchronous save below this call publishes the final snapshot.
     func scheduleReminderIfNeeded(for block: Block) {
-        guard block.isTask, !block.isCompleted,
-              let owningList = list(id: block.listID), !owningList.isArchived else {
-            NotificationService.shared.cancelReminder(for: block.id)
-            return
-        }
-        let fireDate = block.reminderAt ?? (block.includesTime ? block.dueDate : nil)
-        guard let fireDate, fireDate > .now else {
-            NotificationService.shared.cancelReminder(for: block.id)
-            return
-        }
-        NotificationService.shared.scheduleReminder(
-            id: block.id,
-            title: block.displayTitle,
-            listName: owningList.displayTitle,
-            at: fireDate
-        )
+        guard !context.hasChanges else { return }
+        refreshAllReminders()
     }
 
-    /// Re-registers every pending reminder, run once at launch.
+    /// A fresh reader avoids exposing retained unsaved live model values to the
+    /// OS. This also covers direct title/list edits, Undo, copies, and imports.
     func refreshAllReminders() {
-        NotificationService.shared.cancelAll()
-        let descriptor = FetchDescriptor<Block>(
-            predicate: #Predicate { $0.kindRaw == "task" && !$0.isCompleted }
-        )
-        let tasks = (try? context.fetch(descriptor)) ?? []
-        // `cancelAll` already cleared everything, so only tasks that will
-        // actually schedule something need to go through the notification
-        // centre — otherwise each one costs two pointless XPC round trips.
-        for task in tasks where task.reminderAt != nil || (task.includesTime && task.dueDate != nil) {
-            scheduleReminderIfNeeded(for: task)
+        do {
+            let reader = ModelContext(context.container)
+            reader.autosaveEnabled = false
+            let lists = try reader.fetch(FetchDescriptor<TaskList>())
+            let tasks = try reader.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == "task" }))
+            let intents = tasks.compactMap { task -> ReminderIntent? in
+                guard let date = task.reminderAt ?? (task.includesTime ? task.dueDate : nil) else { return nil }
+                var id = task.listID
+                var visited = Set<UUID>()
+                var owningList: TaskList?
+                while let next = id, visited.insert(next).inserted,
+                      let list = lists.first(where: { $0.id == next }) {
+                    if list.mergedIntoID == nil { owningList = list; break }
+                    id = list.mergedIntoID
+                }
+                let reason: String? = task.isCompleted ? "task completed"
+                    : owningList == nil ? "list unavailable"
+                    : owningList?.isArchived == true ? "list archived" : nil
+                return ReminderIntent(id: task.id, occurrenceID: task.occurrenceID,
+                    title: task.displayTitle, listName: owningList?.displayTitle ?? "",
+                    date: date, inactiveReason: reason)
+            }
+            NotificationService.shared.reconcileReminders(intents)
+        } catch {
+            NotificationService.shared.reminderReadFailed("Saved reminders could not be read. \(error.localizedDescription)")
         }
     }
 

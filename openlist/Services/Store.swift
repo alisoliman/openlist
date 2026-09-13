@@ -231,7 +231,6 @@ final class Store {
         for block in blocks(inList: listID) {
             discardTaskSchedule(for: block, reason: "Task deleted")
             purgeMediaAndAttachments(for: block)
-            NotificationService.shared.cancelReminder(for: block.id)
             context.delete(block)
         }
         log(.listDeleted, title: list.displayTitle, list: list)
@@ -372,6 +371,7 @@ final class Store {
         activitySuppressedTaskIDs.removeAll()
         pendingRestoredTaskIDs.removeAll()
         persistenceError = nil
+        refreshAllReminders()
         onDidSave?()
         publishPendingCompletionUndo()
     }
