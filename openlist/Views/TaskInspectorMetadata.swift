@@ -5,6 +5,7 @@ struct TaskInspectorMetadata: View {
     let block: Block
     @Environment(AppEnvironment.self) private var env
     @State private var openPicker: DetailPicker?
+    @FocusState private var focusedPicker: DetailPicker?
 
     var body: some View {
         MetadataFlowLayout(spacing: 7) {
@@ -33,6 +34,7 @@ struct TaskInspectorMetadata: View {
                 }
             }
             .buttonStyle(.plain)
+            .focused($focusedPicker, equals: .due)
             .accessibilityLabel("Edit task schedule")
             .accessibilityValue(block.dueDate.map { Store.absoluteDateText($0, includesTime: block.includesTime) } ?? "No due date")
             .help("Date, time, reminder and repeat (⌃D)")
@@ -60,6 +62,7 @@ struct TaskInspectorMetadata: View {
                 Label("Labels", systemImage: "tag").chipStyle()
             }
             .buttonStyle(.plain)
+            .focused($focusedPicker, equals: .labels)
             .help("Edit labels (⌃L)")
             .popover(isPresented: labelsBinding, arrowEdge: .bottom) {
                 LabelPicker(block: block).environment(env)
@@ -104,6 +107,13 @@ struct TaskInspectorMetadata: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear(perform: adoptRequestedPicker)
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
+        .onChange(of: openPicker) { previous, current in
+            // Popovers must return focus to their source, not let AppKit select
+            // the first task title in the document behind the inspector.
+            if current == nil, let previous {
+                focusedPicker = previous == .labels ? .labels : .due
+            }
+        }
     }
 
     private var scheduleBinding: Binding<Bool> {

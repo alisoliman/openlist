@@ -23,6 +23,7 @@ struct TaskDetailButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable()
         .focused($isFocused)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: showsAction)
         .help("Open details (⌘↩)")

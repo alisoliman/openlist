@@ -48,7 +48,7 @@ struct TaskSchedulePicker: View {
                 .padding(.vertical, 2)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: 470)
+            .frame(height: 510)
         }
         .padding(16)
         .frame(width: 350)
