@@ -190,16 +190,16 @@ struct InboxScreen: View {
             } content: {
                 if isReviewing {
                     InboxReviewView(inbox: inbox)
-                        .padding(.bottom, 20)
+                } else {
+                    CompletedTasksControl(list: inbox)
+                        .padding(.bottom, 12)
+                    DocumentView(
+                        document: DocumentContext(listID: inbox.id),
+                        emptyPlaceholder: "Capture a task…",
+                        showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks)
+                    )
+                    .id(inbox.id)
                 }
-                CompletedTasksControl(list: inbox)
-                    .padding(.bottom, 12)
-                DocumentView(
-                    document: DocumentContext(listID: inbox.id),
-                    emptyPlaceholder: "Capture a task…",
-                    showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks)
-                )
-                .id(inbox.id)
             }
         } else {
             MissingContentView(message: "The inbox could not be loaded.")

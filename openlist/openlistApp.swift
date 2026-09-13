@@ -44,7 +44,7 @@ struct openlistApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(id: WindowID.main) {
+        Window("Openlist", id: WindowID.main) {
             if let env, let container {
                 RootView()
                     .frame(minWidth: 640, minHeight: 420)

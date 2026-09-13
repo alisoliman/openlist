@@ -6,6 +6,7 @@ struct InboxReviewView: View {
     let inbox: TaskList
     @Environment(AppEnvironment.self) private var env
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted }, sort: \Block.sortIndex)
     private var tasks: [Block]
     @State private var reviewed: Set<UUID> = []
@@ -81,6 +82,7 @@ struct InboxReviewView: View {
                 .background(Theme.chipFill, in: .rect(cornerRadius: 8))
             }
         }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: queue.first?.id)
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.chipFill.opacity(0.45), in: .rect(cornerRadius: 14))
