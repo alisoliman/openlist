@@ -23,6 +23,26 @@ do {
     let active = TaskList(title: "Active")
     let archived = TaskList(title: "Retained archive")
     let inbox = TaskList(title: "Inbox", isSystemInbox: true)
+    check(active.completedVisibility == .inherit, "new lists inherit the app default")
+    check(active.showsCompleted(default: true) && !active.showsCompleted(default: false), "inherited visibility follows a changing global default")
+    active.completedVisibility = .show
+    check(active.showsCompleted(default: false), "explicit show overrides a hidden global default")
+    active.completedVisibility = .hide
+    check(!active.showsCompleted(default: true), "explicit hide overrides a shown global default")
+    active.completedVisibility = .inherit
+    check(active.showsCompleted(default: true), "reset to inheritance immediately follows the global default")
+    active.completedVisibilityRaw = nil
+    active.showsCompleted = false
+    check(active.completedVisibility == .hide, "legacy hidden lists retain their override")
+    active.showsCompleted = true
+    check(active.completedVisibility == .inherit, "legacy default lists adopt inheritance")
+    inbox.completedVisibilityRaw = nil
+    inbox.showsCompleted = false
+    check(inbox.completedVisibility == .inherit, "legacy Inbox retains its global preference behavior")
+    active.completedVisibilityRaw = "future-value"
+    check(active.completedVisibility == .inherit, "unknown preference values use a safe legacy fallback")
+    active.completedVisibility = .hide
+    archived.completedVisibility = .show
     archived.isArchived = true
     archivedListID = archived.id
     for list in [active, archived, inbox] { context.insert(list) }
@@ -49,6 +69,7 @@ do {
     activeTask.isCompleted = true
     check(policy.includes(activeTask), "completion filtering remains a surface choice")
     check(archivedTask.dueDate != nil && archivedTask.reminderAt != nil && archivedTask.isStarred, "archiving hides tasks without clearing scheduling or flags")
+    try context.save()
 }
 
 do {
@@ -58,6 +79,10 @@ do {
     let tasks = try context.fetch(FetchDescriptor<Block>())
     let archive = lists.first { $0.id == archivedListID }!
     let task = tasks.first { $0.id == taskID }!
+    check(archive.completedVisibility == .show && archive.showsCompleted(default: false), "explicit shown preference survives reopening")
+    let active = lists.first { $0.title == "Active" }!
+    check(active.completedVisibility == .hide && !active.showsCompleted(default: true), "explicit hidden preference survives reopening")
+    check(tasks.first { $0.listID == active.id && $0.isTask }?.isCompleted == true, "visibility preferences preserve completed task data")
     check(archive.isArchived && !ActiveTaskPolicy(lists: lists).includes(task), "archive visibility survives reopening a disk store")
     check(task.note == "Preserve this note" && task.reminderAt != nil, "archived content and reminder intent survive reopening")
     check(tasks.contains { $0.parentID == task.id }, "archived subtask relationship survives reopening")

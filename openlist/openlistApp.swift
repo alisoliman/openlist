@@ -44,9 +44,10 @@ struct openlistApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(id: WindowID.main) {
+        Window("Openlist", id: WindowID.main) {
             if let env, let container {
                 RootView()
+                    .frame(minWidth: 640, minHeight: 420)
                     .environment(env)
                     .modelContainer(container)
                     .preferredColorScheme(env.settings.appearance.colorScheme)
@@ -64,6 +65,7 @@ struct openlistApp: App {
             }
         }
         .defaultSize(width: 1_180, height: 780)
+        .windowResizability(.contentMinSize)
         .commands {
             if let env { AppCommands(env: env) }
         }

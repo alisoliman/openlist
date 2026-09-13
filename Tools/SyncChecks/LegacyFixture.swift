@@ -20,6 +20,7 @@ import SwiftData
         section.isDefault = true
         let list = TaskList()
         list.title = "Existing local list"
+        list.showsCompleted = false
         list.sectionID = section.id
         list.isPinned = true
         list.summary = "Keep my local data"

@@ -63,9 +63,7 @@ struct TasksScreen: View {
                 icon: "checklist",
                 title: "Tasks",
                 subtitle: "\(matching.count) \(matching.count == 1 ? "task" : "tasks")"
-            ) {
-                controls
-            }
+            )
         } content: {
             activeConstraints
                 .padding(.bottom, 12)
@@ -115,58 +113,52 @@ struct TasksScreen: View {
 
     @ViewBuilder
     private var constraintLabels: some View {
-        HStack(spacing: 6) {
-            Text(filter.title).chipStyle()
-            if let listFilter, let list = allLists.first(where: { $0.id == listFilter }) {
-                Text("\(list.icon) \(list.displayTitle)")
-                    .lineLimit(1)
-                    .chipStyle(accent: list.accent.color)
-                    .help(list.displayTitle)
-            } else {
-                Text("Active lists").foregroundStyle(Theme.secondaryText)
+        Menu {
+            ForEach(TaskFilter.allCases) { option in
+                CheckmarkMenuItem(option.title, isSelected: filter == option) { filter = option }
             }
+        } label: {
+            Label(filter.title, systemImage: "line.3.horizontal.decrease")
+                .chipStyle(accent: filter == .open ? nil : Theme.accent)
         }
-        Text("Grouped by \(grouping.title.lowercased())")
-            .foregroundStyle(Theme.secondaryText)
-        if hasCustomFilters {
-            Button("Reset filters", action: resetFilters)
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.accent)
-        }
-    }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Show tasks: \(filter.title)")
 
-    private var controls: some View {
         HStack(spacing: 4) {
             Menu {
-                Section("Show") {
-                    ForEach(TaskFilter.allCases) { option in
-                        CheckmarkMenuItem(option.title, isSelected: filter == option) { filter = option }
-                    }
-                }
-
-                Section("Group by") {
-                    ForEach(TaskGrouping.allCases) { option in
-                        CheckmarkMenuItem(option.title, isSelected: grouping == option) { grouping = option }
-                    }
-                }
-
-                Section("List") {
-                    CheckmarkMenuItem("All active lists", isSelected: listFilter == nil) { listFilter = nil }
-                    ForEach(activeLists) { list in
-                        CheckmarkMenuItem("\(list.icon)  \(list.displayTitle)", isSelected: listFilter == list.id) {
-                            listFilter = list.id
-                        }
-                    }
+                CheckmarkMenuItem("All active lists", isSelected: listFilter == nil) { listFilter = nil }
+                ForEach(activeLists) { list in
+                    CheckmarkMenuItem(list.displayTitle, isSelected: listFilter == list.id) { listFilter = list.id }
                 }
             } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 15))
+                let list = allLists.first { $0.id == listFilter }
+                Text(list.map { "\($0.icon) \($0.displayTitle)" } ?? "All active lists")
+                    .lineLimit(1)
+                    .chipStyle(accent: list?.accent.color)
             }
             .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: 26)
-            .help("Filter and group")
-            .accessibilityLabel("Filter and group tasks")
+            .accessibilityLabel("Filter by list")
+            if listFilter != nil {
+                ClearButton(label: "Clear list filter") { listFilter = nil }
+            }
+        }
+
+        Menu {
+            ForEach(TaskGrouping.allCases) { option in
+                CheckmarkMenuItem(option.title, isSelected: grouping == option) { grouping = option }
+            }
+        } label: {
+            Text("Group: \(grouping.title)")
+                .chipStyle()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Group tasks by \(grouping.title)")
+
+        if hasCustomFilters {
+            Button("Reset filters", action: resetFilters)
+                .buttonStyle(.borderless)
         }
     }
 
@@ -313,7 +305,10 @@ struct TasksScreen: View {
     }
 
     private func sortedByDate(_ input: [Block]) -> [Block] {
-        input.sorted(by: Block.byDueDate)
+        input.sorted {
+            if $0.isCompleted != $1.isCompleted { return !$0.isCompleted }
+            return Block.byDueDate($0, $1)
+        }
     }
 
     private func sortedByCompletion(_ input: [Block]) -> [Block] {

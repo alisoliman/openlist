@@ -47,28 +47,41 @@ private struct TaskDetailContent: View {
     }
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var openPicker: DetailPicker?
     @State private var isCapturingTitle = false
+    @State private var showsMoreDetails = false
+    @State private var isNoteVisible = false
     @State private var captureCancellationArmed = false
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isNoteFocused: Bool
 
     var body: some View {
-        content(for: block)
+        if block.modelContext != nil, !block.isDeleted {
+            content(for: block)
+        }
     }
 
     private func content(for block: Block) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 20) {
                 titleSection(block)
                 metadataSection(block)
                 TaskSchedulingSection(block: block)
-                noteSection(block)
+                if isNoteVisible || !block.note.isEmpty {
+                    noteSection(block)
+                } else {
+                    Button("Add note", systemImage: "note.text") {
+                        isNoteVisible = true
+                        isNoteFocused = true
+                    }
+                    .buttonStyle(.borderless)
+                }
                 subtaskSection(block)
                 attachmentSection(block)
                 footer(block)
             }
-            .padding(16)
+            .padding(20)
         }
         .onAppear {
             adoptRequestedPicker()
@@ -108,7 +121,7 @@ private struct TaskDetailContent: View {
                     axis: .vertical
                 )
                 .textFieldStyle(.plain)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(block.isCompleted ? Theme.tertiaryText : Color.primary)
                 .strikethrough(block.isCompleted, color: Theme.tertiaryText)
                 .lineLimit(1...6)
@@ -154,7 +167,25 @@ private struct TaskDetailContent: View {
     // MARK: - Scheduling and tags
 
     private func metadataSection(_ block: Block) -> some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
+            DetailRow(icon: "folder", title: "List") {
+                Menu {
+                    ForEach(env.store.allLists()) { list in
+                        Button("\(list.icon)  \(list.displayTitle)") {
+                            env.store.moveToList(block, list: list)
+                        }
+                    }
+                } label: {
+                    let list = env.store.list(id: block.listID)
+                    Text("\(list?.icon ?? "") \(list?.displayTitle ?? "None")")
+                        .chipStyle(accent: list?.accent.color)
+                        .lineLimit(1)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             DetailRow(icon: "calendar", title: "Due") {
                 Button {
                     openPicker = .due
@@ -176,6 +207,27 @@ private struct TaskDetailContent: View {
                 }
             }
 
+            if !showsMoreDetails {
+                optionalMetadata(block, includeInactive: false)
+            }
+
+            DisclosureGroup("More details", isExpanded: $showsMoreDetails) {
+                VStack(alignment: .leading, spacing: 10) {
+                    optionalMetadata(block, includeInactive: true)
+                }
+                .padding(.top, 8)
+            }
+            .font(Theme.Font.metadata)
+            .transaction { transaction in
+                if reduceMotion { transaction.disablesAnimations = true }
+            }
+        }
+        .simultaneousGesture(TapGesture().onEnded { claimParentCommands() })
+    }
+
+    @ViewBuilder
+    private func optionalMetadata(_ block: Block, includeInactive: Bool) -> some View {
+        if includeInactive || block.recurrence != nil {
             DetailRow(icon: "repeat", title: "Repeat") {
                 Button {
                     openPicker = .repeatRule
@@ -193,7 +245,9 @@ private struct TaskDetailContent: View {
                     ClearButton(label: "Clear repeat rule") { env.store.setRecurrence(nil, for: block) }
                 }
             }
+        }
 
+        if includeInactive || block.reminderAt != nil {
             DetailRow(icon: "bell", title: "Remind") {
                 Button {
                     openPicker = .reminder
@@ -211,7 +265,9 @@ private struct TaskDetailContent: View {
                     ClearButton(label: "Clear reminder") { env.store.setReminder(nil, for: block) }
                 }
             }
+        }
 
+        if includeInactive || !block.labelIDs.isEmpty {
             DetailRow(icon: "tag", title: "Labels") {
                 let labels = env.store.labels(for: block)
                 Button {
@@ -221,7 +277,7 @@ private struct TaskDetailContent: View {
                         Text("Add label")
                             .chipStyle()
                     } else {
-                        HStack(spacing: 4) {
+                        VStack(alignment: .leading, spacing: 4) {
                             ForEach(labels) { label in
                                 Text(label.name)
                                     .chipStyle(accent: label.accent.color)
@@ -234,7 +290,9 @@ private struct TaskDetailContent: View {
                     LabelPicker(block: block).environment(env)
                 }
             }
+        }
 
+        if includeInactive || block.priority != .none {
             DetailRow(icon: "flag", title: "Priority") {
                 Menu {
                     ForEach(TaskPriority.allCases, id: \.self) { priority in
@@ -250,7 +308,9 @@ private struct TaskDetailContent: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
+        }
 
+        if includeInactive || block.isStarred {
             DetailRow(icon: "star", title: "Star") {
                 Toggle(
                     "Star task",
@@ -264,31 +324,13 @@ private struct TaskDetailContent: View {
                 .labelsHidden()
                 .accessibilityLabel("Star task")
             }
-
-            DetailRow(icon: "folder", title: "List") {
-                Menu {
-                    ForEach(env.store.allLists()) { list in
-                        Button("\(list.icon)  \(list.displayTitle)") {
-                            env.store.moveToList(block, list: list)
-                        }
-                    }
-                } label: {
-                    let list = env.store.list(id: block.listID)
-                    Text("\(list?.icon ?? "") \(list?.displayTitle ?? "None")")
-                        .chipStyle(accent: list?.accent.color)
-                        .lineLimit(1)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-            }
         }
-        .simultaneousGesture(TapGesture().onEnded { claimParentCommands() })
     }
 
     /// Consumes a picker requested by ⌃D / ⌃L.
     private func adoptRequestedPicker() {
         guard let requested = env.requestedPicker else { return }
+        if requested != .due { showsMoreDetails = true }
         openPicker = requested
         env.requestedPicker = nil
     }
@@ -468,24 +510,15 @@ private struct TaskDetailContent: View {
             HStack {
                 SectionLabel("Files")
                 Spacer()
-                Button {
+                Button("Attach file", systemImage: "paperclip") {
                     presentFilePicker(for: block)
-                } label: {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.secondaryText)
                 }
                 .buttonStyle(.plain)
                 .help("Attach files")
                 .accessibilityLabel("Attach files to task")
             }
 
-            if attachments.isEmpty {
-                Text("No files attached")
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.tertiaryText)
-                    .padding(.vertical, 2)
-            } else {
+            if !attachments.isEmpty {
                 ForEach(attachments) { attachment in
                     AttachmentRow(attachment: attachment) {
                         MediaStore.shared.delete(filename: attachment.filename)
@@ -590,7 +623,15 @@ private struct TaskDetailContent: View {
 struct DetailRow<Content: View>: View {
     let icon: String
     let title: String
-    @ViewBuilder var content: () -> Content
+    let content: Content
+
+    init(icon: String, title: String, @ViewBuilder content: () -> Content) {
+        self.icon = icon
+        self.title = title
+        // Resolve model reads while the parent renders. A deferred closure can
+        // otherwise read an invalidated SwiftData task during inspector removal.
+        self.content = content()
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -604,7 +645,7 @@ struct DetailRow<Content: View>: View {
                 .foregroundStyle(Theme.secondaryText)
                 .frame(width: 54, alignment: .leading)
 
-            content()
+            content
 
             Spacer(minLength: 0)
         }
@@ -664,15 +705,16 @@ struct AttachmentRow: View {
 
             Spacer(minLength: 4)
 
-            if isHovering {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.tertiaryText)
-                }
-                .buttonStyle(.plain)
+            Button("Open attachment", systemImage: "arrow.up.forward.square", action: openAttachment)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Open \(attachment.displayName)")
+
+            Button("Remove attachment", systemImage: "trash", action: onDelete)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Remove attachment \(attachment.displayName)")
-            }
+                .help("Remove \(attachment.displayName)")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
@@ -682,14 +724,16 @@ struct AttachmentRow: View {
         )
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .onTapGesture(count: 2) {
-            do {
-                guard NSWorkspace.shared.open(try attachment.fileURL()) else {
-                    throw CocoaError(.fileReadUnknown)
-                }
-            } catch {
-                MarkdownExporter.presentError(error, operation: "Open attachment \(attachment.displayName)")
+        .onTapGesture(count: 2, perform: openAttachment)
+    }
+
+    private func openAttachment() {
+        do {
+            guard NSWorkspace.shared.open(try attachment.fileURL()) else {
+                throw CocoaError(.fileReadUnknown)
             }
+        } catch {
+            MarkdownExporter.presentError(error, operation: "Open attachment \(attachment.displayName)")
         }
     }
 }

@@ -12,6 +12,8 @@ struct RootView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lastCommandToken = 0
+    @State private var availableWidth: CGFloat = 1180
+    @State private var sidebarBeforeInspector: NavigationSplitViewVisibility?
     /// The route whose unwanted initial focus has already been cleared, so the
     /// clear happens once per navigation and never steals a later click.
     @State private var focusClearedFor: AppRoute?
@@ -23,10 +25,19 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var navigator = env.navigator
+        @Bindable var captureEnvironment = env
 
         navigationContent
-        .navigationTitle("")
+        .navigationTitle("Openlist")
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            availableWidth = width
+            adaptInspectorColumns()
+        }
         .toolbar { toolbarContent }
+        .sheet(item: $captureEnvironment.taskCaptureRequest) { request in
+            TaskCaptureView(request: request)
+                .fixedSize(horizontal: false, vertical: true)
+        }
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
             CommandPaletteView()
         }
@@ -96,6 +107,7 @@ struct RootView: View {
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
+            adaptInspectorColumns()
             // Editing a subtask inside the detail panel makes that panel the
             // command target. On a smart view there is no list document to hand
             // control back to, so closing the panel has to release it or ⌘N and
@@ -113,6 +125,21 @@ struct RootView: View {
             lastCommandToken = newValue
             guard env.activeDocument == nil else { return }
             handleGlobalCommand()
+        }
+    }
+
+    /// Keep the document and inspector usable in a narrow window. Restore only
+    /// sidebar visibility that this adaptive behavior changed itself.
+    private func adaptInspectorColumns() {
+        if env.navigator.openTaskID != nil, availableWidth < 980 {
+            if columnVisibility != .detailOnly {
+                sidebarBeforeInspector = columnVisibility
+                columnVisibility = .detailOnly
+            }
+        } else if let previous = sidebarBeforeInspector,
+                  env.navigator.openTaskID == nil || availableWidth >= 1100 {
+            columnVisibility = previous
+            sidebarBeforeInspector = nil
         }
     }
 
@@ -197,7 +224,7 @@ struct RootView: View {
 
         switch command {
         case .newTask:
-            createTaskFromSmartView()
+            env.presentTaskCapture()
 
         case .openDetails:
             if let first = targets.first(where: \.isTask) { env.navigator.openTask(first.id) }
@@ -217,33 +244,6 @@ struct RootView: View {
         }
     }
 
-    /// ⌘N from a smart view files a task into the Inbox, pre-filled with
-    /// whatever that view implies — due today in Today, tagged in a label view.
-    private func createTaskFromSmartView() {
-        let destination = env.navigator.route.listID.flatMap { env.store.list(id: $0) } ?? env.store.inboxList()
-        guard let destination else { return }
-
-        var defaults = CaptureDefaults(
-            parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates,
-            dueTodayWhenUndated: env.settings.defaultDestination == .today
-        )
-        switch env.navigator.route {
-        case .today:
-            defaults.dueTodayWhenUndated = true
-        case .calendar:
-            defaults.dueTodayWhenUndated = false
-        case let .label(labelID):
-            defaults.labelIDs = [labelID]
-        default:
-            break
-        }
-
-        let block = env.store.captureTask(text: "", in: destination, defaults: defaults)
-        if env.navigator.route == .calendar { env.store.selectForToday(block) }
-        env.beginTaskTitleCapture(block)
-        env.navigator.openTask(block.id)
-    }
-
     // MARK: - Quick capture & Dock
 
     /// Drops the window's first responder when arriving somewhere that focus
@@ -258,7 +258,8 @@ struct RootView: View {
     private func clearInitialFocus(for route: AppRoute) {
         guard !route.hasDocumentEditor, focusClearedFor != route,
               !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-              !env.navigator.isShortcutSheetOpen, env.navigator.openTaskID == nil,
+              !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
+              env.navigator.openTaskID == nil,
               let initialWindow = hostWindow.window, initialWindow.isKeyWindow
         else { return }
 
@@ -268,7 +269,8 @@ struct RootView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak initialWindow] in
             guard env.navigator.route == route, focusClearedFor != route,
                   !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-                  !env.navigator.isShortcutSheetOpen, env.navigator.openTaskID == nil,
+                  !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
+              env.navigator.openTaskID == nil,
                   let window = initialWindow, window === hostWindow.window,
                   window === NSApp.keyWindow, window.sheetParent == nil, window.attachedSheet == nil
             else { return }
@@ -362,43 +364,28 @@ struct RootView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button {
-                env.navigator.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-            }
+            Button("Back", systemImage: "chevron.left") { env.navigator.goBack() }
+                .labelStyle(.iconOnly)
             .disabled(!env.navigator.canGoBack)
             .help("Back (⌘[)")
 
-            Button {
-                env.navigator.goForward()
-            } label: {
-                Image(systemName: "chevron.right")
-            }
+            Button("Forward", systemImage: "chevron.right") { env.navigator.goForward() }
+                .labelStyle(.iconOnly)
             .disabled(!env.navigator.canGoForward)
             .help("Forward (⌘])")
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                env.navigator.isSearchOpen = true
-            } label: {
-                Image(systemName: "magnifyingglass")
-            }
+            Button("Search", systemImage: "magnifyingglass") { env.navigator.isSearchOpen = true }
+                .labelStyle(.iconOnly)
             .help("Search (⌘F)")
 
-            Button {
-                env.navigator.isCommandPaletteOpen = true
-            } label: {
-                Image(systemName: "command")
-            }
+            Button("Quick command", systemImage: "command") { env.navigator.isCommandPaletteOpen = true }
+                .labelStyle(.iconOnly)
             .help("Quick command (⌘K)")
 
-            Button {
-                env.send(.newTask)
-            } label: {
-                Image(systemName: "plus")
-            }
+            Button("Add task", systemImage: "plus") { env.send(.newTask) }
+                .labelStyle(.iconOnly)
             .help("New task (⌘N)")
         }
     }
@@ -432,19 +419,23 @@ struct ScreenScaffold<Header: View, Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header()
-                    .padding(.bottom, headerSpacing)
-                content()
+        GeometryReader { geometry in
+            let gutter = min(Theme.Spacing.documentGutter, max(16, geometry.size.width * 0.045))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header()
+                        .padding(.bottom, headerSpacing)
+                    content()
+                }
+                .frame(maxWidth: maxContentWidth, alignment: .leading)
+                .padding(.horizontal, gutter)
+                .padding(.top, 24)
+                .padding(.bottom, 60)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            .frame(maxWidth: maxContentWidth, alignment: .leading)
-            .padding(.horizontal, Theme.Spacing.documentGutter)
-            .padding(.top, 24)
-            .padding(.bottom, 60)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .environment(\.compactTaskRows, geometry.size.width < 620)
+            .background(Theme.canvas)
         }
-        .background(Theme.canvas)
     }
 }
 

@@ -10,6 +10,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/editor-check
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
-  openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
+  openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift openlist/Editor/SlashMenuLayout.swift \
   Tools/EditorChecks/Support.swift Tools/EditorChecks/main.swift
 "$OUT/editor-checks"

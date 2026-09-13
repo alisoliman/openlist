@@ -35,6 +35,33 @@ struct BlockRow: Identifiable, Hashable {
 /// Parentage lives in `Block.parentID` and ordering in `Block.sortIndex`, so
 /// every view that renders a document runs the same flattening pass.
 enum BlockTree {
+    /// A display projection: completed tasks settle below pending siblings,
+    /// carrying their entire subtree. Stored manual order is untouched, so
+    /// reopening a task restores its position and exports keep document order.
+    static func prioritizingPendingTasks(in rows: [BlockRow]) -> [BlockRow] {
+        var index = 0
+        func siblings(at depth: Int) -> [BlockRow] {
+            var pending: [[BlockRow]] = []
+            var completed: [[BlockRow]] = []
+            while index < rows.count, rows[index].depth == depth {
+                let row = rows[index]
+                index += 1
+                var branch = [row]
+                if index < rows.count, rows[index].depth > depth {
+                    branch += siblings(at: rows[index].depth)
+                }
+                if row.block.isTask && row.block.isCompleted {
+                    completed.append(branch)
+                } else {
+                    pending.append(branch)
+                }
+            }
+            return (pending + completed).flatMap { $0 }
+        }
+        guard let first = rows.first else { return [] }
+        return siblings(at: first.depth)
+    }
+
     /// Children of `parentID`, ordered by `sortIndex`.
     static func children(of parentID: UUID?, in blocks: [Block]) -> [Block] {
         childIndex(of: blocks, root: parentID)[parentID] ?? []

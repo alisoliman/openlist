@@ -55,6 +55,8 @@ final class AppEnvironment {
     private var hasBootstrapped = false
 
     /// A command awaiting pickup by the focused document view.
+    var taskCaptureRequest: TaskCaptureRequest?
+
     var pendingCommand: EditorCommand?
     /// Bumped to make the focused document re-read `pendingCommand` even when
     /// the same command is issued twice in a row.
@@ -96,10 +98,6 @@ final class AppEnvironment {
             widgetPublisher?.scheduleRefresh()
             calendar?.storeDidChange()
         }
-        store.onDidCompleteTask = { [weak settings] _ in
-            guard settings?.playsCompletionSound == true else { return }
-            NSSound(named: "Tink")?.play()
-        }
         sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
     }
 
@@ -120,8 +118,19 @@ final class AppEnvironment {
     }
 
     func send(_ command: EditorCommand) {
+        if command == .newTask {
+            presentTaskCapture()
+            return
+        }
         pendingCommand = command
         commandToken &+= 1
+    }
+
+    func presentTaskCapture(text: String = "") {
+        taskCaptureRequest = TaskCaptureRequest(
+            text: text, suggestedListID: navigator.route.listID,
+            plansForToday: navigator.route == .calendar
+        )
     }
 
     func consumeCommand() -> EditorCommand? {

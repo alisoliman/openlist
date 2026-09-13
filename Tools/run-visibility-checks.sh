@@ -10,6 +10,7 @@ xcrun swiftc \
     openlist/Model/Block.swift \
     openlist/Model/BlockKind.swift \
     openlist/Model/Recurrence.swift \
+    openlist/Model/CalendarTypes.swift \
     openlist/Model/TaskList.swift \
     Shared/ListAccent.swift \
     openlist/Services/ActiveTaskPolicy.swift \

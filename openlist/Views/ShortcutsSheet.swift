@@ -29,6 +29,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⌘3", action: "Updates"),
             Shortcut(keys: "⌘4", action: "Tasks"),
             Shortcut(keys: "⌘5", action: "Lists"),
+            Shortcut(keys: "⌘6", action: "Calendar"),
             Shortcut(keys: "⌘[", action: "Back"),
             Shortcut(keys: "⌘]", action: "Forward"),
             Shortcut(keys: "⌘F", action: "Search"),
@@ -37,11 +38,19 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⌘/", action: "This list of shortcuts"),
         ]),
         Group(title: "Creating", symbol: "plus", shortcuts: [
-            Shortcut(keys: "⌘N", action: "New task"),
+            Shortcut(keys: "⌘N", action: "Draft a new task"),
             Shortcut(keys: "⇧⌘N", action: "New list"),
             Shortcut(keys: "⌥⌘N", action: "New section"),
             Shortcut(keys: "⇧⌥Space", action: "Quick add from anywhere"),
             Shortcut(keys: "⇧⌘E", action: "Export list as Markdown"),
+        ]),
+        Group(title: "Capture and Inbox review", symbol: "tray", shortcuts: [
+            Shortcut(keys: "↩", action: "Confirm capture / add another"),
+            Shortcut(keys: "Esc", action: "Cancel capture"),
+            Shortcut(keys: "↑↓ ↩", action: "Choose a destination or command"),
+            Shortcut(keys: "⇧⌘M", action: "Move reviewed Inbox task"),
+            Shortcut(keys: "⇧⌘T", action: "Schedule reviewed task today"),
+            Shortcut(keys: "⇧⌘→", action: "Keep reviewed task in Inbox"),
         ]),
         Group(title: "Tasks", symbol: "checkmark.circle", shortcuts: [
             Shortcut(keys: "⌘D", action: "Complete or reopen"),
@@ -158,7 +167,7 @@ struct ShortcutsSheet: View {
                 .padding(18)
             }
         }
-        .frame(width: 820, height: 640)
+        .frame(minWidth: 640, idealWidth: 820, maxWidth: 900, minHeight: 420, idealHeight: 640, maxHeight: 760)
         .background(Theme.canvas)
     }
 }

@@ -204,4 +204,143 @@ for (name, edit) in inlineEdits {
     check(signature != plainSignature, "Remote \(name) changes invalidate the editor signature")
     check(signature == BlockTextView.ContentSignature(attributedText: roundTrip, kind: .task, isCompleted: false), "Local \(name) echoes preserve native editing without a redundant restyle")
 }
+// The popup belongs to the actual wrapped caret and the scroll viewport.
+let viewport = CGRect(x: -40, y: -500, width: 420, height: 700)
+let popup = SlashMenuLayout.frame(caret: CGRect(x: 320, y: 170, width: 1, height: 20), viewport: viewport, preferredHeight: 264)!
+check(viewport.contains(popup) && popup.maxY < 170, "Bottom-edge popup opens above the caret within the viewport")
+let narrowViewport = CGRect(x: 0, y: 0, width: 180, height: 140)
+let narrowPopup = SlashMenuLayout.frame(caret: CGRect(x: 140, y: 20, width: 1, height: 18), viewport: narrowViewport, preferredHeight: 264)!
+check(narrowViewport.contains(narrowPopup) && narrowPopup.width == 164 && narrowPopup.height < 264, "Narrow inspectors constrain popup width and scrolling height")
+check(SlashMenuLayout.frame(caret: CGRect(x: 0, y: 800, width: 1, height: 20), viewport: viewport, preferredHeight: 264) == nil, "A caret scrolled outside the viewport does not leave a detached menu")
+
+let textStorage = NSTextStorage()
+let layoutManager = NSLayoutManager()
+let textContainer = NSTextContainer(size: CGSize(width: 180, height: CGFloat.greatestFiniteMagnitude))
+textContainer.lineFragmentPadding = 0
+layoutManager.addTextContainer(textContainer)
+textStorage.addLayoutManager(layoutManager)
+let input = BlockNSTextView(frame: CGRect(x: 0, y: 0, width: 180, height: 300), textContainer: textContainer)
+input.textContainerInset = .zero
+input.coordinator = coordinator
+input.delegate = coordinator
+let wrapped = RichTextCodec.decode(nil, plainText: "A long line that wraps across several visual rows with a /h2 suffix", kind: .task)
+coordinator.apply(wrapped, to: input, kind: .task, isCompleted: false)
+_ = input.height(fittingWidth: 180)
+let trigger = (wrapped.string as NSString).range(of: "/h2").location
+let wrappedCaret = input.caretRectLocal(at: trigger + 3)
+check(wrappedCaret.minY > input.caretRectLocal(at: 0).minY && wrappedCaret.height > 0, "Caret geometry includes the wrapped line and a nonzero line height")
+check(!input.isOnFirstLine(trigger) && input.isOnLastLine(wrapped.length), "Arrow boundaries use visual lines")
+var lastQuery: String?
+var queryRange = NSRange()
+coordinator.parent.callbacks.onSlashQuery = { query, range, _, _ in lastQuery = query; queryRange = range }
+input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
+coordinator.updateSlashQuery(in: input)
+check(lastQuery == "h2" && queryRange == NSRange(location: trigger, length: 3), "Slash query removes only its trigger and filter before a suffix")
+input.isSlashMenuOpen = true
+coordinator.dismissSlash(in: input)
+lastQuery = nil
+coordinator.updateSlashQuery(in: input)
+check(lastQuery == nil, "Escape suppresses the same slash trigger during subsequent selection or layout updates")
+input.isSlashMenuOpen = false
+input.setSelectedRange(NSRange(location: 0, length: 0))
+coordinator.updateSlashQuery(in: input)
+input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
+coordinator.updateSlashQuery(in: input)
+check(lastQuery == "h2", "Moving away from a dismissed trigger allows a later command session")
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .code, isCompleted: false, attributedText: wrapped, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
+lastQuery = nil
+coordinator.updateSlashQuery(in: input)
+check(lastQuery == nil, "Code blocks keep slash characters literal")
+coordinator.parent = editor
+
+let selectedText = RichTextCodec.decode(nil, plainText: "Before DELETE After", kind: .task)
+coordinator.apply(selectedText, to: input, kind: .task, isCompleted: false)
+input.setSelectedRange(NSRange(location: 7, length: 7))
+var returnedText = ""
+var returnedCaret = -1
+coordinator.parent.callbacks.onReturn = { caret, content in returnedCaret = caret; returnedText = content.string; return true }
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertNewline(_:))), "Return is routed to the outline")
+check(returnedText == "Before After" && returnedCaret == 7, "Return replaces selected text before splitting, preserving the suffix")
+var tabCaret = -1
+coordinator.parent.callbacks.onTab = { _, caret in tabCaret = caret; return true }
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertTab(_:))) && tabCaret == 7, "Indentation receives the original mid-text caret")
+input.setSelectedRange(NSRange(location: 0, length: 2))
+check(!coordinator.textView(input, doCommandBy: #selector(NSResponder.moveUp(_:))), "Up with selected text retains native selection behavior")
+
+coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}", kind: .task), to: input, kind: .task, isCompleted: false)
+_ = input.height(fittingWidth: 180)
+check(input.caretRectLocal(at: 5).minY > input.caretRectLocal(at: 0).minY, "A trailing soft break positions the caret on the empty line")
+check(!input.isOnLastLine(2) && input.isOnLastLine(5) && !input.isOnFirstLine(5), "Arrows reach a trailing empty line before leaving the block")
+
+// Use an unshown window: verify AppKit focus and clip coordinates without
+// taking over the coordinating task's visible application.
+_ = NSApplication.shared
+let fixtureWindow = NSWindow(contentRect: CGRect(x: -10000, y: -10000, width: 320, height: 200), styleMask: .borderless, backing: .buffered, defer: false)
+let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+let scrollDocument = NSView(frame: CGRect(x: 0, y: 0, width: 320, height: 800))
+fixtureWindow.contentView = scroll
+scroll.documentView = scrollDocument
+scrollDocument.addSubview(input)
+input.frame = CGRect(x: 40, y: 300, width: 260, height: 100)
+let originalViewport = input.editorViewport
+scroll.contentView.scroll(to: CGPoint(x: 0, y: 200))
+check(input.editorViewport != originalViewport && input.editorViewport.height == scroll.contentView.bounds.height, "Native viewport follows scrolling in text-view coordinates")
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, attributedText: plain, isFocused: true, focusToken: 2, callbacks: BlockEditorCallbacks())
+coordinator.apply(plain, to: input, kind: .task, isCompleted: false)
+coordinator.syncFocus(view: input, shouldFocus: true, caret: 0, token: 1)
+coordinator.syncFocus(view: input, shouldFocus: true, caret: 4, token: 2)
+await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    DispatchQueue.main.async { continuation.resume() }
+}
+check(input.selectedRange().location == 4, "A newer programmatic focus request supersedes an older deferred request")
+input.insertText("X", replacementRange: input.selectedRange())
+coordinator.syncFocus(view: input, shouldFocus: true, caret: 4, token: 2)
+await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    DispatchQueue.main.async { continuation.resume() }
+}
+check(input.selectedRange().location == 5, "Typing in the middle of a focused block does not reapply its pending caret")
+
+// The title's visible cap-height center must agree with its row center. A
+// paragraph line-height multiplier previously shifted that baseline downward.
+input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
+for kind: BlockKind in [.task, .paragraph, .heading1, .heading2, .heading3, .code] {
+    coordinator.apply(RichTextCodec.decode(nil, plainText: "Task", kind: kind), to: input, kind: kind, isCompleted: false)
+    let singleHeight = input.height(fittingWidth: 180)
+    let font = Theme.Editor.nsFont(for: kind)
+    let baseline = input.layoutManager!.location(forGlyphAt: 0).y + input.textContainerOrigin.y
+    let opticalCenter = baseline - font.capHeight / 2
+    check(abs(opticalCenter - singleHeight / 2) < 1.5, "\(kind) text is optically centered in its measured editor height")
+    coordinator.apply(RichTextCodec.decode(nil, plainText: "", kind: kind), to: input, kind: kind, isCompleted: false)
+    check(input.height(fittingWidth: 180) == singleHeight, "\(kind) empty and populated single-line editors have equal height")
+}
+coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}", kind: .task), to: input, kind: .task, isCompleted: false)
+let trailingLineHeight = input.height(fittingWidth: 180)
+check(input.caretRectLocal(at: 5).maxY <= trailingLineHeight, "Balanced insets still contain the caret after a trailing soft break")
+
+// Completion changes presentation, never manual order or parentage.
+let section = Block(kind: .heading1, text: "Section", sortIndex: 0)
+let doneParent = Block(kind: .task, text: "Done parent", sortIndex: 1)
+let attachedNote = Block(kind: .paragraph, text: "Attached note", parentID: doneParent.id, sortIndex: 0)
+let pendingParent = Block(kind: .task, text: "Pending parent", sortIndex: 2)
+let doneChild = Block(kind: .task, text: "Done child", parentID: pendingParent.id, sortIndex: 0)
+let pendingChild = Block(kind: .task, text: "Pending child", parentID: pendingParent.id, sortIndex: 1)
+let secondDone = Block(kind: .task, text: "Second done", sortIndex: 3)
+doneParent.isCompleted = true
+doneChild.isCompleted = true
+secondDone.isCompleted = true
+let completionBlocks = [section, doneParent, attachedNote, pendingParent, doneChild, pendingChild, secondDone]
+let originalCompletionRows = BlockTree.flatten(completionBlocks)
+let projected = BlockTree.prioritizingPendingTasks(in: originalCompletionRows)
+check(projected.map(\.id) == [section.id, pendingParent.id, pendingChild.id, doneChild.id, doneParent.id, attachedNote.id, secondDone.id], "Pending siblings precede completed branches at every outline depth")
+check(projected.first(where: { $0.id == attachedNote.id })?.depth == 1 && attachedNote.parentID == doneParent.id, "A completed task carries its attached note and nesting")
+check(BlockTree.flatten(completionBlocks).map(\.id) == originalCompletionRows.map(\.id) && doneParent.sortIndex == 1, "Completion projection leaves stored manual order unchanged")
+check(BlockTree.prioritizingPendingTasks(in: projected).map(\.id) == projected.map(\.id), "Pending-first projection is stable and idempotent")
+doneParent.isCompleted = false
+check(BlockTree.prioritizingPendingTasks(in: BlockTree.flatten(completionBlocks)).prefix(3).map(\.id) == [section.id, doneParent.id, attachedNote.id], "Reopening restores the original manual position with the whole subtree")
+pendingParent.isCollapsed = true
+let collapsedProjection = BlockTree.prioritizingPendingTasks(in: BlockTree.flatten(completionBlocks))
+check(!collapsedProjection.contains(where: { $0.id == doneChild.id || $0.id == pendingChild.id }), "Completion ordering respects collapsed subtrees")
+check(BlockTree.prioritizingPendingTasks(in: []).isEmpty, "Empty outline has no completion projection")
+check(Set(projected.map(\.id)).count == completionBlocks.count, "Completion ordering never loses or duplicates a block")
+
 print("✅ \(checks) editor/store checks passed")

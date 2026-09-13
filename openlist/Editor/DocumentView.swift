@@ -38,17 +38,10 @@ struct SlashState: Equatable {
     /// The span the trigger occupies, so choosing a block removes exactly the
     /// "/query" the user typed — even mid-line.
     var range: NSRange
-    /// Caret x within the row's text view, used to align the popup.
-    var caretX: CGFloat
+    var caretRect: CGRect
+    var viewport: CGRect
     var selectedIndex: Int = 0
-}
-
-/// Anchors used to position the slash menu under the row that opened it.
-private struct RowBoundsKey: PreferenceKey {
-    static let defaultValue: [UUID: Anchor<CGRect>] = [:]
-    static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
-        value.merge(nextValue()) { _, new in new }
-    }
+    var contentHeight: CGFloat = 264
 }
 
 /// Renders and edits one document: a list, or a task's detail page.
@@ -69,11 +62,17 @@ struct DocumentView: View {
     var trailingSpace: CGFloat = 120
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var blocks: [Block]
     @Query(sort: [SortDescriptor(\TaskLabel.name)]) private var allLabels: [TaskLabel]
 
     @State private var focus = EditorFocus()
     @State private var slash: SlashState?
+    @State private var completionMotionIDs: Set<UUID> = []
+
+    private var completedTaskIDs: Set<UUID> {
+        Set(blocks.filter { $0.isTask && $0.isCompleted }.map(\.id))
+    }
 
     init(
         document: DocumentContext,
@@ -100,7 +99,7 @@ struct DocumentView: View {
     // MARK: - Derived state
 
     private var allRows: [BlockRow] {
-        applySorting(BlockTree.flatten(blocks, root: document.rootBlockID))
+        BlockTree.prioritizingPendingTasks(in: applySorting(BlockTree.flatten(blocks, root: document.rootBlockID)))
     }
 
     /// Reorders top-level blocks without disturbing their subtrees.
@@ -189,13 +188,44 @@ struct DocumentView: View {
 
         return LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(visibleRows) { row in
+                // Animate the branch's position as a whole, rather than
+                // interpolating each chip's internal layout during the move.
                 rowView(for: row, labelLookup: labelLookup, progress: progress[row.id])
-                    .anchorPreference(key: RowBoundsKey.self, value: .bounds) { [row.id: $0] }
+                .background {
+                    if completionMotionIDs.contains(row.id) {
+                        RoundedRectangle(cornerRadius: Theme.Radius.row)
+                            .fill(Theme.canvas)
+                    }
+                }
+                .geometryGroup()
+                .zIndex(completionMotionIDs.contains(row.id) ? 1 : 0)
             }
 
             trailingTapTarget
         }
-        .overlayPreferenceValue(RowBoundsKey.self) { anchors in
+        .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1),
+                   value: completedTaskIDs)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: showsCompleted)
+        .onChange(of: completedTaskIDs) { previous, current in
+            guard !reduceMotion else { return }
+            let changed = previous.symmetricDifference(current)
+            let children = BlockTree.childIndex(of: blocks, root: document.rootBlockID)
+            var moving = changed
+            var queue = Array(changed)
+            while let id = queue.popLast() {
+                for child in children[id] ?? [] where moving.insert(child.id).inserted {
+                    queue.append(child.id)
+                }
+            }
+            completionMotionIDs.formUnion(moving)
+        }
+        .task(id: completionMotionIDs) {
+            guard !completionMotionIDs.isEmpty else { return }
+            do { try await Task.sleep(for: .milliseconds(650)) }
+            catch { return }
+            completionMotionIDs.removeAll()
+        }
+        .overlayPreferenceValue(EditorTextBoundsKey.self) { anchors in
             slashMenuOverlay(anchors: anchors)
         }
         .onChange(of: env.commandToken) { _, _ in
@@ -211,6 +241,9 @@ struct DocumentView: View {
             // A list document claims focus on appear; a task's detail page
             // waits until the user actually edits inside it.
             if document.rootBlockID == nil { env.activeDocument = document }
+        }
+        .onChange(of: env.activeDocument) { _, active in
+            if active != document { slash = nil }
         }
         .onChange(of: document) { _, _ in
             focus = EditorFocus()
@@ -304,17 +337,28 @@ struct DocumentView: View {
         if let slash, let anchor = anchors[slash.blockID] {
             GeometryReader { proxy in
                 let frame = proxy[anchor]
-                SlashMenuView(
-                    query: slash.query,
-                    selectedIndex: slash.selectedIndex,
-                    onSelect: { kind in applySlashSelection(kind) },
-                    onHover: { index in self.slash?.selectedIndex = index },
-                    onDismiss: { self.slash = nil }
-                )
-                .offset(
-                    x: min(max(8, frame.minX + slash.caretX), max(8, proxy.size.width - 268)),
-                    y: min(frame.maxY + 4, max(0, proxy.size.height - 300))
-                )
+                let count = SlashMenuView.matches(query: slash.query).count
+                if let menuFrame = SlashMenuLayout.frame(
+                    caret: slash.caretRect,
+                    viewport: slash.viewport.intersection(CGRect(
+                        x: -frame.minX, y: slash.viewport.minY,
+                        width: proxy.size.width, height: slash.viewport.height
+                    )),
+                    preferredHeight: count == 0 ? 44 : min(264, slash.contentHeight)
+                ) {
+                    SlashMenuView(
+                        query: slash.query,
+                        selectedIndex: slash.selectedIndex,
+                        menuSize: menuFrame.size,
+                        onSelect: { kind in applySlashSelection(kind) },
+                        onHover: { index in self.slash?.selectedIndex = index },
+                        onDismiss: { self.slash = nil },
+                        onContentHeight: { height in
+                            if self.slash?.blockID == slash.blockID { self.slash?.contentHeight = height }
+                        }
+                    )
+                    .offset(x: frame.minX + menuFrame.minX, y: frame.minY + menuFrame.minY)
+                }
             }
         }
     }
@@ -356,10 +400,11 @@ struct DocumentView: View {
         // the trigger to the end of the line would discard anything typed
         // after it, and the trigger need not be at the end.
         let content = NSMutableAttributedString(attributedString: env.store.attributedContent(of: block))
-        if NSMaxRange(state.range) <= content.length {
-            content.deleteCharacters(in: state.range)
-            env.store.setContent(block, attributed: content)
-        }
+        guard state.range.location >= 0, NSMaxRange(state.range) <= content.length,
+              (content.string as NSString).substring(with: state.range) == "/" + state.query
+        else { return }
+        content.deleteCharacters(in: state.range)
+        env.store.setContent(block, attributed: content)
 
         switch kind {
         case .divider:
@@ -376,7 +421,7 @@ struct DocumentView: View {
         default:
             env.store.changeKind(block, to: kind)
             env.store.save()
-            focus.request(block.id, caret: -1)
+            focus.request(block.id, caret: state.range.location)
         }
     }
 
@@ -430,8 +475,8 @@ struct DocumentView: View {
             onReturn: { caret, content in
                 editorEdit("Split block") { handleReturn(block: block, caret: caret, content: content) }
             },
-            onTab: { isBacktab in
-                editorEdit(isBacktab ? "Outdent block" : "Indent block") { handleTab(block: block, isBacktab: isBacktab) }
+            onTab: { isBacktab, caret in
+                editorEdit(isBacktab ? "Outdent block" : "Indent block") { handleTab(block: block, isBacktab: isBacktab, caret: caret) }
             },
             onBackspaceAtStart: { content in
                 editorEdit("Merge blocks") { handleBackspace(block: block, content: content) }
@@ -443,6 +488,7 @@ struct DocumentView: View {
                 handleArrow(from: block, direction: direction, caret: caret)
             },
             onFocus: {
+                if slash?.blockID != block.id { slash = nil }
                 focus.adopt(block.id)
                 env.navigator.selection = [block.id]
                 // Typing inside a document makes it the target for menu commands.
@@ -454,7 +500,7 @@ struct DocumentView: View {
                 focus.request(nil)
                 env.navigator.selection.removeAll()
             },
-            onSlashQuery: { query, range, caretRect in
+            onSlashQuery: { query, range, caretRect, viewport in
                 guard let query else {
                     if slash?.blockID == block.id { slash = nil }
                     return
@@ -467,10 +513,11 @@ struct DocumentView: View {
                         existing.selectedIndex = 0
                     }
                     existing.range = range
-                    existing.caretX = caretRect.minX
+                    existing.caretRect = caretRect
+                    existing.viewport = viewport
                     slash = existing
                 } else {
-                    slash = SlashState(blockID: block.id, query: query, range: range, caretX: caretRect.minX)
+                    slash = SlashState(blockID: block.id, query: query, range: range, caretRect: caretRect, viewport: viewport)
                 }
             },
             onMarkdownPrefix: { kind in
@@ -547,11 +594,11 @@ struct DocumentView: View {
         return true
     }
 
-    private func handleTab(block: Block, isBacktab: Bool) -> Bool {
+    private func handleTab(block: Block, isBacktab: Bool, caret: Int) -> Bool {
         let moved = isBacktab ? env.store.outdent(block) : env.store.indent(block)
         if moved {
             env.store.save()
-            focus.request(block.id, caret: -1)
+            focus.request(block.id, caret: caret)
         }
         // Consume Tab either way so it never inserts a literal tab character.
         return true
@@ -630,7 +677,7 @@ struct DocumentView: View {
         guard let target = candidates.first(where: { !$0.block.kind.isVoid }) else { return false }
 
         commitInlineMetadata(block)
-        focus.request(target.id, caret: direction == .up ? -1 : (caret == 0 ? 0 : -1))
+        focus.request(target.id, caret: direction == .up ? -1 : 0)
         return true
     }
 

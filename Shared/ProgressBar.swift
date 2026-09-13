@@ -15,6 +15,7 @@ struct ProgressBar: View {
     let total: Int
     let accent: ListAccent
     var height: CGFloat = 4
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var fraction: Double {
         guard total > 0 else { return 0 }
@@ -34,6 +35,7 @@ struct ProgressBar: View {
             }
         }
         .frame(height: height)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: fraction)
         .accessibilityLabel("\(done) of \(total) done")
     }
 }

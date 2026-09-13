@@ -185,6 +185,8 @@ struct TodayScreen: View {
 struct InboxScreen: View {
     @Environment(AppEnvironment.self) private var env
 
+    @State private var isReviewing = false
+
     var body: some View {
         if let inbox = env.store.inboxList() {
             ScreenScaffold(headerSpacing: 14) {
@@ -193,21 +195,27 @@ struct InboxScreen: View {
                     title: "Inbox",
                     subtitle: "Everything you capture without picking a list"
                 ) {
-                    Button {
-                        env.send(.newTask)
-                    } label: {
-                        Image(systemName: "plus")
+                    HStack {
+                        Button(isReviewing ? "Done reviewing" : "Review Inbox") { isReviewing.toggle() }
+                        Button("New task", systemImage: "plus") { env.send(.newTask) }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .help("New task (⌘N)")
                     }
-                    .buttonStyle(.borderless)
-                    .help("New task (⌘N)")
                 }
             } content: {
-                DocumentView(
-                    document: DocumentContext(listID: inbox.id),
-                    emptyPlaceholder: "Capture a task…",
-                    showsCompleted: env.settings.showsCompletedTasks
-                )
-                .id(inbox.id)
+                if isReviewing {
+                    InboxReviewView(inbox: inbox)
+                } else {
+                    CompletedTasksControl(list: inbox)
+                        .padding(.bottom, 12)
+                    DocumentView(
+                        document: DocumentContext(listID: inbox.id),
+                        emptyPlaceholder: "Capture a task…",
+                        showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks)
+                    )
+                    .id(inbox.id)
+                }
             }
         } else {
             MissingContentView(message: "The inbox could not be loaded.")

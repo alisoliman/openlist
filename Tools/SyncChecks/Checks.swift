@@ -36,6 +36,8 @@ import SwiftData
         if phase == "migrate" {
             check(store.allLists().count == 2, "Upgrade reuses the old store rather than creating an empty store")
             check(image.mediaData == nil && attachment.contentData == nil, "New asset fields migrate as optional values")
+            check(list.completedVisibilityRaw == nil && list.completedVisibility == .hide, "Completed visibility migrates as optional and preserves legacy hidden lists")
+            check(store.inboxList()?.completedVisibility == .inherit, "Legacy Inbox continues to inherit the global default")
             check(list.mergedIntoID == nil && store.defaultSection()?.mergedIntoID == nil, "System aliases are additive optional fields")
             let imageBytes = try media.readFile(filename: "legacy.png")
             let fileBytes = try media.readFile(filename: "legacy.bin")
@@ -56,6 +58,7 @@ import SwiftData
             try await validateRemoteNotification(store: store)
             store.save()
         } else if phase == "reopen" {
+            check(list.completedVisibility == .hide, "Legacy hidden preference survives separate-process reopening")
             check(image.mediaData != nil && attachment.contentData?.count == 2 * 1024 * 1024, "Synced asset bytes survive a separate-process restart")
             check(task.text == "Legacy task" && task.note == "A note written before iCloud", "Original text and notes survive migration")
             check(task.richData == Data(#"{\rtf1\ansi Legacy \b task\b0}"#.utf8), "RTF survives migration byte-for-byte")

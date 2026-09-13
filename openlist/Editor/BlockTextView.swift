@@ -20,7 +20,7 @@ struct BlockEditorCallbacks {
     /// Return pressed. Receives the caret offset so the outline can split.
     var onReturn: (Int, NSAttributedString) -> Bool = { _, _ in false }
     /// Tab (or Shift-Tab) pressed.
-    var onTab: (_ isBacktab: Bool) -> Bool = { _ in false }
+    var onTab: (_ isBacktab: Bool, _ caret: Int) -> Bool = { _, _ in false }
     /// Backspace with the caret at offset zero and nothing selected.
     var onBackspaceAtStart: (NSAttributedString) -> Bool = { _ in false }
     /// Forward-delete with the caret at the very end.
@@ -32,7 +32,7 @@ struct BlockEditorCallbacks {
     /// The `/` menu query changed. `nil` means the menu should close.
     /// `range` covers the trigger and its query, so the outline can remove
     /// exactly that span rather than assuming it sits at the end of the line.
-    var onSlashQuery: (_ query: String?, _ range: NSRange, _ caretRect: CGRect) -> Void = { _, _, _ in }
+    var onSlashQuery: (_ query: String?, _ range: NSRange, _ caretRect: CGRect, _ viewport: CGRect) -> Void = { _, _, _, _ in }
     /// A block-kind change requested by a markdown prefix such as `## `.
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
     /// A multi-line paste. Return `true` to keep the default insert from
@@ -85,7 +85,7 @@ struct BlockTextView: NSViewRepresentable {
         view.drawsBackground = false
         view.isVerticallyResizable = false
         view.isHorizontallyResizable = false
-        view.textContainerInset = NSSize.zero
+        view.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -159,6 +159,7 @@ struct BlockTextView: NSViewRepresentable {
         /// Length before the current edit, so `textDidChange` can tell an
         /// insertion from a deletion.
         private var previousLength = 0
+        private var dismissedSlashIndex: Int?
 
         init(_ parent: BlockTextView) {
             self.parent = parent
@@ -204,8 +205,9 @@ struct BlockTextView: NSViewRepresentable {
 
             // Defer: during a SwiftUI update pass the view may not be in a
             // window yet, and makeFirstResponder would fail silently.
-            DispatchQueue.main.async { [weak view] in
-                guard let view, let window = view.window else { return }
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, self.lastFocusToken == token, self.parent.isFocused,
+                      let view, let window = view.window else { return }
                 if window.firstResponder !== view {
                     window.makeFirstResponder(view)
                 }
@@ -283,6 +285,15 @@ struct BlockTextView: NSViewRepresentable {
             parent.callbacks.onFocus()
         }
 
+        func textDidEndEditing(_ notification: Notification) {
+            guard let view = notification.object as? BlockNSTextView, view.isSlashMenuOpen else { return }
+            // Allow a popup button action to consume the query first.
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view, view.window?.firstResponder !== view else { return }
+                self.dismissSlash(in: view)
+            }
+        }
+
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             let url: URL?
             switch link {
@@ -308,7 +319,12 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.confirm)
                     return true
                 }
-                return parent.callbacks.onReturn(selection.location, content)
+                // Return replaces a selection before splitting, just as native
+                // text editing does. Persist the deletion before outline logic.
+                if selection.length > 0 {
+                    view.insertText("", replacementRange: selection)
+                }
+                return parent.callbacks.onReturn(view.selectedRange().location, NSAttributedString(attributedString: storage))
 
             case #selector(NSResponder.insertLineBreak(_:)):
                 // Shift-Return inserts a soft break inside the same block.
@@ -320,14 +336,14 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.next)
                     return true
                 }
-                return parent.callbacks.onTab(false)
+                return parent.callbacks.onTab(false, selection.location)
 
             case #selector(NSResponder.insertBacktab(_:)):
                 if view.isSlashMenuOpen {
                     view.slashMenuCommand?(.previous)
                     return true
                 }
-                return parent.callbacks.onTab(true)
+                return parent.callbacks.onTab(true, selection.location)
 
             case #selector(NSResponder.deleteBackward(_:)):
                 guard selection.location == 0, selection.length == 0 else { return false }
@@ -342,7 +358,7 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.previous)
                     return true
                 }
-                guard view.isOnFirstLine(selection.location) else { return false }
+                guard selection.length == 0, view.isOnFirstLine(selection.location) else { return false }
                 return parent.callbacks.onArrowOut(.up, selection.location)
 
             case #selector(NSResponder.moveDown(_:)):
@@ -350,7 +366,7 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.next)
                     return true
                 }
-                guard view.isOnLastLine(selection.location) else { return false }
+                guard selection.length == 0, view.isOnLastLine(selection.location) else { return false }
                 return parent.callbacks.onArrowOut(.down, selection.location)
 
             case #selector(NSResponder.moveLeft(_:)):
@@ -363,7 +379,7 @@ struct BlockTextView: NSViewRepresentable {
 
             case #selector(NSResponder.cancelOperation(_:)):
                 if view.isSlashMenuOpen {
-                    view.slashMenuCommand?(.dismiss)
+                    dismissSlash(in: view)
                     return true
                 }
                 parent.callbacks.onEscape()
@@ -375,26 +391,43 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         /// Recomputes the `/` query from the text immediately before the caret.
-        private func updateSlashQuery(in view: BlockNSTextView) {
+        func suppressCurrentSlash(in view: BlockNSTextView) {
+            dismissedSlashIndex = MarkdownInputRules.slashTriggerIndex(in: view.string as NSString, caret: view.selectedRange().location)
+        }
+
+        func dismissSlash(in view: BlockNSTextView) {
+            suppressCurrentSlash(in: view)
+            view.slashMenuCommand?(.dismiss)
+        }
+
+        func updateSlashQuery(in view: BlockNSTextView) {
             let selection = view.selectedRange()
             guard selection.length == 0, let storage = view.textStorage else {
-                parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero)
+                parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
                 return
             }
 
             let text = storage.string as NSString
             let caret = min(selection.location, text.length)
-            guard let slashIndex = MarkdownInputRules.slashTriggerIndex(in: text, caret: caret) else {
+            guard !view.hasMarkedText(), parent.kind != .code,
+                  let slashIndex = MarkdownInputRules.slashTriggerIndex(in: text, caret: caret) else {
+                dismissedSlashIndex = nil
                 if view.isSlashMenuOpen {
-                    parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero)
+                    parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
                 }
                 return
             }
 
+            guard slashIndex != dismissedSlashIndex else { return }
             let range = NSRange(location: slashIndex, length: caret - slashIndex)
             let query = text.substring(with: NSRange(location: slashIndex + 1, length: caret - slashIndex - 1))
-            let rect = view.caretRectLocal(at: slashIndex)
-            parent.callbacks.onSlashQuery(query, range, rect)
+            let rect = view.caretRectLocal(at: caret)
+            let viewport = view.editorViewport
+            if view.window != nil, !viewport.intersects(rect) {
+                if view.isSlashMenuOpen { dismissSlash(in: view) }
+                return
+            }
+            parent.callbacks.onSlashQuery(query, range, rect, viewport)
         }
     }
 }
@@ -415,10 +448,56 @@ final class BlockNSTextView: NSTextView {
         didSet { if placeholderString != oldValue { needsDisplay = true } }
     }
     /// Set by the outline while the `/` menu is visible so key handling defers to it.
-    var isSlashMenuOpen = false
+    var isSlashMenuOpen = false {
+        didSet {
+            if oldValue && !isSlashMenuOpen { coordinator?.suppressCurrentSlash(in: self) }
+        }
+    }
     var slashMenuCommand: ((SlashMenuCommand) -> Void)?
 
     private var cachedHeight: (width: CGFloat, height: CGFloat)?
+    private var geometryUpdatePending = false
+
+    /// The enclosing scroll viewport, expressed in text-view coordinates. It
+    /// can extend beyond this row and is intersected across nested inspectors.
+    var editorViewport: CGRect {
+        guard let contentView = window?.contentView else { return bounds }
+        var result = convert(contentView.bounds, from: contentView)
+        var ancestor = superview
+        while let view = ancestor {
+            if view is NSClipView { result = result.intersection(convert(view.bounds, from: view)) }
+            ancestor = view.superview
+        }
+        return result
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: nil)
+        var ancestor = superview
+        while let view = ancestor {
+            if let clip = view as? NSClipView {
+                clip.postsBoundsChangedNotifications = true
+                NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged), name: NSView.boundsDidChangeNotification, object: clip)
+            }
+            ancestor = view.superview
+        }
+        queueGeometryUpdate()
+    }
+
+    @objc private func viewportChanged(_ notification: Notification) { queueGeometryUpdate() }
+
+    private func queueGeometryUpdate() {
+        guard !geometryUpdatePending else { return }
+        geometryUpdatePending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.geometryUpdatePending = false
+            guard self.isSlashMenuOpen else { return }
+            self.coordinator?.updateSlashQuery(in: self)
+        }
+    }
+
 
     // MARK: Sizing
 
@@ -433,10 +512,11 @@ final class BlockNSTextView: NSTextView {
         layout.ensureLayout(for: container)
         let used = layout.usedRect(for: container)
 
-        // Empty storage still needs one line's worth of height.
-        let minimum = (font ?? NSFont.systemFont(ofSize: Theme.Editor.bodyPointSize)).boundingRectForFont.height
-            * Theme.Editor.lineHeightMultiple
-        let height = max(ceil(used.height), ceil(minimum))
+        // Size from the same TextKit metrics that place the glyphs. The font's
+        // bounding box includes unrelated glyph extents and is not a line box.
+        let minimum = layout.defaultLineHeight(for: Theme.Editor.nsFont(for: blockKind))
+        let textHeight = max(used.maxY, layout.extraLineFragmentRect.maxY, minimum)
+        let height = ceil(textHeight) + textContainerInset.height * 2
         cachedHeight = (width, height)
         return height
     }
@@ -449,6 +529,7 @@ final class BlockNSTextView: NSTextView {
     override func setFrameSize(_ newSize: NSSize) {
         if abs(newSize.width - frame.width) > 0.5 { cachedHeight = nil }
         super.setFrameSize(newSize)
+        queueGeometryUpdate()
     }
 
     // MARK: Placeholder
@@ -457,17 +538,13 @@ final class BlockNSTextView: NSTextView {
         super.draw(dirtyRect)
         guard (textStorage?.length ?? 0) == 0, !placeholderString.isEmpty else { return }
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: Theme.Editor.nsFont(for: blockKind),
-            .foregroundColor: NSColor.tertiaryLabelColor,
-        ]
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineHeightMultiple = Theme.Editor.lineHeightMultiple
-        var merged = attributes
-        merged[.paragraphStyle] = paragraph
+        var merged = RichTextCodec.baseAttributes(for: blockKind)
+        merged[.foregroundColor] = NSColor.tertiaryLabelColor
 
         NSAttributedString(string: placeholderString, attributes: merged)
-            .draw(in: NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height))
+            .draw(in: NSRect(origin: textContainerOrigin, size: NSSize(
+                width: bounds.width, height: bounds.height - textContainerInset.height * 2
+            )))
     }
 
     // MARK: Caret geometry
@@ -476,8 +553,25 @@ final class BlockNSTextView: NSTextView {
     /// outline adds the row's origin to position the slash menu.
     func caretRectLocal(at location: Int) -> CGRect {
         guard let layout = layoutManager, let container = textContainer else { return .zero }
-        let glyphRange = layout.glyphRange(forCharacterRange: NSRange(location: location, length: 0), actualCharacterRange: nil)
-        var rect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
+        layout.ensureLayout(for: container)
+        let length = textStorage?.length ?? 0
+        let offset = min(max(0, location), length)
+        var rect: CGRect
+        if offset == length, layout.extraLineFragmentTextContainer != nil {
+            rect = layout.extraLineFragmentRect
+            rect.size.width = 1
+        } else if layout.numberOfGlyphs > 0 {
+            let glyph = layout.glyphIndexForCharacter(at: min(offset, max(0, length - 1)))
+            rect = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let point = layout.location(forGlyphAt: glyph)
+            rect.origin.x += point.x
+            if offset == length {
+                rect.origin.x = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container).maxX
+            }
+            rect.size.width = 1
+        } else {
+            rect = CGRect(x: 0, y: 0, width: 1, height: Theme.Editor.nsFont(for: blockKind).boundingRectForFont.height)
+        }
         rect.origin.x += textContainerOrigin.x
         rect.origin.y += textContainerOrigin.y
         return rect
@@ -490,6 +584,7 @@ final class BlockNSTextView: NSTextView {
             forGlyphAt: layout.glyphIndexForCharacter(at: min(location, (textStorage?.length ?? 1) - 1)),
             effectiveRange: &effective
         )
+        if location == textStorage?.length, layout.extraLineFragmentTextContainer != nil { return false }
         return effective.location == 0
     }
 
@@ -500,6 +595,7 @@ final class BlockNSTextView: NSTextView {
             forGlyphAt: layout.glyphIndexForCharacter(at: min(location, storage.length - 1)),
             effectiveRange: &effective
         )
+        if layout.extraLineFragmentTextContainer != nil { return location == storage.length }
         return NSMaxRange(effective) >= layout.numberOfGlyphs
     }
 

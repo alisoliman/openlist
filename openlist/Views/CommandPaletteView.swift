@@ -14,19 +14,28 @@ struct CommandPaletteView: View {
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
 
+    @State private var captureRequest: TaskCaptureRequest?
     @State private var query = ""
     @State private var selection = 0
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            field
-            Divider()
-            results
+        Group {
+            if let captureRequest {
+                TaskCaptureView(request: captureRequest)
+            } else {
+                VStack(spacing: 0) {
+                    field
+                    Divider()
+                    results
+                    Text("↑↓ to choose · Return to open · Esc to close")
+                        .font(.caption).foregroundStyle(.secondary).padding(10)
+                }
+                .frame(width: 560, height: 420)
+                .background(.regularMaterial)
+                .onAppear { isFieldFocused = true }
+            }
         }
-        .frame(width: 560, height: 420)
-        .background(.regularMaterial)
-        .onAppear { isFieldFocused = true }
     }
 
     private var field: some View {
@@ -35,7 +44,7 @@ struct CommandPaletteView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.tertiaryText)
 
-            TextField("Type a task, or jump to a list…", text: $query)
+            TextField("Find a list, task, or command…", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($isFieldFocused)
@@ -63,9 +72,11 @@ struct CommandPaletteView: View {
             ScrollView {
                 LazyVStack(spacing: 1) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        PaletteRow(item: item, isSelected: index == selection)
+                        Button { run(item) } label: {
+                            PaletteRow(item: item, isSelected: index == selection)
+                        }
+                            .buttonStyle(.plain)
                             .id(item.id)
-                            .onTapGesture { run(item) }
                             .onHover { if $0 { selection = index } }
                     }
                 }
@@ -126,7 +137,7 @@ struct CommandPaletteView: View {
         }
 
         // Lists
-        for list in env.store.allLists() where matches(list.displayTitle) {
+        for list in env.store.allLists() where !list.isSystemInbox && matches(list.displayTitle) {
             result.append(
                 PaletteItem(
                     id: "list-\(list.id)",
@@ -158,6 +169,7 @@ struct CommandPaletteView: View {
 
         // Destinations and commands
         let commands: [PaletteItem] = [
+            PaletteItem(id: "new-task", title: "New Task", subtitle: "⌘N · Choose a destination and review details", symbol: "plus.circle", accent: .violet, kind: .createTask("")),
             PaletteItem(id: "go-inbox", title: "Go to Inbox", subtitle: "⌘1", symbol: "tray", accent: .blue, kind: .navigate(.inbox)),
             PaletteItem(id: "go-today", title: "Go to Today", subtitle: "⌘2", symbol: "sun.max", accent: .orange, kind: .navigate(.today)),
             PaletteItem(id: "go-updates", title: "Go to Updates", subtitle: "⌘3", symbol: "sparkles", accent: .violet, kind: .navigate(.updates)),
@@ -172,7 +184,17 @@ struct CommandPaletteView: View {
         ]
         result.append(contentsOf: commands.filter { trimmedQuery.isEmpty || matches($0.title) })
 
-        return result
+        return result.enumerated().sorted { lhs, rhs in
+            let left = rank(lhs.element)
+            let right = rank(rhs.element)
+            return left == right ? lhs.offset < rhs.offset : left < right
+        }.map(\.element)
+    }
+
+    private func rank(_ item: PaletteItem) -> Int {
+        let isTask: Bool
+        if case .openTask = item.kind { isTask = true } else { isTask = false }
+        return CommandMatchRank.rank(title: item.title, query: trimmedQuery, isCreation: item.id == "create", isTask: isTask)
     }
 
     private func createSubtitle(_ parsed: ParsedSchedule) -> String {
@@ -187,8 +209,7 @@ struct CommandPaletteView: View {
         if let recurrence = parsed.recurrence {
             parts.append(recurrence.displayText)
         }
-        let destination = env.settings.defaultDestination == .inbox ? "Inbox" : "Today"
-        parts.append("in \(destination)")
+        parts.append("Review destination and details before adding")
         return parts.joined(separator: " · ")
     }
 
@@ -204,7 +225,8 @@ struct CommandPaletteView: View {
 
         switch item.kind {
         case let .createTask(rawText):
-            createTask(rawText: rawText)
+            captureRequest = TaskCaptureRequest(text: rawText, suggestedListID: env.navigator.route.listID)
+            return
         case let .navigate(route):
             env.navigator.go(to: route)
         case let .openTask(task):
@@ -225,10 +247,7 @@ struct CommandPaletteView: View {
         dismiss()
     }
 
-    private func createTask(rawText: String) {
-        guard let inbox = env.store.inboxList() else { return }
-        env.store.captureTask(text: rawText, in: inbox, defaults: env.captureDefaults)
-    }
+
 }
 
 /// One row in the palette.

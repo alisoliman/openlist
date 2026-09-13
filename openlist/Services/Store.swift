@@ -67,11 +67,6 @@ final class Store {
     /// widget snapshot — can refresh themselves.
     var onDidSave: (() -> Void)?
 
-    /// Called when a task is ticked off, wherever that happened — a checkbox,
-    /// ⌘D, or the menu bar. Keeps the completion sound on one path instead of
-    /// asking every view to remember it.
-    var onDidCompleteTask: ((Block) -> Void)?
-
     init(context: ModelContext) {
         self.context = context
     }
@@ -241,6 +236,7 @@ final class Store {
             copy.isPinned = list.isPinned
             copy.sortingRaw = list.sortingRaw
             copy.showsCompleted = list.showsCompleted
+            copy.completedVisibilityRaw = list.completedVisibilityRaw
             copy.availabilityCategoryRaw = list.availabilityCategoryRaw
             copy.sortIndex = list.sortIndex + 1
             copy.sidebarIndex = list.sidebarIndex + 1
@@ -485,8 +481,12 @@ final class Store {
     }
 
     func setShowsCompleted(_ shows: Bool, for list: TaskList) {
+        setCompletedVisibility(shows ? .show : .hide, for: list)
+    }
+
+    func setCompletedVisibility(_ visibility: TaskList.CompletedVisibility, for list: TaskList) {
         let list = self.list(id: list.id) ?? list
-        list.showsCompleted = shows
+        list.completedVisibility = visibility
         list.touch()
         save()
     }

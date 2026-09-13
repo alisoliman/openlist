@@ -18,16 +18,95 @@ struct CaptureDefaults {
     var prepend: Bool = true
 }
 
+/// A value-only capture: editing or dismissing it never creates model records.
+struct TaskCaptureDraft {
+    var text = ""
+    var parsesNaturalLanguage = true
+    var dueTodayWhenUndated = false
+    var removesDate = false
+    var removesRecurrence = false
+    var removedLabels: Set<String> = []
+
+    var preview: Preview {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pattern = try? NSRegularExpression(pattern: "(?:^|\\s)#([\\p{L}0-9_-]+)")
+        let content = NSMutableString(string: trimmed)
+        let matches = pattern?.matches(in: trimmed, range: NSRange(location: 0, length: content.length)) ?? []
+        let names = matches.map { content.substring(with: $0.range(at: 1)) }
+        for match in matches.reversed() { content.deleteCharacters(in: match.range) }
+        var title = String(content).trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = parsesNaturalLanguage ? DateParser.parse(title) : ParsedSchedule(cleanedText: title)
+        let canParse = !parsed.isEmpty && !parsed.cleanedText.isEmpty
+        if canParse { title = parsed.cleanedText }
+        // Never turn a label-only capture into an untitled task.
+        if title.isEmpty { return Preview(title: trimmed) }
+        let due = canParse ? parsed.date : nil
+        return Preview(
+            title: title,
+            date: removesDate ? nil : (due ?? (dueTodayWhenUndated ? Calendar.current.startOfDay(for: .now) : nil)),
+            includesTime: !removesDate && canParse && parsed.includesTime,
+            recurrence: removesRecurrence || !canParse ? nil : parsed.recurrence,
+            labels: Array(Set(names)).filter { !removedLabels.contains($0) }.sorted()
+        )
+    }
+
+    struct Preview {
+        var title: String
+        var date: Date?
+        var includesTime = false
+        var recurrence: Recurrence?
+        var labels: [String] = []
+    }
+}
+
 extension Store {
+    /// Save a reviewed draft atomically. Failure rolls back only this capture;
+    /// existing editor changes are flushed before starting the transaction.
+    func saveCapture(_ preview: TaskCaptureDraft.Preview, destinationID: UUID?, selectedForDay: Date? = nil) throws -> Block {
+        guard !preview.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CaptureError.emptyTitle
+        }
+        try persistChanges()
+        guard let destination = list(id: destinationID) ?? inboxList(), !destination.isArchived else {
+            throw CaptureError.unavailableDestination
+        }
+        isSavingSuspended = true
+        defer { isSavingSuspended = false }
+        do {
+            let block = prependTask(to: DocumentContext(listID: destination.id))
+            setPlainText(block, preview.title)
+            block.dueDate = preview.date
+            block.selectedForDay = selectedForDay.map { Calendar.current.startOfDay(for: $0) }
+            block.includesTime = preview.includesTime
+            block.recurrence = preview.recurrence?.anchored(to: preview.date)
+            block.labelIDs = preview.labels.compactMap { findOrCreateLabel(named: $0)?.id }
+            log(.created, title: block.displayTitle, block: block, list: destination)
+            try persistChanges()
+            scheduleReminderIfNeeded(for: block)
+            return block
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    enum CaptureError: LocalizedError {
+        case emptyTitle, unavailableDestination
+        var errorDescription: String? {
+            switch self {
+            case .emptyTitle: "Enter a task title before adding it."
+            case .unavailableDestination: "That list is unavailable. Choose Inbox or another active list."
+            }
+        }
+    }
+
     // MARK: - Capture
 
     /// Creates a task from free text, applying everything the text implies.
     ///
-    /// This is the single definition of "make a task from what the user
-    /// typed": date and repeat parsing, `#label` extraction, the activity
-    /// entry, the reminder and the save. Quick add, the menu bar, the command
-    /// palette and the smart views all route through here so they cannot
-    /// drift apart.
+    /// Used by raw-text integrations and inline editor workflows. Interactive
+    /// capture reviews a value-only preview first, then calls `saveCapture` so
+    /// metadata the user removed is never silently parsed back into the task.
     @discardableResult
     func captureTask(
         text: String,
