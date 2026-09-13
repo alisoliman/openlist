@@ -1,0 +1,34 @@
+{
+  "tasks": [
+    {
+      "title": "Plan the autumn weekend: compare train routes, book a quiet place to stay, and share the full itinerary with everyone",
+      "dueDate": "2026-09-19T10:00:00+02:00",
+      "includesTime": true,
+      "reminderAt": "2026-09-19T09:50:00+02:00",
+      "recurrence": {
+        "frequency": "weekly",
+        "weekdays": [
+          6
+        ],
+        "anchor": "dueDate",
+        "completedOccurrences": 0,
+        "interval": 1,
+        "occurrenceLimit": 10
+      },
+      "note": "Compare the timings before booking. Keep the itinerary here so the next person can pick it up.",
+      "priority": 3,
+      "labelIDs": "b'bplist00\\xd4\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\nX$versionY$archiverT$topX$objects\\x12\\x00\\x01\\x86\\xa0_\\x10\\x0fNSKeyedArchiver\\xd1\\x08\\tTroot\\x80\\x01\\xa5\\x0b\\x0c\\x12\\x16\\x1cU$null\\xd2\\r\\x0e\\x0f\\x11ZNS.objectsV$class\\xa1\\x10\\x80\\x02\\x80\\x04\\xd2\\x13\\x0e\\x14\\x15\\\\NS.uuidbytesO\\x10\\x10\\x9e\\xf8\\xa5\\xb9\\\\rJ)\\xb3:*\\xa3o\\xf2x\\xb7\\x80\\x03\\xd2\\x17\\x18\\x19\\x1aZ$classnameX$classesVNSUUID\\xa2\\x19\\x1bXNSObject\\xd2\\x17\\x18\\x1d\\x1eWNSArray\\xa2\\x1d\\x1b\\x08\\x11\\x1a$)27ILQSY_dovxz|\\x81\\x8e\\xa1\\xa3\\xa8\\xb3\\xbc\\xc3\\xc6\\xcf\\xd4\\xdc\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x1f\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xdf'"
+    },
+    {
+      "title": "Start Piranesi",
+      "dueDate": null,
+      "includesTime": false,
+      "reminderAt": null,
+      "recurrence": null,
+      "note": "",
+      "priority": 0,
+      "labelIDs": "b'bplist00\\xd4\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\nX$versionY$archiverT$topX$objects\\x12\\x00\\x01\\x86\\xa0_\\x10\\x0fNSKeyedArchiver\\xd1\\x08\\tTroot\\x80\\x01\\xa3\\x0b\\x0c\\x11U$null\\xd2\\r\\x0e\\x0f\\x10ZNS.objectsV$class\\xa0\\x80\\x02\\xd2\\x12\\x13\\x14\\x15Z$classnameX$classesWNSArray\\xa2\\x14\\x16XNSObject\\x08\\x11\\x1a$)27ILQSW]bmtuw|\\x87\\x90\\x98\\x9b\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x17\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xa4'"
+    }
+  ],
+  "readingCompletedVisibility": "show"
+}
