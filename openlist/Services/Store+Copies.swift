@@ -16,6 +16,7 @@ enum CopyError: LocalizedError {
 private final class StagedContentCopy {
     let writer: ModelContext
     private var filenames: [String] = []
+    private var tasks: [Block] = []
     private var committed = false
 
     init(container: ModelContainer) {
@@ -45,6 +46,7 @@ private final class StagedContentCopy {
                 clone.mediaData = copied.data
             }
             writer.insert(clone)
+            if clone.isTask { tasks.append(clone) }
 
             let originalID = original.id
             let attachments = try store.context.fetch(FetchDescriptor<Attachment>(
@@ -72,7 +74,16 @@ private final class StagedContentCopy {
         return (name, bytes)
     }
 
-    func commit() throws {
+    func commit(owningList: TaskList) throws {
+        // Copy and its fresh history share one transaction. These are creation
+        // facts about the new IDs, never inherited events from the source.
+        for task in tasks {
+            let event = ActivityEvent(kind: .created, title: task.displayTitle,
+                blockID: task.id, listID: task.listID,
+                listTitle: owningList.displayTitle, listIcon: owningList.icon)
+            event.change = TaskActivityChange(before: nil, after: TaskActivityState(task, list: owningList))
+            writer.insert(event)
+        }
         try writer.save()
         committed = true
     }
@@ -91,7 +102,8 @@ extension Store {
     func copyBlock(_ block: Block, mode: CopyMode) throws -> UUID {
         let originals = try copySources(for: block)
         let source = originals[0]
-        guard let listID = resolvedListID(source.listID) else { throw CopyError.unavailable }
+        guard let listID = resolvedListID(source.listID),
+              let owningList = list(id: listID) else { throw CopyError.unavailable }
         let siblings = blocks(inList: listID).filter { $0.parentID == source.parentID && $0.id != source.id }
         let next = siblings.map(\.sortIndex).filter { $0 > source.sortIndex }.min()
         let index = try copyIndex(after: source.sortIndex, before: next)
@@ -99,7 +111,7 @@ extension Store {
         defer { staged.discard() }
         let ids = try staged.clone(originals, to: listID, store: self, mode: mode,
             rootID: source.id, parentID: source.parentID, rootIndex: index)
-        try staged.commit()
+        try staged.commit(owningList: owningList)
         onDidSave?()
         refreshAllReminders()
         return ids[source.id]!
@@ -129,7 +141,7 @@ extension Store {
         let originals = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.listID == listID }))
             .filter { !$0.isDeleted }
         _ = try staged.clone(originals, to: copy.id, store: self, mode: mode)
-        try staged.commit()
+        try staged.commit(owningList: copy)
         onDidSave?()
         refreshAllReminders()
         return copy.id

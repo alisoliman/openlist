@@ -120,6 +120,9 @@ repeating rules** only when the source contains a repeat rule; it starts uncheck
 | Model and occurrence identities, block/list creation timestamps | Fresh | Fresh |
 | Images and attachments | Independent files and retained bytes | Independent files and retained bytes |
 
+Each copied task starts with its own creation event. Copying never transfers source
+activity; task Undo/Redo appends deletion/restoration under the new task identity.
+
 A task copy lands after its source in the same parent/list and opens selected in
 the inspector. A list copy opens as an active, non-system list named “Name copy”,
 keeping its description, appearance, display preferences and sidebar section.
