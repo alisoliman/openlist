@@ -54,6 +54,7 @@ final class Store {
     @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
     var persistenceError: String?
     var editorNotice: String?
+    var inboxError: String?
     var labelMergeUndo: LabelMergePlan?
     var labelMaintenanceError: String?
     var labelRevision = 0
@@ -175,6 +176,7 @@ final class Store {
                 context.insert(SidebarSection(title: "My lists", sortIndex: 0, isDefault: true))
             }
             try reconcileSystemRecords()
+            try migrateInboxMembership()
             save()
         } catch {
             persistenceError = "The Inbox could not be opened. \(error.localizedDescription)"

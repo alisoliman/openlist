@@ -63,7 +63,6 @@ final class WidgetSnapshotPublisher {
         let tasks = ActiveTaskPolicy(lists: lists).tasks(in: (try? store.context.fetch(descriptor)) ?? [])
         var listsByID: [UUID: TaskList] = [:]
         for list in lists { listsByID[list.id] = list }
-        let inboxID = lists.first(where: \.isSystemInbox)?.id
 
         // One pass fills every counter; `isOverdue` and friends each build a
         // Calendar, so the day boundary is computed once up front.
@@ -75,7 +74,7 @@ final class WidgetSnapshotPublisher {
         var overdue = 0
         var dueToday = 0
         var completedToday = 0
-        var inbox = 0
+        let inbox = InboxPolicy(lists: lists).openCount(tasks)
         var totalOpen = 0
         var listCounts: [UUID: (open: Int, done: Int)] = [:]
 
@@ -93,7 +92,6 @@ final class WidgetSnapshotPublisher {
             totalOpen += 1
             if let listID {
                 listCounts[listID, default: (0, 0)].open += 1
-                if listID == inboxID { inbox += 1 }
             }
 
             guard let due = task.dueDate else { continue }

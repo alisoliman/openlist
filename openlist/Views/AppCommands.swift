@@ -115,10 +115,10 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Add to Inbox") { env.send(.moveToInbox) }
+            Button("Add to Inbox") { env.send(.addToInbox) }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(!hasTaskSelection)
-            Button("Remove from List") { env.send(.removeFromList) }
+            Button("Remove from Inbox") { env.send(.removeFromInbox) }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!hasTaskSelection)
 
@@ -183,7 +183,7 @@ struct AppCommands: Commands {
     }
 
     private var hasDocumentContext: Bool {
-        env.activeDocument != nil && (env.navigator.route.hasDocumentEditor || env.navigator.openTaskID != nil)
+        env.activeDocument != nil && (env.navigator.hasDocumentEditor || env.navigator.openTaskID != nil)
     }
 
     // MARK: - Actions

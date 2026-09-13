@@ -108,12 +108,13 @@ nonisolated enum LibraryBackupPackage {
         let manifest = try decoder.decode(Manifest.self,
             from: directory.read("manifest.json", maximumBytes: maximumJSONBytes))
         guard manifest.format == "Openlist Library Backup" else { throw LibraryBackupError.invalid("This is not an Openlist library backup.") }
-        guard manifest.version == LibraryBackup.currentVersion else { throw LibraryBackupError.unsupportedVersion(manifest.version) }
+        guard LibraryBackup.readableVersions.contains(manifest.version) else { throw LibraryBackupError.unsupportedVersion(manifest.version) }
         let bytes = try directory.read("library.json", maximumBytes: maximumJSONBytes)
         guard digest(bytes) == manifest.libraryDigest else { throw LibraryBackupError.invalid("The library checksum does not match. The backup is damaged or has changed.") }
         var snapshot = try decoder.decode(LibraryBackup.self, from: bytes)
         guard snapshot.libraryID == manifest.libraryID, snapshot.createdAt == manifest.createdAt,
               snapshot.version == manifest.version else { throw LibraryBackupError.invalid("The backup manifest does not match its library.") }
+        try snapshot.upgradeToCurrentVersion()
         try snapshot.validate()
         guard manifest.assets.count <= 1_000_000, Set(manifest.assets.map(\.filename)).count == manifest.assets.count else {
             throw LibraryBackupError.invalid("Duplicate or excessive media entries.")

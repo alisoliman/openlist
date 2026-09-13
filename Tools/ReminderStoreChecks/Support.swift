@@ -8,5 +8,5 @@ import Foundation
     func reminderReadFailed(_ message: String) { reminders.recordReadFailure(message) }
 }
 enum EditorCommand: Equatable {
-    case newTask, toggleCompletion, openDetails, setDueToday, pickDueDate, clearDueDate, pickLabel, clearLabels, moveToInbox, removeFromList, toggleStar, indent, outdent, moveUp, moveDown, deleteSelection, expandAll, collapseAll
+    case newTask, toggleCompletion, openDetails, setDueToday, pickDueDate, clearDueDate, pickLabel, clearLabels, addToInbox, removeFromInbox, toggleStar, indent, outdent, moveUp, moveDown, deleteSelection, expandAll, collapseAll
 }

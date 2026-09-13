@@ -4,8 +4,7 @@ import SwiftData
 /// A logical, versioned reconstruction of the library, not a SQLite archive.
 /// Historical references intentionally survive deletion of their subject.
 nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
-    static let currentVersion = 2
-    static let readableVersions: Set<Int> = [1, 2]
+    static let currentVersion = 1
     var version = currentVersion
     var libraryID: UUID
     var createdAt: Date
@@ -75,18 +74,6 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
         workSessions.forEach { context.insert($0.model()) }
         completions.forEach { context.insert($0.model()) }
         placements.forEach { context.insert($0.model()) }
-    }
-
-    /// Version 1 had no queue membership. Preserve nil so the ownership-aware
-    /// migration classifies legacy tasks only after the restored library opens.
-    mutating func upgradeToCurrentVersion() throws {
-        guard Self.readableVersions.contains(version) else { throw LibraryBackupError.unsupportedVersion(version) }
-        if version == 1 {
-            guard blocks.allSatisfy({ $0.inboxMembershipData == nil }) else {
-                throw LibraryBackupError.invalid("A version 1 backup contains unsupported Inbox selection data.")
-            }
-            version = Self.currentVersion
-        }
     }
 
     func validate() throws {

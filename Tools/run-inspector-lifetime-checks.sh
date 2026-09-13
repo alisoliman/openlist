@@ -7,7 +7,7 @@ COPY_MEDIA_DIR="$HOME/Library/Application Support/Openlist-Review-$OPENLIST_COPY
 trap 'rm -rf "$OUT" "$COPY_MEDIA_DIR"' EXIT
 xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-checks" \
   openlist/Model/*.swift Shared/ListAccent.swift Tools/ReusableCopyChecks/ReviewSession.swift openlist/Design/Theme.swift \
-  openlist/Services/Store.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \
+  openlist/Services/Store.swift openlist/Services/Store+Inbox.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \
   openlist/Services/Store+Tasks.swift openlist/Services/Store+LabelMerge.swift openlist/Services/Store+Calendar.swift \
   openlist/Services/Store+CompletionUndo.swift openlist/Services/Store+Capture.swift \
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
@@ -16,7 +16,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-ch
   openlist/Views/TaskInspectorMetadata.swift openlist/Views/LabelPicker.swift openlist/Views/AttachmentRow.swift \
   openlist/Editor/TaskMetadataChips.swift openlist/Editor/MetadataFlowLayout.swift \
   openlist/Editor/BlockRowView.swift openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
-  openlist/Editor/SlashMenuLayout.swift openlist/Views/TaskDetailButton.swift \
+  openlist/Editor/SlashMenuLayout.swift openlist/Views/TaskDetailButton.swift openlist/Views/InboxMembershipButton.swift \
   openlist/Views/FragmentMenu.swift openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift \
   openlist/Services/FragmentMarkdown.swift openlist/Services/InlineMarkdown.swift openlist/Services/Store+Fragments.swift \
   openlist/Editor/DocumentView.swift openlist/Editor/BlockDragAndDrop.swift openlist/Editor/SlashMenuView.swift openlist/Editor/SlashMenuDismissal.swift \

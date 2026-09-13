@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-// Version 2 explicitly lists every persisted field. Adding a model field requires
+// Version 1 explicitly lists every persisted field. Adding a model field requires
 // updating this contract and the schema-coverage regression before shipping.
 // Computed presentation state and SwiftData implementation details are excluded.
 
@@ -94,7 +94,6 @@ nonisolated struct BackupBlock: Codable, Equatable, Sendable {
     var recurrenceData: Data?
     var labelIDs: [UUID]
     var note: String
-    var inboxMembershipData: Data?
     var schedulingEstimateMinutes: Int
     var selectedForDay: Date?
     var deferredUntil: Date?
@@ -128,7 +127,6 @@ nonisolated struct BackupBlock: Codable, Equatable, Sendable {
         recurrenceData = value.recurrenceData
         labelIDs = value.labelIDs
         note = value.note
-        inboxMembershipData = value.inboxMembershipData
         schedulingEstimateMinutes = value.schedulingEstimateMinutes
         selectedForDay = value.selectedForDay
         deferredUntil = value.deferredUntil
@@ -164,7 +162,6 @@ nonisolated struct BackupBlock: Codable, Equatable, Sendable {
         value.recurrenceData = recurrenceData
         value.labelIDs = labelIDs
         value.note = note
-        value.inboxMembershipData = inboxMembershipData
         value.schedulingEstimateMinutes = schedulingEstimateMinutes
         value.selectedForDay = selectedForDay
         value.deferredUntil = deferredUntil

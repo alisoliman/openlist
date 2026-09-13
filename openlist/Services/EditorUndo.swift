@@ -24,6 +24,7 @@ private struct EditorBlockRecord: Equatable {
     var recurrenceData: Data?
     var labelIDs: [UUID]
     var note: String
+    var inboxMembershipData: Data?
     var schedulingEstimateMinutes: Int
     var selectedForDay: Date?
     var deferredUntil: Date?
@@ -56,6 +57,7 @@ private struct EditorBlockRecord: Equatable {
         recurrenceData = model.recurrenceData
         labelIDs = model.labelIDs
         note = model.note
+        inboxMembershipData = model.inboxMembershipData
         schedulingEstimateMinutes = model.schedulingEstimateMinutes
         selectedForDay = model.selectedForDay
         deferredUntil = model.deferredUntil
@@ -89,6 +91,7 @@ private struct EditorBlockRecord: Equatable {
         if old == nil || old?.recurrenceData != recurrenceData { model.recurrenceData = recurrenceData }
         if old == nil || old?.labelIDs != labelIDs { model.labelIDs = labelIDs }
         if old == nil || old?.note != note { model.note = note }
+        if old == nil || (old?.inboxMembershipData != inboxMembershipData && model.inboxMembershipData == old?.inboxMembershipData) { model.inboxMembershipData = inboxMembershipData }
         if old == nil || old?.schedulingEstimateMinutes != schedulingEstimateMinutes { model.schedulingEstimateMinutes = schedulingEstimateMinutes }
         if old == nil || old?.selectedForDay != selectedForDay { model.selectedForDay = selectedForDay }
         if old == nil || old?.deferredUntil != deferredUntil { model.deferredUntil = deferredUntil }

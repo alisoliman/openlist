@@ -366,7 +366,7 @@ struct BlockContextMenu: View {
 
             Menu("Move to List") {
                 ForEach(env.store.allLists()) { list in
-                    Button("\(list.icon)  \(list.displayTitle)") {
+                    Button(list.isSystemInbox ? "📥  Unfiled content" : "\(list.icon)  \(list.displayTitle)") {
                         edit("Move block", including: list.id) { current in
                             env.store.moveToList(current, list: list)
                         }
@@ -374,12 +374,7 @@ struct BlockContextMenu: View {
                     .disabled(list.id == block.listID && block.parentID == nil)
                 }
             }
-            Button("Add to Inbox") {
-                guard let inbox = env.store.inboxList() else { return }
-                edit("Move to Inbox", including: inbox.id) { current in
-                    env.store.moveToInbox(current)
-                }
-            }
+            InboxMembershipButton(block: block)
             Divider()
         }
 

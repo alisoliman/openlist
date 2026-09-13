@@ -453,14 +453,10 @@ private struct TaskDetailContent: View {
             Divider()
 
             HStack(spacing: 8) {
-                Button {
-                    env.store.moveToInbox(block)
-                } label: {
-                    Text("Move to Inbox")
-                        .font(Theme.Font.metadata)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.secondaryText)
+                InboxMembershipButton(block: block)
+                    .font(Theme.Font.metadata)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.secondaryText)
 
                 Spacer()
 

@@ -84,7 +84,7 @@ struct MenuBarView: View {
 
             Spacer()
 
-            Text("\(activeOpenTasks.count) open")
+            Text("\(InboxPolicy(lists: activeLists).openCount(openTasks)) Inbox · \(activeOpenTasks.count) open")
                 .font(Theme.Font.metadata)
                 .foregroundStyle(Theme.tertiaryText)
 

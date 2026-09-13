@@ -116,10 +116,19 @@ struct RootView: View {
             clearInitialFocus(for: route)
             // Screens that aren't documents (Today, Tasks, …) have no editor to
             // claim menu commands, so hand them to the fallback below.
-            if route.hasDocumentEditor {
+            if env.navigator.hasDocumentEditor {
                 // The document view claims it on appear.
             } else {
                 env.activeDocument = nil
+            }
+        }
+        .onChange(of: env.navigator.hasDocumentEditor) { _, hasDocumentEditor in
+            // Switching Inbox tabs or starting its review can remove the
+            // editor without changing the route or closing an inspector.
+            if !hasDocumentEditor {
+                env.activeDocument = nil
+                focusClearedFor = nil
+                clearInitialFocus(for: env.navigator.route)
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
@@ -128,7 +137,7 @@ struct RootView: View {
             // command target. On a smart view there is no list document to hand
             // control back to, so closing the panel has to release it or ⌘N and
             // the "+" buttons stay dead.
-            if newValue == nil, !env.navigator.route.hasDocumentEditor {
+            if newValue == nil, !env.navigator.hasDocumentEditor {
                 env.activeDocument = nil
                 // Dismissing the inspector lets SwiftUI assign the first smart
                 // row as responder again, often with its entire title selected.
@@ -201,6 +210,17 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(ListAccent.blue.softBackground)
             }
+            if let error = env.store.inboxError {
+                HStack(alignment: .top) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.callout).lineLimit(4).help(error)
+                    Spacer(minLength: 0)
+                    Button("Dismiss") { env.store.inboxError = nil }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ListAccent.orange.softBackground)
+            }
             if let error = env.store.persistenceError {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Changes are not saved", systemImage: "exclamationmark.triangle.fill")
@@ -246,7 +266,7 @@ struct RootView: View {
         guard let command = env.consumeCommand() else { return }
         let targets = env.navigator.selection.compactMap { env.store.block(id: $0) }
 
-        if env.store.perform(command, on: targets) {
+        if env.store.perform(command, on: targets, undoManager: NSApp.keyWindow?.undoManager) {
             if command == .deleteSelection { env.navigator.selection.removeAll() }
             return
         }
@@ -285,7 +305,7 @@ struct RootView: View {
     /// takes a caret rather than a selection, and on a brand-new list it is the
     /// title field, which is exactly where you want to be typing.
     private func clearInitialFocus(for route: AppRoute) {
-        guard !route.hasDocumentEditor, focusClearedFor != route,
+        guard !env.navigator.hasDocumentEditor, focusClearedFor != route,
               !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
               !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
               env.navigator.openTaskID == nil,
@@ -296,7 +316,7 @@ struct RootView: View {
         // window becomes key. Recorded per route so this runs once per
         // navigation and cannot steal focus the user establishes afterwards.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak initialWindow] in
-            guard env.navigator.route == route, focusClearedFor != route,
+            guard env.navigator.route == route, !env.navigator.hasDocumentEditor, focusClearedFor != route,
                   !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
                   !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
               env.navigator.openTaskID == nil,

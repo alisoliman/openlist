@@ -79,6 +79,7 @@ extension Store {
     func prepareForSync() {
         do {
             try reconcileSystemRecords()
+            try migrateInboxMembership()
             let images = try context.fetch(FetchDescriptor<Block>(
                 predicate: #Predicate { $0.mediaFilename != nil && $0.mediaData == nil }
             ))

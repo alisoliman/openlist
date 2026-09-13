@@ -878,7 +878,7 @@ struct DocumentView: View {
 
         // Anything that is just "act on these blocks" is defined once on the
         // store; only the cases that need the outline or the caret stay here.
-        if env.store.perform(command, on: targets) {
+        if env.store.perform(command, on: targets, undoManager: NSApp.keyWindow?.undoManager) {
             if command == .deleteSelection {
                 focus.request(nil)
                 env.navigator.selection.removeAll()
