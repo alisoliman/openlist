@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// Attach existing labels or create a new one inline.
@@ -8,6 +9,12 @@ struct LabelPicker: View {
     @State private var query = ""
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Find or create a label", text: $query)
                 .textFieldStyle(.roundedBorder)

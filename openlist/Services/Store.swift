@@ -50,6 +50,8 @@ final class Store {
     // Undo can restore the original attachment and image contents as well.
     var isRecordingEditorEdit = false
     var editorMediaBackups: [String: Data] = [:]
+    /// Structural Undo may remove the task currently open in an inspector.
+    @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
     var persistenceError: String?
     var editorNotice: String?
     var labelMergeUndo: LabelMergePlan?
@@ -143,6 +145,7 @@ final class Store {
     }
 
     func labels(for block: Block) -> [TaskLabel] {
+        guard block.modelContext != nil, !block.isDeleted else { return [] }
         guard !block.labelIDs.isEmpty else { return [] }
         let wanted = Set(block.labelIDs)
         return allLabels().filter { wanted.contains($0.id) }

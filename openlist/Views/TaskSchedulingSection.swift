@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// Scheduling intent stays separate from a task's due date and existing starred state.
@@ -11,6 +12,12 @@ struct TaskSchedulingSection: View {
     private var assessment: TaskScheduleAssessment? { env.calendar.plan.assessments.first { $0.taskID == block.id } }
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Calendar", systemImage: "calendar").font(.headline)
@@ -110,6 +117,12 @@ struct TaskDeferralPicker: View {
     @Environment(\.dismiss) private var dismiss
     @State private var date = Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Defer work").font(.headline)
             Text(block.displayTitle).lineLimit(2)

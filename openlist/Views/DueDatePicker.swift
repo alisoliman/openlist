@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 
 /// Quick presets plus a calendar and optional time, matching how Superlist
@@ -20,6 +21,12 @@ struct DueDatePicker: View {
     private var calendar: Calendar { env.settings.calendar }
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             typeToSchedule
             Divider()

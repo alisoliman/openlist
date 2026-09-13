@@ -219,6 +219,9 @@ extension Store {
             return
         }
 
+        let removedBlockIDs = changed.blocks.filter { desired.blocks[$0] == nil }
+        if !removedBlockIDs.isEmpty { onEditorBlocksRemoved?(removedBlockIDs) }
+
         for id in changed.attachments {
             let existing = try? context.fetch(FetchDescriptor<Attachment>(predicate: #Predicate { $0.id == id })).first
             if let record = desired.attachments[id] {

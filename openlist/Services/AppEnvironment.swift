@@ -98,6 +98,17 @@ final class AppEnvironment {
         store.onLabelsMerged = { [weak navigator] sourceID, destinationID in
             navigator?.retargetLabel(from: sourceID, to: destinationID)
         }
+        store.onEditorBlocksRemoved = { [weak self] ids in
+            guard let self else { return }
+            navigator.selection.subtract(ids)
+            if let taskID = navigator.openTaskID, ids.contains(taskID) {
+                requestedPicker = nil
+                navigator.closeTask()
+            }
+            if let rootID = activeDocument?.rootBlockID, ids.contains(rootID) {
+                activeDocument = nil
+            }
+        }
         store.onDidSave = { [weak widgetPublisher, weak calendar] in
             widgetPublisher?.scheduleRefresh()
             calendar?.storeDidChange()
