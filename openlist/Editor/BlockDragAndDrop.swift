@@ -14,14 +14,17 @@ enum DropPosition {
     case inside
 }
 
-/// Makes a row draggable and turns it into a drop target with an insertion line.
+/// A positional drop target. Dragging starts only in the selection gutter,
+/// leaving native text drags and selected-character copy untouched.
 struct BlockDragAndDrop: ViewModifier {
     let row: BlockRow
     /// Reordering is only offered while the stored order is what's on screen —
     /// a sorted view would put the block somewhere other than where it landed.
     var isEnabled: Bool = true
-    let onMove: (UUID, DropPosition) -> Void
+    let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
+
+    @Environment(AppEnvironment.self) private var env
 
     @State private var indicator: DropPosition?
     @State private var rowHeight: CGFloat = 28
@@ -37,17 +40,17 @@ struct BlockDragAndDrop: ViewModifier {
                 } action: { height in
                     rowHeight = height
                 }
-                .onDrag {
-                    NSItemProvider(object: DragPayload.block.encode(row.id) as NSString)
-                }
                 .onDrop(
-                    of: [.text, .plainText, .utf8PlainText],
+                    of: [UTType(exportedAs: DragPayload.blockTypeIdentifier), .text, .plainText, .utf8PlainText],
                     delegate: RowDropDelegate(
                         row: row,
                         rowHeight: rowHeight,
                         indicator: $indicator,
+                        sessionID: env.navigator.blockDragSessionID,
+                        activeLegacyID: { env.navigator.activeLegacyBlockDragID },
                         onMove: onMove,
-                        onDropText: onDropText
+                        onDropText: onDropText,
+                        onInvalid: { env.store.editorNotice = "This internal drag is invalid or belongs to another library. No rows were changed." }
                     )
                 )
         } else {
@@ -81,8 +84,11 @@ private struct RowDropDelegate: DropDelegate {
     let row: BlockRow
     let rowHeight: CGFloat
     @Binding var indicator: DropPosition?
-    let onMove: (UUID, DropPosition) -> Void
+    let sessionID: UUID
+    let activeLegacyID: () -> UUID?
+    let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
+    let onInvalid: () -> Void
 
     func dropEntered(info: DropInfo) {
         indicator = position(for: info)
@@ -101,17 +107,31 @@ private struct RowDropDelegate: DropDelegate {
         let target = position(for: info)
         indicator = nil
 
-        guard let provider = info.itemProviders(for: [.text, .plainText, .utf8PlainText]).first else {
+        guard let provider = info.itemProviders(for: [UTType(exportedAs: DragPayload.blockTypeIdentifier), .text, .plainText, .utf8PlainText]).first else {
             return false
         }
 
+        let legacyID = activeLegacyID()
+        if provider.hasItemConformingToTypeIdentifier(DragPayload.blockTypeIdentifier) {
+            provider.loadDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier) { data, _ in
+                Task { @MainActor in
+                    guard let data, let value = String(data: data, encoding: .utf8),
+                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID, activeLegacyID: nil) else {
+                        onInvalid()
+                        return
+                    }
+                    onMove(ids, target)
+                }
+            }
+            return true
+        }
         _ = provider.loadObject(ofClass: NSString.self) { value, _ in
             guard let string = value as? String else { return }
             Task { @MainActor in
-                if let id = DragPayload.block.decode(string) {
-                    onMove(id, target)
-                } else {
-                    onDropText(string)
+                switch DragPayload.blockDrop(string, session: sessionID, activeLegacyID: legacyID) {
+                case .blocks(let ids): onMove(ids, target)
+                case .text(let text): onDropText(text)
+                case .invalid: onInvalid()
                 }
             }
         }

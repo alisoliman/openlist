@@ -57,6 +57,7 @@ struct TasksScreen: View {
                 }
             }
         }
+        .modifier(TaskSelectionScope())
         .onChange(of: activeListIDs) { _, ids in
             if let selectedID = options.listID, !ids.contains(selectedID) { options.listID = nil }
         }
@@ -68,7 +69,7 @@ struct TasksScreen: View {
     private func focusTitleFilter() {
         // The filter edits screen state, so shortcuts must not act on the row
         // or inspector document that was selected before focus moved here.
-        env.navigator.selection.removeAll()
+        env.navigator.clearSelection()
         env.activeDocument = nil
     }
 }
@@ -143,6 +144,7 @@ struct LabelScreen: View {
                 }
             }
         }
+        .modifier(TaskSelectionScope())
     }
 
     private var tagged: [Block] {
@@ -196,6 +198,7 @@ struct CompletedScreen: View {
                 }
             }
         }
+        .modifier(TaskSelectionScope())
     }
 
     /// Keyed on the day itself: two groups can share a relative title across a

@@ -132,6 +132,7 @@ struct TodayScreen: View {
                 }
             }
         }
+        .modifier(TaskSelectionScope())
     }
 
     private var showsCompletedNow: Bool {
