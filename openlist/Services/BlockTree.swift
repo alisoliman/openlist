@@ -7,6 +7,7 @@ import Foundation
 
 /// A block paired with its computed position in the document outline.
 struct BlockRow: Identifiable, Hashable {
+    let id: UUID
     var block: Block
     /// Nesting depth, 0 at the document root.
     var depth: Int
@@ -17,17 +18,24 @@ struct BlockRow: Identifiable, Hashable {
     /// `true` when the block's subtree is hidden.
     var isCollapsed: Bool
 
-    var id: UUID { block.id }
+    init(block: Block, depth: Int, ordinal: Int, hasChildren: Bool, isCollapsed: Bool) {
+        id = block.id
+        self.block = block
+        self.depth = depth
+        self.ordinal = ordinal
+        self.hasChildren = hasChildren
+        self.isCollapsed = isCollapsed
+    }
 
     static func == (lhs: BlockRow, rhs: BlockRow) -> Bool {
-        lhs.block.id == rhs.block.id
+        lhs.id == rhs.id
             && lhs.depth == rhs.depth
             && lhs.ordinal == rhs.ordinal
             && lhs.hasChildren == rhs.hasChildren
             && lhs.isCollapsed == rhs.isCollapsed
     }
 
-    func hash(into hasher: inout Hasher) { hasher.combine(block.id) }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 /// Pure functions that turn a flat array of blocks into an ordered outline.
