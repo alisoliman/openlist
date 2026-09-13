@@ -102,6 +102,32 @@ unrelated label edits made afterward are preserved by undo. The central merge
 path includes all stored blocks without a visibility filter; future retained
 Trash records must use that path or extend it if stored separately.
 
+### Reusable copies
+
+**Duplicate** copies a task's complete nested procedure, including prose, notes,
+formatting, images and attachments. **Use as template…** is a separate action in
+task and list menus for starting fresh work. Its confirmation offers **Keep
+repeating rules** only when the source contains a repeat rule; it starts unchecked.
+
+| Field | Duplicate | Use as template |
+|---|---|---|
+| Content, hierarchy, sibling order, collapse state, formatting, notes | Keep | Keep |
+| Labels, priority, stars, estimates and planning preferences | Keep | Keep |
+| Completion and completion date | Keep | Clear |
+| Due date/time and reminder | Keep | Clear |
+| Repeating rule and completed-occurrence count | Keep | Remove by default; opt-in keeps the pattern/count limit, resets progress to zero and clears the old end date |
+| Selected day, deferral, calendar placements, work/completion history | Do not copy | Do not copy |
+| Model and occurrence identities, block/list creation timestamps | Fresh | Fresh |
+| Images and attachments | Independent files and retained bytes | Independent files and retained bytes |
+
+A task copy lands after its source in the same parent/list and opens selected in
+the inspector. A list copy opens as an active, non-system list named “Name copy”,
+keeping its description, appearance, display preferences and sidebar section.
+Task copies in an archived list stay in that list. The source remains unchanged;
+storage or file failures leave no partial copy. Task copies share the editor's
+Undo/Redo, including the complete subtree and files. List copying retains its
+existing behavior without Undo. Clipboard copying keeps its separate semantics.
+
 ### Views
 
 **Inbox** (⌘1) · **Today** (⌘2) · **Updates** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5) ·

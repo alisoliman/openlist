@@ -279,6 +279,9 @@ struct SidebarView: View {
                 let copy = env.store.duplicateList(list)
                 env.navigator.go(to: .list(copy.id))
             },
+            onUseAsTemplate: {
+                env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil)
+            },
             onExport: { MarkdownExporter.presentSavePanel(for: list, store: env.store) },
             onDelete: { env.requestDeleteList(list) },
             onDropAbove: { draggedID in
@@ -440,6 +443,7 @@ struct SidebarListRow: View {
     let onRename: () -> Void
     let onUnpin: () -> Void
     let onDuplicate: () -> Void
+    let onUseAsTemplate: () -> Void
     let onExport: () -> Void
     let onDelete: () -> Void
     /// Another list was dropped onto this row's upper half.
@@ -501,6 +505,7 @@ struct SidebarListRow: View {
             Button("Rename List…") { onRename() }
             Divider()
             Button("Duplicate") { onDuplicate() }
+            Button("Use as template…") { onUseAsTemplate() }
             Button("Export as Markdown…") { onExport() }
             Button("Remove from Sidebar") { onUnpin() }
             Divider()

@@ -237,76 +237,10 @@ final class Store {
     }
 
     func duplicateList(_ list: TaskList) -> TaskList {
-        let list = self.list(id: list.id) ?? list
-        var stagedFiles: [String] = []
-        func stageCopy(of source: URL) throws -> String {
-            let ext = source.pathExtension
-            let filename = UUID().uuidString + (ext.isEmpty ? "" : "." + ext)
-            // Register before copying so even a partial failed write is removed.
-            stagedFiles.append(filename)
-            try FileManager.default.copyItem(at: source, to: MediaStore.shared.url(for: filename))
-            return filename
-        }
         do {
-            let copy = TaskList(title: "\(list.displayTitle) copy", icon: list.icon, accent: list.accent)
-            copy.summary = list.summary
-            copy.sectionID = list.sectionID
-            copy.isPinned = list.isPinned
-            copy.sortingRaw = list.sortingRaw
-            copy.showsCompleted = list.showsCompleted
-            copy.completedVisibilityRaw = list.completedVisibilityRaw
-            copy.availabilityCategoryRaw = list.availabilityCategoryRaw
-            copy.sortIndex = list.sortIndex + 1
-            copy.sidebarIndex = list.sidebarIndex + 1
-
-            // Prepare the whole tree and its independently owned media before
-            // inserting anything. A failed copy must never leave a partial list
-            // or point the duplicate at a file owned by the original.
-            let listID = list.id
-            let originals = try context.fetch(FetchDescriptor<Block>(
-                predicate: #Predicate { $0.listID == listID },
-                sortBy: [SortDescriptor(\.sortIndex)]
-            ))
-            let idMap = Dictionary(uniqueKeysWithValues: originals.map { ($0.id, UUID()) })
-            var clones: [Block] = []
-            var clonedAttachments: [Attachment] = []
-            for original in originals {
-                let clone = Block(kind: original.kind, listID: copy.id)
-                clone.id = idMap[original.id] ?? UUID()
-                clone.parentID = original.parentID.flatMap { idMap[$0] }
-                clone.sortIndex = original.sortIndex
-                clone.copyPayload(from: original)
-                if let filename = original.mediaFilename {
-                    clone.mediaFilename = try stageCopy(of: MediaStore.shared.materialize(filename: filename, data: original.mediaData))
-                }
-                let originalID = original.id
-                let originalsAttachments = try context.fetch(FetchDescriptor<Attachment>(
-                    predicate: #Predicate { $0.blockID == originalID },
-                    sortBy: [SortDescriptor(\.sortIndex)]
-                ))
-                for attachment in originalsAttachments {
-                    let copiedFilename = try stageCopy(of: attachment.fileURL())
-                    let cloned = Attachment(
-                        blockID: clone.id,
-                        filename: copiedFilename,
-                        displayName: attachment.displayName,
-                        contentType: attachment.contentType,
-                        byteCount: attachment.byteCount,
-                        sortIndex: attachment.sortIndex,
-                        contentData: attachment.contentData
-                    )
-                    cloned.createdAt = attachment.createdAt
-                    clonedAttachments.append(cloned)
-                }
-                clones.append(clone)
-            }
-            context.insert(copy)
-            for clone in clones { context.insert(clone) }
-            for attachment in clonedAttachments { context.insert(attachment) }
-            save()
-            return copy
+            let id = try copyList(list, mode: .duplicate)
+            return self.list(id: id) ?? list
         } catch {
-            for filename in stagedFiles { MediaStore.shared.delete(filename: filename) }
             editorNotice = "The list was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
             return list
         }

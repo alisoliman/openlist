@@ -103,57 +103,13 @@ extension Store {
         return block
     }
 
-    /// Copies a block, giving the copy its own media file and attachments.
-    ///
-    /// Sharing the filename would let deleting either copy blank the other.
+    /// Copies the complete subtree with independent media ownership.
     @discardableResult
     func duplicateBlock(_ block: Block) -> Block {
-        var stagedFiles: [String] = []
-        func stageCopy(of source: URL) throws -> String {
-            let ext = source.pathExtension
-            let filename = UUID().uuidString + (ext.isEmpty ? "" : "." + ext)
-            // Register before copying so even a partial failed write is removed.
-            stagedFiles.append(filename)
-            try FileManager.default.copyItem(at: source, to: MediaStore.shared.url(for: filename))
-            return filename
-        }
         do {
-            var mediaFilename: String?
-            if let filename = block.mediaFilename {
-                mediaFilename = try stageCopy(of: MediaStore.shared.materialize(filename: filename, data: block.mediaData))
-            }
-            let blockID = block.id
-            let originals = try context.fetch(FetchDescriptor<Attachment>(
-                predicate: #Predicate { $0.blockID == blockID },
-                sortBy: [SortDescriptor(\.sortIndex)]
-            ))
-            var copiedAttachments: [Attachment] = []
-            for attachment in originals {
-                let copiedFilename = try stageCopy(of: attachment.fileURL())
-                let copied = Attachment(
-                    blockID: block.id,
-                    filename: copiedFilename,
-                    displayName: attachment.displayName,
-                    contentType: attachment.contentType,
-                    byteCount: attachment.byteCount,
-                    sortIndex: attachment.sortIndex,
-                    contentData: attachment.contentData
-                )
-                copied.createdAt = attachment.createdAt
-                copiedAttachments.append(copied)
-            }
-            // No model changes occur until every file has been copied.
-            let copy = insertBlock(kind: block.kind, after: block)
-            copy.copyPayload(from: block)
-            copy.mediaFilename = mediaFilename
-            for attachment in copiedAttachments {
-                attachment.blockID = copy.id
-                context.insert(attachment)
-            }
-            save()
-            return copy
+            let id = try copyBlock(block, mode: .duplicate)
+            return self.block(id: id) ?? block
         } catch {
-            for filename in stagedFiles { MediaStore.shared.delete(filename: filename) }
             editorNotice = "The block was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
             return block
         }

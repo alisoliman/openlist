@@ -380,6 +380,12 @@ struct BlockContextMenu: View {
         }
 
         Button("Duplicate") { duplicate() }
+        if block.isTask {
+            Button("Use as template…") {
+                env.templateCopyRequest = TemplateCopyRequest(source: .task(block.id),
+                    undoManager: undoManager ?? NSApp.keyWindow?.undoManager)
+            }
+        }
         Button("Copy Text") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(block.text, forType: .string)
@@ -396,7 +402,11 @@ struct BlockContextMenu: View {
 
     private func duplicate() {
         edit("Duplicate block") { current in
-            env.store.duplicateBlock(current)
+            let copy = env.store.duplicateBlock(current)
+            guard copy.id != current.id else { return }
+            if copy.isTask, let listID = copy.listID {
+                env.showCopiedTask(id: copy.id, listID: listID)
+            } else { env.navigator.selection = [copy.id] }
         }
     }
 
