@@ -15,7 +15,7 @@ struct TaskMetadataChips: View {
     var onTapLabel: (TaskLabel) -> Void = { _ in }
 
     var body: some View {
-        HStack(spacing: 5) {
+        MetadataFlowLayout {
             if let progress, progress.total > 0 {
                 SubtaskProgressChip(done: progress.done, total: progress.total)
             }
@@ -23,10 +23,13 @@ struct TaskMetadataChips: View {
             ForEach(labels) { label in
                 Button { onTapLabel(label) } label: {
                     Text(label.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                         .chipStyle(accent: label.accent.color)
                 }
                 .buttonStyle(.plain)
                 .help("Label: \(label.name)")
+                .accessibilityLabel("Edit label \(label.name)")
             }
 
             if block.recurrence != nil {
@@ -34,6 +37,7 @@ struct TaskMetadataChips: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.tertiaryText)
                     .help(block.recurrence?.displayText ?? "Repeats")
+                    .accessibilityLabel(block.recurrence?.displayText ?? "Repeats")
             }
 
             if block.reminderAt != nil {
@@ -41,6 +45,7 @@ struct TaskMetadataChips: View {
                     .font(.system(size: 9.5))
                     .foregroundStyle(Theme.tertiaryText)
                     .help("Reminder set")
+                    .accessibilityLabel("Reminder set")
             }
 
             if block.dueDate != nil {
@@ -48,15 +53,17 @@ struct TaskMetadataChips: View {
                     DueDateChip(block: block)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Edit due date: \(Store.dueChipText(for: block))")
             }
 
             if block.isStarred {
                 Image(systemName: "star.fill")
                     .font(.system(size: 10))
                     .foregroundStyle(ListAccent.amber.color)
+                    .accessibilityLabel("Starred")
             }
         }
-        .fixedSize()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -114,6 +121,8 @@ struct SubtaskProgressChip: View {
         }
         .chipStyle()
         .help("\(done) of \(total) subtasks complete")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(done) of \(total) subtasks complete")
     }
 }
 
@@ -124,6 +133,7 @@ struct TaskCheckbox: View {
     let priority: TaskPriority
     var action: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     var body: some View {
@@ -151,7 +161,7 @@ struct TaskCheckbox: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isCompleted)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isCompleted)
         .help(isCompleted ? "Mark as not done (⌘D)" : "Mark as done (⌘D)")
     }
 

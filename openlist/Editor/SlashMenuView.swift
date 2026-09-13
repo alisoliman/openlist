@@ -9,9 +9,12 @@ import SwiftUI
 struct SlashMenuView: View {
     let query: String
     let selectedIndex: Int
+    var menuSize = CGSize(width: 260, height: 264)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onSelect: (BlockKind) -> Void
     let onHover: (Int) -> Void
     let onDismiss: () -> Void
+    var onContentHeight: (CGFloat) -> Void = { _ in }
 
     /// Kinds offered by the menu, in presentation order.
     private static let offered: [BlockKind] = [
@@ -52,18 +55,20 @@ struct SlashMenuView: View {
                             }
                         }
                         .padding(4)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onContentHeight($0) }
                     }
-                    .frame(maxHeight: 264)
+                    .frame(height: menuSize.height)
                     .onChange(of: selectedIndex) { _, newValue in
                         guard results.indices.contains(newValue) else { return }
-                        withAnimation(.easeOut(duration: 0.1)) {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.1)) {
                             proxy.scrollTo(results[newValue], anchor: .center)
                         }
                     }
                 }
             }
         }
-        .frame(width: 260, alignment: .leading)
+        .frame(width: menuSize.width, height: menuSize.height, alignment: .leading)
+        .background(SlashMenuDismissal(onDismiss: onDismiss))
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
                 .fill(.regularMaterial)
@@ -124,6 +129,8 @@ struct SlashMenuView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable(false)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { hovering in
             if hovering { onHover(index) }
         }

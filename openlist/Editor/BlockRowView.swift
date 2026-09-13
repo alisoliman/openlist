@@ -10,13 +10,13 @@ import UniformTypeIdentifiers
 struct BlockRowActions {
     var onChange: (NSAttributedString) -> Void = { _ in }
     var onReturn: (Int, NSAttributedString) -> Bool = { _, _ in false }
-    var onTab: (Bool) -> Bool = { _ in false }
+    var onTab: (Bool, Int) -> Bool = { _, _ in false }
     var onBackspaceAtStart: (NSAttributedString) -> Bool = { _ in false }
     var onDeleteAtEnd: () -> Bool = { false }
     var onArrowOut: (EditorArrow, Int) -> Bool = { _, _ in false }
     var onFocus: () -> Void = {}
     var onEscape: () -> Void = {}
-    var onSlashQuery: (String?, NSRange, CGRect) -> Void = { _, _, _ in }
+    var onSlashQuery: (String?, NSRange, CGRect, CGRect) -> Void = { _, _, _, _ in }
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
     var onPasteMultiline: (String) -> Bool = { _ in false }
     var onSetCaption: (String) -> Void = { _ in }
@@ -46,6 +46,7 @@ struct BlockRowView: View {
     let showsPlaceholder: Bool
     let actions: BlockRowActions
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     private var block: Block { row.block }
@@ -101,7 +102,7 @@ struct BlockRowView: View {
                 Color.clear.frame(width: 14, height: 1)
             }
         }
-        .animation(.easeOut(duration: 0.12), value: row.isCollapsed)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: row.isCollapsed)
     }
 
     @ViewBuilder
@@ -160,30 +161,32 @@ struct BlockRowView: View {
 
     private var textContent: some View {
         HStack(alignment: .top, spacing: 8) {
-            BlockTextView(
-                blockID: block.id,
-                kind: block.kind,
-                isCompleted: block.isCompleted,
-                attributedText: attributedText,
-                placeholder: showsPlaceholder ? placeholder : "",
-                isFocused: isFocused,
-                pendingCaret: pendingCaret,
-                focusToken: focusToken,
-                isSlashMenuOpen: isSlashMenuOpen,
-                onSlashCommand: onSlashCommand,
-                callbacks: editorCallbacks
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if block.isTask {
-                TaskMetadataChips(
-                    block: block,
-                    labels: labels,
-                    progress: progress,
-                    onTapDue: actions.onOpenDetails,
-                    onTapLabel: { _ in actions.onOpenDetails() }
+            VStack(alignment: .leading, spacing: 4) {
+                BlockTextView(
+                    blockID: block.id,
+                    kind: block.kind,
+                    isCompleted: block.isCompleted,
+                    attributedText: attributedText,
+                    placeholder: showsPlaceholder ? placeholder : "",
+                    isFocused: isFocused,
+                    pendingCaret: pendingCaret,
+                    focusToken: focusToken,
+                    isSlashMenuOpen: isSlashMenuOpen,
+                    onSlashCommand: onSlashCommand,
+                    callbacks: editorCallbacks
                 )
-                .padding(.top, 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .anchorPreference(key: EditorTextBoundsKey.self, value: .bounds) { [block.id: $0] }
+
+                if block.isTask, !labels.isEmpty || progress != nil || block.dueDate != nil || block.recurrence != nil || block.reminderAt != nil || block.isStarred {
+                    TaskMetadataChips(
+                        block: block,
+                        labels: labels,
+                        progress: progress,
+                        onTapDue: actions.onOpenDetails,
+                        onTapLabel: { _ in actions.onOpenDetails() }
+                    )
+                }
             }
 
             hoverActions
