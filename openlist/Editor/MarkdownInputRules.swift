@@ -194,6 +194,11 @@ enum MarkdownInputRules {
         let parsed = parseMarkdown(source)
         let unsupported = source.contains("```") || source.contains("~~~")
             || lines.contains { $0.isEmpty || $0.last?.isWhitespace == true }
+            || lines.contains { line in
+                let indent = line.prefix { $0.isWhitespace }
+                return indent.filter { $0 == " " }.count % 2 != 0
+                    || indent.contains { $0 != " " && $0 != "\t" }
+            }
             || parsed.count != lines.count
         var previousDepth = 0
         let malformedIndent = parsed.enumerated().contains { index, line in

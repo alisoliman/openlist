@@ -257,7 +257,7 @@ let crossID = try other.pasteFragment(fragment, in: .init(listID: otherList.id),
 check(other.block(id: crossID)?.labelIDs == [match.id] && match.accent == .blue && collision.name == "Unrelated identity collision", "Cross-library matching ignores source UUID collisions and preserves destination color")
 check(other.allLabels().count == 2 && other.block(id: crossID)?.listID == otherList.id, "Cross-library insertion creates no dangling label or source list reference")
 
-for literal in ["```swift\n# not a heading\n\n- not a bullet\n```", "first\n\nlast", "first  \nsecond", "  indented\nnext", "[title](https://example.com)\n<script>data</script>"] {
+for literal in ["```swift\n# not a heading\n\n- not a bullet\n```", "first\n\nlast", "first  \nsecond", "  indented\nnext", " one space\nnext", "\u{00a0}nonbreaking indent\nnext", "[title](https://example.com)\n<script>data</script>"] {
     let parsed = MarkdownInputRules.parseClipboard(literal)
     check(parsed.count == 1 ? parsed[0].text == literal : parsed.map(\.text).joined(separator: "\n") == literal, "Unsupported external Markdown preserves literal content")
 }
