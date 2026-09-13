@@ -36,6 +36,7 @@ extension Store {
             block.isCompleted = false
             block.completedAt = nil
             block.occurrenceID = UUID()
+            clearInboxForNextOccurrence(block)
             // Completing today's occurrence must not immediately fill today
             // again with a future repeat. An explicit Today choice clears this.
             let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))!
@@ -82,7 +83,9 @@ extension Store {
 
     private func reopen(_ block: Block) {
         discardTaskSchedule(for: block, reason: "Reopened")
+        let oldOccurrenceID = block.occurrenceID
         block.occurrenceID = UUID()
+        carryInboxSelection(block, from: oldOccurrenceID)
         block.isCompleted = false
         block.completedAt = nil
         block.touch()
@@ -96,6 +99,7 @@ extension Store {
             if !descendant.isCompleted { recordCalendarCompletion(for: descendant, now: now) }
             discardTaskSchedule(for: descendant, reason: "Next occurrence", now: now)
             descendant.occurrenceID = UUID()
+            clearInboxForNextOccurrence(descendant)
             descendant.isCompleted = false
             descendant.completedAt = nil
             if let nextEligible, descendant.dueDate == nil || descendant.dueDate! >= nextEligible {
@@ -327,17 +331,13 @@ extension Store {
         save()
     }
 
-    /// ⌘⇧I — file a task into the Inbox.
-    func moveToInbox(_ block: Block) {
+    /// Physically moves a subtree to its unfiled ownership document. This is
+    /// separate from Add/Remove from Inbox, which only changes membership.
+    func moveToUnfiled(_ block: Block) {
         guard let inbox = inboxList() else { return }
         moveToList(block, list: inbox)
     }
 
-    /// ⌘⇧R — detach a task from its list, sending it back to the Inbox.
-    func removeFromList(_ block: Block) {
-        guard let inbox = inboxList(), block.listID != inbox.id else { return }
-        moveToInbox(block)
-    }
 
     // MARK: - Text formatting
 

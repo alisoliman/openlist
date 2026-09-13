@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared by task capture and Inbox review. Selection is always explicit.
+/// Shared by task capture and unfiled review. Selection is always explicit.
 struct CaptureDestinationPicker: View {
     let lists: [TaskList]
     @Binding var selection: UUID?
@@ -12,7 +12,7 @@ struct CaptureDestinationPicker: View {
     @FocusState private var isFocused: Bool
 
     private var matches: [TaskList] {
-        lists.filter { query.isEmpty || $0.displayTitle.localizedCaseInsensitiveContains(query) }
+        lists.filter { query.isEmpty || $0.displayTitle.localizedCaseInsensitiveContains(query) || ($0.isSystemInbox && "Unfiled content".localizedCaseInsensitiveContains(query)) }
     }
 
     var body: some View {
@@ -22,7 +22,7 @@ struct CaptureDestinationPicker: View {
             highlighted = 0
             isOpen = true
         } label: {
-            Label(lists.first(where: { $0.id == selection })?.displayTitle ?? "Inbox", systemImage: "tray.and.arrow.down")
+            Label(sourceTitle(lists.first(where: { $0.id == selection })), systemImage: "tray.and.arrow.down")
         }
         .accessibilityLabel("Destination list")
         .popover(isPresented: $isOpen) {
@@ -47,7 +47,7 @@ struct CaptureDestinationPicker: View {
                                 Button { choose(list) } label: {
                                     HStack {
                                         Text(list.icon)
-                                        Text(list.displayTitle)
+                                        Text(sourceTitle(list))
                                         Spacer()
                                         if list.id == selection { Image(systemName: "checkmark") }
                                     }
@@ -72,6 +72,11 @@ struct CaptureDestinationPicker: View {
             .onDisappear { onDidClose?() }
             .onExitCommand { isOpen = false }
         }
+    }
+
+    private func sourceTitle(_ list: TaskList?) -> String {
+        guard let list, !list.isSystemInbox else { return "Unfiled content" }
+        return list.displayTitle
     }
 
     private func choose(_ list: TaskList?) {

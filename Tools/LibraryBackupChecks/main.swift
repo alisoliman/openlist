@@ -119,6 +119,7 @@ task.schedulingEstimateMinutes = 67; task.selectedForDay = fixedDate
 task.deferredUntil = fixedDate.addingTimeInterval(9000)
 task.keepsSessionsTogether = true; task.tracksAwayFromMac = true
 task.calendarOccurrenceID = UUID()
+task.inboxMembershipData = try InboxMembership.included(order: 19.25, occurrenceID: task.occurrenceID).encoded()
 let child = Block(kind: .task, text: "Nested child", listID: list.id, parentID: task.id, sortIndex: 0.125)
 let heading = Block(kind: .heading2, text: "Nested section", listID: list.id, parentID: child.id)
 let image = Block(kind: .image, text: "", listID: list.id, parentID: heading.id)
@@ -171,6 +172,35 @@ let validated = try LibraryBackupPackage.read(at: package)
 var hydrated = snapshot
 hydrated.blocks[hydrated.blocks.firstIndex { $0.id == legacyImage.id }!].mediaData = legacyBytes
 check(validated.snapshot == hydrated, "Logical package preserves every field and loads legacy media bytes")
+check(validated.manifest.version == 2, "New backup format prevents older apps silently dropping Inbox curation")
+check(validated.snapshot.blocks.first { $0.id == task.id }?.inboxMembershipData == task.inboxMembershipData,
+    "Archive, completed and nested record backup retains exact Inbox order and occurrence payload")
+let oldPackage = root.appendingPathComponent("Version1.openlistbackup")
+try manager.copyItem(at: package, to: oldPackage)
+var oldSnapshot = validated.snapshot
+oldSnapshot.version = 1
+for index in oldSnapshot.blocks.indices {
+    oldSnapshot.blocks[index].inboxMembershipData = nil
+    oldSnapshot.blocks[index].mediaData = nil
+}
+for index in oldSnapshot.attachments.indices { oldSnapshot.attachments[index].contentData = nil }
+let oldBytes = try JSONEncoder().encode(oldSnapshot)
+var oldManifest = validated.manifest
+oldManifest.version = 1
+oldManifest.libraryDigest = LibraryBackupPackage.digest(oldBytes)
+try oldBytes.write(to: oldPackage.appendingPathComponent("library.json"))
+try JSONEncoder().encode(oldManifest).write(to: oldPackage.appendingPathComponent("manifest.json"))
+let upgraded = try LibraryBackupPackage.read(at: oldPackage)
+check(upgraded.manifest.version == 1 && upgraded.snapshot.version == 2, "Version 1 package gets an explicit in-memory upgrade")
+check(upgraded.snapshot.blocks.allSatisfy { $0.inboxMembershipData == nil }, "Version 1 preserves legacy nil for ownership-aware migration")
+let upgradedURL = try BackupStagedStore.create(from: upgraded.snapshot, in: root.appendingPathComponent("UpgradedV1"), using: reader)
+let upgradedRead = try reader.read(at: upgradedURL, settings: upgraded.snapshot.settings, createdAt: upgraded.snapshot.createdAt)
+check(upgradedRead == upgraded.snapshot, "Version 1 upgrade stages and reopens every field without guessed membership")
+var futureSelection = validated.snapshot
+futureSelection.blocks[0].inboxMembershipData = Data(#"{"version":90,"included":true}"#.utf8)
+let futureURL = try BackupStagedStore.create(from: futureSelection, in: root.appendingPathComponent("FutureSelection"), using: reader)
+try check(try reader.read(at: futureURL, settings: futureSelection.settings, createdAt: futureSelection.createdAt) == futureSelection,
+    "Unknown membership payload remains lossless in recovery backups")
 check(validated.manifest.assets.count == 3, "Inline image, legacy image and attachment all have checked assets")
 check(validated.snapshot.lists.contains { $0.isArchived } && validated.snapshot.lists.contains { $0.mergedIntoID != nil }, "Archive and retained aliases are included")
 check(validated.snapshot.activity.first { $0.id == legacyEvent.id }?.changeData == legacyEvent.changeData, "Undecodable legacy activity details are preserved as recorded")
@@ -389,6 +419,36 @@ let freshStartup = try freshStorage.activatePending(currentSettings: snapshot.se
 let freshContainer = try AppPersistence.openSelected(freshStartup, storage: freshStorage, iCloudUnavailableReason: "Isolated fixture")
 try check(freshContainer.container.mainContext.fetchCount(FetchDescriptor<Block>()) == 0, "An original first install can create its new store")
 
+// A restore queued by the format-1 app predates the schema and fingerprint
+// version marker. Reject that pending transition before opening either store;
+// the user can cancel it and choose its valid v1 logical package again.
+let oldPendingRoot = root.appendingPathComponent("PendingV1")
+let oldOriginalURL = try BackupStagedStore.create(from: validated.snapshot, in: oldPendingRoot.appendingPathComponent("Original"), using: reader)
+let oldStorage = LibraryRestoreStorage(originalStoreURL: oldOriginalURL, originalMediaURL: oldPendingRoot.appendingPathComponent("Original/Media"))
+let oldPrepared = try oldStorage.prepare(upgraded.snapshot, using: reader)
+try oldStorage.queue(oldPrepared)
+struct LegacyGeneration: Codable { var createdAt: Date; var fingerprint: String }
+let oldVerification = oldStorage.generationDirectory(oldPrepared.generation).appendingPathComponent("verification.json")
+let originalGeneration = try JSONDecoder().decode(LegacyGeneration.self, from: Data(contentsOf: oldVerification))
+try JSONEncoder().encode(originalGeneration).write(to: oldVerification)
+let oldOriginalBytes = try Data(contentsOf: oldOriginalURL)
+let oldStagedURL = oldStorage.storeURL(for: oldPrepared.generation)
+let oldStagedBytes = try Data(contentsOf: oldStagedURL)
+do {
+    _ = try oldStorage.activatePending(currentSettings: validated.snapshot.settings, using: reader)
+    fatalError("FAIL: Old pending restore must be rejected safely")
+} catch {
+    check(error.localizedDescription.contains("Cancel the pending restore") && error.localizedDescription.contains("version 1"),
+        "Old prepared restore has actionable cancellation and supported package-upgrade guidance")
+}
+try check(oldStorage.selection() == nil && oldStorage.pending() != nil && oldStorage.canCancelPending(),
+    "Version 1 pending rejection retains original selection and a cancellable journal")
+try check(Data(contentsOf: oldOriginalURL) == oldOriginalBytes && Data(contentsOf: oldStagedURL) == oldStagedBytes,
+    "Rejected old pending restore leaves original and staged database bytes untouched")
+try oldStorage.cancelPending()
+let originalAfterOldCancellation = try oldStorage.activatePending(currentSettings: validated.snapshot.settings, using: reader)
+check(originalAfterOldCancellation.storeURL == oldOriginalURL && !originalAfterOldCancellation.isLocalRestore,
+    "Cancelling old pending restore returns to original startup without an empty fallback")
 // Compile-time DTOs plus actual SwiftData schema coverage keep newly persisted
 // fields from silently falling out of this versioned reconstruction contract.
 let covered: [String: Set<String>] = [

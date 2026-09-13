@@ -201,6 +201,17 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(ListAccent.blue.softBackground)
             }
+            if let error = env.store.inboxError {
+                HStack(alignment: .top) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.callout).lineLimit(4).help(error)
+                    Spacer(minLength: 0)
+                    Button("Dismiss") { env.store.inboxError = nil }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ListAccent.orange.softBackground)
+            }
             if let error = env.store.persistenceError {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Changes are not saved", systemImage: "exclamationmark.triangle.fill")
@@ -246,7 +257,7 @@ struct RootView: View {
         guard let command = env.consumeCommand() else { return }
         let targets = env.navigator.selection.compactMap { env.store.block(id: $0) }
 
-        if env.store.perform(command, on: targets) {
+        if env.store.perform(command, on: targets, undoManager: NSApp.keyWindow?.undoManager) {
             if command == .deleteSelection { env.navigator.selection.removeAll() }
             return
         }

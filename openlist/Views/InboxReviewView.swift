@@ -1,7 +1,7 @@
 import SwiftData
 import SwiftUI
 
-/// A deliberate review session. Keeping or scheduling a task leaves it in Inbox.
+/// A deliberate review session. Keeping or scheduling a task leaves it unfiled.
 struct InboxReviewView: View {
     let inbox: TaskList
     @Environment(AppEnvironment.self) private var env
@@ -24,7 +24,7 @@ struct InboxReviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Label("Review Inbox", systemImage: "tray.full").font(.headline)
+                Label("Review unfiled", systemImage: "tray.full").font(.headline)
                 Spacer()
                 Text("\(queue.count) remaining").font(.caption).foregroundStyle(.secondary)
             }
@@ -56,7 +56,7 @@ struct InboxReviewView: View {
                     }
                 }
                 HStack {
-                    Button("Keep in Inbox") { finish(task, notice: "Kept in Inbox for later.", mutated: false) }
+                    Button("Keep unfiled") { finish(task, notice: "Kept unfiled for later.", mutated: false) }
                         .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
                     Spacer()
                     Button("Open details") { env.navigator.openTask(task.id) }
@@ -64,9 +64,9 @@ struct InboxReviewView: View {
                 Text("⇧⌘M move · ⇧⌘T today · ⇧⌘→ keep")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                Label("Inbox review complete", systemImage: "checkmark.circle")
+                Label("Unfiled review complete", systemImage: "checkmark.circle")
                     .font(.title3.weight(.semibold))
-                Text("Tasks you kept or scheduled remain in Inbox. You can review them again whenever you’re ready.")
+                Text("Tasks you kept or scheduled remain unfiled. You can review them again whenever you’re ready.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("Review again") { reviewed = []; notice = nil }
             }
@@ -90,17 +90,17 @@ struct InboxReviewView: View {
 
     private func move(_ task: Block) {
         guard let list = env.store.list(id: destinationID), !list.isArchived, list.id != inbox.id else { return }
-        env.store.undoableEditorEdit(in: Set([inbox.id, list.id]), name: "Move Inbox task", undoManager: undoManager) {
+        env.store.undoableEditorEdit(in: Set([inbox.id, list.id]), name: "Move Unfiled task", undoManager: undoManager) {
             env.store.moveToList(task, list: list)
         }
         finish(task, notice: "Moved to \(list.displayTitle).", mutated: true)
     }
 
     private func schedule(_ task: Block, date: Date) {
-        env.store.undoableEditorEdit(in: inbox.id, name: "Schedule Inbox task", undoManager: undoManager) {
+        env.store.undoableEditorEdit(in: inbox.id, name: "Schedule Unfiled task", undoManager: undoManager) {
             env.store.setDueDate(Calendar.current.startOfDay(for: date), for: task)
         }
-        finish(task, notice: "Scheduled for \(date.formatted(date: .abbreviated, time: .omitted)); kept in Inbox.", mutated: true)
+        finish(task, notice: "Scheduled for \(date.formatted(date: .abbreviated, time: .omitted)); kept unfiled.", mutated: true)
     }
 
     private func finish(_ task: Block, notice: String, mutated: Bool) {

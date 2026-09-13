@@ -34,7 +34,7 @@ struct SidebarView: View {
         // so counts are accumulated in one pass rather than one scan per row.
         let counts = Counts(
             openTasks: ActiveTaskPolicy(lists: lists).tasks(in: openTasks),
-            inboxID: lists.first(where: \.isSystemInbox)?.id
+            inboxCount: InboxPolicy(lists: lists).openCount(openTasks)
         )
 
         return ScrollView {
@@ -138,7 +138,8 @@ struct SidebarView: View {
         var byList: [UUID: Int] = [:]
         var byLabel: [UUID: Int] = [:]
 
-        init(openTasks: [Block], inboxID: UUID?) {
+        init(openTasks: [Block], inboxCount: Int) {
+            inbox = inboxCount
             // Hoisted: `isDueOnOrBeforeToday` builds a Calendar per call.
             let calendar = Calendar.current
             let cutoff = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)) ?? .now
@@ -146,7 +147,6 @@ struct SidebarView: View {
             for task in openTasks {
                 if let listID = task.listID {
                     byList[listID, default: 0] += 1
-                    if listID == inboxID { inbox += 1 }
                 }
                 if task.isStarred || (task.dueDate.map { $0 < cutoff } ?? false)
                     || (task.selectedForDay.map { calendar.startOfDay(for: $0) <= calendar.startOfDay(for: .now) } ?? false) { today += 1 }

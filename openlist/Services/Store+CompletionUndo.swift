@@ -20,6 +20,7 @@ struct CompletionTaskState: Equatable {
     var reminderAt: Date?
     var selectedForDay: Date?
     var deferredUntil: Date?
+    var inboxMembershipData: Data?
 
     init(_ task: Block) {
         id = task.id
@@ -31,6 +32,7 @@ struct CompletionTaskState: Equatable {
         reminderAt = task.reminderAt
         selectedForDay = task.selectedForDay
         deferredUntil = task.deferredUntil
+        inboxMembershipData = task.inboxMembershipData
     }
 
     func apply(to task: Block, replacing source: Self) {
@@ -42,6 +44,7 @@ struct CompletionTaskState: Equatable {
         if reminderAt != source.reminderAt, task.reminderAt == source.reminderAt { task.reminderAt = reminderAt }
         if selectedForDay != source.selectedForDay, task.selectedForDay == source.selectedForDay { task.selectedForDay = selectedForDay }
         if deferredUntil != source.deferredUntil, task.deferredUntil == source.deferredUntil { task.deferredUntil = deferredUntil }
+        if inboxMembershipData != source.inboxMembershipData, task.inboxMembershipData == source.inboxMembershipData { task.inboxMembershipData = inboxMembershipData }
         task.touch()
     }
 }

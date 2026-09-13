@@ -186,6 +186,7 @@ extension BackupBlock {
         recurrenceData = try record.optional("recurrenceData")
         labelIDs = try record.required("labelIDs")
         note = try record.required("note")
+        inboxMembershipData = try record.optional("inboxMembershipData")
         schedulingEstimateMinutes = try record.required("schedulingEstimateMinutes")
         selectedForDay = try record.optional("selectedForDay")
         deferredUntil = try record.optional("deferredUntil")
@@ -350,6 +351,7 @@ extension BackupBlock {
         if let recurrenceData { values["recurrenceData"] = recurrenceData }
         values["labelIDs"] = labelIDs
         values["note"] = note
+        if let inboxMembershipData { values["inboxMembershipData"] = inboxMembershipData }
         values["schedulingEstimateMinutes"] = schedulingEstimateMinutes
         if let selectedForDay { values["selectedForDay"] = selectedForDay }
         if let deferredUntil { values["deferredUntil"] = deferredUntil }

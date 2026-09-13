@@ -60,10 +60,6 @@ final class Block {
     /// Free-form note shown under the title in the task detail page.
     var note: String = ""
 
-    /// Nil is a legacy record awaiting ownership-aware classification. Explicit
-    /// exclusion survives removal/relaunch; it must never become nil again.
-    var inboxMembershipData: Data?
-
     // MARK: Adaptive calendar
 
     /// Zero inherits the editable default estimate for this Mac.
@@ -102,7 +98,6 @@ final class Block {
         self.sortIndex = sortIndex
         self.createdAt = .now
         self.updatedAt = .now
-        self.inboxMembershipData = InboxMembership.excludedData
     }
 }
 
@@ -185,8 +180,7 @@ extension Block {
 
     // MARK: Copying
 
-    /// Copies reusable content, excluding identity, tree position, and Inbox
-    /// curation. An independent copy starts explicitly outside the queue.
+    /// Copies every user-visible field except identity and tree position.
     ///
     /// Kept on the model so "what a block contains" is defined once, rather
     /// than re-listed at each place that clones one.

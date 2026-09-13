@@ -2,7 +2,7 @@
 
 Settings > Data provides **Back up library** and **Restore backup**. Markdown
 export remains a readable document export; an `.openlistbackup` directory
-package is the versioned reconstruction format.
+package is the versioned reconstruction format. Current exports use format 2, including Inbox selection; version 1 packages upgrade explicitly with legacy unclassified membership. An older already-queued restore must be cancelled and its backup selected again so that the staged schema and fingerprint can be revalidated.
 
 Backups are **unencrypted**. They contain private task and note text, files,
 labels, calendar history, and activity for subjects that may since have been

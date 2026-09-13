@@ -251,7 +251,7 @@ extension Store {
     /// - Returns: `false` for commands that need an outline and so cannot be
     ///   served from a set of blocks alone.
     @discardableResult
-    func perform(_ command: EditorCommand, on targets: [Block]) -> Bool {
+    func perform(_ command: EditorCommand, on targets: [Block], undoManager: UndoManager? = nil) -> Bool {
         switch command {
         case .toggleCompletion:
             batch { for block in targets where block.isTask { toggleCompletion(block) } }
@@ -268,11 +268,11 @@ extension Store {
         case .toggleStar:
             batch { for block in targets where block.isTask { toggleStar(block) } }
 
-        case .moveToInbox:
-            batch { for block in targets { moveToInbox(block) } }
+        case .addToInbox:
+            _ = setInboxMembership(true, taskIDs: targets.filter(\.isTask).map(\.id), undoManager: undoManager)
 
-        case .removeFromList:
-            batch { for block in targets { removeFromList(block) } }
+        case .removeFromInbox:
+            _ = setInboxMembership(false, taskIDs: targets.filter(\.isTask).map(\.id), undoManager: undoManager)
 
         case .deleteSelection:
             deleteBlocks(targets)

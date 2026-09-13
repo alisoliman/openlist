@@ -115,10 +115,10 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Add to Inbox") { env.send(.moveToInbox) }
+            Button("Add to Inbox") { env.send(.addToInbox) }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(!hasTaskSelection)
-            Button("Remove from List") { env.send(.removeFromList) }
+            Button("Remove from Inbox") { env.send(.removeFromInbox) }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!hasTaskSelection)
 

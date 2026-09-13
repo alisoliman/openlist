@@ -25,8 +25,8 @@ enum EditorCommand: Equatable {
     case clearDueDate
     case pickLabel
     case clearLabels
-    case moveToInbox
-    case removeFromList
+    case addToInbox
+    case removeFromInbox
     case toggleStar
     case indent
     case outdent
