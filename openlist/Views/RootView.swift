@@ -45,6 +45,7 @@ struct RootView: View {
         .toolbar { toolbarContent }
         .sheet(item: $captureEnvironment.taskCaptureRequest) { request in
             TaskCaptureView(request: request)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
             CommandPaletteView()

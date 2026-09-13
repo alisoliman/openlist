@@ -27,18 +27,21 @@ struct CompletedTasksControl: View {
                 env.store.setShowsCompleted(!showsCompleted, for: list)
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: showsCompleted ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .accessibilityHidden(true)
-                    Text("Completed (\(completed.count))")
-                    Text(showsCompleted ? "Hide" : "Show")
-                        .foregroundStyle(Theme.secondaryText)
+                    if completed.isEmpty {
+                        Text("No completed tasks")
+                            .foregroundStyle(Theme.secondaryText)
+                    } else {
+                        Text("Completed (\(completed.count))")
+                        Text(showsCompleted ? "Hide" : "Show")
+                            .foregroundStyle(Theme.secondaryText)
+                    }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(showsCompleted ? "Hide" : "Show") \(completed.count) completed tasks")
-            .accessibilityValue(showsCompleted ? "Expanded" : "Collapsed")
+            .disabled(completed.isEmpty)
+            .accessibilityLabel(completed.isEmpty ? "No completed tasks" : "\(showsCompleted ? "Hide" : "Show") \(completed.count) completed tasks")
+            .accessibilityValue(completed.isEmpty ? "" : (showsCompleted ? "Shown in outline" : "Hidden"))
             .help("Completed tasks appear in their original place in the outline")
 
             Spacer(minLength: 4)

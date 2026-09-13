@@ -8,5 +8,6 @@ struct QuickAddWindowView: View {
         TaskCaptureView(request: TaskCaptureRequest(), closeWindow: {
             dismissWindow(id: WindowID.quickAdd)
         })
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
