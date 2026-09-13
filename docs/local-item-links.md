@@ -42,6 +42,11 @@ the same link again creates a new reveal request. Links activated by the
 existing rich-text editor use the same handler; other URL schemes retain their
 normal system behavior.
 
+Plain task notes show explicit **Open task link** / **Open list link** buttons
+below detected local references. Multiple references are numbered in note
+order, with repeated URLs shown once. These controls use the same internal
+handler without changing the note text, formatting, or editor selection.
+
 ## Library identity and future backup/restore
 
 The local SQLite store already persists a UUID. Openlist reads `NSStoreUUIDKey`

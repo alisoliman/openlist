@@ -337,6 +337,7 @@ private struct TaskDetailContent: View {
                             .allowsHitTesting(false)
                     }
                 }
+            TaskNoteLinks(note: block.note)
         }
     }
 

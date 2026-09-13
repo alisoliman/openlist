@@ -43,6 +43,19 @@ rejects("https://example.com", .wrongApp)
 rejects(LocalLink(libraryID: libraryID, target: .task(taskID)).url(scheme: "openlist-dev").absoluteString, .wrongApp, scheme: "openlist")
 check(!LocalLink.isLocal(URL(string: "https://example.com/openlist")!), "External URLs are not internal commands")
 
+let listURL = LocalLink(libraryID: libraryID, target: .list(listID)).url()
+let noteText = "Résumé 🧑🏽‍💻 (\(base)).\nAgain \(base)\nAnother: \(listURL.absoluteString)\nhttps://example.com"
+let references = NoteItemLink.references(in: noteText)
+check(references.count == 2, "Task notes detect local references and deduplicate repeated links, excluding external URLs")
+check(references[0].url.absoluteString == base && references[1].url == listURL, "Unicode/parentheses/punctuation keep complete exact URLs in note order")
+check(references.map(\.title) == ["Open task link 1", "Open list link 2"], "Multiple note controls have distinct accessible names")
+check(NoteItemLink.references(in: base).first?.title == "Open task link", "Single reference has a concise control name")
+check(NoteItemLink.references(in: "ordinary note, https://example.com, mailto:hello@example.com").isEmpty, "External links and ordinary notes add no internal controls")
+check(NoteItemLink.references(in: "openlist://v9/unknown").first?.title == "Open Openlist link", "Malformed local reference can show the shared unavailable explanation")
+check(NoteItemLink.references(in: LocalLink(libraryID: libraryID, target: .task(taskID)).url(scheme: "openlist-dev").absoluteString).count == 1, "Wrong-edition reference stays internal for an explicit edition error")
+check(NoteItemLink.references(in: "").isEmpty, "Clearing a note removes link controls")
+check(noteText.hasPrefix("Résumé 🧑🏽‍💻") && noteText.contains("Again \(base)"), "Detection preserves the exact note text")
+
 let fixture = URL.temporaryDirectory.appendingPathComponent("OpenlistLinks-\(UUID())", isDirectory: true)
 try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
 defer { try? FileManager.default.removeItem(at: fixture) }
