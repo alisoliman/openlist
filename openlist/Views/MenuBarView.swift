@@ -89,7 +89,7 @@ struct MenuBarView: View {
                 .foregroundStyle(Theme.tertiaryText)
 
             Button {
-                NSApp.terminate(nil)
+                ApplicationQuit.request()
             } label: {
                 Image(systemName: "power")
                     .font(.system(size: 10))

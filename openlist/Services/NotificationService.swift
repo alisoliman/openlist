@@ -89,15 +89,21 @@ final class NotificationService {
     /// Clears only task reminders. Calendar nudges have their own lifecycle.
     func cancelAll() { reminders.resetForLibraryRestore() }
 
-    /// Startup-only hook for replacing the local library. Invalidate in-flight
-    /// task work first; ordinary reconciliation then adopts the restored tasks.
-    /// Restore also discards old calendar actions, never notification permission.
-    func resetForLibraryRestore() async {
+    /// Fresh-process selection boundary, before any publisher is constructed.
+    /// OS removals have no completion callback; the saved-state reconciliation
+    /// after bootstrap verifies inventory. Review sessions never touch the OS.
+    func beginLibraryRestoreAtStartup() {
         reminders.resetForLibraryRestore()
         if ReviewSession.identifier == nil {
             center.removeAllPendingNotificationRequests()
             center.removeAllDeliveredNotifications()
         }
+    }
+
+    /// In-process callers must additionally drain any old serialized add before
+    /// publishing a replacement library. Startup has no previous-process tasks.
+    func resetForLibraryRestore() async {
+        beginLibraryRestoreAtStartup()
         await reminders.waitUntilIdle()
     }
 

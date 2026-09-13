@@ -7,7 +7,7 @@ enum AvailabilityCategory: String, Codable, CaseIterable, Identifiable, Sendable
     var title: String { self == .work ? "Work" : "Personal" }
 }
 
-struct AvailabilityWindow: Codable, Hashable, Sendable {
+nonisolated struct AvailabilityWindow: Codable, Hashable, Sendable {
     var startMinute: Int
     var endMinute: Int
 
@@ -17,7 +17,7 @@ struct AvailabilityWindow: Codable, Hashable, Sendable {
     }
 }
 
-struct AvailabilityOverride: Codable, Identifiable, Hashable, Sendable {
+nonisolated struct AvailabilityOverride: Codable, Identifiable, Hashable, Sendable {
     var id: UUID = UUID()
     var date: Date
     /// An empty array explicitly makes the date unavailable.
@@ -25,7 +25,7 @@ struct AvailabilityOverride: Codable, Identifiable, Hashable, Sendable {
     var breaks: [AvailabilityWindow] = []
 }
 
-struct AvailabilityProfile: Codable, Equatable, Sendable {
+nonisolated struct AvailabilityProfile: Codable, Equatable, Sendable {
     /// Calendar weekday numbers: Sunday = 1, Monday = 2, … Saturday = 7.
     var weekly: [Int: [AvailabilityWindow]]
     var breaks: [Int: [AvailabilityWindow]] = [:]
@@ -49,7 +49,7 @@ struct AvailabilityProfile: Codable, Equatable, Sendable {
     }
 }
 
-struct CalendarPreferences: Codable, Equatable, Sendable {
+nonisolated struct CalendarPreferences: Codable, Equatable, Sendable {
     var defaultEstimateMinutes: Double = 30
     var minimumSessionMinutes: Int = 25
     var horizonDays: Int = 28
