@@ -125,6 +125,7 @@ if phase == "prepare" {
     let noteID = id(try call(.appendBlock, [
         "list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested context", "kind": "heading2",
     ]), "block")
+    check(try store.taskActivity(for: noteID).contains { $0.kind == .noteAdded && $0.title == "Nested context" }, "MCP standalone text block preserves its existing noteAdded activity")
     let editSession = UUID()
     store.activeTitleDrafts[editSession] = childID
     try rejects(.updateTask, ["task_id": uuid(childID), "title": "Overwrite draft"], code: "busy")

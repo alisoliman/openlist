@@ -30,6 +30,9 @@ extension Store {
         return pendingActivity.compactMap { draft in
             guard checkedKinds.contains(draft.kind), let id = draft.blockID else { return draft.model() }
             guard let current = block(id: id), !current.isDeleted else { return nil }
+            // MCP uses the existing noteAdded kind for a paragraph/heading's
+            // creation too; that content is in text, not the task note field.
+            if draft.kind == .noteAdded && !current.isTask { return draft.model() }
             let before = originalByID[id]
             let applies = draft.kind == .noteAdded
                 ? !current.note.isEmpty && before?.note.isEmpty != false
