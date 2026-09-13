@@ -166,6 +166,22 @@ The default stays on each Mac; explicit list overrides sync with the list.
 tasks, notes and lists, ⇧⌥Space global quick-add from any app, and a menu bar
 popover. ⌘/ shows the full shortcut reference.
 
+Search shows an honest total and loads results in batches of 80; **Load next**
+and the arrow keys can reach every match. **Include completed** and **Include
+archived** start on, retaining access to existing content. The Notes scope finds
+non-task blocks; notes attached to tasks also match in All and Tasks. Matching
+ignores case, accents and character width, and results include their list,
+ancestor path and a matching passage when needed.
+
+Opening a result resolves its current identity. Tasks open their inspector and
+reveal the matching title or note; other blocks open their owning list, scroll
+to the exact result and temporarily expose collapsed/completed ancestors.
+**Finish** or leaving the page ends this temporary reveal without changing
+stored collapse, archive or completion settings. Missing results show an
+unavailable message. Escape closes search and returns focus to its previous
+control when no result was opened. Search preferences are local to the open
+search session; no index or query history is persisted.
+
 ### Widgets
 
 Three macOS widgets — **Today**, **Summary** and **Lists**. The app publishes a small

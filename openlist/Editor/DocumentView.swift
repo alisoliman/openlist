@@ -69,6 +69,8 @@ struct DocumentView: View {
     @State private var focus = EditorFocus()
     @State private var slash: SlashState?
     @State private var completionMotionIDs: Set<UUID> = []
+    @FocusState private var isRevealNoteFocused: Bool
+    @AccessibilityFocusState private var isRevealNoteAccessibilityFocused: Bool
 
     private var completedTaskIDs: Set<UUID> {
         Set(blocks.filter { $0.isTask && $0.isCompleted }.map(\.id))
@@ -98,8 +100,18 @@ struct DocumentView: View {
 
     // MARK: - Derived state
 
+    private var reveal: ContentReveal? {
+        guard let request = env.navigator.contentReveal,
+              request.taskID == nil, request.listID == document.listID,
+              document.rootBlockID == nil else { return nil }
+        return request
+    }
+
+    private var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
+
     private var allRows: [BlockRow] {
-        BlockTree.prioritizingPendingTasks(in: applySorting(BlockTree.flatten(blocks, root: document.rootBlockID)))
+        BlockTree.prioritizingPendingTasks(in: applySorting(BlockTree.flatten(blocks, root: document.rootBlockID,
+            expanding: reveal?.ancestorIDs ?? [])))
     }
 
     /// Reorders top-level blocks without disturbing their subtrees.
@@ -152,21 +164,7 @@ struct DocumentView: View {
         let source = allRows
         guard !showsCompleted else { return source }
 
-        var result: [BlockRow] = []
-        var skipDeeperThan: Int?
-
-        for row in source {
-            if let limit = skipDeeperThan {
-                if row.depth > limit { continue }
-                skipDeeperThan = nil
-            }
-            if row.block.isTask, row.block.isCompleted {
-                skipDeeperThan = row.depth
-                continue
-            }
-            result.append(row)
-        }
-        return result
+        return BlockTree.hidingCompletedTasks(in: source, revealing: reveal?.visiblePath ?? [])
     }
 
     private var listAccent: ListAccent {
@@ -187,6 +185,10 @@ struct DocumentView: View {
         let progress = BlockTree.subtaskCounts(in: blocks)
 
         return LazyVStack(alignment: .leading, spacing: 0) {
+            if let reveal {
+                ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
+                    .padding(.bottom, 12)
+            }
             ForEach(visibleRows) { row in
                 // Animate the branch's position as a whole, rather than
                 // interpolating each chip's internal layout during the move.
@@ -199,6 +201,20 @@ struct DocumentView: View {
                 }
                 .geometryGroup()
                 .zIndex(completionMotionIDs.contains(row.id) ? 1 : 0)
+                .overlay {
+                    if reveal?.blockID == row.id {
+                        RoundedRectangle(cornerRadius: Theme.Radius.row)
+                            .stroke(Theme.accent, lineWidth: 2)
+                            .allowsHitTesting(false)
+                    }
+                }
+                if reveal?.blockID == row.id, reveal?.field == .note, !row.block.note.isEmpty {
+                    ContentRevealNote(text: row.block.note, query: reveal?.query ?? "")
+                        .id(ContentReveal.Anchor.blockNote(row.id))
+                        .focusable()
+                        .focused($isRevealNoteFocused)
+                        .accessibilityFocused($isRevealNoteAccessibilityFocused)
+                }
             }
 
             trailingTapTarget
@@ -241,6 +257,22 @@ struct DocumentView: View {
             // A list document claims focus on appear; a task's detail page
             // waits until the user actually edits inside it.
             if document.rootBlockID == nil { env.activeDocument = document }
+        }
+        .task(id: readyRevealID) {
+            guard readyRevealID != nil, let id = reveal?.blockID,
+                  let block = blocks.first(where: { $0.id == id }) else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            if reveal?.field == .note {
+                isRevealNoteFocused = true
+                isRevealNoteAccessibilityFocused = true
+                return
+            }
+            guard !block.kind.isVoid else { return }
+            let caret = SearchProjection.range(of: reveal?.query ?? "", in: block.text)
+                .map { NSRange($0, in: block.text).location } ?? 0
+            env.activeDocument = document
+            focus.request(id, caret: caret)
         }
         .onChange(of: env.activeDocument) { _, active in
             if active != document { slash = nil }
@@ -536,7 +568,9 @@ struct DocumentView: View {
                 env.store.save()
             },
             onToggleCollapse: {
-                env.store.toggleCollapse(block)
+                if reveal?.ancestorIDs.contains(block.id) == true, block.isCollapsed {
+                    env.navigator.finishReveal()
+                } else { env.store.toggleCollapse(block) }
             },
             onToggleCompletion: {
                 env.store.toggleCompletion(block)

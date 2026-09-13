@@ -18,6 +18,7 @@ struct RootView: View {
     /// clear happens once per navigation and never steals a later click.
     @State private var focusClearedFor: AppRoute?
     @State private var hostWindow = RootWindowReference()
+    @State private var searchReturnFocus = SearchReturnFocus()
 
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
@@ -41,7 +42,9 @@ struct RootView: View {
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
             CommandPaletteView()
         }
-        .sheet(isPresented: $navigator.isSearchOpen) {
+        .sheet(isPresented: $navigator.isSearchOpen, onDismiss: {
+            searchReturnFocus.restore(in: hostWindow.window, activation: env.navigator.searchActivation)
+        }) {
             SearchView()
         }
         .sheet(isPresented: $navigator.isShortcutSheetOpen) {
@@ -95,6 +98,11 @@ struct RootView: View {
             clearInitialFocus(for: env.navigator.route)
         }
         .onAppear(perform: updateDockBadge)
+        .onChange(of: env.navigator.isSearchOpen) { _, isOpen in
+            if isOpen {
+                searchReturnFocus.remember(in: hostWindow.window, activation: env.navigator.searchActivation)
+            }
+        }
         .onChange(of: env.navigator.route) { _, route in
             focusClearedFor = nil
             clearInitialFocus(for: route)
@@ -434,13 +442,21 @@ struct ScreenScaffold<Header: View, Content: View>: View {
     @ViewBuilder var header: () -> Header
     @ViewBuilder var content: () -> Content
 
+    private var readyRevealID: UUID? {
+        guard !env.navigator.isSearchOpen, let request = env.navigator.contentReveal,
+              request.taskID == nil, env.navigator.route == .list(request.listID) else { return nil }
+        return request.id
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let gutter = min(Theme.Spacing.documentGutter, max(16, geometry.size.width * 0.045))
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header()
                         .padding(.bottom, headerSpacing)
+                        .id(ContentReveal.Anchor.pageHeader)
                     content()
                 }
                 .frame(maxWidth: maxContentWidth, alignment: .leading)
@@ -460,7 +476,19 @@ struct ScreenScaffold<Header: View, Content: View>: View {
                 scrollRoute = env.navigator.route
                 scrollPosition.scrollTo(y: env.navigator.scrollOffset(for: env.navigator.route))
             }
+            .task(id: readyRevealID) {
+                guard readyRevealID != nil, let request = env.navigator.contentReveal else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                if request.revealsSummary(for: request.listID) {
+                    proxy.scrollTo(ContentReveal.Anchor.listSummary(request.listID), anchor: .center)
+                } else if let id = request.blockID, request.field == .note {
+                    proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
+                } else if let id = request.blockID { proxy.scrollTo(id, anchor: .center) }
+                else { proxy.scrollTo(ContentReveal.Anchor.pageHeader, anchor: .top) }
+            }
             .background(Theme.canvas)
+            }
         }
     }
 }
