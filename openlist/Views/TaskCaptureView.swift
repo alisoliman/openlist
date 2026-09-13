@@ -14,11 +14,7 @@ struct TaskCaptureView: View {
     @State private var failure: String?
     @State private var savedTaskID: UUID?
     @State private var savedDestination = ""
-    @State private var titleSelection: TextSelection?
-    @State private var retainedTitleSelection: TextSelection?
-    @State private var isRestoringTitleSelection = false
-    @State private var selectionRestoreToken = UUID()
-    @FocusState private var isFocused: Bool
+    @State private var titleFocus = CaptureTitleFocus()
 
     private var destination: TaskList? {
         let selected = env.store.list(id: destinationID)
@@ -67,22 +63,7 @@ struct TaskCaptureView: View {
                     }
                 }
             } else {
-                TextField("What needs doing?", text: $draft.text, selection: $titleSelection, axis: .vertical)
-                    .lineLimit(1...4)
-                    .textFieldStyle(.plain)
-                    .font(.title2)
-                    .focused($isFocused)
-                    .onChange(of: titleSelection) { _, selection in
-                        guard isFocused, !isRestoringTitleSelection, let selection else { return }
-                        retainedTitleSelection = selection
-                    }
-                    .onSubmit(save)
-                    .onKeyPress(keys: [.return], phases: .down) { press in
-                        guard !press.modifiers.contains(.shift) else { return .ignored }
-                        save()
-                        return .handled
-                    }
-                    .accessibilityIdentifier("capture.title")
+                CaptureTitleField(text: $draft.text, focus: titleFocus, onSubmit: save, onCancel: close)
                     .padding(.vertical, 8)
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -210,41 +191,15 @@ struct TaskCaptureView: View {
         if !preservingDestination { destinationID = env.store.inboxList()?.id }
         failure = nil
         savedTaskID = nil
-        titleSelection = TextSelection(insertionPoint: draft.text.endIndex)
-        retainedTitleSelection = titleSelection
-        isRestoringTitleSelection = false
-        selectionRestoreToken = UUID()
-        isFocused = true
+        titleFocus.reset(insertionPoint: (draft.text as NSString).length)
     }
 
-    /// The picker takes keyboard focus away from the title. Keep the actual
-    /// insertion point (or user-selected range) before AppKit selects all on return.
     private func preserveTitleSelection() {
-        retainedTitleSelection = titleSelection ?? retainedTitleSelection
-            ?? TextSelection(insertionPoint: draft.text.endIndex)
-        isRestoringTitleSelection = true
-        isFocused = false
+        titleFocus.preserveSelection()
     }
 
     private func restoreTitleSelection() {
-        let selection = retainedTitleSelection ?? TextSelection(insertionPoint: draft.text.endIndex)
-        let token = UUID()
-        selectionRestoreToken = token
-        isRestoringTitleSelection = true
-        isFocused = true
-        titleSelection = selection
-        // Focus is committed by SwiftUI after the popover has disappeared.
-        // Reapply after that responder update so its automatic select-all cannot
-        // replace the user's caret. A token invalidates work from a closed draft.
-        DispatchQueue.main.async {
-            guard selectionRestoreToken == token else { return }
-            titleSelection = selection
-            DispatchQueue.main.async {
-                guard selectionRestoreToken == token else { return }
-                titleSelection = selection
-                isRestoringTitleSelection = false
-            }
-        }
+        titleFocus.restoreSelection()
     }
 
     private func editMetadata(_ edit: () -> Void) {
@@ -254,7 +209,6 @@ struct TaskCaptureView: View {
     }
 
     private func close() {
-        selectionRestoreToken = UUID()
         if let closeWindow { closeWindow() } else { dismiss() }
     }
 }
