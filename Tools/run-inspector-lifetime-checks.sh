@@ -16,7 +16,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-ch
   openlist/Views/TaskInspectorMetadata.swift openlist/Views/LabelPicker.swift openlist/Views/AttachmentRow.swift \
   openlist/Editor/TaskMetadataChips.swift openlist/Editor/MetadataFlowLayout.swift \
   openlist/Editor/BlockRowView.swift openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
-  openlist/Editor/SlashMenuLayout.swift openlist/Views/TaskDetailButton.swift openlist/Views/InboxMembershipButton.swift \
+  openlist/Editor/SlashMenuLayout.swift openlist/Views/TaskDetailButton.swift openlist/Views/InboxMembershipButton.swift openlist/Views/CopyItemLinkButton.swift \
   openlist/Views/FragmentMenu.swift openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift \
   openlist/Services/FragmentMarkdown.swift openlist/Services/InlineMarkdown.swift openlist/Services/Store+Fragments.swift \
   openlist/Editor/DocumentView.swift openlist/Editor/BlockDragAndDrop.swift openlist/Editor/SlashMenuView.swift openlist/Editor/SlashMenuDismissal.swift \

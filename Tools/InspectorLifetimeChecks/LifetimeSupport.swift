@@ -16,6 +16,8 @@ enum DetailPicker: String { case due, repeatRule, reminder, labels }
     func showCopiedTask(id: UUID, listID: UUID) {}
     func openTask(_ id: UUID, showing: DetailPicker) { navigator.openTask(id) }
     func consumeCommand() -> EditorCommand? { defer { pendingCommand = nil }; return pendingCommand }
+    func copyLink(to target: LocalLink.Target) {}
+
     init(store: Store) { self.store = store }
 }
 final class FixtureSettings { var parsesNaturalLanguageDates = true }
