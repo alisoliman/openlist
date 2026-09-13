@@ -14,6 +14,10 @@ struct TaskCaptureView: View {
     @State private var failure: String?
     @State private var savedTaskID: UUID?
     @State private var savedDestination = ""
+    @State private var titleSelection: TextSelection?
+    @State private var retainedTitleSelection: TextSelection?
+    @State private var isRestoringTitleSelection = false
+    @State private var selectionRestoreToken = UUID()
     @FocusState private var isFocused: Bool
 
     private var destination: TaskList? {
@@ -63,11 +67,15 @@ struct TaskCaptureView: View {
                     }
                 }
             } else {
-                TextField("What needs doing?", text: $draft.text, axis: .vertical)
+                TextField("What needs doing?", text: $draft.text, selection: $titleSelection, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.plain)
                     .font(.title2)
                     .focused($isFocused)
+                    .onChange(of: titleSelection) { _, selection in
+                        guard isFocused, !isRestoringTitleSelection, let selection else { return }
+                        retainedTitleSelection = selection
+                    }
                     .onSubmit(save)
                     .onKeyPress(keys: [.return], phases: .down) { press in
                         guard !press.modifiers.contains(.shift) else { return .ignored }
@@ -80,10 +88,16 @@ struct TaskCaptureView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("SAVE TO").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     HStack(spacing: 10) {
-                        CaptureDestinationPicker(lists: env.store.allLists(), selection: $destinationID)
+                        CaptureDestinationPicker(
+                            lists: env.store.allLists(), selection: $destinationID,
+                            onWillOpen: preserveTitleSelection,
+                            onDidClose: restoreTitleSelection
+                        )
                         if let suggestion = env.store.list(id: request.suggestedListID),
                            !suggestion.isArchived, !suggestion.isSystemInbox, suggestion.id != destination?.id {
-                            Button("Use \(suggestion.displayTitle)") { destinationID = suggestion.id }
+                            Button("Use \(suggestion.displayTitle)") {
+                                editMetadata { destinationID = suggestion.id }
+                            }
                                 .buttonStyle(.link)
                                 .help("The list you were viewing; choose it to file here")
                         }
@@ -113,6 +127,10 @@ struct TaskCaptureView: View {
 
                 Toggle("Detect dates and repeats", isOn: $draft.parsesNaturalLanguage)
                     .toggleStyle(.checkbox).font(.caption).foregroundStyle(.secondary)
+                    .onChange(of: draft.parsesNaturalLanguage) { _, _ in
+                        preserveTitleSelection()
+                        restoreTitleSelection()
+                    }
 
                 HStack {
                     Text("Return to add · Esc to cancel")
@@ -152,9 +170,11 @@ struct TaskCaptureView: View {
             }
             if draft.removesDate || draft.removesRecurrence || !draft.removedLabels.isEmpty {
                 Button("Restore detected details") {
-                    draft.removesDate = false
-                    draft.removesRecurrence = false
-                    draft.removedLabels = []
+                    editMetadata {
+                        draft.removesDate = false
+                        draft.removesRecurrence = false
+                        draft.removedLabels = []
+                    }
                 }
                 .font(.caption).buttonStyle(.link)
             }
@@ -164,7 +184,7 @@ struct TaskCaptureView: View {
     private func removableChip(_ title: String, symbol: String, help: String, remove: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Label(title, systemImage: symbol)
-            Button(help, systemImage: "xmark", action: remove)
+            Button(help, systemImage: "xmark") { editMetadata(remove) }
                 .labelStyle(.iconOnly).buttonStyle(.plain).help(help)
         }
         .font(.caption)
@@ -190,10 +210,51 @@ struct TaskCaptureView: View {
         if !preservingDestination { destinationID = env.store.inboxList()?.id }
         failure = nil
         savedTaskID = nil
+        titleSelection = TextSelection(insertionPoint: draft.text.endIndex)
+        retainedTitleSelection = titleSelection
+        isRestoringTitleSelection = false
+        selectionRestoreToken = UUID()
         isFocused = true
     }
 
+    /// The picker takes keyboard focus away from the title. Keep the actual
+    /// insertion point (or user-selected range) before AppKit selects all on return.
+    private func preserveTitleSelection() {
+        retainedTitleSelection = titleSelection ?? retainedTitleSelection
+            ?? TextSelection(insertionPoint: draft.text.endIndex)
+        isRestoringTitleSelection = true
+        isFocused = false
+    }
+
+    private func restoreTitleSelection() {
+        let selection = retainedTitleSelection ?? TextSelection(insertionPoint: draft.text.endIndex)
+        let token = UUID()
+        selectionRestoreToken = token
+        isRestoringTitleSelection = true
+        isFocused = true
+        titleSelection = selection
+        // Focus is committed by SwiftUI after the popover has disappeared.
+        // Reapply after that responder update so its automatic select-all cannot
+        // replace the user's caret. A token invalidates work from a closed draft.
+        DispatchQueue.main.async {
+            guard selectionRestoreToken == token else { return }
+            titleSelection = selection
+            DispatchQueue.main.async {
+                guard selectionRestoreToken == token else { return }
+                titleSelection = selection
+                isRestoringTitleSelection = false
+            }
+        }
+    }
+
+    private func editMetadata(_ edit: () -> Void) {
+        preserveTitleSelection()
+        edit()
+        restoreTitleSelection()
+    }
+
     private func close() {
+        selectionRestoreToken = UUID()
         if let closeWindow { closeWindow() } else { dismiss() }
     }
 }

@@ -4,6 +4,8 @@ import SwiftUI
 struct CaptureDestinationPicker: View {
     let lists: [TaskList]
     @Binding var selection: UUID?
+    var onWillOpen: (() -> Void)?
+    var onDidClose: (() -> Void)?
     @State private var isOpen = false
     @State private var query = ""
     @State private var highlighted = 0
@@ -15,6 +17,7 @@ struct CaptureDestinationPicker: View {
 
     var body: some View {
         Button {
+            onWillOpen?()
             query = ""
             highlighted = 0
             isOpen = true
@@ -66,6 +69,7 @@ struct CaptureDestinationPicker: View {
             .padding(12)
             .frame(width: 300, height: 260)
             .onAppear { isFocused = true }
+            .onDisappear { onDidClose?() }
             .onExitCommand { isOpen = false }
         }
     }
