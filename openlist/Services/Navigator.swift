@@ -42,9 +42,35 @@ final class Navigator {
     var showsUnfiledInbox = false
     var isReviewingUnfiledInbox = false
 
+    private var listViewModes: [UUID: ListViewMode] = [:]
+    @ObservationIgnored private let defaults: UserDefaults?
+    private static let listViewModesKey = "listViewModes"
+
+    init(defaults: UserDefaults? = nil) {
+        self.defaults = defaults
+        for (id, raw) in defaults?.dictionary(forKey: Self.listViewModesKey) ?? [:] {
+            if let id = UUID(uuidString: id), let raw = raw as? String,
+               let mode = ListViewMode(rawValue: raw) { listViewModes[id] = mode }
+        }
+    }
+
+    func listViewMode(for listID: UUID) -> ListViewMode { listViewModes[listID] ?? .document }
+
+    func setListViewMode(_ mode: ListViewMode, for listID: UUID) {
+        guard listViewMode(for: listID) != mode else { return }
+        listViewModes[listID] = mode
+        defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
+                      forKey: Self.listViewModesKey)
+        if route == .list(listID) {
+            contentReveal = nil
+            openTaskID = nil
+            selection.removeAll()
+        }
+    }
+
     var hasDocumentEditor: Bool {
         switch route {
-        case .list: true
+        case let .list(id): listViewMode(for: id) == .document
         case .inbox: showsUnfiledInbox && !isReviewingUnfiledInbox
         default: false
         }
@@ -67,6 +93,9 @@ final class Navigator {
 
     func reveal(_ request: ContentReveal) {
         go(to: .list(request.listID))
+        // Exact-content navigation must reveal notes and collapsed hierarchy,
+        // including when this list was last viewed as a task-only queue.
+        setListViewMode(.document, for: request.listID)
         openTaskID = request.taskID
         selection = request.blockID.map { [$0] } ?? []
         contentReveal = request

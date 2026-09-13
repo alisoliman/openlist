@@ -234,6 +234,27 @@ shown default adopt inheritance. Older versions did not distinguish an explicit
 Show choice from that default. Inbox continues to inherit the app setting.
 The default stays on each Mac; explicit list overrides sync with the list.
 
+Each list also has a **Document / Tasks** switch, remembered per list on this
+Mac. Document keeps headings, notes, images and nested content. Tasks hides that
+prose and shows every task once, including subtasks beneath collapsed blocks;
+the parent breadcrumb keeps each subtask in context. Its sort menu orders the
+whole list by due date, creation date, alphabetically or priority. **Document
+order** follows the original outline, and equal sort keys keep that order.
+Completed tasks follow the same sort and visibility preference; hiding a
+completed parent does not hide its open subtasks in Tasks mode.
+
+Editing, completing and opening details act on the original task. **Add task**
+and ⌘N in Tasks mode start capture in the current list and place the new task at
+the end of its document, then show it at its sorted position. You can choose
+another destination in capture. Returning to Document restores the original
+prose and hierarchy; its existing sort continues to order only adjacent root
+tasks, carrying each subtree. Neither presentation rewrites stored order. Drag
+reordering remains an operation of manual Document view. Search and reminder
+links to exact content return to Document so hidden prose can be revealed.
+
+The [list Tasks validation guide](docs/LIST_TASKS.md) covers the projection and
+native interaction checks.
+
 ### Capture and navigation
 
 ⌘K quick command (creates tasks, jumps to lists, runs commands), ⌘F search across

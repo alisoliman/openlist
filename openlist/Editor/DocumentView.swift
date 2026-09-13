@@ -113,53 +113,8 @@ struct DocumentView: View {
     private var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
 
     private var allRows: [BlockRow] {
-        BlockTree.prioritizingPendingTasks(in: applySorting(BlockTree.flatten(blocks, root: document.rootBlockID,
-            expanding: reveal?.ancestorIDs ?? [])))
-    }
-
-    /// Reorders top-level blocks without disturbing their subtrees.
-    ///
-    /// Each depth-0 row travels with the deeper rows that follow it, so a
-    /// sorted view still reads as a tree.
-    private func applySorting(_ rows: [BlockRow]) -> [BlockRow] {
-        guard sorting != .manual, !rows.isEmpty else { return rows }
-
-        var chunks: [[BlockRow]] = []
-        for row in rows {
-            if row.depth == 0 || chunks.isEmpty {
-                chunks.append([row])
-            } else {
-                chunks[chunks.count - 1].append(row)
-            }
-        }
-
-        let comparator: @MainActor (Block, Block) -> Bool = switch sorting {
-        case .dueDate: Block.byDueDate
-        case .createdAt: { $0.createdAt < $1.createdAt }
-        case .alphabetical: { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
-        case .priority: { $0.priorityRaw > $1.priorityRaw }
-        case .manual: { _, _ in false }
-        }
-
-        // Prose and headings define the reading order. Sort only contiguous
-        // runs of top-level tasks, keeping each task's subtree with it.
-        var result: [[BlockRow]] = []
-        var taskRun: [[BlockRow]] = []
-        func flush() {
-            result += taskRun.enumerated().sorted {
-                let left = $0.element[0].block, right = $1.element[0].block
-                if comparator(left, right) { return true }
-                if comparator(right, left) { return false }
-                return $0.offset < $1.offset
-            }.map(\.element)
-            taskRun = []
-        }
-        for chunk in chunks {
-            if chunk[0].block.isTask { taskRun.append(chunk) }
-            else { flush(); result.append(chunk) }
-        }
-        flush()
-        return result.flatMap { $0 }
+        BlockTree.prioritizingPendingTasks(in: BlockTree.sortingTaskRuns(in: BlockTree.flatten(blocks, root: document.rootBlockID,
+            expanding: reveal?.ancestorIDs ?? []), by: sorting))
     }
 
     /// Rows after hiding completed tasks (and everything nested under them).

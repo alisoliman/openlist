@@ -27,6 +27,19 @@ check(draft.preview.date == nil && draft.preview.recurrence == nil && draft.prev
 check(draft.preview.title == "Call mum", "Removing detected details preserves the reviewed task title")
 let task = try store.saveCapture(draft.preview, destinationID: list.id)
 check(task.listID == list.id && task.text == "Call mum", "Capture saves to explicitly chosen destination")
+let heading = store.appendBlock(kind: .heading1, text: "Notes at the end", to: .init(listID: list.id))
+let nested = store.appendBlock(kind: .task, text: "Original nested task", to: .init(listID: list.id, rootBlockID: task.id))
+let storedOrder = [task, heading, nested].map { ($0.id, $0.parentID, $0.sortIndex) }
+let appended = try store.saveCapture(TaskCaptureDraft.Preview(title: "Alphabetically first"),
+                                    destinationID: list.id, appendToRoot: true)
+check(appended.listID == list.id && appended.parentID == nil && appended.sortIndex > heading.sortIndex,
+      "Tasks-mode capture appends to the owning document root independently of displayed sort")
+check(zip([task, heading, nested], storedOrder).allSatisfy { block, snapshot in
+    block.id == snapshot.0 && block.parentID == snapshot.1 && block.sortIndex == snapshot.2
+}, "Appending in Tasks mode leaves existing document hierarchy and indices untouched")
+let prepended = try store.saveCapture(TaskCaptureDraft.Preview(title: "Normal capture"), destinationID: list.id)
+check(prepended.parentID == nil && prepended.sortIndex < task.sortIndex,
+      "Existing capture keeps its default prepend behavior")
 check(task.dueDate == nil && task.recurrence == nil && task.labelIDs.isEmpty, "Capture must not reparse removed metadata")
 let parsed = try store.saveCapture(preview, destinationID: nil)
 check(parsed.listID == inbox.id && parsed.dueDate == preview.date && parsed.includesTime, "Inbox fallback preserves exact preview schedule")

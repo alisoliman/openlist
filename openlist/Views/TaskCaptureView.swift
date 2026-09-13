@@ -189,7 +189,8 @@ struct TaskCaptureView: View {
         do {
             let block = try env.store.saveCapture(
                 draft.preview, destinationID: destination?.id,
-                selectedForDay: plansForToday ? .now : nil
+                selectedForDay: plansForToday ? .now : nil,
+                appendToRoot: request.appendsToSuggestedList
             )
             savedTaskID = block.id
             savedDestination = destination?.displayTitle ?? "Inbox"
@@ -203,7 +204,9 @@ struct TaskCaptureView: View {
         draft = TaskCaptureDraft(text: text, parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates,
                                  dueTodayWhenUndated: !request.plansForToday && env.settings.defaultDestination == .today)
         plansForToday = request.plansForToday
-        if !preservingDestination { destinationID = env.store.inboxList()?.id }
+        if !preservingDestination {
+            destinationID = request.appendsToSuggestedList ? request.suggestedListID : env.store.inboxList()?.id
+        }
         failure = nil
         savedTaskID = nil
         titleFocus.reset(insertionPoint: (draft.text as NSString).length)

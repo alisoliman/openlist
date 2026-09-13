@@ -6,7 +6,7 @@
 import SwiftData
 import SwiftUI
 
-/// A list document: editable title, icon, summary, then the block outline.
+/// A list's document or task-only queue, sharing the original title and models.
 struct ListScreen: View {
     let list: TaskList
 
@@ -28,13 +28,18 @@ struct ListScreen: View {
         ScreenScaffold(headerSpacing: 10) {
             header
         } content: {
-            DocumentView(
-                document: DocumentContext(listID: list.id),
-                emptyPlaceholder: "Add a task, or press / for blocks",
-                showsCompleted: showsCompleted,
-                sorting: list.sorting
-            )
-            .id(list.id)
+            if viewMode == .document {
+                DocumentView(
+                    document: DocumentContext(listID: list.id),
+                    emptyPlaceholder: "Add a task, or press / for blocks",
+                    showsCompleted: showsCompleted,
+                    sorting: list.sorting
+                )
+                .id(list.id)
+            } else {
+                ListTasksView(list: list, showsCompleted: showsCompleted)
+                    .id(list.id)
+            }
         }
         .onAppear {
             isSummaryVisible = !list.summary.isEmpty
@@ -46,6 +51,13 @@ struct ListScreen: View {
         }
         .onChange(of: list.summary) { old, new in
             if old.isEmpty && !new.isEmpty { isSummaryVisible = true }
+        }
+        .onChange(of: viewMode) { _, _ in
+            isTitleFocused = false
+            isSummaryFocused = false
+            env.requestedPicker = nil
+            // A removed outline or inspector must not retain menu commands.
+            env.activeDocument = viewMode == .document ? DocumentContext(listID: list.id) : nil
         }
         .task(id: readyRevealID) {
             guard readyRevealID != nil, let reveal = env.navigator.contentReveal else { return }
@@ -63,6 +75,12 @@ struct ListScreen: View {
 
     private var showsCompleted: Bool {
         list.showsCompleted(default: env.settings.showsCompletedTasks)
+    }
+
+    private var viewMode: ListViewMode { env.navigator.listViewMode(for: list.id) }
+
+    private var viewModeSelection: Binding<ListViewMode> {
+        Binding(get: { viewMode }, set: { env.navigator.setListViewMode($0, for: list.id) })
     }
 
     // MARK: - Header
@@ -114,7 +132,7 @@ struct ListScreen: View {
             }
             .accessibilityLabel("List title")
 
-            if isSummaryVisible || revealsSummary {
+            if viewMode == .document && (isSummaryVisible || revealsSummary) {
                 TextField(
                     "Add a description…",
                     text: Binding(
@@ -141,7 +159,17 @@ struct ListScreen: View {
 
             statsRow
 
-            CompletedTasksControl(list: list)
+            Picker("List view", selection: viewModeSelection) {
+                ForEach(ListViewMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .accessibilityLabel("List view")
+            .padding(.top, 8)
+
+            CompletedTasksControl(list: list, showsAsTaskQueue: viewMode == .tasks)
                 .padding(.top, 8)
         }
     }
@@ -175,8 +203,10 @@ struct ListScreen: View {
                         }
                     }
                 }
-                Button(isSummaryVisible ? "Hide Description" : "Add Description") {
-                    isSummaryVisible.toggle()
+                if viewMode == .document {
+                    Button(isSummaryVisible ? "Hide Description" : "Add Description") {
+                        isSummaryVisible.toggle()
+                    }
                 }
 
                 Divider()

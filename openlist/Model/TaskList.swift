@@ -119,7 +119,7 @@ extension TaskList {
     func touch() { updatedAt = .now }
 }
 
-/// How a list's root tasks are ordered.
+/// How tasks are ordered in a document's contiguous runs or its task-only queue.
 enum ListSorting: String, Codable, CaseIterable, Sendable {
     case manual
     case dueDate

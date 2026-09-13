@@ -43,6 +43,43 @@ struct BlockRow: Identifiable, Hashable {
 /// Parentage lives in `Block.parentID` and ordering in `Block.sortIndex`, so
 /// every view that renders a document runs the same flattening pass.
 enum BlockTree {
+    /// Reorders top-level blocks without disturbing their subtrees.
+    ///
+    /// Each depth-0 row travels with the deeper rows that follow it, so a
+    /// sorted view still reads as a tree.
+    static func sortingTaskRuns(in rows: [BlockRow], by sorting: ListSorting) -> [BlockRow] {
+        guard sorting != .manual, !rows.isEmpty else { return rows }
+
+        var chunks: [[BlockRow]] = []
+        for row in rows {
+            if row.depth == 0 || chunks.isEmpty {
+                chunks.append([row])
+            } else {
+                chunks[chunks.count - 1].append(row)
+            }
+        }
+
+        // Prose and headings define the reading order. Sort only contiguous
+        // runs of top-level tasks, keeping each task's subtree with it.
+        var result: [[BlockRow]] = []
+        var taskRun: [[BlockRow]] = []
+        func flush() {
+            result += taskRun.enumerated().sorted {
+                let left = $0.element[0].block, right = $1.element[0].block
+                if sorting.precedes(left, right) { return true }
+                if sorting.precedes(right, left) { return false }
+                return $0.offset < $1.offset
+            }.map(\.element)
+            taskRun = []
+        }
+        for chunk in chunks {
+            if chunk[0].block.isTask { taskRun.append(chunk) }
+            else { flush(); result.append(chunk) }
+        }
+        flush()
+        return result.flatMap { $0 }
+    }
+
     /// A display projection: completed tasks settle below pending siblings,
     /// carrying their entire subtree. Stored manual order is untouched, so
     /// reopening a task restores its position and exports keep document order.
@@ -350,5 +387,28 @@ final class SidebarOrdered: FractionallyOrdered {
     var orderKey: Double {
         get { list.sidebarIndex }
         set { list.sidebarIndex = newValue }
+    }
+}
+
+extension ListSorting {
+    /// The same comparison serves both list presentations. Callers supply
+    /// document order as a stable tie-breaker; no stored indices are changed.
+    func precedes(_ lhs: Block, _ rhs: Block) -> Bool {
+        switch self {
+        case .manual: false
+        case .dueDate: Block.byDueDate(lhs, rhs)
+        case .createdAt: lhs.createdAt < rhs.createdAt
+        case .alphabetical: lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+        case .priority: lhs.priorityRaw > rhs.priorityRaw
+        }
+    }
+
+    func sortedTasks(_ tasks: [Block]) -> [Block] {
+        guard self != .manual else { return tasks }
+        return tasks.enumerated().sorted {
+            if precedes($0.element, $1.element) { return true }
+            if precedes($1.element, $0.element) { return false }
+            return $0.offset < $1.offset
+        }.map(\.element)
     }
 }
