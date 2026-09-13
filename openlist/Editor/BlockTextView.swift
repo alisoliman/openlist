@@ -85,7 +85,7 @@ struct BlockTextView: NSViewRepresentable {
         view.drawsBackground = false
         view.isVerticallyResizable = false
         view.isHorizontallyResizable = false
-        view.textContainerInset = NSSize.zero
+        view.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -512,10 +512,11 @@ final class BlockNSTextView: NSTextView {
         layout.ensureLayout(for: container)
         let used = layout.usedRect(for: container)
 
-        // Empty storage still needs one line's worth of height.
-        let minimum = (font ?? NSFont.systemFont(ofSize: Theme.Editor.bodyPointSize)).boundingRectForFont.height
-            * Theme.Editor.lineHeightMultiple
-        let height = max(ceil(used.height), ceil(minimum))
+        // Size from the same TextKit metrics that place the glyphs. The font's
+        // bounding box includes unrelated glyph extents and is not a line box.
+        let minimum = layout.defaultLineHeight(for: Theme.Editor.nsFont(for: blockKind))
+        let textHeight = max(used.maxY, layout.extraLineFragmentRect.maxY, minimum)
+        let height = ceil(textHeight) + textContainerInset.height * 2
         cachedHeight = (width, height)
         return height
     }
@@ -537,17 +538,13 @@ final class BlockNSTextView: NSTextView {
         super.draw(dirtyRect)
         guard (textStorage?.length ?? 0) == 0, !placeholderString.isEmpty else { return }
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: Theme.Editor.nsFont(for: blockKind),
-            .foregroundColor: NSColor.tertiaryLabelColor,
-        ]
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineHeightMultiple = Theme.Editor.lineHeightMultiple
-        var merged = attributes
-        merged[.paragraphStyle] = paragraph
+        var merged = RichTextCodec.baseAttributes(for: blockKind)
+        merged[.foregroundColor] = NSColor.tertiaryLabelColor
 
         NSAttributedString(string: placeholderString, attributes: merged)
-            .draw(in: NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height))
+            .draw(in: NSRect(origin: textContainerOrigin, size: NSSize(
+                width: bounds.width, height: bounds.height - textContainerInset.height * 2
+            )))
     }
 
     // MARK: Caret geometry

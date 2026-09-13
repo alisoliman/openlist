@@ -77,6 +77,7 @@ enum Theme {
         static let heading3PointSize: CGFloat = 15
         static let codePointSize: CGFloat = 12.5
         static let lineHeightMultiple: CGFloat = 1.28
+        static let textVerticalInset: CGFloat = 2
 
         static func nsFont(for kind: BlockKind) -> NSFont {
             switch kind {

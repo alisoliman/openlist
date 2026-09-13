@@ -66,13 +66,13 @@ struct BlockRowView: View {
             content
         }
         .padding(.vertical, Theme.Spacing.rowVertical)
-        .padding(.top, Theme.Editor.topPadding(for: block.kind))
-        .padding(.bottom, Theme.Editor.bottomPadding(for: block.kind))
         .padding(.horizontal, 6)
         .rowBackground(isSelected: isSelected, isHovering: isHovering)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .contextMenu { BlockContextMenu(block: block, actions: actions) }
+        .padding(.top, Theme.Editor.topPadding(for: block.kind))
+        .padding(.bottom, Theme.Editor.bottomPadding(for: block.kind))
     }
 
     // MARK: - Pieces
@@ -190,6 +190,7 @@ struct BlockRowView: View {
             }
 
             hoverActions
+                .frame(width: block.isTask ? 44 : 20, height: 20, alignment: .topTrailing)
         }
     }
 

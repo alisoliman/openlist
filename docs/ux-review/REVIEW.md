@@ -27,6 +27,20 @@ This review combines source inspection, isolated persistence/editor checks, and 
 | P2 | `AppCommands.swift`, `ShortcutsSheet.swift` | Commands can be enabled with no meaningful target; keyboard help is large and fixed-size. Cmd-K prioritizes creating a task even for an exact navigation match. | Context-aware availability, central capture, explicit editing semantics, improved palette ranking and adaptive help. |
 | P2 | Motion and accessibility | Small checkbox/collapse effects exist, but state transitions are inconsistent and several custom animations ignore Reduce Motion. Hover affordances and symbolic-only labels weaken keyboard/VoiceOver discoverability. | Restrained changes tied to completion, group changes, disclosures and capture feedback; Reduce Motion checks; stable, named controls. |
 | P1 | Window lifecycle | Capture's Open Task action and repeated New Task commands created duplicate main windows sharing one navigator. A blank title also obscured the Window menu entry. | Use a named singleton `Window` for the shared navigator. New Task restores a minimized window and presents capture; closing capture returns to the previous Inbox state. |
+| P2 | Editor optical alignment (follow-up) | Text and `/` sit low inside the selected row: `lineHeightMultiple` adds leading before the baseline, while editor height uses the font's unrelated glyph bounding box. Heading section margins also sit inside the highlight; hover actions can change available text width. | Use natural TextKit line metrics with equal vertical insets and inter-line spacing. Keep heading margins outside the highlight and reserve the trailing action width. Native screenshots and 13 additional metric/caret checks cover this correction. |
+
+## Closure status
+
+All implementation changes in the findings table are present in the review branch. This is not a claim that every visual detail was caught or every platform behavior was tested: the optical alignment defect above was missed in the original pass and corrected after user feedback.
+
+| Scope | Status |
+| --- | --- |
+| Crash, editor caret, slash placement, unified capture, destination selection, capture sizing and single-window behavior | Implemented; automated checks and native journeys passed |
+| Completed visibility, interactive filters, Inbox review, responsive rows, settings and detail hierarchy | Implemented; source review and relevant native journeys passed |
+| Editor optical alignment and heading highlight bounds | Corrected in the follow-up; measured checks and native screenshots passed |
+| Context-aware shortcuts and command ranking | Implemented; Command-K and capture keyboard journeys passed. Existing Ctrl-D/L/T mappings retained for compatibility; their remapping remains a product decision |
+| Reduce Motion and accessibility labels | Implemented and source-reviewed; physical VoiceOver and system Reduce Motion behavior remain unverified |
+| Global Quick Add hotkey, live CloudKit, release signing/notarization, frame-time profiling | Not validated by this UI review |
 
 ## Modern SwiftUI decisions
 
@@ -63,6 +77,10 @@ Apple's guidance supports allowing standard components to inherit the platform's
 - [After: settings hierarchy](evidence/after-settings.png)
 - [After: complete capture form and metadata preview](evidence/after-capture.png)
 - [After: wrapped capture title with visible actions](evidence/after-wrapped-capture.png)
+- [Before: editor optical alignment](evidence/before-editor-alignment.png)
+- [After: slash aligned within the selected row](evidence/after-editor-alignment.png)
+- [After: heading highlight excludes section margins](evidence/after-heading-alignment.png)
+- [After: wrapped editor alignment](evidence/after-wrapped-editor-alignment.png)
 
 ## Acceptance record
 
@@ -88,5 +106,7 @@ Automated validation:
 - Capture rollback checks deliberately use a read-only store and verify no task, label or event leaks. Corrupt-store and persistence-error output is expected from failure fixtures.
 - Following the last native editor change, 12 additional hidden-window capture selection checks exited 0, covering exact selection restoration, Unicode offsets, metadata focus and Return semantics. This runner is now included in `Tools/check.sh`.
 - The integrated arm64 Debug app builds with Xcode 27 (27A266a). Capture changes were also built for both supported Mac architectures in their implementation task.
+- The alignment follow-up builds successfully and passes 77 editor/store checks (13 new checks). These measure optical centering for task, paragraph, three heading sizes and code; equal empty/populated row heights; and containment of a trailing-line caret. Native screenshots verify the selected slash row, heading highlight and wrapped paragraph. No full-suite rerun is implied by this focused follow-up.
+- The same follow-up also passes 71 logic and 14 rich-text splice checks.
 
 Physical VoiceOver navigation, the system-wide Quick Add hotkey, production signing/notarization and live cross-device CloudKit synchronization were not validated. Reduce Motion handling was reviewed in code; system accessibility preferences were not changed. UI checks use native interaction and screenshots, not frame-time profiling. Historical explicit Show preferences cannot be distinguished from the old default, as described in the migration contract above.

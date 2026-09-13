@@ -158,14 +158,16 @@ enum RichTextCodec {
     /// Font, colour and paragraph style for a block kind in its normal state.
     static func baseAttributes(for kind: BlockKind, isCompleted: Bool = false) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineHeightMultiple = Theme.Editor.lineHeightMultiple
+        let font = Theme.Editor.nsFont(for: kind)
+        // Keep the first and last line at the font's natural height. A line
+        // height multiplier puts the extra leading before the baseline and
+        // makes a single-line title sit low in its selection highlight.
+        let multiple = kind == .code ? 1.15 : Theme.Editor.lineHeightMultiple
+        paragraph.lineSpacing = NSLayoutManager().defaultLineHeight(for: font) * (multiple - 1)
         paragraph.lineBreakMode = .byWordWrapping
-        if kind == .code {
-            paragraph.lineHeightMultiple = 1.15
-        }
 
         var attributes: [NSAttributedString.Key: Any] = [
-            .font: Theme.Editor.nsFont(for: kind),
+            .font: font,
             .paragraphStyle: paragraph,
             .foregroundColor: isCompleted ? NSColor.tertiaryLabelColor : NSColor.labelColor,
         ]

@@ -300,4 +300,21 @@ await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>)
 }
 check(input.selectedRange().location == 5, "Typing in the middle of a focused block does not reapply its pending caret")
 
+// The title's visible cap-height center must agree with its row center. A
+// paragraph line-height multiplier previously shifted that baseline downward.
+input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
+for kind: BlockKind in [.task, .paragraph, .heading1, .heading2, .heading3, .code] {
+    coordinator.apply(RichTextCodec.decode(nil, plainText: "Task", kind: kind), to: input, kind: kind, isCompleted: false)
+    let singleHeight = input.height(fittingWidth: 180)
+    let font = Theme.Editor.nsFont(for: kind)
+    let baseline = input.layoutManager!.location(forGlyphAt: 0).y + input.textContainerOrigin.y
+    let opticalCenter = baseline - font.capHeight / 2
+    check(abs(opticalCenter - singleHeight / 2) < 1.5, "\(kind) text is optically centered in its measured editor height")
+    coordinator.apply(RichTextCodec.decode(nil, plainText: "", kind: kind), to: input, kind: kind, isCompleted: false)
+    check(input.height(fittingWidth: 180) == singleHeight, "\(kind) empty and populated single-line editors have equal height")
+}
+coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}", kind: .task), to: input, kind: .task, isCompleted: false)
+let trailingLineHeight = input.height(fittingWidth: 180)
+check(input.caretRectLocal(at: 5).maxY <= trailingLineHeight, "Balanced insets still contain the caret after a trailing soft break")
+
 print("✅ \(checks) editor/store checks passed")
