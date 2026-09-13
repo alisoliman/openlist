@@ -77,7 +77,8 @@ enum BlockTree {
     static func flatten(
         _ blocks: [Block],
         root: UUID? = nil,
-        respectCollapse: Bool = true
+        respectCollapse: Bool = true,
+        expanding: Set<UUID> = []
     ) -> [BlockRow] {
         // Bucket by parent once so the recursion is linear rather than O(n²).
         let byParent = childIndex(of: blocks, root: root)
@@ -106,11 +107,11 @@ enum BlockTree {
                         depth: depth,
                         ordinal: ordinal,
                         hasChildren: !kids.isEmpty,
-                        isCollapsed: block.isCollapsed
+                        isCollapsed: block.isCollapsed && !expanding.contains(block.id)
                     )
                 )
 
-                if !kids.isEmpty && !(respectCollapse && block.isCollapsed) {
+                if !kids.isEmpty && !(respectCollapse && block.isCollapsed && !expanding.contains(block.id)) {
                     visit(parent: block.id, depth: depth + 1)
                 }
             }
@@ -118,6 +119,25 @@ enum BlockTree {
 
         visit(parent: root, depth: 0)
         return rows
+    }
+
+    /// Temporarily revealed ancestors/targets remain visible without changing
+    /// completion preferences or exposing every other completed branch.
+    static func hidingCompletedTasks(in rows: [BlockRow], revealing: Set<UUID> = []) -> [BlockRow] {
+        var result: [BlockRow] = []
+        var skipDeeperThan: Int?
+        for row in rows {
+            if let limit = skipDeeperThan {
+                if row.depth > limit { continue }
+                skipDeeperThan = nil
+            }
+            if row.block.isTask, row.block.isCompleted, !revealing.contains(row.id) {
+                skipDeeperThan = row.depth
+                continue
+            }
+            result.append(row)
+        }
+        return result
     }
 
     /// Buckets blocks by parent, sorted within each bucket.

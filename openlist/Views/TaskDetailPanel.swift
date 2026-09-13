@@ -57,6 +57,14 @@ private struct TaskDetailContent: View {
     @State private var captureCancellationArmed = false
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isNoteFocused: Bool
+    @State private var noteSelection: TextSelection?
+    @State private var titleSelection: TextSelection?
+
+    private var reveal: ContentReveal? {
+        guard let request = env.navigator.contentReveal, request.taskID == taskID else { return nil }
+        return request
+    }
+    private var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
 
     var body: some View {
         if block.modelContext != nil, !block.isDeleted {
@@ -65,14 +73,25 @@ private struct TaskDetailContent: View {
     }
 
     private func content(for block: Block) -> some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if let reveal {
+                    ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
+                }
                 titleSection(block)
+                    .id(ContentReveal.Anchor.taskTitle(taskID))
+                    .overlay {
+                        if reveal != nil, reveal?.field != .note {
+                            RoundedRectangle(cornerRadius: 8).stroke(Theme.accent, lineWidth: 2).allowsHitTesting(false)
+                        }
+                    }
                 TaskInspectorMetadata(block: block)
                     .simultaneousGesture(TapGesture().onEnded { claimParentCommands() })
                 Divider()
                 if isNoteVisible || !block.note.isEmpty {
                     noteSection(block)
+                        .id(ContentReveal.Anchor.taskNote(taskID))
                 } else {
                     Button("Add note", systemImage: "note.text") {
                         isNoteVisible = true
@@ -98,9 +117,26 @@ private struct TaskDetailContent: View {
         .onAppear {
             focusTitleIfNew(block)
         }
+        .task(id: readyRevealID) {
+            guard readyRevealID != nil, let reveal else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            claimParentCommands()
+            if reveal.field == .note {
+                isNoteVisible = true
+                isNoteFocused = true
+                noteSelection = SearchProjection.range(of: reveal.query, in: block.note).map { TextSelection(range: $0) }
+                proxy.scrollTo(ContentReveal.Anchor.taskNote(taskID), anchor: .center)
+            } else {
+                isTitleFocused = true
+                titleSelection = SearchProjection.range(of: reveal.query, in: block.text).map { TextSelection(range: $0) }
+                proxy.scrollTo(ContentReveal.Anchor.taskTitle(taskID), anchor: .top)
+            }
+        }
         .onDisappear {
             commitTitle()
             env.finishTaskTitleCapture(taskID, discardEmpty: true)
+        }
         }
     }
 
@@ -128,6 +164,7 @@ private struct TaskDetailContent: View {
                         // task here keeps any bold, code or link it already had.
                         set: { env.store.setText($0, for: block) }
                     ),
+                    selection: $titleSelection,
                     axis: .vertical
                 )
                 .textFieldStyle(.plain)
@@ -260,7 +297,7 @@ private struct TaskDetailContent: View {
             TextEditor(text: Binding(
                 get: { block.note },
                 set: { env.store.setNote($0, for: block) }
-            ))
+            ), selection: $noteSelection)
                 .focused($isNoteFocused)
                 .accessibilityLabel("Task note")
                 .onChange(of: isNoteFocused) { _, focused in
@@ -274,6 +311,11 @@ private struct TaskDetailContent: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Theme.chipFill.opacity(0.6))
                 )
+                .overlay {
+                    if reveal?.field == .note {
+                        RoundedRectangle(cornerRadius: 8).stroke(Theme.accent, lineWidth: 2).allowsHitTesting(false)
+                    }
+                }
                 .overlay(alignment: .topLeading) {
                     if block.note.isEmpty {
                         Text("Add extra context…")

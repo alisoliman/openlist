@@ -14,6 +14,15 @@ struct ListScreen: View {
     @State private var isIconPickerOpen = false
     @State private var isSummaryVisible = false
     @FocusState private var isTitleFocused: Bool
+    @FocusState private var isSummaryFocused: Bool
+    @State private var titleSelection: TextSelection?
+    @State private var summarySelection: TextSelection?
+
+    private var revealsSummary: Bool { env.navigator.contentReveal?.revealsSummary(for: list.id) == true }
+    private var readyRevealID: UUID? {
+        guard !env.navigator.isSearchOpen, env.navigator.contentReveal?.destination == .list(list.id) else { return nil }
+        return env.navigator.contentReveal?.id
+    }
 
     var body: some View {
         ScreenScaffold(headerSpacing: 10) {
@@ -37,6 +46,18 @@ struct ListScreen: View {
         }
         .onChange(of: list.summary) { old, new in
             if old.isEmpty && !new.isEmpty { isSummaryVisible = true }
+        }
+        .task(id: readyRevealID) {
+            guard readyRevealID != nil, let reveal = env.navigator.contentReveal else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            if revealsSummary {
+                isSummaryFocused = true
+                summarySelection = SearchProjection.range(of: reveal.query, in: list.summary).map { TextSelection(range: $0) }
+            } else {
+                isTitleFocused = true
+                titleSelection = SearchProjection.range(of: reveal.query, in: list.title).map { TextSelection(range: $0) }
+            }
         }
     }
 
@@ -78,6 +99,7 @@ struct ListScreen: View {
                     get: { list.title },
                     set: { env.store.rename(list, to: $0) }
                 ),
+                selection: $titleSelection,
                 axis: .vertical
             )
             .textFieldStyle(.plain)
@@ -92,19 +114,28 @@ struct ListScreen: View {
             }
             .accessibilityLabel("List title")
 
-            if isSummaryVisible {
+            if isSummaryVisible || revealsSummary {
                 TextField(
                     "Add a description…",
                     text: Binding(
                         get: { list.summary },
                         set: { env.store.setSummary($0, for: list) }
                     ),
+                    selection: $summarySelection,
                     axis: .vertical
                 )
                 .textFieldStyle(.plain)
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.secondaryText)
-                .lineLimit(1...5)
+                .lineLimit(revealsSummary ? nil : 5)
+                .focused($isSummaryFocused)
+                .id(ContentReveal.Anchor.listSummary(list.id))
+                .accessibilityLabel("List description")
+                .overlay {
+                    if revealsSummary {
+                        RoundedRectangle(cornerRadius: 6).stroke(Theme.accent, lineWidth: 2).allowsHitTesting(false)
+                    }
+                }
                 .onSubmit { env.store.save() }
             }
 

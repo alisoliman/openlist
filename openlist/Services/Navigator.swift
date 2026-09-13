@@ -57,6 +57,20 @@ final class Navigator {
     var isSearchOpen = false
     var isShortcutSheetOpen = false
 
+    /// Reusable exact-content navigation, retained only while viewing its page.
+    private(set) var contentReveal: ContentReveal?
+    private(set) var searchActivation = 0
+
+    func reveal(_ request: ContentReveal) {
+        go(to: .list(request.listID))
+        openTaskID = request.taskID
+        selection = request.blockID.map { [$0] } ?? []
+        contentReveal = request
+        searchActivation &+= 1
+    }
+
+    func finishReveal() { contentReveal = nil }
+
     private var backStack: [AppRoute] = []
     private var forwardStack: [AppRoute] = []
     @ObservationIgnored private var scrollOffsets: [AppRoute: CGFloat] = [:]
@@ -77,6 +91,7 @@ final class Navigator {
         backStack.append(route)
         forwardStack.removeAll()
         route = newRoute
+        contentReveal = nil
         openTaskID = nil
         selection.removeAll()
         trimHistory()
@@ -86,6 +101,7 @@ final class Navigator {
         guard let previous = backStack.popLast() else { return }
         forwardStack.append(route)
         route = previous
+        contentReveal = nil
         openTaskID = nil
         selection.removeAll()
     }
@@ -94,6 +110,7 @@ final class Navigator {
         guard let next = forwardStack.popLast() else { return }
         backStack.append(route)
         route = next
+        contentReveal = nil
         openTaskID = nil
         selection.removeAll()
     }
@@ -102,6 +119,7 @@ final class Navigator {
     /// list you are viewing is deleted underneath you.
     func replace(with newRoute: AppRoute) {
         route = newRoute
+        contentReveal = nil
         openTaskID = nil
         selection.removeAll()
     }
@@ -117,11 +135,13 @@ final class Navigator {
     }
 
     func openTask(_ id: UUID?) {
+        if contentReveal?.taskID != id { contentReveal = nil }
         openTaskID = id
     }
 
     func closeTask() {
         openTaskID = nil
+        if contentReveal?.taskID != nil { contentReveal = nil }
     }
 
     private func trimHistory() {
