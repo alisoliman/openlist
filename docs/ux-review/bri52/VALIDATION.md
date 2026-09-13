@@ -4,7 +4,7 @@ Implementation and review evidence for [BRI-52](https://linear.app/brickd/issue/
 
 ## Isolation
 
-Built with `./Tools/build-dev.sh`: `Openlist Dev.app`, bundle ID `solimanali.openlist.dev`, separate local storage/preferences and no production CloudKit access. The normal Dev bundle passed its verifier and all nine development isolation checks. The final native review candidate includes the focused keyboard fixes committed in `634c0dc`. Native testing uses a separately signed copy with `OpenlistReviewSession=bri52-polish`, seeded with disposable sample tasks. Neither production data nor normal Dev tasks are fixtures.
+Built with `./Tools/build-dev.sh`: `Openlist Dev.app`, bundle ID `solimanali.openlist.dev`, separate local storage/preferences and no production CloudKit access. The normal Dev bundle passed its verifier and all nine development isolation checks. The final native review candidate includes the focused keyboard fixes committed in `1a67eb5` (`634c0dc` before rebase). Native testing uses a separately signed copy with `OpenlistReviewSession=bri52-polish`, seeded with disposable sample tasks. Neither production data nor normal Dev tasks are fixtures.
 
 ## Acceptance criteria
 
@@ -23,8 +23,9 @@ Built with `./Tools/build-dev.sh`: `Openlist Dev.app`, bundle ID `solimanali.ope
 
 ## Checks
 
-- `./Tools/build-dev.sh` passed; app, widget, helper, icon, entitlements and storage isolation verified.
-- `./Tools/check.sh` passed all 17 suites (exit 0), including 984 scheduling checks, 151 calendar runtime checks, 85 editor/store checks, 32 capture checks, 12 native hidden-window capture-selection checks, 22 visibility/persistence checks, and MCP suites.
+- Rebased onto main `6f75f57`, including the Lists and Today sorting changes. `git range-diff` confirmed that all three independently reviewed implementation patches were preserved unchanged.
+- `./Tools/build-dev.sh` passed again after integration; app, widget, helper, icon, entitlements and storage isolation verified.
+- `./Tools/check.sh` passed all 19 integrated suites (exit 0), including 984 scheduling checks, 151 calendar runtime checks, 85 editor/store checks, 32 capture checks, 12 native hidden-window capture-selection checks, 22 visibility/persistence checks, both Lists and Today sorting suites, and MCP suites.
 - `./Tools/run-calendar-layout-checks.sh`: 1,543 checks passed. New grid checks exercise leap February, Amsterdam March/October daylight-saving boundaries, December rollover, and Sunday/Monday/Saturday week starts. Each month contains every date exactly once within six complete weeks.
 - `git diff --check` passed.
 
