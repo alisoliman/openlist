@@ -8,6 +8,7 @@ struct CalendarMonthPicker: View {
     let onSelect: (Date) -> Void
 
     @State private var displayedMonth: Date
+    @State private var hoveredDay: Date?
     @FocusState private var focusedDay: Date?
 
     init(selection: Date?, calendar: Calendar, onSelect: @escaping (Date) -> Void) {
@@ -67,7 +68,7 @@ struct CalendarMonthPicker: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
                 .background {
-                    Circle().fill(isSelected ? Theme.accent : Color.clear)
+                    Circle().fill(isSelected ? Theme.accent : (hoveredDay == day ? Theme.rowHover : Color.clear))
                         .frame(width: 32, height: 32)
                 }
                 .overlay {
@@ -83,6 +84,8 @@ struct CalendarMonthPicker: View {
         .accessibilityLabel(day.formatted(date: .complete, time: .omitted))
         .accessibilityValue(isToday ? "Today" : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint("Use arrow keys to move between dates, then Space to choose.")
+        .onHover { hoveredDay = $0 ? day : nil }
         .help(day.formatted(date: .complete, time: .omitted))
         .onKeyPress(.leftArrow) { moveFocus(from: day, by: -1) }
         .onKeyPress(.rightArrow) { moveFocus(from: day, by: 1) }

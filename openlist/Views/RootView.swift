@@ -448,7 +448,6 @@ struct ScreenScaffold<Header: View, Content: View>: View {
                 scrollRoute = env.navigator.route
                 scrollPosition.scrollTo(y: env.navigator.scrollOffset(for: env.navigator.route))
             }
-            .environment(\.compactTaskRows, geometry.size.width < 620)
             .background(Theme.canvas)
         }
     }

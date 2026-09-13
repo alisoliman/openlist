@@ -23,6 +23,7 @@ struct TaskInspectorMetadata: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .accessibilityLabel("Move task to list")
+            .accessibilityValue(env.store.list(id: block.listID)?.displayTitle ?? "None")
 
             Button { openPicker = .due } label: {
                 if block.dueDate != nil {
@@ -33,6 +34,7 @@ struct TaskInspectorMetadata: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Edit task schedule")
+            .accessibilityValue(block.dueDate.map { Store.absoluteDateText($0, includesTime: block.includesTime) } ?? "No due date")
             .help("Date, time, reminder and repeat (⌃D)")
             .popover(isPresented: scheduleBinding, arrowEdge: .bottom) {
                 TaskSchedulePicker(block: block, initialSection: openPicker ?? .due)
@@ -88,6 +90,7 @@ struct TaskInspectorMetadata: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Edit reminder")
+                .accessibilityValue(Store.absoluteDateText(reminder, includesTime: true))
             }
 
             Button { env.store.toggleStar(block) } label: {

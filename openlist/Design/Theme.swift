@@ -181,10 +181,3 @@ struct CheckmarkMenuItem: View {
         }
     }
 }
-
-
-extension EnvironmentValues {
-    /// Supplied by the page's available width, so row layout responds to an
-    /// inspector/sidebar opening as well as direct window resizing.
-    @Entry var compactTaskRows = false
-}
