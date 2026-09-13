@@ -83,6 +83,15 @@ Release-verifier regressions run through the script's own shebang, macOS's
 explicitly fail-closed: do not rely on `set -e` to reject metadata mismatches,
 especially when a `[[ ... ]]` condition contains command substitution.
 
+### App icon
+
+The default app icon is `openlist/Openlist.icon`, an editable Icon Composer
+document containing the checkmark and list SVG layers. Open it in Icon Composer
+to adjust the artwork, background, and glass effects. Both Debug and Release
+select `Openlist` as their app icon; Xcode compiles its default, dark, and mono
+appearances. The older `AppIcon.appiconset` and `Tools/generate-app-icon.swift`
+are legacy artwork and do not control the default icon.
+
 ## Releases
 
 Release binaries and notes belong on
