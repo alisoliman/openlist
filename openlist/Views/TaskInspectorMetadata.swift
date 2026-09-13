@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// Everyday task controls stay together and wrap within the inspector width.
@@ -8,6 +9,12 @@ struct TaskInspectorMetadata: View {
     @FocusState private var focusedPicker: DetailPicker?
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         MetadataFlowLayout(spacing: 7) {
             Menu {
                 ForEach(env.store.allLists()) { list in

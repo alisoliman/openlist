@@ -1,4 +1,5 @@
 import AppKit
+import SwiftData
 import SwiftUI
 import UserNotifications
 
@@ -12,6 +13,12 @@ struct ReminderPicker: View {
     @State private var authorizationDenied = false
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(block.reminderAt.map { Store.absoluteDateText($0, includesTime: true) } ?? "No reminder", systemImage: "bell")
                 .font(Theme.Font.body)

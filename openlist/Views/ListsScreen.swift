@@ -169,6 +169,9 @@ struct ListCard: View {
                 let copy = env.store.duplicateList(list)
                 env.navigator.go(to: .list(copy.id))
             }
+            Button("Use as template…") {
+                env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil)
+            }
             Button("Export as Markdown…") {
                 MarkdownExporter.presentSavePanel(for: list, store: env.store)
             }

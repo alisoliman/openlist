@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 
 /// The trailing metadata on a task row: due date, repeat, labels, subtask
@@ -15,6 +16,12 @@ struct TaskMetadataChips: View {
     var onTapLabel: (TaskLabel) -> Void = { _ in }
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         MetadataFlowLayout {
             if let progress, progress.total > 0 {
                 SubtaskProgressChip(done: progress.done, total: progress.total)
@@ -72,6 +79,12 @@ struct DueDateChip: View {
     let block: Block
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         HStack(spacing: 3) {
             Image(systemName: symbolName)
                 .font(.system(size: 9, weight: .semibold))

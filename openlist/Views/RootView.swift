@@ -39,6 +39,9 @@ struct RootView: View {
             TaskCaptureView(request: request)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .sheet(item: $captureEnvironment.templateCopyRequest) { request in
+            TemplateCopySheet(request: request)
+        }
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
             CommandPaletteView()
         }

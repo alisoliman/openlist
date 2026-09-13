@@ -56,6 +56,7 @@ final class AppEnvironment {
 
     /// A command awaiting pickup by the focused document view.
     var taskCaptureRequest: TaskCaptureRequest?
+    var templateCopyRequest: TemplateCopyRequest?
 
     var pendingCommand: EditorCommand?
     /// Bumped to make the focused document re-read `pendingCommand` even when
@@ -97,6 +98,17 @@ final class AppEnvironment {
         store.onLabelsMerged = { [weak navigator] sourceID, destinationID in
             navigator?.retargetLabel(from: sourceID, to: destinationID)
         }
+        store.onEditorBlocksRemoved = { [weak self] ids in
+            guard let self else { return }
+            navigator.selection.subtract(ids)
+            if let taskID = navigator.openTaskID, ids.contains(taskID) {
+                requestedPicker = nil
+                navigator.closeTask()
+            }
+            if let rootID = activeDocument?.rootBlockID, ids.contains(rootID) {
+                activeDocument = nil
+            }
+        }
         store.onDidSave = { [weak widgetPublisher, weak calendar] in
             widgetPublisher?.scheduleRefresh()
             calendar?.storeDidChange()
@@ -134,6 +146,12 @@ final class AppEnvironment {
             text: text, suggestedListID: navigator.route.listID,
             plansForToday: navigator.route == .calendar
         )
+    }
+
+    func showCopiedTask(id: UUID, listID: UUID) {
+        navigator.go(to: .list(listID))
+        navigator.selection = [id]
+        navigator.openTask(id)
     }
 
     func consumeCommand() -> EditorCommand? {

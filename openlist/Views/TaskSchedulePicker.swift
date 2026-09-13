@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// One scheduling surface; switching sections never dismisses the popover or
@@ -14,6 +15,12 @@ struct TaskSchedulePicker: View {
     }
 
     var body: some View {
+        // SwiftUI may update this child after a saved deletion, before its
+        // parent removes it. Never read persisted fields on that old model.
+        if block.modelContext != nil, !block.isDeleted { liveContent }
+    }
+
+    private var liveContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {

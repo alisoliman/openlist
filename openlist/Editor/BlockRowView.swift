@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -59,6 +60,12 @@ struct BlockRowView: View {
     }
 
     var body: some View {
+        if block.modelContext != nil, !block.isDeleted {
+            liveContent
+        }
+    }
+
+    private var liveContent: some View {
         HStack(alignment: .top, spacing: 0) {
             indentSpacer
             collapseAffordance
@@ -308,6 +315,13 @@ struct BlockContextMenu: View {
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
+        if block.modelContext != nil, !block.isDeleted {
+            liveContent
+        }
+    }
+
+    @ViewBuilder
+    private var liveContent: some View {
         if block.isTask {
             Button(block.isCompleted ? "Mark as Not Done" : "Mark as Done") {
                 actions.onToggleCompletion()
@@ -380,6 +394,12 @@ struct BlockContextMenu: View {
         }
 
         Button("Duplicate") { duplicate() }
+        if block.isTask {
+            Button("Use as template…") {
+                env.templateCopyRequest = TemplateCopyRequest(source: .task(block.id),
+                    undoManager: undoManager ?? NSApp.keyWindow?.undoManager)
+            }
+        }
         Button("Copy Text") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(block.text, forType: .string)
@@ -396,7 +416,11 @@ struct BlockContextMenu: View {
 
     private func duplicate() {
         edit("Duplicate block") { current in
-            env.store.duplicateBlock(current)
+            let copy = env.store.duplicateBlock(current)
+            guard copy.id != current.id else { return }
+            if copy.isTask, let listID = copy.listID {
+                env.showCopiedTask(id: copy.id, listID: listID)
+            } else { env.navigator.selection = [copy.id] }
         }
     }
 
