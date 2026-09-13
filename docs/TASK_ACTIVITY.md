@@ -14,8 +14,9 @@ Children completed by a parent receive their own entries. Undo and Redo add
 truthful inverse/new entries; they do not erase the prior action. Labels,
 priority, and note differences are outside this timeline's new detail scope.
 
-Titles entered in the outline or inspector coalesce until submit, focus end,
-or a one-second pause. Smart task rows keep a local draft and commit on submit,
+Outline title edits coalesce until a one-second pause or an explicit editor
+action saves. Inspector titles also commit on submit or focus end. Smart task
+rows keep a local draft and commit on submit,
 blur, navigation away, app focus loss, or quit. A save for another explicit
 action also commits current model edits. Saving without a tracked change adds
 no event. Sample data does not generate an invented action history.
@@ -27,7 +28,7 @@ fallback. Existing events receive no fabricated migration data.
 
 ## Saving and retention
 
-Task edits and their generated history save in the same SwiftData transaction.
+Tracked task edits and their generated history save in the same SwiftData transaction.
 Store owns the save boundary; its context does not independently autosave.
 Editor text has a debounce fallback, explicit editing actions save immediately,
 and lifecycle handling commits local drafts before the final save. Quit is
@@ -58,7 +59,7 @@ include ActivityEvent history; there is no new history backup or restore UI.
 
 | Writer | Save boundary |
 | --- | --- |
-| Outline rich/plain text and captions | Document change debounce; commit/blur save |
+| Outline rich/plain text and captions | Document change debounce; explicit editor-action save |
 | Inspector task title | Store text debounce; submit/blur/disappear save |
 | Smart task row title | Local draft commit; lifecycle notification before save |
 | Due-date pickers, completion, recurrence, moves | Existing Store save/batch boundary |
