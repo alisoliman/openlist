@@ -23,7 +23,7 @@ extension Store {
         save()
     }
 
-    private func complete(_ block: Block, now: Date) {
+    func complete(_ block: Block, now: Date) {
         recordCalendarCompletion(for: block, now: now)
 
         if var rule = block.recurrence,
@@ -81,7 +81,7 @@ extension Store {
         log(.completed, title: block.displayTitle, block: block)
     }
 
-    private func reopen(_ block: Block) {
+    func reopen(_ block: Block) {
         discardTaskSchedule(for: block, reason: "Reopened")
         let oldOccurrenceID = block.occurrenceID
         block.occurrenceID = UUID()

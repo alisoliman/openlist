@@ -14,7 +14,7 @@ struct CalendarCompletionFeedback: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(ListAccent.green.color)
                         .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? nil : visibleID)
-                    Text("Completed \(action.title)")
+                    Text(action.feedback)
                         .font(.callout).lineLimit(1)
                     Button("Undo") { _ = env.store.undoCompletion(action.id) }
                         .buttonStyle(.link).font(.callout.weight(.semibold))
@@ -27,7 +27,7 @@ struct CalendarCompletionFeedback: View {
                 .padding(.horizontal, 20).padding(.bottom, 40)
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel("Task completed")
+                .accessibilityLabel(action.isReopening ? "Tasks reopened" : "Tasks completed")
             }
         }
         .animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.25), value: visibleID)
