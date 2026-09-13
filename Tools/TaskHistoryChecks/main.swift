@@ -253,6 +253,32 @@ check(try events(afterRetryStore).allSatisfy { !failedIDs.contains($0.id) }, "no
 check(try afterRetryStore.taskActivity(for: task.id, limit: 10_000).count == beforeFailure.count + 1, "reopened store contains one committed retry event")
 check(store.uncommittedActivityIDs.isEmpty, "successful removal prunes the failed-attempt registry")
 
+let legacyTask = store.appendBlock(kind: .task, text: "Legacy retry actions", to: .init(listID: source.id))
+try store.persistChanges()
+let initialLegacyIDs = try history(legacyTask).map(\.id)
+injectedFailures = 1
+store.setNote("Never committed note", for: legacyTask)
+check(store.persistenceError != nil && !store.pendingActivity.isEmpty, "failed note save keeps its action pending")
+store.setNote("", for: legacyTask)
+check(store.persistenceError == nil && (try? history(legacyTask).map(\.id)) == initialLegacyIDs, "reversing a failed note addition commits no false noteAdded entry")
+injectedFailures = 1
+store.toggleStar(legacyTask)
+check(store.persistenceError != nil && legacyTask.isStarred, "failed star save leaves the edit available to reverse")
+store.toggleStar(legacyTask)
+check(store.persistenceError == nil && (try? history(legacyTask).map(\.id)) == initialLegacyIDs, "reversing a failed star commits no false starred entry")
+injectedFailures = 1
+store.setNote("First attempted note", for: legacyTask)
+store.isSavingSuspended = true
+store.setNote("", for: legacyTask)
+store.setNote("Finally committed note", for: legacyTask)
+store.isSavingSuspended = false
+try store.persistChanges()
+check(try history(legacyTask).filter { $0.kind == .noteAdded }.count == 1, "repeated pending note additions coalesce to the one committed addition")
+let legacyReopened = try ModelContainer(for: schema, configurations: [configuration])
+let legacySavedStore = Store(context: ModelContext(legacyReopened))
+check(try legacySavedStore.taskActivity(for: legacyTask.id).filter { $0.kind == .starred }.isEmpty, "reopened storage has no cancelled star entry")
+check(try legacySavedStore.taskActivity(for: legacyTask.id).filter { $0.kind == .noteAdded }.count == 1, "reopened storage has exactly one actual note addition")
+
 let seededContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
 let seeded = Store(context: seededContainer.mainContext)
 seeded.bootstrap()

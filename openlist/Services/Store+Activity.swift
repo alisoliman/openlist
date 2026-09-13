@@ -15,6 +15,36 @@ extension TaskActivityState {
 }
 
 extension Store {
+    /// Existing one-way note/star entries must still describe a committed
+    /// change after a failed save. Reversing the unsaved edit cancels the
+    /// queued entry; this does not add note or priority diff history.
+    func stagedLegacyActivity() throws -> [ActivityEvent] {
+        let checkedKinds: Set<ActivityKind> = [.noteAdded, .starred]
+        let ids = Array(Set(pendingActivity.filter { checkedKinds.contains($0.kind) }.compactMap(\.blockID)))
+        guard !ids.isEmpty else { return pendingActivity.map { $0.model() } }
+        let reader = ModelContext(context.container)
+        reader.autosaveEnabled = false
+        let originals = try reader.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
+        let originalByID = Dictionary(originals.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen: Set<String> = []
+        return pendingActivity.compactMap { draft in
+            guard checkedKinds.contains(draft.kind), let id = draft.blockID else { return draft.model() }
+            guard let current = block(id: id), !current.isDeleted else { return nil }
+            let before = originalByID[id]
+            let applies = draft.kind == .noteAdded
+                ? !current.note.isEmpty && before?.note.isEmpty != false
+                : current.isStarred && before?.isStarred != true
+            guard applies, seen.insert("\(draft.kind.rawValue):\(id)").inserted else { return nil }
+            let event = draft.model()
+            let owningList = list(id: current.listID)
+            event.title = current.displayTitle
+            event.listID = current.listID
+            event.listTitle = owningList?.displayTitle ?? ""
+            event.listIcon = owningList?.icon ?? ""
+            return event
+        }
+    }
+
     /// Read only the changed task IDs from committed storage. A separate
     /// context keeps the before values independent of live unsaved models.
     func stagedTaskActivity() throws -> [ActivityEvent] {

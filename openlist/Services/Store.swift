@@ -408,7 +408,7 @@ final class Store {
         }
         if context.hasChanges || !pendingActivity.isEmpty {
             context.processPendingChanges()
-            let events = try stagedTaskActivity() + pendingActivity.map { $0.model() }
+            let events = try stagedTaskActivity() + stagedLegacyActivity()
             for event in events { context.insert(event) }
             do {
                 try commitContext(context)
