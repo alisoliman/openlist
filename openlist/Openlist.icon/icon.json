@@ -1,4 +1,7 @@
 {
+  "features": [
+    "refractivity"
+  ],
   "fill": {
     "automatic-gradient": "extended-srgb:0.02353,0.02745,0.03922,1.00000"
   },
@@ -18,6 +21,11 @@
       "translucency": {
         "enabled": true,
         "value": 0.4
+      },
+      "refractivity": {
+        "depth": 0.12,
+        "enabled": true,
+        "strength": 0.5
       }
     },
     {
@@ -28,6 +36,11 @@
           "name": "Check"
         }
       ],
+      "refractivity": {
+        "depth": 0.12,
+        "enabled": true,
+        "strength": 0.5
+      },
       "shadow": {
         "kind": "neutral",
         "opacity": 0.3

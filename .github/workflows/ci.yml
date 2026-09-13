@@ -11,18 +11,22 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check:
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Select latest stable Xcode
+      - name: Select Xcode 27
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: latest-stable
+          xcode-version: latest
       - name: Toolchain
-        run: xcodebuild -version && swift --version && uname -m
+        run: |
+          xcodebuild -version
+          [[ $(xcodebuild -version | head -n 1) == "Xcode 27."* ]]
+          swift --version
+          uname -m
       - name: Regression checks
         run: ./Tools/check.sh
       - name: Build and verify Apple Silicon app and widget
