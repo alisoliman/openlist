@@ -761,6 +761,10 @@ struct DocumentView: View {
 
     private func move(_ draggedIDs: [UUID], relativeTo target: BlockRow, position: DropPosition) {
         guard sorting == .manual else { return }
+        guard target.block.modelContext != nil, !target.block.isDeleted else {
+            env.store.editorNotice = "The drop target is no longer available. No rows were changed."
+            return
+        }
         NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
         let parentID: UUID?
         let aboveID: UUID?

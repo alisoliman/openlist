@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import UniformTypeIdentifiers
 
 /// Where a dropped block should land relative to the row it was dropped on.
@@ -50,7 +51,8 @@ struct BlockDragAndDrop: ViewModifier {
                         activeLegacyID: { env.navigator.activeLegacyBlockDragID },
                         onMove: onMove,
                         onDropText: onDropText,
-                        onInvalid: { env.store.editorNotice = "This internal drag is invalid or belongs to another library. No rows were changed." }
+                        onInvalid: { env.store.editorNotice = "This internal drag is invalid or belongs to another library. No rows were changed." },
+                        onUnavailable: { env.store.editorNotice = "The drop target is no longer available. No rows were changed." }
                     )
                 )
         } else {
@@ -89,12 +91,17 @@ private struct RowDropDelegate: DropDelegate {
     let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
     let onInvalid: () -> Void
+    let onUnavailable: () -> Void
+
+    private var targetIsAvailable: Bool { row.block.modelContext != nil && !row.block.isDeleted }
 
     func dropEntered(info: DropInfo) {
+        guard targetIsAvailable else { indicator = nil; return }
         indicator = position(for: info)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard targetIsAvailable else { indicator = nil; return DropProposal(operation: .cancel) }
         indicator = position(for: info)
         return DropProposal(operation: .move)
     }
@@ -104,6 +111,7 @@ private struct RowDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        guard targetIsAvailable else { indicator = nil; onUnavailable(); return false }
         let target = position(for: info)
         indicator = nil
 
@@ -115,6 +123,9 @@ private struct RowDropDelegate: DropDelegate {
         if provider.hasItemConformingToTypeIdentifier(DragPayload.blockTypeIdentifier) {
             provider.loadDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier) { data, _ in
                 Task { @MainActor in
+                    // The target may disappear while the provider loads. Do
+                    // not inspect its kind, ID or position after deletion.
+                    guard targetIsAvailable else { onUnavailable(); return }
                     guard let data, let value = String(data: data, encoding: .utf8),
                           case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID, activeLegacyID: nil) else {
                         onInvalid()
@@ -128,6 +139,7 @@ private struct RowDropDelegate: DropDelegate {
         _ = provider.loadObject(ofClass: NSString.self) { value, _ in
             guard let string = value as? String else { return }
             Task { @MainActor in
+                guard targetIsAvailable else { onUnavailable(); return }
                 switch DragPayload.blockDrop(string, session: sessionID, activeLegacyID: legacyID) {
                 case .blocks(let ids): onMove(ids, target)
                 case .text(let text): onDropText(text)
