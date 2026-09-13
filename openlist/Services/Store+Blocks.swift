@@ -265,6 +265,9 @@ extension Store {
     /// styling the outline editor may have applied.
     func setText(_ text: String, for block: Block) {
         guard block.text != text else { return }
+        // Inspector fields commit on Return/blur; this is a fallback if the
+        // user pauses without leaving the field. Fast keystrokes coalesce.
+        defer { scheduleSave(after: .seconds(1)) }
         guard block.richData != nil else {
             setPlainText(block, text)
             return

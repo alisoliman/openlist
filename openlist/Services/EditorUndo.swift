@@ -233,6 +233,9 @@ extension Store {
                 let model = existing ?? Block()
                 if existing == nil { context.insert(model) }
                 record.apply(to: model, replacing: existing == nil ? nil : source.blocks[id])
+                if source.blocks[id] == nil, model.isTask {
+                    pendingRestoredTaskIDs.insert(id)
+                }
                 model.labelIDs = resolvedLabelIDs(model.labelIDs)
                 let listID = resolvedListID(model.listID)
                 if model.listID != listID { model.listID = listID }

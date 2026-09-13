@@ -42,6 +42,7 @@ final class MCPStoreAdapter {
                     store.context.rollback()
                     store.refreshAllReminders()
                 }
+                store.pendingActivity.removeAll()
                 throw error
             }
         } catch let error as MCPToolFailure {

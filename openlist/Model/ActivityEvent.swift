@@ -26,6 +26,9 @@ final class ActivityEvent {
     var listID: UUID?
     var listTitle: String = ""
     var listIcon: String = ""
+    /// Optional, additive history details. Older events retain only their
+    /// original text; absent values never imply a known before/after state.
+    var changeData: Data?
 
     init(
         kind: ActivityKind,
@@ -53,6 +56,11 @@ extension ActivityEvent {
         get { ActivityKind(rawValue: kindRaw) ?? .created }
         set { kindRaw = newValue.rawValue }
     }
+
+    var change: TaskActivityChange? {
+        get { changeData.flatMap { try? JSONDecoder().decode(TaskActivityChange.self, from: $0) } }
+        set { changeData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
 }
 
 enum ActivityKind: String, Codable, CaseIterable, Sendable {
@@ -68,6 +76,9 @@ enum ActivityKind: String, Codable, CaseIterable, Sendable {
     case listCreated
     case listDeleted
     case noteAdded
+    case renamed
+    case completionUndone
+    case restored
 
     var symbol: String {
         switch self {
@@ -83,6 +94,9 @@ enum ActivityKind: String, Codable, CaseIterable, Sendable {
         case .listCreated: "folder.circle.fill"
         case .listDeleted: "folder.badge.minus"
         case .noteAdded: "text.bubble.fill"
+        case .renamed: "pencil.circle.fill"
+        case .completionUndone: "arrow.uturn.backward.circle.fill"
+        case .restored: "arrow.uturn.backward.circle.fill"
         }
     }
 
@@ -100,6 +114,9 @@ enum ActivityKind: String, Codable, CaseIterable, Sendable {
         case .listCreated: "Created list"
         case .listDeleted: "Deleted list"
         case .noteAdded: "Added a note to"
+        case .renamed: "Renamed"
+        case .completionUndone: "Undid completion of"
+        case .restored: "Restored"
         }
     }
 

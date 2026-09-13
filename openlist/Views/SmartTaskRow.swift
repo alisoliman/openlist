@@ -108,6 +108,9 @@ struct SmartTaskRow: View {
         )
         .onHover { isHovering = $0 }
         .onAppear { titleDraft.reset(to: block.text) }
+        .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
+            if isEditing { commit() }
+        }
         .onDisappear {
             if env.store.activeTitleDrafts[editSessionID] != nil { commit() }
             env.store.activeTitleDrafts.removeValue(forKey: editSessionID)

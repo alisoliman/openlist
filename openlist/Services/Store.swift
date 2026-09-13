@@ -29,9 +29,17 @@ struct DocumentContext: Hashable {
 @MainActor
 final class Store {
     let context: ModelContext
+    @ObservationIgnored private let commitContext: (ModelContext) throws -> Void
 
     /// Suppresses activity logging during bulk work such as seeding samples.
-    private var isLoggingSuspended = false
+    var isLoggingSuspended = false
+    @ObservationIgnored var pendingActivity: [ActivityDraft] = []
+    @ObservationIgnored var activitySuppressedTaskIDs: Set<UUID> = []
+    @ObservationIgnored var pendingRestoredTaskIDs: Set<UUID> = []
+    /// Failed SwiftData saves can leave inserted models in the live fetch
+    /// cache even after deletion. Never publish those attempt identities, and
+    /// explicitly delete them again before any subsequent commit.
+    private(set) var uncommittedActivityIDs: Set<UUID> = []
 
     /// Set by ``batch(_:)`` so a run of mutations commits once.
     var isSavingSuspended = false
@@ -72,8 +80,12 @@ final class Store {
     /// widget snapshot — can refresh themselves.
     var onDidSave: (() -> Void)?
 
-    init(context: ModelContext) {
+    init(context: ModelContext, commitContext: @escaping (ModelContext) throws -> Void = { try $0.save() }) {
         self.context = context
+        self.commitContext = commitContext
+        // Task changes and their activity must commit together. Independent
+        // autosave could otherwise write the task before its history exists.
+        context.autosaveEnabled = false
     }
 
     // MARK: - Fetching
@@ -389,11 +401,39 @@ final class Store {
         pendingSave?.cancel()
         pendingSave = nil
 
-        // `onDidSave` fires even when SwiftData's autosave already flushed the
-        // change, because downstream caches still need to know it happened.
-        if context.hasChanges {
-            try context.save()
+        if !uncommittedActivityIDs.isEmpty {
+            let ids = Array(uncommittedActivityIDs)
+            for event in try context.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate { ids.contains($0.id) })) {
+                context.delete(event)
+            }
         }
+        if context.hasChanges || !pendingActivity.isEmpty {
+            context.processPendingChanges()
+            let events = try stagedTaskActivity() + stagedLegacyActivity()
+            for event in events { context.insert(event) }
+            do {
+                try commitContext(context)
+            } catch {
+                // Keep the user's edits retryable. A failed attempt is never
+                // a published fact, even if SwiftData returns its stale model.
+                uncommittedActivityIDs.formUnion(events.map(\.id))
+                for event in events { context.delete(event) }
+                context.processPendingChanges()
+                throw error
+            }
+        }
+        // Successful cleanup usually removes the failed insertion from the
+        // cache as well. Keep only IDs SwiftData still returns; a refresh
+        // failure must not turn an already committed write into a save error.
+        if !uncommittedActivityIDs.isEmpty {
+            let ids = Array(uncommittedActivityIDs)
+            if let remaining = try? context.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate { ids.contains($0.id) })) {
+                uncommittedActivityIDs.formIntersection(remaining.map(\.id))
+            }
+        }
+        pendingActivity.removeAll()
+        activitySuppressedTaskIDs.removeAll()
+        pendingRestoredTaskIDs.removeAll()
         persistenceError = nil
         onDidSave?()
         publishPendingCompletionUndo()
@@ -403,10 +443,10 @@ final class Store {
     ///
     /// Called from the editor on every keystroke, where saving synchronously
     /// each time would be wasteful.
-    func scheduleSave() {
+    func scheduleSave(after delay: Duration = .milliseconds(400)) {
         pendingSave?.cancel()
         pendingSave = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(400))
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             self?.save()
         }
@@ -415,15 +455,25 @@ final class Store {
     // MARK: - Activity log
 
     func withoutLogging<T>(_ body: () throws -> T) rethrows -> T {
+        let previous = isLoggingSuspended
         isLoggingSuspended = true
-        defer { isLoggingSuspended = false }
+        defer {
+            activitySuppressedTaskIDs.formUnion((context.insertedModelsArray + context.changedModelsArray)
+                .compactMap { $0 as? Block }.map(\.id))
+            isLoggingSuspended = previous
+        }
         return try body()
     }
 
     func log(_ kind: ActivityKind, title: String, detail: String = "", block: Block? = nil, list: TaskList? = nil) {
         guard !isLoggingSuspended else { return }
+        // Tracked task changes are derived from the actual committed before
+        // and after states, including callers that write several fields.
+        if block?.isTask == true, [.created, .completed, .reopened, .scheduled, .unscheduled, .moved, .deleted].contains(kind) {
+            return
+        }
         let owningList = list ?? self.list(id: block?.listID)
-        let event = ActivityEvent(
+        pendingActivity.append(ActivityDraft(
             kind: kind,
             title: title,
             detail: detail,
@@ -431,23 +481,33 @@ final class Store {
             listID: owningList?.id,
             listTitle: owningList?.displayTitle ?? "",
             listIcon: owningList?.icon ?? ""
-        )
-        context.insert(event)
+        ))
     }
 
     func recentActivity(limit: Int = 300) -> [ActivityEvent] {
-        var descriptor = FetchDescriptor<ActivityEvent>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        let excluded = Array(uncommittedActivityIDs)
+        var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { !excluded.contains($0.id) },
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
         descriptor.fetchLimit = limit
         return (try? context.fetch(descriptor)) ?? []
     }
 
     func clearActivity() {
         do {
-            // The Updates view is paginated; clearing history must also remove
-            // events older than its fetch limit.
+            try persistChanges()
             let events = try context.fetch(FetchDescriptor<ActivityEvent>())
+            let writer = ModelContext(context.container)
+            writer.autosaveEnabled = false
+            for event in try writer.fetch(FetchDescriptor<ActivityEvent>()) { writer.delete(event) }
+            try writer.save()
+            // Publish the committed deletion to existing queries. Failure in
+            // the writer never changes the live event collection.
             for event in events { context.delete(event) }
-            save()
+            context.rollback()
+            context.processPendingChanges()
+            _ = try? context.fetch(FetchDescriptor<ActivityEvent>())
+            persistenceError = nil
+            onDidSave?()
         } catch {
             persistenceError = "Activity history could not be cleared. \(error.localizedDescription)"
         }

@@ -101,6 +101,7 @@ private struct TaskDetailContent: View {
                 }
                 subtaskSection(block)
                 attachmentSection(block)
+                TaskActivitySection(taskID: taskID)
                 DisclosureGroup(isExpanded: $showsScheduling) {
                     TaskSchedulingSection(block: block)
                         .padding(.top, 10)
