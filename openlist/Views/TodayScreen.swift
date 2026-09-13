@@ -192,10 +192,12 @@ struct InboxScreen: View {
                     InboxReviewView(inbox: inbox)
                         .padding(.bottom, 20)
                 }
+                CompletedTasksControl(list: inbox)
+                    .padding(.bottom, 12)
                 DocumentView(
                     document: DocumentContext(listID: inbox.id),
                     emptyPlaceholder: "Capture a task…",
-                    showsCompleted: env.settings.showsCompletedTasks
+                    showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks)
                 )
                 .id(inbox.id)
             }

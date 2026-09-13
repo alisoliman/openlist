@@ -25,6 +25,7 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var navigator = env.navigator
+        @Bindable var captureEnvironment = env
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
@@ -42,6 +43,9 @@ struct RootView: View {
             adaptInspectorColumns()
         }
         .toolbar { toolbarContent }
+        .sheet(item: $captureEnvironment.taskCaptureRequest) { request in
+            TaskCaptureView(request: request)
+        }
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
             CommandPaletteView()
         }
@@ -202,7 +206,7 @@ struct RootView: View {
 
         switch command {
         case .newTask:
-            createTaskFromSmartView()
+            env.presentTaskCapture()
 
         case .openDetails:
             if let first = targets.first(where: \.isTask) { env.navigator.openTask(first.id) }
@@ -222,30 +226,6 @@ struct RootView: View {
         }
     }
 
-    /// ⌘N from a smart view files a task into the Inbox, pre-filled with
-    /// whatever that view implies — due today in Today, tagged in a label view.
-    private func createTaskFromSmartView() {
-        let destination = env.navigator.route.listID.flatMap { env.store.list(id: $0) } ?? env.store.inboxList()
-        guard let destination else { return }
-
-        var defaults = CaptureDefaults(
-            parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates,
-            dueTodayWhenUndated: env.settings.defaultDestination == .today
-        )
-        switch env.navigator.route {
-        case .today:
-            defaults.dueTodayWhenUndated = true
-        case let .label(labelID):
-            defaults.labelIDs = [labelID]
-        default:
-            break
-        }
-
-        let block = env.store.captureTask(text: "", in: destination, defaults: defaults)
-        env.beginTaskTitleCapture(block)
-        env.navigator.openTask(block.id)
-    }
-
     // MARK: - Quick capture & Dock
 
     /// Drops the window's first responder when arriving somewhere that focus
@@ -260,7 +240,8 @@ struct RootView: View {
     private func clearInitialFocus(for route: AppRoute) {
         guard !route.hasDocumentEditor, focusClearedFor != route,
               !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-              !env.navigator.isShortcutSheetOpen, env.navigator.openTaskID == nil,
+              !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
+              env.navigator.openTaskID == nil,
               let initialWindow = hostWindow.window, initialWindow.isKeyWindow
         else { return }
 
@@ -270,7 +251,8 @@ struct RootView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak initialWindow] in
             guard env.navigator.route == route, focusClearedFor != route,
                   !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-                  !env.navigator.isShortcutSheetOpen, env.navigator.openTaskID == nil,
+                  !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
+              env.navigator.openTaskID == nil,
                   let window = initialWindow, window === hostWindow.window,
                   window === NSApp.keyWindow, window.sheetParent == nil, window.attachedSheet == nil
             else { return }
