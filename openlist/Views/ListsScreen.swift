@@ -17,8 +17,13 @@ struct ListsScreen: View {
     private var tasks: [Block]
 
     @State private var showsArchived = false
+    @AppStorage(ListGallerySorting.preferenceKey, store: ReviewSession.defaults)
+    private var sorting: ListGallerySorting = .existing
+    @AppStorage(ListGallerySorting.ascendingPreferenceKey, store: ReviewSession.defaults)
+    private var sortAscending = true
 
     var body: some View {
+        let visibleLists = sorting.visibleLists(from: lists, includingArchived: showsArchived, ascending: sortAscending)
         // One pass over all tasks instead of two scans per card.
         var counts: [UUID: (open: Int, done: Int)] = [:]
         for task in tasks {
@@ -59,23 +64,23 @@ struct ListsScreen: View {
                 }
             }
         } content: {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 12)],
-                spacing: 12
-            ) {
-                ForEach(visibleLists) { list in
-                    ListCard(
-                        list: list,
-                        openCount: counts[list.id]?.open ?? 0,
-                        doneCount: counts[list.id]?.done ?? 0
-                    )
+            VStack(alignment: .leading, spacing: 16) {
+                ListGallerySortMenu(sorting: $sorting, ascending: $sortAscending)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 12)],
+                    spacing: 12
+                ) {
+                    ForEach(visibleLists) { list in
+                        ListCard(
+                            list: list,
+                            openCount: counts[list.id]?.open ?? 0,
+                            doneCount: counts[list.id]?.done ?? 0
+                        )
+                    }
                 }
             }
         }
-    }
-
-    private var visibleLists: [TaskList] {
-        lists.filter { showsArchived || !$0.isArchived }
     }
 }
 
