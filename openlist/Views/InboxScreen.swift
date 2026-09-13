@@ -1,20 +1,6 @@
 import SwiftData
 import SwiftUI
 
-struct InboxMembershipButton: View {
-    let block: Block
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.undoManager) private var undoManager
-
-    var body: some View {
-        let selected = InboxPolicy.selection(block) != nil
-        Button(selected ? "Remove from Inbox" : "Add to Inbox", systemImage: selected ? "tray.and.arrow.up" : "tray.and.arrow.down") {
-            env.store.setInboxMembership(!selected, taskIDs: [block.id], undoManager: undoManager ?? NSApp.keyWindow?.undoManager)
-        }
-        .help(selected ? "Keep this task in its source, and remove it from the Inbox queue (⇧⌘R)" : "Select this task for Inbox without moving its content (⇧⌘I)")
-    }
-}
-
 /// A curated queue of task identities plus the retained rich capture document.
 struct InboxScreen: View {
     @Environment(AppEnvironment.self) private var env

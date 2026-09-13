@@ -38,6 +38,7 @@ struct RetainedInspector: View {
     let child: Block
     var body: some View {
         VStack {
+            InboxMembershipButton(block: block)
             TaskInspectorMetadata(block: block)
             DueDateChip(block: block)
             TaskMetadataChips(block: block, labels: [], progress: nil)
