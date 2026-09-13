@@ -14,7 +14,7 @@ struct InlineMetadataEdits {
     mutating func recordTextChange(for block: Block, to text: String) {
         guard block.modelContext != nil, !block.isDeleted, block.text != text else { return }
         let original: String
-        if let previous = edits[block.id], previous.block === block {
+        if let previous = edits[block.id], previous.block === block, previous.editedText == block.text {
             original = previous.originalText
         } else {
             original = block.text

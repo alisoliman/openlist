@@ -114,6 +114,17 @@ store.setText("Pending tomorrow", for: literalTask)
 inlineEdits.retain(blockIDs: [])
 check(!inlineEdits.consume(for: literalTask), "Leaving or removing a document row clears pending capture intent")
 
+// A remote edit can arrive between two local edits without a commit in between.
+store.setText("Call mum tomorrow", for: literalTask)
+inlineEdits.recordTextChange(for: literalTask, to: "Local draft")
+store.setText("Local draft", for: literalTask)
+store.setText("External title", for: literalTask)
+inlineEdits.recordTextChange(for: literalTask, to: "Call mum tomorrow")
+store.setText("Call mum tomorrow", for: literalTask)
+check(inlineEdits.consume(for: literalTask), "A new local edit after an external change uses the refreshed baseline")
+store.applyInlineMetadata(to: literalTask, parsesNaturalLanguage: true)
+check(literalTask.text == "Call mum" && literalTask.dueDate != nil, "Typing an earlier title after an external change still commits metadata")
+
 // A read-only on-disk fixture exercises a real save failure after insertion.
 let fixtureURL = FileManager.default.temporaryDirectory.appending(path: "capture-failure-\(UUID().uuidString)")
 try FileManager.default.createDirectory(at: fixtureURL, withIntermediateDirectories: true)
