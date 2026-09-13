@@ -10,8 +10,11 @@ graphemes; deep task-note matches; scope/archive/completion combinations;
 completed and collapsed ancestors below the fold; preserved stored state;
 unavailable identities; live Observation; and background query supersession.
 
-The first passing run completed 272 assertions. Final suite/build results and
-native observations will be recorded after the final integration checks.
+The focused suite passed 280 assertions. The integrated `Tools/check.sh` run
+passed all 22 suites; the final changes after that run concern native focus
+and lazy scroll-target registration. The final Dev build passed, including all
+9 storage/identity isolation checks. CI runs the complete regression suite and
+release build on the final pull-request revision.
 
 ## Measured search cost
 
@@ -36,20 +39,46 @@ sequence published only its final `needle 9999` result in 40.78 ms. Cancellation
 is checked throughout scanning and hit construction; sorting only reads values.
 These are synthetic measurements, not a latency guarantee or an external index.
 
-## Native checks to complete
+## Native validation
 
-- More than 80 matches: count, Load next, arrow-key crossing, Return, result
-  button keyboard focus, VoiceOver labels and activation.
-- Close with Escape from query and controls; cancel returns the prior native
-  editor/caret, while opening a result retains destination focus.
-- Exact paragraph below the fold inside collapsed/completed ancestors;
-  non-task note-only match; Finish and leaving/revisiting preserve collapse,
-  completion and archived status.
-- Task title and a match near the end of a long note: inspector scroll,
-  native selection visibility and keyboard focus.
-- Long query with the reveal notice at the supported narrow window size.
-- Rename, reparent, complete, archive and delete while search is open; rapid
-  query changes must not expose clickable results from an older request.
+Observed on 2026-09-13 in an isolated Dev review session, using source data
+created through the app. Production storage was not used.
 
-No native app control was performed by the implementation agent. The root
-delivery task owns native validation and records its observed results here.
+- A list with 110 matching tasks reports 110 results, initially renders 80,
+  exposes all results through **Load next 30**, and loads the next batch when
+  arrow navigation crosses the boundary. Return opens the selected exact task.
+- Tab focus, arrow selection, and Return activation agree. Result labels,
+  selected state, destination focus, and accessibility focus were inspected.
+- A match after 60 paragraphs in a task note scrolls the inspector to the
+  ending passage and visibly selects the exact word. Cancelling another search
+  restores that native selection. The content includes accents and a
+  multi-scalar emoji.
+- Excluding completed tasks changes the result count from 110 to 109.
+  Activating an included completed result preserves its completion state.
+- A paragraph beneath a completed, collapsed task is revealed below the fold
+  with its native editor focused. Leaving and revisiting retains the saved
+  hidden-completed preference and collapsed branch.
+- A retained note on a non-task block opens its matching passage card in the
+  owning document. Cold launch, navigation from another page, and repeat
+  activation from the bottom of the document all reach the offscreen card at
+  a 640-point window width with the sidebar visible. The passage and keyboard
+  focus ring are visible; accessibility focus reports “Search result in note”.
+- Archived content is included by default and clearly identified. Turning
+  inclusion off removes its match; turning it back on restores it. Opening the
+  result leaves the list archived, verified in the Lists gallery.
+- A hidden list description is exposed and focused even on the same page.
+  **Finish** restores its saved hidden state. A 94-character query wraps in the
+  reveal notice at 640 points; **Finish** stays visible and clickable.
+- Task-title activation opens the correct inspector. Back navigation restores
+  the previous reading region. An actual app relaunch retained fixture content
+  and saved completion/collapse preferences.
+
+Native review found and resolved mismatched result-button focus/selection,
+hidden-summary reveal, and cold lazy note-target scrolling. The latter uses
+registered UUID scroll targets before refining the scroll to the mounted note
+card; it does not eagerly render the document.
+
+Concurrent native/MCP mutations while the search modal remained open and
+spoken VoiceOver traversal were not exercised. Automated saved-store checks
+cover live Observation, changed/deleted identities, query supersession, and
+scope transitions; these are distinct from the native checks above.
