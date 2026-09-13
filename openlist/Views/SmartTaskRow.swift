@@ -77,11 +77,14 @@ struct SmartTaskRow: View {
                 priority: block.priority,
                 action: { env.store.toggleCompletion(block) }
             )
-            .padding(.top, 1)
+            .frame(height: 24)
             .accessibilityLabel("\(block.isCompleted ? "Reopen" : "Complete") \(block.displayTitle)")
 
             VStack(alignment: .leading, spacing: 4) {
                 title
+                    // Match the detail control's line height for both Text and
+                    // TextField, while allowing multiline titles to grow.
+                    .frame(minHeight: 24, alignment: .leading)
                 if showsBreadcrumb, let breadcrumb = context.breadcrumb(for: block) {
                     Text(breadcrumb)
                         .font(Theme.Font.metadata)
