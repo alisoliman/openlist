@@ -88,4 +88,21 @@ navigator.go(to: .tasks)
 check(navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil && navigator.rowFocusRequest == nil,
       "Navigation clears selection scope and pending gutter focus together")
 
+let listScope = UUID()
+navigator.go(to: .list(listID))
+navigator.selectRow(a, gesture: .replace, scope: listScope, visible: [a, b, c])
+navigator.stepRowSelection(1, extending: true, scope: listScope, visible: [a, b, c])
+navigator.setListViewMode(.tasks, for: listID)
+check(!navigator.hasDocumentEditor && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil
+      && !navigator.isSelectingRows && navigator.rowFocusRequest == nil,
+      "Switching to list Tasks clears the document selection, anchor and pending native focus")
+navigator.selectRow(c, gesture: .replace, scope: listScope, visible: [c, b, a])
+navigator.selectRow(a, gesture: .range, scope: listScope, visible: [c, b, a])
+check(navigator.orderedSelection == [c, b, a], "List Tasks range follows the entire sorted projection")
+navigator.reconcileSelection(scope: listScope, visible: [b, a])
+check(navigator.orderedSelection == [b, a], "Hiding a completed task prunes it from list Tasks selection")
+navigator.setListViewMode(.document, for: listID)
+check(navigator.hasDocumentEditor && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil,
+      "Returning to Document clears list Tasks row selection before text focus resumes")
+
 print("\(checks) Inbox navigation checks passed")

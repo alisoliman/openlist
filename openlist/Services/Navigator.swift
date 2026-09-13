@@ -65,7 +65,7 @@ final class Navigator {
         if route == .list(listID) {
             contentReveal = nil
             openTaskID = nil
-            selection.removeAll()
+            clearSelection()
         }
     }
 
