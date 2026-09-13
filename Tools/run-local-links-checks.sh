@@ -9,7 +9,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/link-checks"
     openlist/Model/SearchOptions.swift openlist/Model/SearchHit.swift openlist/Model/ContentReveal.swift \
     openlist/Model/LocalLink.swift Shared/ListAccent.swift openlist/Services/LibraryIdentity.swift openlist/Services/NoteItemLink.swift \
     openlist/Services/LocalLinkNavigation.swift openlist/Services/ReminderNavigation.swift \
-    openlist/Services/BlockTree.swift openlist/Services/Navigator.swift \
+    openlist/Services/BlockTree.swift openlist/Model/ListViewMode.swift openlist/Services/Navigator.swift \
     Tools/LocalLinkChecks/main.swift
 "$OUT/link-checks"
 xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/identity-checks" \

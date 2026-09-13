@@ -84,6 +84,9 @@ check(target.taskID == taskID && target.listID == listID && target.ancestorIDs =
 check(target.source == .localLink && target.query.isEmpty, "Link reveal has no search or title dependency")
 check(parent.isCompleted && parent.isCollapsed, "Reveal never rewrites completion or collapse")
 let navigator = Navigator()
+let unrelatedListID = UUID()
+navigator.setListViewMode(.tasks, for: listID)
+navigator.setListViewMode(.tasks, for: unrelatedListID)
 let links = LocalLinkNavigation(libraryID: firstIdentity, navigator: navigator)
 let taskURL = LocalLink(libraryID: firstIdentity, target: .task(taskID)).url()
 links.receive(taskURL)
@@ -93,15 +96,23 @@ check(navigator.contentReveal == nil, "Window readiness alone cannot resolve bef
 navigator.replace(with: .today) // Existing bootstrap default.
 links.storeReady(resolve: resolve)
 check(navigator.openTaskID == taskID && navigator.contentReveal?.source == .localLink, "Delivery after bootstrap overrides Today exactly once")
+check(navigator.listViewMode(for: listID) == .document && navigator.contentReveal?.ancestorIDs == [parent.id],
+      "Exact nested task link exits Tasks mode and reveals its original document hierarchy")
+check(navigator.listViewMode(for: unrelatedListID) == .tasks,
+      "Revealing one list leaves another list's Tasks preference unchanged")
 let firstActivation = navigator.searchActivation
 links.windowReady(true)
 links.storeReady(resolve: resolve)
 check(navigator.searchActivation == firstActivation, "Repeated readiness does not replay a delivery")
 links.windowReady(false)
+navigator.setListViewMode(.tasks, for: listID)
 links.receive(LocalLink(libraryID: firstIdentity, target: .list(listID)).url())
-check(navigator.openTaskID == taskID, "Closed main window queues incoming delivery")
+check(navigator.contentReveal == nil && navigator.listViewMode(for: listID) == .tasks,
+      "Closed main window queues a list link without prematurely leaving Tasks mode")
 links.windowReady(true)
 check(navigator.openTaskID == nil && navigator.contentReveal?.destination == .list(listID), "Reopened window consumes pending list link")
+check(navigator.listViewMode(for: listID) == .document && navigator.hasDocumentEditor,
+      "Queued whole-list link reopens the original document from Tasks mode")
 
 // Both entry points share one navigator after integration. Readiness must not
 // lose either queue, replay a delivery, or let bootstrap reset a revealed item.
