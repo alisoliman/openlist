@@ -73,6 +73,7 @@ struct RootView: View {
             RootWindowReader { window in
                 hostWindow.window = window
                 env.reminderNavigation.windowReady(window != nil)
+                env.localLinks.windowReady(window != nil)
                 installCompletionUndo(in: window)
                 clearInitialFocus(for: env.navigator.route)
             }
@@ -84,6 +85,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === hostWindow.window else { return }
+            env.localLinks.windowReady(true)
             installCompletionUndo(in: window)
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
@@ -105,7 +107,10 @@ struct RootView: View {
             updateDockBadge()
             env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
         }
-        .onDisappear { env.reminderNavigation.windowReady(false) }
+        .onDisappear {
+            env.reminderNavigation.windowReady(false)
+            env.localLinks.windowReady(false)
+        }
         .onChange(of: env.navigator.isSearchOpen) { _, isOpen in
             if isOpen {
                 searchReturnFocus.remember(in: hostWindow.window, activation: env.navigator.searchActivation)
@@ -175,6 +180,9 @@ struct RootView: View {
         } detail: {
             GeometryReader { viewport in
                 VStack(spacing: 0) {
+                    if env.localLinks.error != nil {
+                        LocalLinkNotice()
+                    }
                     if env.store.labelMergeUndo != nil || env.store.labelMaintenanceError != nil {
                         LabelMergeNotice()
                     }

@@ -283,6 +283,12 @@ unavailable message. Escape closes search and returns focus to its previous
 control when no result was opened. Search preferences are local to the open
 search session; no index or query history is persisted.
 
+**Copy Link** in task and list menus copies a stable reference to that item in
+this Mac's library. Links survive renaming and moving tasks, and can open
+Openlist from another app. Archived content is clearly identified and stays
+archived; missing or wrong-library targets show an explanation. Openlist Dev
+uses a separate URL scheme. See the [local link and backup/restore contract](docs/local-item-links.md).
+
 ### Widgets
 
 Three macOS widgets — **Today**, **Summary** and **Lists**. The app publishes a small

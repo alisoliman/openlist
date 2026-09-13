@@ -1,0 +1,128 @@
+import CoreData
+import Foundation
+import SwiftData
+
+var checks = 0
+func check(_ value: Bool, _ message: String) {
+    precondition(value, message)
+    checks += 1
+}
+func rejects(_ text: String, _ error: LocalLinkError, scheme: String = LocalLink.scheme) {
+    do { _ = try LocalLink.parse(URL(string: text)!, scheme: scheme); preconditionFailure("Accepted \(text)") }
+    catch let actual as LocalLinkError { check(actual == error, "Precise validation: \(text)") }
+    catch { preconditionFailure("Unexpected error \(error)") }
+}
+
+let libraryID = UUID()
+let taskID = UUID()
+let listID = UUID()
+for scheme in [LocalLink.productionScheme, LocalLink.developmentScheme] {
+    for target in [LocalLink.Target.task(taskID), .list(listID)] {
+        let link = LocalLink(libraryID: libraryID, target: target)
+        let url = link.url(scheme: scheme)
+        check(try LocalLink.parse(url, scheme: scheme) == link, "Task/list round trip in each edition")
+        check(url.absoluteString == "\(scheme)://v1/\(libraryID.uuidString.lowercased())/\(target.route)/\(target.id.uuidString.lowercased())", "Canonical link contains only scheme, version and identities")
+        check(LocalLink.isLocal(url), "Both editions are recognized as internal links")
+    }
+}
+let base = LocalLink(libraryID: libraryID, target: .task(taskID)).url().absoluteString
+for suffix in ["?", "?action=delete", "?task=foo", "#", "#note", "/", "/extra"] {
+    rejects(base + suffix, .malformed)
+}
+for path in ["//\(libraryID)/task/\(taskID)", "/\(libraryID)//\(taskID)", "/bad/task/\(taskID)",
+             "/\(libraryID)/task/bad", "/\(libraryID)/task", "/\(libraryID)/task/\(taskID)/..",
+             "/\(libraryID)/task/%41\(taskID.uuidString.dropFirst())"] {
+    rejects("\(LocalLink.scheme)://v1" + path, .malformed)
+}
+rejects(base.replacingOccurrences(of: "/task/", with: "/delete/"), .unsupported)
+rejects(base.replacingOccurrences(of: "://v1/", with: "://v2/"), .unsupported)
+rejects(base.replacingOccurrences(of: "://v1/", with: "://user@v1/"), .malformed)
+rejects(base.replacingOccurrences(of: "://v1/", with: "://v1:99/"), .malformed)
+rejects(base.replacingOccurrences(of: "://v1/", with: "://%76%31/"), .malformed)
+rejects("https://example.com", .wrongApp)
+rejects(LocalLink(libraryID: libraryID, target: .task(taskID)).url(scheme: "openlist-dev").absoluteString, .wrongApp, scheme: "openlist")
+check(!LocalLink.isLocal(URL(string: "https://example.com/openlist")!), "External URLs are not internal commands")
+
+let fixture = URL.temporaryDirectory.appendingPathComponent("OpenlistLinks-\(UUID())", isDirectory: true)
+try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+defer { try? FileManager.default.removeItem(at: fixture) }
+let storeURL = fixture.appendingPathComponent("library.store")
+let schema = Schema([TaskList.self, Block.self, SidebarSection.self])
+let configuration = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
+let container = try ModelContainer(for: schema, configurations: configuration)
+let context = container.mainContext
+context.autosaveEnabled = false
+let firstIdentity = try LibraryIdentity.read(at: storeURL)
+let list = TaskList(title: "Secret original title"); list.id = listID
+let task = Block(kind: .task); task.id = taskID; task.listID = listID; task.text = "Duplicate title"
+let parent = Block(kind: .task); parent.listID = listID; parent.text = "Closed parent"; parent.isCompleted = true; parent.isCollapsed = true
+task.parentID = parent.id
+let duplicate = Block(kind: .task); duplicate.listID = listID; duplicate.text = task.text
+let paragraph = Block(kind: .paragraph); paragraph.listID = listID
+for block in [task, parent, duplicate, paragraph] { context.insert(block) }
+context.insert(list)
+try context.save()
+check(try LibraryIdentity.read(at: storeURL) == firstIdentity, "Library identity survives saves")
+func resolve(_ target: LocalLink.Target) throws -> ContentReveal {
+    try LocalLinkNavigation.resolve(target, blocks: context.fetch(FetchDescriptor<Block>()), lists: context.fetch(FetchDescriptor<TaskList>()))
+}
+let target = try resolve(.task(taskID))
+check(target.taskID == taskID && target.listID == listID && target.ancestorIDs == [parent.id], "Nested exact task and completed/collapsed ancestor path")
+check(target.source == .localLink && target.query.isEmpty, "Link reveal has no search or title dependency")
+check(parent.isCompleted && parent.isCollapsed, "Reveal never rewrites completion or collapse")
+let navigator = Navigator()
+let links = LocalLinkNavigation(libraryID: firstIdentity, navigator: navigator)
+let taskURL = LocalLink(libraryID: firstIdentity, target: .task(taskID)).url()
+links.receive(taskURL)
+check(navigator.contentReveal == nil, "Cold delivery waits for initialization")
+links.windowReady(true)
+check(navigator.contentReveal == nil, "Window readiness alone cannot resolve before bootstrap")
+navigator.replace(with: .today) // Existing bootstrap default.
+links.storeReady(resolve: resolve)
+check(navigator.openTaskID == taskID && navigator.contentReveal?.source == .localLink, "Delivery after bootstrap overrides Today exactly once")
+let firstActivation = navigator.searchActivation
+links.windowReady(true)
+links.storeReady(resolve: resolve)
+check(navigator.searchActivation == firstActivation, "Repeated readiness does not replay a delivery")
+links.windowReady(false)
+links.receive(LocalLink(libraryID: firstIdentity, target: .list(listID)).url())
+check(navigator.openTaskID == taskID, "Closed main window queues incoming delivery")
+links.windowReady(true)
+check(navigator.openTaskID == nil && navigator.contentReveal?.destination == .list(listID), "Reopened window consumes pending list link")
+let beforeFailure = navigator.contentReveal
+links.receive(LocalLink(libraryID: UUID(), target: .task(taskID)).url())
+check(links.error == .wrongLibrary && navigator.contentReveal == beforeFailure, "Wrong-library UUID cannot resolve coincidentally identical target IDs")
+links.receive(LocalLink(libraryID: firstIdentity, target: .task(UUID())).url())
+check(links.error == .targetUnavailable && navigator.contentReveal == beforeFailure, "Missing target explains failure without navigation")
+links.receive(LocalLink(libraryID: firstIdentity, target: .task(paragraph.id)).url())
+check(links.error == .targetUnavailable, "Non-task block cannot masquerade as task URL")
+let renamed = TaskList(title: "Different destination"); context.insert(renamed)
+task.text = "Renamed résumé 🧑🏽‍💻"; task.listID = renamed.id; task.parentID = nil
+list.title = "Renamed list"
+try context.save()
+links.receive(taskURL)
+check(navigator.openTaskID == taskID && navigator.route == .list(renamed.id), "Saved URL survives rename, move and duplicate titles")
+check(links.error == nil, "Successful delivery clears previous failure")
+renamed.isArchived = true; renamed.completedVisibility = .hide; task.isCompleted = true
+try context.save()
+links.receive(taskURL)
+check(navigator.contentReveal?.isArchived == true && task.isCompleted && renamed.isArchived && renamed.completedVisibility == .hide, "Archived/completed task opens explicitly without restore or preference writes")
+check(try links.link(to: .task(taskID)) == taskURL, "Copy canonical link remains stable after model changes")
+let persistedIdentity = try LibraryIdentity.read(at: storeURL)
+let reopened = try ModelContainer(for: schema, configurations: configuration)
+check(try LibraryIdentity.read(at: storeURL) == firstIdentity && persistedIdentity == firstIdentity, "Reopened library retains identity")
+let reopenedTask = try reopened.mainContext.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == taskID })).first!
+check(reopenedTask.text == task.text && reopenedTask.listID == renamed.id && reopenedTask.isCompleted, "Reopened target keeps UUID and move/completion state")
+let otherURL = fixture.appendingPathComponent("different.store")
+let other = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: otherURL, cloudKitDatabase: .none))
+check(try LibraryIdentity.read(at: otherURL) != firstIdentity, "A separately created library has a different identity")
+withExtendedLifetime(other) {}
+context.delete(task); try context.save()
+links.receive(taskURL)
+check(links.error == .targetUnavailable, "Deleted target does not restore or recreate itself")
+do { _ = try links.link(to: .task(taskID)); preconditionFailure("Copied deleted target") }
+catch { check(error as? LocalLinkError == .targetUnavailable, "Copying a stale menu target is rejected") }
+let noIdentity = LocalLinkNavigation(libraryID: nil, navigator: Navigator())
+noIdentity.storeReady(resolve: resolve); noIdentity.windowReady(true); noIdentity.receive(taskURL)
+check(noIdentity.error == .identityUnavailable, "Missing store identity fails closed")
+print("Passed \(checks) local link parsing, library identity, queued navigation and exact reveal checks")

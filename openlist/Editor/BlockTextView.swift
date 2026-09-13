@@ -47,6 +47,7 @@ struct BlockEditorCallbacks {
 /// Return that splits a block, Tab that re-parents it, Backspace that merges
 /// upwards — so each block hosts a bare `NSTextView` and the outline arbitrates.
 struct BlockTextView: NSViewRepresentable {
+    @Environment(\.openURL) private var openURL
     let blockID: UUID
     let kind: BlockKind
     let isCompleted: Bool
@@ -303,7 +304,7 @@ struct BlockTextView: NSViewRepresentable {
             default: url = nil
             }
             guard let url else { return false }
-            NSWorkspace.shared.open(url)
+            parent.openURL(url)
             return true
         }
 

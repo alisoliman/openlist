@@ -20,5 +20,11 @@
         <key>UTTypeDescription</key><string>Openlist Inbox Order</string>
         <key>UTTypeConformsTo</key><array><string>public.data</string></array>
     </dict></array>
+    <key>CFBundleURLTypes</key>
+    <array><dict>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>CFBundleURLName</key><string>solimanali.openlist.dev.item</string>
+        <key>CFBundleURLSchemes</key><array><string>openlist-dev</string></array>
+    </dict></array>
 </dict>
 </plist>

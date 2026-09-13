@@ -30,6 +30,7 @@ for bundle, identifier in [(app, 'solimanali.openlist.dev'),
         require(info.get('CFBundleIconName') == 'OpenlistDev' or info.get('CFBundleIconFile') == 'OpenlistDev', 'DEV-badged app icon')
         require(info.get('OpenlistDevelopment') in (True, 'YES'), 'development Info.plist marker')
         require('OpenlistReviewSession' not in info, 'normal Dev must not use a disposable review fixture')
+        require(info.get('CFBundleURLTypes') == [{'CFBundleTypeRole': 'Viewer', 'CFBundleURLName': 'solimanali.openlist.dev.item', 'CFBundleURLSchemes': ['openlist-dev']}], 'Dev must register only its distinct item-link scheme')
 helper = app / 'Contents/MacOS/openlist-mcp'
 signature = subprocess.run(['codesign', '-d', '--verbose=2', str(helper)], check=True, capture_output=True).stderr.decode()
 require('Identifier=solimanali.openlist.dev.mcp' in signature, 'distinct MCP helper signing identity')

@@ -493,6 +493,7 @@ class PackagingChecks(unittest.TestCase):
                         {"UTTypeIdentifier": "app.openlist.inbox-order", "UTTypeConformsTo": ["public.data"]},
                         {"UTTypeIdentifier": "solimanali.openlist.library-backup", "UTTypeConformsTo": ["com.apple.package"]},
                     ]} if bundle == self.app else {}),
+                    **({"CFBundleURLTypes": [{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "solimanali.openlist.item", "CFBundleURLSchemes": ["openlist"]}]} if bundle == self.app else {}),
                 }, output)
         self.helper = self.app / "Contents/MacOS/openlist-mcp"
         shutil.copy2(BINARY, self.helper)
@@ -546,6 +547,17 @@ class PackagingChecks(unittest.TestCase):
         result = self.verify()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"Contents/Resources/ThirdPartyNotices.txt", result.stderr)
+
+    def test_item_links_never_register_development_or_extra_schemes_in_release(self):
+        path = self.app / "Contents/Info.plist"
+        original = plistlib.loads(path.read_bytes())
+        for schemes in ([], ["openlist-dev"], ["openlist", "openlist-dev"], ["openlist", "https"]):
+            with self.subTest(schemes=schemes):
+                info = dict(original)
+                info["CFBundleURLTypes"] = [{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "solimanali.openlist.item", "CFBundleURLSchemes": schemes}]
+                path.write_bytes(plistlib.dumps(info))
+                for shell in self.verifier_shells():
+                    self.assert_invalid_bundle(self.verify(shell), self.app, "item-link registration")
 
     def test_empty_dependency_notices_are_rejected(self):
         self.notices.write_text("")

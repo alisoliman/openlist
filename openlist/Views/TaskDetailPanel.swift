@@ -462,6 +462,10 @@ private struct TaskDetailContent: View {
             Divider()
 
             HStack(spacing: 8) {
+                CopyItemLinkButton(target: .task(taskID))
+                    .buttonStyle(.plain)
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(Theme.secondaryText)
                 InboxMembershipButton(block: block)
                     .font(Theme.Font.metadata)
                     .buttonStyle(.plain)

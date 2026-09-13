@@ -329,6 +329,7 @@ struct BlockContextMenu: View {
                 actions.onToggleCompletion()
             }
             Button("Open Details") { actions.onOpenDetails() }
+            CopyItemLinkButton(target: .task(block.id))
             Divider()
 
             Menu("Due") {

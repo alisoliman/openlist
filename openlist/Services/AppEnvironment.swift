@@ -44,6 +44,7 @@ final class AppEnvironment {
     let store: Store
     let navigator: Navigator
     let reminderNavigation: ReminderNavigation
+    let localLinks: LocalLinkNavigation
     let settings: AppSettings
     let sync: ICloudSyncMonitor
     let calendar: CalendarCoordinator
@@ -86,7 +87,7 @@ final class AppEnvironment {
     @ObservationIgnored private var pendingTitleCaptures: [UUID: PendingTitleCapture] = [:]
 
     init(context: ModelContext, sync: ICloudSyncMonitor,
-         libraryStorage: LibraryRestoreStorage? = nil, libraryStartup: LibraryRestoreStorage.Startup? = nil) {
+         libraryID: UUID? = nil, libraryStorage: LibraryRestoreStorage? = nil, libraryStartup: LibraryRestoreStorage.Startup? = nil) {
         let store = Store(context: context)
         let settings = AppSettings()
         self.store = store
@@ -101,6 +102,7 @@ final class AppEnvironment {
         mcp = MCPIntegration(store: store, settings: settings)
         navigator = Navigator(defaults: ReviewSession.defaults)
         reminderNavigation = ReminderNavigation(navigator: navigator)
+        localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
 
@@ -214,6 +216,12 @@ final class AppEnvironment {
                         && recovery.recoveryError == nil)
             }
         }
+        localLinks.storeReady { [weak store] target in
+            guard let store else { throw LocalLinkError.targetUnavailable }
+            return try LocalLinkNavigation.resolve(target,
+                blocks: store.context.fetch(FetchDescriptor<Block>()),
+                lists: store.context.fetch(FetchDescriptor<TaskList>()))
+        }
     }
 
     private func refreshAfterRemoteChange() {
@@ -239,6 +247,17 @@ final class AppEnvironment {
 // MARK: - Convenience
 
 extension AppEnvironment {
+    func copyLink(to target: LocalLink.Target) {
+        do {
+            let url = try localLinks.link(to: target)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([url as NSURL])
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        } catch {
+            localLinks.error = error as? LocalLinkError ?? .targetUnavailable
+        }
+    }
+
     /// Sugar so views can write `app.route` instead of reaching through the navigator.
     var route: AppRoute { navigator.route }
 
