@@ -32,7 +32,7 @@ final class RowSelectionNSControl: NSControl, NSDraggingSource {
     private var handlingMouse = false
     private var pendingClick = false
     private var didDrag = false
-    private var mouseDownPoint: NSPoint?
+    private var mouseDownEvent: NSEvent?
 
     /// Transfer focus after an arrow move without creating a fresh anchor.
     /// Deferring also allows ScrollViewReader to realize an offscreen row.
@@ -80,7 +80,7 @@ final class RowSelectionNSControl: NSControl, NSDraggingSource {
         window?.makeFirstResponder(self)
         handlingMouse = false
         didDrag = false
-        mouseDownPoint = event.locationInWindow
+        mouseDownEvent = event
         let command = event.modifierFlags.contains(.command)
         let shift = event.modifierFlags.contains(.shift)
         pendingClick = !command && !shift && configuration?.defersPlainClick == true
@@ -92,12 +92,12 @@ final class RowSelectionNSControl: NSControl, NSDraggingSource {
     override func mouseUp(with event: NSEvent) {
         if pendingClick && !didDrag { configuration?.onSelect(.replace) }
         pendingClick = false
-        mouseDownPoint = nil
+        mouseDownEvent = nil
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !didDrag, let start = mouseDownPoint,
-              hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) > 4,
+        guard !didDrag, let start = mouseDownEvent,
+              hypot(event.locationInWindow.x - start.locationInWindow.x, event.locationInWindow.y - start.locationInWindow.y) > 4,
               let configuration else { return }
         didDrag = true
         pendingClick = false
@@ -108,7 +108,9 @@ final class RowSelectionNSControl: NSControl, NSDraggingSource {
         let item = NSDraggingItem(pasteboardWriter: payload)
         let image = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: "Selected rows") ?? NSImage()
         item.setDraggingFrame(bounds, contents: image)
-        beginDraggingSession(with: [item], event: event, source: self)
+        // AppKit derives the drag-image offset from the original mouse-down
+        // event, even though movement crosses the threshold later.
+        beginDraggingSession(with: [item], event: start, source: self)
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
@@ -116,6 +118,8 @@ final class RowSelectionNSControl: NSControl, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        mouseDownEvent = nil
+        pendingClick = false
         configuration?.onDragEnd()
     }
 
