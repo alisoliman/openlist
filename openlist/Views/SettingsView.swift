@@ -111,8 +111,7 @@ struct GeneralSettingsTab: View {
                 Toggle("Show unfinished count on the Dock icon", isOn: $settings.showsDockBadge)
             }
 
-            Section("Feedback") {
-                Toggle("Play a sound when completing a task", isOn: $settings.playsCompletionSound)
+            Section("Confirmations") {
                 Toggle("Confirm before deleting a list", isOn: $settings.confirmsBeforeDeletingLists)
             }
         }

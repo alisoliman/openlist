@@ -62,11 +62,17 @@ struct DocumentView: View {
     var trailingSpace: CGFloat = 120
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var blocks: [Block]
     @Query(sort: [SortDescriptor(\TaskLabel.name)]) private var allLabels: [TaskLabel]
 
     @State private var focus = EditorFocus()
     @State private var slash: SlashState?
+    @State private var completionMotionIDs: Set<UUID> = []
+
+    private var completedTaskIDs: Set<UUID> {
+        Set(blocks.filter { $0.isTask && $0.isCompleted }.map(\.id))
+    }
 
     init(
         document: DocumentContext,
@@ -93,7 +99,7 @@ struct DocumentView: View {
     // MARK: - Derived state
 
     private var allRows: [BlockRow] {
-        applySorting(BlockTree.flatten(blocks, root: document.rootBlockID))
+        BlockTree.prioritizingPendingTasks(in: applySorting(BlockTree.flatten(blocks, root: document.rootBlockID)))
     }
 
     /// Reorders top-level blocks without disturbing their subtrees.
@@ -182,10 +188,42 @@ struct DocumentView: View {
 
         return LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(visibleRows) { row in
+                // Animate the branch's position as a whole, rather than
+                // interpolating each chip's internal layout during the move.
                 rowView(for: row, labelLookup: labelLookup, progress: progress[row.id])
+                .background {
+                    if completionMotionIDs.contains(row.id) {
+                        RoundedRectangle(cornerRadius: Theme.Radius.row)
+                            .fill(Theme.canvas)
+                    }
+                }
+                .geometryGroup()
+                .zIndex(completionMotionIDs.contains(row.id) ? 1 : 0)
             }
 
             trailingTapTarget
+        }
+        .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1),
+                   value: completedTaskIDs)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: showsCompleted)
+        .onChange(of: completedTaskIDs) { previous, current in
+            guard !reduceMotion else { return }
+            let changed = previous.symmetricDifference(current)
+            let children = BlockTree.childIndex(of: blocks, root: document.rootBlockID)
+            var moving = changed
+            var queue = Array(changed)
+            while let id = queue.popLast() {
+                for child in children[id] ?? [] where moving.insert(child.id).inserted {
+                    queue.append(child.id)
+                }
+            }
+            completionMotionIDs.formUnion(moving)
+        }
+        .task(id: completionMotionIDs) {
+            guard !completionMotionIDs.isEmpty else { return }
+            do { try await Task.sleep(for: .milliseconds(650)) }
+            catch { return }
+            completionMotionIDs.removeAll()
         }
         .overlayPreferenceValue(EditorTextBoundsKey.self) { anchors in
             slashMenuOverlay(anchors: anchors)

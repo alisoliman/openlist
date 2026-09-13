@@ -317,4 +317,30 @@ coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}", kind: .ta
 let trailingLineHeight = input.height(fittingWidth: 180)
 check(input.caretRectLocal(at: 5).maxY <= trailingLineHeight, "Balanced insets still contain the caret after a trailing soft break")
 
+// Completion changes presentation, never manual order or parentage.
+let section = Block(kind: .heading1, text: "Section", sortIndex: 0)
+let doneParent = Block(kind: .task, text: "Done parent", sortIndex: 1)
+let attachedNote = Block(kind: .paragraph, text: "Attached note", parentID: doneParent.id, sortIndex: 0)
+let pendingParent = Block(kind: .task, text: "Pending parent", sortIndex: 2)
+let doneChild = Block(kind: .task, text: "Done child", parentID: pendingParent.id, sortIndex: 0)
+let pendingChild = Block(kind: .task, text: "Pending child", parentID: pendingParent.id, sortIndex: 1)
+let secondDone = Block(kind: .task, text: "Second done", sortIndex: 3)
+doneParent.isCompleted = true
+doneChild.isCompleted = true
+secondDone.isCompleted = true
+let completionBlocks = [section, doneParent, attachedNote, pendingParent, doneChild, pendingChild, secondDone]
+let originalCompletionRows = BlockTree.flatten(completionBlocks)
+let projected = BlockTree.prioritizingPendingTasks(in: originalCompletionRows)
+check(projected.map(\.id) == [section.id, pendingParent.id, pendingChild.id, doneChild.id, doneParent.id, attachedNote.id, secondDone.id], "Pending siblings precede completed branches at every outline depth")
+check(projected.first(where: { $0.id == attachedNote.id })?.depth == 1 && attachedNote.parentID == doneParent.id, "A completed task carries its attached note and nesting")
+check(BlockTree.flatten(completionBlocks).map(\.id) == originalCompletionRows.map(\.id) && doneParent.sortIndex == 1, "Completion projection leaves stored manual order unchanged")
+check(BlockTree.prioritizingPendingTasks(in: projected).map(\.id) == projected.map(\.id), "Pending-first projection is stable and idempotent")
+doneParent.isCompleted = false
+check(BlockTree.prioritizingPendingTasks(in: BlockTree.flatten(completionBlocks)).prefix(3).map(\.id) == [section.id, doneParent.id, attachedNote.id], "Reopening restores the original manual position with the whole subtree")
+pendingParent.isCollapsed = true
+let collapsedProjection = BlockTree.prioritizingPendingTasks(in: BlockTree.flatten(completionBlocks))
+check(!collapsedProjection.contains(where: { $0.id == doneChild.id || $0.id == pendingChild.id }), "Completion ordering respects collapsed subtrees")
+check(BlockTree.prioritizingPendingTasks(in: []).isEmpty, "Empty outline has no completion projection")
+check(Set(projected.map(\.id)).count == completionBlocks.count, "Completion ordering never loses or duplicates a block")
+
 print("✅ \(checks) editor/store checks passed")

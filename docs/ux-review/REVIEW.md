@@ -19,7 +19,7 @@ This review combines source inspection, isolated persistence/editor checks, and 
 | P1 | Capture surface sizing | The shared Quick Add content could be compressed to its minimum height, clipping its header and Add task footer when preview chips appeared. | Request the capture content's ideal vertical size in both the window and sheet. Native screenshots verify the whole form and footer remain visible. |
 | P1 | Capture caret | Returning from destination search selected the entire title, so typing replaced the draft. SwiftUI TextSelection restoration was overridden by the native field editor's focus behavior. | Use a dedicated plain-text NSTextView, preserving its actual UTF-16 selected range and typing undo. Native insertion, selected-substring replacement, and Return/Shift-Return behavior pass. |
 | P2 | `RootView.swift`, `SmartTaskRow.swift` | Three columns become cramped at narrow widths. Metadata consumes title width; a hover-only details button changes row geometry. | Adapt row layout without recreating title fields, reserve the details affordance, reduce gutters with available space, and yield the sidebar for a narrow inspector. |
-| P2 | `TaskList.swift`, `ListScreen.swift`, `AppSettings.swift` | Global completed visibility affected only Inbox/Today; ordinary lists used independent Booleans. The per-list action was hidden in the ellipsis menu. | Discoverable Completed count/Show/Hide control and explicit inherit/show/hide policy. Keep completed tasks with their original notes, parents and descendants. |
+| P2 | `TaskList.swift`, `ListScreen.swift`, `AppSettings.swift` | Global completed visibility affected only Inbox/Today; ordinary lists used independent Booleans. The per-list action was hidden in the ellipsis menu. | Discoverable Completed count/Show/Hide control and explicit inherit/show/hide policy. Keep completed tasks with their original notes, parents and descendants; the later completion follow-up places each completed branch below pending siblings. |
 | P2 | `TasksScreen.swift` | Filter menu worked, but visible constraint text looked like controls while being noninteractive. | Make status, list and grouping directly actionable. Add clear/reset actions and remove the redundant duplicate filter menu. |
 | P2 | `InboxScreen`, `InboxReviewView` | Inbox was an ordinary document with no guided way to process captures. | Optional review queue for moving, scheduling or consciously keeping tasks, with remaining count and undo. Scheduling keeps the task in Inbox; this is stated in the interface. |
 | P2 | `TaskDetailPanel.swift` | Every empty scheduling/tag field, empty note editor, attachment placeholder and destructive footer competes with the title. | List and Due first; active metadata visible; secondary fields in More details; Add note and Attach file actions instead of empty input blocks. |
@@ -28,6 +28,7 @@ This review combines source inspection, isolated persistence/editor checks, and 
 | P2 | Motion and accessibility | Small checkbox/collapse effects exist, but state transitions are inconsistent and several custom animations ignore Reduce Motion. Hover affordances and symbolic-only labels weaken keyboard/VoiceOver discoverability. | Restrained changes tied to completion, group changes, disclosures and capture feedback; Reduce Motion checks; stable, named controls. |
 | P1 | Window lifecycle | Capture's Open Task action and repeated New Task commands created duplicate main windows sharing one navigator. A blank title also obscured the Window menu entry. | Use a named singleton `Window` for the shared navigator. New Task restores a minimized window and presents capture; closing capture returns to the previous Inbox state. |
 | P2 | Editor optical alignment (follow-up) | Text and `/` sit low inside the selected row: `lineHeightMultiple` adds leading before the baseline, while editor height uses the font's unrelated glyph bounding box. Heading section margins also sit inside the highlight; hover actions can change available text width. | Use natural TextKit line metrics with equal vertical insets and inter-line spacing. Keep heading margins outside the highlight and reserve the trailing action width. Native screenshots and 13 additional metric/caret checks cover this correction. |
+| P2 | Completion feel (follow-up) | The system Tink sound feels delayed; completed tasks stay mixed among pending tasks, and the checkbox change is abrupt. | Remove completion audio, its setting and its callback. Add a brief checkmark bounce and fading ring, then spring the completed branch below pending siblings. The projection preserves manual order, parentage, notes and nested content. |
 
 ## Closure status
 
@@ -38,6 +39,7 @@ All implementation changes in the findings table are present in the review branc
 | Crash, editor caret, slash placement, unified capture, destination selection, capture sizing and single-window behavior | Implemented; automated checks and native journeys passed |
 | Completed visibility, interactive filters, Inbox review, responsive rows, settings and detail hierarchy | Implemented; source review and relevant native journeys passed |
 | Editor optical alignment and heading highlight bounds | Corrected in the follow-up; measured checks and native screenshots passed |
+| Silent completion, pending-first ordering and restoration on reopen | Implemented; native motion frames, completion/reopen, nested ordering and recurring-task journeys passed |
 | Context-aware shortcuts and command ranking | Implemented; Command-K and capture keyboard journeys passed. Existing Ctrl-D/L/T mappings retained for compatibility; their remapping remains a product decision |
 | Reduce Motion and accessibility labels | Implemented and source-reviewed; physical VoiceOver and system Reduce Motion behavior remain unverified |
 | Global Quick Add hotkey, live CloudKit, release signing/notarization, frame-time profiling | Not validated by this UI review |
@@ -59,6 +61,7 @@ Apple's guidance supports allowing standard components to inherit the platform's
 - App-wide preferences remain per Mac; list overrides are model data. Offline migration checks do not prove production CloudKit schema deployment or physical cross-device synchronization.
 - Destination suggestions are explicit and context-based. No semantic guess silently files a task. The default remains Inbox until the user picks another destination.
 - Existing Ctrl-D/L/T task shortcuts remain for compatibility and are scoped by target availability. They are less idiomatic for native text editing than Command-based shortcuts; changing established mappings is a separate product decision.
+- The completion follow-up supersedes the original decision to leave completed tasks at their exact manual position. Completed branches now appear below pending siblings at each outline depth. The stored order is unchanged, so reopening restores the manual position. Ordinary sibling prose remains in its document order; notes that must travel with a task remain its children or task note field. Repeating tasks stay pending for their next occurrence.
 
 ## Native evidence
 
@@ -81,6 +84,10 @@ Apple's guidance supports allowing standard components to inherit the platform's
 - [After: slash aligned within the selected row](evidence/after-editor-alignment.png)
 - [After: heading highlight excludes section margins](evidence/after-heading-alignment.png)
 - [After: wrapped editor alignment](evidence/after-wrapped-editor-alignment.png)
+- [Completion: before marking a task done](evidence/before-completion-move.png)
+- [Completion: immediate acknowledgement](evidence/completion-motion-acknowledgement.png)
+- [Completion: moving as one readable row](evidence/completion-motion-travelling.png)
+- [Completion: settled below pending work](evidence/after-completion-move.png)
 
 ## Acceptance record
 
@@ -108,5 +115,9 @@ Automated validation:
 - The integrated arm64 Debug app builds with Xcode 27 (27A266a). Capture changes were also built for both supported Mac architectures in their implementation task.
 - The alignment follow-up builds successfully and passes 77 editor/store checks (13 new checks). These measure optical centering for task, paragraph, three heading sizes and code; equal empty/populated row heights; and containment of a trailing-line caret. Native screenshots verify the selected slash row, heading highlight and wrapped paragraph. No full-suite rerun is implied by this focused follow-up.
 - The same follow-up also passes 71 logic and 14 rich-text splice checks.
+- The completion follow-up builds successfully and passes 85 editor/store checks and 34 lifecycle checks. Eight added ordering checks cover nested branches, attached notes, unchanged manual order, stable projection, reopening, collapse, empty documents and no lost/duplicated blocks.
+- Native completion of Call Mum moves it below pending root tasks; reopening restores its place and task counts. Captured intermediate frames verify the acknowledgement and grouped row movement. The travelling row uses an opaque background and temporary stacking priority, avoiding text overlap. Geometry grouping keeps title, checkbox and chips together.
+- Native completion of Oat milk places it below pending Sourdough while both stay under Do the weekly shop. Completing that repeating parent advances its due date from September 13 to September 20, keeps it pending and resets its subtasks for the new occurrence. Accessibility reports Pending/Completed from model state rather than the temporary visual acknowledgement.
+- Completion audio, its settings property/key, playback callback and Settings toggle are removed. Native Settings shows Confirmations without the sound control. No notification/reminder audio behavior was changed. Reduce Motion disables the bounce, ring and row movement; this path was source-reviewed, not tested by changing system preferences.
 
 Physical VoiceOver navigation, the system-wide Quick Add hotkey, production signing/notarization and live cross-device CloudKit synchronization were not validated. Reduce Motion handling was reviewed in code; system accessibility preferences were not changed. UI checks use native interaction and screenshots, not frame-time profiling. Historical explicit Show preferences cannot be distinguished from the old default, as described in the migration contract above.

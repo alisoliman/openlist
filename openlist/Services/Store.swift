@@ -53,11 +53,6 @@ final class Store {
     /// widget snapshot — can refresh themselves.
     var onDidSave: (() -> Void)?
 
-    /// Called when a task is ticked off, wherever that happened — a checkbox,
-    /// ⌘D, or the menu bar. Keeps the completion sound on one path instead of
-    /// asking every view to remember it.
-    var onDidCompleteTask: ((Block) -> Void)?
-
     init(context: ModelContext) {
         self.context = context
     }

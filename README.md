@@ -83,6 +83,10 @@ the completion date, ending never / on a date / after N times), labels, priority
 stars, and progress rollups from subtasks.
 Completing a repeating task rolls it forward to the next occurrence rather than
 marking it done.
+Completion is silent: the checkbox gives a brief visual acknowledgement, then
+completed tasks settle below pending siblings. Each task carries its subtasks
+and attached notes. Manual order stays stored, so reopening restores its place.
+Reduce Motion uses an immediate state change without the bounce or movement.
 
 ### Views
 
@@ -91,8 +95,8 @@ plus per-label views and a completed archive. Today buckets overdue / due today 
 starred; Tasks filters and groups by date, list, label or priority; Updates is a
 personal activity feed grouped by day.
 
-Each list has a **Completed (count)** control to show or hide finished tasks in
-place, preserving their notes and nested content. Settings → Tasks sets the app
+Each list has a **Completed (count)** control to show or hide finished tasks below
+pending siblings, preserving their notes and nested content. Settings → Tasks sets the app
 default; each list can inherit it or explicitly show/hide completed tasks. On
 upgrade, previously hidden lists stay hidden and lists using the historical
 shown default adopt inheritance. Older versions did not distinguish an explicit

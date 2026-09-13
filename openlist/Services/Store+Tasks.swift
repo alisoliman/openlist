@@ -56,7 +56,6 @@ extension Store {
         block.isCompleted = true
         block.completedAt = now
         block.touch()
-        onDidCompleteTask?(block)
         NotificationService.shared.cancelReminder(for: block.id)
 
         // Ticking a parent ticks everything under it.

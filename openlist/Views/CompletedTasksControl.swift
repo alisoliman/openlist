@@ -1,8 +1,8 @@
 import SwiftData
 import SwiftUI
 
-/// A visible disclosure for finished work. Rows stay in their original outline
-/// positions so showing them never separates a task from its notes or children.
+/// A visible control for finished work. Completed branches settle below pending
+/// siblings without separating a task from its notes or children.
 struct CompletedTasksControl: View {
     let list: TaskList
 
@@ -42,7 +42,7 @@ struct CompletedTasksControl: View {
             .disabled(completed.isEmpty)
             .accessibilityLabel(completed.isEmpty ? "No completed tasks" : "\(showsCompleted ? "Hide" : "Show") \(completed.count) completed tasks")
             .accessibilityValue(completed.isEmpty ? "" : (showsCompleted ? "Shown in outline" : "Hidden"))
-            .help("Completed tasks appear in their original place in the outline")
+            .help("Completed tasks appear below pending tasks, with their subtasks and notes")
 
             Spacer(minLength: 4)
 

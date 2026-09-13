@@ -135,34 +135,60 @@ struct TaskCheckbox: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
+    @State private var completionPulse = 0
+    @State private var isAcknowledging = false
+
+    private var showsCheckmark: Bool { isCompleted || isAcknowledging }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            if !isCompleted { acknowledgeCompletion() }
+            else { isAcknowledging = false }
+            action()
+        } label: {
             ZStack {
                 Circle()
                     .strokeBorder(strokeColor, lineWidth: 1.5)
                     .frame(width: 15, height: 15)
 
-                if isCompleted {
-                    Circle()
-                        .fill(accent)
-                        .frame(width: 15, height: 15)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(.white)
-                } else if isHovering {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(accent.opacity(0.55))
-                }
+                Circle()
+                    .fill(accent)
+                    .frame(width: 15, height: 15)
+                    .scaleEffect(showsCheckmark ? 1 : 0)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(showsCheckmark ? Color.white : accent.opacity(0.55))
+                    .opacity(showsCheckmark || isHovering ? 1 : 0)
+                    .scaleEffect(showsCheckmark ? 1 : 0.7)
             }
             .frame(width: 18, height: 18)
             .contentShape(Rectangle())
+            .accessibilityHidden(true)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isCompleted ? "Reopen task" : "Complete task")
+        .accessibilityValue(isCompleted ? "Completed" : "Pending")
         .onHover { isHovering = $0 }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isCompleted)
+        .animation(reduceMotion ? nil : .spring(duration: 0.24, bounce: 0.2), value: showsCheckmark)
+        .modifier(TaskCompletionFeedback(trigger: completionPulse, accent: accent))
+        .onChange(of: isCompleted) { _, completed in
+            if completed && !isAcknowledging { acknowledgeCompletion() }
+            if !completed { isAcknowledging = false }
+        }
+        .task(id: completionPulse) {
+            guard completionPulse > 0 else { return }
+            // Also acknowledges a repeating occurrence, whose model remains
+            // pending. This never delays the save or schedules a data mutation.
+            do { try await Task.sleep(for: .milliseconds(380)) }
+            catch { return }
+            isAcknowledging = false
+        }
         .help(isCompleted ? "Mark as not done (⌘D)" : "Mark as done (⌘D)")
+    }
+
+    private func acknowledgeCompletion() {
+        isAcknowledging = true
+        completionPulse &+= 1
     }
 
     private var strokeColor: Color {

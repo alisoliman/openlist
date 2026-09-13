@@ -63,10 +63,6 @@ final class AppSettings {
     var showsDockBadge: Bool {
         didSet { defaults.set(showsDockBadge, forKey: Key.dockBadge) }
     }
-    /// Play a subtle sound when a task is ticked off.
-    var playsCompletionSound: Bool {
-        didSet { defaults.set(playsCompletionSound, forKey: Key.completionSound) }
-    }
     var confirmsBeforeDeletingLists: Bool {
         didSet { defaults.set(confirmsBeforeDeletingLists, forKey: Key.confirmDelete) }
     }
@@ -97,7 +93,6 @@ final class AppSettings {
             Key.menuBarExtra: true,
             Key.quickCaptureHotKey: true,
             Key.dockBadge: true,
-            Key.completionSound: true,
             Key.confirmDelete: true,
             Key.firstWeekday: 0,
             Key.mcpEnabled: false,
@@ -112,7 +107,6 @@ final class AppSettings {
         showsMenuBarExtra = defaults.bool(forKey: Key.menuBarExtra)
         quickCaptureHotKeyEnabled = defaults.bool(forKey: Key.quickCaptureHotKey)
         showsDockBadge = defaults.bool(forKey: Key.dockBadge)
-        playsCompletionSound = defaults.bool(forKey: Key.completionSound)
         confirmsBeforeDeletingLists = defaults.bool(forKey: Key.confirmDelete)
         firstWeekday = defaults.integer(forKey: Key.firstWeekday)
         hasSeededSampleData = defaults.bool(forKey: Key.seeded)
@@ -138,7 +132,6 @@ final class AppSettings {
         static let menuBarExtra = "settings.menuBarExtra"
         static let quickCaptureHotKey = "settings.quickCaptureHotKey"
         static let dockBadge = "settings.dockBadge"
-        static let completionSound = "settings.completionSound"
         static let confirmDelete = "settings.confirmDelete"
         static let firstWeekday = "settings.firstWeekday"
         static let seeded = "settings.hasSeededSampleData"

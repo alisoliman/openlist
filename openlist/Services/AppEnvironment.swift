@@ -91,10 +91,6 @@ final class AppEnvironment {
         store.onDidSave = { [weak widgetPublisher] in
             widgetPublisher?.scheduleRefresh()
         }
-        store.onDidCompleteTask = { [weak settings] _ in
-            guard settings?.playsCompletionSound == true else { return }
-            NSSound(named: "Tink")?.play()
-        }
         sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
     }
 

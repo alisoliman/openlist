@@ -325,7 +325,7 @@ struct TaskGroupSection<Footer: View>: View {
             }
         }
         .padding(.bottom, 10)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: tasks.map(\.id))
+        .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1), value: tasks.map(\.id))
     }
 }
 

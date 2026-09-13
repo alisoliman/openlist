@@ -305,7 +305,10 @@ struct TasksScreen: View {
     }
 
     private func sortedByDate(_ input: [Block]) -> [Block] {
-        input.sorted(by: Block.byDueDate)
+        input.sorted {
+            if $0.isCompleted != $1.isCompleted { return !$0.isCompleted }
+            return Block.byDueDate($0, $1)
+        }
     }
 
     private func sortedByCompletion(_ input: [Block]) -> [Block] {
