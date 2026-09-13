@@ -10,8 +10,10 @@ import SwiftUI
 struct TodayScreen: View {
     @Environment(AppEnvironment.self) private var env
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })
-    private var tasks: [Block]
+    @Query private var blocks: [Block]
+
+    @AppStorage(TodaySorting.preferenceKey, store: ReviewSession.defaults)
+    private var sorting: TodaySorting = .default
 
     @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var lists: [TaskList]
@@ -25,34 +27,38 @@ struct TodayScreen: View {
     var body: some View {
         // Bucketed once per render; each `body` read of a computed property
         // would otherwise re-scan every task.
-        let buckets = Buckets(tasks: ActiveTaskPolicy(lists: lists).tasks(in: tasks))
-        let context = TaskRowContext(tasks: tasks, lists: lists, labels: labels)
+        let buckets = TodayTaskBuckets(blocks: blocks, lists: lists, sorting: sorting)
+        let context = TaskRowContext(tasks: blocks.filter(\.isTask), lists: lists, labels: labels)
 
         return ScreenScaffold {
-            ScreenHeader(
-                icon: "sun.max",
-                title: "Today",
-                subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))
-            ) {
-                HStack(spacing: 4) {
-                    Button { env.navigator.go(to: .calendar) } label: { Image(systemName: "calendar") }
-                        .buttonStyle(.borderless).help("Open adaptive calendar (⌘6)")
-                    Button {
-                        showsCompleted = !showsCompletedNow
-                    } label: {
-                        Image(systemName: showsCompletedNow ? "eye" : "eye.slash")
-                    }
-                    .buttonStyle(.borderless)
-                    .help(showsCompletedNow ? "Hide completed" : "Show completed")
+            VStack(alignment: .leading, spacing: 12) {
+                ScreenHeader(
+                    icon: "sun.max",
+                    title: "Today",
+                    subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))
+                ) {
+                    HStack(spacing: 4) {
+                        Button { env.navigator.go(to: .calendar) } label: { Image(systemName: "calendar") }
+                            .buttonStyle(.borderless).help("Open adaptive calendar (⌘6)")
+                        Button {
+                            showsCompleted = !showsCompletedNow
+                        } label: {
+                            Image(systemName: showsCompletedNow ? "eye" : "eye.slash")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(showsCompletedNow ? "Hide completed" : "Show completed")
 
-                    Button {
-                        env.send(.newTask)
-                    } label: {
-                        Image(systemName: "plus")
+                        Button {
+                            env.send(.newTask)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("New task (⌘N)")
                     }
-                    .buttonStyle(.borderless)
-                    .help("New task (⌘N)")
                 }
+                TodaySortMenu(selection: $sorting)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         } content: {
             if buckets.isEmpty(showsCompleted: showsCompletedNow) {
@@ -130,54 +136,6 @@ struct TodayScreen: View {
 
     private var showsCompletedNow: Bool {
         showsCompleted ?? env.settings.showsCompletedTasks
-    }
-
-    /// Today's four groups, filled in one pass.
-    private struct Buckets {
-        var overdue: [Block] = []
-        var dueToday: [Block] = []
-        var starred: [Block] = []
-        var selected: [Block] = []
-        var completedToday: [Block] = []
-
-        func isEmpty(showsCompleted: Bool) -> Bool {
-            overdue.isEmpty && dueToday.isEmpty && starred.isEmpty && selected.isEmpty
-                && (!showsCompleted || completedToday.isEmpty)
-        }
-
-        init(tasks: [Block]) {
-            for task in tasks {
-                if task.isCompleted {
-                    if task.isCompletedToday { completedToday.append(task) }
-                    continue
-                }
-                if task.isOverdue {
-                    overdue.append(task)
-                } else if task.isDueToday {
-                    dueToday.append(task)
-                } else if task.selectedForDay.map({ Calendar.current.startOfDay(for: $0) <= Calendar.current.startOfDay(for: .now) }) == true {
-                    selected.append(task)
-                } else if task.isStarred {
-                    starred.append(task)
-                }
-            }
-
-            overdue.sort(by: Block.byDueDate)
-            dueToday.sort(by: Self.byTimeThenPriority)
-            selected.sort(by: Self.byTimeThenPriority)
-            starred.sort(by: Self.byTimeThenPriority)
-            completedToday.sort(by: Block.byCompletionDate)
-        }
-
-        /// Timed tasks sort by clock; everything else falls back to priority.
-        private static func byTimeThenPriority(_ lhs: Block, _ rhs: Block) -> Bool {
-            switch (lhs.includesTime, rhs.includesTime) {
-            case (true, false): true
-            case (false, true): false
-            case (true, true): (lhs.dueDate ?? .distantPast) < (rhs.dueDate ?? .distantPast)
-            case (false, false): lhs.priorityRaw > rhs.priorityRaw
-            }
-        }
     }
 }
 
