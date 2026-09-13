@@ -488,6 +488,11 @@ class PackagingChecks(unittest.TestCase):
                     "CFBundleExecutable": name, "CFBundleIdentifier": identifier,
                     "CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "7",
                     "LSMinimumSystemVersion": "26.5",
+                    **({"UTExportedTypeDeclarations": [
+                        {"UTTypeIdentifier": "app.openlist.block-drag", "UTTypeConformsTo": ["public.data"]},
+                        {"UTTypeIdentifier": "app.openlist.inbox-order", "UTTypeConformsTo": ["public.data"]},
+                        {"UTTypeIdentifier": "solimanali.openlist.library-backup", "UTTypeConformsTo": ["com.apple.package"]},
+                    ]} if bundle == self.app else {}),
                 }, output)
         self.helper = self.app / "Contents/MacOS/openlist-mcp"
         shutil.copy2(BINARY, self.helper)
@@ -608,6 +613,22 @@ class PackagingChecks(unittest.TestCase):
                     with self.subTest(bundle=bundle.name, key=key, shell=shell or "shebang"):
                         self.assert_invalid_bundle(self.verify(shell), bundle, key)
             plist.write_bytes(plistlib.dumps(original))
+
+    def test_private_drag_type_registration_is_required(self):
+        plist = self.app / "Contents/Info.plist"
+        original = plistlib.loads(plist.read_bytes())
+        exports = original["UTExportedTypeDeclarations"]
+        for identifier in ("app.openlist.block-drag", "app.openlist.inbox-order"):
+            for defect in ("missing", "text-only", "duplicate"):
+                changed = [dict(item) for item in exports if item["UTTypeIdentifier"] != identifier]
+                if defect == "text-only":
+                    changed.append({"UTTypeIdentifier": identifier, "UTTypeConformsTo": ["public.text"]})
+                if defect == "duplicate":
+                    changed.extend([{"UTTypeIdentifier": identifier, "UTTypeConformsTo": ["public.data"]}] * 2)
+                plist.write_bytes(plistlib.dumps({**original, "UTExportedTypeDeclarations": changed}))
+                with self.subTest(identifier=identifier, defect=defect):
+                    self.assert_invalid_bundle(self.verify(), self.app, identifier)
+        plist.write_bytes(plistlib.dumps(original))
 
     def test_missing_and_malformed_plists_fail_without_success_output(self):
         for bundle in (self.app, self.app / "Contents/PlugIns/OpenlistWidget.appex"):
