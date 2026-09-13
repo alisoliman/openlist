@@ -8,6 +8,7 @@ struct InboxScreen: View {
     @Query private var blocks: [Block]
     @Query private var lists: [TaskList]
     @Query private var labels: [TaskLabel]
+    @State private var selectionGroupID = UUID()
 
     var body: some View {
         @Bindable var navigator = env.navigator
@@ -56,9 +57,13 @@ struct InboxScreen: View {
                         ForEach(members) { task in
                             if task.modelContext != nil, !task.isDeleted {
                                 queueRow(task, members: members, context: context)
+                                    .id(TaskSelectionScrollID.first(task.id))
                             }
                         }
                     }
+                    .preference(key: VisibleSelectionIDsKey.self,
+                        value: [VisibleSelectionGroup(id: selectionGroupID, blockIDs: members.map(\.id))])
+                    .modifier(TaskSelectionScope())
                     .onAppear { env.activeDocument = nil }
                 }
             }
@@ -95,6 +100,12 @@ struct InboxScreen: View {
                         .padding(.leading, 32)
                 }
             }
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.tertiary)
+                .frame(width: 20, height: 26)
+                .draggable(InboxQueueDrag(taskID: task.id, sessionID: env.navigator.blockDragSessionID))
+                .help("Reorder this task in Inbox. Its list stays the same.")
+                .accessibilityLabel("Reorder \(task.displayTitle) in Inbox")
             Menu {
                 InboxMembershipButton(block: task)
                 Divider()
@@ -110,10 +121,11 @@ struct InboxScreen: View {
             .padding(.top, 9)
             .accessibilityLabel("Inbox actions for \(task.displayTitle)")
         }
-        .draggable(task.id.uuidString)
-        .dropDestination(for: String.self) { values, _ in
-            guard let value = values.first, let id = UUID(uuidString: value), id != task.id else { return false }
-            return move(id, before: task.id)
+        .dropDestination(for: InboxQueueDrag.self) { values, _ in
+            guard values.count == 1, let value = values.first,
+                  value.sessionID == env.navigator.blockDragSessionID,
+                  value.taskID != task.id else { return false }
+            return move(value.taskID, before: task.id)
         }
     }
 
