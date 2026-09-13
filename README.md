@@ -95,6 +95,13 @@ Reduce Motion uses an immediate state change without the bounce or movement.
 overdue, due-today, planned-for-today, and starred work; Tasks filters and groups
 by date, list, label or priority; Updates is a personal activity feed grouped by day.
 
+Today's **Sort** menu orders tasks within each section by priority (highest first),
+due date (earliest first, undated last), title (A–Z), creation date (oldest first),
+or list position and stored document order. **Default** restores the original
+task ordering within each section. Equal values use creation date, then task identity for stable
+ties. This Mac remembers the choice; task membership, list documents, and synced
+list preferences stay unchanged.
+
 ### Adaptive calendar
 
 Calendar offers **1-day, 3-day, 1-week, and 1-month** views of a rolling four-week
