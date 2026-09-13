@@ -425,3 +425,43 @@ Settings or Quick Add instead of the main window.
 
 `Tools/add-widget-target.py` regenerates the widget target in the project file and
 is idempotent.
+
+### Reminder scheduling and recovery
+
+A task’s reminder time is saved intent. Openlist reports **Accepted by macOS**
+only after the notification center returns a matching pending request for that
+saved task occurrence. This does not prove that an alert was displayed: Focus,
+notification preferences, and macOS delivery policy still apply. Local scheduling
+status is rebuilt from the saved library and OS inventory after launch; it is not
+synced as a task fact.
+
+Task details and Settings → Tasks show permission problems and scheduling errors.
+Use **Allow notifications** or **Open Notification Settings** for permission, and
+**Retry reminder** / **Retry future reminders** for eligible future times. Recovery
+never requests permission automatically and never replays expired reminders.
+Expired intent remains visible. A previously delivered expired alert can remain in
+Notification Center; completion, archive, deletion, removal or replacement of its
+saved reminder clears obsolete pending and delivered alerts. Calendar nudges use a
+separate namespace and ordinary reminder recovery preserves them.
+
+There is at most one reminder request per task UUID. A custom reminder takes
+precedence over an automatic due-time reminder; repeating tasks retain their
+existing relative offset while replacing the occurrence. Saved dates represent
+absolute instants and notification triggers include UTC so travel and DST do not
+reinterpret an already scheduled time. Saved title/list changes update request
+text. Unsaved changes never replace the prior OS request and are labeled separately.
+Notification clicks wait for bootstrap and the main window, then reveal the exact
+task through the same temporary expansion used by search, or explain that the
+subject is unavailable. Review fixtures disable actual notification operations and
+say so; injected tests simulate acceptance and failures without changing permissions.
+
+For isolated native failure/retry checks, a bundle with `OpenlistReviewSession`
+may opt into `OpenlistReviewReminderSimulation = true`. Every task’s first add
+fails, Retry creates a **Simulated pending reminder**, and simulated inventory is
+kept only in that review session’s defaults for relaunch checks. This opt-in never
+creates a notification center or changes permission. It is not delivery evidence.
+
+Quitting saves current edits, waits up to five seconds for reminder work, then
+saves any edits made during that wait. A save failure cancels quitting. If macOS
+does not answer within the limit, the app can quit with saved intent still
+unconfirmed; the next launch reconciles it. Timeout never implies acceptance.

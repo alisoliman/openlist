@@ -43,6 +43,7 @@ enum EditorCommand: Equatable {
 final class AppEnvironment {
     let store: Store
     let navigator: Navigator
+    let reminderNavigation: ReminderNavigation
     let settings: AppSettings
     let sync: ICloudSyncMonitor
     let calendar: CalendarCoordinator
@@ -53,6 +54,7 @@ final class AppEnvironment {
     private let notificationDelegate = NotificationDelegate()
     private let calendarNotifications: CalendarNotificationBridge
     private var hasBootstrapped = false
+    @ObservationIgnored private var notificationActivityObserver: NSObjectProtocol?
 
     /// A command awaiting pickup by the focused document view.
     var taskCaptureRequest: TaskCaptureRequest?
@@ -90,6 +92,7 @@ final class AppEnvironment {
         calendar = CalendarCoordinator(store: store)
         mcp = MCPIntegration(store: store, settings: settings)
         navigator = Navigator()
+        reminderNavigation = ReminderNavigation(navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
 
@@ -114,6 +117,14 @@ final class AppEnvironment {
             calendar?.storeDidChange()
         }
         sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
+        installNotificationDelegate()
+        notificationActivityObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.store.refreshAllReminders()
+                    NotificationService.shared.reminders.refresh()
+                }
+            }
     }
 
     /// Wires notification handling once the environment is fully built.
@@ -122,11 +133,7 @@ final class AppEnvironment {
             calendarNotifications?.handle(action: action, identifier: identifier, taskID: taskID, occurrenceID: occurrenceID)
         }
         notificationDelegate.onOpenTask = { [weak self] id in
-            guard let self, let block = store.block(id: id) else { return }
-            if let listID = block.listID, store.list(id: listID) != nil {
-                navigator.go(to: .list(listID))
-            }
-            navigator.openTask(id)
+            self?.reminderNavigation.receive(id)
             NSApp.activate(ignoringOtherApps: true)
         }
         NotificationService.shared.install(delegate: notificationDelegate)
@@ -173,9 +180,13 @@ final class AppEnvironment {
             SampleData.seed(into: store)
             if store.persistenceError == nil { settings.hasSeededSampleData = true }
         }
-        installNotificationDelegate()
         store.refreshAllReminders()
         navigator.replace(with: .today)
+        reminderNavigation.storeReady { [weak store] id in
+            guard let store, let task = store.block(id: id), task.isTask,
+                  let list = store.list(id: task.listID) else { throw ContentReveal.Unavailable.deleted }
+            return try ContentReveal.resolve(.block(id), blocks: store.blocks(inList: list.id), lists: store.allLists(includeArchived: true))
+        }
         widgetPublisher.refreshNow()
         sync.checkAccount()
         if sync.state.isEnabled { NSApplication.shared.registerForRemoteNotifications() }

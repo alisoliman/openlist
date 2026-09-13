@@ -10,7 +10,8 @@ import UserNotifications
 ///
 /// Requests are keyed by the task's id so rescheduling is idempotent: a task
 /// that moves date simply replaces its own pending request.
-final class NotificationService: @unchecked Sendable {
+@MainActor
+final class NotificationService {
     static let shared = NotificationService()
 
     static let calendarRequestPrefix = "openlist.calendar.nudge."
@@ -21,7 +22,16 @@ final class NotificationService: @unchecked Sendable {
     static let calendarDoneAction = "openlist.calendar.done-task"
     static let calendarKeepGoingAction = "openlist.calendar.keep-going"
 
-    private let center = UNUserNotificationCenter.current()
+    private lazy var center = UNUserNotificationCenter.current()
+    lazy var reminders: ReminderRecovery = {
+        if ReviewSession.identifier != nil {
+            if Bundle.main.object(forInfoDictionaryKey: "OpenlistReviewReminderSimulation") as? Bool == true {
+                return ReminderRecovery(client: ReviewReminderClient(defaults: ReviewSession.defaults), isSimulated: true)
+            }
+            return ReminderRecovery(client: SystemReminderNotificationClient(center: nil, isEnabled: false))
+        }
+        return ReminderRecovery(client: SystemReminderNotificationClient(center: center, isEnabled: true))
+    }()
     private var hasRequestedAuthorization = false
     private var calendarCategoryInstallation: Task<Void, Never>?
 
@@ -31,8 +41,8 @@ final class NotificationService: @unchecked Sendable {
     /// and makes a click on one open the task.
     @MainActor
     func install(delegate: UNUserNotificationCenterDelegate) {
-        center.delegate = delegate
         guard ReviewSession.identifier == nil else { return }
+        center.delegate = delegate
         calendarCategoryInstallation = Task {
             let start = UNNotificationAction(identifier: Self.calendarStartAction, title: "Start", options: [])
             let done = UNNotificationAction(identifier: Self.calendarDoneAction, title: "Done", options: [])
@@ -54,11 +64,12 @@ final class NotificationService: @unchecked Sendable {
     func requestAuthorizationIfNeeded() {
         guard ReviewSession.identifier == nil, !hasRequestedAuthorization else { return }
         hasRequestedAuthorization = true
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        Task { _ = await reminders.requestPermission() }
     }
 
     func authorizationStatus() async -> UNAuthorizationStatus {
-        await center.notificationSettings().authorizationStatus
+        guard ReviewSession.identifier == nil else { return .notDetermined }
+        return await center.notificationSettings().authorizationStatus
     }
 
     /// Explicit prompt, used by the Settings screen.
@@ -66,40 +77,28 @@ final class NotificationService: @unchecked Sendable {
     func requestAuthorization() async -> Bool {
         guard ReviewSession.identifier == nil else { return false }
         hasRequestedAuthorization = true
-        return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        return await reminders.requestPermission()
     }
 
     // MARK: - Scheduling
 
-    func scheduleReminder(id: UUID, title: String, listName: String, at date: Date) {
-        guard ReviewSession.identifier == nil, date > .now else { return }
-        requestAuthorizationIfNeeded()
+    func reconcileReminders(_ intents: [ReminderIntent]) { reminders.reconcile(intents) }
 
-        let content = UNMutableNotificationContent()
-        content.title = title.isEmpty ? "Reminder" : title
-        content.body = listName.isEmpty ? "Due now" : "Due now in \(listName)"
-        content.sound = .default
-        content.userInfo = ["blockID": id.uuidString]
+    func reminderReadFailed(_ message: String) { reminders.recordReadFailure(message) }
 
-        let components = Calendar.current.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second],
-            from: date
-        )
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-        let request = UNNotificationRequest(identifier: id.uuidString, content: content, trigger: trigger)
+    /// Clears only task reminders. Calendar nudges have their own lifecycle.
+    func cancelAll() { reminders.resetForLibraryRestore() }
 
-        center.add(request) { _ in }
-    }
-
-    func cancelReminder(for id: UUID) {
-        guard ReviewSession.identifier == nil else { return }
-        center.removePendingNotificationRequests(withIdentifiers: [id.uuidString])
-        center.removeDeliveredNotifications(withIdentifiers: [id.uuidString])
-    }
-
-    func cancelAll() {
-        guard ReviewSession.identifier == nil else { return }
-        center.removeAllPendingNotificationRequests()
+    /// Startup-only hook for replacing the local library. Invalidate in-flight
+    /// task work first; ordinary reconciliation then adopts the restored tasks.
+    /// Restore also discards old calendar actions, never notification permission.
+    func resetForLibraryRestore() async {
+        reminders.resetForLibraryRestore()
+        if ReviewSession.identifier == nil {
+            center.removeAllPendingNotificationRequests()
+            center.removeAllDeliveredNotifications()
+        }
+        await reminders.waitUntilIdle()
     }
 
     // MARK: - Quiet calendar nudges

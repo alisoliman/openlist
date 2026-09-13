@@ -122,7 +122,6 @@ struct GeneralSettingsTab: View {
 
 struct TasksSettingsTab: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -148,66 +147,12 @@ struct TasksSettingsTab: View {
                     .foregroundStyle(Theme.tertiaryText)
             }
 
-            Section("Reminders") {
-                HStack {
-                    Text("Notifications")
-                    Spacer()
-                    Text(statusText)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-
-                if notificationStatus == .denied {
-                    Button("Open Notification Settings…") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    Text("Select Openlist in System Settings, then turn on Allow Notifications.")
-                        .font(Theme.Font.metadata)
-                        .foregroundStyle(Theme.secondaryText)
-                } else if notificationStatus == .notDetermined {
-                    Button("Allow notifications") {
-                        Task {
-                            _ = await NotificationService.shared.requestAuthorization()
-                            await refreshNotificationStatus()
-                        }
-                    }
-                }
-
-                DisclosureGroup("Troubleshooting") {
-                    Button("Reschedule all reminders") {
-                        env.store.refreshAllReminders()
-                    }
-                    Text("Rebuilds pending notifications from your current task reminders.")
-                        .font(Theme.Font.metadata)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-            }
+            ReminderSettingsSection()
         }
         .formStyle(.grouped)
-        .task { await refreshNotificationStatus() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await refreshNotificationStatus() }
-        }
-    }
-
-    private func refreshNotificationStatus() async {
-        let previous = notificationStatus
-        notificationStatus = await NotificationService.shared.authorizationStatus()
-        if notificationStatus != previous,
-           [.authorized, .provisional].contains(notificationStatus) {
-            env.store.refreshAllReminders()
-        }
-    }
-
-    private var statusText: String {
-        switch notificationStatus {
-        case .authorized, .provisional: "Enabled"
-        case .denied: "Turned off in System Settings"
-        default: "Not requested yet"
-        }
     }
 }
+
 
 struct LabelsSettingsTab: View {
     @Environment(AppEnvironment.self) private var env
@@ -457,7 +402,6 @@ struct DataSettingsTab: View {
             env.store.context.delete(label)
         }
         env.store.clearActivity()
-        NotificationService.shared.cancelAll()
         env.store.save()
         env.navigator.replace(with: .today)
     }

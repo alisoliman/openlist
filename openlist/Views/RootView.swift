@@ -72,6 +72,7 @@ struct RootView: View {
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
+                env.reminderNavigation.windowReady(window != nil)
                 installCompletionUndo(in: window)
                 clearInitialFocus(for: env.navigator.route)
             }
@@ -100,7 +101,11 @@ struct RootView: View {
             // AppKit assigning a responder after the first query/layout pass.
             clearInitialFocus(for: env.navigator.route)
         }
-        .onAppear(perform: updateDockBadge)
+        .onAppear {
+            updateDockBadge()
+            env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
+        }
+        .onDisappear { env.reminderNavigation.windowReady(false) }
         .onChange(of: env.navigator.isSearchOpen) { _, isOpen in
             if isOpen {
                 searchReturnFocus.remember(in: hostWindow.window, activation: env.navigator.searchActivation)
@@ -164,6 +169,7 @@ struct RootView: View {
                     if env.store.labelMergeUndo != nil || env.store.labelMaintenanceError != nil {
                         LabelMergeNotice()
                     }
+                    ReminderNavigationNotice()
                     contentArea
                         .frame(minHeight: 0, maxHeight: .infinity)
                 }

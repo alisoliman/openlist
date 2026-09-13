@@ -34,6 +34,8 @@ struct openlistApp: App {
             _env = State(initialValue: environment)
             // Menu-bar-only launches must also migrate files and start sync.
             applicationDelegate.onDidLaunch = { [weak environment] in environment?.bootstrap() }
+            applicationDelegate.hasPendingNotifications = { NotificationService.shared.reminders.isRefreshing }
+            applicationDelegate.finishPendingNotifications = { await NotificationService.shared.reminders.drainForTermination() }
             applicationDelegate.persistPendingChanges = { [weak environment] in
                 guard let environment else { return }
                 do { try environment.store.persistChanges() }

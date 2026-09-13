@@ -48,6 +48,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
             onCalendarAction?(response.actionIdentifier, response.notification.request.identifier, id, occurrenceID)
             return
         }
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
         onOpenTask?(id)
     }
 }
