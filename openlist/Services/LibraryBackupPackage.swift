@@ -41,10 +41,14 @@ nonisolated enum LibraryBackupPackage {
         guard !manager.fileExists(atPath: destination.path) else {
             throw LibraryBackupError.invalid("A backup already exists at this location. Choose a new name.")
         }
-        let temporary = destination.deletingLastPathComponent()
-            .appendingPathComponent(".openlist-backup-\(UUID().uuidString).partial", isDirectory: true)
+        // A save-panel grant covers the chosen destination, not arbitrary
+        // siblings. Foundation supplies an authorized staging directory on
+        // the destination volume so publication can remain a single rename.
+        let replacement = try manager.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                                          appropriateFor: destination, create: true)
+        defer { try? manager.removeItem(at: replacement) }
+        let temporary = replacement.appendingPathComponent("Backup.openlistbackup", isDirectory: true)
         try manager.createDirectory(at: temporary.appendingPathComponent("Media"), withIntermediateDirectories: true)
-        defer { try? manager.removeItem(at: temporary) }
         var snapshot = original
         var assets: [String: Asset] = [:]
         var totalBytes = 0
@@ -83,9 +87,19 @@ nonisolated enum LibraryBackupPackage {
         try encoder.encode(manifest).write(to: temporary.appendingPathComponent("manifest.json"), options: .atomic)
         _ = try read(at: temporary)
         try beforePublish()
-        // Same-parent rename is the publication boundary; no partial package is
-        // visible at the selected destination and existing backups stay intact.
-        try manager.moveItem(at: temporary, to: destination)
+        // Coordinate the selected URL, then rename exclusively: even a new
+        // destination created during validation must remain untouched. A
+        // cross-volume error fails rather than falling back to a partial copy.
+        var coordinationError: NSError?
+        var publicationError: Error?
+        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: destination, options: [],
+                                                         error: &coordinationError) { target in
+            if renamex_np(temporary.path, target.path, UInt32(RENAME_EXCL)) != 0 {
+                publicationError = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let publicationError { throw publicationError }
     }
 
     static func read(at package: URL) throws -> Validated {

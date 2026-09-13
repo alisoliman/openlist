@@ -22,6 +22,37 @@ let defaults = UserDefaults(suiteName: settingsSuite)!
 defer { defaults.removePersistentDomain(forName: settingsSuite) }
 let fixedDate = Date(timeIntervalSinceReferenceDate: 700_000_000.125)
 
+if phase.hasPrefix("crash-") || phase == "resume-journal" {
+    let fixture = try LibraryBackupPackage.read(at: package)
+    let reader = try BackupSnapshotReader(schema: AppPersistence.schema)
+    let storage = LibraryRestoreStorage(originalStoreURL: root.appendingPathComponent("Original/Openlist.store"),
+        originalMediaURL: root.appendingPathComponent("Original/Media"))
+    if phase == "resume-journal" {
+        let startup = try storage.activatePending(currentSettings: fixture.snapshot.settings, using: reader)
+        let opened = try AppPersistence.openSelected(startup, storage: storage, iCloudUnavailableReason: "Isolated fixture")
+        let expected = try JSONDecoder().decode(UUID.self, from: Data(contentsOf: root.appendingPathComponent("expected-id.json")))
+        let actual = try reader.read(at: startup.storeURL, settings: fixture.snapshot.settings)
+        check(startup.isLocalRestore && actual.libraryID == expected, "Actual fresh process activates the intended restored identity")
+        try check(opened.container.mainContext.fetchCount(FetchDescriptor<Block>()) == fixture.snapshot.blocks.count, "Actual fresh process opens the complete activated store")
+        check(manager.fileExists(atPath: storage.originalStoreURL.path), "Actual process replay retains original storage")
+        print("3 process-interruption reopen checks passed")
+        exit(0)
+    }
+    var incoming = fixture.snapshot
+    incoming.libraryID = UUID()
+    try JSONEncoder().encode(incoming.libraryID).write(to: root.appendingPathComponent("expected-id.json"))
+    let prepared = try storage.prepare(incoming, using: reader)
+    try storage.queue(prepared)
+    _ = try storage.activatePending(currentSettings: fixture.snapshot.settings, using: reader) { point in
+        switch (phase, point) {
+        case ("crash-before-selection", .beforeSelection), ("crash-after-selection", .afterSelection):
+            kill(getpid(), SIGKILL)
+        default: break
+        }
+    }
+    fatalError("Crash checkpoint was not reached")
+}
+
 if phase == "mutate-scalars" || phase == "mutate-media" {
     let schema = AppPersistence.schema
     let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema,
@@ -155,6 +186,14 @@ rejects("Interrupted write is not published") {
     try LibraryBackupPackage.write(snapshot, to: cancelled, readMedia: { _ in legacyBytes }, beforePublish: { throw CocoaError(.userCancelled) })
 }
 check(!manager.fileExists(atPath: cancelled.path), "Cancelled package has no published destination")
+let raced = root.appendingPathComponent("Raced.openlistbackup")
+let racedBytes = Data("Destination created while backup was being validated".utf8)
+rejects("A destination created before publication is never replaced") {
+    try LibraryBackupPackage.write(snapshot, to: raced, readMedia: { _ in legacyBytes }, beforePublish: {
+        try racedBytes.write(to: raced)
+    })
+}
+try check(try Data(contentsOf: raced) == racedBytes, "Concurrent destination remains byte-identical")
 let failedStage = root.appendingPathComponent("FailedStage")
 rejects("Failed staged save leaves original store untouched") {
     _ = try BackupStagedStore.create(from: validated.snapshot, in: failedStage, beforeSave: { throw CocoaError(.fileWriteNoPermission) })
@@ -347,6 +386,29 @@ check(Set(schema.entities.map(\.name)) == Set(covered.keys), "Every authoritativ
 for entity in schema.entities {
     check(Set(entity.properties.map(\.name)) == covered[entity.name], "Every persisted \(entity.name) field is covered")
 }
+// Abrupt process termination bypasses cleanup/defer. A new executable process
+// resumes the durable journal on both sides of the selection publication.
+for crashPhase in ["crash-before-selection", "crash-after-selection"] {
+    let processRoot = root.appendingPathComponent(crashPhase)
+    try manager.createDirectory(at: processRoot, withIntermediateDirectories: true)
+    try manager.copyItem(at: package, to: processRoot.appendingPathComponent("Library.openlistbackup"))
+    _ = try BackupStagedStore.create(from: validated.snapshot, in: processRoot.appendingPathComponent("Original"), using: reader)
+    let process = Process(); process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    process.arguments = [processRoot.path, crashPhase]
+    try process.run(); process.waitUntilExit()
+    check(process.terminationReason == .uncaughtSignal && process.terminationStatus == SIGKILL, "Fixture actually stops abruptly at \(crashPhase)")
+    let processStorage = LibraryRestoreStorage(originalStoreURL: processRoot.appendingPathComponent("Original/Openlist.store"), originalMediaURL: processRoot.appendingPathComponent("Original/Media"))
+    if crashPhase == "crash-before-selection" {
+        try check(processStorage.selection() == nil, "Abrupt pre-commit stop keeps original selection")
+    } else {
+        try check(processStorage.selection()?.generation != nil, "Abrupt post-commit stop retains the complete new selection")
+    }
+    let resumed = Process(); resumed.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    resumed.arguments = [processRoot.path, "resume-journal"]
+    try resumed.run(); resumed.waitUntilExit()
+    check(resumed.terminationReason == .exit && resumed.terminationStatus == 0, "New process resumes \(crashPhase) into a verified complete library")
+}
+
 // A real separate SwiftData writer commits between entity reads in the public
 // pinned reader. Scalar changes stay outside the snapshot; lost external bytes
 // abort the whole export instead of becoming legacy-file fallbacks.

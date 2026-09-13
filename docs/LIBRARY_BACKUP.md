@@ -40,9 +40,11 @@ checksum, and media filenames, sizes and SHA-256 digests. `library.json` contain
 explicit records. Files live under `Media/<digest>`; user filenames are metadata
 and are never interpreted as package paths. Package readers use `openat` and
 `O_NOFOLLOW`, reject symlinks/non-files/traversal, and verify bytes before preview.
-The package is published with a same-parent rename only after successful
-readback. Existing destinations are never replaced. A process interruption may
-leave a hidden `.partial` directory, but not a successful-looking destination.
+The package is staged in the system-provided item replacement directory on the
+destination volume, then published with a coordinated, exclusive rename only
+after successful readback. This respects the save panel's sandbox grant.
+Existing destinations are never replaced. A process interruption may leave
+system-managed staging data, but not a successful-looking destination.
 
 The contract includes every persisted property of all nine current model types:
 
