@@ -255,7 +255,12 @@ parent downloads and cycles from concurrent moves remain visible in a stable
 outline without rewriting their stored parent links.
 
 **Deletions sync too**, including clearing activity and resetting all data.
-iCloud sync is not a backup; export important lists separately. App-wide
+iCloud sync is not a backup. Settings > Data can create a complete, unencrypted
+`.openlistbackup` package with library records, history and media. Restore previews
+the package before explicit quit/reopen, opens a separate local-only library,
+and retains the original library and a recovery backup. Return to the original
+library through the same Data settings. See [manual backup and restore](docs/LIBRARY_BACKUP.md)
+for the format, limits, recovery behavior and privacy details. App-wide
 preferences remain per-Mac, and reminders and widget snapshots are refreshed
 locally after imports. Widgets do not run their own sync engine.
 

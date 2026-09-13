@@ -15,10 +15,13 @@ import UniformTypeIdentifiers
 nonisolated final class MediaStore: @unchecked Sendable {
     static let shared = MediaStore()
 
-    private let directory: URL
+    private let originalDirectory: URL
+    private var selectedDirectory: URL?
+    private let locationLock = NSLock()
+    private var directory: URL { locationLock.withLock { selectedDirectory ?? originalDirectory } }
     private let queue = DispatchQueue(label: "com.openlist.mediastore")
 
-    private init() {
+    static var defaultDirectory: URL {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? URL.temporaryDirectory
@@ -28,10 +31,21 @@ nonisolated final class MediaStore: @unchecked Sendable {
         let defaultBase = base
         #endif
         let mediaBase = ReviewSession.identifier.map { base.appendingPathComponent("Openlist-Review-\($0)", isDirectory: true) } ?? defaultBase
-        directory = mediaBase
+        return mediaBase
             .appendingPathComponent("Openlist", isDirectory: true)
             .appendingPathComponent("Media", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    private init() {
+        originalDirectory = Self.defaultDirectory
+        try? FileManager.default.createDirectory(at: originalDirectory, withIntermediateDirectories: true)
+    }
+
+    /// Called once at startup, before model bootstrap or any media operation.
+    /// A running app never switches libraries underneath pending file writes.
+    func selectStartupDirectory(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        locationLock.withLock { selectedDirectory = url }
     }
 
     func url(for filename: String) -> URL {

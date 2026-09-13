@@ -327,6 +327,12 @@ struct DataSettingsTab: View {
                     .foregroundStyle(Theme.tertiaryText)
             }
 
+            if let library = env.libraryMaintenance {
+                Section("Library backup and restore") {
+                    LibraryBackupControls(library: library)
+                }
+            }
+
             Section("Activity") {
                 Button("Clear all activity history…") {
                     isConfirmingClearHistory = true

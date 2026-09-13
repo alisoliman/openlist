@@ -48,6 +48,7 @@ final class AppEnvironment {
     let sync: ICloudSyncMonitor
     let calendar: CalendarCoordinator
     let mcp: MCPIntegration
+    let libraryMaintenance: LibraryMaintenance?
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
     /// Retained so the notification centre keeps a live delegate.
@@ -83,12 +84,18 @@ final class AppEnvironment {
     /// tasks and from a new task the user has already given meaningful details.
     @ObservationIgnored private var pendingTitleCaptures: [UUID: PendingTitleCapture] = [:]
 
-    init(context: ModelContext, sync: ICloudSyncMonitor) {
+    init(context: ModelContext, sync: ICloudSyncMonitor,
+         libraryStorage: LibraryRestoreStorage? = nil, libraryStartup: LibraryRestoreStorage.Startup? = nil) {
         let store = Store(context: context)
         let settings = AppSettings()
         self.store = store
         self.settings = settings
         self.sync = sync
+        if let libraryStorage, let libraryStartup {
+            libraryMaintenance = LibraryMaintenance(store: store, storage: libraryStorage, startup: libraryStartup)
+        } else {
+            libraryMaintenance = nil
+        }
         calendar = CalendarCoordinator(store: store)
         mcp = MCPIntegration(store: store, settings: settings)
         navigator = Navigator()
@@ -174,7 +181,8 @@ final class AppEnvironment {
         store.bootstrap()
         if sync.state.isEnabled {
             store.prepareForSync()
-        } else if ReviewSession.identifier != nil, !settings.hasSeededSampleData,
+        } else if libraryMaintenance?.isLocalRestore != true,
+                  ReviewSession.identifier != nil, !settings.hasSeededSampleData,
                   store.allLists(includeArchived: true).allSatisfy(\.isSystemInbox),
                   (try? store.context.fetchCount(FetchDescriptor<Block>())) == 0 {
             SampleData.seed(into: store)
