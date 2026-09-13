@@ -10,6 +10,21 @@ let navigator = Navigator()
 let listID = UUID()
 navigator.go(to: .list(listID))
 check(navigator.hasDocumentEditor, "A list retains native outline command ownership")
+navigator.selection = [UUID()]
+navigator.openTask(UUID())
+navigator.setListViewMode(.tasks, for: listID)
+check(!navigator.hasDocumentEditor, "List Tasks mode releases outline command ownership")
+check(navigator.selection.isEmpty && navigator.openTaskID == nil, "Switching presentation clears stale document and inspector selection")
+navigator.openTask(UUID())
+navigator.closeTask()
+check(!navigator.hasDocumentEditor, "Closing a Tasks-mode inspector keeps global task commands available")
+let otherListID = UUID()
+navigator.go(to: .list(otherListID))
+check(navigator.hasDocumentEditor, "Other lists retain Document as their default")
+navigator.goBack()
+check(!navigator.hasDocumentEditor, "Back restores the original list's Tasks presentation")
+navigator.setListViewMode(.document, for: listID)
+check(navigator.hasDocumentEditor, "Returning to Document restores native outline commands")
 navigator.go(to: .inbox)
 check(!navigator.hasDocumentEditor, "Entering the selected queue enables smart-row focus protection")
 navigator.openTask(UUID())
@@ -33,4 +48,20 @@ check(navigator.route == .inbox && !navigator.hasDocumentEditor,
 navigator.showsUnfiledInbox = true
 navigator.go(to: .tasks)
 check(!navigator.hasDocumentEditor, "A retained Unfiled tab cannot make Tasks an outline editor")
+
+let suite = "openlist-list-mode-checks-\(UUID().uuidString)"
+let defaults = UserDefaults(suiteName: suite)!
+defer { defaults.removePersistentDomain(forName: suite) }
+let saved = Navigator(defaults: defaults)
+saved.setListViewMode(.tasks, for: listID)
+let reopened = Navigator(defaults: defaults)
+reopened.go(to: .list(listID))
+check(!reopened.hasDocumentEditor, "This Mac remembers each list's presentation across relaunch")
+let list = TaskList(title: "List")
+list.id = listID
+let note = Block(kind: .paragraph, text: "Visible source", listID: listID)
+let reveal = try ContentReveal.resolve(.block(note.id), blocks: [note], lists: [list])
+reopened.reveal(reveal)
+check(reopened.hasDocumentEditor && reopened.contentReveal == reveal,
+      "Exact-content navigation returns to Document before revealing prose")
 print("\(checks) Inbox navigation checks passed")

@@ -62,7 +62,8 @@ struct TaskCaptureDraft {
 extension Store {
     /// Save a reviewed draft atomically. Failure rolls back only this capture;
     /// existing editor changes are flushed before starting the transaction.
-    func saveCapture(_ preview: TaskCaptureDraft.Preview, destinationID: UUID?, selectedForDay: Date? = nil) throws -> Block {
+    func saveCapture(_ preview: TaskCaptureDraft.Preview, destinationID: UUID?, selectedForDay: Date? = nil,
+                     appendToRoot: Bool = false) throws -> Block {
         guard !preview.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CaptureError.emptyTitle
         }
@@ -73,7 +74,8 @@ extension Store {
         isSavingSuspended = true
         defer { isSavingSuspended = false }
         do {
-            let block = prependTask(to: DocumentContext(listID: destination.id))
+            let document = DocumentContext(listID: destination.id)
+            let block = appendToRoot ? appendBlock(kind: .task, to: document) : prependTask(to: document)
             setPlainText(block, preview.title)
             block.dueDate = preview.date
             block.selectedForDay = selectedForDay.map { Calendar.current.startOfDay(for: $0) }

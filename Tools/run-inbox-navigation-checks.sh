@@ -8,6 +8,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inbox-naviga
     openlist/Model/Recurrence.swift openlist/Model/CalendarTypes.swift openlist/Model/TaskList.swift \
     openlist/Model/SidebarSection.swift openlist/Model/SearchOptions.swift openlist/Model/SearchHit.swift \
     openlist/Model/ContentReveal.swift Shared/ListAccent.swift \
-    openlist/Services/BlockTree.swift openlist/Services/Navigator.swift \
+    openlist/Services/BlockTree.swift openlist/Model/ListViewMode.swift openlist/Services/Navigator.swift \
     Tools/InboxNavigationChecks/main.swift
 "$OUT/inbox-navigation-checks"

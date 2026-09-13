@@ -99,7 +99,7 @@ final class AppEnvironment {
         }
         calendar = CalendarCoordinator(store: store)
         mcp = MCPIntegration(store: store, settings: settings)
-        navigator = Navigator()
+        navigator = Navigator(defaults: ReviewSession.defaults)
         reminderNavigation = ReminderNavigation(navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
@@ -159,7 +159,8 @@ final class AppEnvironment {
     func presentTaskCapture(text: String = "") {
         taskCaptureRequest = TaskCaptureRequest(
             text: text, suggestedListID: navigator.route.listID,
-            plansForToday: navigator.route == .calendar
+            plansForToday: navigator.route == .calendar,
+            appendsToSuggestedList: navigator.route.listID.map { navigator.listViewMode(for: $0) == .tasks } ?? false
         )
     }
 

@@ -9,6 +9,6 @@ xcrun swiftc -O -swift-version 6 -default-isolation MainActor -o "$OUT/search-ch
     openlist/Model/SearchOptions.swift openlist/Model/SearchHit.swift openlist/Model/SearchCorpus.swift \
     openlist/Model/SearchResultSelection.swift openlist/Model/ContentReveal.swift Shared/ListAccent.swift \
     openlist/Services/SearchProjection.swift openlist/Services/SearchSession.swift \
-    openlist/Services/BlockTree.swift openlist/Services/Navigator.swift \
+    openlist/Services/BlockTree.swift openlist/Model/ListViewMode.swift openlist/Services/Navigator.swift \
     Tools/SearchChecks/main.swift
 "$OUT/search-checks"

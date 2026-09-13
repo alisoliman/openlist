@@ -5,12 +5,14 @@ import SwiftUI
 /// siblings without separating a task from its notes or children.
 struct CompletedTasksControl: View {
     let list: TaskList
+    var showsAsTaskQueue = false
 
     @Environment(AppEnvironment.self) private var env
     @Query private var completed: [Block]
 
-    init(list: TaskList) {
+    init(list: TaskList, showsAsTaskQueue: Bool = false) {
         self.list = list
+        self.showsAsTaskQueue = showsAsTaskQueue
         let listID = list.id
         _completed = Query(filter: #Predicate<Block> {
             $0.listID == listID && $0.kindRaw == "task" && $0.isCompleted
@@ -48,8 +50,10 @@ struct CompletedTasksControl: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(showsCompleted ? "Hide" : "Show") \(completed.count) completed tasks")
-            .accessibilityValue(showsCompleted ? "Shown in outline" : "Hidden")
-            .help("Completed tasks appear below pending tasks, with their subtasks and notes")
+            .accessibilityValue(showsCompleted ? (showsAsTaskQueue ? "Shown in task queue" : "Shown in outline") : "Hidden")
+            .help(showsAsTaskQueue
+                ? "Completed tasks follow the same sort order. Subtasks are filtered independently."
+                : "Completed tasks appear below pending tasks, with their subtasks and notes")
 
             Spacer(minLength: 4)
 
