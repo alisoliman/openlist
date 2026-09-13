@@ -141,12 +141,21 @@ private struct EditorSnapshot {
     var listIDs: Set<UUID>
     var blocks: [UUID: EditorBlockRecord]
     var attachments: [UUID: EditorAttachmentRecord]
+    var labels: [UUID: EditorLabelRecord]
+    var hasLabelSnapshot: Bool
 
-    init(store: Store, listIDs: Set<UUID>) {
+    init(store: Store, listIDs: Set<UUID>, includingNewLabels: Bool = false) {
         self.listIDs = Set(listIDs.map { store.resolvedListID($0) ?? $0 })
         let models = self.listIDs.flatMap { store.blocks(inList: $0) }
         blocks = Dictionary(uniqueKeysWithValues: models.map { ($0.id, EditorBlockRecord($0)) })
         attachments = Dictionary(uniqueKeysWithValues: models.flatMap { store.attachments(for: $0.id) }.map { ($0.id, EditorAttachmentRecord($0)) })
+        if includingNewLabels, let models = try? store.context.fetch(FetchDescriptor<TaskLabel>()) {
+            labels = Dictionary(models.filter { !$0.isDeleted }.map { ($0.id, EditorLabelRecord($0)) }, uniquingKeysWith: { first, _ in first })
+            hasLabelSnapshot = true
+        } else {
+            labels = [:]
+            hasLabelSnapshot = false
+        }
     }
 
     var files: Set<String> {
@@ -159,20 +168,35 @@ private struct EditorSnapshot {
     }
 }
 
+private struct EditorLabelRecord: Equatable {
+    var id: UUID
+    var name: String
+    var accent: String
+    var sortIndex: Double
+    var createdAt: Date
+    init(_ label: TaskLabel) {
+        id = label.id
+        name = label.name
+        accent = label.accentRaw
+        sortIndex = label.sortIndex
+        createdAt = label.createdAt
+    }
+}
+
 extension Store {
     /// Registers one inverse for a structural edit with the same window undo
     /// manager used by NSTextView. Native typing undo remains native.
-    func undoableEditorEdit<T>(in listID: UUID, name: String, undoManager: UndoManager?, _ body: () -> T) -> T {
-        undoableEditorEdit(in: Set([listID]), name: name, undoManager: undoManager, body)
+    func undoableEditorEdit<T>(in listID: UUID, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false, _ body: () -> T) -> T {
+        undoableEditorEdit(in: Set([listID]), name: name, undoManager: undoManager, includingNewLabels: includingNewLabels, body)
     }
 
-    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: String, undoManager: UndoManager?, _ body: () -> T) -> T {
+    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false, _ body: () -> T) -> T {
         guard let undoManager, !isRecordingEditorEdit else { return body() }
-        let before = EditorSnapshot(store: self, listIDs: listIDs)
+        let before = EditorSnapshot(store: self, listIDs: listIDs, includingNewLabels: includingNewLabels)
         isRecordingEditorEdit = true
         editorMediaBackups = [:]
         let result = body()
-        let after = EditorSnapshot(store: self, listIDs: listIDs)
+        let after = EditorSnapshot(store: self, listIDs: listIDs, includingNewLabels: includingNewLabels)
         let media = editorMediaBackups
         isRecordingEditorEdit = false
         editorMediaBackups = [:]
@@ -202,6 +226,16 @@ extension Store {
         }
         let changed = source.changedIDs(comparedTo: desired)
         var retained = media
+        let canRestoreLabels = source.hasLabelSnapshot && desired.hasLabelSnapshot
+        let labelsToRestore = canRestoreLabels ? desired.labels.filter { source.labels[$0.key] == nil } : [:]
+        var liveLabels: [TaskLabel] = []
+        if !labelsToRestore.isEmpty {
+            do { liveLabels = try context.fetch(FetchDescriptor<TaskLabel>()).filter { !$0.isDeleted } }
+            catch {
+                editorNotice = "The edit could not be restored because its labels could not be read. \(error.localizedDescription)"
+                return
+            }
+        }
 
         // Save files needed by Redo before deleting anything. The media queue
         // serializes deletion and restoration, avoiding an async unlink race.
@@ -222,6 +256,24 @@ extension Store {
         let removedBlockIDs = changed.blocks.filter { desired.blocks[$0] == nil }
         if !removedBlockIDs.isEmpty { onEditorBlocksRemoved?(removedBlockIDs) }
 
+        // Only identities introduced by this paste participate. Existing
+        // labels and edits made to them after the paste remain independent.
+        var restoredLabels: [UUID: UUID] = [:]
+        for (id, record) in labelsToRestore {
+            if let resolved = resolvedLabelIDs([id]).first, liveLabels.contains(where: { $0.id == resolved }) {
+                restoredLabels[id] = resolved
+            } else if let existing = liveLabels.first(where: { TaskLabel.namesMatch($0.name, record.name) }) {
+                restoredLabels[id] = existing.id
+            } else {
+                let label = TaskLabel(name: record.name, accent: ListAccent(rawValue: record.accent) ?? .violet, sortIndex: record.sortIndex)
+                label.id = id
+                label.createdAt = record.createdAt
+                context.insert(label)
+                liveLabels.append(label)
+                restoredLabels[id] = id
+            }
+        }
+
         for id in changed.attachments {
             let existing = try? context.fetch(FetchDescriptor<Attachment>(predicate: #Predicate { $0.id == id })).first
             if let record = desired.attachments[id] {
@@ -239,13 +291,27 @@ extension Store {
                 if source.blocks[id] == nil, model.isTask {
                     pendingRestoredTaskIDs.insert(id)
                 }
-                model.labelIDs = resolvedLabelIDs(model.labelIDs)
+                model.labelIDs = resolvedLabelIDs(model.labelIDs.map { restoredLabels[$0] ?? $0 })
                 let listID = resolvedListID(model.listID)
                 if model.listID != listID { model.listID = listID }
             } else if let existing {
                 context.delete(existing)
             }
         }
+        let introducedLabels = canRestoreLabels ? source.labels.filter { desired.labels[$0.key] == nil } : [:]
+        if !introducedLabels.isEmpty {
+            // Cleanup is optional. A failed global reference read cannot mean
+            // that an unrelated task has stopped using one of these labels.
+            if let references = try? context.fetch(FetchDescriptor<Block>()) {
+                let referencedLabels = Set(references.filter { !$0.isDeleted }.flatMap(\.labelIDs))
+                for (id, record) in introducedLabels where !referencedLabels.contains(id) {
+                    if let label = allLabels().first(where: { $0.id == id }), EditorLabelRecord(label) == record {
+                        context.delete(label)
+                    }
+                }
+            }
+        }
+        if canRestoreLabels, !source.labels.isEmpty || !desired.labels.isEmpty { labelRevision += 1 }
         for filename in source.files.subtracting(desired.files) { MediaStore.shared.delete(filename: filename) }
         save()
         refreshAllReminders()

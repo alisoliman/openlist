@@ -353,6 +353,12 @@ struct DocumentView: View {
                     appendTask()
                 }
             }
+            .contextMenu {
+                FragmentPasteMenu(document: document) { ids in
+                    env.activeDocument = document
+                    focus.request(ids.first, caret: 0)
+                }
+            }
     }
 
     private func shouldShowPlaceholder(for row: BlockRow) -> Bool {
@@ -556,6 +562,10 @@ struct DocumentView: View {
             },
             onPasteMultiline: { text in
                 editorEdit("Paste blocks") { insertPastedText(text, after: block) }
+                return true
+            },
+            onPasteFragment: {
+                editorEditFragment(after: block.id)
                 return true
             },
             onSetCaption: { caption in
@@ -789,7 +799,7 @@ struct DocumentView: View {
     }
 
     private func insertPastedText(_ text: String, after block: Block) {
-        var lines = MarkdownInputRules.parseMarkdown(text)
+        var lines = MarkdownInputRules.parseClipboard(text)
         guard !lines.isEmpty else { return }
 
         var previous = block
@@ -822,6 +832,17 @@ struct DocumentView: View {
 
         env.store.save()
         focus.request(previous.id, caret: -1)
+    }
+
+    private func editorEditFragment(after blockID: UUID) {
+        env.store.undoableEditorEdit(in: document.listID, name: "Paste content",
+            undoManager: NSApp.keyWindow?.undoManager, includingNewLabels: true) {
+            do {
+                let ids = try env.store.pasteFragment(FragmentClipboard.read(), in: document, after: blockID)
+                env.navigator.selection = Set(ids)
+                focus.request(ids.first, caret: 0)
+            } catch { env.store.editorNotice = error.localizedDescription }
+        }
     }
 
     // MARK: - Menu commands

@@ -38,6 +38,7 @@ struct BlockEditorCallbacks {
     /// A multi-line paste. Return `true` to keep the default insert from
     /// dumping the whole thing into this one block.
     var onPasteMultiline: (String) -> Bool = { _ in false }
+    var onPasteFragment: () -> Bool = { false }
 }
 
 /// A single editable line of a document, backed by `NSTextView`.
@@ -232,7 +233,7 @@ struct BlockTextView: NSViewRepresentable {
             let wasInsertion = storage.length > previousLength
             previousLength = storage.length
 
-            if let rule = MarkdownInputRules.matchBlockPrefix(
+            if !view.isPasting, let rule = MarkdownInputRules.matchBlockPrefix(
                 in: storage,
                 caret: view.selectedRange().location,
                 wasInsertion: wasInsertion,
@@ -258,7 +259,7 @@ struct BlockTextView: NSViewRepresentable {
             }
 
             // Inline rules such as **bold** fire on the closing delimiter.
-            if MarkdownInputRules.applyInlineRules(in: storage, view: view, kind: parent.kind) {
+            if !view.isPasting, MarkdownInputRules.applyInlineRules(in: storage, view: view, kind: parent.kind) {
                 view.invalidateIntrinsicContentSize()
             }
 
@@ -606,7 +607,24 @@ final class BlockNSTextView: NSTextView {
     /// A pasted markdown list should become a list. Single-line pastes fall
     /// through to AppKit so ordinary paste — including styled text — is
     /// untouched.
+    private(set) var isPasting = false
+
     override func paste(_ sender: Any?) {
+        isPasting = true
+        defer { isPasting = false }
+        if selectedRange().length > 0 {
+            super.paste(sender)
+            return
+        }
+        let hasFragment = NSPasteboard.general.availableType(from: [.init("solimanali.openlist.document-fragment")]) != nil
+        if hasFragment {
+            // Existing text selections and inline insertions remain native.
+            // Only an empty document row opts ordinary Paste into structure.
+            if string.isEmpty, selectedRange().length == 0,
+               coordinator?.parent.callbacks.onPasteFragment() == true { return }
+            super.paste(sender)
+            return
+        }
         let text = NSPasteboard.general.string(forType: .string)
         if let text, text.contains("\n"), coordinator?.parent.callbacks.onPasteMultiline(text) == true {
             return

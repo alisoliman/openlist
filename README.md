@@ -131,6 +131,45 @@ storage or file failures leave no partial copy. Task copies share the editor's
 Undo/Redo, including the complete subtree and files. List copying retains its
 existing behavior without Undo. Clipboard copying keeps its separate semantics.
 
+### Document content on the clipboard
+
+In a block's context menu, **Copy content and descendants** copies its complete
+subtree, including hidden/completed descendants, notes, supported inline formatting,
+images, and files. **Copy subtree as Markdown** exports just that subtree as readable
+text; images/files are described by name, without private local file URLs.
+
+Use **Paste content after this block** at a destination row, or **Paste content**
+in the blank document area's context menu. ⌘V in an empty outline row also inserts
+the internal content. Selected text and inline pastes retain normal text behavior;
+ordinary ⌘C still copies the selected text. The insertion has fresh IDs and independent
+media, and is one editor Undo/Redo operation. A blank destination row is retained.
+Completed content remains completed and follows the destination's visibility/sort settings.
+
+Content paste keeps text, formatting, links, notes, hierarchy, completion/date,
+collapse, stars, priority, estimates, and planning preferences. **Dates, reminders,
+repeating rules, selected day, and deferral are cleared by default.** The explicit
+**Paste content including schedules** action also retains those scheduling values;
+only eligible future reminders are reconciled after a successful save. Repeat progress,
+occurrence IDs, calendar placements, work sessions, and prior history never transfer.
+Every pasted task gets a fresh Created event; Undo/Redo records Deleted/Restored.
+Links retain their original destinations rather than being rewritten to the new IDs.
+
+Labels match destination names case-insensitively, without trusting source UUIDs.
+Existing destination labels and colors win; missing labels are created with the
+copied name/color in the same transaction. Undo removes a newly introduced label
+only if it is still unchanged and unused elsewhere; Redo reuses or restores it.
+
+The private version-1 clipboard payload embeds file bytes and supported text-style
+runs, so deleting the source or restarting Openlist does not invalidate a retained
+clipboard. Limits are 10,000 blocks, 512 nesting levels, 64 MB encoded data, 40 MB
+total media, and 32 MB per asset (images also have a 100-million-pixel ceiling).
+Unsupported versions, malformed trees/styles, invalid paths, corrupt images,
+oversized data, missing source media, or failed storage writes report an error
+without a partial insertion. Copy failures preserve the previous clipboard.
+Pasting never fetches remote assets or executes content. External Markdown lists
+keep supported structure; unsupported fences/whitespace/indentation stay as literal
+text instead of being silently discarded. No multi-selection UI is added here.
+
 ### Views
 
 **Inbox** (⌘1) · **Today** (⌘2) · **Updates** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5) ·
