@@ -47,8 +47,8 @@ struct ListScreen: View {
     // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
                 Button {
                     isIconPickerOpen = true
                 } label: {
@@ -68,25 +68,29 @@ struct ListScreen: View {
                         .environment(env)
                 }
 
-                TextField(
-                    "Untitled list",
-                    text: Binding(
-                        get: { list.title },
-                        set: { env.store.rename(list, to: $0) }
-                    )
-                )
-                .textFieldStyle(.plain)
-                .font(Theme.Font.documentTitle)
-                .focused($isTitleFocused)
-                .onSubmit {
-                    env.store.save()
-                    isTitleFocused = false
-                    env.send(.newTask)
-                }
-
-                Spacer(minLength: 8)
+                Spacer(minLength: 12)
                 headerControls
             }
+
+            TextField(
+                "Untitled list",
+                text: Binding(
+                    get: { list.title },
+                    set: { env.store.rename(list, to: $0) }
+                ),
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .font(Theme.Font.documentTitle)
+            .lineLimit(1...)
+            .fixedSize(horizontal: false, vertical: true)
+            .focused($isTitleFocused)
+            .onSubmit {
+                env.store.save()
+                isTitleFocused = false
+                env.send(.newTask)
+            }
+            .accessibilityLabel("List title")
 
             if isSummaryVisible {
                 TextField(
@@ -101,12 +105,10 @@ struct ListScreen: View {
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1...5)
-                .padding(.leading, 50)
                 .onSubmit { env.store.save() }
             }
 
             statsRow
-                .padding(.leading, 50)
 
             CompletedTasksControl(list: list)
                 .padding(.top, 8)
