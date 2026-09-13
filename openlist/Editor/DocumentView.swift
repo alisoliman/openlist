@@ -69,8 +69,6 @@ struct DocumentView: View {
     @State private var focus = EditorFocus()
     @State private var slash: SlashState?
     @State private var completionMotionIDs: Set<UUID> = []
-    @FocusState private var isRevealNoteFocused: Bool
-    @AccessibilityFocusState private var isRevealNoteAccessibilityFocused: Bool
 
     private var completedTaskIDs: Set<UUID> {
         Set(blocks.filter { $0.isTask && $0.isCompleted }.map(\.id))
@@ -190,35 +188,36 @@ struct DocumentView: View {
                     .padding(.bottom, 12)
             }
             ForEach(visibleRows) { row in
-                // Animate the branch's position as a whole, rather than
-                // interpolating each chip's internal layout during the move.
-                rowView(for: row, labelLookup: labelLookup, progress: progress[row.id])
-                .background {
-                    if completionMotionIDs.contains(row.id) {
-                        RoundedRectangle(cornerRadius: Theme.Radius.row)
-                            .fill(Theme.canvas)
+                VStack(alignment: .leading, spacing: 0) {
+                    // Animate the branch's position as a whole, rather than
+                    // interpolating each chip's internal layout during the move.
+                    rowView(for: row, labelLookup: labelLookup, progress: progress[row.id])
+                    .background {
+                        if completionMotionIDs.contains(row.id) {
+                            RoundedRectangle(cornerRadius: Theme.Radius.row)
+                                .fill(Theme.canvas)
+                        }
+                    }
+                    .geometryGroup()
+                    .overlay {
+                        if reveal?.blockID == row.id {
+                            RoundedRectangle(cornerRadius: Theme.Radius.row)
+                                .stroke(Theme.accent, lineWidth: 2)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    if reveal?.blockID == row.id, reveal?.field == .note, !row.block.note.isEmpty {
+                        ContentRevealNote(text: row.block.note, query: reveal?.query ?? "", requestID: readyRevealID)
+                            .id(ContentReveal.Anchor.blockNote(row.id))
                     }
                 }
-                .geometryGroup()
+                .id(row.id)
                 .zIndex(completionMotionIDs.contains(row.id) ? 1 : 0)
-                .overlay {
-                    if reveal?.blockID == row.id {
-                        RoundedRectangle(cornerRadius: Theme.Radius.row)
-                            .stroke(Theme.accent, lineWidth: 2)
-                            .allowsHitTesting(false)
-                    }
-                }
-                if reveal?.blockID == row.id, reveal?.field == .note, !row.block.note.isEmpty {
-                    ContentRevealNote(text: row.block.note, query: reveal?.query ?? "")
-                        .id(ContentReveal.Anchor.blockNote(row.id))
-                        .focusable()
-                        .focused($isRevealNoteFocused)
-                        .accessibilityFocused($isRevealNoteAccessibilityFocused)
-                }
             }
 
             trailingTapTarget
         }
+        .scrollTargetLayout()
         .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1),
                    value: completedTaskIDs)
         .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: showsCompleted)
@@ -263,11 +262,8 @@ struct DocumentView: View {
                   let block = blocks.first(where: { $0.id == id }) else { return }
             await Task.yield()
             guard !Task.isCancelled else { return }
-            if reveal?.field == .note {
-                isRevealNoteFocused = true
-                isRevealNoteAccessibilityFocused = true
-                return
-            }
+            // A note claims focus only after its lazy card actually appears.
+            if reveal?.field == .note { return }
             guard !block.kind.isVoid else { return }
             let caret = SearchProjection.range(of: reveal?.query ?? "", in: block.text)
                 .map { NSRange($0, in: block.text).location } ?? 0
@@ -318,7 +314,6 @@ struct DocumentView: View {
             showsPlaceholder: shouldShowPlaceholder(for: row),
             actions: actions(for: row)
         )
-        .id(row.id)
         .modifier(
             BlockDragAndDrop(
                 row: row,

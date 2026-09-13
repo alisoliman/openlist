@@ -434,8 +434,9 @@ struct MissingContentView: View {
 /// then scrolling content constrained to a comfortable measure.
 struct ScreenScaffold<Header: View, Content: View>: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var scrollPosition = ScrollPosition(y: 0)
+    @State private var scrollPosition = ScrollPosition(idType: UUID.self)
     @State private var scrollRoute: AppRoute?
+    @State private var visibleNoteRevealID: UUID?
     var maxContentWidth: CGFloat = 820
     /// Gap between the title block and the content below it.
     var headerSpacing: CGFloat = 14
@@ -474,7 +475,9 @@ struct ScreenScaffold<Header: View, Content: View>: View {
             }
             .onAppear {
                 scrollRoute = env.navigator.route
-                scrollPosition.scrollTo(y: env.navigator.scrollOffset(for: env.navigator.route))
+                if readyRevealID == nil {
+                    scrollPosition.scrollTo(y: env.navigator.scrollOffset(for: env.navigator.route))
+                }
             }
             .task(id: readyRevealID) {
                 guard readyRevealID != nil, let request = env.navigator.contentReveal else { return }
@@ -482,10 +485,19 @@ struct ScreenScaffold<Header: View, Content: View>: View {
                 guard !Task.isCancelled else { return }
                 if request.revealsSummary(for: request.listID) {
                     proxy.scrollTo(ContentReveal.Anchor.listSummary(request.listID), anchor: .center)
-                } else if let id = request.blockID, request.field == .note {
+                } else if let id = request.blockID, request.field == .note,
+                          visibleNoteRevealID == request.id {
                     proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
-                } else if let id = request.blockID { proxy.scrollTo(id, anchor: .center) }
+                } else if let id = request.blockID { scrollPosition.scrollTo(id: id, anchor: .center) }
                 else { proxy.scrollTo(ContentReveal.Anchor.pageHeader, anchor: .top) }
+            }
+            .onPreferenceChange(ContentRevealNoteReadyKey.self) { requestID in
+                visibleNoteRevealID = requestID
+                guard let requestID, requestID == readyRevealID,
+                      let id = env.navigator.contentReveal?.blockID else { return }
+                // The first scroll materializes the row. Only then does its
+                // nested note anchor exist in the lazy document.
+                proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
             }
             .background(Theme.canvas)
             }
