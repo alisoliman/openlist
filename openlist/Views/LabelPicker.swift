@@ -19,8 +19,9 @@ struct LabelPicker: View {
                 ScrollView {
                     VStack(spacing: 1) {
                         ForEach(matches) { label in
+                            let labelID = label.id
                             Button {
-                                env.store.toggleLabel(label, on: block)
+                                env.store.toggleLabel(id: labelID, on: block)
                             } label: {
                                 HStack(spacing: 7) {
                                     Circle()
@@ -84,7 +85,7 @@ struct LabelPicker: View {
     private var canCreate: Bool {
         let name = TaskLabel.normalize(query)
         guard !name.isEmpty else { return false }
-        return !env.store.allLabels().contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        return env.store.matchingLabels(named: name).isEmpty
     }
 
     private func createFromQuery() {

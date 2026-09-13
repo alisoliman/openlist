@@ -106,6 +106,16 @@ final class Navigator {
         selection.removeAll()
     }
 
+    /// Retarget both the visible route and history so Back/Forward cannot open
+    /// the identity removed by a confirmed label merge.
+    func retargetLabel(from sourceID: UUID, to destinationID: UUID) {
+        let source = AppRoute.label(sourceID)
+        let destination = AppRoute.label(destinationID)
+        if route == source { route = destination }
+        backStack = backStack.map { $0 == source ? destination : $0 }
+        forwardStack = forwardStack.map { $0 == source ? destination : $0 }
+    }
+
     func openTask(_ id: UUID?) {
         openTaskID = id
     }

@@ -216,9 +216,13 @@ struct LabelsSettingsTab: View {
     private var labels: [TaskLabel]
 
     @State private var newLabelName = ""
+    @State private var mergeRequest: LabelMergePlan.Request?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if env.store.labelMergeUndo != nil || env.store.labelMaintenanceError != nil {
+                LabelMergeNotice()
+            }
             HStack(spacing: 8) {
                 TextField("New label name", text: $newLabelName)
                     .textFieldStyle(.roundedBorder)
@@ -240,11 +244,16 @@ struct LabelsSettingsTab: View {
             } else {
                 List {
                     ForEach(labels) { label in
-                        LabelSettingsRow(label: label)
+                        LabelSettingsRow(label: label) { name in
+                            mergeRequest = .init(sourceID: label.id, name: name)
+                        }
                     }
                 }
                 .listStyle(.inset)
             }
+        }
+        .sheet(item: $mergeRequest) { request in
+            LabelMergeSheet(request: request)
         }
     }
 
@@ -258,6 +267,7 @@ struct LabelsSettingsTab: View {
 
 struct LabelSettingsRow: View {
     let label: TaskLabel
+    let requestMerge: (String) -> Void
     @Environment(AppEnvironment.self) private var env
     @State private var nameDraft = SyncedTextDraft()
     @FocusState private var isEditing: Bool
@@ -302,6 +312,12 @@ struct LabelSettingsRow: View {
                 .foregroundStyle(Theme.tertiaryText)
                 .monospacedDigit()
 
+            if !env.store.matchingLabels(named: label.name, excluding: label.id).isEmpty {
+                Button("Merge duplicates") { requestMerge(label.name) }
+                    .buttonStyle(.borderless)
+                    .help("Choose a matching label to keep")
+            }
+
             Button {
                 env.store.deleteLabel(label)
             } label: {
@@ -323,12 +339,20 @@ struct LabelSettingsRow: View {
 
     private func commit() {
         guard !label.isDeleted, label.modelContext != nil else { return }
-        guard let trimmed = nameDraft.editedValue(normalize: TaskLabel.normalize),
-              !trimmed.isEmpty, trimmed != label.name else {
+        guard let trimmed = nameDraft.editedValue(normalize: TaskLabel.normalize), trimmed != label.name else {
             nameDraft.reset(to: label.name)
             return
         }
-        env.store.renameLabel(label, to: trimmed)
+        if !trimmed.isEmpty, !env.store.matchingLabels(named: trimmed, excluding: label.id).isEmpty {
+            nameDraft.reset(to: label.name)
+            requestMerge(trimmed)
+            return
+        }
+        do {
+            try env.store.renameLabel(label, to: trimmed)
+        } catch {
+            env.store.labelMaintenanceError = "The label was not renamed. \(error.localizedDescription)"
+        }
         nameDraft.reset(to: label.name)
     }
 }

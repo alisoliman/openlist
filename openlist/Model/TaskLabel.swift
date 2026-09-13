@@ -39,6 +39,10 @@ extension TaskLabel {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static func namesMatch(_ lhs: String, _ rhs: String) -> Bool {
+        normalize(lhs).caseInsensitiveCompare(normalize(rhs)) == .orderedSame
+    }
+
     /// A stable accent chosen from the label's name, so a freshly typed `#tag`
     /// gets a consistent colour without asking the user.
     static func suggestedAccent(for name: String) -> ListAccent {

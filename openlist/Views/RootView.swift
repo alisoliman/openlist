@@ -148,11 +148,23 @@ struct RootView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 236, max: 340)
         } detail: {
-            contentArea
-                .inspector(isPresented: taskPanelBinding) {
-                    TaskDetailPanel()
-                        .inspectorColumnWidth(min: 300, ideal: 380, max: 480)
+            GeometryReader { viewport in
+                VStack(spacing: 0) {
+                    if env.store.labelMergeUndo != nil || env.store.labelMaintenanceError != nil {
+                        LabelMergeNotice()
+                    }
+                    contentArea
+                        .frame(minHeight: 0, maxHeight: .infinity)
                 }
+                // The notice reserves space inside the detail viewport. Its
+                // wrapping height must not increase the split view's minimum
+                // window size during AppKit's zero-width fitting pass.
+                .frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
+            }
+            .inspector(isPresented: taskPanelBinding) {
+                TaskDetailPanel()
+                    .inspectorColumnWidth(min: 300, ideal: 380, max: 480)
+            }
         }
     }
 

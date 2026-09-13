@@ -118,7 +118,7 @@ extension Store {
             ? prependTask(to: document)
             : appendBlock(kind: .task, to: document)
 
-        block.labelIDs = defaults.labelIDs
+        block.labelIDs = resolvedLabelIDs(defaults.labelIDs)
         setPlainText(block, text.trimmingCharacters(in: .whitespacesAndNewlines))
 
         // Parsing runs against the stored text so it also strips the phrase.

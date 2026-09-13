@@ -44,6 +44,11 @@ final class Store {
     var editorMediaBackups: [String: Data] = [:]
     var persistenceError: String?
     var editorNotice: String?
+    var labelMergeUndo: LabelMergePlan?
+    var labelMaintenanceError: String?
+    var labelRevision = 0
+    @ObservationIgnored var mergedLabelIDs: [UUID: UUID] = [:]
+    var onLabelsMerged: ((UUID, UUID) -> Void)?
     var syncPreparationError: String?
     /// Set by the calendar coordinator from this Mac's preferences.
     var calendarDefaultEstimateMinutes: Int = 30
@@ -120,6 +125,7 @@ final class Store {
     }
 
     func allLabels() -> [TaskLabel] {
+        _ = labelRevision // Refresh open pickers when a label identity disappears.
         let descriptor = FetchDescriptor<TaskLabel>(sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.name)])
         return (try? context.fetch(descriptor)) ?? []
     }
