@@ -68,6 +68,7 @@ struct DocumentView: View {
 
     @State private var focus = EditorFocus()
     @State private var slash: SlashState?
+    @State private var inlineMetadataEdits = InlineMetadataEdits()
     @State private var completionMotionIDs: Set<UUID> = []
 
     private var completedTaskIDs: Set<UUID> {
@@ -274,6 +275,7 @@ struct DocumentView: View {
             if active != document { slash = nil }
         }
         .onChange(of: document) { _, _ in
+            inlineMetadataEdits = InlineMetadataEdits()
             focus = EditorFocus()
             slash = nil
             if document.rootBlockID == nil { env.activeDocument = document }
@@ -285,6 +287,7 @@ struct DocumentView: View {
             }
         }
         .onChange(of: blocks.map(\.id)) { _, ids in
+            inlineMetadataEdits.retain(blockIDs: Set(ids))
             if let focused = focus.blockID, !ids.contains(focused) {
                 focus.request(rows.first(where: { !$0.block.kind.isVoid })?.id, caret: -1)
             }
@@ -493,6 +496,7 @@ struct DocumentView: View {
                 // A native text undo can outlive a structural delete/recreate.
                 // Resolve by identity instead of writing a deleted model.
                 guard let current = env.store.block(id: blockID) else { return }
+                inlineMetadataEdits.recordTextChange(for: current, to: attributed.string)
                 env.store.setContent(current, attributed: attributed)
                 // Typing only mutates the model; without this the save that
                 // fires `onDidSave` never happens, so the widget snapshot
@@ -733,6 +737,7 @@ struct DocumentView: View {
     ///
     /// The rule itself lives in `Store`; what belongs here is only the timing.
     private func commitInlineMetadata(_ block: Block) {
+        guard inlineMetadataEdits.consume(for: block) else { return }
         env.store.applyInlineMetadata(
             to: block,
             parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates
