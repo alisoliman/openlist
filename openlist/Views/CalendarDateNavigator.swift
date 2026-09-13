@@ -98,10 +98,7 @@ struct CalendarDateNavigator: View {
     }
 
     private var monthDays: [Date] {
-        let offset = (calendar.component(.weekday, from: displayedMonth) - calendar.firstWeekday + 7) % 7
-        guard let first = calendar.date(byAdding: .day, value: -offset, to: displayedMonth) else { return [] }
-        // Six fixed rows keep the popover size steady while browsing months.
-        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: first) }
+        CalendarMonthGrid.days(in: displayedMonth, calendar: calendar)
     }
 
     private func dayButton(_ day: Date) -> some View {

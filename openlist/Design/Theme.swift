@@ -41,6 +41,8 @@ enum Theme {
     static var canvas: Color { Color(nsColor: .textBackgroundColor) }
     /// Sidebar and inspector background.
     static var chrome: Color { Color(nsColor: .windowBackgroundColor) }
+    /// A quiet surface separating task content from the main document.
+    static var inspector: Color { Color(nsColor: .controlBackgroundColor) }
     /// Hairline separators.
     static var separator: Color { Color(nsColor: .separatorColor) }
     /// Hover highlight on rows.
@@ -58,6 +60,7 @@ enum Theme {
 
     enum Font {
         static let documentTitle = SwiftUI.Font.system(size: 28, weight: .bold, design: .default)
+        static let inspectorTitle = SwiftUI.Font.system(size: 25, weight: .semibold)
         static let heading1 = SwiftUI.Font.system(size: 21, weight: .bold)
         static let heading2 = SwiftUI.Font.system(size: 17, weight: .semibold)
         static let heading3 = SwiftUI.Font.system(size: 15, weight: .semibold)

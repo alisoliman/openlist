@@ -55,4 +55,23 @@ for (index, left) in arranged.enumerated() {
         expect(left.laneCount == right.laneCount, "Connected rectangles have matching widths")
     }
 }
+// The scheduling grid respects first weekday, leap years and local day
+// boundaries, including the short/long days when Amsterdam changes clocks.
+var calendar = Calendar(identifier: .gregorian)
+calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+for firstWeekday in [1, 2, 7] {
+    calendar.firstWeekday = firstWeekday
+    for (year, month) in [(2024, 2), (2026, 3), (2026, 10), (2026, 12)] {
+        let date = calendar.date(from: DateComponents(year: year, month: month, day: 15))!
+        let days = CalendarMonthGrid.days(in: date, calendar: calendar)
+        expect(days.count == 42 && Set(days).count == 42, "Grid keeps six complete, unique weeks")
+        expect(calendar.component(.weekday, from: days[0]) == firstWeekday, "Grid starts on the preferred weekday")
+        expect(days.allSatisfy { calendar.startOfDay(for: $0) == $0 }, "Every day uses local midnight")
+        let inMonth = days.filter { calendar.isDate($0, equalTo: date, toGranularity: .month) }
+        expect(inMonth.count == calendar.range(of: .day, in: .month, for: date)!.count, "Grid includes every day of the month")
+        for (previous, next) in zip(days, days.dropFirst()) {
+            expect(calendar.dateComponents([.day], from: previous, to: next).day == 1, "Adjacent cells remain consecutive across DST")
+        }
+    }
+}
 print("Calendar layout: \(checks) checks passed")

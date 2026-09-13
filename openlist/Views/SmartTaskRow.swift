@@ -62,7 +62,6 @@ struct SmartTaskRow: View {
     var showsBreadcrumb: Bool = true
 
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.compactTaskRows) private var isCompact
     @State private var isHovering = false
     @State private var titleDraft = SyncedTextDraft()
     @State private var editSessionID = UUID()
@@ -81,36 +80,20 @@ struct SmartTaskRow: View {
             .padding(.top, 1)
             .accessibilityLabel("\(block.isCompleted ? "Reopen" : "Complete") \(block.displayTitle)")
 
-            let layout = isCompact
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 5))
-                : AnyLayout(HStackLayout(alignment: .top, spacing: 8))
-            layout {
-                VStack(alignment: .leading, spacing: 3) {
-                    title
-                    if showsBreadcrumb, let breadcrumb = context.breadcrumb(for: block) {
-                        Text(breadcrumb)
-                            .font(Theme.Font.metadata)
-                            .foregroundStyle(Theme.tertiaryText)
-                            .lineLimit(1)
-                    }
+            VStack(alignment: .leading, spacing: 4) {
+                title
+                if showsBreadcrumb, let breadcrumb = context.breadcrumb(for: block) {
+                    Text(breadcrumb)
+                        .font(Theme.Font.metadata)
+                        .foregroundStyle(Theme.tertiaryText)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
-
-                metadata
-                    .fixedSize(horizontal: !isCompact, vertical: false)
+                if hasMetadata { metadata }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
-            Button("Open details", systemImage: "arrow.up.forward.square", action: openDetails)
-                .labelStyle(.iconOnly)
-                .font(.system(size: 12))
-                .foregroundStyle(isHovering || isSelected ? Theme.secondaryText : Theme.tertiaryText)
-                .opacity(isHovering || isSelected ? 1 : 0.45)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-                .buttonStyle(.plain)
-                .help("Open details (⌘↩)")
-                .accessibilityLabel("Open details for \(block.displayTitle)")
+            TaskDetailButton(title: block.displayTitle, isRevealed: isHovering || isSelected || isEditing, action: openDetails)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -147,6 +130,7 @@ struct SmartTaskRow: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 5) {
                 metadataChips
+                    .fixedSize()
                 listBadge
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -154,6 +138,12 @@ struct SmartTaskRow: View {
                 listBadge
             }
         }
+    }
+
+    private var hasMetadata: Bool {
+        block.dueDate != nil || block.recurrence != nil || block.reminderAt != nil || block.isStarred
+            || !block.labelIDs.isEmpty || context.subtaskProgress(for: block) != nil
+            || (showsListBadge && owningList != nil && owningList?.isSystemInbox == false)
     }
 
     private var metadataChips: some View {
