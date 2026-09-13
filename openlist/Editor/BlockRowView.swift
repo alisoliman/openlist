@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -59,6 +60,12 @@ struct BlockRowView: View {
     }
 
     var body: some View {
+        if block.modelContext != nil, !block.isDeleted {
+            liveContent
+        }
+    }
+
+    private var liveContent: some View {
         HStack(alignment: .top, spacing: 0) {
             indentSpacer
             collapseAffordance
@@ -308,6 +315,13 @@ struct BlockContextMenu: View {
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
+        if block.modelContext != nil, !block.isDeleted {
+            liveContent
+        }
+    }
+
+    @ViewBuilder
+    private var liveContent: some View {
         if block.isTask {
             Button(block.isCompleted ? "Mark as Not Done" : "Mark as Done") {
                 actions.onToggleCompletion()
