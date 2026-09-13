@@ -277,6 +277,7 @@ check(staged.workSessions[0].endedAt == work.lastHeartbeatAt, "Restored open wor
 check(incoming.workSessions[0].endedAt == nil, "Pausing a restored session leaves the backup record unchanged")
 try storage.queue(prepared)
 try check(storage.selection() == nil && storage.pending() != nil, "Selecting and confirming staging does not activate it in the live process")
+try check(storage.canCancelPending(), "Prepared restore offers cancellation before selection commits")
 rejects("Interruption before pointer commit preserves original selection") {
     _ = try storage.activatePending(currentSettings: snapshot.settings, using: reader) { point in
         if case .beforeSelection = point { throw CocoaError(.userCancelled) }
@@ -294,6 +295,7 @@ rejects("Interruption after pointer commit retains validated new and old storage
     }
 }
 let selectedAfterCommit = try storage.selection()!
+try check(!storage.canCancelPending(), "Post-commit recovery offers return instead of misleading cancellation")
 check(selectedAfterCommit.generation == prepared.generation && manager.fileExists(atPath: storage.originalStoreURL.path), "Post-commit interruption leaves original store intact and points to complete staging")
 check(defaults.integer(forKey: "settings.firstWeekday") == 2, "Settings are not applied to the old running environment")
 let replay = try storage.activatePending(currentSettings: snapshot.settings, using: reader)

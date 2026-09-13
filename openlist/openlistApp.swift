@@ -76,7 +76,7 @@ struct openlistApp: App {
                     Text("Your existing database has not been replaced. Check available disk space and file permissions, then restart Openlist.\n\n\(startupError ?? "")")
                         .textSelection(.enabled)
                 } actions: {
-                    if (try? recoveryStorage.pending()) != nil {
+                    if (try? recoveryStorage.canCancelPending()) == true {
                         Button("Cancel pending restore and quit") {
                             do { try recoveryStorage.cancelPending(); NSApplication.shared.terminate(nil) }
                             catch { showRecoveryError(error) }

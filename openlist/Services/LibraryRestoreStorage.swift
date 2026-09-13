@@ -72,6 +72,14 @@ nonisolated struct LibraryRestoreStorage: Sendable {
         return value
     }
 
+    /// Removing a post-commit journal only finishes replay; it cannot cancel
+    /// the selection that has already been published. Recovery uses Return to
+    /// Original in that state, so do not offer a misleading cancellation.
+    func canCancelPending() throws -> Bool {
+        guard let request = try pending() else { return false }
+        return try selection()?.id != request.id
+    }
+
     func prepare(_ snapshot: LibraryBackup, using reader: BackupSnapshotReader) throws -> Prepared {
         let id = UUID()
         var complete = false

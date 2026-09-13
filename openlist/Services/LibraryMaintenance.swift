@@ -1,11 +1,13 @@
 import AppKit
 import Foundation
 import SwiftData
+import UniformTypeIdentifiers
 
 /// The user-visible manual workflow. Bulk work uses immutable values and an
 /// owned Core Data queue; only draft commits and UI state run on the main actor.
 @Observable @MainActor
 final class LibraryMaintenance {
+    private static let backupType = UTType(exportedAs: "solimanali.openlist.library-backup", conformingTo: .package)
     private let store: Store
     let storage: LibraryRestoreStorage
     let startup: LibraryRestoreStorage.Startup
@@ -33,6 +35,8 @@ final class LibraryMaintenance {
         panel.title = "Back up library"
         panel.nameFieldStringValue = "Openlist \(Date.now.formatted(.iso8601.year().month().day().dateSeparator(.dash))) \(UUID().uuidString.prefix(6)).openlistbackup"
         panel.canCreateDirectories = true
+        panel.allowedContentTypes = [Self.backupType]
+        panel.allowsOtherFileTypes = false
         panel.message = "This unencrypted package contains your private library and files. Choose a new backup name."
         guard panel.runModal() == .OK, let destination = panel.url else { return }
         let access = destination.startAccessingSecurityScopedResource()
@@ -55,8 +59,10 @@ final class LibraryMaintenance {
         let panel = NSOpenPanel()
         panel.title = "Choose an Openlist backup"
         panel.message = "Select an .openlistbackup package to validate and preview. Selecting it does not replace your library."
-        panel.canChooseDirectories = true
+        panel.canChooseDirectories = false
         panel.canChooseFiles = true
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowedContentTypes = [Self.backupType]
         panel.allowsMultipleSelection = false
         panel.prompt = "Preview Backup"
         guard panel.runModal() == .OK, let source = panel.url else { return }
