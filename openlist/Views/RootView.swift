@@ -12,6 +12,8 @@ struct RootView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lastCommandToken = 0
+    @State private var availableWidth: CGFloat = 1180
+    @State private var sidebarBeforeInspector: NavigationSplitViewVisibility?
     /// The route whose unwanted initial focus has already been cleared, so the
     /// clear happens once per navigation and never steals a later click.
     @State private var focusClearedFor: AppRoute?
@@ -35,6 +37,10 @@ struct RootView: View {
                 }
         }
         .navigationTitle("Openlist")
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            availableWidth = width
+            adaptInspectorColumns()
+        }
         .toolbar { toolbarContent }
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
             CommandPaletteView()
@@ -137,6 +143,7 @@ struct RootView: View {
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
+            adaptInspectorColumns()
             // Editing a subtask inside the detail panel makes that panel the
             // command target. On a smart view there is no list document to hand
             // control back to, so closing the panel has to release it or ⌘N and
@@ -154,6 +161,21 @@ struct RootView: View {
             lastCommandToken = newValue
             guard env.activeDocument == nil else { return }
             handleGlobalCommand()
+        }
+    }
+
+    /// Keep the document and inspector usable in a narrow window. Restore only
+    /// sidebar visibility that this adaptive behavior changed itself.
+    private func adaptInspectorColumns() {
+        if env.navigator.openTaskID != nil, availableWidth < 980 {
+            if columnVisibility != .detailOnly {
+                sidebarBeforeInspector = columnVisibility
+                columnVisibility = .detailOnly
+            }
+        } else if let previous = sidebarBeforeInspector,
+                  env.navigator.openTaskID == nil || availableWidth >= 1100 {
+            columnVisibility = previous
+            sidebarBeforeInspector = nil
         }
     }
 

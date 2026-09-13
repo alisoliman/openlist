@@ -63,9 +63,7 @@ struct TasksScreen: View {
                 icon: "checklist",
                 title: "Tasks",
                 subtitle: "\(matching.count) \(matching.count == 1 ? "task" : "tasks")"
-            ) {
-                controls
-            }
+            )
         } content: {
             activeConstraints
                 .padding(.bottom, 12)
@@ -161,41 +159,6 @@ struct TasksScreen: View {
         if hasCustomFilters {
             Button("Reset filters", action: resetFilters)
                 .buttonStyle(.borderless)
-        }
-    }
-
-    private var controls: some View {
-        HStack(spacing: 4) {
-            Menu {
-                Section("Show") {
-                    ForEach(TaskFilter.allCases) { option in
-                        CheckmarkMenuItem(option.title, isSelected: filter == option) { filter = option }
-                    }
-                }
-
-                Section("Group by") {
-                    ForEach(TaskGrouping.allCases) { option in
-                        CheckmarkMenuItem(option.title, isSelected: grouping == option) { grouping = option }
-                    }
-                }
-
-                Section("List") {
-                    CheckmarkMenuItem("All active lists", isSelected: listFilter == nil) { listFilter = nil }
-                    ForEach(activeLists) { list in
-                        CheckmarkMenuItem("\(list.icon)  \(list.displayTitle)", isSelected: listFilter == list.id) {
-                            listFilter = list.id
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 15))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: 26)
-            .help("Filter and group")
-            .accessibilityLabel("Filter and group tasks")
         }
     }
 
