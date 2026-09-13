@@ -19,6 +19,9 @@ final class LibraryMaintenance {
     var lastBackupURL: URL?
     var hasPendingRestore = false
     var isLocalRestore: Bool { startup.isLocalRestore }
+    var pendingQuitError: String? { hasPendingRestore ? store.persistenceError : nil }
+    @ObservationIgnored private var quitsAfterPreviewDismissal = false
+    @ObservationIgnored private var quitTask: Task<Void, Never>?
 
     init(store: Store, storage: LibraryRestoreStorage, startup: LibraryRestoreStorage.Startup,
          defaults: UserDefaults = ReviewSession.defaults) {
@@ -86,10 +89,18 @@ final class LibraryMaintenance {
             }.value
             try storage.queue(prepared)
             self.hasPendingRestore = true
+            self.quitsAfterPreviewDismissal = true
             self.preview = nil
             self.status = "Restore is prepared. Open Openlist again after it quits to finish."
-            NSApplication.shared.terminate(nil)
         }
+    }
+
+    /// A nil binding starts sheet dismissal; only onDismiss confirms that the
+    /// presentation has closed. A cancelled preview must never request quit.
+    func previewDidDismiss() {
+        guard quitsAfterPreviewDismissal else { return }
+        quitsAfterPreviewDismissal = false
+        requestQuit()
     }
 
     func returnToOriginal() async {
@@ -98,6 +109,32 @@ final class LibraryMaintenance {
             try self.storage.queueReturnToOriginal()
             self.hasPendingRestore = true
             self.status = "Return is prepared. Open Openlist again after it quits."
+            self.requestQuit()
+        }
+    }
+
+    /// AppKit can decline terminate while a sheet or alert is still closing.
+    /// Wait for the actual presentation boundary, not an animation-duration
+    /// guess; leave a clear retry action if another dialog remains open.
+    func requestQuit() {
+        guard hasPendingRestore, quitTask == nil else { return }
+        quitTask = Task { [weak self] in
+            guard let self else { return }
+            defer { quitTask = nil }
+            await Task.yield()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            while NSApplication.shared.modalWindow != nil
+                || NSApplication.shared.windows.contains(where: { $0.attachedSheet != nil }) {
+                guard !Task.isCancelled, hasPendingRestore else { return }
+                guard ContinuousClock.now < deadline else {
+                    error = "Close any open dialogs, then choose Quit Openlist to finish the prepared restore."
+                    return
+                }
+                do { try await Task.sleep(for: .milliseconds(50)) }
+                catch { return }
+            }
+            guard !Task.isCancelled, hasPendingRestore else { return }
+            error = nil
             NSApplication.shared.terminate(nil)
         }
     }
@@ -106,6 +143,8 @@ final class LibraryMaintenance {
         do {
             try storage.cancelPending()
             hasPendingRestore = false
+            quitsAfterPreviewDismissal = false
+            quitTask?.cancel()
             status = "Pending restore cancelled. Your current library is still selected."
         } catch { self.error = error.localizedDescription }
     }

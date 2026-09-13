@@ -25,7 +25,7 @@ struct LibraryBackupControls: View {
             Button("Show recovery files") { library.showRecoveryFiles() }
             if library.isBusy { ProgressView("Working with library…").controlSize(.small) }
             if let status = library.status { Text(status).font(Theme.Font.metadata).textSelection(.enabled) }
-            if let error = library.error {
+            if let error = library.error ?? library.pendingQuitError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(.red)
@@ -34,10 +34,14 @@ struct LibraryBackupControls: View {
             if library.hasPendingRestore {
                 Text("If quitting was stopped by a save error, save your changes and quit again, or cancel the pending restore.")
                     .font(Theme.Font.metadata)
-                Button("Cancel pending restore") { library.cancelPending() }
+                HStack {
+                    Button("Quit Openlist") { library.requestQuit() }
+                    Button("Cancel pending restore") { library.cancelPending() }
+                }
             }
         }
-        .sheet(isPresented: Binding(get: { library.preview != nil }, set: { if !$0 { library.preview = nil } })) {
+        .sheet(isPresented: Binding(get: { library.preview != nil }, set: { if !$0 { library.preview = nil } }),
+               onDismiss: { library.previewDidDismiss() }) {
             if let preview = library.preview {
                 LibraryRestorePreview(preview: preview, library: library)
             }
