@@ -20,3 +20,14 @@ cp -R "$OUT/original" "$OUT/restored"
 "$OUT/identity-checks" reopen "$OUT/original"
 "$OUT/identity-checks" restore "$OUT/restored"
 python3 -B Tools/LocalLinkChecks/check_registration.py
+xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/restore-link-checks" \
+    openlist/Model/*.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift \
+    openlist/Services/LibraryIdentity.swift openlist/Services/LocalLinkNavigation.swift openlist/Services/Navigator.swift \
+    openlist/Services/LibraryBackupPackage.swift openlist/Services/BackupStagedStore.swift \
+    openlist/Services/BackupSnapshotReader.swift openlist/Services/LibraryRestoreStorage.swift \
+    openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift \
+    openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudError.swift \
+    openlist/Services/RichTextCodec.swift openlist/Design/Theme.swift Tools/LocalLinkChecks/Restore/main.swift
+for phase in prepare restore return different; do
+    "$OUT/restore-link-checks" "$OUT/SelectedLibrary" "$phase"
+done

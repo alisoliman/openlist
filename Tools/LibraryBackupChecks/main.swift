@@ -1,5 +1,6 @@
 import AppKit
 import CoreData
+import CryptoKit
 import Foundation
 import SwiftData
 
@@ -21,6 +22,59 @@ let settingsSuite = "openlist.backup-check.\(UUID())"
 let defaults = UserDefaults(suiteName: settingsSuite)!
 defer { defaults.removePersistentDomain(forName: settingsSuite) }
 let fixedDate = Date(timeIntervalSinceReferenceDate: 700_000_000.125)
+
+if phase == "read-closed" {
+    let source = root.appendingPathComponent("Source.store")
+    let expected = try JSONDecoder().decode(LibraryBackup.self, from: Data(contentsOf: root.appendingPathComponent("expected-closed.json")))
+    let reader = try BackupSnapshotReader(schema: AppPersistence.schema)
+    let scratch = root.appendingPathComponent("Scratch", isDirectory: true)
+    try manager.createDirectory(at: scratch, withIntermediateDirectories: true)
+    func sourceBytes() throws -> [String: String] {
+        var result: [String: String] = [:]
+        for case let url as URL in manager.enumerator(at: root, includingPropertiesForKeys: nil)! {
+            let relative = String(url.path.dropFirst(root.path.count + 1))
+            guard relative == "Source.store" || relative == "Source.store-wal" || relative.hasPrefix(".Source_SUPPORT/") else { continue }
+            guard (try manager.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular else { continue }
+            result[relative] = SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        }
+        return result
+    }
+    let before = try sourceBytes()
+    let actual = try reader.readClosedStore(at: source, settings: expected.settings, createdAt: expected.createdAt,
+                                            temporaryDirectory: scratch) { directory in
+        let files = FileManager.default
+        guard (try files.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)?.intValue == 0o700 else { throw CocoaError(.fileReadNoPermission) }
+        for case let url as URL in files.enumerator(at: directory, includingPropertiesForKeys: nil)! {
+            let attributes = try files.attributesOfItem(atPath: url.path)
+            let required = attributes[.type] as? FileAttributeType == .typeDirectory ? 0o700 : 0o600
+            guard (attributes[.posixPermissions] as? NSNumber)?.intValue == required else { throw CocoaError(.fileReadNoPermission) }
+        }
+    }
+    check(actual == expected, "Closed actual SwiftData source preserves all nine DTO types, identity and payloads exactly")
+    check(actual.blocks.contains { $0.mediaData?.count == 1_048_593 }, "Closed source hydrates external image bytes")
+    check(actual.attachments.contains { $0.contentData?.count == 3_000_000 }, "Closed source hydrates external attachment bytes")
+    try check(sourceBytes() == before, "Closed read leaves original DB, WAL and external payload bytes unchanged; SHM read marks are excluded")
+    try check(manager.contentsOfDirectory(atPath: scratch.path).isEmpty, "Successful read removes its private scratch files")
+    rejects("Injected failure after copying aborts the read") {
+        _ = try reader.readClosedStore(at: source, settings: expected.settings, temporaryDirectory: scratch,
+                                      afterCopy: { _ in throw CocoaError(.userCancelled) })
+    }
+    try check(manager.contentsOfDirectory(atPath: scratch.path).isEmpty, "Injected failure removes its private scratch files")
+    rejects("Missing expected external bytes in scratch cannot become successful legacy media") {
+        _ = try reader.readClosedStore(at: source, settings: expected.settings, temporaryDirectory: scratch) { directory in
+            let files = FileManager.default
+            for case let url as URL in files.enumerator(at: directory, includingPropertiesForKeys: nil)! {
+                if url.path.contains("_EXTERNAL_DATA/"), (try files.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular {
+                    try files.removeItem(at: url)
+                }
+            }
+        }
+    }
+    try check(manager.contentsOfDirectory(atPath: scratch.path).isEmpty, "Failed materialization removes its private scratch files")
+    try check(sourceBytes() == before, "All failure paths preserve original DB, WAL and payload bytes")
+    print("\(checks) closed SwiftData snapshot checks passed")
+    exit(0)
+}
 
 if phase.hasPrefix("crash-") || phase == "resume-journal" {
     let fixture = try LibraryBackupPackage.read(at: package)
@@ -96,7 +150,8 @@ if phase == "reopen" {
 }
 
 let schema = AppPersistence.schema
-let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: root.appendingPathComponent("Source.store"), cloudKitDatabase: .none)])
+let container = try AppPersistence.open(at: root.appendingPathComponent("Source.store"),
+                                        iCloudUnavailableReason: "Isolated backup fixture").container
 let context = container.mainContext
 context.autosaveEnabled = false
 let section = SidebarSection(title: "Pinned personal", sortIndex: 8.5, isDefault: true)
@@ -137,8 +192,9 @@ image.mediaFilename = "image-original.png"; image.mediaData = Data(repeating: 0x
 image.mediaWidth = 140.5; image.mediaHeight = 70.25; image.mediaCaption = "Caption"
 let legacyImage = Block(kind: .image, text: "", listID: inbox.id)
 legacyImage.mediaFilename = "legacy-file.png"
+let attachmentBytes = phase == "prepare-closed" ? Data(repeating: 0x51, count: 3_000_000) : Data("pdf bytes".utf8)
 let attachment = Attachment(blockID: task.id, filename: "source-file.pdf", displayName: "Original 📎 file.pdf",
-    contentType: "application/pdf", byteCount: 9, sortIndex: 9.5, contentData: Data("pdf bytes".utf8))
+    contentType: "application/pdf", byteCount: attachmentBytes.count, sortIndex: 9.5, contentData: attachmentBytes)
 let event = ActivityEvent(kind: .renamed, title: "Old title", detail: "Available facts", blockID: task.id,
     listID: list.id, listTitle: "Historical list", listIcon: "🧾")
 event.timestamp = fixedDate; event.change = TaskActivityChange(before: TaskActivityState(title: task.text, dueDate: task.dueDate, includesTime: true, isCompleted: true, listID: list.id, listTitle: list.title, listIcon: list.icon, occurrenceID: task.occurrenceID), after: TaskActivityState(title: task.text, dueDate: task.dueDate, includesTime: true, isCompleted: true, listID: list.id, listTitle: list.title, listIcon: list.icon, occurrenceID: task.occurrenceID))
@@ -170,6 +226,11 @@ let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type:
 let libraryID = UUID(uuidString: metadata[NSStoreUUIDKey] as! String)!
 let snapshot = try LibraryBackup(context: context, libraryID: libraryID, settings: .init(defaults: defaults), createdAt: fixedDate)
 let reader = try BackupSnapshotReader(schema: schema)
+if phase == "prepare-closed" {
+    try JSONEncoder().encode(snapshot).write(to: root.appendingPathComponent("expected-closed.json"))
+    print("Prepared closed actual AppPersistence source without an earlier backup read")
+    exit(0)
+}
 let pinned = try reader.read(at: root.appendingPathComponent("Source.store"), settings: snapshot.settings, createdAt: fixedDate)
 check(pinned == snapshot, "Public pinned reader matches every actual-schema value including external media")
 try snapshot.validate()

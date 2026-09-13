@@ -47,11 +47,12 @@ below detected local references. Multiple references are numbered in note
 order, with repeated URLs shown once. These controls use the same internal
 handler without changing the note text, formatting, or editor selection.
 
-## Library identity and future backup/restore
+## Library identity and backup/restore
 
 The local SQLite store already persists a UUID. Openlist reads `NSStoreUUIDKey`
 using Core Data's public `metadataForPersistentStore(type:at:options:)` API after
-SwiftData opens the store. This adds no synchronized model, preference, or
+SwiftData opens the selected store, including an active restored generation.
+This adds no synchronized model, preference, or
 second identity file. No new or session UUID is substituted when reading
 fails: copying and opening item links fail closed while existing content stays
 available.
@@ -61,11 +62,13 @@ or record IDs. Another Mac's independently created store is a different
 library even when it synchronizes the same content. Development, production,
 and isolated review stores have independent identities.
 
-The future backup/restore implementation (BRI-23 / OL-003) must preserve the
-store metadata UUID and item UUIDs when restoring a full snapshot of the same
-library. A newly created library or a content import into another library must
-keep that destination's distinct identity. Restoring a different full library
-adopts its identity, so links from the replaced library are rejected. A literal
+Full-library backup and restore preserve the store metadata UUID and item UUIDs,
+so existing links remain valid when restoring that library at a different local
+store location. Return to Original uses the original store's identity again.
+Restoring a different full library adopts its identity, so links from the
+previously selected library are rejected even if item UUIDs happen to match.
+A newly created library or a future content import into another library must
+keep that destination's distinct identity. A literal
 file copy of a database preserves its UUID: such copies are the same logical
 library for link purposes, and whichever copy is installed in the app's active
 store location is the one that opens. This feature does not discover or choose

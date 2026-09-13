@@ -102,6 +102,18 @@ after selection replays the complete new selection on the next launch. Selected
 stores are checked again at the actual container factory; a missing or unreadable
 selected store cannot silently become an empty library.
 
+Cold startup reads use a disposable framework-managed copy: Core Data's public
+`replacePersistentStore` API opens the closed source read-only and copies its
+store family into a private temporary directory. The same logical reader pins
+the copy with persistent-history tracking enabled, which permits the initial
+WAL bookkeeping required for a cold SwiftData store. Only that disposable copy
+is writable; no CloudKit container, app bootstrap, or source migration runs.
+Its UUID, schema, every record and expected payload are validated before use,
+and scratch files are removed on success or a thrown failure. A process kill
+can leave the private system-temporary directory for operating-system cleanup.
+Original database, WAL, and external payload contents stay unchanged; SQLite
+may update transient SHM read marks. Live export continues to use its original read-only pinned reader.
+
 Portable preferences apply before observers are created, once per selection UUID.
 An interruption during preference application replays all keys; later ordinary
 launches preserve preference edits. The selected generation owns its media cache.
@@ -149,3 +161,8 @@ processes to verify asynchronous termination replies, cancellation and retry.
 Format 2 adds the optional Inbox membership payload. Closed-store recovery recognizes the exact immediately previous schema by its public Core Data model hashes. It copies that source with read-only Core Data options, checks private file ownership, runs supported lightweight SwiftData migration only on the disposable copy with CloudKit disabled, checks the resulting files again, and validates every current DTO through the pinned reader. Database identity is checked before and after. The original database, WAL and external media are never migrated during preflight.
 
 This also permits Return to the original library after only the selected restored generation has upgraded. Once original selection is committed, the ordinary app container performs its normal migration. A queued but not yet activated restore prepared by the old app is rejected with a cancellation/reselect action so its staged schema and fingerprint are rebuilt from the valid version 1 package. An unknown newer or unrelated schema is not guessed or migrated.
+
+The startup-copy boundary follows Apple's public [store-copy guidance](https://developer.apple.com/documentation/technotes/tn3163-understanding-the-synchronization-of-nspersistentcloudkitcontainer)
+and [SwiftData coexistence history requirement](https://developer.apple.com/videos/play/wwdc2023/10189/?time=376).
+Separate-process closed-source checks compare all nine DTO types, both external
+payload attributes, source database/WAL/payload hashes, and scratch cleanup.
