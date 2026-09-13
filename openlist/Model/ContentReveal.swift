@@ -37,13 +37,13 @@ struct ContentReveal: Identifiable, Equatable {
         let block: Block?
         switch destination {
         case let .list(id):
-            list = lists.first { $0.id == id && $0.mergedIntoID == nil }
+            list = lists.first { $0.id == id && !$0.isTrashed && $0.mergedIntoID == nil }
             block = nil
             guard list != nil else { throw Unavailable.deleted }
         case let .block(id):
-            block = blocks.first { $0.id == id && !$0.isDeleted }
+            block = blocks.first { $0.id == id && !$0.isTrashed && !$0.isDeleted }
             guard let block else { throw Unavailable.deleted }
-            list = lists.first { $0.id == block.listID && $0.mergedIntoID == nil }
+            list = lists.first { $0.id == block.listID && !$0.isTrashed && $0.mergedIntoID == nil }
         }
         guard let list, !list.isDeleted else { throw Unavailable.missingList }
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)

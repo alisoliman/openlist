@@ -147,7 +147,7 @@ undo.endUndoGrouping()
 let removedListID = removedList.id
 store.deleteList(removedList)
 undo.undo()
-check(store.blocks(inList: removedListID).isEmpty && store.editorNotice?.contains("permanently deleted") == true, "Undo cannot recreate orphan tasks after permanent list deletion")
+check(store.blocks(inList: removedListID).isEmpty && store.editorNotice?.contains("unavailable") == true, "Undo waits for a retained list to be restored before applying its edits")
 
 store.setArchived(true, for: list)
 check(!NotificationService.shared.scheduled.contains(secondID), "Archiving cancels reminders")

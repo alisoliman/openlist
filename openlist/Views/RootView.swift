@@ -20,9 +20,9 @@ struct RootView: View {
     @State private var hostWindow = RootWindowReference()
     @State private var searchReturnFocus = SearchReturnFocus()
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
-    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }) private var allLists: [TaskList]
+    @Query(filter: TaskList.availablePredicate) private var allLists: [TaskList]
 
     var body: some View {
         @Bindable var navigator = env.navigator
@@ -65,7 +65,7 @@ struct RootView: View {
                 if let list = env.listPendingDeletion { env.performDeleteList(list) }
             }
         } message: {
-            Text("Its tasks and notes will be deleted too, including on your other Macs when iCloud sync is available. This cannot be undone.")
+            Text("This moves the list, its tasks, notes, and files to Trash. You can restore them later. With iCloud enabled, this change also syncs to your other Macs.")
         }
         .background(Theme.canvas)
         .overlay(alignment: .bottom) { CalendarCompletionFeedback() }
@@ -209,6 +209,16 @@ struct RootView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(ListAccent.blue.softBackground)
+            }
+            if let message = env.store.trashError ?? env.store.trashNotice {
+                HStack {
+                    Text(message).font(.callout)
+                    Spacer()
+                    Button("Open Trash") { env.navigator.go(to: .trash) }
+                    Button("Dismiss") { env.store.trashError = nil; env.store.trashNotice = nil }
+                }
+                .padding(12)
+                .background(Theme.secondaryText.opacity(0.08))
             }
             if let error = env.store.inboxError {
                 HStack(alignment: .top) {
@@ -390,6 +400,8 @@ struct RootView: View {
             TasksScreen()
         case .lists:
             ListsScreen()
+        case .trash:
+            TrashScreen()
         case .completed:
             CompletedScreen()
         case let .list(id):

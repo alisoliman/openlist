@@ -55,6 +55,10 @@ final class Store {
     var persistenceError: String?
     var editorNotice: String?
     var inboxError: String?
+    var trashError: String?
+    var trashNotice: String?
+    @ObservationIgnored var permanentlyErasedBlockIDs: Set<UUID> = []
+    @ObservationIgnored var trashMediaRollbacks: [() -> Void] = []
     var labelMergeUndo: LabelMergePlan?
     var labelMaintenanceError: String?
     var labelRevision = 0
@@ -103,6 +107,7 @@ final class Store {
             }
             let descriptor = FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id })
             guard let list = try? context.fetch(descriptor).first else { return nil }
+            guard !list.isTrashed else { return nil }
             guard let mergedIntoID = list.mergedIntoID else { return list }
             nextID = mergedIntoID
         }
@@ -111,17 +116,17 @@ final class Store {
 
     func block(id: UUID?) -> Block? {
         guard let id else { return nil }
-        let descriptor = FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })
+        let descriptor = FetchDescriptor<Block>(predicate: #Predicate { $0.id == id && $0.trashID == nil })
         return try? context.fetch(descriptor).first
     }
 
     func allLists(includeArchived: Bool = false) -> [TaskList] {
         var descriptor = FetchDescriptor<TaskList>(
-            predicate: #Predicate { $0.mergedIntoID == nil },
+            predicate: #Predicate { $0.trashID == nil && $0.mergedIntoID == nil },
             sortBy: [SortDescriptor(\.sortIndex)]
         )
         if !includeArchived {
-            descriptor.predicate = #Predicate { !$0.isArchived && $0.mergedIntoID == nil }
+            descriptor.predicate = #Predicate { !$0.isArchived && $0.trashID == nil && $0.mergedIntoID == nil }
         }
         return (try? context.fetch(descriptor)) ?? []
     }
@@ -129,7 +134,7 @@ final class Store {
     func blocks(inList listID: UUID) -> [Block] {
         let listID = resolvedListID(listID) ?? listID
         let descriptor = FetchDescriptor<Block>(
-            predicate: #Predicate { $0.listID == listID },
+            predicate: #Predicate { $0.trashID == nil && $0.listID == listID },
             sortBy: [SortDescriptor(\.sortIndex)]
         )
         return (try? context.fetch(descriptor)) ?? []
@@ -225,19 +230,9 @@ final class Store {
         return list
     }
 
-    func deleteList(_ list: TaskList) {
-        guard !list.isSystemInbox else { return }
-        let listID = list.id
-
-        // Blocks are keyed by list rather than related, so remove them here.
-        for block in blocks(inList: listID) {
-            discardTaskSchedule(for: block, reason: "Task deleted")
-            purgeMediaAndAttachments(for: block)
-            context.delete(block)
-        }
-        log(.listDeleted, title: list.displayTitle, list: list)
-        context.delete(list)
-        save()
+    @discardableResult
+    func deleteList(_ list: TaskList) -> Bool {
+        trashList(list)
     }
 
     func duplicateList(_ list: TaskList) -> TaskList {

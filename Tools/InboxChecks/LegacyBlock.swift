@@ -104,6 +104,8 @@ final class Block {
 // MARK: - Derived accessors
 
 extension Block {
+    var isTrashed: Bool { false }
+
     /// Repeating tasks retain task identity while recording each occurrence.
     var occurrenceID: UUID {
         get { calendarOccurrenceID ?? id }

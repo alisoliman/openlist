@@ -78,15 +78,19 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
                 }
                 let requiresMigration = !model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
                 if requiresMigration {
-                    // Recognize exactly the previous shipped schema, not an
-                    // arbitrary older/newer library. The sole additive field
-                    // is optional and no other hashes may differ.
-                    guard let legacy = model.copy() as? NSManagedObjectModel,
-                          let block = legacy.entities.first(where: { $0.name == "Block" }) else {
-                        throw LibraryBackupError.invalid("The previous library schema could not be verified.")
+                    // Accept only the two shipped additive predecessor schemas:
+                    // pre-Trash, and pre-Inbox-membership. Migrate the private copy.
+                    let recognized = [false, true].contains { removeInbox in
+                        guard let legacy = model.copy() as? NSManagedObjectModel else { return false }
+                        for entity in legacy.entities where entity.name == "Block" || entity.name == "TaskList" {
+                            entity.properties = entity.properties.filter {
+                                $0.name != "trashID" && $0.name != "trashMetadataData"
+                                    && !(removeInbox && entity.name == "Block" && $0.name == "inboxMembershipData")
+                            }
+                        }
+                        return legacy.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
                     }
-                    block.properties = block.properties.filter { $0.name != "inboxMembershipData" }
-                    guard legacy.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) else {
+                    guard recognized else {
                         throw LibraryBackupError.invalid("This library uses an incompatible schema. Its files have been kept. Open it with a compatible Openlist version or recover a logical backup.")
                     }
                 }
@@ -243,6 +247,8 @@ extension BackupTaskList {
     nonisolated fileprivate init(values: [String: Any]) throws {
         let record = BackupRecordValues(values: values)
         id = try record.required("id")
+        trashID = try record.optional("trashID")
+        trashMetadataData = try record.optional("trashMetadataData")
         title = try record.required("title")
         icon = try record.required("icon")
         accentRaw = try record.required("accentRaw")
@@ -268,6 +274,8 @@ extension BackupBlock {
     nonisolated fileprivate init(values: [String: Any]) throws {
         let record = BackupRecordValues(values: values)
         id = try record.required("id")
+        trashID = try record.optional("trashID")
+        trashMetadataData = try record.optional("trashMetadataData")
         kindRaw = try record.required("kindRaw")
         text = try record.required("text")
         richData = try record.optional("richData")
@@ -407,6 +415,8 @@ extension BackupTaskList {
     nonisolated fileprivate var backupValues: [String: Any] {
         var values: [String: Any] = [:]
         values["id"] = id
+        if let trashID { values["trashID"] = trashID }
+        if let trashMetadataData { values["trashMetadataData"] = trashMetadataData }
         values["title"] = title
         values["icon"] = icon
         values["accentRaw"] = accentRaw
@@ -433,6 +443,8 @@ extension BackupBlock {
     nonisolated fileprivate var backupValues: [String: Any] {
         var values: [String: Any] = [:]
         values["id"] = id
+        if let trashID { values["trashID"] = trashID }
+        if let trashMetadataData { values["trashMetadataData"] = trashMetadataData }
         values["kindRaw"] = kindRaw
         values["text"] = text
         if let richData { values["richData"] = richData }

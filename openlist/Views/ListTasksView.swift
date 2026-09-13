@@ -15,7 +15,7 @@ struct ListTasksView: View {
         self.list = list
         self.showsCompleted = showsCompleted
         let listID = list.id
-        _blocks = Query(filter: #Predicate<Block> { $0.listID == listID })
+        _blocks = Query(filter: #Predicate<Block> { $0.trashID == nil && $0.listID == listID })
     }
 
     var body: some View {

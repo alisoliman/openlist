@@ -71,8 +71,8 @@ extension Store {
         for task in tasks where included.contains(task.id) && seen.insert(task.id).inserted {
             let original = originalByID[task.id]
             let previousList = original?.listID.flatMap { oldListByID[$0] }
-            let before = original.map { TaskActivityState($0, list: previousList) }
-            let after = task.isDeleted ? nil : TaskActivityState(task, list: list(id: task.listID))
+            let before = original.flatMap { $0.isTrashed ? nil : TaskActivityState($0, list: previousList) }
+            let after = task.isDeleted || task.isTrashed ? nil : TaskActivityState(task, list: list(id: task.listID))
             func append(_ kind: ActivityKind, completion: CompletionRecord? = nil, undone: CompletionRecord? = nil) {
                 guard let subject = after ?? before else { return }
                 let event = ActivityEvent(kind: kind, title: subject.title.isEmpty ? "Untitled task" : subject.title,

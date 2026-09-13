@@ -327,12 +327,12 @@ private struct Snapshot {
 
     init(context: ModelContext) throws {
         let records = try context.fetch(FetchDescriptor<TaskList>(sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.id)]))
-        lists = records.filter { $0.mergedIntoID == nil }
+        lists = records.filter { !$0.isTrashed && $0.mergedIntoID == nil }
         listAliases = Dictionary(
             records.compactMap { record in record.mergedIntoID.map { (record.id, $0) } },
             uniquingKeysWith: { first, _ in first }
         )
-        blocks = try context.fetch(FetchDescriptor<Block>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
+        blocks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil }, sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
         labels = try context.fetch(FetchDescriptor<TaskLabel>(sortBy: [SortDescriptor(\.name), SortDescriptor(\.id)]))
     }
 

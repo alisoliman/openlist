@@ -6,7 +6,7 @@ enum FragmentContent {
         guard !selection.isEmpty, let first = store.block(id: selection[0]), let listID = first.listID else {
             throw CopyError.unavailable
         }
-        let all = try store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.listID == listID }))
+        let all = try store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.listID == listID }))
             .filter { !$0.isDeleted }
         let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let selected = Set(selection)

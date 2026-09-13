@@ -13,10 +13,10 @@ struct SidebarView: View {
     @Query(filter: #Predicate<SidebarSection> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\SidebarSection.sortIndex)])
     private var sections: [SidebarSection]
 
-    @Query(filter: #Predicate<TaskList> { !$0.isArchived && $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sidebarIndex)])
+    @Query(filter: TaskList.activePredicate, sort: [SortDescriptor(\TaskList.sidebarIndex)])
     private var lists: [TaskList]
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])
@@ -127,6 +127,10 @@ struct SidebarView: View {
                 isSelected: env.navigator.route == .lists,
                 shortcutHint: "⌘5"
             ) { env.navigator.go(to: .lists) }
+            SidebarRow(icon: "trash", title: "Trash", accent: .graphite, badge: 0,
+                isSelected: env.navigator.route == .trash, shortcutHint: nil) {
+                env.navigator.go(to: .trash)
+            }
         }
         .padding(.bottom, Theme.Spacing.sectionGap - 6)
     }

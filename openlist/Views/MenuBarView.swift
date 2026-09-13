@@ -12,10 +12,10 @@ struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismiss) private var dismiss
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
 
-    @Query(filter: #Predicate<TaskList> { !$0.isArchived && $0.mergedIntoID == nil })
+    @Query(filter: TaskList.activePredicate)
     private var activeLists: [TaskList]
 
 

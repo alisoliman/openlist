@@ -10,10 +10,10 @@ import SwiftUI
 struct TasksScreen: View {
     @Environment(AppEnvironment.self) private var env
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" })
     private var tasks: [Block]
 
-    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: TaskList.availablePredicate, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var allLists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])
@@ -79,10 +79,10 @@ struct LabelScreen: View {
 
     @Environment(AppEnvironment.self) private var env
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" })
     private var tasks: [Block]
 
-    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: TaskList.availablePredicate, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var allLists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])
@@ -158,10 +158,10 @@ struct LabelScreen: View {
 struct CompletedScreen: View {
     @Environment(AppEnvironment.self) private var env
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && $0.isCompleted })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && $0.isCompleted })
     private var tasks: [Block]
 
-    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: TaskList.availablePredicate, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var allLists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])

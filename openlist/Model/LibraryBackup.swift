@@ -4,8 +4,8 @@ import SwiftData
 /// A logical, versioned reconstruction of the library, not a SQLite archive.
 /// Historical references intentionally survive deletion of their subject.
 nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
-    static let currentVersion = 2
-    static let readableVersions: Set<Int> = [1, 2]
+    static let currentVersion = 3
+    static let readableVersions: Set<Int> = [1, 2, 3]
     var version = currentVersion
     var libraryID: UUID
     var createdAt: Date
@@ -85,8 +85,14 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
             guard blocks.allSatisfy({ $0.inboxMembershipData == nil }) else {
                 throw LibraryBackupError.invalid("A version 1 backup contains unsupported Inbox selection data.")
             }
-            version = Self.currentVersion
         }
+        if version < 3 {
+            guard blocks.allSatisfy({ $0.trashID == nil && $0.trashMetadataData == nil }),
+                  lists.allSatisfy({ $0.trashID == nil && $0.trashMetadataData == nil }) else {
+                throw LibraryBackupError.invalid("An older backup contains unsupported Trash data.")
+            }
+        }
+        version = Self.currentVersion
     }
 
     func validate() throws {
@@ -111,21 +117,63 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
             if let id, !ids.contains(id) { throw LibraryBackupError.invalid("Missing \(description): \(id).") }
         }
         for list in lists {
-            try reference(list.sectionID, in: sectionIDs, "sidebar section")
+            if list.trashID == nil { try reference(list.sectionID, in: sectionIDs, "sidebar section") }
             try reference(list.mergedIntoID, in: listIDs, "list alias destination")
             guard ListSorting(rawValue: list.sortingRaw) != nil else { throw LibraryBackupError.invalid("Unsupported list sorting value.") }
         }
         for section in sections { try reference(section.mergedIntoID, in: sectionIDs, "section alias destination") }
         let byID = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0) })
         for block in blocks {
-            try reference(block.listID, in: listIDs, "block list")
-            try reference(block.parentID, in: blockIDs, "parent block")
-            if let parentID = block.parentID, byID[parentID]?.listID != block.listID {
+            if block.trashID == nil {
+                try reference(block.listID, in: listIDs, "block list")
+                try reference(block.parentID, in: blockIDs, "parent block")
+            }
+            if let parentID = block.parentID, let parent = byID[parentID], parent.listID != block.listID, block.trashID == nil {
                 throw LibraryBackupError.invalid("A parent block belongs to a different list.")
             }
-            for id in block.labelIDs { try reference(id, in: labelIDs, "task label") }
+            if block.trashID == nil { for id in block.labelIDs { try reference(id, in: labelIDs, "task label") } }
             guard BlockKind(rawValue: block.kindRaw) != nil, TaskPriority(rawValue: block.priorityRaw) != nil else {
                 throw LibraryBackupError.invalid("Unsupported block kind or priority.")
+            }
+        }
+        let listsByID = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, $0) })
+        var trashMetadata: [UUID: TrashMetadata] = [:]
+        for list in lists where list.trashID != nil {
+            guard list.trashID == list.id, !list.isSystemInbox, list.mergedIntoID == nil,
+                  let data = list.trashMetadataData,
+                  let metadata = try? JSONDecoder().decode(TrashMetadata.self, from: data) else {
+                throw LibraryBackupError.invalid("Invalid retained list recovery information.")
+            }
+            trashMetadata[list.id] = metadata
+        }
+        for block in blocks where block.trashID == block.id {
+            guard trashMetadata[block.id] == nil, let data = block.trashMetadataData,
+                  let metadata = try? JSONDecoder().decode(TrashMetadata.self, from: data) else {
+                throw LibraryBackupError.invalid("Invalid retained content recovery information.")
+            }
+            trashMetadata[block.id] = metadata
+        }
+        for block in blocks {
+            if let group = block.trashID {
+                guard let metadata = trashMetadata[group] else { throw LibraryBackupError.invalid("Missing Trash group.") }
+                if let list = listsByID[group], list.trashID == group {
+                    guard block.listID == group,
+                          block.parentID == nil || byID[block.parentID!]?.trashID == group else {
+                        throw LibraryBackupError.invalid("A retained list has content outside its hierarchy.")
+                    }
+                } else if block.id != group {
+                    guard block.listID == byID[group]?.listID, let parentID = block.parentID,
+                          byID[parentID]?.trashID == group else {
+                        throw LibraryBackupError.invalid("A retained subtree has a missing or unrelated parent.")
+                    }
+                }
+                let retainedLabels = Set(metadata.labels.map(\.id))
+                for id in block.labelIDs where !labelIDs.contains(id) && !retainedLabels.contains(id) {
+                    throw LibraryBackupError.invalid("A retained task label has no recovery information.")
+                }
+            } else if block.listID.flatMap({ listsByID[$0] })?.trashID != nil
+                || block.parentID.flatMap({ byID[$0] })?.trashID != nil {
+                throw LibraryBackupError.invalid("Active content has a retained owner.")
             }
         }
         for attachment in attachments {

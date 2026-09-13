@@ -11,7 +11,7 @@ struct ListTasksProjection {
 
     init(blocks: [Block], listID: UUID, sorting: ListSorting, showsCompleted: Bool) {
         var seen: Set<UUID> = []
-        let owned = blocks.filter { $0.listID == listID && !$0.isDeleted && seen.insert($0.id).inserted }
+        let owned = blocks.filter { $0.listID == listID && !$0.isTrashed && !$0.isDeleted && seen.insert($0.id).inserted }
         let outlined = BlockTree.flatten(owned, respectCollapse: false).map(\.block)
         let allTasks = outlined.filter(\.isTask)
         completedCount = allTasks.filter(\.isCompleted).count

@@ -89,6 +89,16 @@ nonisolated final class MediaStore: @unchecked Sendable {
         }
     }
 
+    /// Synchronous and fallible for confirmed permanent erasure.
+    func eraseCachedFile(filename: String) throws {
+        try queue.sync {
+            let target = try checkedURL(for: filename)
+            if FileManager.default.fileExists(atPath: target.path) {
+                try FileManager.default.removeItem(at: target)
+            }
+        }
+    }
+
     func fileContents(filename: String) -> Data? {
         queue.sync { try? Data(contentsOf: url(for: filename)) }
     }

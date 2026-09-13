@@ -306,7 +306,7 @@ struct DataSettingsTab: View {
     @Environment(AppEnvironment.self) private var env
 
     @Query private var blocks: [Block]
-    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }) private var lists: [TaskList]
+    @Query(filter: TaskList.availablePredicate) private var lists: [TaskList]
 
     @State private var isConfirmingReset = false
     @State private var isConfirmingClearHistory = false
@@ -349,7 +349,7 @@ struct DataSettingsTab: View {
             } header: {
                 Text("Reset")
             } footer: {
-                Text("Removes all lists, tasks and labels. With iCloud enabled, this also deletes them on your other Macs. This cannot be undone.")
+                Text("Permanently removes all lists, tasks, labels, and Trash. With iCloud enabled, this also deletes them on your other Macs. This cannot be undone.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }
@@ -396,19 +396,7 @@ struct DataSettingsTab: View {
     }
 
     private func reset() {
-        env.store.clearCalendarHistory()
-        for list in env.store.allLists(includeArchived: true) where !list.isSystemInbox {
-            env.store.deleteList(list)
-        }
-        if let inbox = env.store.inboxList() {
-            // Through the store so attachment rows and their files go too.
-            env.store.deleteBlocks(env.store.blocks(inList: inbox.id))
-        }
-        for label in env.store.allLabels() {
-            env.store.context.delete(label)
-        }
-        env.store.clearActivity()
-        env.store.save()
+        guard env.store.permanentlyResetLibrary() else { return }
         env.navigator.replace(with: .today)
     }
 }

@@ -15,7 +15,7 @@ struct CompletedTasksControl: View {
         self.showsAsTaskQueue = showsAsTaskQueue
         let listID = list.id
         _completed = Query(filter: #Predicate<Block> {
-            $0.listID == listID && $0.kindRaw == "task" && $0.isCompleted
+            $0.trashID == nil && $0.listID == listID && $0.kindRaw == "task" && $0.isCompleted
         })
     }
 

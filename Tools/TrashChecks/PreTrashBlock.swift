@@ -17,11 +17,6 @@ import SwiftData
 final class Block {
     var id: UUID = UUID()
 
-    /// Retained records keep their identity and payload until explicitly erased.
-    var trashID: UUID?
-    /// Present on the root; retained after recovery to explain its former location.
-    var trashMetadataData: Data?
-
     /// Raw `BlockKind`. Stored as a string for schema stability.
     var kindRaw: String = BlockKind.paragraph.rawValue
 
@@ -114,11 +109,6 @@ final class Block {
 // MARK: - Derived accessors
 
 extension Block {
-    var isTrashed: Bool { trashID != nil }
-    var trashMetadata: TrashMetadata? {
-        trashMetadataData.flatMap { try? JSONDecoder().decode(TrashMetadata.self, from: $0) }
-    }
-
     /// Repeating tasks retain task identity while recording each occurrence.
     var occurrenceID: UUID {
         get { calendarOccurrenceID ?? id }

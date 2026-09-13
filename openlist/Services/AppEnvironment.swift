@@ -255,7 +255,7 @@ extension AppEnvironment {
     /// Deletes for real, and steps off the list if it is the one on screen.
     func performDeleteList(_ list: TaskList) {
         let wasOpen = navigator.route == .list(list.id)
-        store.deleteList(list)
+        guard store.deleteList(list) else { return }
         if wasOpen { navigator.replace(with: .today) }
         listPendingDeletion = nil
     }

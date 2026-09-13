@@ -15,7 +15,7 @@ struct TodayScreen: View {
     @AppStorage(TodaySorting.preferenceKey, store: ReviewSession.defaults)
     private var sorting: TodaySorting = .default
 
-    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: TaskList.availablePredicate, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var lists: [TaskList]
 
     @Query(sort: [SortDescriptor(\TaskLabel.name)])
