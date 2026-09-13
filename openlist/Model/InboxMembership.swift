@@ -10,6 +10,8 @@ nonisolated struct InboxMembership: Codable, Equatable, Sendable {
     var included: Bool
     var order: Double?
     var occurrenceID: UUID?
+    /// Explicit decisions remain distinguishable from recurrence/default clears.
+    var decisionID: UUID?
 
     static func included(order: Double, occurrenceID: UUID) -> Self {
         Self(included: true, order: order, occurrenceID: occurrenceID)

@@ -7,6 +7,7 @@ import SwiftData
 /// This is a logical read snapshot; no live database files are copied.
 nonisolated final class BackupSnapshotReader: @unchecked Sendable {
     private let model: NSManagedObjectModel
+    private let schema: Schema
     private let lock = NSLock()
 
     @MainActor init(schema: Schema) throws {
@@ -14,6 +15,7 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
             throw LibraryBackupError.invalid("The current library schema could not be read for backup.")
         }
         self.model = model
+        self.schema = schema
     }
 
     func createStore(from snapshot: LibraryBackup, at url: URL) throws {
@@ -48,6 +50,99 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
               afterFirstFetch: @Sendable () throws -> Void = {}) throws -> LibraryBackup {
         lock.lock()
         defer { lock.unlock() }
+        return try readSnapshot(at: url, settings: settings, createdAt: createdAt,
+                                isPrivateCopy: false, afterFirstFetch: afterFirstFetch)
+    }
+
+    /// Startup only: no application or synchronization writer may be open.
+    /// Core Data copies the closed source with read-only options. Only this
+    /// disposable copy permits the WAL initialization required to pin a cold
+    /// SwiftData store. No CloudKit container or app bootstrap is constructed.
+    func readClosedStore(at url: URL, settings: LibraryBackupSettings, createdAt: Date = .now,
+                         temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+                         afterCopy: @Sendable (URL) throws -> Void = { _ in }) throws -> LibraryBackup {
+        lock.lock()
+        defer { lock.unlock() }
+        let manager = FileManager.default
+        let directory = temporaryDirectory.appendingPathComponent("OpenlistRestoreRead-\(UUID())", isDirectory: true)
+        try manager.createDirectory(at: directory, withIntermediateDirectories: false,
+                                    attributes: [.posixPermissions: 0o700])
+        do {
+            let snapshot = try autoreleasepool {
+                let options: [AnyHashable: Any] = [NSReadOnlyPersistentStoreOption: true,
+                    NSMigratePersistentStoresAutomaticallyOption: false,
+                    NSInferMappingModelAutomaticallyOption: false]
+                let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url, options: options)
+                guard let raw = metadata[NSStoreUUIDKey] as? String, let sourceID = UUID(uuidString: raw) else {
+                    throw LibraryBackupError.invalid("The saved library schema or identity could not be verified.")
+                }
+                let requiresMigration = !model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
+                if requiresMigration {
+                    // Recognize exactly the previous shipped schema, not an
+                    // arbitrary older/newer library. The sole additive field
+                    // is optional and no other hashes may differ.
+                    guard let legacy = model.copy() as? NSManagedObjectModel,
+                          let block = legacy.entities.first(where: { $0.name == "Block" }) else {
+                        throw LibraryBackupError.invalid("The previous library schema could not be verified.")
+                    }
+                    block.properties = block.properties.filter { $0.name != "inboxMembershipData" }
+                    guard legacy.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) else {
+                        throw LibraryBackupError.invalid("This library uses an incompatible schema. Its files have been kept. Open it with a compatible Openlist version or recover a logical backup.")
+                    }
+                }
+                let copiedURL = directory.appendingPathComponent("Openlist.store")
+                try autoreleasepool {
+                    let copier = NSPersistentStoreCoordinator(managedObjectModel: model)
+                    try copier.replacePersistentStore(at: copiedURL, withPersistentStoreFrom: url,
+                                                       sourceOptions: options, type: .sqlite)
+                }
+                // Check ownership and reject links before a migration opens
+                // anything writable; recheck files created by migration below.
+                try protectPrivateCopy(in: directory)
+                if requiresMigration {
+                    // SwiftData performs its supported lightweight migration
+                    // only on this disposable copy. No original file, app
+                    // context, cloud integration or bootstrap is opened here.
+                    try autoreleasepool {
+                        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema,
+                            url: copiedURL, cloudKitDatabase: .none)])
+                        withExtendedLifetime(container) {}
+                    }
+                }
+                try protectPrivateCopy(in: directory)
+                try afterCopy(directory)
+                let value = try readSnapshot(at: copiedURL, settings: settings, createdAt: createdAt,
+                                             isPrivateCopy: true, afterFirstFetch: {})
+                guard value.libraryID == sourceID else {
+                    throw LibraryBackupError.invalid("The recovery copy did not preserve the library identity.")
+                }
+                return value
+            }
+            try manager.removeItem(at: directory)
+            return snapshot
+        } catch {
+            try? manager.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    private func protectPrivateCopy(in directory: URL) throws {
+        let manager = FileManager.default
+        guard let files = manager.enumerator(at: directory, includingPropertiesForKeys: nil) else {
+            throw LibraryBackupError.invalid("The recovery copy could not be inspected.")
+        }
+        for case let url as URL in files {
+            let attributes = try manager.attributesOfItem(atPath: url.path)
+            let kind = attributes[.type] as? FileAttributeType
+            guard kind == .typeDirectory || (kind == .typeRegular && (attributes[.referenceCount] as? NSNumber)?.intValue == 1) else {
+                throw LibraryBackupError.invalid("The recovery copy contains an unsupported file.")
+            }
+            try manager.setAttributes([.posixPermissions: kind == .typeDirectory ? 0o700 : 0o600], ofItemAtPath: url.path)
+        }
+    }
+
+    private func readSnapshot(at url: URL, settings: LibraryBackupSettings, createdAt: Date,
+                              isPrivateCopy: Bool, afterFirstFetch: @Sendable () throws -> Void) throws -> LibraryBackup {
         return try autoreleasepool {
             let coordinator = NSPersistentStoreCoordinator(managedObjectModel: model)
             let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
@@ -55,11 +150,17 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
                   let raw = metadata[NSStoreUUIDKey] as? String, let libraryID = UUID(uuidString: raw) else {
                 throw LibraryBackupError.invalid("The saved library schema or identity could not be verified.")
             }
-            let store = try coordinator.addPersistentStore(type: .sqlite, at: url, options: [
-                NSReadOnlyPersistentStoreOption: true,
+            var options: [AnyHashable: Any] = [
+                NSReadOnlyPersistentStoreOption: !isPrivateCopy,
                 NSMigratePersistentStoresAutomaticallyOption: false,
                 NSInferMappingModelAutomaticallyOption: false
-            ])
+            ]
+            if isPrivateCopy {
+                // SwiftData stores require history tracking for Core Data
+                // coexistence; without it the framework forces read-only mode.
+                options[NSPersistentHistoryTrackingKey] = true
+            }
+            let store = try coordinator.addPersistentStore(type: .sqlite, at: url, options: options)
             defer { try? coordinator.remove(store) }
             let context = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
             context.persistentStoreCoordinator = coordinator

@@ -162,13 +162,13 @@ nonisolated struct LibraryRestoreStorage: Sendable {
             guard verification.formatVersion == LibraryBackup.currentVersion else {
                 throw LibraryBackupError.invalid("This restore was prepared by an older or incompatible Openlist version. Your current library and staged files have been kept. Cancel the pending restore and select the original backup again; version 1 backup packages can be upgraded safely.")
             }
-            let destination = try reader.read(at: destinationURL, settings: request.destinationSettings, createdAt: verification.createdAt)
+            let destination = try reader.readClosedStore(at: destinationURL, settings: request.destinationSettings, createdAt: verification.createdAt)
             guard try LibraryBackupPackage.fingerprint(destination) == verification.fingerprint else {
                 throw LibraryBackupError.invalid("The staged library changed after validation. Cancel this restore and select the backup again.")
             }
             destinationLibraryID = destination.libraryID
         } else {
-            destinationLibraryID = try reader.read(at: destinationURL, settings: request.destinationSettings).libraryID
+            destinationLibraryID = try reader.readClosedStore(at: destinationURL, settings: request.destinationSettings).libraryID
         }
         let sourceURL = storeURL(for: selected?.generation)
         let name = "Before restore \(request.id.uuidString).\(LibraryBackupPackage.fileExtension)"
@@ -176,7 +176,7 @@ nonisolated struct LibraryRestoreStorage: Sendable {
         var recoveryName: String? = name
         var recoveryWarning: String?
         do {
-            let source = try reader.read(at: sourceURL, settings: currentSettings)
+            let source = try reader.readClosedStore(at: sourceURL, settings: currentSettings)
             try FileManager.default.createDirectory(at: recoveryDirectory, withIntermediateDirectories: true)
             // A stopped pre-commit attempt may already have published this copy.
             if FileManager.default.fileExists(atPath: recovery.path) {

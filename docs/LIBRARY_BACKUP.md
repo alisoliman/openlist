@@ -143,3 +143,9 @@ and library identity. Native chooser, preview/cancel and actual quit/relaunch
 validation must be recorded separately from these automated checks.
 `Tools/run-application-quit-checks.sh` additionally runs real windowless AppKit
 processes to verify asynchronous termination replies, cancellation and retry.
+
+## Inbox schema upgrade
+
+Format 2 adds the optional Inbox membership payload. Closed-store recovery recognizes the exact immediately previous schema by its public Core Data model hashes. It copies that source with read-only Core Data options, checks private file ownership, runs supported lightweight SwiftData migration only on the disposable copy with CloudKit disabled, checks the resulting files again, and validates every current DTO through the pinned reader. Database identity is checked before and after. The original database, WAL and external media are never migrated during preflight.
+
+This also permits Return to the original library after only the selected restored generation has upgraded. Once original selection is committed, the ordinary app container performs its normal migration. A queued but not yet activated restore prepared by the old app is rejected with a cancellation/reselect action so its staged schema and fingerprint are rebuilt from the valid version 1 package. An unknown newer or unrelated schema is not guessed or migrated.

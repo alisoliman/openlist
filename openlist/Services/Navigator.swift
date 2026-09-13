@@ -29,15 +29,6 @@ enum AppRoute: Hashable, Codable {
         if case let .list(id) = self { return id }
         return nil
     }
-
-    /// `true` for routes that render a `DocumentView`, which then owns menu
-    /// commands for that screen.
-    var hasDocumentEditor: Bool {
-        switch self {
-        case .list, .inbox: true
-        default: false
-        }
-    }
 }
 
 /// Drives which view is on screen, plus the back/forward history behind ⌘[ and ⌘].
@@ -45,6 +36,19 @@ enum AppRoute: Hashable, Codable {
 @MainActor
 final class Navigator {
     private(set) var route: AppRoute = .today
+
+    /// Inbox can show a smart queue, the original document, or its review.
+    /// Command routing and initial-focus protection must follow that content.
+    var showsUnfiledInbox = false
+    var isReviewingUnfiledInbox = false
+
+    var hasDocumentEditor: Bool {
+        switch route {
+        case .list: true
+        case .inbox: showsUnfiledInbox && !isReviewingUnfiledInbox
+        default: false
+        }
+    }
 
     /// The task whose detail panel is open, if any.
     var openTaskID: UUID?

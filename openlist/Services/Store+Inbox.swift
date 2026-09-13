@@ -34,6 +34,12 @@ extension Store {
     /// moves. New unfiled captures join at the front of the manual queue.
     func includeNewUnfiledTask(_ task: Block) {
         guard task.isTask, let owner = list(id: task.listID), owner.isSystemInbox else { return }
+        // Conversion can revisit a retained future payload. Never turn an
+        // unknown task -> text -> task roundtrip into a destructive downgrade.
+        if let data = task.inboxMembershipData {
+            do { _ = try InboxMembership.decode(data) }
+            catch { inboxError = error.localizedDescription; return }
+        }
         do {
             let tasks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == "task" }))
             let first = tasks.compactMap { InboxPolicy.selection($0)?.order }.min()
@@ -63,11 +69,13 @@ extension Store {
                 guard let task = byID[id], let listID = task.listID,
                       policy.activeListIDs.contains(listID) else { throw InboxMembershipError.unavailable }
                 if let data = task.inboxMembershipData { _ = try InboxMembership.decode(data) }
-                guard (InboxPolicy.selection(task) != nil) != included || (!included && task.inboxMembershipData == nil) else { continue }
+                if included, InboxPolicy.selection(task) != nil { continue }
                 let previousOrder = order
                 order -= BlockTree.indexStep
                 guard !included || (order.isFinite && order < previousOrder) else { throw InboxMembershipError.ordering }
-                let data = included ? try InboxMembership.included(order: order, occurrenceID: task.occurrenceID).encoded() : InboxMembership.excludedData
+                var value = included ? InboxMembership.included(order: order, occurrenceID: task.occurrenceID) : InboxMembership(included: false)
+                value.decisionID = UUID()
+                let data = try value.encoded()
                 changes.append(InboxChange(id: id, before: task.inboxMembershipData, after: data))
             }
             return try applyInboxChanges(changes, name: included ? "Add to Inbox" : "Remove from Inbox", undoManager: undoManager)
@@ -95,26 +103,46 @@ extension Store {
             } else { destination = ordered.count }
             ordered.insert(task, at: destination)
             let changes = try ordered.enumerated().compactMap { index, task -> InboxChange? in
-                let data = try InboxMembership.included(order: Double(index) * BlockTree.indexStep, occurrenceID: task.occurrenceID).encoded()
+                var value = try InboxMembership.decode(task.inboxMembershipData!)
+                value.order = Double(index) * BlockTree.indexStep
+                let data = try value.encoded()
                 return data == task.inboxMembershipData ? nil : InboxChange(id: task.id, before: task.inboxMembershipData, after: data)
             }
             return try applyInboxChanges(changes, name: "Reorder Inbox", undoManager: undoManager)
         } catch { inboxError = error.localizedDescription; return false }
     }
 
-    private func applyInboxChanges(_ changes: [InboxChange], name: String, undoManager: UndoManager?) throws -> Bool {
+    private func applyInboxChanges(_ changes: [InboxChange], name: String, undoManager: UndoManager?, rebindingOccurrence: Bool = false) throws -> Bool {
         guard !changes.isEmpty else { inboxError = nil; return true }
         let ids = changes.map(\.id)
         let tasks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
         let byID = Dictionary(tasks.filter { !$0.isDeleted }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        guard changes.allSatisfy({ change in
-            guard let task = byID[change.id] else { return false }
-            return task.inboxMembershipData == change.before
-        }) else { throw InboxMembershipError.unavailable }
-        for change in changes { byID[change.id]?.inboxMembershipData = change.after }
+        let applied = try changes.map { change -> InboxChange in
+            guard let task = byID[change.id] else { throw InboxMembershipError.unavailable }
+            var matches = task.inboxMembershipData == change.before
+            if !matches, rebindingOccurrence,
+               let liveData = task.inboxMembershipData, let expectedData = change.before,
+               let live = try? InboxMembership.decode(liveData),
+               var expected = try? InboxMembership.decode(expectedData),
+               live.included, expected.included, live.occurrenceID == task.occurrenceID {
+                // Completion Undo/reopen may rebind this same decision. A new
+                // decision UUID, order, or included state still conflicts.
+                expected.occurrenceID = live.occurrenceID
+                matches = live == expected
+            }
+            guard matches else { throw InboxMembershipError.unavailable }
+            var desired = change.after
+            if rebindingOccurrence, let data = desired,
+               var selection = try? InboxMembership.decode(data), selection.included {
+                selection.occurrenceID = task.occurrenceID
+                desired = try selection.encoded()
+            }
+            return InboxChange(id: change.id, before: task.inboxMembershipData, after: desired)
+        }
+        for change in applied { byID[change.id]?.inboxMembershipData = change.after }
         do { try persistChanges() }
         catch {
-            for change in changes { byID[change.id]?.inboxMembershipData = change.before }
+            for change in applied { byID[change.id]?.inboxMembershipData = change.before }
             context.processPendingChanges()
             throw error
         }
@@ -122,8 +150,8 @@ extension Store {
         if let undoManager {
             undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
                 do {
-                    let inverse = changes.map { InboxChange(id: $0.id, before: $0.after, after: $0.before) }
-                    _ = try store.applyInboxChanges(inverse, name: name, undoManager: undoManager)
+                    let inverse = applied.map { InboxChange(id: $0.id, before: $0.after, after: $0.before) }
+                    _ = try store.applyInboxChanges(inverse, name: name, undoManager: undoManager, rebindingOccurrence: true)
                 } catch { store.inboxError = "Inbox Undo could not be applied. \(error.localizedDescription)" }
             }
             undoManager.setActionName(name)

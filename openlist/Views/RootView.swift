@@ -116,10 +116,19 @@ struct RootView: View {
             clearInitialFocus(for: route)
             // Screens that aren't documents (Today, Tasks, …) have no editor to
             // claim menu commands, so hand them to the fallback below.
-            if route.hasDocumentEditor {
+            if env.navigator.hasDocumentEditor {
                 // The document view claims it on appear.
             } else {
                 env.activeDocument = nil
+            }
+        }
+        .onChange(of: env.navigator.hasDocumentEditor) { _, hasDocumentEditor in
+            // Switching Inbox tabs or starting its review can remove the
+            // editor without changing the route or closing an inspector.
+            if !hasDocumentEditor {
+                env.activeDocument = nil
+                focusClearedFor = nil
+                clearInitialFocus(for: env.navigator.route)
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
@@ -128,7 +137,7 @@ struct RootView: View {
             // command target. On a smart view there is no list document to hand
             // control back to, so closing the panel has to release it or ⌘N and
             // the "+" buttons stay dead.
-            if newValue == nil, !env.navigator.route.hasDocumentEditor {
+            if newValue == nil, !env.navigator.hasDocumentEditor {
                 env.activeDocument = nil
                 // Dismissing the inspector lets SwiftUI assign the first smart
                 // row as responder again, often with its entire title selected.
@@ -296,7 +305,7 @@ struct RootView: View {
     /// takes a caret rather than a selection, and on a brand-new list it is the
     /// title field, which is exactly where you want to be typing.
     private func clearInitialFocus(for route: AppRoute) {
-        guard !route.hasDocumentEditor, focusClearedFor != route,
+        guard !env.navigator.hasDocumentEditor, focusClearedFor != route,
               !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
               !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
               env.navigator.openTaskID == nil,
@@ -307,7 +316,7 @@ struct RootView: View {
         // window becomes key. Recorded per route so this runs once per
         // navigation and cannot steal focus the user establishes afterwards.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak initialWindow] in
-            guard env.navigator.route == route, focusClearedFor != route,
+            guard env.navigator.route == route, !env.navigator.hasDocumentEditor, focusClearedFor != route,
                   !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
                   !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
               env.navigator.openTaskID == nil,

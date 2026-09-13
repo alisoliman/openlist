@@ -129,6 +129,42 @@ check(recurrence.occurrenceID != oldOccurrence && InboxPolicy.selection(recurren
 check(InboxPolicy.selection(child) == nil, "Recurring descendant reset clears child focus too")
 check(store.undoCompletion(store.completionUndo!.id), "Completion Undo succeeds")
 check(InboxPolicy.selection(recurrence) != nil && InboxPolicy.selection(child) != nil, "Completion Undo restores selection and occurrence together")
+store.toggleCompletion(recurrence)
+let pendingCompletionID = store.completionUndo!.id
+check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Explicit Add selects the advanced recurring occurrence")
+let laterOrder = InboxPolicy.selection(recurrence)?.order
+check(store.undoCompletion(pendingCompletionID), "Undo prior completion after a new explicit Add succeeds")
+check(InboxPolicy.selection(recurrence)?.order == laterOrder, "Completion Undo rebinds the later Add while preserving its manual order")
+store.toggleCompletion(recurrence)
+let removalCompletionID = store.completionUndo!.id
+check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Re-add next occurrence for deliberate removal test")
+check(store.setInboxMembership(false, taskIDs: [recurrence.id]), "Explicit Remove after completion succeeds")
+check(store.undoCompletion(removalCompletionID), "Completion Undo after explicit removal succeeds")
+check(InboxPolicy.selection(recurrence) == nil, "Completion Undo preserves the later explicit Remove")
+store.toggleCompletion(recurrence)
+let explicitExcludedCompletionID = store.completionUndo!.id
+check(store.setInboxMembership(false, taskIDs: [recurrence.id]), "Explicit Remove records intent even after automatic recurrence clearing")
+check(store.undoCompletion(explicitExcludedCompletionID), "Undo after a deliberate already-excluded choice succeeds")
+check(InboxPolicy.selection(recurrence) == nil, "Explicit already-excluded decision survives prior completion Undo")
+check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Restore fixture selected state")
+store.toggleCompletion(recurrence)
+let addToastID = store.completionUndo!.id
+let addAfterCompletion = nativeUndo("Add to Inbox") { check(store.setInboxMembership(true, taskIDs: [recurrence.id], undoManager: $0), "Add next occurrence with native Undo") }
+check(store.undoCompletion(addToastID), "Completion toast Undo carries the explicit Add")
+addAfterCompletion.undo()
+check(InboxPolicy.selection(recurrence) == nil && store.inboxError == nil, "Native Undo of Add remains usable after automatic occurrence rebinding")
+addAfterCompletion.redo()
+check(InboxPolicy.selection(recurrence) != nil && store.inboxError == nil, "Native Redo of Add binds to the actual restored occurrence")
+store.toggleCompletion(recurrence)
+let removeToastID = store.completionUndo!.id
+check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Select next occurrence before native Remove")
+let removeAfterCompletion = nativeUndo("Remove from Inbox") { check(store.setInboxMembership(false, taskIDs: [recurrence.id], undoManager: $0), "Remove next occurrence with native Undo") }
+check(store.undoCompletion(removeToastID), "Completion toast Undo keeps explicit exclusion")
+removeAfterCompletion.undo()
+check(InboxPolicy.selection(recurrence) != nil && store.inboxError == nil, "Native Undo Remove re-adds to actual restored occurrence")
+removeAfterCompletion.redo()
+check(InboxPolicy.selection(recurrence) == nil && store.inboxError == nil, "Native Redo Remove stays coherent after rebinding")
+check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Restore selected state for old-client occurrence test")
 let stale = recurrence.inboxMembershipData
 recurrence.occurrenceID = UUID(); store.save()
 check(InboxPolicy.selection(recurrence) == nil && recurrence.inboxMembershipData == stale, "Old-client occurrence advance cannot silently rejoin without clearing data")
@@ -145,6 +181,12 @@ let unknown = store.appendBlock(kind: .task, text: "Future selection", to: .init
 unknown.id = id(50); unknown.inboxMembershipData = Data(#"{"version":50,"included":true}"#.utf8); store.save()
 check(!store.setInboxMembership(false, taskIDs: [unknown.id]), "Unknown membership version cannot be overwritten by Remove")
 check(InboxPolicy.issue(in: [unknown]) != nil, "Unknown membership provides user-visible recovery guidance")
+let unknownBytes = unknown.inboxMembershipData
+store.moveToList(unknown, list: store.inboxList()!)
+store.changeKind(unknown, to: .paragraph); store.changeKind(unknown, to: .task); store.save()
+check(unknown.inboxMembershipData == unknownBytes, "Unknown membership survives task -> paragraph -> task conversion in Unfiled")
+store.moveToList(unknown, list: project)
+
 let missing = Block(kind: .task, text: "Late cloud owner", listID: UUID())
 missing.inboxMembershipData = nil; store.context.insert(missing); try store.migrateInboxMembership(); store.save()
 check(missing.inboxMembershipData == nil, "Incomplete CloudKit owner leaves legacy membership undecided")

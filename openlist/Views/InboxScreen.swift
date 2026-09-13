@@ -8,10 +8,9 @@ struct InboxScreen: View {
     @Query private var blocks: [Block]
     @Query private var lists: [TaskList]
     @Query private var labels: [TaskLabel]
-    @State private var showsUnfiled = false
-    @State private var isReviewing = false
 
     var body: some View {
+        @Bindable var navigator = env.navigator
         if let inbox = env.store.inboxList() {
             let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
             let policy = InboxPolicy(lists: lists)
@@ -19,24 +18,24 @@ struct InboxScreen: View {
             let context = TaskRowContext(tasks: live, lists: lists, labels: labels)
             ScreenScaffold {
                 ScreenHeader(icon: "tray", title: "Inbox",
-                    subtitle: showsUnfiled ? "Your original capture document, including tasks and notes" : "Selected tasks, kept in their original lists") {
+                    subtitle: navigator.showsUnfiledInbox ? "Your original capture document, including tasks and notes" : "Selected tasks, kept in their original lists") {
                     Button("New task", systemImage: "plus") { env.presentTaskCapture() }
                         .help("Capture an unfiled task (⌘N)")
                 }
-                Picker("Inbox view", selection: $showsUnfiled) {
+                Picker("Inbox view", selection: $navigator.showsUnfiledInbox) {
                     Text("Selected tasks").tag(false)
                     Text("Unfiled content").tag(true)
                 }
                 .pickerStyle(.segmented)
                 .padding(.top, 12)
             } content: {
-                if showsUnfiled {
+                if navigator.showsUnfiledInbox {
                     HStack {
                         CompletedTasksControl(list: inbox)
-                        Button(isReviewing ? "Done reviewing" : "Review unfiled") { isReviewing.toggle() }
+                        Button(navigator.isReviewingUnfiledInbox ? "Done reviewing" : "Review unfiled") { navigator.isReviewingUnfiledInbox.toggle() }
                     }
                     .padding(.bottom, 12)
-                    if isReviewing { InboxReviewView(inbox: inbox) }
+                    if navigator.isReviewingUnfiledInbox { InboxReviewView(inbox: inbox) }
                     else {
                         DocumentView(document: .init(listID: inbox.id), emptyPlaceholder: "Capture a task…",
                             showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks))
@@ -91,7 +90,7 @@ struct InboxScreen: View {
             VStack(alignment: .leading, spacing: 0) {
                 SmartTaskRow(block: task, context: context)
                 if context.list(for: task)?.isSystemInbox == true {
-                    Button("Unfiled content") { showsUnfiled = true }
+                    Button("Unfiled content") { env.navigator.showsUnfiledInbox = true }
                         .font(Theme.Font.metadata).buttonStyle(.plain).foregroundStyle(.secondary)
                         .padding(.leading, 32)
                 }
