@@ -95,6 +95,16 @@ private struct BulkBlockPosition: Equatable {
     }
 }
 
+/// Expansion belongs to an inside-drop but remains independent of positions.
+/// A later explicit collapse is preserved when the move is undone or redone.
+private struct BulkMoveExpansion {
+    let parentID: UUID
+    let before: Bool
+    let after: Bool
+
+    var reversed: Self { Self(parentID: parentID, before: after, after: before) }
+}
+
 extension Store {
     /// Explicit Complete/Reopen never toggles mixed-state selections. Completing
     /// a selected parent covers selected children once; reopening does not cascade.
@@ -151,7 +161,8 @@ extension Store {
     /// follow with their original IDs, content, files and task metadata.
     @discardableResult
     func moveSelection(_ ids: [UUID], to listID: UUID, parentID: UUID? = nil,
-                       above targetID: UUID? = nil, undoManager: UndoManager? = nil) throws -> [UUID] {
+                       above targetID: UUID? = nil, expandsParent: Bool = false,
+                       undoManager: UndoManager? = nil) throws -> [UUID] {
         let snapshot = try BulkSelectionSnapshot(ids: ids, context: context)
         guard let destination = snapshot.lists[listID], destination.mergedIntoID == nil,
               !destination.isArchived else { throw BulkActionError.invalidDestination }
@@ -176,6 +187,9 @@ extension Store {
         let touched = Dictionary(uniqueKeysWithValues: (subtree + peers).map { ($0.id, $0) }.uniquedByID())
         let before = touched.mapValues(BulkBlockPosition.init)
         let updatedAt = touched.mapValues(\.updatedAt)
+        let parentToExpand = expandsParent ? parentID.flatMap { snapshot.blocks[$0] }.flatMap { $0.isCollapsed ? $0 : nil } : nil
+        let expansion = parentToExpand.map { BulkMoveExpansion(parentID: $0.id, before: $0.isCollapsed, after: false) }
+        let parentUpdatedAt = parentToExpand?.updatedAt
         try commitBulkMutation({
             for block in subtree where block.listID != listID { block.listID = listID; block.touch() }
             for root in roots { root.parentID = parentID; root.touch() }
@@ -185,16 +199,25 @@ extension Store {
                 block.sortIndex = Double(index + 1) * BlockTree.indexStep
                 block.touch()
             }
+            if let parentToExpand {
+                parentToExpand.isCollapsed = false
+                parentToExpand.touch()
+            }
         }, restoring: {
             for (id, model) in touched {
                 before[id]?.apply(to: model)
                 if let date = updatedAt[id] { model.updatedAt = date }
             }
+            if let parentToExpand, let expansion {
+                parentToExpand.isCollapsed = expansion.before
+                if let parentUpdatedAt { parentToExpand.updatedAt = parentUpdatedAt }
+            }
         })
         let after = touched.mapValues(BulkBlockPosition.init)
         let changed = before.filter { after[$0.key] != $0.value }
-        if let undoManager, !changed.isEmpty {
-            registerBulkMove(source: after.filter { changed[$0.key] != nil }, desired: changed, with: undoManager)
+        if let undoManager, !changed.isEmpty || expansion != nil {
+            registerBulkMove(source: after.filter { changed[$0.key] != nil }, desired: changed,
+                             expansion: expansion, with: undoManager)
         }
         return roots.map(\.id)
     }
@@ -225,10 +248,11 @@ extension Store {
     }
 
     private func registerBulkMove(source: [UUID: BulkBlockPosition], desired: [UUID: BulkBlockPosition],
-                                  with manager: UndoManager) {
+                                  expansion: BulkMoveExpansion? = nil, with manager: UndoManager) {
         manager.registerUndo(withTarget: self) { store in
             do {
-                let snapshot = try BulkSelectionSnapshot(ids: Array(source.keys), context: store.context)
+                let ids = Array(source.keys) + (expansion.map { [$0.parentID] } ?? [])
+                let snapshot = try BulkSelectionSnapshot(ids: ids, context: store.context)
                 guard source.allSatisfy({ id, expected in snapshot.blocks[id].map(BulkBlockPosition.init) == expected })
                 else { throw BulkActionError.changed }
                 // Validate the proposed restored graph, including parents that
@@ -258,9 +282,16 @@ extension Store {
                         throw BulkActionError.changed
                     }
                 }
+                let expansionToRestore = expansion.flatMap { change in
+                    snapshot.blocks[change.parentID]?.isCollapsed == change.after ? change : nil
+                }
                 let updatedAt = snapshot.blocks.mapValues(\.updatedAt)
                 try store.commitBulkMutation({
                     for (id, position) in desired { position.apply(to: snapshot.blocks[id]!) }
+                    if let expansionToRestore, let parent = snapshot.blocks[expansionToRestore.parentID] {
+                        parent.isCollapsed = expansionToRestore.before
+                        parent.touch()
+                    }
                 }, restoring: {
                     for (id, position) in source {
                         if let model = snapshot.blocks[id] {
@@ -268,8 +299,13 @@ extension Store {
                             if let date = updatedAt[id] { model.updatedAt = date }
                         }
                     }
+                    if let expansionToRestore, let parent = snapshot.blocks[expansionToRestore.parentID] {
+                        parent.isCollapsed = expansionToRestore.after
+                        if let date = updatedAt[parent.id] { parent.updatedAt = date }
+                    }
                 })
-                store.registerBulkMove(source: desired, desired: source, with: manager)
+                store.registerBulkMove(source: desired, desired: source,
+                                       expansion: expansionToRestore?.reversed, with: manager)
             } catch { store.editorNotice = error.localizedDescription }
         }
         manager.setActionName("Move selected items")

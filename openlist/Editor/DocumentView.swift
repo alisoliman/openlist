@@ -789,7 +789,8 @@ struct DocumentView: View {
         }
         do {
             _ = try env.store.moveSelection(draggedIDs, to: document.listID,
-                parentID: parentID, above: aboveID, undoManager: NSApp.keyWindow?.undoManager)
+                parentID: parentID, above: aboveID, expandsParent: position == .inside,
+                undoManager: NSApp.keyWindow?.undoManager)
         } catch { env.store.editorNotice = error.localizedDescription }
     }
 

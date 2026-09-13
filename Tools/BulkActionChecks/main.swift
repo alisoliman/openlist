@@ -36,6 +36,10 @@ if CommandLine.arguments.last == "reopen" {
           "Independent process reads the same attachment owner and bytes")
     check(InboxPolicy.selection(savedParent) == nil && InboxPolicy.selection(savedFirst) != nil && InboxPolicy.selection(savedChild) != nil,
           "A separate process observes independent Inbox curation after move Undo and Redo")
+    let savedDropParent = saved.first { $0.text == "Collapsed drop target" }!
+    let savedDropOne = saved.first { $0.text == "Drop one" }!
+    check(savedDropParent.isCollapsed && savedDropOne.listID == lists.first { $0.title == "Source" }!.id && savedDropOne.parentID == nil,
+          "A separate process observes no failed destination expansion or inside-drop")
     print("\(checks) bulk action reopen checks passed")
     exit(0)
 }
@@ -189,6 +193,77 @@ check(failedSaveIncludedCompletion, "Injected failure reaches the completion mut
 check(CompletionTaskState(first) == beforeFailure && store.completionRecords().count == completionCount && store.pendingCompletionUndoChanges.isEmpty,
       "Completion save failure restores occurrence and records and clears unpublished action")
 store.save()
+// Inside-drop expansion shares the move's save and Undo, unlike toolbar moves.
+let dropParent = store.appendBlock(kind: .task, text: "Collapsed drop target", to: .init(listID: destination.id))
+let dropOne = store.appendBlock(kind: .task, text: "Drop one", to: doc)
+let dropTwo = store.appendBlock(kind: .task, text: "Drop two", to: doc)
+dropParent.isCollapsed = true
+store.save()
+_ = try store.moveSelection([dropOne.id], to: destination.id, parentID: dropParent.id)
+check(dropParent.isCollapsed, "Ordinary Move does not change destination expansion")
+_ = try store.moveSelection([dropOne.id], to: source.id)
+let dropUndo = UndoManager()
+dropUndo.groupsByEvent = false
+dropUndo.beginUndoGrouping()
+_ = try store.moveSelection([dropOne.id, dropTwo.id], to: destination.id, parentID: dropParent.id,
+                           expandsParent: true, undoManager: dropUndo)
+dropUndo.endUndoGrouping()
+check(!dropParent.isCollapsed && store.children(of: dropParent.id, listID: destination.id).map(\.id) == [dropOne.id, dropTwo.id],
+      "Inside-drop reveals a collapsed parent and preserves selected child order")
+let expansionReader = ModelContext(container)
+let savedExpandedParent = try expansionReader.fetch(FetchDescriptor<Block>()).first { $0.id == dropParent.id }!
+check(!savedExpandedParent.isCollapsed, "Expansion is committed with the successful positional move")
+dropUndo.undo()
+check(dropParent.isCollapsed && dropOne.listID == source.id && dropTwo.listID == source.id && dropOne.parentID == nil,
+      "One Undo restores the original collapse and both selected positions")
+dropUndo.redo()
+check(!dropParent.isCollapsed && dropOne.parentID == dropParent.id && dropTwo.parentID == dropParent.id,
+      "One Redo restores both the move and destination expansion")
+dropParent.isCollapsed = true
+store.save()
+dropUndo.undo()
+check(dropParent.isCollapsed && dropOne.listID == source.id,
+      "A later explicit collapse is preserved while Undo still restores movement")
+dropUndo.redo()
+check(dropParent.isCollapsed && dropOne.parentID == dropParent.id,
+      "Redo preserves the same independent collapse decision")
+dropUndo.removeAllActions()
+dropUndo.beginUndoGrouping()
+_ = try store.moveSelection([dropOne.id, dropTwo.id], to: destination.id, parentID: dropParent.id,
+                           expandsParent: true, undoManager: dropUndo)
+dropUndo.endUndoGrouping()
+check(!dropParent.isCollapsed && dropUndo.canUndo, "An inside-drop with unchanged positions still records its expansion")
+dropUndo.undo()
+check(dropParent.isCollapsed && dropOne.parentID == dropParent.id && dropTwo.parentID == dropParent.id,
+      "Expansion-only Undo leaves existing child positions intact")
+dropUndo.removeAllActions()
+dropUndo.beginUndoGrouping()
+_ = try store.moveSelection([dropOne.id, dropTwo.id], to: destination.id, parentID: dropParent.id,
+                           expandsParent: true, undoManager: dropUndo)
+dropUndo.endUndoGrouping()
+let beforeExpansionUndoFailure = dropParent.updatedAt
+store.editorNotice = nil
+failNextSave = true
+dropUndo.undo()
+check(!dropParent.isCollapsed && dropParent.updatedAt == beforeExpansionUndoFailure
+      && dropOne.parentID == dropParent.id && dropTwo.parentID == dropParent.id,
+      "Failed expansion Undo restores live destination state and all positions")
+check(!dropUndo.canRedo && store.editorNotice != nil, "Failed expansion Undo reports an error without registering a partial Redo")
+dropParent.isCollapsed = true
+store.save()
+_ = try store.moveSelection([dropOne.id, dropTwo.id], to: source.id)
+dropUndo.removeAllActions()
+let beforeExpansionFailure = dropParent.updatedAt
+check(!store.context.hasChanges, "Expansion failure starts with committed input")
+failNextSave = true
+rejects("Inside-drop save failure must not leave its destination expanded") {
+    _ = try store.moveSelection([dropOne.id, dropTwo.id], to: destination.id, parentID: dropParent.id,
+                               expandsParent: true, undoManager: dropUndo)
+}
+check(dropParent.isCollapsed && dropParent.updatedAt == beforeExpansionFailure
+      && dropOne.listID == source.id && dropTwo.parentID == nil && !dropUndo.canUndo,
+      "Failed inside-drop restores live collapse, timestamp and positions without registering Undo")
+
 let reader = ModelContext(container)
 let savedFirst = try reader.fetch(FetchDescriptor<Block>()).first { $0.id == first.id }!
 check(savedFirst.listID == destination.id && savedFirst.note == "Draft before action" && !savedFirst.isCompleted,
@@ -210,4 +285,13 @@ check(!readOnlyCompletion.context.hasChanges, "Read-only completion starts in a 
 rejects("Real read-only store cannot acknowledge bulk completion") { _ = try readOnlyCompletion.setBulkCompletion(true, ids: [first.id, parent.id]) }
 check(CompletionTaskState(readOnlyCompletionFirst) == readOnlyBefore, "Actual read-only completion failure restores retained task values")
 check(readOnlyCompletion.completionRecords().count == completionCount, "Actual read-only completion failure restores history values")
+let readOnlyExpansion = Store(context: ModelContext(readOnlyContainer))
+let readOnlyDropParent = readOnlyExpansion.block(id: dropParent.id)!
+let readOnlyDropOne = readOnlyExpansion.block(id: dropOne.id)!
+rejects("Actual read-only inside-drop cannot persist expansion") {
+    _ = try readOnlyExpansion.moveSelection([dropOne.id, dropTwo.id], to: destination.id,
+                                           parentID: dropParent.id, expandsParent: true)
+}
+check(readOnlyDropParent.isCollapsed && readOnlyDropOne.listID == source.id && readOnlyDropOne.parentID == nil,
+      "A real read-only failure restores retained parent expansion and moved rows together")
 print("\(checks) bulk action checks passed")
