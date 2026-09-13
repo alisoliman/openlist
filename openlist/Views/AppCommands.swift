@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// The macOS menu bar, carrying the same shortcut set Superlist uses.
+/// Context-aware macOS commands; capture is available from every screen.
 struct AppCommands: Commands {
     let env: AppEnvironment
 
@@ -14,7 +14,11 @@ struct AppCommands: Commands {
     var body: some Commands {
         // File ▸ replaces the template "New Window" with task and list creation.
         CommandGroup(replacing: .newItem) {
-            Button("New Task") { env.send(.newTask) }
+            Button("New Task…") {
+                openWindow(id: WindowID.main)
+                env.presentTaskCapture()
+                NSApp.activate(ignoringOtherApps: true)
+            }
                 .keyboardShortcut("n", modifiers: .command)
 
             Button("New List") { newList() }
@@ -64,45 +68,59 @@ struct AppCommands: Commands {
 
             Button("Indent") { env.send(.indent) }
                 .keyboardShortcut("]", modifiers: [.command, .option])
+                .disabled(!hasDocumentContext || !hasBlockSelection)
             Button("Outdent") { env.send(.outdent) }
                 .keyboardShortcut("[", modifiers: [.command, .option])
+                .disabled(!hasDocumentContext || !hasBlockSelection)
             Button("Move Up") { env.send(.moveUp) }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .disabled(!hasDocumentContext || !hasBlockSelection)
             Button("Move Down") { env.send(.moveDown) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .disabled(!hasDocumentContext || !hasBlockSelection)
         }
 
         // Task ▸ everything that acts on the current selection.
         CommandMenu("Task") {
             Button("Complete / Reopen") { env.send(.toggleCompletion) }
                 .keyboardShortcut("d", modifiers: .command)
+                .disabled(!hasTaskSelection)
             Button("Open Details") { env.send(.openDetails) }
                 .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!hasTaskSelection)
 
             Divider()
 
             Button("Due Today") { env.send(.setDueToday) }
                 .keyboardShortcut("t", modifiers: .control)
+                .disabled(!hasTaskSelection)
             Button("Add Due Date…") { env.send(.pickDueDate) }
                 .keyboardShortcut("d", modifiers: .control)
+                .disabled(!hasTaskSelection)
             Button("Clear Due Date") { env.send(.clearDueDate) }
                 .keyboardShortcut("d", modifiers: [.control, .shift])
+                .disabled(!hasTaskSelection)
 
             Divider()
 
             Button("Add Label…") { env.send(.pickLabel) }
                 .keyboardShortcut("l", modifiers: .control)
+                .disabled(!hasTaskSelection)
             Button("Clear Labels") { env.send(.clearLabels) }
                 .keyboardShortcut("l", modifiers: [.control, .shift])
+                .disabled(!hasTaskSelection)
             Button("Toggle Star") { env.send(.toggleStar) }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!hasTaskSelection)
 
             Divider()
 
             Button("Add to Inbox") { env.send(.moveToInbox) }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+                .disabled(!hasTaskSelection)
             Button("Remove from List") { env.send(.removeFromList) }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!hasTaskSelection)
 
             Divider()
 
@@ -110,6 +128,7 @@ struct AppCommands: Commands {
             // before the text view sees the event, so ⌘⌫ here would delete the
             // task instead of the line the user was editing.
             Button("Delete Task", role: .destructive) { env.send(.deleteSelection) }
+                .disabled(!hasTaskSelection)
         }
 
         // View ▸ navigation between the five fixed destinations.
@@ -137,7 +156,9 @@ struct AppCommands: Commands {
             Divider()
 
             Button("Expand All") { env.send(.expandAll) }
+                .disabled(!hasDocumentContext)
             Button("Collapse All") { env.send(.collapseAll) }
+                .disabled(!hasDocumentContext)
 
             Divider()
         }
@@ -146,6 +167,21 @@ struct AppCommands: Commands {
             Button("Keyboard Shortcuts") { env.navigator.isShortcutSheetOpen = true }
                 .keyboardShortcut("/", modifiers: .command)
         }
+    }
+
+    private var hasTaskSelection: Bool {
+        guard env.taskCaptureRequest == nil, !env.navigator.isCommandPaletteOpen,
+              !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return false }
+        return env.navigator.selection.contains { env.store.block(id: $0)?.isTask == true }
+    }
+
+    private var hasBlockSelection: Bool {
+        env.taskCaptureRequest == nil && !env.navigator.isCommandPaletteOpen
+            && env.navigator.selection.contains { env.store.block(id: $0) != nil }
+    }
+
+    private var hasDocumentContext: Bool {
+        env.activeDocument != nil && (env.navigator.route.hasDocumentEditor || env.navigator.openTaskID != nil)
     }
 
     // MARK: - Actions

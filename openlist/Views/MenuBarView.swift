@@ -10,6 +10,7 @@ import SwiftUI
 struct MenuBarView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
 
     @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
@@ -17,8 +18,6 @@ struct MenuBarView: View {
     @Query(filter: #Predicate<TaskList> { !$0.isArchived && $0.mergedIntoID == nil })
     private var activeLists: [TaskList]
 
-    @State private var draft = ""
-    @FocusState private var isFieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -52,23 +51,23 @@ struct MenuBarView: View {
             footer
         }
         .frame(width: 320)
-        .onAppear { isFieldFocused = true }
     }
 
     private var captureField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus.circle.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.accent)
-
-            TextField("Add to Inbox…", text: $draft)
-                .textFieldStyle(.plain)
-                .font(Theme.Font.body)
-                .focused($isFieldFocused)
-                .onSubmit(capture)
+        Button {
+            dismiss()
+            openWindow(id: WindowID.quickAdd)
+            NSApp.activate(ignoringOtherApps: true)
+        } label: {
+            HStack {
+                Label("New task…", systemImage: "plus.circle.fill")
+                Spacer()
+                Text("⇧⌥Space").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .buttonStyle(.plain)
     }
 
     private var footer: some View {
@@ -116,13 +115,7 @@ struct MenuBarView: View {
             .map(\.self)
     }
 
-    private func capture() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let inbox = env.store.inboxList() else { return }
 
-        env.store.captureTask(text: text, in: inbox, defaults: env.captureDefaults)
-        draft = ""
-    }
 }
 
 /// A compact task row inside the menu bar popover.

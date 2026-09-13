@@ -169,6 +169,8 @@ struct TodayScreen: View {
 struct InboxScreen: View {
     @Environment(AppEnvironment.self) private var env
 
+    @State private var isReviewing = false
+
     var body: some View {
         if let inbox = env.store.inboxList() {
             ScreenScaffold(headerSpacing: 14) {
@@ -177,15 +179,19 @@ struct InboxScreen: View {
                     title: "Inbox",
                     subtitle: "Everything you capture without picking a list"
                 ) {
-                    Button {
-                        env.send(.newTask)
-                    } label: {
-                        Image(systemName: "plus")
+                    HStack {
+                        Button(isReviewing ? "Done reviewing" : "Review Inbox") { isReviewing.toggle() }
+                        Button("New task", systemImage: "plus") { env.send(.newTask) }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .help("New task (⌘N)")
                     }
-                    .buttonStyle(.borderless)
-                    .help("New task (⌘N)")
                 }
             } content: {
+                if isReviewing {
+                    InboxReviewView(inbox: inbox)
+                        .padding(.bottom, 20)
+                }
                 DocumentView(
                     document: DocumentContext(listID: inbox.id),
                     emptyPlaceholder: "Capture a task…",
