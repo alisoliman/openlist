@@ -20,6 +20,7 @@ struct BlockRowActions {
     var onSlashQuery: (String?, NSRange, CGRect, CGRect) -> Void = { _, _, _, _ in }
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
     var onPasteMultiline: (String) -> Bool = { _ in false }
+    var onPasteFragment: () -> Bool = { false }
     var onSetCaption: (String) -> Void = { _ in }
     var onCommitCaption: () -> Void = {}
     var onToggleCollapse: () -> Void = {}
@@ -301,7 +302,8 @@ struct BlockRowView: View {
             onEscape: actions.onEscape,
             onSlashQuery: actions.onSlashQuery,
             onMarkdownPrefix: actions.onMarkdownPrefix,
-            onPasteMultiline: actions.onPasteMultiline
+            onPasteMultiline: actions.onPasteMultiline,
+            onPasteFragment: actions.onPasteFragment
         )
     }
 }
@@ -403,6 +405,10 @@ struct BlockContextMenu: View {
         Button("Copy Text") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(block.text, forType: .string)
+        }
+        FragmentCopyMenu(blockID: block.id)
+        if let listID = block.listID {
+            FragmentPasteMenu(document: DocumentContext(listID: listID), afterID: block.id)
         }
 
         Divider()

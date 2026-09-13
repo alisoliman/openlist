@@ -186,6 +186,32 @@ enum MarkdownInputRules {
         var isCompleted: Bool
     }
 
+    /// External Markdown has no internal fidelity promise. When conversion
+    /// would lose whitespace, code fences, or unsupported indentation, keep
+    /// the complete source as one literal paragraph instead of guessing.
+    static func parseClipboard(_ source: String) -> [ParsedLine] {
+        let lines = source.components(separatedBy: .newlines)
+        let parsed = parseMarkdown(source)
+        let unsupported = source.contains("```") || source.contains("~~~")
+            || lines.contains { $0.isEmpty || $0.last?.isWhitespace == true }
+            || lines.contains { line in
+                let indent = line.prefix { $0.isWhitespace }
+                return indent.filter { $0 == " " }.count % 2 != 0
+                    || indent.contains { $0 != " " && $0 != "\t" }
+            }
+            || parsed.count != lines.count
+        var previousDepth = 0
+        let malformedIndent = parsed.enumerated().contains { index, line in
+            defer { previousDepth = line.depth }
+            return (index == 0 && line.depth != 0) || line.depth > previousDepth + 1
+                || (line.depth > 0 && line.kind == .paragraph)
+        }
+        if unsupported || malformedIndent {
+            return source.isEmpty ? [] : [ParsedLine(kind: .paragraph, text: source, depth: 0, isCompleted: false)]
+        }
+        return parsed
+    }
+
     static func parseMarkdown(_ source: String) -> [ParsedLine] {
         var results: [ParsedLine] = []
 

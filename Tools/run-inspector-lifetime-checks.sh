@@ -17,5 +17,10 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-ch
   openlist/Editor/TaskMetadataChips.swift openlist/Editor/MetadataFlowLayout.swift \
   openlist/Editor/BlockRowView.swift openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
   openlist/Editor/SlashMenuLayout.swift openlist/Views/TaskDetailButton.swift \
+  openlist/Views/FragmentMenu.swift openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift \
+  openlist/Services/FragmentMarkdown.swift openlist/Services/InlineMarkdown.swift openlist/Services/Store+Fragments.swift \
+  openlist/Editor/DocumentView.swift openlist/Editor/BlockDragAndDrop.swift openlist/Editor/SlashMenuView.swift openlist/Editor/SlashMenuDismissal.swift \
+  openlist/Services/DragPayload.swift openlist/Services/SearchProjection.swift \
+  openlist/Views/ContentRevealNotice.swift openlist/Views/ContentRevealNote.swift \
   Tools/EditorChecks/Support.swift Tools/InspectorLifetimeChecks/LifetimeSupport.swift Tools/InspectorLifetimeChecks/main.swift
 "$OUT/inspector-checks"

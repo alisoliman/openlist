@@ -13,11 +13,23 @@ enum CopyError: LocalizedError {
 
 /// Files and detached models are prepared before a single insert transaction.
 /// A failed save only rolls back the sibling context, never the live editor.
-private final class StagedContentCopy {
+final class StagedContentCopy {
     let writer: ModelContext
     private var filenames: [String] = []
     private var tasks: [Block] = []
     private var committed = false
+
+    func insert(_ block: Block) {
+        writer.insert(block)
+        if block.isTask { tasks.append(block) }
+    }
+
+    func stageMedia(_ data: Data, fileExtension: String) throws -> String {
+        let name = UUID().uuidString + (fileExtension.isEmpty ? "" : "." + fileExtension)
+        filenames.append(name)
+        try MediaStore.shared.restoreFile(data, filename: name)
+        return name
+    }
 
     init(container: ModelContainer) {
         writer = ModelContext(container)
@@ -45,8 +57,7 @@ private final class StagedContentCopy {
                 clone.mediaFilename = copied.name
                 clone.mediaData = copied.data
             }
-            writer.insert(clone)
-            if clone.isTask { tasks.append(clone) }
+            insert(clone)
 
             let originalID = original.id
             let attachments = try store.context.fetch(FetchDescriptor<Attachment>(
@@ -68,9 +79,7 @@ private final class StagedContentCopy {
         // its cache even when this copy subsequently fails.
         let bytes = try data ?? MediaStore.shared.readFile(filename: filename)
         let ext = (filename as NSString).pathExtension
-        let name = UUID().uuidString + (ext.isEmpty ? "" : "." + ext)
-        filenames.append(name)
-        try MediaStore.shared.restoreFile(bytes, filename: name)
+        let name = try stageMedia(bytes, fileExtension: ext)
         return (name, bytes)
     }
 

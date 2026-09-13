@@ -63,7 +63,7 @@ struct DocumentView: View {
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Query private var blocks: [Block]
+    @Query private var fetchedBlocks: [Block]
     @Query(sort: [SortDescriptor(\TaskLabel.name)]) private var allLabels: [TaskLabel]
 
     @State private var focus = EditorFocus()
@@ -91,13 +91,17 @@ struct DocumentView: View {
         self.trailingSpace = trailingSpace
 
         let listID = document.listID
-        _blocks = Query(
+        _fetchedBlocks = Query(
             filter: #Predicate<Block> { $0.listID == listID },
             sort: [SortDescriptor(\Block.sortIndex)]
         )
     }
 
     // MARK: - Derived state
+
+    private var blocks: [Block] {
+        fetchedBlocks.filter { $0.modelContext != nil && !$0.isDeleted }
+    }
 
     private var reveal: ContentReveal? {
         guard let request = env.navigator.contentReveal,
@@ -172,7 +176,7 @@ struct DocumentView: View {
 
     /// Label lookup built once per render rather than per row.
     private var labelsByID: [UUID: TaskLabel] {
-        Dictionary(allLabels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        Dictionary(allLabels.filter { $0.modelContext != nil && !$0.isDeleted }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     var body: some View {
@@ -189,31 +193,33 @@ struct DocumentView: View {
                     .padding(.bottom, 12)
             }
             ForEach(visibleRows) { row in
-                VStack(alignment: .leading, spacing: 0) {
-                    // Animate the branch's position as a whole, rather than
-                    // interpolating each chip's internal layout during the move.
-                    rowView(for: row, labelLookup: labelLookup, progress: progress[row.id])
-                    .background {
-                        if completionMotionIDs.contains(row.id) {
-                            RoundedRectangle(cornerRadius: Theme.Radius.row)
-                                .fill(Theme.canvas)
+                if row.block.modelContext != nil, !row.block.isDeleted {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Animate the branch's position as a whole, rather than
+                        // interpolating each chip's internal layout during the move.
+                        rowView(for: row, labelLookup: labelLookup, progress: progress[row.id])
+                        .background {
+                            if completionMotionIDs.contains(row.id) {
+                                RoundedRectangle(cornerRadius: Theme.Radius.row)
+                                    .fill(Theme.canvas)
+                            }
+                        }
+                        .geometryGroup()
+                        .overlay {
+                            if reveal?.blockID == row.id {
+                                RoundedRectangle(cornerRadius: Theme.Radius.row)
+                                    .stroke(Theme.accent, lineWidth: 2)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        if reveal?.blockID == row.id, reveal?.field == .note, !row.block.note.isEmpty {
+                            ContentRevealNote(text: row.block.note, query: reveal?.query ?? "", requestID: readyRevealID)
+                                .id(ContentReveal.Anchor.blockNote(row.id))
                         }
                     }
-                    .geometryGroup()
-                    .overlay {
-                        if reveal?.blockID == row.id {
-                            RoundedRectangle(cornerRadius: Theme.Radius.row)
-                                .stroke(Theme.accent, lineWidth: 2)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    if reveal?.blockID == row.id, reveal?.field == .note, !row.block.note.isEmpty {
-                        ContentRevealNote(text: row.block.note, query: reveal?.query ?? "", requestID: readyRevealID)
-                            .id(ContentReveal.Anchor.blockNote(row.id))
-                    }
+                    .id(row.id)
+                    .zIndex(completionMotionIDs.contains(row.id) ? 1 : 0)
                 }
-                .id(row.id)
-                .zIndex(completionMotionIDs.contains(row.id) ? 1 : 0)
             }
 
             trailingTapTarget
@@ -262,7 +268,7 @@ struct DocumentView: View {
             guard readyRevealID != nil, let id = reveal?.blockID,
                   let block = blocks.first(where: { $0.id == id }) else { return }
             await Task.yield()
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, block.modelContext != nil, !block.isDeleted else { return }
             // A note claims focus only after its lazy card actually appears.
             if reveal?.field == .note { return }
             guard !block.kind.isVoid else { return }
@@ -296,35 +302,38 @@ struct DocumentView: View {
 
     // MARK: - Rows
 
+    @ViewBuilder
     private func rowView(
         for row: BlockRow,
         labelLookup: [UUID: TaskLabel],
         progress: (done: Int, total: Int)?
     ) -> some View {
-        BlockRowView(
-            row: row,
-            listAccent: listAccent,
-            labels: row.block.labelIDs.compactMap { labelLookup[$0] },
-            progress: (progress?.total ?? 0) > 0 ? progress : nil,
-            isFocused: focus.blockID == row.id,
-            isSelected: env.navigator.selection.contains(row.id),
-            pendingCaret: focus.blockID == row.id ? focus.caret : nil,
-            focusToken: focus.token,
-            isSlashMenuOpen: slash?.blockID == row.id,
-            onSlashCommand: { command in handleSlashCommand(command) },
-            attributedText: env.store.attributedContent(of: row.block),
-            placeholder: emptyPlaceholder,
-            showsPlaceholder: shouldShowPlaceholder(for: row),
-            actions: actions(for: row)
-        )
-        .modifier(
-            BlockDragAndDrop(
+        if row.block.modelContext != nil, !row.block.isDeleted {
+            BlockRowView(
                 row: row,
-                isEnabled: sorting == .manual,
-                onMove: { draggedID, position in move(draggedID, relativeTo: row, position: position) },
-                onDropText: { text in editorEdit("Drop text") { insertPastedText(text, after: row.block) } }
+                listAccent: listAccent,
+                labels: row.block.labelIDs.compactMap { labelLookup[$0] },
+                progress: (progress?.total ?? 0) > 0 ? progress : nil,
+                isFocused: focus.blockID == row.id,
+                isSelected: env.navigator.selection.contains(row.id),
+                pendingCaret: focus.blockID == row.id ? focus.caret : nil,
+                focusToken: focus.token,
+                isSlashMenuOpen: slash?.blockID == row.id,
+                onSlashCommand: { command in handleSlashCommand(command) },
+                attributedText: env.store.attributedContent(of: row.block),
+                placeholder: emptyPlaceholder,
+                showsPlaceholder: shouldShowPlaceholder(for: row),
+                actions: actions(for: row)
             )
-        )
+            .modifier(
+                BlockDragAndDrop(
+                    row: row,
+                    isEnabled: sorting == .manual,
+                    onMove: { draggedID, position in move(draggedID, relativeTo: row, position: position) },
+                    onDropText: { text in editorEdit("Drop text") { insertPastedText(text, after: row.block) } }
+                )
+            )
+        }
     }
 
     /// Blank space under the document: clicking it appends a new task, the way
@@ -351,6 +360,12 @@ struct DocumentView: View {
                     focus.request(last.id, caret: -1)
                 } else {
                     appendTask()
+                }
+            }
+            .contextMenu {
+                FragmentPasteMenu(document: document) { ids in
+                    env.activeDocument = document
+                    focus.request(ids.first, caret: 0)
                 }
             }
     }
@@ -489,7 +504,7 @@ struct DocumentView: View {
 
     private func actions(for row: BlockRow) -> BlockRowActions {
         let block = row.block
-        let blockID = block.id
+        let blockID = row.id
 
         return BlockRowActions(
             onChange: { attributed in
@@ -519,9 +534,10 @@ struct DocumentView: View {
                 handleArrow(from: block, direction: direction, caret: caret)
             },
             onFocus: {
-                if slash?.blockID != block.id { slash = nil }
-                focus.adopt(block.id)
-                env.navigator.selection = [block.id]
+                guard block.modelContext != nil, !block.isDeleted else { return }
+                if slash?.blockID != blockID { slash = nil }
+                focus.adopt(blockID)
+                env.navigator.selection = [blockID]
                 // Typing inside a document makes it the target for menu commands.
                 env.activeDocument = document
             },
@@ -533,10 +549,11 @@ struct DocumentView: View {
             },
             onSlashQuery: { query, range, caretRect, viewport in
                 guard let query else {
-                    if slash?.blockID == block.id { slash = nil }
+                    if slash?.blockID == blockID { slash = nil }
                     return
                 }
-                if var existing = slash, existing.blockID == block.id {
+                guard block.modelContext != nil, !block.isDeleted else { return }
+                if var existing = slash, existing.blockID == blockID {
                     // Reset the highlight whenever the filter changes, so the
                     // top result is always the one Return picks.
                     if existing.query != query {
@@ -548,7 +565,7 @@ struct DocumentView: View {
                     existing.viewport = viewport
                     slash = existing
                 } else {
-                    slash = SlashState(blockID: block.id, query: query, range: range, caretRect: caretRect, viewport: viewport)
+                    slash = SlashState(blockID: blockID, query: query, range: range, caretRect: caretRect, viewport: viewport)
                 }
             },
             onMarkdownPrefix: { kind in
@@ -556,6 +573,10 @@ struct DocumentView: View {
             },
             onPasteMultiline: { text in
                 editorEdit("Paste blocks") { insertPastedText(text, after: block) }
+                return true
+            },
+            onPasteFragment: {
+                editorEditFragment(after: blockID)
                 return true
             },
             onSetCaption: { caption in
@@ -737,6 +758,7 @@ struct DocumentView: View {
     ///
     /// The rule itself lives in `Store`; what belongs here is only the timing.
     private func commitInlineMetadata(_ block: Block) {
+        guard block.modelContext != nil, !block.isDeleted else { return }
         guard inlineMetadataEdits.consume(for: block) else { return }
         env.store.applyInlineMetadata(
             to: block,
@@ -789,7 +811,7 @@ struct DocumentView: View {
     }
 
     private func insertPastedText(_ text: String, after block: Block) {
-        var lines = MarkdownInputRules.parseMarkdown(text)
+        var lines = MarkdownInputRules.parseClipboard(text)
         guard !lines.isEmpty else { return }
 
         var previous = block
@@ -822,6 +844,17 @@ struct DocumentView: View {
 
         env.store.save()
         focus.request(previous.id, caret: -1)
+    }
+
+    private func editorEditFragment(after blockID: UUID) {
+        env.store.undoableEditorEdit(in: document.listID, name: "Paste content",
+            undoManager: NSApp.keyWindow?.undoManager, includingNewLabels: true) {
+            do {
+                let ids = try env.store.pasteFragment(FragmentClipboard.read(), in: document, after: blockID)
+                env.navigator.selection = Set(ids)
+                focus.request(ids.first, caret: 0)
+            } catch { env.store.editorNotice = error.localizedDescription }
+        }
     }
 
     // MARK: - Menu commands
