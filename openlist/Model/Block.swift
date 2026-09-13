@@ -60,6 +60,19 @@ final class Block {
     /// Free-form note shown under the title in the task detail page.
     var note: String = ""
 
+    // MARK: Adaptive calendar
+
+    /// Zero inherits the editable default estimate for this Mac.
+    var schedulingEstimateMinutes: Int = 0
+    /// Selection is separate from a deadline and carries forward until done.
+    var selectedForDay: Date?
+    var deferredUntil: Date?
+    var keepsSessionsTogether: Bool = false
+    var tracksAwayFromMac: Bool = false
+    /// Nil means the first occurrence, whose identity is the task's own UUID.
+    /// A migration-time UUID() default would be shared by every existing row.
+    var calendarOccurrenceID: UUID?
+
     // MARK: Image payload
 
     /// Relative filename inside the app's media directory.
@@ -91,6 +104,12 @@ final class Block {
 // MARK: - Derived accessors
 
 extension Block {
+    /// Repeating tasks retain task identity while recording each occurrence.
+    var occurrenceID: UUID {
+        get { calendarOccurrenceID ?? id }
+        set { calendarOccurrenceID = newValue }
+    }
+
     var kind: BlockKind {
         get { BlockKind(rawValue: kindRaw) ?? .paragraph }
         set { kindRaw = newValue.rawValue }
@@ -180,6 +199,9 @@ extension Block {
         recurrenceData = source.recurrenceData
         labelIDs = source.labelIDs
         note = source.note
+        schedulingEstimateMinutes = source.schedulingEstimateMinutes
+        keepsSessionsTogether = source.keepsSessionsTogether
+        tracksAwayFromMac = source.tracksAwayFromMac
         mediaFilename = source.mediaFilename
         mediaData = source.mediaData
         mediaWidth = source.mediaWidth

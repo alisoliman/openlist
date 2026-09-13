@@ -45,6 +45,20 @@ final class Store {
     var persistenceError: String?
     var editorNotice: String?
     var syncPreparationError: String?
+    /// Set by the calendar coordinator from this Mac's preferences.
+    var calendarDefaultEstimateMinutes: Int = 30
+    /// Identifies this Mac when closing imported open sessions conservatively.
+    var calendarDeviceID: String?
+    /// The live coordinator applies the same approved and fixed-time boundary
+    /// when a checkbox, parent completion, deferral, or deletion closes work.
+    @ObservationIgnored var calendarRecordingEndpoint: ((WorkSession, Date) -> Date)?
+    /// The displayed generated plan is captured before a completion removes it.
+    @ObservationIgnored var calendarPlannedBlocks: [PlannedBlock] = []
+    var completionUndo: CompletionUndoAction?
+    @ObservationIgnored var completionUndoChanges: [UUID: CompletionUndoChange] = [:]
+    @ObservationIgnored var pendingCompletionUndoChanges: [CompletionUndoChange] = []
+    @ObservationIgnored var completionUndoRegistrations: [UUID: CompletionUndoRegistration] = [:]
+    var onCompletionUndoAvailable: ((CompletionUndoAction) -> Void)?
     /// Smart rows commit local title drafts on blur. External writes must not
     /// overwrite those drafts or be overwritten by their later commit.
     @ObservationIgnored var activeTitleDrafts: [UUID: UUID] = [:]
@@ -199,6 +213,7 @@ final class Store {
 
         // Blocks are keyed by list rather than related, so remove them here.
         for block in blocks(inList: listID) {
+            discardTaskSchedule(for: block, reason: "Task deleted")
             purgeMediaAndAttachments(for: block)
             NotificationService.shared.cancelReminder(for: block.id)
             context.delete(block)
@@ -226,6 +241,7 @@ final class Store {
             copy.isPinned = list.isPinned
             copy.sortingRaw = list.sortingRaw
             copy.showsCompleted = list.showsCompleted
+            copy.availabilityCategoryRaw = list.availabilityCategoryRaw
             copy.sortIndex = list.sortIndex + 1
             copy.sidebarIndex = list.sidebarIndex + 1
 
@@ -378,6 +394,7 @@ final class Store {
         }
         persistenceError = nil
         onDidSave?()
+        publishPendingCompletionUndo()
     }
 
     /// Saves once the user pauses.

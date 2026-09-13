@@ -165,6 +165,7 @@ extension Store {
     /// set, in which case they take the deleted block's place.
     func deleteBlock(_ block: Block, liftChildren: Bool = false) {
         guard let listID = block.listID else {
+            discardTaskSchedule(for: block, reason: "Task deleted")
             context.delete(block)
             return
         }
@@ -178,6 +179,7 @@ extension Store {
             }
         } else {
             for descendant in BlockTree.descendants(of: block.id, in: all) {
+                discardTaskSchedule(for: descendant, reason: "Task deleted")
                 purgeMediaAndAttachments(for: descendant)
                 // Otherwise the notification still fires, naming a task that
                 // no longer exists.
@@ -186,6 +188,7 @@ extension Store {
             }
         }
 
+        discardTaskSchedule(for: block, reason: "Task deleted")
         purgeMediaAndAttachments(for: block)
         NotificationService.shared.cancelReminder(for: block.id)
         let parentID = block.parentID
@@ -227,6 +230,8 @@ extension Store {
 
         // Leaving task-hood drops scheduling metadata that no longer applies.
         if previous == .task, kind != .task {
+            discardTaskSchedule(for: block, reason: "Changed to a note")
+            block.occurrenceID = UUID()
             block.isCompleted = false
             block.completedAt = nil
             block.dueDate = nil
@@ -486,6 +491,9 @@ extension Store {
         // Joining text must not silently discard the removed task's payload.
         // Conflicting schedules/status need an explicit choice in the inspector.
         let incomingAttachments = attachments(for: block.id)
+        let hasCalendarPayload = block.schedulingEstimateMinutes != 0 || block.selectedForDay != nil
+            || block.deferredUntil != nil || block.keepsSessionsTogether || block.tracksAwayFromMac
+            || !workSessions(taskID: block.id).isEmpty || !placements(taskID: block.id).isEmpty
         let hasTaskPayload = block.isCompleted || block.dueDate != nil || block.reminderAt != nil
             || block.recurrenceData != nil || block.isStarred || block.priorityRaw != 0
             || !block.labelIDs.isEmpty || !block.note.isEmpty || !incomingAttachments.isEmpty
@@ -494,7 +502,7 @@ extension Store {
                 && (previous.dueDate != block.dueDate || previous.includesTime != block.includesTime))
             || (previous.reminderAt != nil && block.reminderAt != nil && previous.reminderAt != block.reminderAt)
             || (previous.recurrenceData != nil && block.recurrenceData != nil && previous.recurrenceData != block.recurrenceData)
-        guard !(hasTaskPayload && !previous.isTask), !conflicts else {
+        guard !(hasTaskPayload && !previous.isTask), !conflicts, !hasCalendarPayload else {
             editorNotice = "These rows have different task details. Review their status and dates before merging, or keep them as separate rows."
             return .noop
         }

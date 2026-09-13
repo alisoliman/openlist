@@ -6,6 +6,9 @@ nonisolated enum ICloudConfiguration {
     static let containerIdentifier = "iCloud.solimanali.openlist"
 
     static var unavailableReason: String? {
+        #if OPENLIST_DEV
+        return "iCloud is disabled in Openlist Dev. Development data stays on this Mac."
+        #else
         if ReviewSession.identifier != nil {
             return "iCloud is disabled for this isolated review session."
         }
@@ -26,12 +29,14 @@ nonisolated enum ICloudConfiguration {
             return "This build is not provisioned for iCloud. Use a signed build with the Openlist iCloud container. Your data remains on this Mac."
         }
         return nil
+        #endif
     }
 }
 
 enum AppPersistence {
     static var modelTypes: [any PersistentModel.Type] {
-        [TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self]
+        [TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self,
+         WorkSession.self, CompletionRecord.self, SchedulePlacement.self]
     }
 
     static var schema: Schema {

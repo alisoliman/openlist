@@ -37,6 +37,8 @@ final class TaskList {
     /// Per-list display preferences.
     var sortingRaw: String = ListSorting.manual.rawValue
     var showsCompleted: Bool = true
+    /// The weekly availability inherited by this list's tasks.
+    var availabilityCategoryRaw: String = "work"
 
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now

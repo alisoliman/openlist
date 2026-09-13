@@ -7,7 +7,7 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     checks += 1
 }
 
-let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self])
+let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self, WorkSession.self, CompletionRecord.self, SchedulePlacement.self])
 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
 let store = Store(context: container.mainContext)
 store.context.autosaveEnabled = false

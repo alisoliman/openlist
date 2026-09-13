@@ -62,6 +62,7 @@ private struct TaskDetailContent: View {
             VStack(alignment: .leading, spacing: 16) {
                 titleSection(block)
                 metadataSection(block)
+                TaskSchedulingSection(block: block)
                 noteSection(block)
                 subtaskSection(block)
                 attachmentSection(block)

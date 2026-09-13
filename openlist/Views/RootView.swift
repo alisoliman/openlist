@@ -24,16 +24,7 @@ struct RootView: View {
     var body: some View {
         @Bindable var navigator = env.navigator
 
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 236, max: 340)
-        } detail: {
-            contentArea
-                .inspector(isPresented: taskPanelBinding) {
-                    TaskDetailPanel()
-                        .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
-                }
-        }
+        navigationContent
         .navigationTitle("")
         .toolbar { toolbarContent }
         .sheet(isPresented: $navigator.isCommandPaletteOpen) {
@@ -60,54 +51,22 @@ struct RootView: View {
             Text("Its tasks and notes will be deleted too, including on your other Macs when iCloud sync is available. This cannot be undone.")
         }
         .background(Theme.canvas)
+        .overlay(alignment: .bottom) { CalendarCompletionFeedback() }
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
+                installCompletionUndo(in: window)
                 clearInitialFocus(for: env.navigator.route)
             }
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
         }
-        .safeAreaInset(edge: .top) {
-            VStack(spacing: 0) {
-                if let notice = env.store.editorNotice {
-                    HStack(alignment: .top, spacing: 12) {
-                        Label(notice, systemImage: "info.circle")
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                        Button("Dismiss") { env.store.editorNotice = nil }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.accent)
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ListAccent.blue.softBackground)
-                }
-                if let error = env.store.persistenceError {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("Changes are not saved", systemImage: "exclamationmark.triangle.fill")
-                            .font(.headline)
-                        Text(error).font(.callout)
-                        Button("Retry saving") { env.store.save() }
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ListAccent.red.softBackground)
-                }
-                if let warning = syncWarning {
-                    Label(warning, systemImage: "icloud.slash")
-                        .font(.callout)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(ListAccent.orange.softBackground)
-                }
-            }
-        }
+        .safeAreaInset(edge: .top) { statusNotices }
         .task { installQuickCapture() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === hostWindow.window else { return }
+            installCompletionUndo(in: window)
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
             clearInitialFocus(for: env.navigator.route)
@@ -157,7 +116,65 @@ struct RootView: View {
         }
     }
 
+    private var navigationContent: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarView()
+                .navigationSplitViewColumnWidth(min: 200, ideal: 236, max: 340)
+        } detail: {
+            contentArea
+                .inspector(isPresented: taskPanelBinding) {
+                    TaskDetailPanel()
+                        .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
+                }
+        }
+    }
+
+    private var statusNotices: some View {
+        VStack(spacing: 0) {
+            if let notice = env.store.editorNotice {
+                HStack(alignment: .top, spacing: 12) {
+                    Label(notice, systemImage: "info.circle")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Dismiss") { env.store.editorNotice = nil }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.accent)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ListAccent.blue.softBackground)
+            }
+            if let error = env.store.persistenceError {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Changes are not saved", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                    Text(error).font(.callout)
+                    Button("Retry saving") { env.store.save() }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ListAccent.red.softBackground)
+            }
+            if let warning = syncWarning {
+                Label(warning, systemImage: "icloud.slash")
+                    .font(.callout)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(ListAccent.orange.softBackground)
+            }
+        }
+    }
+
     // MARK: - Commands outside a document
+
+    private func installCompletionUndo(in window: NSWindow?) {
+        guard let window else { return }
+        env.store.onCompletionUndoAvailable = { [weak window, weak store = env.store] action in
+            guard let manager = window?.undoManager else { return }
+            store?.registerCompletionUndo(action, with: manager)
+        }
+    }
 
     private var syncWarning: String? {
         env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
@@ -213,6 +230,8 @@ struct RootView: View {
         switch env.navigator.route {
         case .today:
             defaults.dueTodayWhenUndated = true
+        case .calendar:
+            defaults.dueTodayWhenUndated = false
         case let .label(labelID):
             defaults.labelIDs = [labelID]
         default:
@@ -220,6 +239,7 @@ struct RootView: View {
         }
 
         let block = env.store.captureTask(text: "", in: destination, defaults: defaults)
+        if env.navigator.route == .calendar { env.store.selectForToday(block) }
         env.beginTaskTitleCapture(block)
         env.navigator.openTask(block.id)
     }
@@ -279,7 +299,7 @@ struct RootView: View {
     /// Overdue plus due-today work — the number worth surfacing on the Dock.
     private var dockBadgeCount: Int {
         ActiveTaskPolicy(lists: allLists).tasks(in: openTasks)
-            .filter { $0.isDueOnOrBeforeToday || $0.isStarred }.count
+            .filter { $0.isDueOnOrBeforeToday || $0.isStarred || ($0.selectedForDay.map { Calendar.current.startOfDay(for: $0) <= Calendar.current.startOfDay(for: .now) } ?? false) }.count
     }
 
     private func updateDockBadge() {
@@ -296,13 +316,22 @@ struct RootView: View {
 
     // MARK: - Content routing
 
-    @ViewBuilder
     private var contentArea: some View {
+        VStack(spacing: 0) {
+            CalendarWorkBanner()
+            routedContent
+        }
+    }
+
+    @ViewBuilder
+    private var routedContent: some View {
         switch env.navigator.route {
         case .inbox:
             InboxScreen()
         case .today:
             TodayScreen()
+        case .calendar:
+            CalendarScreen()
         case .updates:
             UpdatesScreen()
         case .tasks:

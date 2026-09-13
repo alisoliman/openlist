@@ -4,6 +4,9 @@ cd "$(dirname "$0")/.."
 mkdir -p .build/tmp
 export TMPDIR="$PWD/.build/tmp"
 BUILD_OPTIONS=(--configuration debug)
+# Keep this nonempty for macOS Bash 3.2's nounset handling of array expansion.
+CHECK_FLAGS=(-DOPENLIST_CHECKS)
+if [[ "${OPENLIST_DEV_CHECKS:-0}" == 1 ]]; then CHECK_FLAGS+=(-DDEBUG -DOPENLIST_DEV); fi
 if [[ -n "${OPENLIST_SWIFT_BUILD_SYSTEM:-}" ]]; then
     case "$OPENLIST_SWIFT_BUILD_SYSTEM" in
         native|swiftbuild) BUILD_OPTIONS+=(--build-system "$OPENLIST_SWIFT_BUILD_SYSTEM") ;;
@@ -33,10 +36,10 @@ else
     while IFS= read -r map; do FLAGS+=(-Xcc "-fmodule-map-file=$map"); done \
         < <(find "$BIN" -path '*/C*.build/module.modulemap' -type f)
 fi
-xcrun swiftc -swift-version 6 -default-isolation MainActor -enable-upcoming-feature MemberImportVisibility "${FLAGS[@]}" -o "$OUT/mcp-store-checks" \
-    openlist/Model/*.swift Shared/ListAccent.swift Tools/MCPChecks/ReviewSession.swift openlist/Design/Theme.swift \
+xcrun swiftc -swift-version 6 -default-isolation MainActor -enable-upcoming-feature MemberImportVisibility "${FLAGS[@]}" "${CHECK_FLAGS[@]}" -o "$OUT/mcp-store-checks" \
+    openlist/Model/*.swift Shared/ListAccent.swift Shared/AppGroup.swift Tools/MCPChecks/ReviewSession.swift openlist/Design/Theme.swift \
     openlist/Services/Store.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Sync.swift \
-    openlist/Services/Store+Tasks.swift openlist/Services/Store+Capture.swift \
+    openlist/Services/Store+Tasks.swift openlist/Services/Store+Calendar.swift openlist/Services/Store+CompletionUndo.swift openlist/Services/Store+Capture.swift \
     openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
     openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
     openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
@@ -46,7 +49,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -enable-upcoming-feat
     Tools/EditorChecks/Support.swift Tools/MCPChecks/HelperRoundTrip.swift Tools/MCPChecks/main.swift
 HELPER=${OPENLIST_MCP_HELPER:-"$OUT/openlist-mcp"}
 if [[ -z "${OPENLIST_MCP_HELPER:-}" ]]; then
-    xcrun swiftc -swift-version 6 -parse-as-library -o "$HELPER" OpenlistMCPHelper/*.swift
+    xcrun swiftc -swift-version 6 -parse-as-library "${CHECK_FLAGS[@]}" -o "$HELPER" OpenlistMCPHelper/*.swift
 fi
 [[ -x "$HELPER" ]] || { echo "MCP helper is missing: $HELPER" >&2; exit 1; }
 FIXTURE_ID=$(uuidgen)

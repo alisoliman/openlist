@@ -10,19 +10,21 @@ extension Store {
     // MARK: - Completion
 
     /// Toggles a task, rolling repeating tasks forward to their next occurrence.
-    func toggleCompletion(_ block: Block) {
+    func toggleCompletion(_ block: Block, now: Date = .now) {
         guard block.isTask else { return }
 
         if block.isCompleted {
             reopen(block)
         } else {
-            complete(block)
+            let before = captureCompletionUndo(for: block)
+            complete(block, now: now)
+            stageCompletionUndo(for: block, before: before, now: now)
         }
         save()
     }
 
-    private func complete(_ block: Block) {
-        let now = Date.now
+    private func complete(_ block: Block, now: Date) {
+        recordCalendarCompletion(for: block, now: now)
 
         if var rule = block.recurrence,
            let next = RecurrenceEngine.nextDate(rule: rule, dueDate: block.dueDate, completedAt: now) {
@@ -33,12 +35,18 @@ extension Store {
             block.dueDate = rule.isFinished ? nil : next
             block.isCompleted = false
             block.completedAt = nil
+            block.occurrenceID = UUID()
+            // Completing today's occurrence must not immediately fill today
+            // again with a future repeat. An explicit Today choice clears this.
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))!
+            let nextEligible = !rule.isFinished && next >= tomorrow ? tomorrow : nil
+            block.deferredUntil = nextEligible
             // The reminder has to travel with the occurrence, or it stays in
             // the past and every future repeat is silently unreminded.
             shiftReminder(on: block, fromDue: previousDue)
 
             // Subtasks reset so the next occurrence starts fresh.
-            resetSubtasks(of: block)
+            resetSubtasks(of: block, now: now, nextEligible: nextEligible)
 
             log(
                 .completed,
@@ -63,6 +71,7 @@ extension Store {
         if let listID = block.listID {
             for descendant in BlockTree.descendants(of: block.id, in: blocks(inList: listID)) where descendant.isTask {
                 if !descendant.isCompleted {
+                    recordCalendarCompletion(for: descendant, now: now)
                     descendant.isCompleted = true
                     descendant.completedAt = now
                     descendant.touch()
@@ -75,6 +84,8 @@ extension Store {
     }
 
     private func reopen(_ block: Block) {
+        discardTaskSchedule(for: block, reason: "Reopened")
+        block.occurrenceID = UUID()
         block.isCompleted = false
         block.completedAt = nil
         block.touch()
@@ -82,11 +93,17 @@ extension Store {
         log(.reopened, title: block.displayTitle, block: block)
     }
 
-    private func resetSubtasks(of block: Block) {
+    private func resetSubtasks(of block: Block, now: Date, nextEligible: Date?) {
         guard let listID = block.listID else { return }
         for descendant in BlockTree.descendants(of: block.id, in: blocks(inList: listID)) where descendant.isTask {
+            if !descendant.isCompleted { recordCalendarCompletion(for: descendant, now: now) }
+            discardTaskSchedule(for: descendant, reason: "Next occurrence", now: now)
+            descendant.occurrenceID = UUID()
             descendant.isCompleted = false
             descendant.completedAt = nil
+            if let nextEligible, descendant.dueDate == nil || descendant.dueDate! >= nextEligible {
+                descendant.deferredUntil = nextEligible
+            }
             descendant.touch()
         }
     }

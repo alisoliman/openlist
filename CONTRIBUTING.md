@@ -20,10 +20,49 @@ This produces an unsigned Apple Silicon app in `build/release/DerivedData/Build/
 without an Apple account. It verifies compilation and bundle metadata; use a
 signed build to run the sandboxed app and widget reliably.
 
-For development, open `openlist.xcodeproj`, select the `openlist` scheme and
-choose your signing team for both targets. Forks should use their own bundle
-IDs and matching App Group in `Shared/AppGroup.swift` and both entitlements.
-The committed team and identifiers are public app identities, not credentials.
+For local development, run:
+
+```sh
+./Tools/build-dev.sh --open
+```
+
+This builds **Openlist Dev.app**, with an orange **DEV** badge, bundle identifier
+`solimanali.openlist.dev`, and a separate `openlist-dev` executable. Production
+Openlist can stay installed and running. The script builds and ad-hoc signs
+without Apple credentials, then verifies the app, widget, helper, icon,
+entitlements, and storage isolation. The app is at
+`build/dev/DerivedData/Build/Products/Dev/Openlist Dev.app`; later launches can use
+`open "build/dev/DerivedData/Build/Products/Dev/Openlist Dev.app"`.
+
+Xcode's **Openlist Dev** scheme uses the same `Dev` configuration. The existing
+`openlist` scheme also uses `Dev` for Run, Test, and Analyze; its Profile and
+Archive actions retain `Release`. Both development routes use separate
+preferences and local data, and disable iCloud. They do not seed disposable
+review fixtures or import production tasks. Ad-hoc Dev data lives in its private
+sandbox under `Library/Application Support/Openlist Dev`, with `Store` and
+`Openlist/Media` subdirectories. Its preferences suite is
+`solimanali.openlist.dev`; its MCP Keychain identity is also separate. MCP stays
+off initially; enabling it uses port **45874** and the client configuration key
+`openlist-dev`, leaving production's **45873** / `openlist` entry separate.
+Development's global quick-capture shortcut is off initially so opening Dev
+does not take production's shortcut. You can enable it in Dev settings.
+`OPENLIST_DEV_CHECKS=1 ./Tools/run-mcp-checks.sh` verifies the development MCP
+defaults and exported client names through the actual local listener and helper.
+
+To exercise the development widget with shared data, choose your signing team
+in Xcode or use `./Tools/build-dev.sh --signed --open`. These signed builds use
+the distinct `Y5UE64R7TQ.solimanali.openlist.dev` App Group. Credential-free
+ad-hoc builds omit App Group entitlements and keep widget data private to its
+own process; they cannot share the app's task snapshot. Neither route touches
+the production App Group. The signed group and private sandbox are separate
+development stores; changing signing modes does not migrate data between them.
+
+The explicit `Debug` configuration remains available for provisioned iCloud
+integration work described below. It retains the production identity, so use
+isolated review fixtures for that work. Forks should use their own bundle IDs,
+signing team, and matching App Groups in `Shared/AppGroup.swift` and the
+production/development entitlements. Committed identifiers are public app
+identities, not credentials.
 
 ### Developing iCloud sync
 
@@ -89,7 +128,9 @@ The default app icon is `openlist/Openlist.icon`, an editable Icon Composer
 document containing the checkmark and list SVG layers. Open it in Icon Composer
 to adjust the artwork, background, and glass effects. Both Debug and Release
 select `Openlist` as their app icon; Xcode compiles its default, dark, and mono
-appearances. The older `AppIcon.appiconset` and `Tools/generate-app-icon.swift`
+appearances. Local `Dev` selects `openlist/OpenlistDev.icon`, which reuses those
+vector layers with a separate outlined **DEV** badge layer. The older
+`AppIcon.appiconset` and `Tools/generate-app-icon.swift`
 are legacy artwork and do not control the default icon.
 
 ## Releases

@@ -15,7 +15,11 @@ struct MCPCredentialError: LocalizedError {
 @MainActor
 final class MCPKeychainTokenStore: MCPTokenStorage {
     private var query: [String: Any] {
+        #if OPENLIST_DEV
+        let bundleID = Bundle.main.bundleIdentifier ?? "solimanali.openlist.dev"
+        #else
         let bundleID = Bundle.main.bundleIdentifier ?? "solimanali.openlist"
+        #endif
         let suffix = ReviewSession.identifier.map { ".review.\($0)" } ?? ""
         return [
             kSecClass as String: kSecClassGenericPassword,
@@ -46,7 +50,11 @@ final class MCPKeychainTokenStore: MCPTokenStorage {
         if status == errSecItemNotFound {
             var item = query.merging(attributes) { _, new in new }
             item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            #if OPENLIST_DEV
+            item[kSecAttrLabel as String] = "Openlist Dev AI agent access"
+            #else
             item[kSecAttrLabel as String] = "Openlist AI agent access"
+            #endif
             let added = SecItemAdd(item as CFDictionary, nil)
             guard added == errSecSuccess else { throw failure(added) }
         } else if status != errSecSuccess {

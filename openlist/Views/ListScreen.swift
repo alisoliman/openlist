@@ -108,6 +108,15 @@ struct ListScreen: View {
     private var headerControls: some View {
         HStack(spacing: 4) {
             Menu {
+                Section("Calendar availability") {
+                    ForEach(AvailabilityCategory.allCases) { category in
+                        CheckmarkMenuItem(category.title, isSelected: list.availabilityCategoryRaw == category.rawValue) {
+                            env.store.setAvailabilityCategory(category.rawValue, for: list)
+                            env.calendar.storeDidChange()
+                        }
+                    }
+                }
+
                 Section("Sort by") {
                     ForEach(ListSorting.allCases, id: \.self) { sorting in
                         CheckmarkMenuItem(sorting.title, isSelected: list.sorting == sorting) {

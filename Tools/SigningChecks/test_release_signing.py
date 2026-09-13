@@ -34,6 +34,7 @@ PRIVATE_SENTINEL = "OFFLINE-PROFILE-METADATA-MUST-NOT-BE-LOGGED"
 def source_fixture():
     return {
         "com.apple.security.app-sandbox": True,
+        "com.apple.security.personal-information.calendars": True,
         "com.apple.security.files.user-selected.read-write": True,
         "com.apple.security.network.client": True,
         "com.apple.security.network.server": True,
@@ -91,6 +92,7 @@ class EntitlementChecks(unittest.TestCase):
         self.assertEqual(result[signing.CONTAINERS], [CONTAINER])
         self.assertEqual(result[signing.SERVICES], ["CloudKit"])
         self.assertIs(result["com.apple.security.app-sandbox"], True)
+        self.assertIs(result[signing.CALENDAR_ACCESS], True)
         self.assertIs(result["com.apple.security.network.client"], True)
         self.assertIs(result["com.apple.security.network.server"], True)
         self.assertIs(result["com.apple.security.files.user-selected.read-write"], True)
@@ -109,6 +111,15 @@ class EntitlementChecks(unittest.TestCase):
         signing.verify_signature(self.profile, self.source, CERTIFICATE, result, self.now)
         result[signing.SERVICES] = ["*"]
         with self.assertRaises(signing.SigningError):
+            signing.verify_signature(self.profile, self.source, CERTIFICATE, result, self.now)
+
+    def test_calendar_sandbox_access_is_retained_without_a_profile_grant(self):
+        self.assertNotIn(signing.CALENDAR_ACCESS, self.profile["Entitlements"])
+        result = self.prepare()
+        self.assertIs(result[signing.CALENDAR_ACCESS], True)
+        signing.verify_signature(self.profile, self.source, CERTIFICATE, result, self.now)
+        del result[signing.CALENDAR_ACCESS]
+        with self.assertRaisesRegex(signing.SigningError, "Signed app entitlements differ"):
             signing.verify_signature(self.profile, self.source, CERTIFICATE, result, self.now)
 
     def test_other_services_scalar_and_container_wildcard_remain_rejected(self):
@@ -148,6 +159,7 @@ class EntitlementChecks(unittest.TestCase):
     def test_wrong_or_widened_source_values_fail(self):
         cases = {
             "com.apple.security.app-sandbox": [False, 1],
+            signing.CALENDAR_ACCESS: [False, 1, "true"],
             "com.apple.security.network.client": [False, "true"],
             "com.apple.security.network.server": [False, "true"],
             "com.apple.security.files.user-selected.read-write": [False],
@@ -187,6 +199,7 @@ class EntitlementChecks(unittest.TestCase):
             "com.apple.security.get-task-allow",
             "com.apple.security.cs.disable-library-validation",
             "com.apple.security.cs.allow-jit",
+            "com.apple.security.personal-information.addressbook",
             "aps-environment",
             "application-identifier",
             "keychain-access-groups",
@@ -333,6 +346,8 @@ class EntitlementChecks(unittest.TestCase):
             (signing.PUSH_ENVIRONMENT, "development"),
             (signing.APP_IDENTIFIER, f"{TEAM}.{BUNDLE}"),
             ("com.apple.security.get-task-allow", True),
+            (signing.CALENDAR_ACCESS, False),
+            (signing.CALENDAR_ACCESS, 1),
             (signing.CONTAINERS, [CONTAINER, "iCloud.extra"]),
         ):
             cases.append(dict(valid, **{key: value}))
@@ -513,6 +528,15 @@ class PipelineChecks(unittest.TestCase):
         self.assertEqual(resolved[signing.CLOUD_ENVIRONMENT], "Production")
         self.assertEqual(resolved[signing.PUSH_ENVIRONMENT], "production")
         self.assertIs(resolved["com.apple.security.network.server"], True)
+        self.assertIs(resolved[signing.CALENDAR_ACCESS], True)
+
+    def test_widget_keeps_only_sandbox_and_snapshot_group_access(self):
+        source = plistlib.loads((TOOLS.parent / "Config/OpenlistWidget.entitlements").read_bytes())
+        self.assertEqual(source, {
+            "com.apple.security.app-sandbox": True,
+            "com.apple.security.application-groups": [GROUP],
+        })
+        self.assertNotIn(signing.CALENDAR_ACCESS, source)
 
     def test_packaging_prepares_before_signing_and_verifies_before_notarization(self):
         script = (TOOLS / "package-release.sh").read_text()
