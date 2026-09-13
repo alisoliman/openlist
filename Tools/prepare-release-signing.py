@@ -111,7 +111,10 @@ def prepare_entitlements(profile, source, now=None):
     ):
         raise SigningError("Profile has no DeveloperCertificates; regenerate it with the release signing certificate.")
     authorized_values(allowed, CONTAINERS, [CONTAINER_ID])
-    authorized_values(allowed, SERVICES, ["CloudKit"])
+    # Apple Developer ID profiles can grant all iCloud services with a scalar
+    # wildcard. The app still claims only the reviewed CloudKit service below.
+    if allowed.get(SERVICES) != "*":
+        authorized_values(allowed, SERVICES, ["CloudKit"])
     cloud_environment = allowed.get(CLOUD_ENVIRONMENT)
     if isinstance(cloud_environment, list):
         if (

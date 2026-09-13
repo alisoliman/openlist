@@ -102,6 +102,26 @@ class EntitlementChecks(unittest.TestCase):
         self.assertEqual(self.profile, before_profile)
         self.assertEqual(self.source, before_source)
 
+    def test_apple_scalar_services_wildcard_does_not_widen_app_entitlements(self):
+        self.profile["Entitlements"][signing.SERVICES] = "*"
+        result = self.prepare()
+        self.assertEqual(result[signing.SERVICES], ["CloudKit"])
+        signing.verify_signature(self.profile, self.source, CERTIFICATE, result, self.now)
+        result[signing.SERVICES] = ["*"]
+        with self.assertRaises(signing.SigningError):
+            signing.verify_signature(self.profile, self.source, CERTIFICATE, result, self.now)
+
+    def test_other_services_scalar_and_container_wildcard_remain_rejected(self):
+        for value in ("CloudKit", "Cloud*", ["*"], [], None):
+            with self.subTest(value=value):
+                self.profile["Entitlements"][signing.SERVICES] = value
+                with self.assertRaises(signing.SigningError):
+                    self.prepare()
+        self.profile["Entitlements"][signing.SERVICES] = "*"
+        self.profile["Entitlements"][signing.CONTAINERS] = ["*"]
+        with self.assertRaises(signing.SigningError):
+            self.prepare()
+
     def test_profile_extras_and_unrestricted_entitlements_are_not_copied(self):
         self.profile["Entitlements"]["com.apple.security.application-groups"] = ["unused.offline.group"]
         self.profile["Entitlements"]["com.apple.security.cs.allow-jit"] = True
