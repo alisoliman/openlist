@@ -254,6 +254,19 @@ extension Store {
             editorNotice = "Restore this content from Trash before undoing an earlier edit."
             return
         }
+        // An older move/outdent can depend on an unchanged parent that was
+        // deleted later. It may only refer to a live parent, or one restored by
+        // this exact Undo; an old snapshot alone is not authority to revive it.
+        for id in changed.blocks {
+            guard let record = desired.blocks[id], let parentID = record.parentID else { continue }
+            let restoredParent = changed.blocks.contains(parentID) ? desired.blocks[parentID] : nil
+            let liveParent = block(id: parentID)
+            guard (restoredParent != nil && restoredParent?.listID == record.listID)
+                || (liveParent != nil && liveParent?.listID == record.listID) else {
+                editorNotice = "This edit depends on a parent that is no longer available. Restore the parent from Trash first."
+                return
+            }
+        }
         let sourceFiles = source.files(excluding: permanentlyErasedBlockIDs)
         let desiredFiles = desired.files(excluding: permanentlyErasedBlockIDs)
         var retained = media.filter { sourceFiles.contains($0.key) || desiredFiles.contains($0.key) }

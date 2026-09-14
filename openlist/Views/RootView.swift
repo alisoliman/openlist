@@ -179,6 +179,7 @@ struct RootView: View {
                         LabelMergeNotice()
                     }
                     ReminderNavigationNotice()
+                    TrashNotice()
                     contentArea
                         .frame(minHeight: 0, maxHeight: .infinity)
                 }
@@ -209,16 +210,6 @@ struct RootView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(ListAccent.blue.softBackground)
-            }
-            if let message = env.store.trashError ?? env.store.trashNotice {
-                HStack {
-                    Text(message).font(.callout)
-                    Spacer()
-                    Button("Open Trash") { env.navigator.go(to: .trash) }
-                    Button("Dismiss") { env.store.trashError = nil; env.store.trashNotice = nil }
-                }
-                .padding(12)
-                .background(Theme.secondaryText.opacity(0.08))
             }
             if let error = env.store.inboxError {
                 HStack(alignment: .top) {

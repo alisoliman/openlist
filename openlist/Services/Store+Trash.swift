@@ -119,6 +119,28 @@ extension Store {
         }
     }
 
+    /// A label merge may replace the IDs captured at deletion. Before a
+    /// referenced label is deleted, retain its current identity and name in
+    /// every affected deletion root. Older captured labels remain for merge Undo.
+    func preserveTrashLabel(_ label: TaskLabel, referencedBy blocks: [Block]) throws {
+        let groups = Array(Set(blocks.filter { $0.isTrashed && $0.labelIDs.contains(label.id) }.compactMap(\.trashID)))
+        guard !groups.isEmpty else { return }
+        let roots = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { groups.contains($0.id) }))
+        let lists = try context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { groups.contains($0.id) }))
+        var updates: [() -> Void] = []
+        for group in groups {
+            let root = roots.first { $0.id == group && $0.trashID == group }
+            let list = lists.first { $0.id == group && $0.trashID == group }
+            guard var metadata = root?.trashMetadata ?? list?.trashMetadata else { throw TrashError.invalidRetention }
+            metadata.labels.removeAll { $0.id == label.id }
+            metadata.labels.append(TrashLabel(id: label.id, name: label.name, accentRaw: label.accentRaw,
+                sortIndex: label.sortIndex, createdAt: label.createdAt))
+            let bytes = try JSONEncoder().encode(metadata)
+            updates.append { if let root { root.trashMetadataData = bytes } else { list?.trashMetadataData = bytes } }
+        }
+        for update in updates { update() }
+    }
+
     /// Preview uses the same ownership checks as restore, before the user acts.
     func trashRestoreDestination(_ entry: TrashEntry) -> String {
         if entry.isList { return "Restore list" }
@@ -186,6 +208,8 @@ extension Store {
                         labels.append(label)
                     }
                 }
+                let availableLabels = Set(labels.map(\.id))
+                guard members.allSatisfy({ Set($0.labelIDs).isSubset(of: availableLabels) }) else { throw TrashError.invalidRetention }
                 for member in members {
                     if let filename = member.mediaFilename {
                         _ = try MediaStore.shared.materialize(filename: filename, data: member.mediaData)

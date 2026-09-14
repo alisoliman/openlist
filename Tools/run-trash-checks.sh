@@ -12,7 +12,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/trash-checks
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift openlist/Editor/SlashMenuLayout.swift \
   Tools/EditorChecks/Support.swift openlist/Services/ActiveTaskPolicy.swift Tools/TrashChecks/main.swift
-for phase in delete restore ownership readonly failure validation; do
+for phase in delete restore ownership readonly prior-actions failure validation; do
     "$OUT/trash-checks" "$OUT/Fixture" "$phase"
 done
 

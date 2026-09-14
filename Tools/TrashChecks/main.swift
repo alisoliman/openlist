@@ -216,6 +216,53 @@ if phase == "delete" {
     try version2.upgradeToCurrentVersion()
     try version2.validate()
     try check(version2.version == 3 && version2.blocks[0].inboxMembershipData == bytes, "Version 2 upgrade preserves Inbox payload byte-for-byte")
+ } else if phase == "prior-actions" {
+    let list = store.createList(title: "Prior actions")
+    let task = store.appendBlock(kind: .task, text: "Inbox retained", to: DocumentContext(listID: list.id))
+    try store.persistChanges()
+    let inboxUndo = UndoManager(); inboxUndo.groupsByEvent = false
+    inboxUndo.beginUndoGrouping()
+    try check(store.setInboxMembership(true, taskIDs: [task.id], undoManager: inboxUndo), "Set Inbox before deletion")
+    inboxUndo.endUndoGrouping()
+    let selection = task.inboxMembershipData
+    try check(store.trashList(list), "Retain owning list without adding a list Undo")
+    inboxUndo.undo()
+    try check(task.inboxMembershipData == selection, "Earlier Inbox Undo cannot mutate retained task curation")
+    try check(!store.setInboxMembership(false, taskIDs: [task.id]), "Direct stale-ID Inbox write rejects retained task")
+    try check(store.restoreTrash(ids: [list.id]) && task.inboxMembershipData == selection, "Restore keeps deletion-time Inbox selection")
+
+    let source = store.findOrCreateLabel(named: "Trash merge source")!
+    let destination = store.findOrCreateLabel(named: "Trash merge destination")!
+    let destinationID = destination.id
+    task.labelIDs = [source.id]
+    try store.persistChanges()
+    try check(store.trashBlocks([task]), "Retain task before its global label is merged")
+    try store.mergeLabels(store.labelMergePlan(sourceID: source.id, destinationID: destinationID))
+    try check(task.labelIDs == [destinationID], "Merge updates retained label reference")
+    store.deleteLabel(destination)
+    try snapshot().validate()
+    try check(store.trashEntries().first { $0.id == task.id }?.metadata?.labels.contains { $0.id == destinationID } == true,
+        "Deleting merged label retains its recovery record")
+    try check(store.restoreTrash(ids: [task.id]) && store.allLabels().contains { $0.id == destinationID },
+        "Restore recreates missing merged label identity")
+    try snapshot().validate()
+
+    let parent = store.appendBlock(kind: .task, text: "Outdent parent", to: DocumentContext(listID: list.id))
+    let child = store.insertChild(kind: .task, text: "Outdent child", of: parent)
+    try store.persistChanges()
+    let structuralUndo = UndoManager(); structuralUndo.groupsByEvent = false
+    structuralUndo.beginUndoGrouping()
+    store.undoableEditorEdit(in: list.id, name: "Outdent child", undoManager: structuralUndo) {
+        _ = store.outdent(child)
+        store.save()
+    }
+    structuralUndo.endUndoGrouping()
+    try check(child.parentID == nil, "Outdent leaves child outside former parent")
+    let parentID = parent.id
+    try check(store.trashBlocks([parent]) && store.permanentlyEraseTrash(ids: [parentID]), "Permanently erase former parent")
+    structuralUndo.undo()
+    try check(child.parentID == nil && store.block(id: parentID) == nil, "Earlier outdent Undo cannot reattach to permanently erased parent")
+    try snapshot().validate()
 } else if phase == "failure" {
     let list = store.createList(title: "Failures")
     let task = store.appendBlock(kind: .task, text: "Atomic task", to: DocumentContext(listID: list.id))

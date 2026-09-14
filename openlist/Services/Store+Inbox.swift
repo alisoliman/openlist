@@ -60,7 +60,7 @@ extension Store {
         do {
             let ids = Set(taskIDs)
             let tasks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == "task" }))
-                .filter { !$0.isDeleted }
+                .filter { !$0.isDeleted && !$0.isTrashed }
             let lists = try context.fetch(FetchDescriptor<TaskList>())
             let byID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let policy = InboxPolicy(lists: lists)
@@ -117,7 +117,7 @@ extension Store {
         guard !changes.isEmpty else { inboxError = nil; return true }
         let ids = changes.map(\.id)
         let tasks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
-        let byID = Dictionary(tasks.filter { !$0.isDeleted }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let byID = Dictionary(tasks.filter { !$0.isDeleted && !$0.isTrashed }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let applied = try changes.map { change -> InboxChange in
             guard let task = byID[change.id] else { throw InboxMembershipError.unavailable }
             var matches = task.inboxMembershipData == change.before
