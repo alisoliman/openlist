@@ -245,6 +245,8 @@ extension Store {
     private func commitBulkMutation(_ body: () throws -> Void, restoring: () -> Void = {}) throws {
         guard !isSavingSuspended, !isRecordingEditorEdit else { throw BulkActionError.busy }
         try persistChanges()
+        let previousCompletionCycles = pendingCompletionCycleIDs
+        let previousReopenedCycles = pendingReopenedCycleIDs
         isSavingSuspended = true
         do {
             try body()
@@ -259,6 +261,8 @@ extension Store {
             pendingCompletionUndoChanges.removeAll()
             activitySuppressedTaskIDs.removeAll()
             pendingRestoredTaskIDs.removeAll()
+            pendingCompletionCycleIDs = previousCompletionCycles
+            pendingReopenedCycleIDs = previousReopenedCycles
             refreshAllReminders()
             persistenceError = "The selected items could not be changed. \(error.localizedDescription)"
             throw error

@@ -151,6 +151,7 @@ struct CompletionUndoChange {
     var after: [UUID: CompletionTaskState]
     var placements: [CompletionPlacementState]
     var records: [CompletionRecordState]
+    var reopenedCycleIDs: [UUID: UUID] = [:]
     var isApplied = true
 }
 
@@ -197,7 +198,10 @@ extension Store {
             action: CompletionUndoAction(title: title, createdAt: now, isReopening: isReopening),
             rootTaskID: first.id, additionalRootTaskIDs: roots.dropFirst().map(\.id),
             before: changed, after: after.filter { changed[$0.key] != nil },
-            placements: snapshot.placements.filter { changed[$0.taskID] != nil }, records: records
+            placements: snapshot.placements.filter { changed[$0.taskID] != nil }, records: records,
+            reopenedCycleIDs: Dictionary(uniqueKeysWithValues: after.values.compactMap { state in
+                pendingReopenedCycleIDs[state.occurrenceID].map { (state.occurrenceID, $0) }
+            })
         ))
     }
 
@@ -262,6 +266,8 @@ extension Store {
             return task
         }
         let matchingIDs = Set(matching.map(\.id))
+        let previousCompletionCycles = pendingCompletionCycleIDs
+        let previousReopenedCycles = pendingReopenedCycleIDs
         let previousTasks = Dictionary(uniqueKeysWithValues: matching.map { ($0.id, CompletionTaskState($0)) })
         let originalPlacements = placements()
         let originalRecords = completionRecords()
@@ -276,6 +282,9 @@ extension Store {
             // and paused instead of silently becoming an active older session.
             pauseWorkSessions(for: task, reason: undoing ? "Completion undone" : "Completion restored")
             desired[task.id]?.apply(to: task, replacing: source[task.id]!)
+            if !undoing, let cycle = change.reopenedCycleIDs[task.occurrenceID] {
+                pendingReopenedCycleIDs[task.occurrenceID] = cycle
+            }
         }
         for placement in change.placements where matchingIDs.contains(placement.taskID) {
             if undoing {
@@ -315,6 +324,8 @@ extension Store {
                 session.pauseReason = reason
             }
             context.processPendingChanges()
+            pendingCompletionCycleIDs = previousCompletionCycles
+            pendingReopenedCycleIDs = previousReopenedCycles
             persistenceError = "The completion could not be restored. \(error.localizedDescription)"
             return false
         }

@@ -204,9 +204,23 @@ partialCopy.change = TaskActivityChange(before: nil, after: nil, completionID: f
 store.context.insert(partialCopy)
 try store.persistChanges()
 check(try snapshot().total == 5, "persisted partial and complete copies with one completion ID do not suppress or inflate the known action")
+let conflictingCopy = ActivityEvent(kind: .completed, title: "Conflicting backup copy", blockID: child.id)
+conflictingCopy.change = TaskActivityChange(before: nil, after: nil, completionID: finalChildEvent.change?.completionID,
+    completedAt: third, completedOccurrenceID: finalChildOccurrence, completionWasRecurring: false)
+store.context.insert(conflictingCopy)
+try store.persistChanges()
+check(try snapshot().total == 4 && snapshot().unclassifiedCount == 1,
+      "persisted conflicting copies are one ambiguous uncounted action")
+store.context.delete(conflictingCopy)
+try store.persistChanges()
+check(try snapshot().total == 5, "removing a conflicting copy restores the usable original action")
 
 let batchContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])
-let batchStore = Store(context: batchContainer.mainContext)
+var failBatchSave = false
+let batchStore = Store(context: batchContainer.mainContext) { context in
+    if failBatchSave { failBatchSave = false; throw CocoaError(.fileWriteNoPermission) }
+    try context.save()
+}
 batchStore.bootstrap()
 let batchList = batchStore.createList(title: "Batch fixture")
 let batchParent = batchStore.appendBlock(kind: .task, text: "Batch repeat", to: .init(listID: batchList.id))
@@ -251,6 +265,57 @@ check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == befo
 batchStore.toggleCompletion(middle, now: third)
 check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeNestedReopen + 2,
       "genuinely advanced nested parent and child cycles count separately")
+let bulkParent = batchStore.appendBlock(kind: .task, text: "Bulk repeat", to: .init(listID: batchList.id))
+batchStore.setDueDate(first, for: bulkParent)
+batchStore.setRecurrence(.daily, for: bulkParent)
+let bulkChild = batchStore.insertChild(text: "Bulk recurring child", of: bulkParent)
+let bulkOrdinary = batchStore.appendBlock(kind: .task, text: "Bulk ordinary", to: .init(listID: batchList.id))
+try batchStore.persistChanges()
+let bulkManager = UndoManager()
+bulkManager.groupsByEvent = false
+batchStore.onCompletionUndoAvailable = { action in
+    bulkManager.beginUndoGrouping()
+    batchStore.registerCompletionUndo(action, with: bulkManager)
+    bulkManager.endUndoGrouping()
+}
+let beforeBulk = try batchStore.activityHeatmap(now: now, calendar: calendar).total
+check(try batchStore.setBulkCompletion(true, ids: [bulkParent.id, bulkChild.id, bulkOrdinary.id], now: first) == 3,
+      "bulk selection resolves parent, selected descendant, and independent task")
+check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeBulk + 3,
+      "bulk completion counts parent, child and ordinary task once each")
+bulkManager.undo()
+bulkManager.redo()
+check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeBulk + 3,
+      "multi-root bulk completion Undo and Redo preserve captured recurring cycle IDs")
+failBatchSave = true
+do { _ = try batchStore.setBulkCompletion(true, ids: [bulkParent.id], now: second); fatalError("bulk failure expected") }
+catch { check(batchStore.persistenceError != nil, "bulk completion failure reports its atomic rollback") }
+check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeBulk + 3,
+      "failed bulk recurring completion adds no activity")
+check(batchStore.pendingCompletionCycleIDs.isEmpty && batchStore.pendingReopenedCycleIDs.isEmpty,
+      "bulk rollback removes only its uncommitted cycle metadata")
+_ = try batchStore.setBulkCompletion(true, ids: [bulkParent.id], now: second)
+check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeBulk + 5,
+      "retry after bulk rollback adds one parent and child cycle")
+
+let bulkRoot = batchStore.appendBlock(kind: .task, text: "Bulk alias root", to: .init(listID: batchList.id))
+let bulkMiddle = batchStore.insertChild(text: "Bulk alias middle", of: bulkRoot)
+batchStore.setDueDate(first, for: bulkMiddle)
+batchStore.setRecurrence(.daily, for: bulkMiddle)
+let bulkLeaf = batchStore.insertChild(text: "Bulk alias leaf", of: bulkMiddle)
+try batchStore.persistChanges()
+_ = try batchStore.setBulkCompletion(true, ids: [bulkRoot.id], now: first)
+let beforeBulkReopen = try batchStore.activityHeatmap(now: now, calendar: calendar).total
+_ = try batchStore.setBulkCompletion(false, ids: [bulkMiddle.id, bulkLeaf.id], now: second)
+bulkManager.undo()
+check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeBulkReopen,
+      "bulk Reopen Undo refers to the existing occurrence rather than another completion")
+bulkManager.redo()
+batchStore.toggleCompletion(bulkLeaf, now: third)
+batchStore.toggleCompletion(bulkMiddle, now: third)
+check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeBulkReopen,
+      "bulk Reopen Undo/Redo preserves ancestor aliases for later child and parent completion")
+batchStore.onCompletionUndoAvailable = nil
 
 // Failed writes stay retryable, but a fresh history reader sees committed facts.
 let failed = store.appendBlock(kind: .task, text: "Retry completion", to: .init(listID: list.id))

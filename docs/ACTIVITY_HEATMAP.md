@@ -66,6 +66,9 @@ advances. Parent cascades can complete a self-recurring child without advancing
 its own rule; reopening history preserves that unadvanced cycle for both the
 child and its descendants. Completion Undo snapshots retain the same cycle for
 Redo. The calendar's own occurrence UUID behavior is unchanged.
+Multi-selection completion and reopening use the same cycle facts, including
+their multi-root Undo/Redo. A failed atomic bulk action rolls back its pending
+cycle metadata along with its task changes.
 
 Run `./Tools/run-activity-heatmap-checks.sh` for date boundaries, DST/time-zone
 grouping, repeated toggles, recurring children, Undo/Redo, committed reads,
