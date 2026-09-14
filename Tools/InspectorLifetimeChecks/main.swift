@@ -8,6 +8,63 @@ func check(_ value: Bool, _ message: String) {
     checks += 1
 }
 let app = NSApplication.shared
+
+for event: NSEvent.EventType? in [nil, .keyDown, .keyUp, .flagsChanged, .mouseMoved, .scrollWheel, .applicationDefined] {
+    check(!Theme.Motion.allowsAnimation(reduceMotion: false, eventType: event),
+        "Keyboard, scrolling, hovering and background updates never opt into motion")
+}
+for event: NSEvent.EventType in [.leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp] {
+    check(Theme.Motion.allowsAnimation(reduceMotion: false, eventType: event), "Pointer actions allow brief feedback")
+    check(!Theme.Motion.allowsAnimation(reduceMotion: true, eventType: event), "Reduce Motion removes pointer movement too")
+}
+check(Theme.Motion.feedbackDuration >= 0.1 && Theme.Motion.feedbackDuration <= 0.16,
+    "Press feedback stays within 100-160 milliseconds")
+check(Theme.Motion.rearrangementDuration <= 0.25, "Task movement is brief and has no added delay")
+
+var selectionPresses = 0
+var lastSelectionStep: (Int, Bool)?
+func selectionConfiguration(revealed: Bool = false, selected: Bool = false, focused: Bool = false) -> RowSelectionControl {
+    RowSelectionControl(title: "Selection fixture", isSelected: selected, isSelectionFocus: focused,
+        requestsKeyboardFocus: false, defersPlainClick: false, isRevealed: revealed,
+        onSelect: { if case .toggle = $0 { selectionPresses += 1 } },
+        onStep: { lastSelectionStep = ($0, $1) }, onClear: {}, onFocusRequestHandled: {},
+        onDrag: { "" }, onDragEnd: {})
+}
+let selectionControl = RowSelectionNSControl(frame: NSRect(x: 0, y: 0, width: 22, height: 26))
+selectionControl.appearance = NSAppearance(named: .aqua)
+func selectionImage() -> Data {
+    let image = NSImage(size: selectionControl.bounds.size)
+    image.lockFocus()
+    NSColor.clear.setFill()
+    selectionControl.bounds.fill(using: .copy)
+    selectionControl.draw(selectionControl.bounds)
+    image.unlockFocus()
+    return image.tiffRepresentation!
+}
+selectionControl.configuration = selectionConfiguration()
+let quietGutter = selectionImage()
+selectionControl.configuration = selectionConfiguration(revealed: true)
+check(selectionImage() != quietGutter, "Hover reveals the native selection glyph without replacing the control")
+selectionControl.configuration = selectionConfiguration(selected: true)
+check(selectionImage() != quietGutter, "Selected rows retain a visible native selection glyph")
+selectionControl.configuration = selectionConfiguration(focused: true)
+check(selectionImage() != quietGutter, "Keyboard row focus retains the visible selection ring")
+selectionControl.configuration = selectionConfiguration()
+check(selectionImage() == quietGutter, "An idle, unselected gutter returns to its quiet appearance")
+check(selectionControl.bounds.size == CGSize(width: 22, height: 26), "Gutter hit target never shrinks or shifts")
+check(selectionControl.isAccessibilityElement() && selectionControl.acceptsFirstResponder,
+    "Quiet glyphs remain in accessibility and keyboard navigation")
+check(selectionControl.accessibilityPerformPress() && selectionPresses == 1,
+    "Accessibility can activate an idle selection handle")
+let space = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+    windowNumber: 0, context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49)!
+selectionControl.keyDown(with: space)
+check(selectionPresses == 2, "Space still toggles an idle selection handle")
+let down = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift, timestamp: 0,
+    windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 125)!
+selectionControl.keyDown(with: down)
+check(lastSelectionStep?.0 == 1 && lastSelectionStep?.1 == true, "Shift-arrow still extends row selection")
+
 let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self,
     ActivityEvent.self, WorkSession.self, CompletionRecord.self, SchedulePlacement.self])
 let fixtureDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("OpenlistInspectorLifetime-\(UUID())")

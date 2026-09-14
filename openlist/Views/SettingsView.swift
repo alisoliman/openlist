@@ -135,14 +135,16 @@ struct TasksSettingsTab: View {
                 }
 
                 Toggle("Read dates from what you type", isOn: $settings.parsesNaturalLanguageDates)
-                Text("Typing “call mum tomorrow at 6pm” sets a due date and trims the phrase from the task.")
+                    .help("Typing “call mum tomorrow at 6pm” sets a due date and trims the phrase from the task.")
+                Text("Dates and repeats become task details as you type.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }
 
             Section("Completed tasks") {
                 Toggle("Show completed tasks by default", isOn: $settings.showsCompletedTasks)
-                Text("Applies to lists, Inbox and Today. Use the Completed control in any list to choose Show, Hide or Use app default. Preferences stay on this Mac; list overrides sync with iCloud.")
+                    .help("Preferences stay on this Mac. Individual list overrides sync with iCloud.")
+                Text("Applies to Inbox, Today, and lists without an override.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }

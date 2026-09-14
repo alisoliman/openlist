@@ -2,16 +2,7 @@ import SwiftUI
 
 struct ActivityHeatmapLegend: View {
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                Text("Recorded completions").font(.callout)
-                legend
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Recorded completions").font(.callout)
-                legend
-            }
-        }
+        legend
     }
 
     private var legend: some View {

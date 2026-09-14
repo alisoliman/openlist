@@ -20,16 +20,14 @@ struct TaskSchedulingSection: View {
     private var liveContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Calendar", systemImage: "calendar").font(.headline)
-                Spacer()
+                Toggle("Plan for today", isOn: Binding(get: { selectedToday }, set: { value in
+                    if value { env.store.selectForToday(block) } else { env.store.deselectForToday(block) }
+                    env.calendar.storeDidChange()
+                }))
+                .disabled(block.isCompleted)
                 Button { env.navigator.go(to: .calendar) } label: { Image(systemName: "arrow.up.right") }
-                    .buttonStyle(.plain).help("Open calendar")
+                    .buttonStyle(.plain).help("Open calendar").accessibilityLabel("Open calendar")
             }
-            Toggle("Plan for today", isOn: Binding(get: { selectedToday }, set: { value in
-                if value { env.store.selectForToday(block) } else { env.store.deselectForToday(block) }
-                env.calendar.storeDidChange()
-            }))
-            .disabled(block.isCompleted)
             HStack {
                 Text("Estimate")
                 Spacer()
@@ -62,13 +60,12 @@ struct TaskSchedulingSection: View {
             Toggle("Track work away from this Mac", isOn: Binding(get: { block.tracksAwayFromMac }, set: {
                 env.store.setTracksAway($0, for: block)
             }))
-            Text(block.tracksAwayFromMac ? "Tracking can continue through lock or sleep, until a meeting or unavailable time." : "Locking or sleeping pauses active work. You can resume when you return.")
-                .font(.caption).foregroundStyle(Theme.secondaryText)
+            .help(block.tracksAwayFromMac ? "Tracking continues through lock or sleep, until a meeting or unavailable time." : "Locking or sleeping pauses active work.")
             HStack {
                 let category = env.store.list(id: block.listID)?.availabilityCategoryRaw == "personal" ? "Personal" : "Work"
                 Label("\(category) hours", systemImage: category == "Personal" ? "house" : "briefcase")
                 Spacer()
-                Text("From list")
+                Image(systemName: "square.stack").help("Inherited from this task's list")
             }.font(.caption).foregroundStyle(Theme.secondaryText)
             if let assessment {
                 VStack(alignment: .leading, spacing: 3) {

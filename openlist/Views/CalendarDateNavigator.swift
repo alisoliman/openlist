@@ -7,7 +7,6 @@ struct CalendarDateNavigator: View {
     let calendar: Calendar
     let onSelect: (Date) -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var displayedMonth: Date
     @State private var jumpDate: Date
     @State private var hoveredDay: Date?
@@ -131,10 +130,8 @@ struct CalendarDateNavigator: View {
         .accessibilityValue(isToday ? "Today" : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { value in
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                if value { hoveredDay = day }
-                else if hoveredDay == day { hoveredDay = nil }
-            }
+            if value { hoveredDay = day }
+            else if hoveredDay == day { hoveredDay = nil }
         }
     }
 

@@ -41,15 +41,17 @@ struct CalendarSettingsView: View {
                     Text("minutes").foregroundStyle(Theme.secondaryText)
                 }
                 Stepper("Minimum session: \(preferences.minimumSessionMinutes) minutes", value: $preferences.minimumSessionMinutes, in: 5...120, step: 5)
-                Text("Shorter tasks can use shorter slots. Flexible sessions move when work overruns. Planning always covers the next four weeks.")
+                Text("A rolling four-week plan. Flexible sessions move when work runs over.")
                     .font(.caption).foregroundStyle(Theme.secondaryText)
+                    .help("Tasks shorter than the minimum session can still use shorter slots.")
             }
             Section("Availability") {
                 Picker("Hours", selection: $category) {
                     ForEach(AvailabilityCategory.allCases) { Text($0.title).tag($0) }
                 }.pickerStyle(.segmented)
-                Text("Choose Work or Personal in a list’s options. Its tasks inherit these hours.")
+                Text("Lists use either Work or Personal hours.")
                     .font(.caption).foregroundStyle(Theme.secondaryText)
+                    .help("Choose the availability category in each list's options.")
                 ForEach(weekdays, id: \.self) { weekday in
                     DisclosureGroup {
                         AvailabilityWindowsEditor(title: "Available", windows: weeklyBinding(weekday, breaks: false))
@@ -65,7 +67,7 @@ struct CalendarSettingsView: View {
                 }
             }
             Section("Date-specific overrides") {
-                Text("An override replaces that day’s usual hours and breaks. Leave its available hours empty to take the day off.")
+                Text("Replace a day's usual hours, or leave it unavailable.")
                     .font(.caption).foregroundStyle(Theme.secondaryText)
                 ForEach(profile.overrides.sorted { $0.date < $1.date }) { item in
                     HStack {
@@ -88,7 +90,7 @@ struct CalendarSettingsView: View {
             Section("Connected calendars") {
                 Text(env.calendar.externalCalendars.authorizationDescription)
                     .font(.callout).foregroundStyle(Theme.secondaryText)
-                Text("Selected calendars are read as fixed busy time. Openlist schedules its own tasks and never changes external events.")
+                Text("Read-only busy time. Your calendar events are never changed.")
                     .font(.caption).foregroundStyle(Theme.secondaryText)
                 if env.calendar.externalCalendars.isConnected {
                     ForEach(env.calendar.externalCalendars.calendars) { source in

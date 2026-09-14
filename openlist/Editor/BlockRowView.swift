@@ -110,7 +110,7 @@ struct BlockRowView: View {
                 Color.clear.frame(width: 14, height: 1)
             }
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: row.isCollapsed)
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion), value: row.isCollapsed)
     }
 
     @ViewBuilder

@@ -14,7 +14,7 @@ struct TodaySortMenu: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Label("Sort: \(selection.title)", systemImage: "arrow.up.arrow.down")
+            Label(selection == .default ? "Sort" : selection.title, systemImage: "arrow.up.arrow.down")
                 .font(Theme.Font.metadata)
                 .lineLimit(1)
         }

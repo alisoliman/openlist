@@ -75,7 +75,7 @@ private struct TaskDetailContent: View {
     private func content(for block: Block) -> some View {
         ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
                 if let reveal {
                     ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
                 }
@@ -102,7 +102,7 @@ private struct TaskDetailContent: View {
                 }
                 subtaskSection(block)
                 attachmentSection(block)
-                TaskActivitySection(taskID: taskID)
+                TaskActivitySection(taskID: taskID, createdAt: block.createdAt, completedAt: block.completedAt)
                 DisclosureGroup(isExpanded: $showsScheduling) {
                     TaskSchedulingSection(block: block)
                         .padding(.top, 10)
@@ -111,7 +111,11 @@ private struct TaskDetailContent: View {
                         .font(Theme.Font.body)
                         .foregroundStyle(Theme.secondaryText)
                 }
-                .transaction { if reduceMotion { $0.disablesAnimations = true } }
+                .transaction {
+                    if !Theme.Motion.allowsAnimation(reduceMotion: reduceMotion, eventType: NSApp.currentEvent?.type) {
+                        $0.disablesAnimations = true
+                    }
+                }
                 footer(block)
             }
             .padding(20)
@@ -345,10 +349,10 @@ private struct TaskDetailContent: View {
 
     private func subtaskSection(_ block: Block) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                SectionLabel("Subtasks & notes")
-                Spacer()
-                if let progress = env.store.subtaskProgress(for: block) {
+            if let progress = env.store.subtaskProgress(for: block) {
+                HStack {
+                    SectionLabel("Subtasks & notes")
+                    Spacer()
                     SubtaskProgressChip(done: progress.done, total: progress.total)
                 }
             }
@@ -356,29 +360,12 @@ private struct TaskDetailContent: View {
             // The same outliner the list view uses, rooted at this task.
             DocumentView(
                 document: DocumentContext(listID: block.listID ?? UUID(), rootBlockID: block.id),
-                emptyPlaceholder: "Add a subtask, or press / for blocks",
+                emptyPlaceholder: "Add a subtask…",
                 showsCompleted: true,
                 seedsEmptyBlock: false,
-                trailingSpace: 12
+                appendButtonTitle: "Add subtask"
             )
             .id(block.id)
-
-            Button {
-                env.store.insertChild(kind: .task, of: block, at: .last)
-                env.store.save()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("Add subtask")
-                        .font(Theme.Font.metadata)
-                }
-                .foregroundStyle(Theme.secondaryText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
     }
 
@@ -389,12 +376,16 @@ private struct TaskDetailContent: View {
 
         return VStack(alignment: .leading, spacing: 5) {
             HStack {
-                SectionLabel("Files")
-                Spacer()
+                if !attachments.isEmpty {
+                    SectionLabel("Files")
+                    Spacer()
+                }
                 Button("Attach file", systemImage: "paperclip") {
                     presentFilePicker(for: block)
                 }
                 .buttonStyle(.plain)
+                .font(Theme.Font.metadata)
+                .foregroundStyle(Theme.secondaryText)
                 .help("Attach files")
                 .accessibilityLabel("Attach files to task")
             }
@@ -462,41 +453,28 @@ private struct TaskDetailContent: View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
 
-            HStack(spacing: 8) {
+            Menu {
                 CopyItemLinkButton(target: .task(taskID))
-                    .buttonStyle(.plain)
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.secondaryText)
                 InboxMembershipButton(block: block)
-                    .font(Theme.Font.metadata)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.secondaryText)
-
-                Spacer()
-
-                Button(role: .destructive) {
+                Divider()
+                Button("Delete task", role: .destructive) {
                     if env.store.trashBlocks([block], undoManager: NSApp.keyWindow?.undoManager) {
                         env.navigator.closeTask()
                     }
-                } label: {
-                    Text("Delete")
-                        .font(Theme.Font.metadata)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(ListAccent.red.color)
+            } label: {
+                Label("More", systemImage: "ellipsis")
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(Theme.secondaryText)
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Task actions")
+            .help("Copy link, Inbox, and delete")
 
             if let note = block.trashMetadata?.recoveryNote {
                 Text(note).font(.callout).foregroundStyle(Theme.secondaryText)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Created \(Store.absoluteDateText(block.createdAt, includesTime: true))")
-                if let completedAt = block.completedAt {
-                    Text("Completed \(Store.absoluteDateText(completedAt, includesTime: true))")
-                }
-            }
-            .font(.system(size: 10))
-            .foregroundStyle(Theme.tertiaryText)
         }
     }
 }

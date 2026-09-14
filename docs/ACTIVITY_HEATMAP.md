@@ -1,12 +1,15 @@
 # Activity heatmap
 
-Open **Activity** in the sidebar, View menu, or command palette to see the current
+Open **More → Activity** in the sidebar, or Activity in the View menu or command palette, to see the current
 calendar week and the previous 11 weeks. The grid follows the first-weekday
 preference and this Mac's current time zone. Each day is a keyboard-accessible
 button with its date and numeric count; selecting it shows the saved completion
 titles, list names, and local times. Numbers remain visible in every colored
 cell, so color is never the only way to read the grid. The legend uses fixed
 bands: 1, 2–3, 4–6, and 7 or more recorded completions.
+**About these counts** contains time-zone and counting details. Missing history
+and uncountable entries remain visible beside the grid rather than being hidden
+in that disclosure.
 
 ## What counts
 

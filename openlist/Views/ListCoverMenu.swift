@@ -28,9 +28,12 @@ struct ListCoverMenu: View {
             }
         } label: {
             Label(list.coverFilename == nil ? "Add cover" : "Cover", systemImage: "photo")
+                .labelStyle(.iconOnly)
                 .font(.callout)
+                .frame(width: 28, height: 28)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Choose a local image for this list")
         .accessibilityLabel(list.coverFilename == nil ? "Add list cover" : "List cover options")

@@ -8,7 +8,6 @@ struct CalendarDayColumn: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isDragging = false
-    @State private var recentCompletionIDs: Set<String> = []
     private var calendar: Calendar { .current }
     private var end: Date { calendar.date(byAdding: .day, value: 1, to: day) ?? day.addingTimeInterval(86400) }
     private var blocks: [PlannedBlock] {
@@ -55,7 +54,7 @@ struct CalendarDayColumn: View {
                     let task = env.store.block(id: block.taskID)
                     let listAccent = env.store.list(id: task?.listID)?.accent.color ?? Theme.accent
                     CalendarTaskBlock(block: block, height: height, task: task, listAccent: listAccent,
-                                      celebratesCompletion: recentCompletionIDs.contains(block.id), onMove: { location, translation in
+                                      onMove: { location, translation in
                                           // Preserve where the card was grabbed, so its final
                                           // placement matches the preview before five-minute snapping.
                                           onMove(block, CGPoint(x: location.x, y: y(max(day, block.start)) + translation.height))
@@ -63,8 +62,8 @@ struct CalendarDayColumn: View {
                         .frame(width: max(1, laneWidth - (placement.laneCount > 1 ? 3 : 0)), height: height)
                         .offset(x: 5 + CGFloat(placement.lane) * laneWidth, y: CGFloat(placement.top))
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
-                        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: block.start)
-                        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: block.end)
+                        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion, duration: Theme.Motion.rearrangementDuration), value: block.start)
+                        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion, duration: Theme.Motion.rearrangementDuration), value: block.end)
                 }
             }
             if calendar.isDateInToday(day) {
@@ -80,12 +79,7 @@ struct CalendarDayColumn: View {
         .background(Theme.chrome.opacity(0.22))
         .overlay(alignment: .leading) { Rectangle().fill(Theme.separator.opacity(0.45)).frame(width: 0.5) }
         .zIndex(isDragging ? 10 : 0)
-        .animation(reduceMotion ? .easeOut(duration: 0.18) : .smooth(duration: 0.3), value: completedIDs)
-        .onChange(of: completedIDs) { previous, current in
-            // Deliberately no initial callback: opening old history should not
-            // replay celebrations. Only newly completed visible work pulses.
-            recentCompletionIDs = Set(current).subtracting(previous)
-        }
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion, duration: Theme.Motion.rearrangementDuration), value: completedIDs)
     }
     private func availabilityBackground(_ category: AvailabilityCategory) -> some View {
         let windows = availableWindows(category)

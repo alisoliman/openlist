@@ -16,8 +16,6 @@ struct ActivityHeatmapView: View {
                     .accessibilityIdentifier("activity-total")
                 Text("Last 12 weeks · \(heatmap.start.formatted(date: .abbreviated, time: .omitted)) – \(heatmap.end.formatted(date: .abbreviated, time: .omitted))")
                     .font(.callout).foregroundStyle(.secondary)
-                Text("Dates use \(heatmap.calendar.timeZone.identifier).")
-                    .font(.callout).foregroundStyle(.secondary)
             }
 
             ScrollView(.horizontal) {
@@ -56,22 +54,29 @@ struct ActivityHeatmapView: View {
             .accessibilityLabel("Daily recorded completions")
             ActivityHeatmapLegend()
 
-            Text("History may be incomplete. A dash means no count is available, not a day with zero completions. Older or cleared history cannot be reconstructed; older recurring subtasks may be undercounted.")
-                .font(.callout).foregroundStyle(.secondary)
+            Text("A dash means history is unavailable, not zero completions.")
+                .font(Theme.Font.metadata).foregroundStyle(.secondary)
             if heatmap.unclassifiedCount > 0 {
-                Text("\(heatmap.unclassifiedCount) completion entries could not be counted because their history has missing or conflicting task, recurrence, occurrence, or date details.")
+                Text("\(heatmap.unclassifiedCount) entries could not be counted because their history is incomplete or conflicting.")
                     .font(.callout).foregroundStyle(.secondary)
                     .accessibilityIdentifier("activity-incomplete")
             }
             if heatmap.total == 0 {
-                ContentUnavailableView("No counted completions in this range", systemImage: "square.grid.3x3",
-                    description: Text("Complete a task to add local activity. History from before recording began, or after it was cleared, may be unavailable."))
+                ContentUnavailableView("No recorded completions", systemImage: "square.grid.3x3",
+                    description: Text("Earlier or cleared history may be unavailable."))
             }
             Divider()
             if let selectedDay { ActivityDayDetail(day: selectedDay) }
             Divider()
-            Text("Each ordinary task counts once across retained history; recurring tasks and subtasks count once per recorded cycle, on the first countable completion date. Reopening, Undo and Redo keep the recorded action without adding another count. Clear History in Updates removes these records too.")
-                .font(.callout).foregroundStyle(.secondary)
+            DisclosureGroup("About these counts") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Dates use \(heatmap.calendar.timeZone.identifier).")
+                    Text("Each task counts once; repeating tasks and subtasks count once per recorded cycle. Reopening, Undo, and Redo do not add another completion.")
+                    Text("Older or cleared history cannot be reconstructed, and older recurring subtasks may be undercounted. Clear History in Updates removes these records too.")
+                }
+                .padding(.top, 8)
+            }
+            .font(Theme.Font.metadata).foregroundStyle(.secondary)
         }
         .onChange(of: heatmap.start) { selectedDate = nil }
     }

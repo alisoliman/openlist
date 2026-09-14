@@ -34,12 +34,11 @@ struct InboxReviewView: View {
                     Label(dueDate.formatted(date: .abbreviated, time: task.includesTime ? .shortened : .omitted), systemImage: "calendar")
                         .font(.callout).foregroundStyle(.secondary)
                 }
-                Text("Move it to a list, give it a date, or keep it here for later.")
-                    .font(.callout).foregroundStyle(.secondary)
                 Divider()
                 HStack {
                     CaptureDestinationPicker(lists: env.store.allLists(), selection: $destinationID)
                     Button("Move to list") { move(task) }
+                        .help("Move to the chosen list (⇧⌘M)")
                         .keyboardShortcut("m", modifiers: [.command, .shift])
                         .disabled(destinationID == nil || destinationID == inbox.id)
                 }
@@ -49,6 +48,7 @@ struct InboxReviewView: View {
                     HStack {
                         Button("Set date") { schedule(task, date: scheduledDate) }
                         Button("Today") { schedule(task, date: .now) }
+                            .help("Schedule today and keep unfiled (⇧⌘T)")
                             .keyboardShortcut("t", modifiers: [.command, .shift])
                         Button("Tomorrow") {
                             schedule(task, date: Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now)
@@ -57,16 +57,15 @@ struct InboxReviewView: View {
                 }
                 HStack {
                     Button("Keep unfiled") { finish(task, notice: "Kept unfiled for later.", mutated: false) }
+                        .help("Keep for later (⇧⌘→)")
                         .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
                     Spacer()
                     Button("Open details") { env.navigator.openTask(task.id) }
                 }
-                Text("⇧⌘M move · ⇧⌘T today · ⇧⌘→ keep")
-                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Label("Unfiled review complete", systemImage: "checkmark.circle")
                     .font(.title3.weight(.semibold))
-                Text("Tasks you kept or scheduled remain unfiled. You can review them again whenever you’re ready.")
+                Text("Kept and scheduled tasks remain unfiled.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("Review again") { reviewed = []; notice = nil }
             }
@@ -82,7 +81,7 @@ struct InboxReviewView: View {
                 .background(Theme.chipFill, in: .rect(cornerRadius: 8))
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: queue.first?.id)
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion), value: queue.first?.id)
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.chipFill.opacity(0.45), in: .rect(cornerRadius: 14))

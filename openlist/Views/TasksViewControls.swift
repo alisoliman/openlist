@@ -1,33 +1,52 @@
 import SwiftUI
 
-/// Constraints stay available above results, including when there are none.
+/// One stable input row; only active constraints need a second line.
 struct TasksViewControls: View {
     @Binding var options: TasksViewOptions
     let lists: [TaskList]
     var onTitleFilterFocus: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TaskTitleFilter(query: $options.titleQuery, onFocus: onTitleFilterFocus)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { constraintMenus }
-                VStack(alignment: .leading, spacing: 8) { constraintMenus }
-            }
-            .font(Theme.Font.metadata)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                TaskTitleFilter(query: $options.titleQuery, onFocus: onTitleFilterFocus)
+                filterMenu
+                Menu {
+                    Picker("Group tasks by", selection: $options.grouping) {
+                        ForEach(TaskGrouping.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
                     TaskSortMenu(options: $options)
-                    Spacer(minLength: 12)
-                    resetButton
+                } label: {
+                    Label("View", systemImage: "slider.horizontal.3")
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    TaskSortMenu(options: $options)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .accessibilityLabel("Task view options")
+                .accessibilityValue("Grouped by \(options.grouping.title), \(options.sorting.summary(ascending: options.ascending))")
+                .help("Grouping and sorting")
+            }
+
+            if options.hasCustomFilters {
+                HStack(spacing: 8) {
+                    if options.filter != .open {
+                        Text(options.filter.title).chipStyle(accent: Theme.accent)
+                    }
+                    if let list = lists.first(where: { $0.id == options.listID }) {
+                        Button("Clear list filter", systemImage: "xmark.circle.fill") { options.listID = nil }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                        Text(list.displayTitle).lineLimit(1).foregroundStyle(Theme.secondaryText)
+                    }
+                    Spacer(minLength: 0)
                     resetButton
                 }
             }
         }
+        .font(Theme.Font.metadata)
     }
 
     private var resetButton: some View {
@@ -38,8 +57,7 @@ struct TasksViewControls: View {
             .accessibilityIdentifier("tasks-reset-filters")
     }
 
-    @ViewBuilder
-    private var constraintMenus: some View {
+    private var filterMenu: some View {
         Menu {
             Picker("Show tasks", selection: $options.filter) {
                 ForEach(TaskFilter.allCases) { option in
@@ -47,54 +65,21 @@ struct TasksViewControls: View {
                 }
             }
             .pickerStyle(.inline)
+            Divider()
+            Picker("Filter by list", selection: $options.listID) {
+                Text("All active lists").tag(nil as UUID?)
+                ForEach(lists) { list in
+                    Text(list.displayTitle).tag(Optional(list.id))
+                }
+            }
         } label: {
-            Label(options.filter.title, systemImage: "line.3.horizontal.decrease")
-                .chipStyle(accent: options.filter == .open ? nil : Theme.accent)
+            Label("Filter", systemImage: "line.3.horizontal.decrease")
+                .foregroundStyle(options.hasCustomFilters ? Theme.accent : Theme.secondaryText)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .accessibilityLabel("Show tasks")
-        .accessibilityValue(options.filter.title)
-
-        HStack(spacing: 4) {
-            Menu {
-                Picker("Filter by list", selection: $options.listID) {
-                    Text("All active lists").tag(nil as UUID?)
-                    ForEach(lists) { list in
-                        Text(list.displayTitle).tag(Optional(list.id))
-                    }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                let list = lists.first { $0.id == options.listID }
-                Text(list.map { "\($0.icon) \($0.displayTitle)" } ?? "All active lists")
-                    .lineLimit(1)
-                    .chipStyle(accent: list?.accent.color)
-            }
-            .menuStyle(.borderlessButton)
-            .accessibilityLabel("Filter by list")
-            .accessibilityValue(lists.first { $0.id == options.listID }?.displayTitle ?? "All active lists")
-            if options.listID != nil {
-                Button("Clear list filter", systemImage: "xmark.circle.fill") { options.listID = nil }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-            }
-        }
-
-        Menu {
-            Picker("Group tasks by", selection: $options.grouping) {
-                ForEach(TaskGrouping.allCases) { option in
-                    Text(option.title).tag(option)
-                }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            Text("Group: \(options.grouping.title)")
-                .chipStyle()
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .accessibilityLabel("Group tasks by")
-        .accessibilityValue(options.grouping.title)
+        .accessibilityLabel("Filter tasks")
+        .accessibilityValue("\(options.filter.title), \(lists.first { $0.id == options.listID }?.displayTitle ?? "All active lists")")
+        .help("Filter by status and list")
     }
 }

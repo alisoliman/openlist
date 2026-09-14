@@ -15,7 +15,12 @@ struct TaskInspectorMetadata: View {
     }
 
     private var liveContent: some View {
-        MetadataFlowLayout(spacing: 7) {
+        let labels = env.store.labels(for: block)
+        let names = labels.map(\.name).joined(separator: ", ")
+        let summary = labels.prefix(2).map(\.name).joined(separator: ", ")
+            + (labels.count > 2 ? " +\(labels.count - 2)" : "")
+
+        return MetadataFlowLayout(spacing: 7) {
             Menu {
                 ForEach(env.store.allLists()) { list in
                     Button("\(list.icon)  \(list.displayTitle)") {
@@ -26,7 +31,8 @@ struct TaskInspectorMetadata: View {
                 let list = env.store.list(id: block.listID)
                 Text("\(list?.icon ?? "") \(list?.displayTitle ?? "None")")
                     .lineLimit(1)
-                    .chipStyle(accent: list?.accent.color)
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(Theme.secondaryText)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -57,30 +63,35 @@ struct TaskInspectorMetadata: View {
                     }
                 }
             } label: {
-                Label(block.priority == .none ? "Priority" : block.priority.title, systemImage: "flag")
-                    .chipStyle(accent: block.priority.accent?.color)
+                if block.priority == .none {
+                    Image(systemName: "flag").chipStyle()
+                } else {
+                    Label(block.priority.title, systemImage: "flag.fill")
+                        .chipStyle(accent: block.priority.accent?.color)
+                }
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .accessibilityLabel("Task priority")
             .accessibilityValue(block.priority.title)
+            .help("Priority: \(block.priority.title)")
 
             Button { openPicker = .labels } label: {
-                Label("Labels", systemImage: "tag").chipStyle()
+                if labels.isEmpty {
+                    Image(systemName: "tag").chipStyle()
+                } else {
+                    Label(summary, systemImage: "tag")
+                        .lineLimit(1)
+                        .chipStyle(accent: labels.count == 1 ? labels.first?.accent.color : nil)
+                }
             }
             .buttonStyle(.plain)
             .focused($focusedPicker, equals: .labels)
-            .help("Edit labels (⌃L)")
+            .accessibilityLabel("Edit labels")
+            .accessibilityValue(labels.isEmpty ? "No labels" : names)
+            .help(labels.isEmpty ? "Add labels (⌃L)" : "\(names) · Edit labels (⌃L)")
             .popover(isPresented: labelsBinding, arrowEdge: .bottom) {
                 LabelPicker(block: block).environment(env)
-            }
-
-            ForEach(env.store.labels(for: block)) { label in
-                Button { openPicker = .labels } label: {
-                    Text(label.name).lineLimit(1).chipStyle(accent: label.accent.color)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Edit label \(label.name)")
             }
 
             if let recurrence = block.recurrence {

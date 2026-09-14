@@ -10,7 +10,7 @@ struct ActivityScreen: View {
 
     var body: some View {
         ScreenScaffold {
-            ScreenHeader(icon: "square.grid.3x3.fill", title: "Activity", subtitle: "Recorded task completions") {
+            ScreenHeader(icon: "square.grid.3x3.fill", title: "Activity") {
                 Button("Refresh activity", systemImage: "arrow.clockwise", action: refresh)
                     .labelStyle(.iconOnly)
                     .help("Refresh activity")

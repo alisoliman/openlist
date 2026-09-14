@@ -5,7 +5,6 @@ struct CalendarTaskBlock: View {
     let height: CGFloat
     let task: Block?
     let listAccent: Color
-    var celebratesCompletion = false
     let onMove: (CGPoint, CGSize) -> Void
     let onDragging: (Bool) -> Void
     @Environment(AppEnvironment.self) private var env
@@ -14,7 +13,6 @@ struct CalendarTaskBlock: View {
     @State private var showsMove = false
     @State private var showsDeferral = false
     @State private var showsHistory = false
-    @State private var completionPulse = 0
     @GestureState private var dragOffset = CGSize.zero
     private var title: String { block.titleSnapshot ?? task?.displayTitle ?? "Task" }
     private var accent: Color {
@@ -87,16 +85,9 @@ struct CalendarTaskBlock: View {
                 },
             including: block.isCompleted ? .none : .all
         )
-        .task(id: celebratesCompletion) {
-            guard celebratesCompletion, !reduceMotion else { return }
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            completionPulse += 1
-        }
         .onChange(of: dragOffset) { _, value in onDragging(value != .zero) }
         .onHover { isHovering = $0 }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
-        .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.3), value: block.isCompleted)
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion), value: block.isCompleted)
         .help(([title, status, timeSummary] + block.conflicts).joined(separator: "\n"))
         .accessibilityLabel("\(title), \(block.start.formatted(date: .abbreviated, time: .shortened)), \(block.isCompleted && !block.isTimeTracked ? "time not tracked" : duration + " minutes")\(block.isPinned ? ", pinned" : "")")
         .accessibilityValue(([status] + block.conflicts).joined(separator: ". "))
@@ -127,7 +118,6 @@ struct CalendarTaskBlock: View {
     @ViewBuilder private var statusIcons: some View {
         if block.isCompleted {
             Image(systemName: "checkmark.circle.fill")
-                .symbolEffect(.bounce, options: .nonRepeating, value: completionPulse)
         } else {
             if block.isActive { Image(systemName: "play.fill") }
             if block.isPinned { Image(systemName: "pin.fill") }

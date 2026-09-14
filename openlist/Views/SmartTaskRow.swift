@@ -74,7 +74,8 @@ struct SmartTaskRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            RowSelectionGutter(id: block.id, title: block.displayTitle, isPrimaryAppearance: isPrimaryAppearance)
+            RowSelectionGutter(id: block.id, title: block.displayTitle, isPrimaryAppearance: isPrimaryAppearance,
+                isRevealed: isHovering)
             TaskCheckbox(
                 isCompleted: block.isCompleted,
                 accent: owningList?.accent.color ?? Theme.accent,
@@ -169,9 +170,10 @@ struct SmartTaskRow: View {
             } label: {
                 Text("\(owningList.icon) \(owningList.displayTitle)")
                     .lineLimit(1)
-                    .chipStyle(accent: owningList.accent.color)
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(Theme.secondaryText)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(QuietButtonStyle())
             .help("Open \(owningList.displayTitle)")
         }
     }
@@ -300,7 +302,7 @@ struct TaskGroupSection<Footer: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { isExpanded.toggle() }
+                withAnimation(Theme.Motion.feedback(reduceMotion: reduceMotion)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right")
@@ -350,7 +352,8 @@ struct TaskGroupSection<Footer: View>: View {
         .padding(.bottom, 10)
         .preference(key: VisibleSelectionIDsKey.self,
             value: [VisibleSelectionGroup(id: selectionGroupID, blockIDs: isExpanded ? tasks.map(\.id) : [])])
-        .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1), value: tasks.map(\.id))
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion, duration: Theme.Motion.rearrangementDuration),
+                   value: tasks.map(\.id))
     }
 }
 

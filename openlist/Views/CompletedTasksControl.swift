@@ -26,9 +26,10 @@ struct CompletedTasksControl: View {
     var body: some View {
         if completed.isEmpty {
             visibilityMenu {
-                Label("Completed", systemImage: "checkmark.circle")
+                Image(systemName: "checkmark.circle")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.secondaryText)
+                    .frame(width: 24, height: 24)
             }
             .help("No completed tasks. Choose how finished tasks appear in this list.")
         } else {
@@ -37,35 +38,32 @@ struct CompletedTasksControl: View {
     }
 
     private var populatedControl: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 4) {
             Button {
                 env.store.setShowsCompleted(!showsCompleted, for: list)
             } label: {
                 HStack(spacing: 6) {
-                    Text("Completed (\(completed.count))")
-                    Text(showsCompleted ? "Hide" : "Show")
-                        .foregroundStyle(Theme.secondaryText)
+                    Image(systemName: showsCompleted ? "checkmark.circle.fill" : "checkmark.circle")
+                    Text("\(completed.count) completed")
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(QuietButtonStyle())
+            .foregroundStyle(Theme.secondaryText)
             .accessibilityLabel("\(showsCompleted ? "Hide" : "Show") \(completed.count) completed tasks")
             .accessibilityValue(showsCompleted ? (showsAsTaskQueue ? "Shown in task queue" : "Shown in outline") : "Hidden")
             .help(showsAsTaskQueue
                 ? "Completed tasks follow the same sort order. Subtasks are filtered independently."
                 : "Completed tasks appear below pending tasks, with their subtasks and notes")
 
-            Spacer(minLength: 4)
-
             visibilityMenu {
-                Text(list.completedVisibility == .inherit ? "App default" : "This list")
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .frame(width: 20, height: 24)
                     .foregroundStyle(Theme.secondaryText)
             }
         }
         .font(Theme.Font.metadata)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Theme.chipFill, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func visibilityMenu<Label: View>(@ViewBuilder label: () -> Label) -> some View {
@@ -79,6 +77,7 @@ struct CompletedTasksControl: View {
             label()
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Completed task visibility for this list")
         .accessibilityValue(list.completedVisibility.title)

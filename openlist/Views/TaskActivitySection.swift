@@ -3,19 +3,39 @@ import SwiftUI
 
 struct TaskActivitySection: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let taskID: UUID
+    var createdAt: Date?
+    var completedAt: Date?
     @State private var isExpanded = false
     @State private var limit = 50
 
     var body: some View {
         DisclosureGroup("Activity", isExpanded: $isExpanded) {
             if isExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let createdAt {
+                        Text("Created \(Store.absoluteDateText(createdAt, includesTime: true))")
+                    }
+                    if let completedAt {
+                        Text("Completed \(Store.absoluteDateText(completedAt, includesTime: true))")
+                    }
+                }
+                .font(Theme.Font.metadata)
+                .foregroundStyle(Theme.secondaryText)
+                .padding(.top, 8)
                 TaskActivityPage(taskID: taskID, limit: limit, excluded: Array(env.store.uncommittedActivityIDs)) { limit += 50 }
                     .padding(.top, 8)
             }
         }
         .font(Theme.Font.body)
         .accessibilityIdentifier("task-activity")
+        .help("Newest first. Clear History in Updates also clears task activity.")
+        .transaction {
+            if !Theme.Motion.allowsAnimation(reduceMotion: reduceMotion, eventType: NSApp.currentEvent?.type) {
+                $0.disablesAnimations = true
+            }
+        }
     }
 }
 
@@ -41,7 +61,6 @@ private struct TaskActivityPage: View {
                 Text("No recorded activity for this task.")
                     .foregroundStyle(Theme.secondaryText)
             } else {
-                Text("Newest first").font(Theme.Font.metadata).foregroundStyle(Theme.tertiaryText)
                 ForEach(events.prefix(limit)) { event in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: event.kind.symbol)
@@ -66,7 +85,7 @@ private struct TaskActivityPage: View {
                         .accessibilityIdentifier("task-activity-load-older")
                 }
             }
-            Text("Earlier events may lack before/after details. Clear History in Updates removes this history too.")
+            Text("Older events may have fewer details.")
                 .font(Theme.Font.metadata).foregroundStyle(Theme.tertiaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

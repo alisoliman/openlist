@@ -13,7 +13,6 @@ struct CalendarCompletionFeedback: View {
                 HStack(spacing: 10) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(ListAccent.green.color)
-                        .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? nil : visibleID)
                     Text(action.feedback)
                         .font(.callout).lineLimit(1)
                     Button("Undo") { _ = env.store.undoCompletion(action.id) }
@@ -25,12 +24,12 @@ struct CalendarCompletionFeedback: View {
                 .overlay(Capsule().stroke(Theme.separator, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
                 .padding(.horizontal, 20).padding(.bottom, 40)
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
+                .transition(.opacity)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(action.isReopening ? "Tasks reopened" : "Tasks completed")
             }
         }
-        .animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.25), value: visibleID)
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion), value: visibleID)
         .task(id: env.store.completionUndo?.id) {
             guard let action = env.store.completionUndo else { visibleID = nil; return }
             let remaining = action.expiresAt.timeIntervalSinceNow

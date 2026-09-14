@@ -32,7 +32,6 @@ private struct SearchContentView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var options = SearchOptions()
     @State private var selection = SearchResultSelection()
     @State private var unavailable: String?
@@ -40,6 +39,17 @@ private struct SearchContentView: View {
     @FocusState private var focusedResult: SearchDestination?
 
     private var destinations: [SearchDestination] { session.hits.map(\.id) }
+    private var hasCustomFilters: Bool {
+        let defaults = SearchOptions()
+        return options.scope != defaults.scope || options.includesCompleted != defaults.includesCompleted
+            || options.includesArchived != defaults.includesArchived
+    }
+    private var filterSummary: String {
+        var parts = [options.scope.title]
+        if !options.includesCompleted { parts.append("Open only") }
+        parts.append(options.includesArchived ? "Including archived" : "Active lists")
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,8 +64,7 @@ private struct SearchContentView: View {
                     .accessibilityIdentifier("search-unavailable")
             }
             if options.needle.isEmpty {
-                EmptyStateView(icon: "magnifyingglass", title: "Search everything",
-                    message: "Find tasks, notes and lists by name or content.")
+                EmptyStateView(icon: "magnifyingglass", title: "Find a task, note, or list")
                     .frame(maxHeight: .infinity)
             } else if session.isSearching || session.options != options {
                 ProgressView("Searching…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,10 +76,9 @@ private struct SearchContentView: View {
                 results
                 Divider()
                 HStack {
-                    Text("Showing \(min(selection.limit, session.hits.count)) of \(session.hits.count) results")
+                    Text("\(min(selection.limit, session.hits.count)) of \(session.hits.count) results")
                         .accessibilityIdentifier("search-result-count")
                     Spacer()
-                    Text("↑↓ choose · Return open · Esc close")
                 }
                 .font(Theme.Font.metadata)
                 .foregroundStyle(Theme.secondaryText)
@@ -109,6 +117,7 @@ private struct SearchContentView: View {
                     .focused($isFieldFocused)
                     .accessibilityIdentifier("search-query")
                     .accessibilityLabel("Search tasks, notes and lists")
+                    .accessibilityHint("Use arrow keys to choose a result and Return to open it.")
                     .onSubmit { activate(selection.selected ?? destinations.first) }
                     .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
                     .onKeyPress(.downArrow) { moveSelection(1); return .handled }
@@ -119,18 +128,43 @@ private struct SearchContentView: View {
                         isFieldFocused = true
                     }.labelStyle(.iconOnly).buttonStyle(.plain)
                 }
+                Menu {
+                    Picker("Search scope", selection: $options.scope) {
+                        ForEach(SearchOptions.Scope.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Toggle("Include completed", isOn: $options.includesCompleted)
+                    Toggle("Include archived", isOn: $options.includesArchived)
+                    if hasCustomFilters {
+                        Divider()
+                        Button("Reset filters") {
+                            let query = options.query
+                            options = SearchOptions()
+                            options.query = query
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .foregroundStyle(hasCustomFilters ? Theme.accent : Theme.secondaryText)
+                        .frame(width: 28, height: 28)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("Search filters")
+                .accessibilityValue(filterSummary)
+                .help("Filter by type, completion, or archive")
                 Button("Close search", systemImage: "xmark") { dismiss() }
                     .labelStyle(.iconOnly).buttonStyle(.plain)
                     .keyboardShortcut(.cancelAction)
             }
-            Picker("Search scope", selection: $options.scope) {
-                ForEach(SearchOptions.Scope.allCases) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented).labelsHidden()
-            HStack(spacing: 18) {
-                Toggle("Include completed", isOn: $options.includesCompleted)
-                Toggle("Include archived", isOn: $options.includesArchived)
-                Spacer(minLength: 0)
-            }.toggleStyle(.checkbox).font(.callout)
+            if hasCustomFilters {
+                Text(filterSummary)
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -165,7 +199,7 @@ private struct SearchContentView: View {
                 guard let id = selection.selected else { return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.1)) { proxy.scrollTo(id, anchor: .center) }
+                proxy.scrollTo(id, anchor: .center)
             }
         }
     }

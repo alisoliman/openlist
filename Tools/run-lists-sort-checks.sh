@@ -10,6 +10,7 @@ xcrun swiftc \
     openlist/Model/ListCover.swift openlist/Model/TaskList.swift openlist/Model/ListHierarchy.swift openlist/Model/TrashMetadata.swift \
     openlist/Model/ListGallerySorting.swift \
     Shared/ListAccent.swift \
+    openlist/Model/BlockKind.swift openlist/Design/Theme.swift \
     openlist/Views/ListGallerySortMenu.swift \
     Tools/ListsSortChecks/main.swift
 

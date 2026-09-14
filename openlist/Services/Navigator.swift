@@ -163,11 +163,13 @@ final class Navigator {
     private var forwardStack: [AppRoute] = []
     @ObservationIgnored private var scrollOffsets: [AppRoute: CGFloat] = [:]
 
-    func scrollOffset(for route: AppRoute) -> CGFloat { scrollOffsets[route] ?? 0 }
+    func scrollOffset(for route: AppRoute) -> CGFloat? { scrollOffsets[route] }
 
     func rememberScrollOffset(_ offset: CGFloat, for route: AppRoute) {
         guard offset.isFinite else { return }
-        scrollOffsets[route] = max(0, offset)
+        // ScrollPosition uses native content coordinates, including the
+        // negative offset at the top beneath a macOS toolbar.
+        scrollOffsets[route] = offset
     }
 
     var canGoBack: Bool { !backStack.isEmpty }

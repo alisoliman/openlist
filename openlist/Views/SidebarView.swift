@@ -6,7 +6,7 @@
 import SwiftData
 import SwiftUI
 
-/// The left rail: five fixed destinations, then user sections of lists.
+/// Daily destinations stay visible; history and maintenance live in More.
 struct SidebarView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -28,6 +28,7 @@ struct SidebarView: View {
     @State private var dropTargetSectionID: UUID?
     @State private var renamingListID: UUID?
     @State private var listNameDraft = SyncedTextDraft()
+    @AppStorage("sidebar.showsMore", store: ReviewSession.defaults) private var showsMore = false
 
     var body: some View {
         // The sidebar is always on screen and re-renders on every task change,
@@ -70,6 +71,9 @@ struct SidebarView: View {
         .onChange(of: env.store.list(id: renamingListID)?.title) { _, title in
             if let title { listNameDraft.receive(title) }
         }
+        .onChange(of: env.navigator.route, initial: true) { _, route in
+            if [.updates, .activity, .completed, .trash].contains(route) { showsMore = true }
+        }
     }
 
     // MARK: - Fixed destinations
@@ -104,20 +108,6 @@ struct SidebarView: View {
             ) { env.navigator.go(to: .calendar) }
 
             SidebarRow(
-                icon: "sparkles",
-                title: "Updates",
-                accent: .violet,
-                badge: 0,
-                isSelected: env.navigator.route == .updates,
-                shortcutHint: "⌘3"
-            ) { env.navigator.go(to: .updates) }
-
-            SidebarRow(icon: "square.grid.3x3.fill", title: "Activity", accent: .violet, badge: 0,
-                isSelected: env.navigator.route == .activity, shortcutHint: nil) {
-                env.navigator.go(to: .activity)
-            }
-
-            SidebarRow(
                 icon: "checklist",
                 title: "Tasks",
                 accent: .green,
@@ -134,9 +124,45 @@ struct SidebarView: View {
                 isSelected: env.navigator.route == .lists,
                 shortcutHint: "⌘5"
             ) { env.navigator.go(to: .lists) }
-            SidebarRow(icon: "trash", title: "Trash", accent: .graphite, badge: 0,
-                isSelected: env.navigator.route == .trash, shortcutHint: nil) {
-                env.navigator.go(to: .trash)
+            Button {
+                showsMore.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "ellipsis").frame(width: 16)
+                    Text("More")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .rotationEffect(.degrees(showsMore ? 90 : 0))
+                }
+                .font(Theme.Font.sidebar)
+                .foregroundStyle(Theme.secondaryText)
+                .padding(.horizontal, 8)
+                .frame(height: Theme.Spacing.sidebarRowHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(QuietButtonStyle())
+            .accessibilityLabel("More destinations")
+            .accessibilityValue(showsMore ? "Expanded" : "Collapsed")
+            .help("Updates, activity, completed tasks, and Trash")
+
+            if showsMore {
+                SidebarRow(icon: "sparkles", title: "Updates", accent: .violet, badge: 0,
+                    isSelected: env.navigator.route == .updates, shortcutHint: "⌘3") {
+                    env.navigator.go(to: .updates)
+                }
+                SidebarRow(icon: "square.grid.3x3.fill", title: "Activity", accent: .violet, badge: 0,
+                    isSelected: env.navigator.route == .activity, shortcutHint: nil) {
+                    env.navigator.go(to: .activity)
+                }
+                SidebarRow(icon: "checkmark.circle", title: "Completed", accent: .green, badge: 0,
+                    isSelected: env.navigator.route == .completed, shortcutHint: nil) {
+                    env.navigator.go(to: .completed)
+                }
+                SidebarRow(icon: "trash", title: "Trash", accent: .graphite, badge: 0,
+                    isSelected: env.navigator.route == .trash, shortcutHint: nil) {
+                    env.navigator.go(to: .trash)
+                }
             }
         }
         .padding(.bottom, Theme.Spacing.sectionGap - 6)
@@ -441,9 +467,10 @@ struct SidebarRow: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(QuietButtonStyle())
         .onHover { isHovering = $0 }
         .help(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

@@ -90,10 +90,10 @@ the completion date, ending never / on a date / after N times), labels, priority
 stars, and progress rollups from subtasks.
 Completing a repeating task rolls it forward to the next occurrence rather than
 marking it done.
-Completion is silent: the checkbox gives a brief visual acknowledgement, then
-completed tasks settle below pending siblings. Each task carries its subtasks
-and attached notes. Manual order stays stored, so reopening restores its place.
-Reduce Motion uses an immediate state change without the bounce or movement.
+Completion is silent. Pointer actions give a brief checkbox acknowledgement
+and settle completed tasks below pending siblings without a delay or bounce.
+Keyboard actions and Reduce Motion update immediately. Each task carries its
+subtasks and attached notes; reopening restores its stored manual position.
 
 In **Settings → Labels**, renaming into an existing name offers a merge review
 with the surviving label's name, color, and affected-task count. Matching trims
@@ -184,11 +184,24 @@ text instead of being silently discarded. No multi-selection UI is added here.
 overdue, due-today, planned-for-today, and starred work; Tasks filters and groups
 by date, list, label or priority; Updates is a personal activity feed grouped by day.
 
+Inbox, Today, Calendar, Tasks, and Lists stay visible in the sidebar.
+**More** contains Updates, Activity, Completed, and Trash. Its expansion is
+remembered on this Mac; navigating to a destination inside it reveals that row.
+The toolbar's **+** is the shared task capture action on every page.
+
 Task details include a paginated **Activity** timeline with committed title,
 date/time, completion, recurrence, and list-move changes. It shares history with
 Updates; **Clear History** clears both after confirmation. Older entries retain
 only the facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md)
 for save, retention, and export behavior.
+
+The inspector keeps the title and active metadata above notes and subtasks.
+Empty notes and files use add actions rather than empty forms. Creation and
+completion timestamps are inside **Activity**; **More** contains Copy Link,
+Inbox membership, and Delete. Priority and label controls remain named for
+accessibility, and long label collections show a compact summary.
+**Add subtask** uses the document editor's insertion and Undo path, placing the
+caret in the new subtask immediately.
 
 The sidebar's **Activity** heatmap shows 12 weeks of recorded completions with
 daily counts and saved task details. Ordinary tasks count once; recurring tasks
@@ -203,10 +216,12 @@ task ordering within each section. Equal values use creation date, then task ide
 ties. This Mac remembers the choice; task membership, list documents, and synced
 list preferences stay unchanged.
 
-Tasks has a local **Filter task titles** field that combines with the selected
-status and list. It matches visible titles without case or accent differences;
+Tasks has a local **Filter task titles** field and a **Filter** menu for status
+and list. It matches visible titles without case or accent differences;
 notes, labels and parent titles are not searched. **Sort tasks** independently
 orders every group by due date, title or creation date in either direction.
+Grouping and **Sort tasks** live in **View**. Only active filters add a second
+control line; clearing the last filter returns to the compact default.
 Undated tasks stay last in due-date order; equal values use creation time then
 task identity for stable ties. The page count counts each matching task once,
 even when it appears under several labels. **Reset filters** clears title,
@@ -246,6 +261,8 @@ upgrade, previously hidden lists stay hidden and lists using the historical
 shown default adopt inheritance. Older versions did not distinguish an explicit
 Show choice from that default. Inbox continues to inherit the app setting.
 The default stays on each Mac; explicit list overrides sync with the list.
+This compact control sits beside Document / Tasks. Its adjacent menu chooses
+the visibility policy; an empty list uses the completed icon without a zero count.
 
 Each list also has a **Document / Tasks** switch, remembered per list on this
 Mac. Document keeps headings, notes, images and nested content. Tasks hides that
@@ -274,12 +291,30 @@ native interaction checks.
 tasks, notes and lists, ⇧⌥Space global quick-add from any app, and a menu bar
 popover. ⌘/ shows the full shortcut reference.
 
+Capture keeps the destination visible and previews detected dates, repeats,
+and labels. Per-draft date detection lives in **Capture options** (the ellipsis);
+the default is in Settings → Tasks. Return adds the task, and Escape cancels.
+Navigation, command selection, and keyboard scrolling do not animate. Custom
+pointer feedback lasts 140 ms; task rearrangement lasts 200 ms. Reduce Motion
+disables custom movement.
+Back restores native scroll coordinates, including the negative offset beneath
+the toolbar, so returning to a page does not clip its heading or accumulate drift.
+Routine rescheduling summaries stay in Calendar; active-work controls, save
+failures, and actionable warnings remain available across the app.
+
+Row-selection handles reveal on hover, selection, or keyboard focus without
+changing the row's hit target. They stay available to accessibility, and
+VoiceOver keeps them visible. Command-click, Shift-click, and arrow selection
+retain their existing behavior; a task's round checkbox still means completion.
+
 Search shows an honest total and loads results in batches of 80; **Load next**
 and the arrow keys can reach every match. **Include completed** and **Include
 archived** start on, retaining access to existing content. The Notes scope finds
 non-task blocks; notes attached to tasks also match in All and Tasks. Matching
 ignores case, accents and character width, and results include their list,
 ancestor path and a matching passage when needed.
+The **Search filters** button contains type, completion, and archive controls.
+Non-default filters remain summarized below the query; Reset filters keeps the query.
 
 Opening a result resolves its current identity. Tasks open their inspector and
 reveal the matching title or note; other blocks open their owning list, scroll
@@ -368,6 +403,8 @@ Choose **Claude Desktop / stdio** or **VS Code / HTTP** in Settings, merge the
 copied configuration into your client's MCP settings, and reconnect. Other local
 clients can use the bundled stdio launcher or the Streamable HTTP endpoint with
 its bearer token.
+Client setup appears after MCP is enabled. **Connection options** contains the
+port and token-reset controls; access and token warnings remain visible.
 
 Keep copied configurations private: they contain your access token. Turning MCP
 off disconnects clients; resetting the token revokes old configurations. Connected

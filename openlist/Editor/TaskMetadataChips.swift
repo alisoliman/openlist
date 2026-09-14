@@ -27,7 +27,7 @@ struct TaskMetadataChips: View {
                 SubtaskProgressChip(done: progress.done, total: progress.total)
             }
 
-            ForEach(labels) { label in
+            ForEach(labels.prefix(2)) { label in
                 Button { onTapLabel(label) } label: {
                     Text(label.name)
                         .lineLimit(1)
@@ -37,6 +37,13 @@ struct TaskMetadataChips: View {
                 .buttonStyle(.plain)
                 .help("Label: \(label.name)")
                 .accessibilityLabel("Edit label \(label.name)")
+            }
+            if labels.count > 2 {
+                Button("+\(labels.count - 2)") { onTapLabel(labels[2]) }
+                    .buttonStyle(.plain)
+                    .chipStyle()
+                    .accessibilityLabel("Edit \(labels.count - 2) more labels")
+                    .help(labels.dropFirst(2).map(\.name).joined(separator: ", "))
             }
 
             if block.recurrence != nil {
@@ -155,7 +162,10 @@ struct TaskCheckbox: View {
 
     var body: some View {
         Button {
-            if !isCompleted { acknowledgeCompletion() }
+            if !isCompleted,
+               Theme.Motion.allowsAnimation(reduceMotion: reduceMotion, eventType: NSApp.currentEvent?.type) {
+                acknowledgeCompletion()
+            }
             else { isAcknowledging = false }
             action()
         } label: {
@@ -167,32 +177,29 @@ struct TaskCheckbox: View {
                 Circle()
                     .fill(accent)
                     .frame(width: 15, height: 15)
-                    .scaleEffect(showsCheckmark ? 1 : 0)
+                    .opacity(showsCheckmark ? 1 : 0)
                 Image(systemName: "checkmark")
                     .font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(showsCheckmark ? Color.white : accent.opacity(0.55))
                     .opacity(showsCheckmark || isHovering ? 1 : 0)
-                    .scaleEffect(showsCheckmark ? 1 : 0.7)
             }
             .frame(width: 18, height: 18)
             .contentShape(Rectangle())
             .accessibilityHidden(true)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(QuietButtonStyle())
         .accessibilityLabel(isCompleted ? "Reopen task" : "Complete task")
         .accessibilityValue(isCompleted ? "Completed" : "Pending")
         .onHover { isHovering = $0 }
-        .animation(reduceMotion ? nil : .spring(duration: 0.24, bounce: 0.2), value: showsCheckmark)
-        .modifier(TaskCompletionFeedback(trigger: completionPulse, accent: accent))
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion), value: showsCheckmark)
         .onChange(of: isCompleted) { _, completed in
-            if completed && !isAcknowledging { acknowledgeCompletion() }
             if !completed { isAcknowledging = false }
         }
         .task(id: completionPulse) {
             guard completionPulse > 0 else { return }
             // Also acknowledges a repeating occurrence, whose model remains
             // pending. This never delays the save or schedules a data mutation.
-            do { try await Task.sleep(for: .milliseconds(380)) }
+            do { try await Task.sleep(for: .milliseconds(180)) }
             catch { return }
             isAcknowledging = false
         }

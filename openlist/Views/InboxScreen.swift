@@ -18,16 +18,15 @@ struct InboxScreen: View {
             let members = policy.ordered(live, showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks))
             let context = TaskRowContext(tasks: live, lists: lists, labels: labels)
             ScreenScaffold {
-                ScreenHeader(icon: "tray", title: "Inbox",
-                    subtitle: navigator.showsUnfiledInbox ? "Your original capture document, including tasks and notes" : "Selected tasks, kept in their original lists") {
-                    Button("New task", systemImage: "plus") { env.presentTaskCapture() }
-                        .help("Capture an unfiled task (⌘N)")
-                }
+                ScreenHeader(icon: "tray", title: "Inbox")
                 Picker("Inbox view", selection: $navigator.showsUnfiledInbox) {
-                    Text("Selected tasks").tag(false)
-                    Text("Unfiled content").tag(true)
+                    Text("Selected").tag(false).help("Selected tasks stay in their original lists")
+                    Text("Unfiled").tag(true).help("Your original capture document, including tasks and notes")
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityValue(navigator.showsUnfiledInbox ? "Unfiled content" : "Selected tasks")
                 .padding(.top, 12)
             } content: {
                 if navigator.showsUnfiledInbox {
@@ -50,8 +49,8 @@ struct InboxScreen: View {
                             .padding(.vertical, 12)
                     }
                     if members.isEmpty {
-                        Text("Capture a task, or use Add to Inbox on a task in any list. Removed tasks stay in their source and in Tasks.")
-                            .font(.callout).foregroundStyle(.secondary).padding(.vertical, 20)
+                        EmptyStateView(icon: "tray", title: "Your Inbox is clear",
+                            message: "Add a task, or choose Add to Inbox from any list.")
                     }
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(members) { task in
@@ -72,7 +71,8 @@ struct InboxScreen: View {
 
     private func queueControls(inbox: TaskList, count: Int) -> some View {
         HStack {
-            Text("\(count) open · Manual order").font(Theme.Font.metadata).foregroundStyle(.secondary)
+            Text("\(count) open").font(Theme.Font.metadata).foregroundStyle(.secondary)
+                .help("Drag tasks to reorder this Inbox without changing their lists")
             Spacer()
             Menu("Completed") {
                 ForEach(TaskList.CompletedVisibility.allCases) { preference in
@@ -92,14 +92,7 @@ struct InboxScreen: View {
     private func queueRow(_ task: Block, members: [Block], context: TaskRowContext) -> some View {
         let index = members.firstIndex(where: { $0.id == task.id }) ?? 0
         return HStack(alignment: .top, spacing: 4) {
-            VStack(alignment: .leading, spacing: 0) {
-                SmartTaskRow(block: task, context: context)
-                if context.list(for: task)?.isSystemInbox == true {
-                    Button("Unfiled content") { env.navigator.showsUnfiledInbox = true }
-                        .font(Theme.Font.metadata).buttonStyle(.plain).foregroundStyle(.secondary)
-                        .padding(.leading, 32)
-                }
-            }
+            SmartTaskRow(block: task, context: context)
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
                 .frame(width: 20, height: 26)
@@ -108,6 +101,9 @@ struct InboxScreen: View {
                 .accessibilityLabel("Reorder \(task.displayTitle) in Inbox")
             Menu {
                 InboxMembershipButton(block: task)
+                if context.list(for: task)?.isSystemInbox == true {
+                    Button("Show unfiled content") { env.navigator.showsUnfiledInbox = true }
+                }
                 Divider()
                 Button("Move earlier in Inbox") {
                     move(task.id, before: members[index - 1].id)

@@ -38,13 +38,14 @@ struct TaskReminderStatus: View {
                 } else {
                     let status = recovery.statuses[block.id] ?? .checking
                     Label(recovery.title(for: status), systemImage: status.needsRecovery ? "bell.badge" : "bell")
-                    if let date { Text(Store.absoluteDateText(date, includesTime: true)) }
+                        .accessibilityValue(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "")
+                        .help(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "Reminder status")
                     if case .failed(let message) = status { Text(message).textSelection(.enabled) }
                     if let error = recovery.authorizationError { Text(error) }
                     ReminderRecoveryActions(taskID: block.id, status: status)
                     if recovery.isSimulated { Text("Review simulation only. No macOS notification is scheduled or displayed.") }
                     if status == .accepted && !recovery.isSimulated {
-                        Text("macOS reports a pending request. Focus and system settings can affect when it is shown.")
+                        Text("Delivery depends on Focus and system settings.")
                     }
                 }
             }
