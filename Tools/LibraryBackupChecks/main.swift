@@ -58,7 +58,7 @@ if phase.hasPrefix("crash-") || phase == "resume-journal" {
     fatalError("Crash checkpoint was not reached")
 }
 
-if phase == "mutate-scalars" || phase == "mutate-media" {
+if phase == "mutate-scalars" || phase == "mutate-media" || phase == "mutate-cover" {
     let schema = AppPersistence.schema
     let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema,
         url: root.appendingPathComponent("Source.store"), cloudKitDatabase: .none)])
@@ -69,6 +69,12 @@ if phase == "mutate-scalars" || phase == "mutate-media" {
         let block = try context.fetch(FetchDescriptor<Block>()).first { $0.text == "Completed repeating task" }!
         list.title = "List committed after snapshot"
         block.text = "Task committed after snapshot"
+    } else if phase == "mutate-cover" {
+        let list = try context.fetch(FetchDescriptor<TaskList>()).first { $0.coverFilename == "cover-original.png" }!
+        list.coverData = Data("new cover after snapshot".utf8)
+        var metadata = list.coverMetadata!
+        metadata.byteCount = list.coverData!.count
+        list.coverMetadataData = try JSONEncoder().encode(metadata)
     } else {
         let image = try context.fetch(FetchDescriptor<Block>()).first { $0.mediaFilename == "image-original.png" }!
         image.mediaData = Data("new blob after snapshot".utf8)
@@ -104,6 +110,10 @@ list.sectionID = section.id; list.isPinned = true; list.isArchived = true
 list.sortIndex = 8.125; list.sidebarIndex = 4.125; list.sorting = .priority
 list.completedVisibility = .hide; list.availabilityCategoryRaw = "personal"
 list.lastOpenedAt = fixedDate
+list.coverFilename = "cover-original.png"
+list.coverData = Data(repeating: 0x42, count: 1_048_611)
+list.coverMetadataData = try JSONEncoder().encode(ListCoverMetadata(displayName: "Garden.png", contentType: "image/png", byteCount: 1_048_611, pixelWidth: 800, pixelHeight: 600))
+list.coverPresentationRaw = ListCoverPresentation.hidden.rawValue
 let aliasList = TaskList(title: "Old Inbox", isSystemInbox: true)
 aliasList.mergedIntoID = inbox.id
 let label = TaskLabel(name: "#Long label", accent: .orange, sortIndex: 2.5)
@@ -172,13 +182,19 @@ let validated = try LibraryBackupPackage.read(at: package)
 var hydrated = snapshot
 hydrated.blocks[hydrated.blocks.firstIndex { $0.id == legacyImage.id }!].mediaData = legacyBytes
 check(validated.snapshot == hydrated, "Logical package preserves every field and loads legacy media bytes")
-check(validated.manifest.version == 3, "New backup format prevents older apps silently dropping Inbox curation")
+check(validated.manifest.version == 4, "New backup format prevents older apps silently dropping Inbox curation")
 check(validated.snapshot.blocks.first { $0.id == task.id }?.inboxMembershipData == task.inboxMembershipData,
     "Archive, completed and nested record backup retains exact Inbox order and occurrence payload")
 let oldPackage = root.appendingPathComponent("Version1.openlistbackup")
 try manager.copyItem(at: package, to: oldPackage)
 var oldSnapshot = validated.snapshot
 oldSnapshot.version = 1
+for index in oldSnapshot.lists.indices {
+    oldSnapshot.lists[index].coverFilename = nil
+    oldSnapshot.lists[index].coverData = nil
+    oldSnapshot.lists[index].coverMetadataData = nil
+    oldSnapshot.lists[index].coverPresentationRaw = nil
+}
 for index in oldSnapshot.blocks.indices {
     oldSnapshot.blocks[index].inboxMembershipData = nil
     oldSnapshot.blocks[index].mediaData = nil
@@ -187,12 +203,28 @@ for index in oldSnapshot.attachments.indices { oldSnapshot.attachments[index].co
 let oldBytes = try JSONEncoder().encode(oldSnapshot)
 var oldManifest = validated.manifest
 oldManifest.version = 1
+oldManifest.assets.removeAll { $0.filename == "cover-original.png" }
 oldManifest.libraryDigest = LibraryBackupPackage.digest(oldBytes)
 try oldBytes.write(to: oldPackage.appendingPathComponent("library.json"))
 try JSONEncoder().encode(oldManifest).write(to: oldPackage.appendingPathComponent("manifest.json"))
 let upgraded = try LibraryBackupPackage.read(at: oldPackage)
-check(upgraded.manifest.version == 1 && upgraded.snapshot.version == 3, "Version 1 package gets an explicit in-memory upgrade")
+check(upgraded.manifest.version == 1 && upgraded.snapshot.version == 4, "Version 1 package gets an explicit in-memory upgrade")
 check(upgraded.snapshot.blocks.allSatisfy { $0.inboxMembershipData == nil }, "Version 1 preserves legacy nil for ownership-aware migration")
+for version in [2, 3] {
+    let olderPackage = root.appendingPathComponent("Version\(version).openlistbackup")
+    try manager.copyItem(at: oldPackage, to: olderPackage)
+    var older = oldSnapshot; older.version = version
+    let encoded = try JSONEncoder().encode(older)
+    var manifest = oldManifest; manifest.version = version; manifest.libraryDigest = LibraryBackupPackage.digest(encoded)
+    try encoded.write(to: olderPackage.appendingPathComponent("library.json"))
+    try JSONEncoder().encode(manifest).write(to: olderPackage.appendingPathComponent("manifest.json"))
+    let loaded = try LibraryBackupPackage.read(at: olderPackage)
+    check(loaded.snapshot == upgraded.snapshot && loaded.manifest.version == version,
+        "Version \(version) package upgrades without invented cover fields")
+}
+var disguisedCover = validated.snapshot; disguisedCover.version = 3
+rejects("Older backup version cannot silently carry unsupported cover data") { try disguisedCover.upgradeToCurrentVersion() }
+
 let upgradedURL = try BackupStagedStore.create(from: upgraded.snapshot, in: root.appendingPathComponent("UpgradedV1"), using: reader)
 let upgradedRead = try reader.read(at: upgradedURL, settings: upgraded.snapshot.settings, createdAt: upgraded.snapshot.createdAt)
 check(upgradedRead == upgraded.snapshot, "Version 1 upgrade stages and reopens every field without guessed membership")
@@ -201,7 +233,7 @@ futureSelection.blocks[0].inboxMembershipData = Data(#"{"version":90,"included":
 let futureURL = try BackupStagedStore.create(from: futureSelection, in: root.appendingPathComponent("FutureSelection"), using: reader)
 try check(try reader.read(at: futureURL, settings: futureSelection.settings, createdAt: futureSelection.createdAt) == futureSelection,
     "Unknown membership payload remains lossless in recovery backups")
-check(validated.manifest.assets.count == 3, "Inline image, legacy image and attachment all have checked assets")
+check(validated.manifest.assets.count == 4, "Cover, inline image, legacy image and attachment all have checked assets")
 check(validated.snapshot.lists.contains { $0.isArchived } && validated.snapshot.lists.contains { $0.mergedIntoID != nil }, "Archive and retained aliases are included")
 check(validated.snapshot.activity.first { $0.id == legacyEvent.id }?.changeData == legacyEvent.changeData, "Undecodable legacy activity details are preserved as recorded")
 let restoredURL = try BackupStagedStore.create(from: validated.snapshot, in: root.appendingPathComponent("Restored"))
@@ -508,6 +540,16 @@ rejects("Replacing an external blob during pinned export cannot publish missing 
         afterFirstFetch: { [root, executable] in
             let process = Process(); process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = [root.path, "mutate-media"]
+            try process.run(); process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
+        })
+}
+
+rejects("Replacing a list cover external blob during pinned export cannot publish missing bytes") {
+    _ = try reader.read(at: storage.originalStoreURL, settings: snapshot.settings, createdAt: fixedDate,
+        afterFirstFetch: { [root, executable] in
+            let process = Process(); process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = [root.path, "mutate-cover"]
             try process.run(); process.waitUntilExit()
             guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
         })

@@ -217,7 +217,7 @@ if phase == "delete" {
     version2.version = 2
     try version2.upgradeToCurrentVersion()
     try version2.validate()
-    try check(version2.version == 3 && version2.blocks[0].inboxMembershipData == bytes, "Version 2 upgrade preserves Inbox payload byte-for-byte")
+    try check(version2.version == 4 && version2.blocks[0].inboxMembershipData == bytes, "Version 2 upgrade preserves Inbox payload byte-for-byte")
  } else if phase == "prior-actions" {
     let list = store.createList(title: "Prior actions")
     let task = store.appendBlock(kind: .task, text: "Inbox retained", to: DocumentContext(listID: list.id))

@@ -24,13 +24,6 @@ final class TaskList {
     var accentRaw: String = ListAccent.graphite.rawValue
     var summary: String = ""
 
-    /// Independent, optional local image ownership; bytes also travel with sync.
-    var coverFilename: String?
-    @Attribute(.externalStorage) var coverData: Data?
-    var coverMetadataData: Data?
-    /// nil preserves the compact default for migrated lists.
-    var coverPresentationRaw: String?
-
     /// Inbox is a singleton system list that receives unfiled tasks.
     var isSystemInbox: Bool = false
     /// Retained aliases route late-arriving records from another Mac's Inbox.
@@ -159,22 +152,6 @@ enum ListSorting: String, Codable, CaseIterable, Sendable {
         case .alphabetical: "Alphabetical"
         case .priority: "Priority"
         }
-    }
-
-}
-
-extension TaskList {
-    var coverPresentation: ListCoverPresentation {
-        coverPresentationRaw.flatMap(ListCoverPresentation.init(rawValue:)) ?? .compact
-    }
-    var coverMetadata: ListCoverMetadata? {
-        coverMetadataData.flatMap { try? JSONDecoder().decode(ListCoverMetadata.self, from: $0) }
-    }
-
-    /// Unknown or partial payloads must remain recoverable, never disappear in a copy.
-    func validatedCover() throws -> (filename: String, metadata: ListCoverMetadata)? {
-        try ListCoverMetadata.validatePayload(filename: coverFilename, data: coverData, metadataData: coverMetadataData,
-                               presentationRaw: coverPresentationRaw)
     }
 
 }

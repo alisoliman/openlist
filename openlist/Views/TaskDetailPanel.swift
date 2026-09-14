@@ -401,7 +401,7 @@ private struct TaskDetailContent: View {
             if !attachments.isEmpty {
                 ForEach(attachments) { attachment in
                     AttachmentRow(attachment: attachment) {
-                        MediaStore.shared.delete(filename: attachment.filename)
+                        env.store.removeEditorMedia(filename: attachment.filename)
                         env.store.context.delete(attachment)
                         env.store.save()
                     }

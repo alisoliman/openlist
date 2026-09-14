@@ -78,14 +78,15 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
                 }
                 let requiresMigration = !model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
                 if requiresMigration {
-                    // Accept only the two shipped additive predecessor schemas:
-                    // pre-Trash, and pre-Inbox-membership. Migrate the private copy.
-                    let recognized = [false, true].contains { removeInbox in
+                    // Accept the shipped additive predecessors: pre-cover,
+                    // pre-Trash, and pre-Inbox-membership. Only migrate the private copy.
+                    let recognized = [0, 1, 2].contains { predecessor in
                         guard let legacy = model.copy() as? NSManagedObjectModel else { return false }
                         for entity in legacy.entities where entity.name == "Block" || entity.name == "TaskList" {
                             entity.properties = entity.properties.filter {
-                                $0.name != "trashID" && $0.name != "trashMetadataData"
-                                    && !(removeInbox && entity.name == "Block" && $0.name == "inboxMembershipData")
+                                !(entity.name == "TaskList" && ["coverFilename", "coverData", "coverMetadataData", "coverPresentationRaw"].contains($0.name))
+                                    && !(predecessor >= 1 && ["trashID", "trashMetadataData"].contains($0.name))
+                                    && !(predecessor == 2 && entity.name == "Block" && $0.name == "inboxMembershipData")
                             }
                         }
                         return legacy.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
@@ -183,6 +184,7 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
                         return id
                     })
                 }
+                let expectedCovers = try payloadIDs("TaskList", "coverData")
                 let expectedImages = try payloadIDs("Block", "mediaData")
                 let expectedAttachments = try payloadIDs("Attachment", "contentData")
                 func records<T>(_ name: String, _ decode: ([String: Any]) throws -> T) throws -> [T] {
@@ -197,13 +199,15 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
                         return try decode(values)
                     }
                 }
-                let lists = try records("TaskList", BackupTaskList.init(values:))
+                // Fetch a scalar-only entity first; every external payload is
+                // hydrated after the same preflight and generation boundary.
+                let sections = try records("SidebarSection", BackupSidebarSection.init(values:))
                 try afterFirstFetch()
                 let snapshot = LibraryBackup(
                     libraryID: libraryID, createdAt: createdAt,
-                    lists: lists,
+                    lists: try records("TaskList", BackupTaskList.init(values:)),
                     blocks: try records("Block", BackupBlock.init(values:)),
-                    sections: try records("SidebarSection", BackupSidebarSection.init(values:)),
+                    sections: sections,
                     labels: try records("TaskLabel", BackupTaskLabel.init(values:)),
                     attachments: try records("Attachment", BackupAttachment.init(values:)),
                     activity: try records("ActivityEvent", BackupActivityEvent.init(values:)),
@@ -214,9 +218,10 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
                 // Query generations pin row references, but Core Data can remove
                 // an old external blob during a concurrent replacement/deletion.
                 // Never mistake that missing payload for legacy file-only data.
+                let hydratedCovers = Set(snapshot.lists.filter { $0.coverData != nil }.map(\.id))
                 let hydratedImages = Set(snapshot.blocks.filter { $0.mediaData != nil }.map(\.id))
                 let hydratedAttachments = Set(snapshot.attachments.filter { $0.contentData != nil }.map(\.id))
-                guard expectedImages.isSubset(of: hydratedImages), expectedAttachments.isSubset(of: hydratedAttachments) else {
+                guard expectedCovers.isSubset(of: hydratedCovers), expectedImages.isSubset(of: hydratedImages), expectedAttachments.isSubset(of: hydratedAttachments) else {
                     throw LibraryBackupError.invalid("Media changed while the backup was being read. No backup was created. Try again after synchronization finishes.")
                 }
                 try snapshot.validate()
@@ -253,6 +258,10 @@ extension BackupTaskList {
         icon = try record.required("icon")
         accentRaw = try record.required("accentRaw")
         summary = try record.required("summary")
+        coverFilename = try record.optional("coverFilename")
+        coverData = try record.optional("coverData")
+        coverMetadataData = try record.optional("coverMetadataData")
+        coverPresentationRaw = try record.optional("coverPresentationRaw")
         isSystemInbox = try record.required("isSystemInbox")
         mergedIntoID = try record.optional("mergedIntoID")
         sortIndex = try record.required("sortIndex")
@@ -421,6 +430,10 @@ extension BackupTaskList {
         values["icon"] = icon
         values["accentRaw"] = accentRaw
         values["summary"] = summary
+        if let coverFilename { values["coverFilename"] = coverFilename }
+        if let coverData { values["coverData"] = coverData }
+        if let coverMetadataData { values["coverMetadataData"] = coverMetadataData }
+        if let coverPresentationRaw { values["coverPresentationRaw"] = coverPresentationRaw }
         values["isSystemInbox"] = isSystemInbox
         if let mergedIntoID { values["mergedIntoID"] = mergedIntoID }
         values["sortIndex"] = sortIndex

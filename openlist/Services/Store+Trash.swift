@@ -20,6 +20,9 @@ extension Store {
             let members = blocks.filter { $0.trashID == id }
             let ids = Set(members.map(\.id))
             var media: [String: Int] = [:]
+            if let list = lists.first(where: { $0.id == id }), let name = list.coverFilename {
+                media[name] = list.coverData?.count ?? list.coverMetadata?.byteCount ?? 0
+            }
             for block in members {
                 if let name = block.mediaFilename { media[name] = block.mediaData?.count ?? 0 }
             }
@@ -87,6 +90,12 @@ extension Store {
             let members = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.listID == id && $0.trashID == nil }))
             removedIDs = Set(members.map(\.id))
             list.trashMetadataData = try JSONEncoder().encode(deletionMetadata(for: members, list: list, parent: nil))
+            if let cover = try list.validatedCover(), list.coverData == nil {
+                let bytes = try MediaStore.shared.readFile(filename: cover.filename)
+                guard bytes.count == cover.metadata.byteCount else { throw ListCoverError.unavailable }
+                trashMediaRollbacks.append { list.coverData = nil }
+                list.coverData = bytes
+            }
             list.trashID = id
             try retain(members, groupID: id)
             log(.listDeleted, title: list.displayTitle, list: list)
@@ -175,6 +184,9 @@ extension Store {
                 guard retainedList != nil || root != nil else { throw TrashError.unavailable }
                 guard var metadata = retainedList?.trashMetadata ?? root?.trashMetadata else { throw TrashError.invalidRetention }
                 if let retainedList {
+                    if let cover = try retainedList.validatedCover() {
+                        _ = try MediaStore.shared.materialize(filename: cover.filename, data: retainedList.coverData)
+                    }
                     if let sectionID = retainedList.sectionID, !allSections().contains(where: { $0.id == resolvedSectionID(sectionID) }) {
                         retainedList.sectionID = defaultSection()?.id
                         metadata.recoveryNote = "Restored from \(metadata.formerLocation). Its sidebar section is unavailable; the list is in My lists."
@@ -251,15 +263,18 @@ extension Store {
             let members = all.filter { $0.trashID.map(groups.contains) == true }
             let memberIDs = Set(members.map(\.id))
             erasedBlockIDs = memberIDs
-            let lists = try context.fetch(FetchDescriptor<TaskList>()).filter { $0.trashID.map(groups.contains) == true }
+            let allLists = try context.fetch(FetchDescriptor<TaskList>())
+            let lists = allLists.filter { $0.trashID.map(groups.contains) == true }
             guard Set(lists.map(\.id) + members.filter { $0.trashID == $0.id }.map(\.id)) == groups else { throw TrashError.unavailable }
             let files = try context.fetch(FetchDescriptor<Attachment>())
             let removedFiles = files.filter { $0.blockID.map(memberIDs.contains) == true }
             guard members.allSatisfy({ $0.mediaFilename == nil || $0.mediaData != nil }),
+                  lists.allSatisfy({ $0.coverFilename == nil || $0.coverData != nil }),
                   removedFiles.allSatisfy({ $0.contentData != nil }) else { throw TrashError.invalidRetention }
-            let names = Set(members.compactMap(\.mediaFilename) + removedFiles.map(\.filename))
+            let names = Set(members.compactMap(\.mediaFilename) + removedFiles.map(\.filename) + lists.compactMap(\.coverFilename))
             let referenced = Set(all.filter { !memberIDs.contains($0.id) }.compactMap(\.mediaFilename)
-                + files.filter { $0.blockID.map(memberIDs.contains) != true }.map(\.filename))
+                + files.filter { $0.blockID.map(memberIDs.contains) != true }.map(\.filename)
+                + allLists.filter { $0.trashID.map(groups.contains) != true }.compactMap(\.coverFilename))
             // Bytes were committed by retain(). Erase caches first: if unlink or
             // the following save fails, the record remains fully recoverable.
             for name in names.subtracting(referenced) { try MediaStore.shared.eraseCachedFile(filename: name) }

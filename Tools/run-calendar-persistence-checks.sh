@@ -8,7 +8,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library -o 
   Tools/CalendarPersistenceChecks/Legacy/*.swift Tools/CalendarPersistenceChecks/LegacyFixture.swift \
   openlist/Model/ActivityEvent.swift openlist/Model/TaskActivityChange.swift openlist/Model/Attachment.swift openlist/Model/BlockKind.swift \
   openlist/Model/Recurrence.swift openlist/Model/SidebarSection.swift openlist/Model/TaskLabel.swift \
-  Shared/ListAccent.swift openlist/Services/MediaStore.swift Tools/LifecycleChecks/ReviewSession.swift
+  Shared/ListAccent.swift openlist/Model/ListCover.swift openlist/Services/MediaStore.swift Tools/LifecycleChecks/ReviewSession.swift
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library -o "$OUT/calendar-persistence-checks" \
   openlist/Model/*.swift Shared/ListAccent.swift Tools/LifecycleChecks/ReviewSession.swift openlist/Design/Theme.swift \
   openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Inbox.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \

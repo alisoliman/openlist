@@ -8,6 +8,10 @@ extension Block {
     var trashMetadataData: Data? { get { nil } set {} }
 }
 extension TaskList {
+    var coverFilename: String? { get { nil } set {} }
+    var coverData: Data? { get { nil } set {} }
+    var coverMetadataData: Data? { get { nil } set {} }
+    var coverPresentationRaw: String? { get { nil } set {} }
     var trashID: UUID? { get { nil } set {} }
     var trashMetadataData: Data? { get { nil } set {} }
 }

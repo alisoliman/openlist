@@ -6,7 +6,7 @@ FIXTURE_ID=$(uuidgen)
 trap 'rm -rf "$OUT"' EXIT
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   -o "$OUT/legacy-fixture" Tools/SyncChecks/LegacyModels.swift \
-  openlist/Model/Recurrence.swift openlist/Services/MediaStore.swift \
+  openlist/Model/Recurrence.swift openlist/Model/ListCover.swift openlist/Services/MediaStore.swift \
   Tools/SyncChecks/ReviewSession.swift Tools/SyncChecks/LegacyFixture.swift
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   -o "$OUT/sync-checks" openlist/Model/*.swift Shared/ListAccent.swift Shared/WidgetSnapshot.swift \

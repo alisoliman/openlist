@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-// Version 3 explicitly lists every persisted field. Adding a model field requires
+// Version 4 explicitly lists every persisted field. Adding a model field requires
 // updating this contract and the schema-coverage regression before shipping.
 // Computed presentation state and SwiftData implementation details are excluded.
 
@@ -13,6 +13,10 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
     var icon: String
     var accentRaw: String
     var summary: String
+    var coverFilename: String?
+    var coverData: Data?
+    var coverMetadataData: Data?
+    var coverPresentationRaw: String?
     var isSystemInbox: Bool
     var mergedIntoID: UUID?
     var sortIndex: Double
@@ -36,6 +40,10 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
         icon = value.icon
         accentRaw = value.accentRaw
         summary = value.summary
+        coverFilename = value.coverFilename
+        coverData = value.coverData
+        coverMetadataData = value.coverMetadataData
+        coverPresentationRaw = value.coverPresentationRaw
         isSystemInbox = value.isSystemInbox
         mergedIntoID = value.mergedIntoID
         sortIndex = value.sortIndex
@@ -61,6 +69,10 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
         value.icon = icon
         value.accentRaw = accentRaw
         value.summary = summary
+        value.coverFilename = coverFilename
+        value.coverData = coverData
+        value.coverMetadataData = coverMetadataData
+        value.coverPresentationRaw = coverPresentationRaw
         value.isSystemInbox = isSystemInbox
         value.mergedIntoID = mergedIntoID
         value.sortIndex = sortIndex

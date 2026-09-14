@@ -220,6 +220,7 @@ extension Store {
         // An old/shared cache filename can still belong to recoverable content.
         // Retention takes precedence over structural cleanup and session Undo.
         do {
+            if try context.fetch(FetchDescriptor<TaskList>()).contains(where: { !$0.isDeleted && $0.coverFilename == filename }) { return }
             let retained = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID != nil }))
             if retained.contains(where: { $0.mediaFilename == filename }) { return }
             let ids = Set(retained.map(\.id))
@@ -359,9 +360,10 @@ extension Store {
         // Global references include other documents and retained Trash groups.
         // A failed reference read keeps the cache for a later cleanup.
         if let blocks = try? context.fetch(FetchDescriptor<Block>()),
-           let files = try? context.fetch(FetchDescriptor<Attachment>()) {
+           let files = try? context.fetch(FetchDescriptor<Attachment>()),
+           let lists = try? context.fetch(FetchDescriptor<TaskList>()) {
             let referenced = Set(blocks.filter { !$0.isDeleted }.compactMap(\.mediaFilename)
-                + files.filter { !$0.isDeleted }.map(\.filename))
+                + files.filter { !$0.isDeleted }.map(\.filename) + lists.filter { !$0.isDeleted }.compactMap(\.coverFilename))
             for filename in sourceFiles.subtracting(desiredFiles).subtracting(referenced) {
                 MediaStore.shared.delete(filename: filename)
             }

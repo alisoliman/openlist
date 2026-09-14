@@ -145,6 +145,14 @@ extension Store {
                 .filter { $0 > source.sidebarIndex }.min())
         let staged = StagedContentCopy(container: context.container)
         defer { staged.discard() }
+        if let cover = try source.validatedCover() {
+            let bytes = try source.coverData ?? MediaStore.shared.readFile(filename: cover.filename)
+            guard bytes.count == cover.metadata.byteCount else { throw ListCoverError.unavailable }
+            copy.coverFilename = try staged.stageMedia(bytes, fileExtension: (cover.filename as NSString).pathExtension)
+            copy.coverData = bytes
+            copy.coverMetadataData = source.coverMetadataData
+        }
+        copy.coverPresentationRaw = source.coverPresentationRaw
         staged.writer.insert(copy)
         let listID = source.id
         let originals = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.listID == listID }))
