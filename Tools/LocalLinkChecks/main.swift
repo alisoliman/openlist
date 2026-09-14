@@ -179,6 +179,60 @@ try context.save()
 links.receive(taskURL)
 check(navigator.contentReveal?.isArchived == true && task.isCompleted && renamed.isArchived && renamed.completedVisibility == .hide, "Archived/completed task opens explicitly without restore or preference writes")
 check(try links.link(to: .task(taskID)) == taskURL, "Copy canonical link remains stable after model changes")
+
+// Retention can arrive between copying a link and opening it, including while
+// the main window is closed. Navigation must not become an implicit restore.
+let retainedMetadata = try JSONEncoder().encode(TrashMetadata(deletedAt: .now,
+    listTitle: renamed.title, parentTitle: nil, labels: []))
+task.trashID = task.id
+task.trashMetadataData = retainedMetadata
+try context.save()
+navigator.replace(with: .today)
+let retainedRoute = navigator.route
+links.receive(taskURL)
+check(links.error == .targetUnavailable && navigator.route == retainedRoute && navigator.contentReveal == nil,
+      "A retained task link reports unavailability without leaving the current route")
+check(task.trashID == taskID && task.trashMetadataData == retainedMetadata && task.isCompleted && renamed.isArchived,
+      "Opening a retained task link cannot restore it or change retained metadata")
+check(!context.hasChanges, "Rejected retained task navigation performs no model writes")
+do { _ = try links.link(to: .task(taskID)); preconditionFailure("Copied retained task") }
+catch { check(error as? LocalLinkError == .targetUnavailable, "Stale Copy Link rejects a retained task") }
+task.trashID = nil
+try context.save()
+check(navigator.route == retainedRoute && navigator.contentReveal == nil,
+      "Restoring a task does not replay its previously rejected link")
+links.receive(taskURL)
+check(links.error == nil && navigator.openTaskID == taskID && navigator.contentReveal?.isArchived == true,
+      "The original saved URL works again after restoring the same task identity")
+
+let retainedListURL = LocalLink(libraryID: firstIdentity, target: .list(renamed.id)).url()
+renamed.trashID = renamed.id
+renamed.trashMetadataData = retainedMetadata
+try context.save()
+navigator.replace(with: .trash)
+links.windowReady(false)
+links.receive(retainedListURL)
+check(navigator.route == .trash && navigator.contentReveal == nil,
+      "A closed-window retained-list delivery waits without navigating")
+links.windowReady(true)
+check(links.error == .targetUnavailable && navigator.route == .trash && navigator.contentReveal == nil,
+      "Opening the window rejects a retained list without revealing or restoring it")
+links.receive(taskURL)
+check(links.error == .targetUnavailable && navigator.route == .trash,
+      "A task whose owner is retained is unavailable even before its own retention flag arrives")
+check(renamed.trashID == renamed.id && renamed.trashMetadataData == retainedMetadata && !context.hasChanges,
+      "Rejected list and child navigation preserve the retained store")
+do { _ = try links.link(to: .list(renamed.id)); preconditionFailure("Copied retained list") }
+catch { check(error as? LocalLinkError == .targetUnavailable, "Stale Copy Link rejects a retained list") }
+renamed.trashID = nil
+try context.save()
+links.receive(retainedListURL)
+check(links.error == nil && navigator.contentReveal?.destination == .list(renamed.id) && renamed.isArchived,
+      "The original list URL works after restore without unarchiving its owner")
+links.receive(taskURL)
+check(navigator.openTaskID == taskID && task.trashMetadataData == retainedMetadata,
+      "The restored child URL still reveals its exact original identity")
+
 let persistedIdentity = try LibraryIdentity.read(at: storeURL)
 let reopened = try ModelContainer(for: schema, configurations: configuration)
 check(try LibraryIdentity.read(at: storeURL) == firstIdentity && persistedIdentity == firstIdentity, "Reopened library retains identity")

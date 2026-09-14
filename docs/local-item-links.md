@@ -12,9 +12,10 @@ An archived target opens with an explicit archived notice and stays archived.
 A completed or nested task uses the same temporary exact-content reveal as
 search, without rewriting completion visibility or collapsed ancestors.
 Finish ends the temporary reveal. Missing, deleted, changed-to-text, and
-wrong-library targets explain why they cannot open. There is currently no
-Trash feature; a future Trash target must stay unavailable until it is restored
-through an explicit action elsewhere.
+wrong-library targets explain why they cannot open. Tasks and lists in Trash
+stay unavailable until explicitly restored from Trash or through deletion Undo.
+The same saved link then works again. Following a link never restores content,
+and restoring content does not replay a previously rejected link.
 
 ## Version 1 contract
 

@@ -31,7 +31,7 @@ IDENTITY=$(openssl x509 -inform DER -in "$OUT/signing-0" -noout -fingerprint -sh
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   -target arm64-apple-macos26.5 -o "$APP/Contents/MacOS/CloudSyncChecks" \
   openlist/Model/*.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift \
-  openlist/Services/MediaStore.swift openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudError.swift \
+  openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudError.swift \
   Tools/CloudSyncChecks/PhaseCheckpoints.swift Tools/CloudSyncChecks/Checks.swift
 codesign --force --sign "$IDENTITY" --entitlements "$OUT/entitlements.plist" "$APP"
 codesign --verify --deep --strict "$APP"
