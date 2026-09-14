@@ -135,6 +135,50 @@ if phase == "write" {
     try store.persistChanges()
     try check(store.trashList(shared) && store.permanentlyEraseTrash(ids: [shared.id]), "Shared cover may be permanently erased from one retained owner")
     try check(media.readFile(filename: copyName) == bytes, "Trash purge respects other live cover references")
+    // Session Undo owns its own file bytes even while another live model keeps
+    // the shared cache alive. Covers can be replaced/removed before that Undo.
+    for isAttachment in [false, true] {
+        for replaceCover in [false, true] {
+            let owner = store.createList(title: "Shared legacy Undo")
+            try store.setListCover(owner, from: source)
+            let sharedName = owner.coverFilename!
+            let legacy = Block(kind: isAttachment ? .task : .image, listID: owner.id)
+            let legacyID = legacy.id
+            context.insert(legacy)
+            if isAttachment {
+                context.insert(Attachment(blockID: legacy.id, filename: sharedName,
+                    displayName: "Legacy image", contentType: "image/png", byteCount: bytes.count))
+            } else {
+                legacy.mediaFilename = sharedName
+                legacy.mediaData = nil
+            }
+            try store.persistChanges()
+            let undo = UndoManager(); undo.groupsByEvent = false
+            undo.beginUndoGrouping()
+            store.undoableEditorEdit(in: owner.id, name: "Remove legacy media", undoManager: undo) {
+                store.deleteBlock(legacy)
+                store.save()
+            }
+            undo.endUndoGrouping()
+            try check(media.fileContents(filename: sharedName) == bytes, "Structural deletion retains a shared cover cache")
+            if replaceCover { try store.setListCover(owner, from: replacement) }
+            else { try store.removeListCover(owner) }
+            try check(media.fileContents(filename: sharedName) == nil, "Later cover mutation removes the now-unreferenced cache")
+            undo.undo()
+            try check(store.block(id: legacyID) != nil && media.fileContents(filename: sharedName) == bytes,
+                "Undo restores legacy image/attachment bytes after shared cover removal or replacement")
+            if isAttachment {
+                try check(store.attachments(for: legacyID).first?.filename == sharedName,
+                    "Undo restores the legacy attachment owner as well as its bytes")
+            }
+            undo.redo()
+            try check(store.block(id: legacyID) == nil && media.fileContents(filename: sharedName) == nil,
+                "Redo removes only the restored legacy media")
+            undo.undo()
+            try check(media.fileContents(filename: sharedName) == bytes, "A later Undo retains its independent media snapshot")
+        }
+    }
+
     copy.title = "Cold cover"; copy.coverPresentationRaw = "hidden"
     try store.persistChanges()
     try manager.removeItem(at: source)

@@ -217,8 +217,13 @@ extension Store {
 
     /// Copy before the async disk deletion, never after it.
     func removeEditorMedia(filename: String) {
+        // Undo needs independent bytes even when another owner keeps the cache
+        // today: that owner may remove or replace its media before Undo runs.
+        if isRecordingEditorEdit, let data = MediaStore.shared.fileContents(filename: filename) {
+            editorMediaBackups[filename] = data
+        }
         // An old/shared cache filename can still belong to recoverable content.
-        // Retention takes precedence over structural cleanup and session Undo.
+        // Retention prevents cache erasure, without skipping the Undo snapshot.
         do {
             if try context.fetch(FetchDescriptor<TaskList>()).contains(where: { !$0.isDeleted && $0.coverFilename == filename }) { return }
             let retained = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID != nil }))
@@ -230,9 +235,6 @@ extension Store {
         } catch {
             persistenceError = "A file could not be checked for retained references. It has been kept. \(error.localizedDescription)"
             return
-        }
-        if isRecordingEditorEdit, let data = MediaStore.shared.fileContents(filename: filename) {
-            editorMediaBackups[filename] = data
         }
         MediaStore.shared.delete(filename: filename)
     }
