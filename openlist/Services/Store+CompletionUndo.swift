@@ -241,14 +241,17 @@ extension Store {
         let desired = undoing ? change.before : change.after
         let rootIDs = [change.rootTaskID] + change.additionalRootTaskIDs
         guard rootIDs.allSatisfy({ id in
-            guard let root = block(id: id), !root.isDeleted, root.isTask, let expected = source[id] else { return false }
+            guard !permanentlyErasedBlockIDs.contains(id), let root = block(id: id),
+                  !root.isDeleted, root.isTask, list(id: root.listID) != nil,
+                  let expected = source[id] else { return false }
             return root.occurrenceID == expected.occurrenceID && root.isCompleted == expected.isCompleted
         }) else {
             editorNotice = "This change cannot be undone because a task has changed or was deleted."
             return false
         }
         let matching = source.compactMap { taskID, expected -> Block? in
-            guard let task = block(id: taskID), !task.isDeleted, task.occurrenceID == expected.occurrenceID,
+            guard !permanentlyErasedBlockIDs.contains(taskID), let task = block(id: taskID),
+                  !task.isDeleted, list(id: task.listID) != nil, task.occurrenceID == expected.occurrenceID,
                   task.isCompleted == expected.isCompleted else { return nil }
             return task
         }

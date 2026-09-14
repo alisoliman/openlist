@@ -9,7 +9,7 @@ enum SelectionCommandPolicy {
         case .newTask, .expandAll, .collapseAll:
             return false
         default:
-            store.editorNotice = "Use Complete, Reopen or Move in the selection bar. Select one row for other task actions."
+            store.editorNotice = "Use Complete, Reopen, Move or Delete in the selection bar. Select one row for other task actions."
             return true
         }
     }

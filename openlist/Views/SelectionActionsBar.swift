@@ -49,6 +49,8 @@ struct SelectionActionsBar: View {
                 }
             }
             .help("Move selected rows and their descendants to a list")
+            Button("Delete", systemImage: "trash", role: .destructive, action: deleteSelection)
+                .help("Move selected rows and their descendants to Trash. Restore them from Trash or Undo.")
             Button("Clear selection", systemImage: "xmark", action: env.navigator.clearSelection)
                 .labelStyle(.iconOnly)
                 .help("Clear selection (Escape in the selection gutter)")
@@ -69,6 +71,18 @@ struct SelectionActionsBar: View {
         do {
             _ = try env.store.moveSelection(selected, to: listID,
                 undoManager: undoManager ?? NSApp.keyWindow?.undoManager)
+        } catch { env.store.editorNotice = error.localizedDescription }
+    }
+
+    private func deleteSelection() {
+        let selected = ids
+        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        do {
+            if try env.store.trashSelection(selected, undoManager: undoManager ?? NSApp.keyWindow?.undoManager) {
+                env.navigator.clearSelection()
+            } else {
+                env.store.editorNotice = env.store.trashError
+            }
         } catch { env.store.editorNotice = error.localizedDescription }
     }
 }

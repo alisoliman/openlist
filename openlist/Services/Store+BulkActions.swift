@@ -22,9 +22,11 @@ private struct BulkSelectionSnapshot {
     let lists: [UUID: TaskList]
     let ordered: [Block]
 
-    init(ids: [UUID], context: ModelContext) throws {
-        let all = try context.fetch(FetchDescriptor<Block>()).filter { !$0.isDeleted }
-        let allLists = try context.fetch(FetchDescriptor<TaskList>()).filter { !$0.isDeleted }
+    init(ids: [UUID], store: Store) throws {
+        let all = try store.context.fetch(FetchDescriptor<Block>()).filter {
+            !$0.isDeleted && !$0.isTrashed && !store.permanentlyErasedBlockIDs.contains($0.id)
+        }
+        let allLists = try store.context.fetch(FetchDescriptor<TaskList>()).filter { !$0.isDeleted && !$0.isTrashed }
         guard Set(all.map(\.id)).count == all.count,
               Set(allLists.map(\.id)).count == allLists.count else { throw BulkActionError.invalidHierarchy }
         let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
@@ -106,11 +108,23 @@ private struct BulkMoveExpansion {
 }
 
 extension Store {
+    /// Resolve the entire displayed selection before entering durable Trash.
+    /// An unavailable row cannot turn an explicit bulk Delete into a partial one.
+    @discardableResult
+    func trashSelection(_ ids: [UUID], undoManager: UndoManager? = nil) throws -> Bool {
+        guard !isSavingSuspended, !isRecordingEditorEdit else { throw BulkActionError.busy }
+        let snapshot = try BulkSelectionSnapshot(ids: ids, store: self)
+        let roots = snapshot.roots(of: snapshot.ordered)
+        guard !roots.isEmpty else { throw BulkActionError.unavailable }
+        _ = try snapshot.subtree(roots)
+        return trashBlocks(roots, undoManager: undoManager)
+    }
+
     /// Explicit Complete/Reopen never toggles mixed-state selections. Completing
     /// a selected parent covers selected children once; reopening does not cascade.
     @discardableResult
     func setBulkCompletion(_ completed: Bool, ids: [UUID], now: Date = .now) throws -> Int {
-        let snapshot = try BulkSelectionSnapshot(ids: ids, context: context)
+        let snapshot = try BulkSelectionSnapshot(ids: ids, store: self)
         let candidates = snapshot.ordered.filter { $0.isTask && $0.isCompleted != completed }
         let roots = completed ? snapshot.roots(of: candidates) : candidates
         guard !roots.isEmpty else { return 0 }
@@ -163,7 +177,7 @@ extension Store {
     func moveSelection(_ ids: [UUID], to listID: UUID, parentID: UUID? = nil,
                        above targetID: UUID? = nil, expandsParent: Bool = false,
                        undoManager: UndoManager? = nil) throws -> [UUID] {
-        let snapshot = try BulkSelectionSnapshot(ids: ids, context: context)
+        let snapshot = try BulkSelectionSnapshot(ids: ids, store: self)
         guard let destination = snapshot.lists[listID], destination.mergedIntoID == nil,
               !destination.isArchived else { throw BulkActionError.invalidDestination }
         let roots = snapshot.roots(of: snapshot.ordered)
@@ -252,7 +266,7 @@ extension Store {
         manager.registerUndo(withTarget: self) { store in
             do {
                 let ids = Array(source.keys) + (expansion.map { [$0.parentID] } ?? [])
-                let snapshot = try BulkSelectionSnapshot(ids: ids, context: store.context)
+                let snapshot = try BulkSelectionSnapshot(ids: ids, store: store)
                 guard source.allSatisfy({ id, expected in snapshot.blocks[id].map(BulkBlockPosition.init) == expected })
                 else { throw BulkActionError.changed }
                 // Validate the proposed restored graph, including parents that

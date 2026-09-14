@@ -761,7 +761,10 @@ struct DocumentView: View {
 
     private func move(_ draggedIDs: [UUID], relativeTo target: BlockRow, position: DropPosition) {
         guard sorting == .manual else { return }
-        guard target.block.modelContext != nil, !target.block.isDeleted else {
+        guard target.block.modelContext != nil, !target.block.isDeleted, !target.block.isTrashed,
+              target.block.listID == document.listID,
+              env.store.block(id: target.id) != nil,
+              env.store.list(id: document.listID) != nil else {
             env.store.editorNotice = "The drop target is no longer available. No rows were changed."
             return
         }

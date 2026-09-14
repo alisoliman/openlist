@@ -93,7 +93,9 @@ private struct RowDropDelegate: DropDelegate {
     let onInvalid: () -> Void
     let onUnavailable: () -> Void
 
-    private var targetIsAvailable: Bool { row.block.modelContext != nil && !row.block.isDeleted }
+    private var targetIsAvailable: Bool {
+        row.block.modelContext != nil && !row.block.isDeleted && !row.block.isTrashed
+    }
 
     func dropEntered(info: DropInfo) {
         guard targetIsAvailable else { indicator = nil; return }
