@@ -201,4 +201,33 @@ func runBulkTrashChecks(at directory: URL) throws {
     undo.undo()
     check(BackupBlock(retainedChild) == childState && activeParent.listID == source.id,
           "Move Undo also leaves separately retained descendants untouched")
+    undo.removeAllActions()
+
+    // An imported alias can outlive its canonical owner. Its raw identity is
+    // not an available list just because the alias itself is outside Trash.
+    let aliasOwner = store.createList(title: "Unavailable alias owner")
+    check(store.trashList(aliasOwner), "Canonical alias owner is retained before a late block reference arrives")
+    let alias = TaskList(title: "Late Inbox alias", isSystemInbox: true)
+    alias.mergedIntoID = aliasOwner.id
+    let lateTask = Block(kind: .task, text: "Task arriving through alias", listID: alias.id)
+    store.context.insert(alias)
+    store.context.insert(lateTask)
+    try store.persistChanges()
+    check(!alias.isTrashed && !lateTask.isTrashed && store.list(id: alias.id) == nil,
+          "A live raw alias and task resolve to an unavailable canonical owner")
+    let beforeAliasActions = try records()
+    let retainedOwner = BackupTaskList(aliasOwner)
+    let aliasHistory = Set(store.completionRecords().map(\.id))
+    rejects("Bulk Complete rejects a source alias whose canonical owner is retained") {
+        _ = try store.setBulkCompletion(true, ids: [survivor.id, lateTask.id])
+    }
+    rejects("Bulk Move rejects a source alias whose canonical owner is retained") {
+        _ = try store.moveSelection([survivor.id, lateTask.id], to: destination.id, undoManager: undo)
+    }
+    rejects("Bulk Delete rejects a source alias whose canonical owner is retained") {
+        _ = try store.trashSelection([survivor.id, lateTask.id], undoManager: undo)
+    }
+    try checkThrowing(try records() == beforeAliasActions && BackupTaskList(aliasOwner) == retainedOwner
+          && Set(store.completionRecords().map(\.id)) == aliasHistory && !undo.canUndo,
+          "Unavailable alias ownership changes no selected task, retained list, history or Undo")
 }

@@ -26,7 +26,11 @@ private struct BulkSelectionSnapshot {
         let all = try store.context.fetch(FetchDescriptor<Block>()).filter {
             !$0.isDeleted && !$0.isTrashed && !store.permanentlyErasedBlockIDs.contains($0.id)
         }
-        let allLists = try store.context.fetch(FetchDescriptor<TaskList>()).filter { !$0.isDeleted && !$0.isTrashed }
+        // Alias rows are routing records, never available raw document owners.
+        // A late block reference must be reconciled before a bulk mutation.
+        let allLists = try store.context.fetch(FetchDescriptor<TaskList>()).filter {
+            !$0.isDeleted && !$0.isTrashed && $0.mergedIntoID == nil
+        }
         guard Set(all.map(\.id)).count == all.count,
               Set(allLists.map(\.id)).count == allLists.count else { throw BulkActionError.invalidHierarchy }
         let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
