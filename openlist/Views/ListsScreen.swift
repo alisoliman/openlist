@@ -159,6 +159,7 @@ struct ListCard: View {
         .help(list.isArchived ? "\(list.displayTitle) · Archived; excluded from active tasks and reminders" : list.displayTitle)
         .contextMenu {
             Button("Open") { env.navigator.go(to: .list(list.id)) }
+            CopyItemLinkButton(target: .list(list.id))
             Divider()
             if !list.isArchived {
                 Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") {

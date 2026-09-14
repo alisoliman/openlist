@@ -60,6 +60,16 @@ for bundle in "$APP" "$APP/Contents/PlugIns/OpenlistWidget.appex"; do
         identifier=solimanali.openlist.OpenlistWidget
     fi
     require_metadata "$plist" CFBundleIdentifier "$identifier"
+    if [[ "$bundle" == "$APP" ]]; then
+        python3 - "$plist" <<'PY' || fail_bundle "$plist: CFBundleURLTypes: invalid production item-link registration"
+import plistlib, sys
+with open(sys.argv[1], 'rb') as source:
+    info = plistlib.load(source)
+expected = [{'CFBundleTypeRole': 'Viewer', 'CFBundleURLName': 'solimanali.openlist.item', 'CFBundleURLSchemes': ['openlist']}]
+if info.get('CFBundleURLTypes') != expected:
+    raise SystemExit('Production must register only the openlist item-link scheme')
+PY
+    fi
     if /usr/libexec/PlistBuddy -c 'Print :OpenlistReviewSession' "$plist" >/dev/null 2>&1; then
         fail_bundle "$plist: OpenlistReviewSession must not be present in a release"
     fi

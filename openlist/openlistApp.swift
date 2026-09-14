@@ -42,7 +42,9 @@ struct openlistApp: App {
             // Store and @Query must share the main context: views pass their
             // models into mutations, so saving a second context loses edits.
             let context = loaded.container.mainContext
-            let environment = AppEnvironment(context: context, sync: sync, libraryStorage: storage, libraryStartup: startup)
+            let environment = AppEnvironment(context: context, sync: sync,
+                libraryID: try? LibraryIdentity.read(at: startup.storeURL),
+                libraryStorage: storage, libraryStartup: startup)
             _env = State(initialValue: environment)
             // Menu-bar-only launches must also migrate files and start sync.
             applicationDelegate.onDidLaunch = { [weak environment] in environment?.bootstrap() }
@@ -73,7 +75,17 @@ struct openlistApp: App {
                     .modelContainer(container)
                     .preferredColorScheme(env.settings.appearance.colorScheme)
                     .environment(\.calendar, env.settings.calendar)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard LocalLink.isLocal(url) else { return .systemAction }
+                        env.localLinks.receive(url)
+                        return .handled
+                    })
                     .task { env.bootstrap() }
+                    .onOpenURL { url in
+                        env.localLinks.receive(url)
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                    }
+                    .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
             } else {
                 ContentUnavailableView {
                     Label("Your saved data could not be opened", systemImage: "externaldrive.badge.exclamationmark")
@@ -106,6 +118,7 @@ struct openlistApp: App {
         }
         .defaultSize(width: 1_180, height: 780)
         .windowResizability(.contentMinSize)
+        .handlesExternalEvents(matching: ["*"])
         .commands {
             if let env { AppCommands(env: env) }
         }
@@ -122,6 +135,7 @@ struct openlistApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
         .defaultPosition(.top)
+        .handlesExternalEvents(matching: [])
 
         Settings {
             if let env, let container {
@@ -132,6 +146,7 @@ struct openlistApp: App {
                     .preferredColorScheme(env.settings.appearance.colorScheme)
             }
         }
+        .handlesExternalEvents(matching: [])
 
         MenuBarExtra("Openlist", systemImage: "checkmark.circle", isInserted: menuBarBinding) {
             if let env, let container {

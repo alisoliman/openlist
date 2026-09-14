@@ -3,6 +3,7 @@ import SwiftData
 
 /// A temporary display request; none of these values are persisted on a block.
 struct ContentReveal: Identifiable, Equatable {
+    enum Source: Equatable { case search, localLink }
     enum Anchor: Hashable { case pageHeader, taskTitle(UUID), taskNote(UUID), blockNote(UUID), listSummary(UUID) }
     let id = UUID()
     let destination: SearchDestination
@@ -11,6 +12,8 @@ struct ContentReveal: Identifiable, Equatable {
     let ancestorIDs: Set<UUID>
     let field: SearchField
     let query: String
+    var source: Source = .search
+    var isArchived = false
 
     var blockID: UUID? {
         if case let .block(id) = destination { return id }
@@ -59,6 +62,7 @@ struct ContentReveal: Identifiable, Equatable {
         }
         let ancestors = block.map { BlockTree.ancestors(of: $0, in: blocks.filter { $0.listID == list.id }) } ?? []
         return ContentReveal(destination: destination, listID: list.id,
-            taskID: block.flatMap { $0.isTask ? $0.id : nil }, ancestorIDs: Set(ancestors.map(\.id)), field: currentField, query: needle)
+            taskID: block.flatMap { $0.isTask ? $0.id : nil }, ancestorIDs: Set(ancestors.map(\.id)), field: currentField,
+            query: needle, isArchived: list.isArchived)
     }
 }

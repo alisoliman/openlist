@@ -512,6 +512,7 @@ struct SidebarListRow: View {
         .contextMenu {
             Button("Open") { onOpen() }
             Button("Rename List…") { onRename() }
+            CopyItemLinkButton(target: .list(list.id))
             Divider()
             Button("Duplicate") { onDuplicate() }
             Button("Use as template…") { onUseAsTemplate() }

@@ -249,6 +249,7 @@ struct ListScreen: View {
                 Button("Copy as Markdown") {
                     MarkdownExporter.copyToPasteboard(list: list, store: env.store)
                 }
+                CopyItemLinkButton(target: .list(list.id))
 
                 if !list.isSystemInbox {
                     Divider()
