@@ -174,12 +174,12 @@ struct AppCommands: Commands {
     private var hasTaskSelection: Bool {
         guard env.taskCaptureRequest == nil, !env.navigator.isCommandPaletteOpen,
               !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return false }
-        return env.navigator.selection.contains { env.store.block(id: $0)?.isTask == true }
+        return env.navigator.selection.count == 1 && env.navigator.selection.contains { env.store.block(id: $0)?.isTask == true }
     }
 
     private var hasBlockSelection: Bool {
         env.taskCaptureRequest == nil && !env.navigator.isCommandPaletteOpen
-            && env.navigator.selection.contains { env.store.block(id: $0) != nil }
+            && env.navigator.selection.count == 1 && env.navigator.selection.contains { env.store.block(id: $0) != nil }
     }
 
     private var hasDocumentContext: Bool {

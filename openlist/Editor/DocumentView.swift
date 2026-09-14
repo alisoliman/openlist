@@ -70,6 +70,7 @@ struct DocumentView: View {
     @State private var slash: SlashState?
     @State private var inlineMetadataEdits = InlineMetadataEdits()
     @State private var completionMotionIDs: Set<UUID> = []
+    @State private var selectionScopeID = UUID()
 
     private var completedTaskIDs: Set<UUID> {
         Set(blocks.filter { $0.isTask && $0.isCompleted }.map(\.id))
@@ -139,6 +140,7 @@ struct DocumentView: View {
         // document costs one pass over the block list rather than one fetch
         // per row.
         let visibleRows = rows
+        let visibleIDs = visibleRows.map(\.id)
         let labelLookup = labelsByID
         let progress = BlockTree.subtaskCounts(in: blocks)
 
@@ -178,6 +180,20 @@ struct DocumentView: View {
             }
 
             trailingTapTarget
+        }
+        .environment(\.rowSelectionContext, RowSelectionContext(scopeID: selectionScopeID, visibleIDs: visibleIDs) {
+            env.activeDocument = document
+            focus.request(nil)
+            slash = nil
+        })
+        .onChange(of: visibleIDs, initial: true) { _, ids in
+            env.navigator.reconcileSelection(scope: selectionScopeID, visible: ids)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
+            for block in blocks { commitInlineMetadata(block) }
+        }
+        .onDisappear {
+            if env.navigator.rowSelection.scopeID == selectionScopeID { env.navigator.clearSelection() }
         }
         .scrollTargetLayout()
         .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1),
@@ -249,7 +265,7 @@ struct DocumentView: View {
         }
         .onChange(of: blocks.map(\.id)) { _, ids in
             inlineMetadataEdits.retain(blockIDs: Set(ids))
-            if let focused = focus.blockID, !ids.contains(focused) {
+            if !env.navigator.isSelectingRows, let focused = focus.blockID, !ids.contains(focused) {
                 focus.request(rows.first(where: { !$0.block.kind.isVoid })?.id, caret: -1)
             }
         }
@@ -264,27 +280,31 @@ struct DocumentView: View {
         progress: (done: Int, total: Int)?
     ) -> some View {
         if row.block.modelContext != nil, !row.block.isDeleted {
-            BlockRowView(
-                row: row,
-                listAccent: listAccent,
-                labels: row.block.labelIDs.compactMap { labelLookup[$0] },
-                progress: (progress?.total ?? 0) > 0 ? progress : nil,
-                isFocused: focus.blockID == row.id,
-                isSelected: env.navigator.selection.contains(row.id),
-                pendingCaret: focus.blockID == row.id ? focus.caret : nil,
-                focusToken: focus.token,
-                isSlashMenuOpen: slash?.blockID == row.id,
-                onSlashCommand: { command in handleSlashCommand(command) },
-                attributedText: env.store.attributedContent(of: row.block),
-                placeholder: emptyPlaceholder,
-                showsPlaceholder: shouldShowPlaceholder(for: row),
-                actions: actions(for: row)
-            )
+            HStack(alignment: .top, spacing: 0) {
+                RowSelectionGutter(id: row.id, title: row.block.displayTitle)
+                BlockRowView(
+                    row: row,
+                    listAccent: listAccent,
+                    labels: row.block.labelIDs.compactMap { labelLookup[$0] },
+                    progress: (progress?.total ?? 0) > 0 ? progress : nil,
+                    isFocused: focus.blockID == row.id,
+                    isSelected: env.navigator.selection.contains(row.id)
+                        && (env.navigator.rowSelection.scopeID == nil || env.navigator.rowSelection.scopeID == selectionScopeID),
+                    pendingCaret: focus.blockID == row.id ? focus.caret : nil,
+                    focusToken: focus.token,
+                    isSlashMenuOpen: slash?.blockID == row.id,
+                    onSlashCommand: { command in handleSlashCommand(command) },
+                    attributedText: env.store.attributedContent(of: row.block),
+                    placeholder: emptyPlaceholder,
+                    showsPlaceholder: shouldShowPlaceholder(for: row),
+                    actions: actions(for: row)
+                )
+            }
             .modifier(
                 BlockDragAndDrop(
                     row: row,
                     isEnabled: sorting == .manual,
-                    onMove: { draggedID, position in move(draggedID, relativeTo: row, position: position) },
+                    onMove: { draggedIDs, position in move(draggedIDs, relativeTo: row, position: position) },
                     onDropText: { text in editorEdit("Drop text") { insertPastedText(text, after: row.block) } }
                 )
             )
@@ -490,9 +510,10 @@ struct DocumentView: View {
             },
             onFocus: {
                 guard block.modelContext != nil, !block.isDeleted else { return }
+                guard !(NSApp.keyWindow?.firstResponder is RowSelectionNSControl) else { return }
                 if slash?.blockID != blockID { slash = nil }
                 focus.adopt(blockID)
-                env.navigator.selection = [blockID]
+                env.navigator.selectForEditing(blockID, scope: selectionScopeID, visible: rows.map(\.id))
                 // Typing inside a document makes it the target for menu commands.
                 env.activeDocument = document
             },
@@ -500,7 +521,7 @@ struct DocumentView: View {
                 commitInlineMetadata(block)
                 slash = nil
                 focus.request(nil)
-                env.navigator.selection.removeAll()
+                env.navigator.clearSelection()
             },
             onSlashQuery: { query, range, caretRect, viewport in
                 guard let query else {
@@ -555,7 +576,8 @@ struct DocumentView: View {
                 env.navigator.openTask(block.id)
             },
             onSelect: {
-                env.navigator.selection = [block.id]
+                env.navigator.selectRow(block.id, gesture: .replace, scope: selectionScopeID, visible: rows.map(\.id))
+                env.activeDocument = document
                 focus.request(nil)
             }
         )
@@ -737,32 +759,42 @@ struct DocumentView: View {
         env.store.undoableEditorEdit(in: document.listID, name: name, undoManager: NSApp.keyWindow?.undoManager, body)
     }
 
-    private func move(_ draggedID: UUID, relativeTo target: BlockRow, position: DropPosition) {
-        let listIDs = Set([document.listID, env.store.block(id: draggedID)?.listID].compactMap { $0 })
-        env.store.undoableEditorEdit(in: listIDs, name: "Move block", undoManager: NSApp.keyWindow?.undoManager) {
-            moveContents(draggedID, relativeTo: target, position: position)
+    private func move(_ draggedIDs: [UUID], relativeTo target: BlockRow, position: DropPosition) {
+        guard sorting == .manual else { return }
+        guard target.block.modelContext != nil, !target.block.isDeleted, !target.block.isTrashed,
+              target.block.listID == document.listID,
+              env.store.block(id: target.id) != nil,
+              env.store.list(id: document.listID) != nil else {
+            env.store.editorNotice = "The drop target is no longer available. No rows were changed."
+            return
         }
-    }
-
-    private func moveContents(_ draggedID: UUID, relativeTo target: BlockRow, position: DropPosition) {
-        guard
-            draggedID != target.id,
-            let dragged = env.store.block(id: draggedID)
-        else { return }
-
+        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        let parentID: UUID?
+        let aboveID: UUID?
         switch position {
         case .before:
-            _ = env.store.move(dragged, toParent: target.block.parentID, above: target.block, in: document.listID)
+            parentID = target.block.parentID
+            aboveID = target.id
         case .after:
-            let siblings = env.store.children(of: target.block.parentID, listID: document.listID)
+            parentID = target.block.parentID
+            // The next selected sibling will move too, so it cannot be the
+            // insertion anchor for this transaction.
+            let selected = Set(draggedIDs)
+            let siblings = env.store.children(of: parentID, listID: document.listID)
             let index = siblings.firstIndex { $0.id == target.id }
-            let next = index.map { $0 + 1 < siblings.count ? siblings[$0 + 1] : nil } ?? nil
-            _ = env.store.move(dragged, toParent: target.block.parentID, above: next, in: document.listID)
+            aboveID = index.flatMap { position in
+                siblings.dropFirst(position + 1).first { !selected.contains($0.id) }?.id
+            }
         case .inside:
-            _ = env.store.move(dragged, toParent: target.id, above: nil, in: document.listID)
-            env.store.setCollapsed(false, for: target.block)
+            parentID = target.id
+            aboveID = env.store.children(of: target.id, listID: document.listID)
+                .first { !draggedIDs.contains($0.id) }?.id
         }
-        env.store.save()
+        do {
+            _ = try env.store.moveSelection(draggedIDs, to: document.listID,
+                parentID: parentID, above: aboveID, expandsParent: position == .inside,
+                undoManager: NSApp.keyWindow?.undoManager)
+        } catch { env.store.editorNotice = error.localizedDescription }
     }
 
     private func insertPastedText(_ text: String, after block: Block) {
@@ -830,6 +862,11 @@ struct DocumentView: View {
     private func handleCommand() {
         guard let command = env.consumeCommand() else { return }
         let targets = commandTargets
+        guard !SelectionCommandPolicy.reject(command, selectedCount: env.navigator.selection.count, store: env.store) else { return }
+        if sorting != .manual, [.moveUp, .moveDown, .indent, .outdent].contains(command) {
+            env.store.editorNotice = "Switch to manual order before rearranging rows."
+            return
+        }
 
         // Anything that is just "act on these blocks" is defined once on the
         // store; only the cases that need the outline or the caret stay here.

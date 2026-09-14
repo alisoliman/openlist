@@ -7,6 +7,7 @@ struct ListTasksView: View {
     let list: TaskList
     let showsCompleted: Bool
 
+    @State private var selectionGroupID = UUID()
     @Environment(AppEnvironment.self) private var env
     @Query private var blocks: [Block]
     @Query(sort: [SortDescriptor(\TaskLabel.name)]) private var labels: [TaskLabel]
@@ -46,6 +47,7 @@ struct ListTasksView: View {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(projection.tasks) { task in
                         SmartTaskRow(block: task, context: context, showsListBadge: false)
+                            .id(TaskSelectionScrollID.first(task.id))
                     }
                 }
                 Button("Add task", systemImage: "plus") { env.send(.newTask) }
@@ -55,6 +57,9 @@ struct ListTasksView: View {
                     .help("New tasks are added at the end of this list's document")
             }
         }
+        .preference(key: VisibleSelectionIDsKey.self,
+            value: [VisibleSelectionGroup(id: selectionGroupID, blockIDs: projection.tasks.map(\.id))])
+        .modifier(TaskSelectionScope())
     }
 
     private var sortMenu: some View {

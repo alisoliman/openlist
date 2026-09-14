@@ -5,7 +5,10 @@ struct CompletionUndoAction: Identifiable {
     var id: UUID = UUID()
     var title: String
     var createdAt: Date
+    var isReopening = false
     var expiresAt: Date { createdAt.addingTimeInterval(10) }
+    var commandTitle: String { "\(isReopening ? "Reopen" : "Complete") \(title)" }
+    var feedback: String { "\(isReopening ? "Reopened" : "Completed") \(title)" }
 }
 
 /// Only completion-owned fields are captured. Titles, notes, estimates, labels,
@@ -141,6 +144,7 @@ struct CompletionUndoSnapshot {
 struct CompletionUndoChange {
     var action: CompletionUndoAction
     var rootTaskID: UUID
+    var additionalRootTaskIDs: [UUID] = []
     var before: [UUID: CompletionTaskState]
     var after: [UUID: CompletionTaskState]
     var placements: [CompletionPlacementState]
@@ -170,15 +174,22 @@ extension Store {
     }
 
     func stageCompletionUndo(for task: Block, before snapshot: CompletionUndoSnapshot, now: Date) {
+        stageCompletionUndo(for: [task], title: task.displayTitle, before: snapshot, now: now)
+    }
+
+    func stageCompletionUndo(for roots: [Block], title: String, before snapshot: CompletionUndoSnapshot,
+                             now: Date, isReopening: Bool = false) {
+        guard let first = roots.first else { return }
         let after = Dictionary(uniqueKeysWithValues: snapshot.tasks.keys.compactMap { id -> (UUID, CompletionTaskState)? in
             guard let task = block(id: id) else { return nil }
             return (id, CompletionTaskState(task))
         })
         let changed = snapshot.tasks.filter { after[$0.key] != $0.value }
         let records = completionRecords().filter { !snapshot.existingRecordIDs.contains($0.id) }.map(CompletionRecordState.init)
-        guard !changed.isEmpty, !records.isEmpty else { return }
+        guard !changed.isEmpty, isReopening || !records.isEmpty else { return }
         pendingCompletionUndoChanges.append(CompletionUndoChange(
-            action: CompletionUndoAction(title: task.displayTitle, createdAt: now), rootTaskID: task.id,
+            action: CompletionUndoAction(title: title, createdAt: now, isReopening: isReopening),
+            rootTaskID: first.id, additionalRootTaskIDs: roots.dropFirst().map(\.id),
             before: changed, after: after.filter { changed[$0.key] != nil },
             placements: snapshot.placements.filter { changed[$0.taskID] != nil }, records: records
         ))
@@ -207,7 +218,7 @@ extension Store {
             guard let store = target.store, let manager = target.manager else { return }
             store.restoreCompletion(action.id, undoing: true, undoManager: manager)
         }
-        undoManager.setActionName("Complete \(action.title)")
+        undoManager.setActionName(action.commandTitle)
     }
 
     @discardableResult
@@ -228,14 +239,19 @@ extension Store {
         }
         let source = undoing ? change.after : change.before
         let desired = undoing ? change.before : change.after
-        guard let root = block(id: change.rootTaskID), !root.isDeleted,
-              let expected = source[root.id], root.occurrenceID == expected.occurrenceID,
-              root.isCompleted == expected.isCompleted else {
-            editorNotice = "This completion cannot be undone because the task has changed or was deleted."
+        let rootIDs = [change.rootTaskID] + change.additionalRootTaskIDs
+        guard rootIDs.allSatisfy({ id in
+            guard !permanentlyErasedBlockIDs.contains(id), let root = block(id: id),
+                  !root.isDeleted, root.isTask, list(id: root.listID) != nil,
+                  let expected = source[id] else { return false }
+            return root.occurrenceID == expected.occurrenceID && root.isCompleted == expected.isCompleted
+        }) else {
+            editorNotice = "This change cannot be undone because a task has changed or was deleted."
             return false
         }
         let matching = source.compactMap { taskID, expected -> Block? in
-            guard let task = block(id: taskID), !task.isDeleted, task.occurrenceID == expected.occurrenceID,
+            guard !permanentlyErasedBlockIDs.contains(taskID), let task = block(id: taskID),
+                  !task.isDeleted, list(id: task.listID) != nil, task.occurrenceID == expected.occurrenceID,
                   task.isCompleted == expected.isCompleted else { return nil }
             return task
         }
@@ -305,7 +321,7 @@ extension Store {
                 guard let store = target.store, let manager = target.manager else { return }
                 store.restoreCompletion(id, undoing: !undoing, undoManager: manager)
             }
-            undoManager.setActionName("Complete \(change.action.title)")
+            undoManager.setActionName(change.action.commandTitle)
         }
         return true
     }

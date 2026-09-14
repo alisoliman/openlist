@@ -265,6 +265,7 @@ struct RootView: View {
     /// the targets are and handles the cases a cross-list screen owns.
     private func handleGlobalCommand() {
         guard let command = env.consumeCommand() else { return }
+        guard !SelectionCommandPolicy.reject(command, selectedCount: env.navigator.selection.count, store: env.store) else { return }
         let targets = env.navigator.selection.compactMap { env.store.block(id: $0) }
 
         if env.store.perform(command, on: targets, undoManager: NSApp.keyWindow?.undoManager) {
@@ -373,6 +374,9 @@ struct RootView: View {
             CalendarWorkBanner()
             routedContent
                 .modifier(PageArrivalTransition(route: env.navigator.route))
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            SelectionActionsBar(scopeID: env.navigator.rowSelection.scopeID)
         }
     }
 
@@ -499,6 +503,13 @@ struct ScreenScaffold<Header: View, Content: View>: View {
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollPosition($scrollPosition)
+            .onChange(of: env.navigator.rowSelection.focusID) { _, id in
+                guard env.navigator.isSelectingRows, let id,
+                      env.activeDocument?.rootBlockID == nil,
+                      NSApp.keyWindow?.firstResponder is RowSelectionNSControl else { return }
+                if env.activeDocument == nil { proxy.scrollTo(TaskSelectionScrollID.first(id)) }
+                else { proxy.scrollTo(id) }
+            }
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, offset in

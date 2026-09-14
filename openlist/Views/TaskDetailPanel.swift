@@ -119,6 +119,12 @@ private struct TaskDetailContent: View {
         .onAppear {
             focusTitleIfNew(block)
         }
+        .onChange(of: env.navigator.rowSelection.focusID) { _, id in
+            guard env.navigator.isSelectingRows, let id,
+                  env.activeDocument?.rootBlockID == taskID,
+                  NSApp.keyWindow?.firstResponder is RowSelectionNSControl else { return }
+            proxy.scrollTo(id)
+        }
         .task(id: readyRevealID) {
             guard readyRevealID != nil, let reveal else { return }
             await Task.yield()
@@ -178,7 +184,9 @@ private struct TaskDetailContent: View {
                 .focused($isTitleFocused)
                 .onSubmit(commitTitle)
                 .onChange(of: isTitleFocused) { _, focused in
-                    if focused { claimParentCommands() } else { commitTitle() }
+                    if focused {
+                        if !(NSApp.keyWindow?.firstResponder is RowSelectionNSControl) { claimParentCommands() }
+                    } else { commitTitle() }
                 }
                 .onKeyPress(.escape) {
                     cancelAndClose()
@@ -223,6 +231,7 @@ private struct TaskDetailContent: View {
 
     private func claimParentCommands() {
         env.activeDocument = nil
+        env.navigator.clearSelection()
         env.navigator.selection = [block.id]
     }
 
@@ -303,7 +312,7 @@ private struct TaskDetailContent: View {
                 .focused($isNoteFocused)
                 .accessibilityLabel("Task note")
                 .onChange(of: isNoteFocused) { _, focused in
-                    if focused { claimParentCommands() }
+                    if focused, !(NSApp.keyWindow?.firstResponder is RowSelectionNSControl) { claimParentCommands() }
                 }
                 .font(Theme.Font.body)
                 .scrollContentBackground(.hidden)

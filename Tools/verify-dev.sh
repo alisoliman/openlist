@@ -2,6 +2,7 @@
 set -euo pipefail
 APP=${1:?Usage: verify-dev.sh APP}
 codesign --verify --deep --strict "$APP"
+python3 "$(dirname "$0")/verify-drag-types.py" "$APP/Contents/Info.plist" development
 python3 - "$APP" <<'PY'
 import plistlib
 import os

@@ -65,7 +65,7 @@ final class Navigator {
         if route == .list(listID) {
             contentReveal = nil
             openTaskID = nil
-            selection.removeAll()
+            clearSelection()
         }
     }
 
@@ -82,6 +82,57 @@ final class Navigator {
 
     /// Blocks selected in the current document, for multi-select actions.
     var selection: Set<UUID> = []
+    private(set) var rowSelection = BlockSelection()
+    private(set) var isSelectingRows = false
+    private(set) var rowFocusRequest: UUID?
+
+    /// Private drag identity is per environment/library, not a persisted block ID.
+    let blockDragSessionID = UUID()
+    var activeLegacyBlockDragID: UUID?
+
+    var orderedSelection: [UUID] { rowSelection.ordered(selection) }
+
+    func selectRow(_ id: UUID, gesture: BlockSelection.Gesture, scope: UUID, visible: [UUID]) {
+        rowFocusRequest = nil
+        selection = rowSelection.select(id, gesture: gesture, in: scope, visible: visible, selected: selection)
+        isSelectingRows = true
+    }
+
+    func stepRowSelection(_ direction: Int, extending: Bool, scope: UUID, visible: [UUID]) {
+        selection = rowSelection.step(direction, extending: extending, in: scope, visible: visible, selected: selection)
+        isSelectingRows = true
+        rowFocusRequest = rowSelection.focusID
+    }
+
+    func finishRowFocusRequest(_ id: UUID) {
+        if rowFocusRequest == id { rowFocusRequest = nil }
+    }
+
+    func reconcileSelection(scope: UUID, visible: [UUID]) {
+        selection = rowSelection.reconcile(in: scope, visible: visible, selected: selection)
+    }
+
+    func selectForEditing(_ id: UUID, scope: UUID, visible: [UUID]) {
+        rowFocusRequest = nil
+        selection = rowSelection.select(id, gesture: .replace, in: scope, visible: visible, selected: selection)
+        isSelectingRows = false
+    }
+
+    func clearSelection() {
+        selection.removeAll()
+        rowSelection.clear()
+        isSelectingRows = false
+        rowFocusRequest = nil
+    }
+
+    func beginBlockDrag(_ id: UUID, scope: UUID, visible: [UUID]) -> String {
+        if rowSelection.scopeID != scope || !selection.contains(id) {
+            selectRow(id, gesture: .replace, scope: scope, visible: visible)
+        }
+        let ids = orderedSelection
+        activeLegacyBlockDragID = ids.count == 1 ? ids.first : nil
+        return DragPayload.encodeBlocks(ids, session: blockDragSessionID)
+    }
 
     // Overlays.
     var isCommandPaletteOpen = false
@@ -127,7 +178,7 @@ final class Navigator {
         route = newRoute
         contentReveal = nil
         openTaskID = nil
-        selection.removeAll()
+        clearSelection()
         trimHistory()
     }
 
@@ -137,7 +188,7 @@ final class Navigator {
         route = previous
         contentReveal = nil
         openTaskID = nil
-        selection.removeAll()
+        clearSelection()
     }
 
     func goForward() {
@@ -146,7 +197,7 @@ final class Navigator {
         route = next
         contentReveal = nil
         openTaskID = nil
-        selection.removeAll()
+        clearSelection()
     }
 
     /// Replaces the current route without disturbing history — used when the
@@ -155,7 +206,7 @@ final class Navigator {
         route = newRoute
         contentReveal = nil
         openTaskID = nil
-        selection.removeAll()
+        clearSelection()
     }
 
     /// Retarget both the visible route and history so Back/Forward cannot open

@@ -10,6 +10,14 @@
         <key>UTTypeTagSpecification</key><dict>
             <key>public.filename-extension</key><array><string>openlistbackup</string></array>
         </dict>
+    </dict><dict>
+        <key>UTTypeIdentifier</key><string>app.openlist.block-drag</string>
+        <key>UTTypeDescription</key><string>Openlist Row Move</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+    </dict><dict>
+        <key>UTTypeIdentifier</key><string>app.openlist.inbox-order</string>
+        <key>UTTypeDescription</key><string>Openlist Inbox Order</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
     </dict></array>
 </dict>
 </plist>

@@ -64,4 +64,45 @@ let reveal = try ContentReveal.resolve(.block(note.id), blocks: [note], lists: [
 reopened.reveal(reveal)
 check(reopened.hasDocumentEditor && reopened.contentReveal == reveal,
       "Exact-content navigation returns to Document before revealing prose")
+let queueScope = UUID(), inspectorScope = UUID()
+let a = UUID(), b = UUID(), c = UUID()
+navigator.go(to: .inbox)
+navigator.showsUnfiledInbox = false
+navigator.selectRow(a, gesture: .replace, scope: queueScope, visible: [a, b, c])
+navigator.selectRow(c, gesture: .range, scope: queueScope, visible: [a, b, c])
+check(navigator.orderedSelection == [a, b, c] && navigator.isSelectingRows, "Inbox range selection follows eager queue order")
+navigator.reconcileSelection(scope: inspectorScope, visible: [])
+check(navigator.orderedSelection == [a, b, c], "An inactive inspector cannot prune the Inbox queue selection")
+navigator.reconcileSelection(scope: queueScope, visible: [c, a])
+check(navigator.orderedSelection == [c, a], "Filtered Inbox membership prunes hidden rows and refreshes queue order")
+navigator.selectForEditing(c, scope: queueScope, visible: [c, a])
+check(navigator.selection == [c] && !navigator.isSelectingRows, "Editing a queue task intentionally returns to single native text selection")
+navigator.stepRowSelection(1, extending: true, scope: queueScope, visible: [c, a])
+check(navigator.selection == [c, a] && navigator.rowFocusRequest == a, "An arrow extension requests the next gutter without losing its range anchor")
+navigator.finishRowFocusRequest(a)
+check(navigator.rowFocusRequest == nil && navigator.rowSelection.anchorID == c, "Keyboard focus handoff preserves the range anchor")
+let payload = navigator.beginBlockDrag(c, scope: queueScope, visible: [c, a])
+check(DragPayload.blockDrop(payload, session: navigator.blockDragSessionID, activeLegacyID: nil) == .blocks([c, a]),
+      "Queue ownership drag carries visible multi-row order without becoming an Inbox reorder")
+navigator.go(to: .tasks)
+check(navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil && navigator.rowFocusRequest == nil,
+      "Navigation clears selection scope and pending gutter focus together")
+
+let listScope = UUID()
+navigator.go(to: .list(listID))
+navigator.selectRow(a, gesture: .replace, scope: listScope, visible: [a, b, c])
+navigator.stepRowSelection(1, extending: true, scope: listScope, visible: [a, b, c])
+navigator.setListViewMode(.tasks, for: listID)
+check(!navigator.hasDocumentEditor && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil
+      && !navigator.isSelectingRows && navigator.rowFocusRequest == nil,
+      "Switching to list Tasks clears the document selection, anchor and pending native focus")
+navigator.selectRow(c, gesture: .replace, scope: listScope, visible: [c, b, a])
+navigator.selectRow(a, gesture: .range, scope: listScope, visible: [c, b, a])
+check(navigator.orderedSelection == [c, b, a], "List Tasks range follows the entire sorted projection")
+navigator.reconcileSelection(scope: listScope, visible: [b, a])
+check(navigator.orderedSelection == [b, a], "Hiding a completed task prunes it from list Tasks selection")
+navigator.setListViewMode(.document, for: listID)
+check(navigator.hasDocumentEditor && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil,
+      "Returning to Document clears list Tasks row selection before text focus resumes")
+
 print("\(checks) Inbox navigation checks passed")

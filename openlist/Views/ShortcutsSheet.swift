@@ -66,6 +66,16 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⇧⌘I", action: "Add to inbox"),
             Shortcut(keys: "⇧⌘R", action: "Remove from list"),
         ]),
+        Group(title: "Selecting rows", symbol: "checklist", shortcuts: [
+            Shortcut(keys: "Click gutter", action: "Select a row"),
+            Shortcut(keys: "⌘ click", action: "Add or remove a row in the gutter"),
+            Shortcut(keys: "⇧ click", action: "Select a visible range in the gutter"),
+            Shortcut(keys: "↑ ↓", action: "Move selection while gutter is focused"),
+            Shortcut(keys: "⇧↑ ⇧↓", action: "Extend or shrink a row range"),
+            Shortcut(keys: "Space", action: "Toggle the focused gutter row"),
+            Shortcut(keys: "Drag gutter", action: "Move selected rows and descendants"),
+            Shortcut(keys: "Esc", action: "Clear row selection"),
+        ]),
         Group(title: "Editing", symbol: "text.cursor", shortcuts: [
             Shortcut(keys: "↩", action: "New block below"),
             Shortcut(keys: "⇧↩", action: "Line break inside a block"),

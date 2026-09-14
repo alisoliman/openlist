@@ -18,14 +18,6 @@ enum DetailPicker: String { case due, repeatRule, reminder, labels }
     func consumeCommand() -> EditorCommand? { defer { pendingCommand = nil }; return pendingCommand }
     init(store: Store) { self.store = store }
 }
-@Observable final class Navigator {
-    var selection: Set<UUID> = []
-    var contentReveal: ContentReveal?
-    var isSearchOpen = false
-    var openTaskID: UUID?
-    func openTask(_ id: UUID) { openTaskID = id }
-    func finishReveal() { contentReveal = nil }
-}
 final class FixtureSettings { var parsesNaturalLanguageDates = true }
 struct TaskSchedulePicker: View {
     let block: Block

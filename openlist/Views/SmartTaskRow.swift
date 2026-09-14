@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import AppKit
 import SwiftData
 import SwiftUI
 
@@ -60,8 +61,10 @@ struct SmartTaskRow: View {
     var context: TaskRowContext
     var showsListBadge: Bool = true
     var showsBreadcrumb: Bool = true
+    var selectionGroupID: UUID?
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.rowSelectionContext) private var selectionScope
     @State private var isHovering = false
     @State private var titleDraft = SyncedTextDraft()
     @State private var editSessionID = UUID()
@@ -71,6 +74,7 @@ struct SmartTaskRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
+            RowSelectionGutter(id: block.id, title: block.displayTitle, isPrimaryAppearance: isPrimaryAppearance)
             TaskCheckbox(
                 isCompleted: block.isCompleted,
                 accent: owningList?.accent.color ?? Theme.accent,
@@ -101,11 +105,6 @@ struct SmartTaskRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .rowBackground(isSelected: isSelected, isHovering: isHovering)
-        .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { env.navigator.selection = [block.id] }
-        )
         .onHover { isHovering = $0 }
         .onAppear { titleDraft.reset(to: block.text) }
         .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
@@ -177,7 +176,14 @@ struct SmartTaskRow: View {
         }
     }
 
-    private var isSelected: Bool { env.navigator.selection.contains(block.id) }
+    private var isSelected: Bool {
+        env.navigator.selection.contains(block.id)
+            && (env.navigator.rowSelection.scopeID == nil || env.navigator.rowSelection.scopeID == selectionScope?.scopeID)
+    }
+
+    private var isPrimaryAppearance: Bool {
+        selectionGroupID == nil || selectionScope?.firstGroupByBlock[block.id] == selectionGroupID
+    }
 
     /// Open tasks are directly editable; completed ones are not.
     ///
@@ -202,9 +208,15 @@ struct SmartTaskRow: View {
                 .onSubmit(commit)
                 .onChange(of: isEditing) { _, editing in
                     if editing {
+                        // SwiftUI can report the old title's focus after a
+                        // gutter click. The actual responder decides ownership.
+                        guard !(NSApp.keyWindow?.firstResponder is RowSelectionNSControl) else { return }
                         env.store.activeTitleDrafts[editSessionID] = block.id
                         titleDraft.reset(to: block.text)
-                        env.navigator.selection = [block.id]
+                        if let selectionScope {
+                            env.navigator.selectForEditing(block.id, scope: selectionScope.scopeID,
+                                visible: selectionScope.visibleIDs)
+                        } else { env.navigator.selection = [block.id] }
                         env.activeDocument = nil
                     } else {
                         commit()
@@ -261,6 +273,8 @@ struct TaskGroupSection<Footer: View>: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded: Bool
+    @State private var selectionGroupID = UUID()
+    @Environment(\.rowSelectionContext) private var selectionScope
 
     init(
         title: String,
@@ -323,13 +337,19 @@ struct TaskGroupSection<Footer: View>: View {
                 // Lazy so a long group only realizes the rows on screen.
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(tasks) { task in
-                        SmartTaskRow(block: task, context: context, showsListBadge: showsListBadge)
+                        SmartTaskRow(block: task, context: context, showsListBadge: showsListBadge,
+                            selectionGroupID: selectionGroupID)
+                            .id(selectionScope?.firstGroupByBlock[task.id] == selectionGroupID
+                                ? TaskSelectionScrollID.first(task.id)
+                                : TaskSelectionScrollID.repeated(group: selectionGroupID, block: task.id))
                     }
                 }
                 footer()
             }
         }
         .padding(.bottom, 10)
+        .preference(key: VisibleSelectionIDsKey.self,
+            value: [VisibleSelectionGroup(id: selectionGroupID, blockIDs: isExpanded ? tasks.map(\.id) : [])])
         .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1), value: tasks.map(\.id))
     }
 }

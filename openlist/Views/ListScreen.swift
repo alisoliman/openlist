@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import AppKit
 import SwiftData
 import SwiftUI
 
@@ -52,6 +53,12 @@ struct ListScreen: View {
                 DispatchQueue.main.async { isTitleFocused = true }
             }
         }
+        .onChange(of: isTitleFocused) { _, focused in
+            if focused { adoptListTextFocus() }
+        }
+        .onChange(of: isSummaryFocused) { _, focused in
+            if focused { adoptListTextFocus() }
+        }
         .onChange(of: list.summary) { old, new in
             if old.isEmpty && !new.isEmpty { isSummaryVisible = true }
         }
@@ -74,6 +81,16 @@ struct ListScreen: View {
                 titleSelection = SearchProjection.range(of: reveal.query, in: list.title).map { TextSelection(range: $0) }
             }
         }
+    }
+
+    private func adoptListTextFocus() {
+        // A delayed callback from a removed list or the previous field must
+        // not clear a newer gutter selection or another pane's selection.
+        guard list.modelContext != nil, !list.isDeleted,
+              env.navigator.route == .list(list.id),
+              isTitleFocused || isSummaryFocused,
+              NSApp.keyWindow?.firstResponder is NSTextView else { return }
+        env.navigator.clearSelection()
     }
 
     private var showsCompleted: Bool {
