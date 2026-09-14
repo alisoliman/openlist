@@ -39,9 +39,10 @@ struct ListsScreen: View {
             ScreenHeader(
                 icon: "square.stack",
                 title: "Lists",
-                subtitle: "\(visibleLists.count) \(visibleLists.count == 1 ? "list" : "lists")\(showsArchived ? " · including archived" : " · active")"
+                subtitle: showsArchived ? "Including archived" : nil
             ) {
-                HStack(spacing: 4) {
+                HStack(spacing: 12) {
+                    ListGallerySortMenu(sorting: $sorting, ascending: $sortAscending)
                     Menu {
                         Button(showsArchived ? "Hide Archived" : "Show Archived") {
                             showsArchived.toggle()
@@ -67,8 +68,14 @@ struct ListsScreen: View {
             }
         } content: {
             VStack(alignment: .leading, spacing: 16) {
-                ListGallerySortMenu(sorting: $sorting, ascending: $sortAscending)
-
+                if visibleLists.isEmpty {
+                    EmptyStateView(icon: "square.stack", title: "Your lists live here",
+                        message: "Create a list for a project, a plan, or anything on your mind.",
+                        actionTitle: "New list") {
+                            let list = env.store.createList(in: env.store.defaultSection())
+                            env.navigator.go(to: .list(list.id))
+                        }
+                }
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 12)],
                     spacing: 12
@@ -164,7 +171,7 @@ struct ListCard: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(QuietButtonStyle())
         .onHover { isHovering = $0 }
         .help(isEffectivelyArchived ? "\(list.displayTitle) · Archived; excluded from active tasks and reminders" : list.displayTitle)
         .contextMenu {
@@ -206,7 +213,8 @@ struct ListCard: View {
 
     private var subtitle: String {
         if !list.summary.isEmpty { return list.summary }
-        if total == 0 { return "Empty" }
+        if total == 0 { return "No tasks" }
+        if doneCount == 0 { return "\(openCount) \(openCount == 1 ? "task" : "tasks")" }
         return openCount == 0 ? "All \(total) done" : "\(openCount) open · \(doneCount) done"
     }
 }
@@ -227,8 +235,7 @@ struct UpdatesScreen: View {
         ScreenScaffold {
             ScreenHeader(
                 icon: "sparkles",
-                title: "Updates",
-                subtitle: "What you have been up to"
+                title: "Updates"
             ) {
                 if !events.isEmpty {
                     Menu {

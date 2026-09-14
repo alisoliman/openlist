@@ -70,6 +70,7 @@ struct openlistApp: App {
         Window("Openlist", id: WindowID.main) {
             if let env, let container {
                 RootView()
+                    .modifier(InteractionMotion())
                     .frame(minWidth: 640, minHeight: 420)
                     .environment(env)
                     .modelContainer(container)
@@ -126,6 +127,7 @@ struct openlistApp: App {
         Window("Quick Add", id: WindowID.quickAdd) {
             if let env, let container {
                 QuickAddWindowView()
+                    .modifier(InteractionMotion())
                     .environment(env)
                     .modelContainer(container)
                     .environment(\.calendar, env.settings.calendar)
@@ -140,6 +142,7 @@ struct openlistApp: App {
         Settings {
             if let env, let container {
                 SettingsView()
+                    .modifier(InteractionMotion())
                     .environment(env)
                     .modelContainer(container)
                     .environment(\.calendar, env.settings.calendar)
@@ -151,6 +154,7 @@ struct openlistApp: App {
         MenuBarExtra("Openlist", systemImage: "checkmark.circle", isInserted: menuBarBinding) {
             if let env, let container {
                 MenuBarView()
+                    .modifier(InteractionMotion())
                     .environment(env)
                     .modelContainer(container)
                     .environment(\.calendar, env.settings.calendar)

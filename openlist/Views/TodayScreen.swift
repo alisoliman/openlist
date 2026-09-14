@@ -31,41 +31,30 @@ struct TodayScreen: View {
         let context = TaskRowContext(tasks: blocks.filter(\.isTask), lists: lists, labels: labels)
 
         return ScreenScaffold {
-            VStack(alignment: .leading, spacing: 12) {
-                ScreenHeader(
-                    icon: "sun.max",
-                    title: "Today",
-                    subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))
-                ) {
-                    HStack(spacing: 4) {
-                        Button { env.navigator.go(to: .calendar) } label: { Image(systemName: "calendar") }
-                            .buttonStyle(.borderless).help("Open adaptive calendar (⌘6)")
-                        Button {
-                            showsCompleted = !showsCompletedNow
-                        } label: {
-                            Image(systemName: showsCompletedNow ? "eye" : "eye.slash")
-                        }
-                        .buttonStyle(.borderless)
-                        .help(showsCompletedNow ? "Hide completed" : "Show completed")
-
-                        Button {
-                            env.send(.newTask)
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("New task (⌘N)")
+            ScreenHeader(
+                icon: "sun.max",
+                title: "Today",
+                subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))
+            ) {
+                HStack(spacing: 12) {
+                    TodaySortMenu(selection: $sorting)
+                    Button {
+                        showsCompleted = !showsCompletedNow
+                    } label: {
+                        Image(systemName: showsCompletedNow ? "eye" : "eye.slash")
+                            .frame(width: 28, height: 28)
                     }
+                    .buttonStyle(QuietButtonStyle())
+                    .help(showsCompletedNow ? "Hide completed" : "Show completed")
+                    .accessibilityLabel(showsCompletedNow ? "Hide completed tasks" : "Show completed tasks")
                 }
-                TodaySortMenu(selection: $sorting)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         } content: {
             if buckets.isEmpty(showsCompleted: showsCompletedNow) {
                 EmptyStateView(
                     icon: "checkmark.circle",
                     title: "Nothing due today",
-                    message: "Scheduled and starred tasks from active lists land here. Add one, or schedule something from a list.",
+                    message: "Due, planned, and starred tasks appear here.",
                     actionTitle: "Add a task",
                     action: { env.send(.newTask) }
                 )

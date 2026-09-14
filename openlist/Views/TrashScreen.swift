@@ -11,20 +11,24 @@ struct TrashScreen: View {
 
     var body: some View {
         ScreenScaffold(maxContentWidth: 840) {
-            ScreenHeader(icon: "trash", title: "Trash", subtitle: "Kept until you permanently delete them") {
-                Button("Empty Trash", role: .destructive) {
-                    pendingErase = entries.map(\.id)
-                    showsEraseConfirmation = true
+            ScreenHeader(icon: "trash", title: "Trash") {
+                if !entries.isEmpty {
+                    Button("Empty Trash", role: .destructive) {
+                        pendingErase = entries.map(\.id)
+                        showsEraseConfirmation = true
+                    }
                 }
-                .disabled(entries.isEmpty)
             }
         } content: {
             VStack(alignment: .leading, spacing: 20) {
-                Text("\(entries.count) items · \(ByteCountFormatter.string(fromByteCount: Int64(entries.reduce(0) { $0 + $1.byteCount }), countStyle: .file)) in retained files. Nothing is deleted automatically.")
-                    .font(.callout)
-                    .foregroundStyle(Theme.secondaryText)
                 if entries.isEmpty {
-                    ContentUnavailableView("Trash is empty", systemImage: "trash", description: Text("Deleted tasks and lists appear here so you can recover them later."))
+                    EmptyStateView(icon: "trash", title: "Trash is empty",
+                        message: "Deleted tasks and lists stay here until you remove them permanently.")
+                } else {
+                    Text("\(entries.count) items · Nothing is deleted automatically")
+                        .font(Theme.Font.metadata)
+                        .foregroundStyle(Theme.secondaryText)
+                        .help("\(ByteCountFormatter.string(fromByteCount: Int64(entries.reduce(0) { $0 + $1.byteCount }), countStyle: .file)) in retained files")
                 }
                 ForEach(entries) { entry in
                     VStack(alignment: .leading, spacing: 8) {
@@ -42,10 +46,19 @@ struct TrashScreen: View {
                             .font(.callout)
                         HStack {
                             Button("Restore") { _ = env.store.restoreTrash(ids: [entry.id]); reload() }
-                            Button("Permanently Delete…", role: .destructive) {
-                                pendingErase = [entry.id]
-                                showsEraseConfirmation = true
+                            Spacer()
+                            Menu {
+                                Button("Permanently Delete…", role: .destructive) {
+                                    pendingErase = [entry.id]
+                                    showsEraseConfirmation = true
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis").frame(width: 24, height: 24)
                             }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .accessibilityLabel("Trash actions for \(entry.title)")
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

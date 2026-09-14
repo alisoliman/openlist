@@ -2,6 +2,11 @@
 
 Inbox is an ordered selection of existing task IDs. Add to Inbox (⇧⌘I) and Remove from Inbox (⇧⌘R) only change selection. Titles, notes, labels, attachments, parents, document order and owning list remain the same. Tasks can be selected from any active list, including nested tasks. Repeated Add does not create a copy or move an existing selection. Removing an unfiled task leaves it reachable in Tasks and the Unfiled content tab.
 
+The compact tab labels are **Selected** and **Unfiled**. Their meanings are
+unchanged: Selected is the curated queue, while Unfiled opens the original rich
+capture document. The task's Inbox actions menu includes **Show unfiled content**
+instead of repeating that navigation link beneath every unfiled row.
+
 The Unfiled content tab retains the original rich Inbox document: its UUID, summary, non-task blocks, collapsed branches, nested tasks and completed content. “Move to List → Unfiled content” is an ownership operation and still moves the complete subtree. Review unfiled sorts the original capture document into lists; it does not remove queue membership. New unfiled task captures, including task conversion and nested capture, enter the queue. Independent duplicate, template and fragment copies start outside it, even when a copy keeps schedules.
 
 The queue has saved manual order, independent of document sort order. Drag onto another queue task to place it before that task; the task's Inbox actions menu also has keyboard/VoiceOver-accessible Move earlier and Move later commands. Sidebar, menu and widget show the same open-member count. Completed members can remain visible using the Inbox completed-visibility preference; they do not count as open. Archived or temporarily missing sources are hidden without losing selection, and unarchive makes selected tasks visible again. Deleting a task removes its membership with the task.

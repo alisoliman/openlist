@@ -383,7 +383,6 @@ struct RootView: View {
         VStack(spacing: 0) {
             CalendarWorkBanner()
             routedContent
-                .modifier(PageArrivalTransition(route: env.navigator.route))
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SelectionActionsBar(scopeID: env.navigator.rowSelection.scopeID)
@@ -449,10 +448,6 @@ struct RootView: View {
                 .labelStyle(.iconOnly)
             .help("Search (⌘F)")
 
-            Button("Quick command", systemImage: "command") { env.navigator.isCommandPaletteOpen = true }
-                .labelStyle(.iconOnly)
-            .help("Quick command (⌘K)")
-
             Button("Add task", systemImage: "plus") { env.send(.newTask) }
                 .labelStyle(.iconOnly)
             .help("New task (⌘N)")
@@ -484,6 +479,7 @@ struct ScreenScaffold<Header: View, Content: View>: View {
     @Environment(AppEnvironment.self) private var env
     @State private var scrollPosition = ScrollPosition(idType: UUID.self)
     @State private var scrollRoute: AppRoute?
+    @State private var hasRestoredScroll = false
     @State private var visibleNoteRevealID: UUID?
     var maxContentWidth: CGFloat = 820
     /// Gap between the title block and the content below it.
@@ -523,16 +519,21 @@ struct ScreenScaffold<Header: View, Content: View>: View {
                 else { proxy.scrollTo(id) }
             }
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top
+                geometry.contentOffset.y
             } action: { _, offset in
-                guard let scrollRoute, scrollRoute == env.navigator.route else { return }
+                guard hasRestoredScroll, let scrollRoute, scrollRoute == env.navigator.route else { return }
                 env.navigator.rememberScrollOffset(offset, for: scrollRoute)
             }
             .onAppear {
                 scrollRoute = env.navigator.route
                 if readyRevealID == nil {
-                    scrollPosition.scrollTo(y: env.navigator.scrollOffset(for: env.navigator.route))
+                    if let offset = env.navigator.scrollOffset(for: env.navigator.route) {
+                        scrollPosition.scrollTo(y: offset)
+                    } else {
+                        scrollPosition.scrollTo(edge: .top)
+                    }
                 }
+                hasRestoredScroll = true
             }
             .task(id: readyRevealID) {
                 guard readyRevealID != nil, let request = env.navigator.contentReveal else { return }
@@ -564,7 +565,7 @@ struct ScreenScaffold<Header: View, Content: View>: View {
 struct EmptyStateView: View {
     let icon: String
     let title: String
-    let message: String
+    var message: String = ""
     var actionTitle: String?
     var action: (() -> Void)?
 
@@ -577,11 +578,13 @@ struct EmptyStateView: View {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
 
-            Text(message)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.secondaryText)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 340)
+            if !message.isEmpty {
+                Text(message)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 340)
+            }
 
             if let actionTitle, let action {
                 Button(actionTitle, action: action)

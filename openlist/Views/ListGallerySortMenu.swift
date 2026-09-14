@@ -22,8 +22,8 @@ struct ListGallerySortMenu: View {
                 .pickerStyle(.inline)
             }
         } label: {
-            Label(sorting.summary(ascending: ascending), systemImage: "arrow.up.arrow.down")
-                .font(.callout)
+            Label(sorting == .existing ? "Sort" : sorting.title, systemImage: "arrow.up.arrow.down")
+                .font(Theme.Font.metadata)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()

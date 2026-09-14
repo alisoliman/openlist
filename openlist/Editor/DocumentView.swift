@@ -60,6 +60,7 @@ struct DocumentView: View {
     /// Height of the click-to-append area below the last block. A full page
     /// wants a generous target; an inspector panel would just show a gap.
     var trailingSpace: CGFloat = 120
+    var appendButtonTitle: String?
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -82,7 +83,8 @@ struct DocumentView: View {
         showsCompleted: Bool = true,
         sorting: ListSorting = .manual,
         seedsEmptyBlock: Bool = true,
-        trailingSpace: CGFloat = 120
+        trailingSpace: CGFloat = 120,
+        appendButtonTitle: String? = nil
     ) {
         self.document = document
         self.emptyPlaceholder = emptyPlaceholder
@@ -90,6 +92,7 @@ struct DocumentView: View {
         self.sorting = sorting
         self.seedsEmptyBlock = seedsEmptyBlock
         self.trailingSpace = trailingSpace
+        self.appendButtonTitle = appendButtonTitle
 
         let listID = document.listID
         _fetchedBlocks = Query(
@@ -179,7 +182,20 @@ struct DocumentView: View {
                 }
             }
 
-            trailingTapTarget
+            if let appendButtonTitle {
+                Button(action: appendTask) {
+                    Label(appendButtonTitle, systemImage: "plus")
+                        .font(Theme.Font.metadata)
+                        .foregroundStyle(Theme.secondaryText)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(QuietButtonStyle())
+                .accessibilityIdentifier("document-append-task")
+                .contextMenu { pasteMenu }
+            } else {
+                trailingTapTarget
+            }
         }
         .environment(\.rowSelectionContext, RowSelectionContext(scopeID: selectionScopeID, visibleIDs: visibleIDs) {
             env.activeDocument = document
@@ -196,11 +212,15 @@ struct DocumentView: View {
             if env.navigator.rowSelection.scopeID == selectionScopeID { env.navigator.clearSelection() }
         }
         .scrollTargetLayout()
-        .animation(reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.12).delay(0.1),
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion, duration: Theme.Motion.rearrangementDuration),
                    value: completedTaskIDs)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: showsCompleted)
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion, duration: Theme.Motion.rearrangementDuration),
+                   value: showsCompleted)
         .onChange(of: completedTaskIDs) { previous, current in
-            guard !reduceMotion else { return }
+            guard Theme.Motion.allowsAnimation(reduceMotion: reduceMotion, eventType: NSApp.currentEvent?.type) else {
+                completionMotionIDs.removeAll()
+                return
+            }
             let changed = previous.symmetricDifference(current)
             let children = BlockTree.childIndex(of: blocks, root: document.rootBlockID)
             var moving = changed
@@ -214,7 +234,7 @@ struct DocumentView: View {
         }
         .task(id: completionMotionIDs) {
             guard !completionMotionIDs.isEmpty else { return }
-            do { try await Task.sleep(for: .milliseconds(650)) }
+            do { try await Task.sleep(for: .milliseconds(240)) }
             catch { return }
             completionMotionIDs.removeAll()
         }
@@ -337,12 +357,14 @@ struct DocumentView: View {
                     appendTask()
                 }
             }
-            .contextMenu {
-                FragmentPasteMenu(document: document) { ids in
-                    env.activeDocument = document
-                    focus.request(ids.first, caret: 0)
-                }
-            }
+            .contextMenu { pasteMenu }
+    }
+
+    private var pasteMenu: some View {
+        FragmentPasteMenu(document: document) { ids in
+            env.activeDocument = document
+            focus.request(ids.first, caret: 0)
+        }
     }
 
     private func shouldShowPlaceholder(for row: BlockRow) -> Bool {

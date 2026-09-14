@@ -26,12 +26,6 @@ struct TaskSchedulePicker: View {
     let initialSection: DetailPicker
     var body: some View { EmptyView() }
 }
-struct TaskCompletionFeedback: ViewModifier {
-    let trigger: Int
-    let accent: Color
-    func body(content: Content) -> some View { content }
-}
-
 enum MarkdownExporter {
     static func presentError(_ error: Error, operation: String) { preconditionFailure("Unexpected attachment open: \(operation)") }
 }

@@ -3,14 +3,13 @@ import SwiftUI
 /// Browsing changes only the viewport. All scales share the coordinator's plan.
 struct CalendarScreen: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var scaleSelection
     @AppStorage("calendar.viewSpan", store: ReviewSession.defaults) private var span: CalendarSpan = .threeDays
     @State private var date = Date.now
     @State private var showsDateNavigator = false
     @State private var showsSettings = false
     @State private var showsHistory = false
     @State private var showsCoverage = false
+    @State private var showsLegend = false
     @AppStorage("calendar.hourHeight", store: ReviewSession.defaults) private var savedHourHeight: Double = 88
     @State private var scrollRequest = 0
     @State private var scrollTarget: Date?
@@ -29,7 +28,6 @@ struct CalendarScreen: View {
     private var dates: [Date] {
         (0..<span.days).compactMap { calendar.date(byAdding: .day, value: $0, to: firstDay) }
     }
-    private var motion: Animation? { reduceMotion ? nil : .smooth(duration: 0.28) }
     private var title: String {
         if span == .month { return date.formatted(.dateTime.month(.wide).year()) }
         if span == .day {
@@ -82,11 +80,9 @@ struct CalendarScreen: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Calendar").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.secondaryText)
                     Button { showsDateNavigator.toggle() } label: {
                         HStack(spacing: 7) {
                             Text(title).font(.system(size: 23, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
-                                .contentTransition(.numericText())
                             Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.secondaryText)
                         }.contentShape(Rectangle())
                     }
@@ -113,8 +109,6 @@ struct CalendarScreen: View {
                 .help("Go to the current day and time (⌘0)")
                 .accessibilityLabel("Go to current time").accessibilityInputLabels(["Now", "Go to current time"])
                 Menu {
-                    Button("Add task", systemImage: "plus") { env.send(.newTask) }
-                    Divider()
                     Button("Work history", systemImage: "clock.arrow.circlepath") { showsHistory = true }
                     Button("Calendar settings", systemImage: "slider.horizontal.3") { showsSettings = true }
                 } label: { Image(systemName: "ellipsis").frame(width: 24, height: 28) }
@@ -142,7 +136,7 @@ struct CalendarScreen: View {
             if env.calendar.plan.assessments.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "calendar.badge.plus").foregroundStyle(Theme.accent)
-                    Text("Select tasks for today or add a due date. Openlist finds the time.")
+                    Text("Plan tasks for today or give them a due date.")
                         .font(.caption).foregroundStyle(Theme.secondaryText)
                     Spacer(minLength: 0)
                     Button("Add task") { env.send(.newTask) }.font(.caption)
@@ -163,37 +157,34 @@ struct CalendarScreen: View {
             .keyboardShortcut(key, modifiers: [.command, .option])
     }
     private var scalePicker: some View {
-        HStack(spacing: 2) {
+        Picker("Calendar view", selection: $span) {
             ForEach(CalendarSpan.allCases) { item in
-                Button {
-                    withAnimation(motion) { span = item }
-                } label: {
-                    Text(item.rawValue).font(.system(size: 11, weight: span == item ? .semibold : .medium))
-                        .foregroundStyle(span == item ? Color.primary : Theme.secondaryText)
-                        .frame(width: 60, height: 27)
-                        .background {
-                            if span == item {
-                                RoundedRectangle(cornerRadius: 7).fill(Theme.canvas)
-                                    .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
-                                    .matchedGeometryEffect(id: "calendar-scale", in: scaleSelection)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).accessibilityAddTraits(span == item ? [.isSelected] : [])
-                .accessibilityLabel(item.rawValue + " calendar view")
+                Text(item.rawValue).tag(item)
             }
-        }.padding(3).background(Theme.chipFill, in: RoundedRectangle(cornerRadius: 10))
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
     private var footer: some View {
         HStack(spacing: 13) {
-            Label("Work", systemImage: "circle.fill").foregroundStyle(ListAccent.blue.color)
-            Label("Personal", systemImage: "circle.fill").foregroundStyle(ListAccent.green.color)
-            Label("Busy", systemImage: "lock.fill").foregroundStyle(Theme.secondaryText)
-            Label("Completed", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.secondaryText)
-            Spacer(minLength: 4)
             Text("Plan through \(env.calendar.plan.end.addingTimeInterval(-1).formatted(.dateTime.month(.abbreviated).day()))")
                 .foregroundStyle(Theme.secondaryText).lineLimit(1)
+            Spacer(minLength: 4)
+            Button("Calendar legend", systemImage: "info.circle") { showsLegend.toggle() }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .help("Calendar legend")
+                .popover(isPresented: $showsLegend, arrowEdge: .top) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Work", systemImage: "circle.fill").foregroundStyle(ListAccent.blue.color)
+                        Label("Personal", systemImage: "circle.fill").foregroundStyle(ListAccent.green.color)
+                        Label("Busy", systemImage: "lock.fill")
+                        Label("Completed", systemImage: "checkmark.circle.fill")
+                    }
+                    .font(.callout)
+                    .padding(16)
+                }
             if span != .month {
                 CalendarZoomMenu(selection: hourHeight) { value in
                     hourHeight = value
@@ -205,14 +196,15 @@ struct CalendarScreen: View {
     }
     private func advance(_ direction: Int) {
         let next = calendar.date(byAdding: span == .month ? .month : .day, value: direction * (span == .month ? 1 : span.days), to: date) ?? date
-        withAnimation(motion) { date = next }
+        date = next
     }
     private func navigate(to day: Date) {
-        withAnimation(motion) { date = day }
+        date = day
         if span != .month { reveal(day) }
     }
     private func openDay(_ day: Date) {
-        withAnimation(motion) { date = day; span = .day }
+        date = day
+        span = .day
         reveal(day)
     }
     private func reveal(_ day: Date) {
@@ -220,7 +212,8 @@ struct CalendarScreen: View {
         scrollRequest += 1
     }
     private func jumpToNow() {
-        withAnimation(motion) { date = .now; if span == .month { span = .day } }
+        date = .now
+        if span == .month { span = .day }
         scrollTarget = .now
         scrollRequest += 1
     }

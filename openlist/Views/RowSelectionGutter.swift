@@ -7,9 +7,12 @@ struct RowSelectionGutter: View {
     let id: UUID
     let title: String
     var isPrimaryAppearance = true
+    var isRevealed = false
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.rowSelectionContext) private var scope
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @State private var isHovering = false
 
     var body: some View {
         if let scope {
@@ -23,6 +26,8 @@ struct RowSelectionGutter: View {
                 requestsKeyboardFocus: env.navigator.rowSelection.scopeID == scope.scopeID
                     && env.navigator.rowFocusRequest == id && isPrimaryAppearance,
                 defersPlainClick: env.navigator.selection.count > 1 && env.navigator.selection.contains(id),
+                isRevealed: isRevealed || isHovering || voiceOverEnabled
+                    || (env.navigator.isSelectingRows && env.navigator.rowSelection.scopeID == scope.scopeID),
                 onSelect: { gesture in
                     scope.activate()
                     env.navigator.selectRow(id, gesture: gesture, scope: scope.scopeID, visible: scope.visibleIDs)
@@ -41,6 +46,7 @@ struct RowSelectionGutter: View {
                 onDragEnd: { env.navigator.activeLegacyBlockDragID = nil }
             )
             .frame(width: 22, height: 26)
+            .onHover { isHovering = $0 }
         }
     }
 }

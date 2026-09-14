@@ -28,8 +28,6 @@ struct CommandPaletteView: View {
                     field
                     Divider()
                     results
-                    Text("↑↓ to choose · Return to open · Esc to close")
-                        .font(.caption).foregroundStyle(.secondary).padding(10)
                 }
                 .frame(width: 560, height: 420)
                 .background(.regularMaterial)
@@ -48,6 +46,8 @@ struct CommandPaletteView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($isFieldFocused)
+                .accessibilityLabel("Find a list, task, or command")
+                .accessibilityHint("Use arrow keys to choose and Return to open.")
                 .onSubmit { run(items[safe: selection]) }
                 .onChange(of: query) { _, _ in selection = 0 }
                 .onKeyPress(.upArrow) {
@@ -62,6 +62,11 @@ struct CommandPaletteView: View {
                     dismiss()
                     return .handled
                 }
+
+            Button("Close commands", systemImage: "xmark") { dismiss() }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -84,7 +89,7 @@ struct CommandPaletteView: View {
             }
             .onChange(of: selection) { _, newValue in
                 guard let item = items[safe: newValue] else { return }
-                withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(item.id, anchor: .center) }
+                proxy.scrollTo(item.id, anchor: .center)
             }
         }
     }
@@ -109,6 +114,7 @@ struct CommandPaletteView: View {
         var symbol: String
         var accent: ListAccent
         var kind: Kind
+        var shortcut: String?
     }
 
     private var trimmedQuery: String {
@@ -142,7 +148,7 @@ struct CommandPaletteView: View {
                 PaletteItem(
                     id: "list-\(list.id)",
                     title: list.displayTitle,
-                    subtitle: "Open list",
+                    subtitle: "",
                     symbol: "square.stack",
                     accent: list.accent,
                     kind: .openList(list)
@@ -169,19 +175,19 @@ struct CommandPaletteView: View {
 
         // Destinations and commands
         let commands: [PaletteItem] = [
-            PaletteItem(id: "new-task", title: "New Task", subtitle: "⌘N · Choose a destination and review details", symbol: "plus.circle", accent: .violet, kind: .createTask("")),
-            PaletteItem(id: "go-inbox", title: "Go to Inbox", subtitle: "⌘1", symbol: "tray", accent: .blue, kind: .navigate(.inbox)),
-            PaletteItem(id: "go-today", title: "Go to Today", subtitle: "⌘2", symbol: "sun.max", accent: .orange, kind: .navigate(.today)),
-            PaletteItem(id: "go-updates", title: "Go to Updates", subtitle: "⌘3", symbol: "sparkles", accent: .violet, kind: .navigate(.updates)),
-            PaletteItem(id: "go-activity", title: "Go to Activity", subtitle: "Recorded completion heatmap", symbol: "square.grid.3x3.fill", accent: .violet, kind: .navigate(.activity)),
-            PaletteItem(id: "go-tasks", title: "Go to Tasks", subtitle: "⌘4", symbol: "checklist", accent: .green, kind: .navigate(.tasks)),
-            PaletteItem(id: "go-calendar", title: "Go to Calendar", subtitle: "⌘6", symbol: "calendar", accent: .violet, kind: .navigate(.calendar)),
-            PaletteItem(id: "go-lists", title: "Go to Lists", subtitle: "⌘5", symbol: "square.stack", accent: .indigo, kind: .navigate(.lists)),
-            PaletteItem(id: "go-completed", title: "Go to Completed", subtitle: "Archive of finished tasks", symbol: "checkmark.circle", accent: .green, kind: .navigate(.completed)),
-            PaletteItem(id: "new-list", title: "New List", subtitle: "⇧⌘N", symbol: "plus.rectangle.on.folder", accent: .indigo, kind: .newList),
-            PaletteItem(id: "new-section", title: "New Section", subtitle: "⌥⌘N", symbol: "folder.badge.plus", accent: .graphite, kind: .newSection),
-            PaletteItem(id: "search", title: "Search", subtitle: "⌘F", symbol: "magnifyingglass", accent: .graphite, kind: .search),
-            PaletteItem(id: "shortcuts", title: "Keyboard Shortcuts", subtitle: "⌘/", symbol: "keyboard", accent: .graphite, kind: .showShortcuts),
+            PaletteItem(id: "new-task", title: "New Task", subtitle: "", symbol: "plus.circle", accent: .violet, kind: .createTask(""), shortcut: "⌘N"),
+            PaletteItem(id: "go-inbox", title: "Inbox", subtitle: "", symbol: "tray", accent: .blue, kind: .navigate(.inbox), shortcut: "⌘1"),
+            PaletteItem(id: "go-today", title: "Today", subtitle: "", symbol: "sun.max", accent: .orange, kind: .navigate(.today), shortcut: "⌘2"),
+            PaletteItem(id: "go-updates", title: "Updates", subtitle: "", symbol: "sparkles", accent: .violet, kind: .navigate(.updates), shortcut: "⌘3"),
+            PaletteItem(id: "go-activity", title: "Activity", subtitle: "", symbol: "square.grid.3x3.fill", accent: .violet, kind: .navigate(.activity)),
+            PaletteItem(id: "go-tasks", title: "Tasks", subtitle: "", symbol: "checklist", accent: .green, kind: .navigate(.tasks), shortcut: "⌘4"),
+            PaletteItem(id: "go-calendar", title: "Calendar", subtitle: "", symbol: "calendar", accent: .violet, kind: .navigate(.calendar), shortcut: "⌘6"),
+            PaletteItem(id: "go-lists", title: "Lists", subtitle: "", symbol: "square.stack", accent: .indigo, kind: .navigate(.lists), shortcut: "⌘5"),
+            PaletteItem(id: "go-completed", title: "Completed", subtitle: "", symbol: "checkmark.circle", accent: .green, kind: .navigate(.completed)),
+            PaletteItem(id: "new-list", title: "New List", subtitle: "", symbol: "plus.rectangle.on.folder", accent: .indigo, kind: .newList, shortcut: "⇧⌘N"),
+            PaletteItem(id: "new-section", title: "New Section", subtitle: "", symbol: "folder.badge.plus", accent: .graphite, kind: .newSection, shortcut: "⌥⌘N"),
+            PaletteItem(id: "search", title: "Search", subtitle: "", symbol: "magnifyingglass", accent: .graphite, kind: .search, shortcut: "⌘F"),
+            PaletteItem(id: "shortcuts", title: "Keyboard Shortcuts", subtitle: "", symbol: "keyboard", accent: .graphite, kind: .showShortcuts, shortcut: "⌘/"),
         ]
         result.append(contentsOf: commands.filter { trimmedQuery.isEmpty || matches($0.title) })
 
@@ -210,7 +216,6 @@ struct CommandPaletteView: View {
         if let recurrence = parsed.recurrence {
             parts.append(recurrence.displayText)
         }
-        parts.append("Review destination and details before adding")
         return parts.joined(separator: " · ")
     }
 
@@ -280,6 +285,11 @@ struct PaletteRow: View {
             }
 
             Spacer(minLength: 4)
+            if let shortcut = item.shortcut {
+                Text(shortcut)
+                    .font(Theme.Font.metadata)
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.75) : Theme.secondaryText)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)

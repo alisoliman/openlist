@@ -6,7 +6,6 @@ struct TaskCaptureView: View {
     var closeWindow: (() -> Void)?
 
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var draft = TaskCaptureDraft()
@@ -30,10 +29,23 @@ struct TaskCaptureView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("New task").font(.headline)
                 Spacer()
+                if savedTaskID == nil {
+                    Menu {
+                        Toggle("Detect dates and repeats", isOn: $draft.parsesNaturalLanguage)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(width: 24, height: 24)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("Capture options")
+                    .help("Date and repeat detection")
+                }
                 Button("Close", systemImage: "xmark", action: close)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.plain)
@@ -68,7 +80,6 @@ struct TaskCaptureView: View {
                     .padding(.vertical, 8)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("SAVE TO").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     HStack(spacing: 10) {
                         CaptureDestinationPicker(
                             lists: env.store.allLists(), selection: $destinationID,
@@ -102,8 +113,10 @@ struct TaskCaptureView: View {
 
                 if showsPreview {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("PREVIEW").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(draft.preview.title).font(.body).textSelection(.enabled)
+                        if draft.preview.title != draft.text.trimmingCharacters(in: .whitespacesAndNewlines) {
+                            Text(draft.preview.title).font(.body).textSelection(.enabled)
+                                .accessibilityLabel("Task preview: \(draft.preview.title)")
+                        }
                         metadata
                     }
                     .padding(14)
@@ -117,35 +130,30 @@ struct TaskCaptureView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Toggle("Detect dates and repeats", isOn: $draft.parsesNaturalLanguage)
-                    .toggleStyle(.checkbox).font(.caption).foregroundStyle(.secondary)
-                    .onChange(of: draft.parsesNaturalLanguage) { _, _ in
-                        preserveTitleSelection()
-                        restoreTitleSelection()
-                    }
-
                 HStack {
-                    Text("Return to add · Esc to cancel")
-                        .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Add task", action: save)
                         .buttonStyle(.borderedProminent)
                         .disabled(draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || destination == nil)
                         .accessibilityIdentifier("capture.save")
+                        .help("Add task (Return)")
                 }
             }
         }
         .padding(24)
         .frame(width: 560)
         .frame(minHeight: 240)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: savedTaskID)
         .background(Theme.canvas)
         .onAppear { reset(text: request.text) }
         .onExitCommand(perform: close)
+        .onChange(of: draft.parsesNaturalLanguage) { _, _ in
+            preserveTitleSelection()
+            restoreTitleSelection()
+        }
     }
 
     private var metadata: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        MetadataFlowLayout(spacing: 6) {
             if let date = draft.preview.date {
                 removableChip(
                     date.formatted(date: .abbreviated, time: draft.preview.includesTime ? .shortened : .omitted),

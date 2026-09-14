@@ -81,7 +81,7 @@ struct CalendarWorkBanner: View {
                 .accessibilityLabel("Ready to start")
             }
 
-            if let summary = env.calendar.rescheduleSummary {
+            if let summary = env.calendar.rescheduleSummary, env.navigator.route == .calendar {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.triangle.2.circlepath").accessibilityHidden(true)
                     Text(summary.message).lineLimit(1)
@@ -122,7 +122,7 @@ struct CalendarWorkBanner: View {
                 }.padding(12).background(ListAccent.blue.softBackground)
             }
         }
-        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: env.calendar.startNudge?.taskID)
+        .animation(Theme.Motion.feedback(reduceMotion: reduceMotion), value: env.calendar.startNudge?.taskID)
     }
 
     private func extensionMinutes(_ nudge: CalendarOverrunNudge) -> Int {

@@ -11,12 +11,10 @@ struct CalendarTimeGrid: View {
     let onOpenDay: (Date) -> Void
 
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollOffset = CGPoint.zero
     @State private var scrollPosition = ScrollPosition(idType: Int.self)
     private let gutter: CGFloat = 62
     private var firstDay: Date { dates.first ?? calendar.startOfDay(for: .now) }
-    private var motion: Animation? { reduceMotion ? nil : .smooth(duration: 0.28) }
 
     private func minutes(_ time: Date) -> CGFloat {
         CGFloat(calendar.component(.hour, from: time) * 60 + calendar.component(.minute, from: time))
@@ -89,7 +87,7 @@ struct CalendarTimeGrid: View {
                     let dayIndex = max(0, calendar.dateComponents([.day], from: firstDay, to: calendar.startOfDay(for: target)).day ?? 0)
                     let x = min(max(0, contentWidth - geometry.size.width), CGFloat(dayIndex) * width)
                     let y = min(max(0, canvasHeight - viewportHeight), max(0, minutes(target) / 60 * hourHeight - 80))
-                    withAnimation(motion) { scrollPosition.scrollTo(x: x, y: y) }
+                    scrollPosition.scrollTo(x: x, y: y)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             }
@@ -136,8 +134,9 @@ struct CalendarTimeGrid: View {
                         .foregroundStyle(today ? .white : Color.primary)
                         .frame(width: 25, height: 25).background(today ? Theme.accent : .clear, in: Circle())
                 }.font(.system(size: 12, weight: .medium))
-                Text(outside ? "Outside plan" : (planned.isEmpty ? "No tasks planned" : sessionSummary))
+                Text(outside ? "Outside plan" : (planned.isEmpty ? "" : sessionSummary))
                     .font(.system(size: 9)).foregroundStyle(Theme.tertiaryText).lineLimit(1)
+                    .frame(height: 12)
                 if completionCount > 0 {
                     Label("\(completionCount) completed", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 9)).foregroundStyle(Theme.secondaryText).lineLimit(1)

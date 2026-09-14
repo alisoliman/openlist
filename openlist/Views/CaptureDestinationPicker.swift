@@ -25,6 +25,8 @@ struct CaptureDestinationPicker: View {
             Label(sourceTitle(lists.first(where: { $0.id == selection })), systemImage: "tray.and.arrow.down")
         }
         .accessibilityLabel("Destination list")
+        .accessibilityValue(sourceTitle(lists.first(where: { $0.id == selection })))
+        .help("Choose a list. Unfiled tasks stay in Inbox.")
         .popover(isPresented: $isOpen) {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Search lists", text: $query)
@@ -75,7 +77,7 @@ struct CaptureDestinationPicker: View {
     }
 
     private func sourceTitle(_ list: TaskList?) -> String {
-        guard let list, !list.isSystemInbox else { return "Unfiled content" }
+        guard let list, !list.isSystemInbox else { return "Unfiled" }
         return list.displayTitle
     }
 

@@ -10,7 +10,6 @@ struct SlashMenuView: View {
     let query: String
     let selectedIndex: Int
     var menuSize = CGSize(width: 260, height: 264)
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onSelect: (BlockKind) -> Void
     let onHover: (Int) -> Void
     let onDismiss: () -> Void
@@ -60,9 +59,7 @@ struct SlashMenuView: View {
                     .frame(height: menuSize.height)
                     .onChange(of: selectedIndex) { _, newValue in
                         guard results.indices.contains(newValue) else { return }
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.1)) {
-                            proxy.scrollTo(results[newValue], anchor: .center)
-                        }
+                        proxy.scrollTo(results[newValue], anchor: .center)
                     }
                 }
             }
@@ -96,13 +93,8 @@ struct SlashMenuView: View {
                     )
                     .foregroundStyle(isSelected ? Color.white : Theme.secondaryText)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(kind.title)
-                        .font(.system(size: 12.5, weight: .medium))
-                    Text(kind.subtitle)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.75) : Theme.tertiaryText)
-                }
+                Text(kind.title)
+                    .font(.system(size: 12.5, weight: .medium))
 
                 Spacer(minLength: 4)
 
@@ -131,6 +123,8 @@ struct SlashMenuView: View {
         .buttonStyle(.plain)
         .focusable(false)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint(kind.subtitle)
+        .help(kind.subtitle)
         .onHover { hovering in
             if hovering { onHover(index) }
         }

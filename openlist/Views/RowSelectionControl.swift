@@ -7,6 +7,7 @@ struct RowSelectionControl: NSViewRepresentable {
     let isSelectionFocus: Bool
     let requestsKeyboardFocus: Bool
     let defersPlainClick: Bool
+    var isRevealed = true
     let onSelect: (BlockSelection.Gesture) -> Void
     let onStep: (Int, Bool) -> Void
     let onClear: () -> Void
@@ -145,6 +146,8 @@ final class RowSelectionNSControl: NSControl, NSDraggingSource {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let configuration else { return }
+        guard configuration.isRevealed || configuration.isSelected || configuration.isSelectionFocus
+                || window?.firstResponder === self else { return }
         let rect = NSRect(x: (bounds.width - 12) / 2, y: (bounds.height - 12) / 2, width: 12, height: 12)
         let shape = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
         if configuration.isSelected {

@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import AppKit
 import SwiftUI
 
 /// Design tokens for the app: spacing, radii, typography and semantic colours.
@@ -11,6 +12,28 @@ import SwiftUI
 /// tinted sidebar, generous line height in documents, and a single violet
 /// accent that carries selection and primary actions.
 enum Theme {
+    enum Motion {
+        static let feedbackDuration = 0.14
+        static let rearrangementDuration = 0.2
+
+        static func allowsAnimation(reduceMotion: Bool, eventType: NSEvent.EventType?) -> Bool {
+            guard !reduceMotion else { return false }
+            switch eventType {
+            case .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+                 .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+                return true
+            default:
+                return false
+            }
+        }
+
+        @MainActor
+        static func feedback(reduceMotion: Bool, duration: Double = feedbackDuration) -> Animation? {
+            guard allowsAnimation(reduceMotion: reduceMotion, eventType: NSApp.currentEvent?.type) else { return nil }
+            return .timingCurve(0.23, 1, 0.32, 1, duration: duration)
+        }
+    }
+
     // MARK: Spacing
 
     enum Spacing {
@@ -120,6 +143,35 @@ enum Theme {
 
 // MARK: - Shared view helpers
 
+struct InteractionMotion: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.transaction {
+            if !Theme.Motion.allowsAnimation(reduceMotion: reduceMotion, eventType: NSApp.currentEvent?.type) {
+                $0.animation = nil
+                $0.disablesAnimations = true
+            }
+        }
+    }
+}
+
+/// Native controls supply their own feedback; custom plain controls need a
+/// small press response without animating keyboard or accessibility actions.
+struct QuietButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let moves = Theme.Motion.allowsAnimation(reduceMotion: reduceMotion, eventType: NSApp.currentEvent?.type)
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
+            .scaleEffect(configuration.isPressed && moves ? 0.97 : 1)
+            .animation(Theme.Motion.feedback(reduceMotion: reduceMotion), value: configuration.isPressed)
+    }
+}
+
 extension View {
     /// Standard chip styling used for due dates, labels and counts.
     func chipStyle(accent: Color? = nil) -> some View {
@@ -144,7 +196,7 @@ extension View {
     }
 }
 
-/// An uppercase group heading, used above sections in panels and popovers.
+/// A quiet group heading for panels and popovers.
 struct SectionLabel: View {
     let text: String
     init(_ text: String) { self.text = text }
@@ -152,7 +204,6 @@ struct SectionLabel: View {
     var body: some View {
         Text(text)
             .font(Theme.Font.sectionHeader)
-            .textCase(.uppercase)
             .foregroundStyle(Theme.tertiaryText)
     }
 }

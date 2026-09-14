@@ -40,8 +40,8 @@ struct TasksScreen: View {
                     icon: "magnifyingglass",
                     title: "No tasks match",
                     message: options.normalizedTitleQuery.isEmpty
-                        ? "Try a different filter, or add a task to an active list."
-                        : "No task titles match in the selected status and list. Clear the title filter or reset filters to show open tasks.",
+                        ? "Try another filter or add a task."
+                        : "Try another title or reset your filters.",
                     actionTitle: options.hasCustomFilters ? "Reset filters" : nil,
                     action: { options.resetFilters() }
                 )
@@ -180,7 +180,7 @@ struct CompletedScreen: View {
             ScreenHeader(
                 icon: "checkmark.circle",
                 title: "Completed",
-                subtitle: "\(visibleTasks.count) finished in active lists"
+                subtitle: "\(visibleTasks.count) completed"
             )
         } content: {
             if visibleTasks.isEmpty {

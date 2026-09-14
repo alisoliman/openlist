@@ -1,6 +1,8 @@
+import AppKit
 import Foundation
 import Observation
 import SwiftData
+import SwiftUI
 import os
 
 var checks = 0
@@ -215,5 +217,31 @@ observedOptions.grouping = .label
 let hiddenLabels = project(fixtures, observedOptions, labels: [])
 check(hiddenLabels.uniqueTaskCount == fixtures.count, "removing known labels never changes the unique count")
 check(hiddenLabels.groups.count == 1 && hiddenLabels.groups.first?.id == "label-none", "removing all known labels keeps every task under No label")
+
+// Measure the real controls, including the native text field and menu labels.
+_ = NSApplication.shared
+func controls(width: CGFloat, options: TasksViewOptions = .init()) -> some View {
+    TasksViewControls(options: .constant(options), lists: lists, onTitleFilterFocus: {})
+        .frame(width: width)
+}
+let controlsHost = NSHostingView(rootView: controls(width: 600))
+let controlsWindow = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 600, height: 100),
+    styleMask: .borderless, backing: .buffered, defer: false)
+controlsWindow.contentView = controlsHost
+for width: CGFloat in [260, 340, 600] {
+    controlsHost.rootView = controls(width: width)
+    controlsHost.layoutSubtreeIfNeeded()
+    let size = controlsHost.fittingSize
+    check(abs(size.width - width) < 1, "Task controls fit a \(width)-point content column")
+    check(size.height > 20 && size.height <= 44, "Default Task controls occupy one compact row at \(width) points")
+}
+var constrained = TasksViewOptions()
+constrained.filter = .all
+constrained.listID = firstList.id
+constrained.titleQuery = "Needle"
+controlsHost.rootView = controls(width: 260, options: constrained)
+controlsHost.layoutSubtreeIfNeeded()
+check(controlsHost.fittingSize.height <= 78, "Active constraints and Reset fit a compact second line")
+controlsWindow.contentView = nil
 
 print("✅ \(checks) Tasks view filtering, sorting, grouping and observation checks passed")

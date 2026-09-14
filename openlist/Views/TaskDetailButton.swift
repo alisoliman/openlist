@@ -7,7 +7,6 @@ struct TaskDetailButton: View {
     let isRevealed: Bool
     let action: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @FocusState private var isFocused: Bool
 
@@ -25,7 +24,6 @@ struct TaskDetailButton: View {
         .buttonStyle(.plain)
         .focusable()
         .focused($isFocused)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: showsAction)
         .help("Open details (⌘↩)")
         .accessibilityLabel("Open details for \(title)")
     }

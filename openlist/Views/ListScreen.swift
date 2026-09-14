@@ -37,7 +37,7 @@ struct ListScreen: View {
             if viewMode == .document {
                 DocumentView(
                     document: DocumentContext(listID: list.id),
-                    emptyPlaceholder: "Add a task, or press / for blocks",
+                    emptyPlaceholder: "Add a task…",
                     showsCompleted: showsCompleted,
                     sorting: list.sorting
                 )
@@ -180,20 +180,18 @@ struct ListScreen: View {
                 .onSubmit { env.store.save() }
             }
 
-            statsRow
-
-            Picker("List view", selection: viewModeSelection) {
-                ForEach(ListViewMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    viewPicker
+                    Spacer(minLength: 8)
+                    CompletedTasksControl(list: list, showsAsTaskQueue: viewMode == .tasks)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    viewPicker
+                    CompletedTasksControl(list: list, showsAsTaskQueue: viewMode == .tasks)
                 }
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .accessibilityLabel("List view")
             .padding(.top, 8)
-
-            CompletedTasksControl(list: list, showsAsTaskQueue: viewMode == .tasks)
-                .padding(.top, 8)
         }
     }
 
@@ -281,22 +279,15 @@ struct ListScreen: View {
         }
     }
 
-    @ViewBuilder
-    private var statsRow: some View {
-        let blocks = env.store.blocks(inList: list.id)
-        let tasks = blocks.filter(\.isTask)
-        let done = tasks.filter(\.isCompleted).count
-
-        if !tasks.isEmpty {
-            HStack(spacing: 8) {
-                Text("\(done) of \(tasks.count) done")
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.tertiaryText)
-
-                ProgressBar(done: done, total: tasks.count, accent: list.accent)
-                    .frame(width: 90)
+    private var viewPicker: some View {
+        Picker("List view", selection: viewModeSelection) {
+            ForEach(ListViewMode.allCases) { mode in
+                Text(mode.title).tag(mode)
             }
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
 }
 
