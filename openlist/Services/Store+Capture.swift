@@ -68,7 +68,7 @@ extension Store {
             throw CaptureError.emptyTitle
         }
         try persistChanges()
-        guard let destination = list(id: destinationID) ?? inboxList(), !destination.isArchived else {
+        guard let destination = list(id: destinationID) ?? inboxList(), !destination.isEffectivelyArchived else {
             throw CaptureError.unavailableDestination
         }
         isSavingSuspended = true

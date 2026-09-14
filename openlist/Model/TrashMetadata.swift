@@ -20,6 +20,7 @@ struct TrashEntry: Identifiable {
     var metadata: TrashMetadata?
     var blockCount: Int
     var byteCount: Int
+    var listCount: Int = 0
 }
 
 nonisolated struct TrashLabel: Codable, Equatable, Sendable {

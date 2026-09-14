@@ -83,10 +83,14 @@ final class StagedContentCopy {
         return (name, bytes)
     }
 
-    func commit(owningList: TaskList) throws {
+    func commit(owningList: TaskList) throws { try commit(owningLists: [owningList]) }
+
+    func commit(owningLists: [TaskList]) throws {
+        let owners = Dictionary(uniqueKeysWithValues: owningLists.map { ($0.id, $0) })
         // Copy and its fresh history share one transaction. These are creation
         // facts about the new IDs, never inherited events from the source.
         for task in tasks {
+            guard let owningList = task.listID.flatMap({ owners[$0] }) else { throw CopyError.unavailable }
             let event = ActivityEvent(kind: .created, title: task.displayTitle,
                 blockID: task.id, listID: task.listID,
                 listTitle: owningList.displayTitle, listIcon: owningList.icon)
@@ -129,39 +133,49 @@ extension Store {
     @discardableResult
     func copyList(_ list: TaskList, mode: CopyMode) throws -> UUID {
         guard let source = self.list(id: list.id), !source.isDeleted else { throw CopyError.unavailable }
-        let copy = TaskList(title: "\(source.displayTitle) copy", icon: source.icon, accent: source.accent)
-        copy.summary = source.summary
-        copy.sectionID = source.sectionID
-        copy.isPinned = source.isPinned
-        copy.sortingRaw = source.sortingRaw
-        copy.showsCompleted = source.showsCompleted
-        copy.completedVisibilityRaw = source.completedVisibilityRaw
-        copy.availabilityCategoryRaw = source.availabilityCategoryRaw
+        let originals = listHierarchy().subtree(of: source.id)
+        let idMap = Dictionary(uniqueKeysWithValues: originals.map { ($0.id, UUID()) })
         let lists = allLists(includeArchived: true)
-        copy.sortIndex = try copyIndex(after: source.sortIndex,
-            before: lists.map(\.sortIndex).filter { $0 > source.sortIndex }.min())
-        copy.sidebarIndex = try copyIndex(after: source.sidebarIndex,
-            before: lists.filter { $0.sectionID == source.sectionID }.map(\.sidebarIndex)
-                .filter { $0 > source.sidebarIndex }.min())
         let staged = StagedContentCopy(container: context.container)
         defer { staged.discard() }
-        if let cover = try source.validatedCover() {
-            let bytes = try source.coverData ?? MediaStore.shared.readFile(filename: cover.filename)
-            guard bytes.count == cover.metadata.byteCount else { throw ListCoverError.unavailable }
-            copy.coverFilename = try staged.stageMedia(bytes, fileExtension: (cover.filename as NSString).pathExtension)
-            copy.coverData = bytes
-            copy.coverMetadataData = source.coverMetadataData
+        var copies: [TaskList] = []
+        for original in originals {
+            let copy = TaskList(title: original.id == source.id ? "\(source.displayTitle) copy" : original.title,
+                                icon: original.icon, accent: original.accent)
+            copy.id = idMap[original.id]!
+            copy.parentListID = original.id == source.id ? source.parentListID : original.parentListID.flatMap { idMap[$0] }
+            copy.summary = original.summary
+            copy.sectionID = original.sectionID
+            copy.isPinned = original.isPinned
+            copy.isArchived = original.id != source.id && original.isArchived
+            copy.sortingRaw = original.sortingRaw
+            copy.showsCompleted = original.showsCompleted
+            copy.completedVisibilityRaw = original.completedVisibilityRaw
+            copy.availabilityCategoryRaw = original.availabilityCategoryRaw
+            copy.sortIndex = try copyIndex(after: original.sortIndex,
+                before: lists.map(\.sortIndex).filter { $0 > original.sortIndex }.min())
+            copy.sidebarIndex = try copyIndex(after: original.sidebarIndex,
+                before: lists.filter { $0.sectionID == original.sectionID }.map(\.sidebarIndex)
+                    .filter { $0 > original.sidebarIndex }.min())
+            if let cover = try original.validatedCover() {
+                let bytes = try original.coverData ?? MediaStore.shared.readFile(filename: cover.filename)
+                guard bytes.count == cover.metadata.byteCount else { throw ListCoverError.unavailable }
+                copy.coverFilename = try staged.stageMedia(bytes, fileExtension: (cover.filename as NSString).pathExtension)
+                copy.coverData = bytes
+                copy.coverMetadataData = original.coverMetadataData
+            }
+            copy.coverPresentationRaw = original.coverPresentationRaw
+            staged.writer.insert(copy)
+            copies.append(copy)
+            let listID = original.id
+            let blocks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.listID == listID }))
+                .filter { !$0.isDeleted }
+            _ = try staged.clone(blocks, to: copy.id, store: self, mode: mode)
         }
-        copy.coverPresentationRaw = source.coverPresentationRaw
-        staged.writer.insert(copy)
-        let listID = source.id
-        let originals = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.listID == listID }))
-            .filter { !$0.isDeleted }
-        _ = try staged.clone(originals, to: copy.id, store: self, mode: mode)
-        try staged.commit(owningList: copy)
+        try staged.commit(owningLists: copies)
         refreshAllReminders()
         onDidSave?()
-        return copy.id
+        return idMap[source.id]!
     }
 
     private func copyIndex(after source: Double, before next: Double?) throws -> Double {

@@ -72,6 +72,7 @@ final class AppEnvironment {
     /// affordance routes through ``requestDeleteList(_:)`` so the preference is
     /// honoured everywhere rather than only in the sidebar.
     var listPendingDeletion: TaskList?
+    var listPendingMove: TaskList?
 
     /// Which picker the task detail panel should pop open, set by ⌃D / ⌃L.
     var requestedPicker: DetailPicker?
@@ -273,7 +274,8 @@ extension AppEnvironment {
 
     /// Deletes for real, and steps off the list if it is the one on screen.
     func performDeleteList(_ list: TaskList) {
-        let wasOpen = navigator.route == .list(list.id)
+        let ownedIDs = Set(store.listHierarchy().subtree(of: list.id).map(\.id))
+        let wasOpen = navigator.route.listID.map(ownedIDs.contains) == true
         guard store.deleteList(list) else { return }
         if wasOpen { navigator.replace(with: .today) }
         listPendingDeletion = nil

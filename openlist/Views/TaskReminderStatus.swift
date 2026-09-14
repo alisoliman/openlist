@@ -16,7 +16,7 @@ struct TaskReminderStatus: View {
             let date = block.reminderAt ?? (block.includesTime ? block.dueDate : nil)
             let list = env.store.list(id: block.listID)
             let inactiveReason: String? = block.isCompleted ? "task completed"
-                : list == nil ? "list unavailable" : list?.isArchived == true ? "list archived" : nil
+                : list == nil ? "list unavailable" : list?.isEffectivelyArchived == true ? "list archived" : nil
             let matchesSaved = saved?.date == date && saved?.title == block.displayTitle
                 && saved?.listName == list?.displayTitle && saved?.occurrenceID == block.occurrenceID
                 && saved?.inactiveReason == inactiveReason

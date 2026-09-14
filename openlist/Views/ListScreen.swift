@@ -27,8 +27,10 @@ struct ListScreen: View {
 
     var body: some View {
         ScreenScaffold(headerSpacing: 10) {
+            ListBreadcrumbs(list: list)
             header
         } content: {
+            ChildListDocuments(list: list)
             if let note = list.trashMetadata?.recoveryNote {
                 Text(note).font(.callout).foregroundStyle(Theme.secondaryText)
             }
@@ -235,6 +237,16 @@ struct ListScreen: View {
 
                 Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") {
                     env.store.setPinned(!list.isPinned, for: list)
+                }
+                if !list.isSystemInbox {
+                    Button("New Child List") {
+                        if let child = env.store.createChildList(in: list) { env.navigator.go(to: .list(child.id)) }
+                    }
+                    .disabled(list.isEffectivelyArchived)
+                    Button("Move List…") { env.listPendingMove = list }
+                    Button(list.isArchived ? "Unarchive List" : "Archive List") {
+                        env.store.setArchived(!list.isArchived, for: list)
+                    }
                 }
                 Button("Duplicate List") {
                     let copy = env.store.duplicateList(list)

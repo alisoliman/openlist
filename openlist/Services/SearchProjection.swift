@@ -29,7 +29,7 @@ nonisolated struct SearchProjection: Sendable {
             result += matching.map { list in
                 let field: SearchField = Self.matches(list.title, needle) ? .text : .summary
                 return SearchHit(id: .list(list.id), title: list.displayTitle,
-                    context: list.isArchived ? "Archived list" : "List",
+                    context: (list.isArchived ? "Archived · " : "") + list.path,
                     snippet: list.summary.isEmpty ? "" : Self.snippet(list.summary, matching: needle),
                     symbol: nil, emoji: list.icon, accent: list.accent, field: field)
             }
@@ -56,7 +56,7 @@ nonisolated struct SearchProjection: Sendable {
                 if !options.includesCompleted && completed { continue }
                 let list = block.listID.flatMap { listsByID[$0] }
                 let field: SearchField = Self.matches(block.text, needle) ? .text : .note
-                var context = [list.map { "\($0.icon) \($0.displayTitle)" } ?? "Unavailable list"]
+                var context = [list.map { "\($0.icon) \($0.path)" } ?? "Unavailable list"]
                 context += ancestors.reversed().map(\.displayTitle)
                 if list?.isArchived == true { context.append("Archived") }
                 if completed { context.append("Completed") }

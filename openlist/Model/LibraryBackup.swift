@@ -4,8 +4,8 @@ import SwiftData
 /// A logical, versioned reconstruction of the library, not a SQLite archive.
 /// Historical references intentionally survive deletion of their subject.
 nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
-    static let currentVersion = 4
-    static let readableVersions: Set<Int> = [1, 2, 3, 4]
+    static let currentVersion = 5
+    static let readableVersions: Set<Int> = [1, 2, 3, 4, 5]
     var version = currentVersion
     var libraryID: UUID
     var createdAt: Date
@@ -97,6 +97,9 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
                 throw LibraryBackupError.invalid("An older backup contains unsupported list cover data.")
             }
         }
+        if version < 5, lists.contains(where: { $0.parentListID != nil }) {
+            throw LibraryBackupError.invalid("An older backup contains unsupported list ownership.")
+        }
         version = Self.currentVersion
     }
 
@@ -146,12 +149,35 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
         let listsByID = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, $0) })
         var trashMetadata: [UUID: TrashMetadata] = [:]
         for list in lists where list.trashID != nil {
-            guard list.trashID == list.id, !list.isSystemInbox, list.mergedIntoID == nil,
+            guard !list.isSystemInbox, list.mergedIntoID == nil else {
+                throw LibraryBackupError.invalid("Invalid retained system list.")
+            }
+            if list.trashID != list.id { continue }
+            guard
                   let data = list.trashMetadataData,
                   let metadata = try? JSONDecoder().decode(TrashMetadata.self, from: data) else {
                 throw LibraryBackupError.invalid("Invalid retained list recovery information.")
             }
             trashMetadata[list.id] = metadata
+        }
+        for list in lists {
+            if list.isSystemInbox && list.parentListID != nil {
+                throw LibraryBackupError.invalid("The Inbox cannot be a child document.")
+            }
+            if list.parentListID.flatMap({ listsByID[$0] })?.isSystemInbox == true {
+                throw LibraryBackupError.invalid("The Inbox cannot own child documents.")
+            }
+            if let group = list.trashID, group != list.id {
+                var next = list.parentListID, seen: Set<UUID> = [list.id]
+                var reachedRoot = false
+                while let id = next, seen.insert(id).inserted, let parent = listsByID[id], parent.trashID == group {
+                    if id == group { reachedRoot = true; break }
+                    next = parent.parentListID
+                }
+                guard reachedRoot, trashMetadata[group] != nil else {
+                    throw LibraryBackupError.invalid("A retained child document has no owning Trash root.")
+                }
+            }
         }
         for block in blocks where block.trashID == block.id {
             guard trashMetadata[block.id] == nil, let data = block.trashMetadataData,
@@ -164,8 +190,9 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
             if let group = block.trashID {
                 guard let metadata = trashMetadata[group] else { throw LibraryBackupError.invalid("Missing Trash group.") }
                 if let list = listsByID[group], list.trashID == group {
-                    guard block.listID == group,
-                          block.parentID == nil || byID[block.parentID!]?.trashID == group else {
+                    guard block.listID.flatMap({ listsByID[$0] })?.trashID == group,
+                          block.parentID == nil || (byID[block.parentID!]?.trashID == group
+                            && byID[block.parentID!]?.listID == block.listID) else {
                         throw LibraryBackupError.invalid("A retained list has content outside its hierarchy.")
                     }
                 } else if block.id != group {

@@ -2,7 +2,7 @@
 
 Settings > Data provides **Back up library** and **Restore backup**. Markdown
 export remains a readable document export; an `.openlistbackup` directory
-package is the versioned reconstruction format. Current exports use format 2, including Inbox selection; version 1 packages upgrade explicitly with legacy unclassified membership. An older already-queued restore must be cancelled and its backup selected again so that the staged schema and fingerprint can be revalidated.
+package is the versioned reconstruction format. Current exports use format 5, including Inbox selection, Trash, covers, and list ownership. Formats 1–4 upgrade explicitly; version 1 retains legacy unclassified membership. An older already-queued restore must be cancelled and its backup selected again so that the staged schema and fingerprint can be revalidated.
 
 Backups are **unencrypted**. They contain private task and note text, files,
 labels, calendar history, and activity for subjects that may since have been
@@ -29,11 +29,11 @@ also stop the export. Retry after synchronization finishes.
 
 A synchronized library backup describes the committed, complete local library
 on this Mac, not a promise that all server changes have downloaded. Unresolved
-live references—including an Inbox alias whose destination has not arrived in
+required live references—including an Inbox alias whose destination has not arrived in
 a CloudKit import—fail validation. Wait for synchronization and retry. No
 cloud account or real CloudKit transfer is exercised by the offline tests.
 
-## Version 1 contract
+## Current format contract
 
 `manifest.json` records the format version, library UUID, creation time, library
 checksum, and media filenames, sizes and SHA-256 digests. `library.json` contains
@@ -50,7 +50,7 @@ The contract includes every persisted property of all nine current model types:
 
 | Records | Included state |
 | --- | --- |
-| TaskList | IDs, Inbox/alias identity, archive, title/summary, icon/color, ordering, section and display/availability preferences, timestamps |
+| TaskList | IDs, parent document ownership, Inbox/alias identity, own archive choice, Trash group/recovery metadata, title/summary, icon/color, cover metadata and bytes, ordering, section and display/availability preferences, timestamps |
 | Block | IDs, hierarchy, rich/plain text, all task/recurrence/reminder/calendar payloads, labels, media and timestamps |
 | SidebarSection and TaskLabel | IDs, names/colors, ordering, collapse/default/alias state and timestamps |
 | Attachment | IDs, owning task, filename/display metadata, exact bytes, ordering and timestamps |
@@ -58,14 +58,16 @@ The contract includes every persisted property of all nine current model types:
 | WorkSession and CompletionRecord | IDs, occurrence and historical subject references, times, corrections, planned intervals and snapshots |
 | SchedulePlacement | IDs, task/occurrence reference, explicit preferred/pinned intervals |
 
-Parent and alias cycles, duplicate model IDs, missing live relationships and
+Block parent and alias cycles, duplicate model IDs, missing required live relationships and
 unsupported values are rejected. Historical activity/work/completion/placement
 references may outlive their subjects and are retained. Legacy file-only media
 are embedded into the restored record, preserving the file bytes. Attachment
 `byteCount` must match the actual file bytes; a mismatch is reported, not silently
 rewritten. New model types or persisted fields must update this versioned
-contract; schema-coverage tests fail if a property is omitted. Future Trash
-records must join this all-record path, not a visible-task query.
+contract; schema-coverage tests fail if a property is omitted. Nested list references
+may remain unresolved during sync and are retained; imported list cycles remain
+recoverable through the bounded hierarchy display. Retained document groups
+must connect to their own Trash root without crossing document boundaries.
 
 Portable settings include completed-task visibility, date parsing, default task
 destination, list-deletion confirmation, first weekday, Today/Lists sorting, and
@@ -162,7 +164,20 @@ Format 2 adds the optional Inbox membership payload. Closed-store recovery recog
 
 This also permits Return to the original library after only the selected restored generation has upgraded. Once original selection is committed, the ordinary app container performs its normal migration. A queued but not yet activated restore prepared by the old app is rejected with a cancellation/reselect action so its staged schema and fingerprint are rebuilt from the valid version 1 package. An unknown newer or unrelated schema is not guessed or migrated.
 
+
+## Nested document schema upgrade
+
+Format 5 adds optional `TaskList.parentListID`. Cold reads recognize the exact
+pre-nesting, pre-cover, pre-Trash, and pre-Inbox schemas. The nine-model
+pre-nesting migration matrix verifies private restore and cold Return while
+leaving every authoritative original byte unchanged. Parent/child documents,
+independent Trash groups, imported orphan references, and covers retain their
+original IDs and bytes in logical backup. Run `Tools/run-nested-list-checks.sh`
+for ownership, archive, copy/export, retention, late imports, and migration checks.
+
+
 The startup-copy boundary follows Apple's public [store-copy guidance](https://developer.apple.com/documentation/technotes/tn3163-understanding-the-synchronization-of-nspersistentcloudkitcontainer)
 and [SwiftData coexistence history requirement](https://developer.apple.com/videos/play/wwdc2023/10189/?time=376).
-Separate-process closed-source checks compare all nine DTO types, both external
+Separate-process closed-source checks compare all nine DTO types, all three external
 payload attributes, source database/WAL/payload hashes, and scratch cleanup.
+

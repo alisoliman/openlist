@@ -89,7 +89,7 @@ struct InboxReviewView: View {
     }
 
     private func move(_ task: Block) {
-        guard let list = env.store.list(id: destinationID), !list.isArchived, list.id != inbox.id else { return }
+        guard let list = env.store.list(id: destinationID), !list.isEffectivelyArchived, list.id != inbox.id else { return }
         env.store.undoableEditorEdit(in: Set([inbox.id, list.id]), name: "Move Unfiled task", undoManager: undoManager) {
             env.store.moveToList(task, list: list)
         }

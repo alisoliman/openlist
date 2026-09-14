@@ -81,3 +81,9 @@ Apple documents the UUID's copy behavior in
 [NSStoreUUIDKey](https://developer.apple.com/documentation/coredata/nsstoreuuidkey).
 The URL entry follows SwiftUI's
 [external-event scene routing](https://developer.apple.com/documentation/swiftui/scene/handlesexternalevents(matching:)).
+
+Owned child documents keep their own list UUIDs in links. Moving or renaming a
+child never redirects its saved URL to its parent. Opening an archived child's
+URL reports archive inherited from any ancestor; a retained ancestor makes the
+child unavailable until restoration. A genuinely missing parent preserves the
+child's recoverable document access and its original ownership reference.

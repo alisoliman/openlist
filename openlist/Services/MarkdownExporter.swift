@@ -6,17 +6,45 @@ import UniformTypeIdentifiers
 enum MarkdownExporter {
     @MainActor
     static func markdown(for list: TaskList, store: Store) throws -> String {
-        // Clipboard export cannot bundle files, so its media links point to the
-        // actual local files instead of unusable relative storage filenames.
-        let paths = Dictionary(try assets(for: list, store: store).map { ($0.key, $0.source.absoluteString) },
-                               uniquingKeysWith: { first, _ in first })
-        return render(list: list, store: store) { paths[$0] ?? $0 }
+        let hierarchy = store.listHierarchy()
+        let documents = hierarchy.subtree(of: list.id)
+        let paths = Dictionary(try documents.flatMap { try assets(for: $0, store: store) }
+            .map { ($0.key, $0.source.absoluteString) }, uniquingKeysWith: { first, _ in first })
+        if documents.count == 1 { return render(list: list, store: store) { paths[$0] ?? $0 } }
+        return documents.map { document in
+            "Document: \(InlineMarkdown.escape(hierarchy.path(for: document.id)))\n\n"
+                + render(list: document, store: store) { paths[$0] ?? $0 }
+        }.joined(separator: "\n---\n\n")
     }
 
     @MainActor
     static func write(list: TaskList, store: Store, to destination: URL) throws {
-        try MarkdownExportPackage.write(to: destination, assets: assets(for: list, store: store)) { paths in
-            render(list: list, store: store) { paths[$0] ?? $0 }
+        let hierarchy = store.listHierarchy()
+        let documents = hierarchy.subtree(of: list.id)
+        if documents.count <= 1 {
+            try MarkdownExportPackage.write(to: destination, assets: assets(for: list, store: store)) { paths in
+                render(list: list, store: store) { paths[$0] ?? $0 }
+            }
+            return
+        }
+        let names = Dictionary(uniqueKeysWithValues: documents.map {
+            ($0.id, MarkdownExportPackage.safeFilename($0.displayTitle) + "-" + $0.id.uuidString + ".md")
+        })
+        try MarkdownExportPackage.writeFolder(to: destination,
+            assets: documents.flatMap { try assets(for: $0, store: store) }) { paths in
+            Dictionary(uniqueKeysWithValues: documents.map { document in
+                var navigation = ""
+                if let parent = hierarchy.parent(of: document.id), let filename = names[parent.id] {
+                    navigation += "Parent: [\(InlineMarkdown.escape(parent.displayTitle))](\(InlineMarkdown.destination(filename)))\n\n"
+                }
+                let children = hierarchy.children(of: document.id).filter { names[$0.id] != nil }
+                if !children.isEmpty {
+                    navigation += "Child lists:\n" + children.map {
+                        "- [\(InlineMarkdown.escape($0.displayTitle))](\(InlineMarkdown.destination(names[$0.id]!)))"
+                    }.joined(separator: "\n") + "\n\n"
+                }
+                return (names[document.id]!, navigation + render(list: document, store: store) { paths[$0] ?? $0 })
+            })
         }
     }
 
@@ -134,11 +162,12 @@ enum MarkdownExporter {
 
     @MainActor
     static func presentSavePanel(for list: TaskList, store: Store) {
-        let blocks = store.blocks(inList: list.id)
+        let documents = store.listHierarchy().subtree(of: list.id)
+        let blocks = documents.flatMap { store.blocks(inList: $0.id) }
         let hasMedia = list.coverFilename != nil || blocks.contains { $0.mediaFilename != nil || !store.attachments(for: $0.id).isEmpty }
         let filename = "\(MarkdownExportPackage.safeFilename(list.displayTitle)).md"
         let url: URL
-        if hasMedia {
+        if hasMedia || documents.count > 1 {
             // A save-panel grant covers the selected file, not an arbitrary
             // sibling assets folder. Select its parent to grant the sandbox
             // access to both parts of this portable export.
@@ -148,9 +177,11 @@ enum MarkdownExporter {
             panel.canCreateDirectories = true
             panel.title = "Export \(list.displayTitle)"
             panel.prompt = "Export"
-            panel.message = "Choose a folder for \(filename) and its images and attachments. Keep the Markdown file and assets folder together when sharing. Existing files are kept."
+            panel.message = documents.count > 1
+                ? "Choose where to export a folder containing one Markdown file per document, with parent and child links and shared assets. Existing files are kept."
+                : "Choose a folder for \(filename) and its images and attachments. Keep the Markdown file and assets folder together when sharing. Existing files are kept."
             guard panel.runModal() == .OK, let folder = panel.url else { return }
-            url = MarkdownExportPackage.availableURL(in: folder, filename: filename)
+            url = MarkdownExportPackage.availableURL(in: folder, filename: documents.count > 1 ? MarkdownExportPackage.safeFilename(list.displayTitle) : filename)
         } else {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]

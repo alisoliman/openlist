@@ -61,6 +61,13 @@ levels, bullets, numbered items, quotes, code and dividers, plus inline images.
 A task's detail page is the same editor rooted at that task, so subtasks nest as
 deeply as you like.
 
+Lists can also own separately titled **child list documents**. Create one from
+List options, navigate with breadcrumbs, or use **Move List** to change its
+parent while retaining its contents and identity. Parent archive applies to
+its subtree; parent deletion retains the subtree as one restorable Trash unit.
+Duplicate, template copy, Markdown folder export, and full backup preserve the
+document boundaries. See [nested lists](docs/NESTED_LISTS.md).
+
 Typing drives everything:
 
 | Type | Get |

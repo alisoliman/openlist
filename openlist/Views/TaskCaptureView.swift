@@ -19,7 +19,7 @@ struct TaskCaptureView: View {
 
     private var destination: TaskList? {
         let selected = env.store.list(id: destinationID)
-        return selected?.isArchived == false ? selected : env.store.inboxList()
+        return selected?.isEffectivelyArchived == false ? selected : env.store.inboxList()
     }
 
     private var showsPreview: Bool {
@@ -76,7 +76,7 @@ struct TaskCaptureView: View {
                             onDidClose: restoreTitleSelection
                         )
                         if let suggestion = env.store.list(id: request.suggestedListID),
-                           !suggestion.isArchived, !suggestion.isSystemInbox, suggestion.id != destination?.id {
+                           !suggestion.isEffectivelyArchived, !suggestion.isSystemInbox, suggestion.id != destination?.id {
                             Button("Use \(suggestion.displayTitle)") {
                                 editMetadata { destinationID = suggestion.id }
                             }

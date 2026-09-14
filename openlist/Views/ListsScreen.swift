@@ -23,7 +23,9 @@ struct ListsScreen: View {
     private var sortAscending = true
 
     var body: some View {
-        let visibleLists = sorting.visibleLists(from: lists, includingArchived: showsArchived, ascending: sortAscending)
+        let hierarchy = ListHierarchy(lists)
+        let visibleLists = sorting.visibleLists(from: lists, includingArchived: showsArchived,
+                                               ascending: sortAscending, hierarchy: hierarchy)
         // One pass over all tasks instead of two scans per card.
         var counts: [UUID: (open: Int, done: Int)] = [:]
         for task in tasks {
@@ -74,6 +76,8 @@ struct ListsScreen: View {
                     ForEach(visibleLists) { list in
                         ListCard(
                             list: list,
+                            parentPath: hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "),
+                            isEffectivelyArchived: hierarchy.isArchived(list.id),
                             openCount: counts[list.id]?.open ?? 0,
                             doneCount: counts[list.id]?.done ?? 0
                         )
@@ -87,6 +91,8 @@ struct ListsScreen: View {
 /// One tile in the Lists gallery.
 struct ListCard: View {
     let list: TaskList
+    let parentPath: String
+    let isEffectivelyArchived: Bool
     let openCount: Int
     let doneCount: Int
 
@@ -111,7 +117,7 @@ struct ListCard: View {
 
                     Spacer()
 
-                    if list.isArchived {
+                    if isEffectivelyArchived {
                         Label("Archived", systemImage: "archivebox")
                             .font(Theme.Font.metadata)
                             .foregroundStyle(Theme.secondaryText)
@@ -132,6 +138,10 @@ struct ListCard: View {
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
 
+                    if !parentPath.isEmpty {
+                        Text(parentPath)
+                            .font(.caption).foregroundStyle(Theme.secondaryText).lineLimit(2)
+                    }
                     Text(subtitle)
                         .font(Theme.Font.metadata)
                         .foregroundStyle(Theme.tertiaryText)
@@ -156,12 +166,12 @@ struct ListCard: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .help(list.isArchived ? "\(list.displayTitle) · Archived; excluded from active tasks and reminders" : list.displayTitle)
+        .help(isEffectivelyArchived ? "\(list.displayTitle) · Archived; excluded from active tasks and reminders" : list.displayTitle)
         .contextMenu {
             Button("Open") { env.navigator.go(to: .list(list.id)) }
             CopyItemLinkButton(target: .list(list.id))
             Divider()
-            if !list.isArchived {
+            if !isEffectivelyArchived {
                 Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") {
                     env.store.setPinned(!list.isPinned, for: list)
                 }
@@ -177,6 +187,11 @@ struct ListCard: View {
                 MarkdownExporter.presentSavePanel(for: list, store: env.store)
             }
             if !list.isSystemInbox {
+                Button("Move List…") { env.listPendingMove = list }
+                Button("New Child List") {
+                    if let child = env.store.createChildList(in: list) { env.navigator.go(to: .list(child.id)) }
+                }
+                .disabled(isEffectivelyArchived)
                 Button(list.isArchived ? "Unarchive List" : "Archive List") {
                     env.store.setArchived(!list.isArchived, for: list)
                 }

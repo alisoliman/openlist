@@ -181,7 +181,7 @@ final class CalendarCoordinator {
 
     @discardableResult
     func start(task: Block, now: Date = .now) -> Bool {
-        guard task.isTask, !task.isCompleted, store.list(id: task.listID)?.isArchived == false else { return false }
+        guard task.isTask, !task.isCompleted, store.list(id: task.listID)?.isEffectivelyArchived == false else { return false }
         if activeSession?.taskID == task.id, activeSession?.occurrenceID == task.occurrenceID { return true }
         guard let boundary = nextBoundary(for: task, at: now), boundary > now else {
             notice = "This time is outside the list’s available hours or overlaps fixed busy time. Choose an available slot or update availability."
@@ -370,7 +370,7 @@ final class CalendarCoordinator {
                 clearActiveState()
                 needsPlan = true
             } else if let task = store.block(id: session.taskID) {
-                if store.list(id: task.listID)?.isArchived != false {
+                if store.list(id: task.listID)?.isEffectivelyArchived != false {
                     pause(reason: "List unavailable", now: now)
                 } else if checkClockGap, !task.tracksAwayFromMac, let last = lastObservedAt, now.timeIntervalSince(last) > 75 {
                     resumeTaskID = task.id
@@ -621,7 +621,7 @@ final class CalendarCoordinator {
         let moved = Set(previous.blocks.filter { block in
             guard !block.isActive, !block.isPinned, block.taskID != taskID,
                   let task = store.block(id: block.taskID), !task.isCompleted,
-                  task.occurrenceID == block.occurrenceID, store.list(id: task.listID)?.isArchived == false else { return false }
+                  task.occurrenceID == block.occurrenceID, store.list(id: task.listID)?.isEffectivelyArchived == false else { return false }
             return !plan.blocks.contains { $0.occurrenceID == block.occurrenceID && $0.start == block.start && $0.end == block.end }
         }.map(\.taskID)).sorted { $0.uuidString < $1.uuidString }
         guard !moved.isEmpty else { return }
@@ -640,7 +640,7 @@ final class CalendarCoordinator {
              timestamp($0.deferredUntil), String($0.priorityRaw), String($0.keepsSessionsTogether), String($0.tracksAwayFromMac)].joined(separator: "|")
         }
         parts += store.allLists(includeArchived: true).map {
-            "list|\($0.id)|\($0.availabilityCategoryRaw)|\($0.isArchived)|\($0.mergedIntoID?.uuidString ?? "-")"
+            "list|\($0.id)|\($0.availabilityCategoryRaw)|\($0.isEffectivelyArchived)|\($0.parentListID?.uuidString ?? "-")|\($0.mergedIntoID?.uuidString ?? "-")"
         }
         parts += store.placements().map { "placement|\($0.id)|\($0.taskID)|\($0.occurrenceID)|\(timestamp($0.start))|\(timestamp($0.end))|\($0.isPinned)" }
         let liveOccurrences = Set(tasks.filter { !$0.isCompleted }.map(\.occurrenceID))
@@ -666,7 +666,7 @@ final class CalendarCoordinator {
             guard placement.isPinned, placement.occurrenceID != task.occurrenceID,
                   let owner = store.block(id: placement.taskID), owner.isTask, !owner.isCompleted,
                   owner.occurrenceID == placement.occurrenceID,
-                  store.list(id: owner.listID)?.isArchived == false else { return false }
+                  store.list(id: owner.listID)?.isEffectivelyArchived == false else { return false }
             return placement.end > placement.start
         }
         let fixed = externalCalendars.busyTimes.map { DateInterval(start: $0.start, end: $0.end) } + pins.map { DateInterval(start: $0.start, end: $0.end) }

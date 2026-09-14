@@ -35,7 +35,7 @@ struct TrashScreen: View {
                                 .font(.callout)
                                 .foregroundStyle(Theme.secondaryText)
                         }
-                        Text("\(entry.blockCount) content blocks · \(ByteCountFormatter.string(fromByteCount: Int64(entry.byteCount), countStyle: .file))")
+                        Text("\(entry.isList ? "\(entry.listCount) documents · " : "")\(entry.blockCount) content blocks · \(ByteCountFormatter.string(fromByteCount: Int64(entry.byteCount), countStyle: .file))")
                             .font(.caption)
                             .foregroundStyle(Theme.secondaryText)
                         Text(env.store.trashRestoreDestination(entry))

@@ -7,7 +7,11 @@ struct ActiveTaskPolicy {
     let activeListIDs: Set<UUID>
 
     init(lists: [TaskList]) {
-        activeListIDs = Set(lists.lazy.filter { !$0.isTrashed && !$0.isArchived && $0.mergedIntoID == nil }.map(\.id))
+        self.init(hierarchy: ListHierarchy(lists))
+    }
+
+    init(hierarchy: ListHierarchy) {
+        activeListIDs = hierarchy.activeIDs
     }
 
     func includes(_ task: Block) -> Bool {
