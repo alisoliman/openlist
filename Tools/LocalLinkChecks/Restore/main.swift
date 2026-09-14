@@ -29,6 +29,9 @@ let defaults = UserDefaults(suiteName: defaultsName)!
 defer { defaults.removePersistentDomain(forName: defaultsName) }
 let settings = LibraryBackupSettings(defaults: defaults)
 let reader = try BackupSnapshotReader(schema: AppPersistence.schema)
+let coverBytes = Data(repeating: 0x43, count: 1_048_621)
+let coverMetadata = ListCoverMetadata(displayName: "Original cover.png", contentType: "image/png",
+    byteCount: coverBytes.count, pixelWidth: 800, pixelHeight: 600)
 
 func navigation(context: ModelContext, storeURL: URL) throws -> (Navigator, LocalLinkNavigation) {
     let navigator = Navigator()
@@ -47,6 +50,10 @@ if phase == "prepare" {
     let context = loaded.container.mainContext
     context.autosaveEnabled = false
     let list = TaskList(title: "Original document")
+    list.coverFilename = "original-cover.png"
+    list.coverData = coverBytes
+    list.coverMetadataData = try JSONEncoder().encode(coverMetadata)
+    list.coverPresentationRaw = ListCoverPresentation.hidden.rawValue
     let task = Block(kind: .task, text: "Original task", listID: list.id)
     context.insert(list)
     context.insert(task)
@@ -56,6 +63,8 @@ if phase == "prepare" {
         taskID: task.id, listID: list.id, task: links.link(to: .task(task.id)), list: links.link(to: .list(list.id)))
     try JSONEncoder().encode(copied).write(to: copiedURL)
     let snapshot = try reader.read(at: storage.originalStoreURL, settings: settings)
+    check(snapshot.version == 4 && snapshot.lists.first { $0.id == list.id }?.coverData == coverBytes,
+        "Link-bearing backup preserves schema 4 and the external cover payload")
     try LibraryBackupPackage.write(snapshot, to: package) { _ in throw CocoaError(.fileReadNoSuchFile) }
     try check(LocalLink.parse(copied.task).libraryID == snapshot.libraryID, "Copied task URL records the backed-up library identity")
     try check(LocalLink.parse(copied.list).target == .list(list.id), "Copied list URL records the original stable list identity")
@@ -75,6 +84,10 @@ if phase == "prepare" {
     context.autosaveEnabled = false
     let (navigator, links) = try navigation(context: context, storeURL: startup.storeURL)
     let task = try context.fetch(FetchDescriptor<Block>()).first { $0.id == copied.taskID }!
+    let list = try context.fetch(FetchDescriptor<TaskList>()).first { $0.id == copied.listID }!
+    check(list.coverFilename == "original-cover.png" && list.coverData == coverBytes
+        && list.coverMetadata == coverMetadata && list.coverPresentation == .hidden,
+        "Selected linked list preserves cover identity, bytes, metadata and hidden presentation")
     let expectedIdentity = phase == "different" ? snapshot.libraryID : copied.libraryID
     try check(LibraryIdentity.read(at: startup.storeURL) == expectedIdentity, "Selected store metadata preserves the selected library identity")
     check(startup.isLocalRestore == (phase != "return"), "Restore and Return select their intended storage generation")
@@ -100,6 +113,8 @@ if phase == "prepare" {
         if phase == "restore" {
             check(startup.storeURL != storage.originalStoreURL, "Restored link target uses a separate store location")
             task.text = "Edited only in the restored generation"
+            list.coverData = Data(repeating: 0x44, count: coverBytes.count)
+            list.coverPresentationRaw = ListCoverPresentation.compact.rawValue
             try context.save()
         } else {
             check(startup.storeURL == storage.originalStoreURL, "Return resolves links against the untouched original store")
