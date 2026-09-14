@@ -61,6 +61,7 @@ extension Store {
             guard !rootIDs.isEmpty else { throw TrashError.unavailable }
         }
         if succeeded {
+            trashNotice = nil
             onEditorBlocksRemoved?(removedIDs)
             if let undoManager {
                 undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
@@ -90,7 +91,10 @@ extension Store {
             try retain(members, groupID: id)
             log(.listDeleted, title: list.displayTitle, list: list)
         }
-        if succeeded { onEditorBlocksRemoved?(removedIDs) }
+        if succeeded {
+            trashNotice = nil
+            onEditorBlocksRemoved?(removedIDs)
+        }
         return succeeded
     }
 

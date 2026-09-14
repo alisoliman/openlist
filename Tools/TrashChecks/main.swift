@@ -52,7 +52,9 @@ if phase == "delete" {
     try JSONEncoder().encode(expected).write(to: manifest)
     var closed = Set<UUID>()
     store.onEditorBlocksRemoved = { closed.formUnion($0) }
+    store.trashNotice = "Earlier restoration"
     try check(store.trashBlocks([root, child]), "Rich subtree can be retained")
+    try check(store.trashNotice == nil, "A new deletion clears stale restoration feedback")
     try check(closed == Set(expected.blocks.map(\.id)), "Deletion closes every descendant inspector and command owner")
     try check(store.trashEntries().count == 1, "Selected descendants are owned by selected ancestor")
     try check(store.block(id: root.id) == nil && store.blocks(inList: list.id).isEmpty, "Active lookup and outline exclude retained content")
