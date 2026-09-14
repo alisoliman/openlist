@@ -107,6 +107,7 @@ struct CompletionRecordState {
     var estimateMinutes: Int
     var wasRecurring: Bool
     var plannedIntervalsData: Data?
+    var activityCycleID: UUID?
 
     init(_ record: CompletionRecord) {
         id = record.id
@@ -132,6 +133,7 @@ struct CompletionRecordState {
         record.wasRecurring = wasRecurring
         record.plannedIntervalsData = plannedIntervalsData
         store.context.insert(record)
+        store.pendingCompletionCycleIDs[id] = activityCycleID
     }
 }
 
@@ -185,7 +187,11 @@ extension Store {
             return (id, CompletionTaskState(task))
         })
         let changed = snapshot.tasks.filter { after[$0.key] != $0.value }
-        let records = completionRecords().filter { !snapshot.existingRecordIDs.contains($0.id) }.map(CompletionRecordState.init)
+        let records = completionRecords().filter { !snapshot.existingRecordIDs.contains($0.id) }.map { record in
+            var state = CompletionRecordState(record)
+            state.activityCycleID = pendingCompletionCycleIDs[record.id]
+            return state
+        }
         guard !changed.isEmpty, isReopening || !records.isEmpty else { return }
         pendingCompletionUndoChanges.append(CompletionUndoChange(
             action: CompletionUndoAction(title: title, createdAt: now, isReopening: isReopening),

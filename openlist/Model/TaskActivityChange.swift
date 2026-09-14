@@ -21,6 +21,13 @@ nonisolated struct TaskActivityChange: Codable, Equatable, Sendable {
     var completedAt: Date?
     var completedDueDate: Date?
     var advancesOccurrence = false
+    /// Captured from the completed occurrence, never from today's task state.
+    /// Optional for compatibility with existing history and library backups.
+    var completedOccurrenceID: UUID?
+    var completionWasRecurring: Bool?
+    /// A recurring ancestor's cycle is stable when a child is reopened.
+    /// For a task with its own rule this is its completed occurrence UUID.
+    var completionCycleID: UUID?
 }
 
 /// A staged legacy event retains its action time across retries. Each attempt

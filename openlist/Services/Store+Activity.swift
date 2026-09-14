@@ -15,6 +15,21 @@ extension TaskActivityState {
 }
 
 extension Store {
+    /// A fresh reader publishes only committed completion actions, including
+    /// after a failed write leaves retryable models in the live context.
+    func activityHeatmap(now: Date = .now, calendar: Calendar = .current) throws -> ActivityHeatmap {
+        let reader = ModelContext(context.container)
+        reader.autosaveEnabled = false
+        let events = try reader.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.kindRaw == "completed" }))
+        let needed = Array(Set(events.filter { $0.change?.completionWasRecurring == nil || $0.change?.completedOccurrenceID == nil }
+            .compactMap { $0.change?.completionID }))
+        let records = needed.isEmpty ? [] : try reader.fetch(FetchDescriptor<CompletionRecord>(predicate: #Predicate { needed.contains($0.id) }))
+        let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ActivityHeatmap(completions: events.map {
+            ActivityCompletion(event: $0, matchingRecord: $0.change?.completionID.flatMap { byID[$0] })
+        }, now: now, calendar: calendar)
+    }
+
     /// Existing one-way note/star entries must still describe a committed
     /// change after a failed save. Reversing the unsaved edit cancels the
     /// queued entry; this does not add note or priority diff history.
@@ -80,7 +95,10 @@ extension Store {
                 let record = completion ?? undone
                 event.change = TaskActivityChange(before: before, after: after, completionID: record?.id,
                     completedAt: record?.completedAt, completedDueDate: record?.dueDate,
-                    advancesOccurrence: completion.map { $0.occurrenceID != after?.occurrenceID } ?? false)
+                    advancesOccurrence: completion.map { $0.occurrenceID != after?.occurrenceID } ?? false,
+                    completedOccurrenceID: record?.occurrenceID, completionWasRecurring: record?.wasRecurring,
+                    completionCycleID: record.flatMap { pendingCompletionCycleIDs[$0.id] }
+                        ?? (kind == .reopened ? after.flatMap { pendingReopenedCycleIDs[$0.occurrenceID] } : nil))
                 result.append(event)
             }
             guard let after else {

@@ -173,6 +173,7 @@ struct CommandPaletteView: View {
             PaletteItem(id: "go-inbox", title: "Go to Inbox", subtitle: "⌘1", symbol: "tray", accent: .blue, kind: .navigate(.inbox)),
             PaletteItem(id: "go-today", title: "Go to Today", subtitle: "⌘2", symbol: "sun.max", accent: .orange, kind: .navigate(.today)),
             PaletteItem(id: "go-updates", title: "Go to Updates", subtitle: "⌘3", symbol: "sparkles", accent: .violet, kind: .navigate(.updates)),
+            PaletteItem(id: "go-activity", title: "Go to Activity", subtitle: "Recorded completion heatmap", symbol: "square.grid.3x3.fill", accent: .violet, kind: .navigate(.activity)),
             PaletteItem(id: "go-tasks", title: "Go to Tasks", subtitle: "⌘4", symbol: "checklist", accent: .green, kind: .navigate(.tasks)),
             PaletteItem(id: "go-calendar", title: "Go to Calendar", subtitle: "⌘6", symbol: "calendar", accent: .violet, kind: .navigate(.calendar)),
             PaletteItem(id: "go-lists", title: "Go to Lists", subtitle: "⌘5", symbol: "square.stack", accent: .indigo, kind: .navigate(.lists)),

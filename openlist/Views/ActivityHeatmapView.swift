@@ -1,0 +1,78 @@
+import SwiftUI
+
+struct ActivityHeatmapView: View {
+    let heatmap: ActivityHeatmap
+    @State private var selectedDate: Date?
+
+    private var selectedDay: ActivityHeatmapDay? {
+        heatmap.days.first { $0.id == selectedDate } ?? heatmap.days.last
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sectionGap) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(heatmap.total) recorded completion\(heatmap.total == 1 ? "" : "s")")
+                    .font(.title2).bold()
+                    .accessibilityIdentifier("activity-total")
+                Text("Last 12 weeks · \(heatmap.start.formatted(date: .abbreviated, time: .omitted)) – \(heatmap.end.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.callout).foregroundStyle(.secondary)
+                Text("Dates use \(heatmap.calendar.timeZone.identifier).")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text("Week").hidden().frame(height: 22)
+                        ForEach(0..<7) { index in
+                            Text(heatmap.calendar.shortWeekdaySymbols[(heatmap.calendar.firstWeekday - 1 + index) % 7])
+                                .font(.callout).foregroundStyle(.secondary)
+                                .frame(height: 30)
+                        }
+                    }
+                    .accessibilityHidden(true)
+                    ForEach(0..<12) { week in
+                        VStack(spacing: 6) {
+                            Text(heatmap.days[week * 7].id, format: .dateTime.month(.abbreviated).day())
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(height: 22)
+                                .accessibilityHidden(true)
+                            ForEach(0..<7) { weekday in
+                                let index = week * 7 + weekday
+                                if index < heatmap.days.count {
+                                    ActivityHeatmapCell(day: heatmap.days[index], isSelected: selectedDay?.id == heatmap.days[index].id) {
+                                        selectedDate = heatmap.days[index].id
+                                    }
+                                } else {
+                                    Color.clear.frame(width: 30, height: 30).accessibilityHidden(true)
+                                }
+                            }
+                        }
+                        .frame(width: 46)
+                    }
+                }
+                .padding(4)
+            }
+            .accessibilityLabel("Daily recorded completions")
+            ActivityHeatmapLegend()
+
+            Text("History may be incomplete. A dash means no count is available, not a day with zero completions. Older or cleared history cannot be reconstructed; older recurring subtasks may be undercounted.")
+                .font(.callout).foregroundStyle(.secondary)
+            if heatmap.unclassifiedCount > 0 {
+                Text("\(heatmap.unclassifiedCount) completion entries could not be counted because their history has missing or conflicting task, recurrence, occurrence, or date details.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("activity-incomplete")
+            }
+            if heatmap.total == 0 {
+                ContentUnavailableView("No counted completions in this range", systemImage: "square.grid.3x3",
+                    description: Text("Complete a task to add local activity. History from before recording began, or after it was cleared, may be unavailable."))
+            }
+            Divider()
+            if let selectedDay { ActivityDayDetail(day: selectedDay) }
+            Divider()
+            Text("Each ordinary task counts once across retained history; recurring tasks and subtasks count once per recorded cycle, on the first countable completion date. Reopening, Undo and Redo keep the recorded action without adding another count. Clear History in Updates removes these records too.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .onChange(of: heatmap.start) { selectedDate = nil }
+    }
+}

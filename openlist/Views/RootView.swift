@@ -391,6 +391,8 @@ struct RootView: View {
             CalendarScreen()
         case .updates:
             UpdatesScreen()
+        case .activity:
+            ActivityScreen()
         case .tasks:
             TasksScreen()
         case .lists:

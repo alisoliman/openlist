@@ -223,7 +223,35 @@ extension Store {
         block.deferredUntil = nil
     }
 
-    func recordCalendarCompletion(for block: Block, now: Date) {
+    /// Capture before any parent/reset changes its occurrence. The override
+    /// preserves a completing parent's cycle even after its last rule ends.
+    func recurringCompletionCycle(for block: Block, completingAncestor: (id: UUID, cycleID: UUID)? = nil) -> UUID? {
+        if block.recurrence != nil { return unadvancedCompletionCycle(for: block) }
+        var parentID = block.parentID
+        var visited: Set<UUID> = [block.id]
+        while let id = parentID, visited.insert(id).inserted, let parent = self.block(id: id) {
+            if id == completingAncestor?.id { return completingAncestor?.cycleID }
+            if parent.recurrence != nil { return unadvancedCompletionCycle(for: parent) }
+            parentID = parent.parentID
+        }
+        return nil
+    }
+
+    private func unadvancedCompletionCycle(for block: Block) -> UUID {
+        if let cycle = pendingReopenedCycleIDs[block.occurrenceID] { return cycle }
+        // Parent checkbox cascades can finish a self-recurring child without
+        // advancing its rule. Both that task and its descendants inherit the
+        // preserved cycle after reopening changes its calendar UUID.
+        let id = block.id
+        let descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == id && $0.kindRaw == "reopened" })
+        if let cycle = (try? context.fetch(descriptor))?.compactMap({ event -> UUID? in
+            guard event.change?.after?.occurrenceID == block.occurrenceID else { return nil }
+            return event.change?.completionCycleID
+        }).first { return cycle }
+        return block.occurrenceID
+    }
+
+    func recordCalendarCompletion(for block: Block, now: Date, recurringCycleID: UUID? = nil) {
         // A cloud-delivered completion must not produce duplicate local history.
         if !completionRecords(taskID: block.id).contains(where: { $0.occurrenceID == block.occurrenceID }) {
             let record = CompletionRecord(
@@ -232,6 +260,12 @@ extension Store {
                 estimateMinutes: block.schedulingEstimateMinutes > 0
                     ? block.schedulingEstimateMinutes : calendarDefaultEstimateMinutes
             )
+            // A subtask belongs to its ancestor's recurring cycle even when
+            // it has no recurrence rule of its own. Capture that fact now;
+            // later moves, parent deletion or rule edits cannot recover it.
+            let cycleID = recurringCycleID ?? recurringCompletionCycle(for: block)
+            record.wasRecurring = cycleID != nil
+            pendingCompletionCycleIDs[record.id] = cycleID
             let originalPlan = workSessions(taskID: block.id)
                 .filter { $0.occurrenceID == block.occurrenceID && $0.plannedIntervalsData != nil }
                 .min { $0.startedAt < $1.startedAt }

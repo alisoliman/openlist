@@ -12,6 +12,7 @@ enum AppRoute: Hashable, Codable {
     case today
     case calendar
     case updates
+    case activity
     case tasks
     case lists
     case list(UUID)
