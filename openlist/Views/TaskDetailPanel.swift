@@ -67,7 +67,7 @@ private struct TaskDetailContent: View {
     private var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
 
     var body: some View {
-        if block.modelContext != nil, !block.isDeleted {
+        if block.modelContext != nil, !block.isDeleted, !block.isTrashed {
             content(for: block)
         }
     }
@@ -461,9 +461,9 @@ private struct TaskDetailContent: View {
                 Spacer()
 
                 Button(role: .destructive) {
-                    env.navigator.closeTask()
-                    env.store.deleteBlock(block)
-                    env.store.save()
+                    if env.store.trashBlocks([block], undoManager: NSApp.keyWindow?.undoManager) {
+                        env.navigator.closeTask()
+                    }
                 } label: {
                     Text("Delete")
                         .font(Theme.Font.metadata)
@@ -472,6 +472,9 @@ private struct TaskDetailContent: View {
                 .foregroundStyle(ListAccent.red.color)
             }
 
+            if let note = block.trashMetadata?.recoveryNote {
+                Text(note).font(.callout).foregroundStyle(Theme.secondaryText)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Created \(Store.absoluteDateText(block.createdAt, includesTime: true))")
                 if let completedAt = block.completedAt {

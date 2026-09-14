@@ -7,7 +7,7 @@ trap 'rm -rf "$OUT"' EXIT
 xcrun swiftc \
     -swift-version 6 -default-isolation MainActor \
     -o "$OUT/visibility-checks" \
-    openlist/Model/Block.swift openlist/Model/InboxMembership.swift \
+    openlist/Model/Block.swift openlist/Model/TrashMetadata.swift openlist/Model/InboxMembership.swift \
     openlist/Model/BlockKind.swift \
     openlist/Model/Recurrence.swift \
     openlist/Model/CalendarTypes.swift \

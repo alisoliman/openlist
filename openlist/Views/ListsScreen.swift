@@ -10,10 +10,10 @@ import SwiftUI
 struct ListsScreen: View {
     @Environment(AppEnvironment.self) private var env
 
-    @Query(filter: #Predicate<TaskList> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\TaskList.sortIndex)])
+    @Query(filter: TaskList.availablePredicate, sort: [SortDescriptor(\TaskList.sortIndex)])
     private var lists: [TaskList]
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" })
     private var tasks: [Block]
 
     @State private var showsArchived = false

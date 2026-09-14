@@ -207,7 +207,8 @@ extension Store {
                     if list.mergedIntoID == nil { owningList = list; break }
                     id = list.mergedIntoID
                 }
-                let reason: String? = task.isCompleted ? "task completed"
+                let reason: String? = task.isTrashed || owningList?.isTrashed == true ? "in Trash"
+                    : task.isCompleted ? "task completed"
                     : owningList == nil ? "list unavailable"
                     : owningList?.isArchived == true ? "list archived" : nil
                 return ReminderIntent(id: task.id, occurrenceID: task.occurrenceID,
@@ -296,21 +297,25 @@ extension Store {
     }
 
     func deleteLabel(_ label: TaskLabel) {
-        let labelID = label.id
-        let descriptor = FetchDescriptor<Block>()
-        let all = (try? context.fetch(descriptor)) ?? []
-        for block in all where block.labelIDs.contains(labelID) {
-            block.labelIDs.removeAll { $0 == labelID }
+        do {
+            let labelID = label.id
+            let all = try context.fetch(FetchDescriptor<Block>())
+            try preserveTrashLabel(label, referencedBy: all)
+            for block in all where !block.isTrashed && block.labelIDs.contains(labelID) {
+                block.labelIDs.removeAll { $0 == labelID }
+            }
+            context.delete(label)
+            try persistChanges()
+        } catch {
+            persistenceError = "The label could not be deleted. \(error.localizedDescription)"
         }
-        context.delete(label)
-        save()
     }
 
     func blockCount(for label: TaskLabel) -> Int {
         let labelID = label.id
         let descriptor = FetchDescriptor<Block>(predicate: #Predicate { !$0.isCompleted })
         let all = (try? context.fetch(descriptor)) ?? []
-        return all.filter { $0.labelIDs.contains(labelID) }.count
+        return all.filter { !$0.isTrashed && $0.labelIDs.contains(labelID) }.count
     }
 
     // MARK: - Moving between lists

@@ -65,9 +65,10 @@ private struct LibraryRestorePreview: View {
             Text("Format \(preview.manifest.version) · \(preview.manifest.createdAt.formatted(date: .abbreviated, time: .shortened))")
                 .foregroundStyle(Theme.secondaryText)
             Grid(alignment: .leading, horizontalSpacing: 22, verticalSpacing: 6) {
-                row("Lists", "\(preview.snapshot.lists.filter { $0.mergedIntoID == nil }.count)")
-                row("Archived lists", "\(preview.snapshot.lists.filter { $0.isArchived && $0.mergedIntoID == nil }.count)")
-                row("Tasks", "\(preview.snapshot.taskCount)")
+                row("Lists", "\(preview.snapshot.lists.filter { $0.trashID == nil && $0.mergedIntoID == nil }.count)")
+                row("Archived lists", "\(preview.snapshot.lists.filter { $0.isArchived && $0.trashID == nil && $0.mergedIntoID == nil }.count)")
+                row("Trash items", "\(preview.snapshot.lists.filter { $0.trashID == $0.id }.count + preview.snapshot.blocks.filter { $0.trashID == $0.id }.count)")
+                row("Tasks (including Trash)", "\(preview.snapshot.taskCount)")
                 row("Notes and other blocks", "\(preview.snapshot.blocks.count - preview.snapshot.taskCount)")
                 row("Labels", "\(preview.snapshot.labels.count)")
                 row("Activity entries", "\(preview.snapshot.activity.count)")

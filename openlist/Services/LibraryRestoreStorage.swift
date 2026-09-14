@@ -160,7 +160,7 @@ nonisolated struct LibraryRestoreStorage: Sendable {
             let verification = try JSONDecoder().decode(Generation.self,
                 from: Data(contentsOf: generationDirectory(generation).appendingPathComponent("verification.json")))
             guard verification.formatVersion == LibraryBackup.currentVersion else {
-                throw LibraryBackupError.invalid("This restore was prepared by an older or incompatible Openlist version. Your current library and staged files have been kept. Cancel the pending restore and select the original backup again; version 1 backup packages can be upgraded safely.")
+                throw LibraryBackupError.invalid("This restore was prepared by an older or incompatible Openlist version. Your current library and staged files have been kept. Cancel the pending restore and select the original backup again; version 1 and version 2 backup packages can be upgraded safely.")
             }
             let destination = try reader.readClosedStore(at: destinationURL, settings: request.destinationSettings, createdAt: verification.createdAt)
             guard try LibraryBackupPackage.fingerprint(destination) == verification.fingerprint else {

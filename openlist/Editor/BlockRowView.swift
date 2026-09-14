@@ -408,10 +408,7 @@ struct BlockContextMenu: View {
 
         Divider()
         Button("Delete", role: .destructive) {
-            edit("Delete block") { current in
-                env.store.deleteBlock(current)
-                env.store.save()
-            }
+            _ = env.store.trashBlocks([block], undoManager: undoManager ?? NSApp.keyWindow?.undoManager)
         }
     }
 

@@ -161,8 +161,9 @@ private struct EditorSnapshot {
         }
     }
 
-    var files: Set<String> {
-        Set(blocks.values.compactMap(\.mediaFilename) + attachments.values.map(\.filename))
+    func files(excluding erasedBlockIDs: Set<UUID>) -> Set<String> {
+        Set(blocks.values.filter { !erasedBlockIDs.contains($0.id) }.compactMap(\.mediaFilename)
+            + attachments.values.filter { $0.blockID.map(erasedBlockIDs.contains) != true }.map(\.filename))
     }
 
     func changedIDs(comparedTo other: Self) -> (blocks: Set<UUID>, attachments: Set<UUID>) {
@@ -216,6 +217,19 @@ extension Store {
 
     /// Copy before the async disk deletion, never after it.
     func removeEditorMedia(filename: String) {
+        // An old/shared cache filename can still belong to recoverable content.
+        // Retention takes precedence over structural cleanup and session Undo.
+        do {
+            let retained = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID != nil }))
+            if retained.contains(where: { $0.mediaFilename == filename }) { return }
+            let ids = Set(retained.map(\.id))
+            if try context.fetch(FetchDescriptor<Attachment>()).contains(where: {
+                $0.filename == filename && $0.blockID.map(ids.contains) == true
+            }) { return }
+        } catch {
+            persistenceError = "A file could not be checked for retained references. It has been kept. \(error.localizedDescription)"
+            return
+        }
         if isRecordingEditorEdit, let data = MediaStore.shared.fileContents(filename: filename) {
             editorMediaBackups[filename] = data
         }
@@ -224,11 +238,38 @@ extension Store {
 
     private func restoreEditorEdit(from source: EditorSnapshot, to desired: EditorSnapshot, media: [String: Data], name: String, undoManager: UndoManager) {
         guard desired.listIDs.allSatisfy({ list(id: $0) != nil }) else {
-            editorNotice = "This edit cannot be restored because its list was permanently deleted."
+            editorNotice = "This edit cannot be restored because its list is unavailable. Restore the list from Trash first if it was deleted."
             return
         }
         let changed = source.changedIDs(comparedTo: desired)
-        var retained = media
+        let attachmentOwners = Set(changed.attachments.flatMap { id in
+            [source.attachments[id]?.blockID, desired.attachments[id]?.blockID].compactMap { $0 }
+        })
+        let changedIDs = Array(changed.blocks.union(attachmentOwners))
+        guard changed.blocks.union(attachmentOwners).isDisjoint(with: permanentlyErasedBlockIDs) else {
+            editorNotice = "This edit includes permanently deleted content and cannot be restored."
+            return
+        }
+        if let retainedBlocks = try? context.fetch(FetchDescriptor<Block>(predicate: #Predicate { changedIDs.contains($0.id) && $0.trashID != nil })), !retainedBlocks.isEmpty {
+            editorNotice = "Restore this content from Trash before undoing an earlier edit."
+            return
+        }
+        // An older move/outdent can depend on an unchanged parent that was
+        // deleted later. It may only refer to a live parent, or one restored by
+        // this exact Undo; an old snapshot alone is not authority to revive it.
+        for id in changed.blocks {
+            guard let record = desired.blocks[id], let parentID = record.parentID else { continue }
+            let restoredParent = changed.blocks.contains(parentID) ? desired.blocks[parentID] : nil
+            let liveParent = block(id: parentID)
+            guard (restoredParent != nil && restoredParent?.listID == record.listID)
+                || (liveParent != nil && liveParent?.listID == record.listID) else {
+                editorNotice = "This edit depends on a parent that is no longer available. Restore the parent from Trash first."
+                return
+            }
+        }
+        let sourceFiles = source.files(excluding: permanentlyErasedBlockIDs)
+        let desiredFiles = desired.files(excluding: permanentlyErasedBlockIDs)
+        var retained = media.filter { sourceFiles.contains($0.key) || desiredFiles.contains($0.key) }
         let canRestoreLabels = source.hasLabelSnapshot && desired.hasLabelSnapshot
         let labelsToRestore = canRestoreLabels ? desired.labels.filter { source.labels[$0.key] == nil } : [:]
         var liveLabels: [TaskLabel] = []
@@ -242,11 +283,11 @@ extension Store {
 
         // Save files needed by Redo before deleting anything. The media queue
         // serializes deletion and restoration, avoiding an async unlink race.
-        for filename in source.files.subtracting(desired.files) {
+        for filename in sourceFiles.subtracting(desiredFiles) {
             if let data = MediaStore.shared.fileContents(filename: filename) { retained[filename] = data }
         }
         do {
-            for filename in desired.files {
+            for filename in desiredFiles {
                 if let data = retained[filename] {
                     try MediaStore.shared.restoreFile(data, filename: filename)
                 }
@@ -315,7 +356,16 @@ extension Store {
             }
         }
         if canRestoreLabels, !source.labels.isEmpty || !desired.labels.isEmpty { labelRevision += 1 }
-        for filename in source.files.subtracting(desired.files) { MediaStore.shared.delete(filename: filename) }
+        // Global references include other documents and retained Trash groups.
+        // A failed reference read keeps the cache for a later cleanup.
+        if let blocks = try? context.fetch(FetchDescriptor<Block>()),
+           let files = try? context.fetch(FetchDescriptor<Attachment>()) {
+            let referenced = Set(blocks.filter { !$0.isDeleted }.compactMap(\.mediaFilename)
+                + files.filter { !$0.isDeleted }.map(\.filename))
+            for filename in sourceFiles.subtracting(desiredFiles).subtracting(referenced) {
+                MediaStore.shared.delete(filename: filename)
+            }
+        }
         save()
         refreshAllReminders()
         undoManager.registerUndo(withTarget: self) { [weak undoManager] store in

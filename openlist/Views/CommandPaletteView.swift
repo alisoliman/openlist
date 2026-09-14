@@ -11,7 +11,7 @@ struct CommandPaletteView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
 
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted })
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
 
     @State private var captureRequest: TaskCaptureRequest?

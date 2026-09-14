@@ -1,12 +1,14 @@
 import Foundation
 import SwiftData
 
-// Version 2 explicitly lists every persisted field. Adding a model field requires
+// Version 3 explicitly lists every persisted field. Adding a model field requires
 // updating this contract and the schema-coverage regression before shipping.
 // Computed presentation state and SwiftData implementation details are excluded.
 
 nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
     var id: UUID
+    var trashID: UUID?
+    var trashMetadataData: Data?
     var title: String
     var icon: String
     var accentRaw: String
@@ -28,6 +30,8 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
 
     @MainActor init(_ value: TaskList) {
         id = value.id
+        trashID = value.trashID
+        trashMetadataData = value.trashMetadataData
         title = value.title
         icon = value.icon
         accentRaw = value.accentRaw
@@ -51,6 +55,8 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
     @MainActor func model() -> TaskList {
         let value = TaskList()
         value.id = id
+        value.trashID = trashID
+        value.trashMetadataData = trashMetadataData
         value.title = title
         value.icon = icon
         value.accentRaw = accentRaw
@@ -75,6 +81,8 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
 
 nonisolated struct BackupBlock: Codable, Equatable, Sendable {
     var id: UUID
+    var trashID: UUID?
+    var trashMetadataData: Data?
     var kindRaw: String
     var text: String
     var richData: Data?
@@ -109,6 +117,8 @@ nonisolated struct BackupBlock: Codable, Equatable, Sendable {
 
     @MainActor init(_ value: Block) {
         id = value.id
+        trashID = value.trashID
+        trashMetadataData = value.trashMetadataData
         kindRaw = value.kindRaw
         text = value.text
         richData = value.richData
@@ -145,6 +155,8 @@ nonisolated struct BackupBlock: Codable, Equatable, Sendable {
     @MainActor func model() -> Block {
         let value = Block()
         value.id = id
+        value.trashID = trashID
+        value.trashMetadataData = trashMetadataData
         value.kindRaw = kindRaw
         value.text = text
         value.richData = richData

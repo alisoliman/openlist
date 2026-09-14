@@ -6,11 +6,11 @@ struct InboxPolicy {
     let activeListIDs: Set<UUID>
 
     init(lists: [TaskList]) {
-        activeListIDs = Set(lists.filter { !$0.isArchived && $0.mergedIntoID == nil }.map(\.id))
+        activeListIDs = Set(lists.filter { !$0.isTrashed && !$0.isArchived && $0.mergedIntoID == nil }.map(\.id))
     }
 
     static func selection(_ task: Block) -> InboxMembership? {
-        guard task.isTask, let data = task.inboxMembershipData,
+        guard !task.isTrashed, task.isTask, let data = task.inboxMembershipData,
               let value = try? InboxMembership.decode(data), value.included,
               value.occurrenceID == task.occurrenceID else { return nil }
         return value

@@ -92,7 +92,7 @@ struct DocumentView: View {
 
         let listID = document.listID
         _fetchedBlocks = Query(
-            filter: #Predicate<Block> { $0.listID == listID },
+            filter: #Predicate<Block> { $0.trashID == nil && $0.listID == listID },
             sort: [SortDescriptor(\Block.sortIndex)]
         )
     }
@@ -209,7 +209,7 @@ struct DocumentView: View {
             // Only the document the user is actually working in should respond,
             // otherwise ⌘N would fire in both the list and the open task panel.
             guard env.activeDocument == document else { return }
-            let structural: [EditorCommand] = [.newTask, .indent, .outdent, .moveUp, .moveDown, .deleteSelection]
+            let structural: [EditorCommand] = [.newTask, .indent, .outdent, .moveUp, .moveDown]
             if let command = env.pendingCommand, structural.contains(command) {
                 editorEdit("Edit outline") { handleCommand() }
             } else { handleCommand() }

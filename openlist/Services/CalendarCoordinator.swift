@@ -163,7 +163,7 @@ final class CalendarCoordinator {
         missedPlacementIDs.subtract(store.placements().filter { $0.start > now }.map(\.id))
         let lists = store.allLists()
         let categories = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, AvailabilityCategory(rawValue: $0.availabilityCategoryRaw) ?? .work) })
-        let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == "task" && !$0.isCompleted }))) ?? [])
+        let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted }))) ?? [])
             .filter { task in task.listID.flatMap { categories[store.resolvedListID($0) ?? $0] } != nil }
         let inputs = tasks.map { scheduleInput(for: $0, now: now) }
         let placements = store.placements().filter { !missedPlacementIDs.contains($0.id) }.map { PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID,
@@ -633,7 +633,7 @@ final class CalendarCoordinator {
     /// changes must not move an otherwise unchanged schedule toward the clock.
     private func schedulingSignature() -> [String] {
         func timestamp(_ date: Date?) -> String { date.map { String($0.timeIntervalSinceReferenceDate) } ?? "-" }
-        let tasks = (try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == "task" }))) ?? []
+        let tasks = (try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" }))) ?? []
         var parts = tasks.map {
             [$0.id.uuidString, $0.occurrenceID.uuidString, $0.listID?.uuidString ?? "-", String($0.isCompleted),
              String($0.schedulingEstimateMinutes), timestamp($0.dueDate), String($0.includesTime), timestamp($0.selectedForDay),

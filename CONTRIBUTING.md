@@ -232,3 +232,14 @@ They use synthetic profiles and certificate bytes with mocked CMS decoding,
 never a Keychain or real signing material. Check a fresh extraction with
 `codesign --verify --deep --strict`, `xcrun stapler validate`, and
 `spctl --assess --type execute` before launch.
+
+### Trash persistence
+
+Run `Tools/run-trash-checks.sh` for deletion/restart/restore, independent subtree
+ownership, Undo, shared media erasure, and injected and actual read-only save
+failures. Its migration matrix uses the persisted pre-Trash Block/TaskList
+schema and verifies private-copy restore plus cold Return without changing the
+retained original. `Tools/run-inbox-checks.sh` retains the pre-membership matrix.
+Trash adds optional `trashID` and `trashMetadataData` to Block and TaskList;
+these are CloudKit schema changes subject to the production schema gate above.
+Local tests and ad-hoc Dev builds do not verify cloud delivery or Production.

@@ -12,11 +12,6 @@ import SwiftData
 @Model
 final class TaskList {
     var id: UUID = UUID()
-
-    /// Retained records keep their identity and payload until explicitly erased.
-    var trashID: UUID?
-    /// Present on the root; retained after recovery to explain its former location.
-    var trashMetadataData: Data?
     var title: String = ""
     /// Emoji shown in the sidebar and list header.
     var icon: String = "📋"
@@ -70,18 +65,7 @@ final class TaskList {
 }
 
 extension TaskList {
-    static var availablePredicate: Predicate<TaskList> {
-        #Predicate<TaskList> { $0.trashID == nil && $0.mergedIntoID == nil }
-    }
-    static var activePredicate: Predicate<TaskList> {
-        #Predicate<TaskList> { $0.trashID == nil && !$0.isArchived && $0.mergedIntoID == nil }
-    }
-
-    var isTrashed: Bool { trashID != nil }
-    var trashMetadata: TrashMetadata? {
-        trashMetadataData.flatMap { try? JSONDecoder().decode(TrashMetadata.self, from: $0) }
-    }
-
+    var isTrashed: Bool { false }
     enum CompletedVisibility: String, CaseIterable, Identifiable {
         case inherit, show, hide
         var id: String { rawValue }

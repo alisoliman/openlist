@@ -41,7 +41,7 @@ extension Store {
         guard try staged.writer.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == listID })).first != nil else {
             throw FragmentError.destination
         }
-        let savedBlocks = try staged.writer.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.listID == listID }))
+        let savedBlocks = try staged.writer.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.listID == listID }))
         let savedByID = Dictionary(savedBlocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         if let anchorID {
             guard let saved = savedByID[anchorID], saved.parentID == parentID, saved.sortIndex == afterIndex else {

@@ -28,6 +28,9 @@ struct ListScreen: View {
         ScreenScaffold(headerSpacing: 10) {
             header
         } content: {
+            if let note = list.trashMetadata?.recoveryNote {
+                Text(note).font(.callout).foregroundStyle(Theme.secondaryText)
+            }
             if viewMode == .document {
                 DocumentView(
                     document: DocumentContext(listID: list.id),

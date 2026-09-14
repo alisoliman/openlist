@@ -33,13 +33,13 @@ nonisolated struct SearchCorpus: Equatable, Sendable {
 
     @MainActor
     init(blocks: [Block], lists: [TaskList]) {
-        self.blocks = blocks.filter { !$0.isDeleted }.map {
+        self.blocks = blocks.filter { !$0.isDeleted && !$0.isTrashed }.map {
             BlockRecord(id: $0.id, listID: $0.listID, parentID: $0.parentID,
                 text: $0.text, note: $0.note, displayTitle: $0.displayTitle,
                 isTask: $0.isTask, isCompleted: $0.isCompleted, updatedAt: $0.updatedAt,
                 createdAt: $0.createdAt, symbol: $0.kind.symbol)
         }
-        self.lists = lists.filter { !$0.isDeleted }.map {
+        self.lists = lists.filter { !$0.isDeleted && !$0.isTrashed }.map {
             ListRecord(id: $0.id, title: $0.title, displayTitle: $0.displayTitle,
                 summary: $0.summary, icon: $0.icon, accent: $0.accent,
                 isArchived: $0.isArchived, mergedIntoID: $0.mergedIntoID, createdAt: $0.createdAt)

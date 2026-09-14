@@ -7,7 +7,7 @@ struct InboxReviewView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.undoManager) private var undoManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Query(filter: #Predicate<Block> { $0.kindRaw == "task" && !$0.isCompleted }, sort: \Block.sortIndex)
+    @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted }, sort: \Block.sortIndex)
     private var tasks: [Block]
     @State private var reviewed: Set<UUID> = []
     @State private var destinationID: UUID?

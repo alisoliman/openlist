@@ -530,3 +530,26 @@ Quitting saves current edits, waits up to five seconds for reminder work, then
 saves any edits made during that wait. A save failure cancels quitting. If macOS
 does not answer within the limit, the app can quit with saved intent still
 unconfirmed; the next launch reconciles it. Timeout never implies acceptance.
+
+### Recovering deleted content
+
+Delete moves a task subtree or an entire list to **Trash** in the sidebar.
+Trash keeps content indefinitely; nothing is emptied automatically. Each item
+shows its former location, deletion time, and retained file size. Restore keeps
+original IDs, rich notes, nested content, files, labels, completion and Inbox
+selection. Tasks in Trash are excluded from active views, search, widgets and
+reminders. Only eligible future reminders resume after restoration.
+
+An independently deleted child stays a separate Trash item when its parent or
+list is later deleted. Restoring the parent restores only the content deleted
+with it. If the original parent or list is unavailable, Restore explicitly
+creates a pinned **Recovered items** list and keeps a separate provenance note;
+it does not rewrite the original notes. Archived lists keep their archive state.
+
+**Permanently Delete** and **Empty Trash** require confirmation and remove only
+files with no remaining live or retained references. These actions cannot be
+undone. Editor merges and abandoned empty captures use structural cleanup and
+session Undo; they do not fill Trash. Settings → Delete everything permanently
+removes both active content and Trash. Library backup format 3 includes Trash
+and its media; versions 1 and 2 can still be imported. A restore already staged
+by an older app must be cancelled and prepared again from the original backup.

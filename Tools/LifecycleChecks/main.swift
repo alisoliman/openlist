@@ -81,8 +81,8 @@ if phase == "prepare" {
     store.save()
     store.deleteList(doomed)
     check(store.list(id: doomed.id) == nil && doomedIDs.allSatisfy { store.block(id: $0) == nil }, "Deleting a list removes parent and descendant blocks")
-    check(store.attachments(for: doomedImage.id).isEmpty, "Deleting a list removes descendant attachment records")
-    check(media.fileContents(filename: "delete-list.png") == nil && media.fileContents(filename: "delete-list.txt") == nil, "Deleting a list removes image and attachment files")
+    check(store.attachments(for: doomedImage.id).count == 1, "Deleting a list retains descendant attachment records")
+    check(media.fileContents(filename: "delete-list.png") != nil && media.fileContents(filename: "delete-list.txt") != nil, "Deleting a list retains image and attachment files")
     check(!NotificationService.shared.scheduled.contains(doomedTask.id), "Deleting a list cancels reminders")
     check(store.block(id: keepTask.id) != nil && media.fileContents(filename: "keep-image.png") != nil, "List deletion preserves unrelated list and media")
     store.deleteList(inbox)
@@ -142,19 +142,12 @@ if phase == "prepare" {
     let blocks = try allBlocks(), attachments = try allAttachments(), count = try activityCount()
     let blockIDs = Set(blocks.map(\.id))
     check(blocks.allSatisfy { $0.parentID == nil || blockIDs.contains($0.parentID!) } && attachments.allSatisfy { $0.blockID != nil && blockIDs.contains($0.blockID!) }, "Reopened store has no dangling block or attachment relationships")
-    check(count == 0 && !blocks.contains { $0.text == "Delete block" || $0.text == "Doomed parent" }, "History and cascade deletions remain durable")
-    check(media.fileContents(filename: "keep.txt") == Data("keep.txt".utf8) && media.fileContents(filename: "delete-list.txt") == nil, "Remaining media bytes and deleted-media state survive process restart")
+    check(count == 0 && !blocks.contains { $0.text == "Delete block" || ($0.text == "Doomed parent" && !$0.isTrashed) }, "History and cascade deletions remain durable")
+    check(media.fileContents(filename: "keep.txt") == Data("keep.txt".utf8) && media.fileContents(filename: "delete-list.txt") != nil, "Remaining and retained media bytes survive process restart")
 
     // Compose the same store operations as DataSettingsTab.reset. Native
     // destructive confirmation and navigation are covered separately by UI QA.
-    for list in store.allLists(includeArchived: true) where !list.isSystemInbox { store.deleteList(list) }
-    if let inbox = store.inboxList() {
-        store.deleteBlocks(store.blocks(inList: inbox.id))
-    }
-    for label in store.allLabels() { store.context.delete(label) }
-    store.clearActivity()
-    NotificationService.shared.cancelAll()
-    store.save()
+    check(store.permanentlyResetLibrary(), "Confirmed library reset succeeds")
     let resetBlocks = try allBlocks(), resetAttachments = try allAttachments()
     check(store.allLists(includeArchived: true).count == 1 && store.inboxList() != nil, "Reset retains only the required Inbox")
     check(resetBlocks.isEmpty && resetAttachments.isEmpty && store.allLabels().isEmpty, "Reset clears tasks, notes, images, labels and attachment records")

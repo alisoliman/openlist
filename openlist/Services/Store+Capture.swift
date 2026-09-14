@@ -277,7 +277,7 @@ extension Store {
             _ = setInboxMembership(false, taskIDs: targets.filter(\.isTask).map(\.id), undoManager: undoManager)
 
         case .deleteSelection:
-            deleteBlocks(targets)
+            return trashBlocks(targets, undoManager: undoManager)
 
         case .newTask, .openDetails, .pickDueDate, .pickLabel,
              .indent, .outdent, .moveUp, .moveDown, .expandAll, .collapseAll:

@@ -172,7 +172,7 @@ let validated = try LibraryBackupPackage.read(at: package)
 var hydrated = snapshot
 hydrated.blocks[hydrated.blocks.firstIndex { $0.id == legacyImage.id }!].mediaData = legacyBytes
 check(validated.snapshot == hydrated, "Logical package preserves every field and loads legacy media bytes")
-check(validated.manifest.version == 2, "New backup format prevents older apps silently dropping Inbox curation")
+check(validated.manifest.version == 3, "New backup format prevents older apps silently dropping Inbox curation")
 check(validated.snapshot.blocks.first { $0.id == task.id }?.inboxMembershipData == task.inboxMembershipData,
     "Archive, completed and nested record backup retains exact Inbox order and occurrence payload")
 let oldPackage = root.appendingPathComponent("Version1.openlistbackup")
@@ -191,7 +191,7 @@ oldManifest.libraryDigest = LibraryBackupPackage.digest(oldBytes)
 try oldBytes.write(to: oldPackage.appendingPathComponent("library.json"))
 try JSONEncoder().encode(oldManifest).write(to: oldPackage.appendingPathComponent("manifest.json"))
 let upgraded = try LibraryBackupPackage.read(at: oldPackage)
-check(upgraded.manifest.version == 1 && upgraded.snapshot.version == 2, "Version 1 package gets an explicit in-memory upgrade")
+check(upgraded.manifest.version == 1 && upgraded.snapshot.version == 3, "Version 1 package gets an explicit in-memory upgrade")
 check(upgraded.snapshot.blocks.allSatisfy { $0.inboxMembershipData == nil }, "Version 1 preserves legacy nil for ownership-aware migration")
 let upgradedURL = try BackupStagedStore.create(from: upgraded.snapshot, in: root.appendingPathComponent("UpgradedV1"), using: reader)
 let upgradedRead = try reader.read(at: upgradedURL, settings: upgraded.snapshot.settings, createdAt: upgraded.snapshot.createdAt)

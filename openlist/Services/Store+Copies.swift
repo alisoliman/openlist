@@ -147,7 +147,7 @@ extension Store {
         defer { staged.discard() }
         staged.writer.insert(copy)
         let listID = source.id
-        let originals = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.listID == listID }))
+        let originals = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.listID == listID }))
             .filter { !$0.isDeleted }
         _ = try staged.clone(originals, to: copy.id, store: self, mode: mode)
         try staged.commit(owningList: copy)
