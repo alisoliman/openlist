@@ -215,10 +215,10 @@ extension Store {
                     if list.mergedIntoID == nil { owningList = list; break }
                     id = list.mergedIntoID
                 }
-                let reason: String? = task.isTrashed || owningList?.isTrashed == true ? "in Trash"
+                let reason: String? = task.isTrashed || owningList?.isEffectivelyTrashed == true ? "in Trash"
                     : task.isCompleted ? "task completed"
                     : owningList == nil ? "list unavailable"
-                    : owningList?.isArchived == true ? "list archived" : nil
+                    : owningList?.isEffectivelyArchived == true ? "list archived" : nil
                 return ReminderIntent(id: task.id, occurrenceID: task.occurrenceID,
                     title: task.displayTitle, listName: owningList?.displayTitle ?? "",
                     date: date, inactiveReason: reason)

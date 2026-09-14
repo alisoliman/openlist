@@ -53,6 +53,7 @@ struct RootView: View {
         .sheet(isPresented: $navigator.isShortcutSheetOpen) {
             ShortcutsSheet()
         }
+        .sheet(item: $captureEnvironment.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
         .alert(
             "Delete “\(env.listPendingDeletion?.displayTitle ?? "")”?",
             isPresented: Binding(
@@ -65,7 +66,7 @@ struct RootView: View {
                 if let list = env.listPendingDeletion { env.performDeleteList(list) }
             }
         } message: {
-            Text("This moves the list, its tasks, notes, and files to Trash. You can restore them later. With iCloud enabled, this change also syncs to your other Macs.")
+            Text("This moves the list and its child documents, tasks, notes, and files to Trash as one restorable unit. You can restore them later. With iCloud enabled, this change also syncs to your other Macs.")
         }
         .background(Theme.canvas)
         .overlay(alignment: .bottom) { CalendarCompletionFeedback() }

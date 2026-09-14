@@ -36,17 +36,19 @@ struct ContentReveal: Identifiable, Equatable {
 
     static func resolve(_ destination: SearchDestination, field: SearchField = .text, query: String = "",
                         blocks: [Block], lists: [TaskList]) throws -> ContentReveal {
+        let hierarchy = ListHierarchy(lists)
+        let availableIDs = hierarchy.availableIDs
         let list: TaskList?
         let block: Block?
         switch destination {
         case let .list(id):
-            list = lists.first { $0.id == id && !$0.isTrashed && $0.mergedIntoID == nil }
+            list = lists.first { $0.id == id && availableIDs.contains($0.id) }
             block = nil
             guard list != nil else { throw Unavailable.deleted }
         case let .block(id):
             block = blocks.first { $0.id == id && !$0.isTrashed && !$0.isDeleted }
             guard let block else { throw Unavailable.deleted }
-            list = lists.first { $0.id == block.listID && !$0.isTrashed && $0.mergedIntoID == nil }
+            list = lists.first { $0.id == block.listID && availableIDs.contains($0.id) }
         }
         guard let list, !list.isDeleted else { throw Unavailable.missingList }
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -63,6 +65,6 @@ struct ContentReveal: Identifiable, Equatable {
         let ancestors = block.map { BlockTree.ancestors(of: $0, in: blocks.filter { $0.listID == list.id }) } ?? []
         return ContentReveal(destination: destination, listID: list.id,
             taskID: block.flatMap { $0.isTask ? $0.id : nil }, ancestorIDs: Set(ancestors.map(\.id)), field: currentField,
-            query: needle, isArchived: list.isArchived)
+            query: needle, isArchived: hierarchy.isArchived(list.id))
     }
 }

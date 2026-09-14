@@ -63,7 +63,10 @@ struct TasksScreen: View {
         }
     }
 
-    private var activeLists: [TaskList] { allLists.filter { !$0.isArchived } }
+    private var activeLists: [TaskList] {
+        let ids = ListHierarchy(allLists).activeIDs
+        return allLists.filter { ids.contains($0.id) }
+    }
     private var activeListIDs: [UUID] { activeLists.map(\.id) }
 
     private func focusTitleFilter() {

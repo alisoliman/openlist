@@ -1,12 +1,13 @@
 import Foundation
 import SwiftData
 
-// Version 4 explicitly lists every persisted field. Adding a model field requires
+// Version 5 explicitly lists every persisted field. Adding a model field requires
 // updating this contract and the schema-coverage regression before shipping.
 // Computed presentation state and SwiftData implementation details are excluded.
 
 nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
     var id: UUID
+    var parentListID: UUID?
     var trashID: UUID?
     var trashMetadataData: Data?
     var title: String
@@ -34,6 +35,7 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
 
     @MainActor init(_ value: TaskList) {
         id = value.id
+        parentListID = value.parentListID
         trashID = value.trashID
         trashMetadataData = value.trashMetadataData
         title = value.title
@@ -63,6 +65,7 @@ nonisolated struct BackupTaskList: Codable, Equatable, Sendable {
     @MainActor func model() -> TaskList {
         let value = TaskList()
         value.id = id
+        value.parentListID = parentListID
         value.trashID = trashID
         value.trashMetadataData = trashMetadataData
         value.title = title

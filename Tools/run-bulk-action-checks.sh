@@ -11,6 +11,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/bulk-action-
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift openlist/Editor/SlashMenuLayout.swift \
-  Tools/EditorChecks/Support.swift Tools/BulkActionChecks/TrashChecks.swift Tools/BulkActionChecks/main.swift
+  Tools/EditorChecks/Support.swift Tools/BulkActionChecks/TrashChecks.swift Tools/BulkActionChecks/NestedOwnerChecks.swift Tools/BulkActionChecks/main.swift
 "$OUT/bulk-action-checks" "$OUT/Bulk.store"
 "$OUT/bulk-action-checks" "$OUT/Bulk.store" reopen

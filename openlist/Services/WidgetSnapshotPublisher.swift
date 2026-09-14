@@ -124,7 +124,7 @@ final class WidgetSnapshotPublisher {
         }
 
         let listSummaries = lists
-            .filter { !$0.isSystemInbox && !$0.isArchived }
+            .filter { !$0.isSystemInbox && !$0.isEffectivelyArchived }
             .prefix(6)
             .map { list in
                 WidgetSnapshot.ListSummary(

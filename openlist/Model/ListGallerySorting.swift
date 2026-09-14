@@ -32,7 +32,12 @@ enum ListGallerySorting: String, CaseIterable, Identifiable {
     }
 
     func visibleLists(from lists: [TaskList], includingArchived: Bool, ascending: Bool) -> [TaskList] {
-        lists.filter { !$0.isTrashed && $0.mergedIntoID == nil && (includingArchived || !$0.isArchived) }
+        visibleLists(from: lists, includingArchived: includingArchived, ascending: ascending, hierarchy: ListHierarchy(lists))
+    }
+
+    func visibleLists(from lists: [TaskList], includingArchived: Bool, ascending: Bool,
+                      hierarchy: ListHierarchy) -> [TaskList] {
+        lists.filter { includingArchived ? hierarchy.availableIDs.contains($0.id) : hierarchy.activeIDs.contains($0.id) }
             .sorted { left, right in
                 let comparison: ComparisonResult
                 switch self {

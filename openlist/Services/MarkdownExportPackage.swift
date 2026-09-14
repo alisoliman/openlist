@@ -48,6 +48,36 @@ enum MarkdownExportPackage {
         }
     }
 
+    /// Publish an owned document tree as one atomic folder. Every file links
+    /// within this folder; shared asset filenames are assigned only once.
+    static func writeFolder(to destination: URL, assets: [Asset],
+                            render: ([String: String]) -> [String: String]) throws {
+        let manager = FileManager.default
+        guard !manager.fileExists(atPath: destination.path) else {
+            throw CocoaError(.fileWriteFileExists)
+        }
+        let stage = destination.deletingLastPathComponent().appendingPathComponent(".openlist-export-\(UUID())", isDirectory: true)
+        defer { try? manager.removeItem(at: stage) }
+        try manager.createDirectory(at: stage, withIntermediateDirectories: false)
+        var paths: [String: String] = [:], used = Set<String>()
+        if !assets.isEmpty {
+            let folder = stage.appendingPathComponent("assets", isDirectory: true)
+            try manager.createDirectory(at: folder, withIntermediateDirectories: false)
+            for asset in assets where paths[asset.key] == nil {
+                let name = availableFilename(safeFilename(asset.preferredFilename), used: &used)
+                try manager.copyItem(at: asset.source, to: folder.appendingPathComponent(name))
+                paths[asset.key] = "assets/" + name
+            }
+        }
+        for (name, markdown) in render(paths) {
+            guard name == URL(fileURLWithPath: name).lastPathComponent, name.hasSuffix(".md") else {
+                throw CocoaError(.fileWriteInvalidFileName)
+            }
+            try markdown.write(to: stage.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        try manager.moveItem(at: stage, to: destination)
+    }
+
     static func safeFilename(_ value: String) -> String {
         let invalid = CharacterSet.controlCharacters.union(CharacterSet(charactersIn: "/:"))
         let cleaned = value.components(separatedBy: invalid).joined(separator: "-")

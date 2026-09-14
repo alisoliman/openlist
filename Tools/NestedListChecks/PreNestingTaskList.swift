@@ -17,8 +17,6 @@ final class TaskList {
     var trashID: UUID?
     /// Present on the root; retained after recovery to explain its former location.
     var trashMetadataData: Data?
-    /// The single owning document; nil means top level. Pins and links are independent.
-    var parentListID: UUID?
     var title: String = ""
     /// Emoji shown in the sidebar and list header.
     var icon: String = "📋"
@@ -87,19 +85,6 @@ extension TaskList {
     }
 
     var isTrashed: Bool { trashID != nil }
-    @MainActor var isEffectivelyArchived: Bool { (try? ownershipAncestors().contains { $0.isArchived }) ?? true }
-    @MainActor var isEffectivelyTrashed: Bool { (try? ownershipAncestors().contains { $0.isTrashed }) ?? true }
-
-    @MainActor private func ownershipAncestors() throws -> [TaskList] {
-        var result = [self], seen: Set<UUID> = [id]
-        var next = isSystemInbox ? nil : parentListID
-        while let id = next, seen.insert(id).inserted, let context = modelContext {
-            guard let parent = try context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id })).first else { break }
-            result.append(parent)
-            next = parent.isSystemInbox ? nil : parent.parentListID
-        }
-        return result
-    }
     var trashMetadata: TrashMetadata? {
         trashMetadataData.flatMap { try? JSONDecoder().decode(TrashMetadata.self, from: $0) }
     }

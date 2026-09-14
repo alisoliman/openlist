@@ -258,3 +258,11 @@ CloudKit schema changes subject to the production schema gate above. Logical
 backup format 4 includes cover assets and presentation; formats 1, 2, and 3 remain
 readable. Compilation and local fixtures do not verify cloud delivery or the
 Production schema.
+
+### Nested document persistence
+
+Run `Tools/run-nested-list-checks.sh` for child document ownership, moves, inherited
+archive, subtree copy/export, Trash restoration, late-sync retention, and the
+exact pre-nesting nine-model private migration and cold Return matrix.
+`TaskList.parentListID` is an additive CloudKit schema change covered by the
+production schema gate above.

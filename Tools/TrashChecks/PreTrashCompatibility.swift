@@ -15,3 +15,7 @@ extension TaskList {
     var trashID: UUID? { get { nil } set {} }
     var trashMetadataData: Data? { get { nil } set {} }
 }
+
+extension TaskList {
+    var parentListID: UUID? { get { nil } set {} }
+}

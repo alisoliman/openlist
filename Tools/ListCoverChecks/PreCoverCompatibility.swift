@@ -7,3 +7,7 @@ extension TaskList {
     var coverMetadataData: Data? { get { nil } set {} }
     var coverPresentationRaw: String? { get { nil } set {} }
 }
+
+extension TaskList {
+    var parentListID: UUID? { get { nil } set {} }
+}

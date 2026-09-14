@@ -207,7 +207,9 @@ let completion = CompletionRecord(task: task, completedAt: fixedDate, estimateMi
 completion.wasRecurring = true; completion.plannedIntervals = [.init(start: fixedDate, end: fixedDate.addingTimeInterval(200))]
 let placement = SchedulePlacement(task: child, start: fixedDate, end: fixedDate.addingTimeInterval(800), isPinned: true)
 [section, aliasSection].forEach { context.insert($0) }
-[inbox, list, aliasList].forEach { context.insert($0) }
+let ownerDocument = TaskList(title: "Parent document")
+list.parentListID = ownerDocument.id
+[inbox, list, aliasList, ownerDocument].forEach { context.insert($0) }
 [task, child, heading, image, legacyImage].forEach { context.insert($0) }
 context.insert(label); context.insert(attachment); context.insert(event); context.insert(legacyEvent)
 context.insert(work); context.insert(completion); context.insert(placement)
@@ -243,7 +245,7 @@ let validated = try LibraryBackupPackage.read(at: package)
 var hydrated = snapshot
 hydrated.blocks[hydrated.blocks.firstIndex { $0.id == legacyImage.id }!].mediaData = legacyBytes
 check(validated.snapshot == hydrated, "Logical package preserves every field and loads legacy media bytes")
-check(validated.manifest.version == 4, "New backup format prevents older apps silently dropping Inbox curation")
+check(validated.manifest.version == LibraryBackup.currentVersion, "New backup format prevents older apps silently dropping Inbox curation")
 check(validated.snapshot.blocks.first { $0.id == task.id }?.inboxMembershipData == task.inboxMembershipData,
     "Archive, completed and nested record backup retains exact Inbox order and occurrence payload")
 let oldPackage = root.appendingPathComponent("Version1.openlistbackup")
@@ -251,6 +253,7 @@ try manager.copyItem(at: package, to: oldPackage)
 var oldSnapshot = validated.snapshot
 oldSnapshot.version = 1
 for index in oldSnapshot.lists.indices {
+    oldSnapshot.lists[index].parentListID = nil
     oldSnapshot.lists[index].coverFilename = nil
     oldSnapshot.lists[index].coverData = nil
     oldSnapshot.lists[index].coverMetadataData = nil
@@ -269,9 +272,9 @@ oldManifest.libraryDigest = LibraryBackupPackage.digest(oldBytes)
 try oldBytes.write(to: oldPackage.appendingPathComponent("library.json"))
 try JSONEncoder().encode(oldManifest).write(to: oldPackage.appendingPathComponent("manifest.json"))
 let upgraded = try LibraryBackupPackage.read(at: oldPackage)
-check(upgraded.manifest.version == 1 && upgraded.snapshot.version == 4, "Version 1 package gets an explicit in-memory upgrade")
+check(upgraded.manifest.version == 1 && upgraded.snapshot.version == LibraryBackup.currentVersion, "Version 1 package gets an explicit in-memory upgrade")
 check(upgraded.snapshot.blocks.allSatisfy { $0.inboxMembershipData == nil }, "Version 1 preserves legacy nil for ownership-aware migration")
-for version in [2, 3] {
+for version in [2, 3, 4] {
     let olderPackage = root.appendingPathComponent("Version\(version).openlistbackup")
     try manager.copyItem(at: oldPackage, to: olderPackage)
     var older = oldSnapshot; older.version = version

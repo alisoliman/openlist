@@ -20,8 +20,8 @@ extension Store {
             let members = blocks.filter { $0.trashID == id }
             let ids = Set(members.map(\.id))
             var media: [String: Int] = [:]
-            if let list = lists.first(where: { $0.id == id }), let name = list.coverFilename {
-                media[name] = list.coverData?.count ?? list.coverMetadata?.byteCount ?? 0
+            for list in lists where list.trashID == id {
+                if let name = list.coverFilename { media[name] = list.coverData?.count ?? list.coverMetadata?.byteCount ?? 0 }
             }
             for block in members {
                 if let name = block.mediaFilename { media[name] = block.mediaData?.count ?? 0 }
@@ -30,7 +30,7 @@ extension Store {
                 media[file.filename] = file.contentData?.count ?? file.byteCount
             }
             return TrashEntry(id: id, title: title, isList: isList, metadata: metadata,
-                blockCount: members.count, byteCount: media.values.reduce(0, +))
+                blockCount: members.count, byteCount: media.values.reduce(0, +), listCount: lists.filter { $0.trashID == id }.count)
         }
         return (lists.filter { $0.trashID == $0.id }.map {
             entry(id: $0.id, title: $0.displayTitle, isList: true, metadata: $0.trashMetadata)
@@ -83,21 +83,21 @@ extension Store {
 
     @discardableResult
     func trashList(_ list: TaskList) -> Bool {
+        let owned = listHierarchy().subtree(of: list.id)
+        let ownedIDs = Set(owned.map(\.id))
         var removedIDs = Set<UUID>()
-        let succeeded = trashTransaction("The list could not be moved to Trash", scope: .lists([list.id])) {
-            guard !list.isSystemInbox, !list.isTrashed, !list.isDeleted else { throw TrashError.unavailable }
-            let id = list.id
-            let members = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.listID == id && $0.trashID == nil }))
+        let succeeded = trashTransaction("The list could not be moved to Trash", scope: .lists(ownedIDs)) {
+            guard !list.isSystemInbox, !list.isEffectivelyTrashed, !list.isDeleted else { throw TrashError.unavailable }
+            let members = try context.fetch(FetchDescriptor<Block>()).filter { !$0.isTrashed && $0.listID.map(ownedIDs.contains) == true }
             removedIDs = Set(members.map(\.id))
-            list.trashMetadataData = try JSONEncoder().encode(deletionMetadata(for: members, list: list, parent: nil))
-            if let cover = try list.validatedCover(), list.coverData == nil {
-                let bytes = try MediaStore.shared.readFile(filename: cover.filename)
-                guard bytes.count == cover.metadata.byteCount else { throw ListCoverError.unavailable }
-                trashMediaRollbacks.append { list.coverData = nil }
-                list.coverData = bytes
+            var metadata = deletionMetadata(for: members, list: list, parent: nil)
+            metadata.listTitle = listHierarchy().path(for: list.id)
+            list.trashMetadataData = try JSONEncoder().encode(metadata)
+            for child in owned {
+                try retainCover(child)
+                child.trashID = list.id
             }
-            list.trashID = id
-            try retain(members, groupID: id)
+            try retain(members, groupID: list.id)
             log(.listDeleted, title: list.displayTitle, list: list)
         }
         if succeeded {
@@ -105,6 +105,47 @@ extension Store {
             onEditorBlocksRemoved?(removedIDs)
         }
         return succeeded
+    }
+
+    private func retainCover(_ list: TaskList) throws {
+        if let cover = try list.validatedCover(), list.coverData == nil {
+            let bytes = try MediaStore.shared.readFile(filename: cover.filename)
+            guard bytes.count == cover.metadata.byteCount else { throw ListCoverError.unavailable }
+            trashMediaRollbacks.append { list.coverData = nil }
+            list.coverData = bytes
+        }
+    }
+
+    /// A sync batch may deliver a child or its blocks after the owning parent
+    /// reached Trash. Persist their bytes and group membership before recovery
+    /// or erasure; a failed read/save leaves all source records intact.
+    @discardableResult
+    func reconcileRetainedListDescendants() -> Bool {
+        let lists: [TaskList], blocks: [Block]
+        do {
+            lists = try context.fetch(FetchDescriptor<TaskList>())
+            blocks = try context.fetch(FetchDescriptor<Block>())
+        } catch { trashError = error.localizedDescription; return false }
+        let hierarchy = ListHierarchy(lists)
+        let arrivingLists = lists.filter { !$0.isTrashed && hierarchy.retainedGroup(for: $0.id) != nil }
+        let arrivingBlocks = blocks.filter { !$0.isTrashed && $0.listID.flatMap { hierarchy.retainedGroup(for: $0) } != nil }
+        guard !arrivingLists.isEmpty || !arrivingBlocks.isEmpty else { return true }
+        let groups = Set(arrivingLists.compactMap { hierarchy.retainedGroup(for: $0.id) }
+            + arrivingBlocks.compactMap { $0.listID.flatMap { hierarchy.retainedGroup(for: $0) } })
+        return trashTransaction("Synced child documents could not be retained in Trash") {
+            for group in groups {
+                guard let root = lists.first(where: { $0.id == group && $0.trashID == group }),
+                      var metadata = root.trashMetadata else { throw TrashError.invalidRetention }
+                let childLists = arrivingLists.filter { hierarchy.retainedGroup(for: $0.id) == group }
+                let members = arrivingBlocks.filter { $0.listID.flatMap { hierarchy.retainedGroup(for: $0) } == group }
+                let captured = deletionMetadata(for: members, list: root, parent: nil)
+                let prior = Set(metadata.labels.map(\.id))
+                metadata.labels += captured.labels.filter { !prior.contains($0.id) }
+                root.trashMetadataData = try JSONEncoder().encode(metadata)
+                for child in childLists { try retainCover(child); child.trashID = group }
+                try retain(members, groupID: group)
+            }
+        }
     }
 
     private func deletionMetadata(for members: [Block], list: TaskList?, parent: Block?) -> TrashMetadata {
@@ -156,7 +197,13 @@ extension Store {
 
     /// Preview uses the same ownership checks as restore, before the user acts.
     func trashRestoreDestination(_ entry: TrashEntry) -> String {
-        if entry.isList { return "Restore list" }
+        if entry.isList {
+            guard let root = try? context.fetch(FetchDescriptor<TaskList>()).first(where: { $0.id == entry.id }) else { return "Restore list" }
+            if let parentID = root.parentListID, list(id: parentID) == nil {
+                return "Restore list and child documents at top level — original parent is unavailable"
+            }
+            return "Restore list and child documents"
+        }
         let id = entry.id
         guard let root = try? context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })).first,
               let owner = list(id: root.listID), root.parentID == nil || block(id: root.parentID)?.listID == owner.id else {
@@ -167,6 +214,7 @@ extension Store {
 
     @discardableResult
     func restoreTrash(ids: [UUID]) -> Bool {
+        guard reconcileRetainedListDescendants() else { return false }
         var notices: [String] = []
         let succeeded = trashTransaction("Content could not be restored; it remains in Trash", scope: .groups(Set(ids))) {
             let allBlocks = try context.fetch(FetchDescriptor<Block>())
@@ -184,15 +232,26 @@ extension Store {
                 guard retainedList != nil || root != nil else { throw TrashError.unavailable }
                 guard var metadata = retainedList?.trashMetadata ?? root?.trashMetadata else { throw TrashError.invalidRetention }
                 if let retainedList {
-                    if let cover = try retainedList.validatedCover() {
-                        _ = try MediaStore.shared.materialize(filename: cover.filename, data: retainedList.coverData)
+                    let retainedLists = allLists.filter { $0.trashID == id }
+                    let unitIDs = Set(retainedLists.map(\.id))
+                    if let parentID = retainedList.parentListID, !unitIDs.contains(parentID),
+                       !allLists.contains(where: { $0.id == parentID && ($0.trashID == nil || ids.contains($0.trashID!)) }) {
+                        retainedList.parentListID = nil
+                        metadata.recoveryNote = "Restored from \(metadata.formerLocation). Its parent list is unavailable; the list is now at top level."
                     }
-                    if let sectionID = retainedList.sectionID, !allSections().contains(where: { $0.id == resolvedSectionID(sectionID) }) {
-                        retainedList.sectionID = defaultSection()?.id
-                        metadata.recoveryNote = "Restored from \(metadata.formerLocation). Its sidebar section is unavailable; the list is in My lists."
-                        retainedList.isPinned = true
+                    for child in retainedLists {
+                        if let cover = try child.validatedCover() {
+                            _ = try MediaStore.shared.materialize(filename: cover.filename, data: child.coverData)
+                        }
+                        if let sectionID = child.sectionID, !allSections().contains(where: { $0.id == resolvedSectionID(sectionID) }) {
+                            child.sectionID = defaultSection()?.id
+                            child.isPinned = true
+                            if metadata.recoveryNote == nil {
+                                metadata.recoveryNote = "Restored from \(metadata.formerLocation). An unavailable sidebar section was replaced with My lists."
+                            }
+                        }
+                        child.trashID = nil
                     }
-                    retainedList.trashID = nil
                 } else if let root {
                     let owner = list(id: root.listID)
                     let parent = block(id: root.parentID)
@@ -241,7 +300,7 @@ extension Store {
                 if let note = metadata.recoveryNote, notices.isEmpty { notices.append(note) }
                 if notices.isEmpty {
                     let owner = retainedList ?? root.flatMap { list(id: $0.listID) }
-                    if let owner, owner.isArchived {
+                    if let owner, owner.isEffectivelyArchived {
                         notices.append("Restored to archived list “\(owner.displayTitle)”. Open Lists and choose Show Archived to view it.")
                     } else if let owner {
                         notices.append("Restored to “\(owner.displayTitle)”.")
@@ -256,6 +315,7 @@ extension Store {
     /// The UI must confirm this action. No timer or retention period calls it.
     @discardableResult
     func permanentlyEraseTrash(ids: [UUID]) -> Bool {
+        guard reconcileRetainedListDescendants() else { return false }
         var erasedBlockIDs = Set<UUID>()
         let succeeded = trashTransaction("Permanent deletion failed; the retained content can still be restored", scope: .groups(Set(ids))) {
             let groups = Set(ids)
@@ -265,7 +325,7 @@ extension Store {
             erasedBlockIDs = memberIDs
             let allLists = try context.fetch(FetchDescriptor<TaskList>())
             let lists = allLists.filter { $0.trashID.map(groups.contains) == true }
-            guard Set(lists.map(\.id) + members.filter { $0.trashID == $0.id }.map(\.id)) == groups else { throw TrashError.unavailable }
+            guard Set(lists.filter { $0.trashID == $0.id }.map(\.id) + members.filter { $0.trashID == $0.id }.map(\.id)) == groups else { throw TrashError.unavailable }
             let files = try context.fetch(FetchDescriptor<Attachment>())
             let removedFiles = files.filter { $0.blockID.map(memberIDs.contains) == true }
             guard members.allSatisfy({ $0.mediaFilename == nil || $0.mediaData != nil }),
@@ -290,7 +350,7 @@ extension Store {
     /// permanent erase leaves recoverable content, then clear the whole library.
     @discardableResult
     func permanentlyResetLibrary() -> Bool {
-        for list in allLists(includeArchived: true) where !list.isSystemInbox {
+        for list in allLists(includeArchived: true) where !list.isSystemInbox && !list.isTrashed {
             guard trashList(list) else { return false }
         }
         if let inbox = inboxList() {
@@ -392,8 +452,8 @@ private struct TrashMutationSnapshot {
                 block.parentID = parent; block.labelIDs = labels }
         }
         let lists = affectedLists.map { list in
-            let id = list.trashID, metadata = list.trashMetadataData, section = list.sectionID, pinned = list.isPinned
-            return { list.trashID = id; list.trashMetadataData = metadata; list.sectionID = section; list.isPinned = pinned }
+            let id = list.trashID, metadata = list.trashMetadataData, section = list.sectionID, pinned = list.isPinned, parent = list.parentListID
+            return { list.trashID = id; list.trashMetadataData = metadata; list.sectionID = section; list.isPinned = pinned; list.parentListID = parent }
         }
         let taskIDs = Set(affected.map(\.id))
         let sessions = try context.fetch(FetchDescriptor<WorkSession>()).filter { taskIDs.contains($0.taskID) }.map { session in

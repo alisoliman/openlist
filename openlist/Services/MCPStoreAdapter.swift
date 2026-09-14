@@ -62,7 +62,7 @@ final class MCPStoreAdapter {
         switch tool {
         case .listLists:
             let lists = snapshot.lists.filter {
-                (args.bool("include_archived") == true || !$0.isArchived)
+                (args.bool("include_archived") == true || !$0.isEffectivelyArchived)
                     && matches(args.string("query"), in: [$0.title, $0.summary])
             }
             return .object(page(lists, args: args, key: "lists") { snapshot.listValue($0) })
@@ -327,7 +327,8 @@ private struct Snapshot {
 
     init(context: ModelContext) throws {
         let records = try context.fetch(FetchDescriptor<TaskList>(sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.id)]))
-        lists = records.filter { !$0.isTrashed && $0.mergedIntoID == nil }
+        let hierarchy = ListHierarchy(records)
+        lists = records.filter { hierarchy.availableIDs.contains($0.id) }
         listAliases = Dictionary(
             records.compactMap { record in record.mergedIntoID.map { (record.id, $0) } },
             uniquingKeysWith: { first, _ in first }
@@ -360,7 +361,7 @@ private struct Snapshot {
     func task(_ id: UUID, writable: Bool = false) throws -> Block {
         let value = try block(id)
         guard value.isTask else { throw MCPToolFailure.invalid("This block is not a task.") }
-        if writable, let listID = value.listID, try list(listID).isArchived {
+        if writable, let listID = value.listID, try list(listID).isEffectivelyArchived {
             throw MCPToolFailure.invalid("Restore the archived list before changing its tasks.")
         }
         return value
@@ -374,7 +375,7 @@ private struct Snapshot {
     func blocks(in listID: UUID?) -> [Block] { blocks.filter { $0.listID == listID } }
 
     func checkDestination(_ list: TaskList, parent: Block?) throws {
-        guard !list.isArchived else { throw MCPToolFailure.invalid("Restore the archived destination list first.") }
+        guard !list.isEffectivelyArchived else { throw MCPToolFailure.invalid("Restore the archived destination list first.") }
         guard let parent else { return }
         guard parent.listID == list.id, parent.kind.acceptsChildren else {
             throw MCPToolFailure.invalid("The parent must be a text or task block in the destination list.")
@@ -391,6 +392,8 @@ private struct Snapshot {
             "display_title": .string(list.displayTitle), "summary": .string(list.summary),
             "icon": .string(list.icon), "accent": .string(list.accentRaw),
             "is_inbox": .bool(list.isSystemInbox), "is_archived": .bool(list.isArchived),
+            "is_effectively_archived": .bool(list.isEffectivelyArchived),
+            "parent_list_id": list.parentListID.map { .string($0.uuidString) } ?? .null,
             "created_at": .string(MCPDates.timestamp(list.createdAt)), "updated_at": .string(MCPDates.timestamp(list.updatedAt)),
         ])
     }

@@ -15,7 +15,7 @@ struct MenuBarView: View {
     @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
 
-    @Query(filter: TaskList.activePredicate)
+    @Query(filter: TaskList.availablePredicate)
     private var activeLists: [TaskList]
 
 

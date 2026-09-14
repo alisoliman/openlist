@@ -80,11 +80,12 @@ nonisolated final class BackupSnapshotReader: @unchecked Sendable {
                 if requiresMigration {
                     // Accept the shipped additive predecessors: pre-cover,
                     // pre-Trash, and pre-Inbox-membership. Only migrate the private copy.
-                    let recognized = [0, 1, 2].contains { predecessor in
+                    let recognized = [-1, 0, 1, 2].contains { predecessor in
                         guard let legacy = model.copy() as? NSManagedObjectModel else { return false }
                         for entity in legacy.entities where entity.name == "Block" || entity.name == "TaskList" {
                             entity.properties = entity.properties.filter {
-                                !(entity.name == "TaskList" && ["coverFilename", "coverData", "coverMetadataData", "coverPresentationRaw"].contains($0.name))
+                                !(entity.name == "TaskList" && $0.name == "parentListID")
+                                    && !(predecessor >= 0 && entity.name == "TaskList" && ["coverFilename", "coverData", "coverMetadataData", "coverPresentationRaw"].contains($0.name))
                                     && !(predecessor >= 1 && ["trashID", "trashMetadataData"].contains($0.name))
                                     && !(predecessor == 2 && entity.name == "Block" && $0.name == "inboxMembershipData")
                             }
@@ -252,6 +253,7 @@ extension BackupTaskList {
     nonisolated fileprivate init(values: [String: Any]) throws {
         let record = BackupRecordValues(values: values)
         id = try record.required("id")
+        parentListID = try record.optional("parentListID")
         trashID = try record.optional("trashID")
         trashMetadataData = try record.optional("trashMetadataData")
         title = try record.required("title")
@@ -424,6 +426,7 @@ extension BackupTaskList {
     nonisolated fileprivate var backupValues: [String: Any] {
         var values: [String: Any] = [:]
         values["id"] = id
+        if let parentListID { values["parentListID"] = parentListID }
         if let trashID { values["trashID"] = trashID }
         if let trashMetadataData { values["trashMetadataData"] = trashMetadataData }
         values["title"] = title

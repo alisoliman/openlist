@@ -124,7 +124,7 @@ extension Store {
 
     @discardableResult
     func startWorkSession(for block: Block, deviceID: String, now: Date = .now) -> WorkSession? {
-        guard block.isTask, !block.isCompleted, let list = list(id: block.listID), !list.isArchived else { return nil }
+        guard block.isTask, !block.isCompleted, let list = list(id: block.listID), !list.isEffectivelyArchived else { return nil }
         let openSessions = workSessions().filter { $0.endedAt == nil }
         if let existing = openSessions.first(where: {
             $0.taskID == block.id && $0.occurrenceID == block.occurrenceID && $0.deviceID == deviceID

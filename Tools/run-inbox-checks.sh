@@ -11,7 +11,7 @@ for model in openlist/Model/*.swift; do
     esac
 done
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library -o "$OUT/legacy-inbox" \
-  "${LEGACY_MODELS[@]}" Tools/InboxChecks/LegacyBlock.swift Tools/InboxChecks/LegacyTaskList.swift Tools/InboxChecks/LegacyLibraryBackup.swift Tools/InboxChecks/LegacyLibraryBackupRecords.swift Shared/ListAccent.swift Tools/InboxChecks/ReviewSession.swift openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift Tools/InboxChecks/LegacyFixture.swift
+  "${LEGACY_MODELS[@]}" Tools/InboxChecks/LegacyBlock.swift Tools/InboxChecks/LegacyTaskList.swift Tools/InboxChecks/LegacyHierarchyCompatibility.swift Tools/InboxChecks/LegacyLibraryBackup.swift Tools/InboxChecks/LegacyLibraryBackupRecords.swift Shared/ListAccent.swift Tools/InboxChecks/ReviewSession.swift openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift Tools/InboxChecks/LegacyFixture.swift
 xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inbox-checks" \
   openlist/Model/*.swift Shared/ListAccent.swift Tools/InboxChecks/ReviewSession.swift Shared/WidgetSnapshot.swift Shared/AppGroup.swift openlist/Design/Theme.swift \
   openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Inbox.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \

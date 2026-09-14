@@ -243,6 +243,40 @@ links.receive(taskURL)
 check(navigator.openTaskID == taskID && task.trashMetadataData == retainedMetadata,
       "The restored child URL still reveals its exact original identity")
 
+// Child document ownership never changes what a saved task/list URL targets.
+let owningParent = TaskList(title: "Owning parent")
+context.insert(owningParent)
+renamed.parentListID = owningParent.id
+renamed.isArchived = false
+owningParent.isArchived = true
+try context.save()
+links.receive(retainedListURL)
+check(navigator.route == .list(renamed.id) && navigator.contentReveal?.isArchived == true,
+      "A child list URL reveals its exact document and inherited archive status")
+links.receive(taskURL)
+check(navigator.openTaskID == taskID && navigator.contentReveal?.listID == renamed.id && !renamed.isArchived,
+      "A linked child task stays in its own document without changing its archive choice")
+owningParent.trashID = owningParent.id
+owningParent.trashMetadataData = retainedMetadata
+try context.save()
+navigator.replace(with: .today)
+links.receive(retainedListURL)
+check(links.error == .targetUnavailable && navigator.route == .today,
+      "A late child list under a retained ancestor cannot open through its saved URL")
+links.receive(taskURL)
+check(links.error == .targetUnavailable && navigator.route == .today && task.trashID == nil,
+      "A late child task link rejects inherited Trash without rewriting the task")
+owningParent.trashID = nil; owningParent.isArchived = false
+try context.save()
+links.receive(taskURL)
+check(links.error == nil && navigator.contentReveal?.isArchived == false && navigator.openTaskID == taskID,
+      "Restoring an owning ancestor revives the same exact child-task URL")
+context.delete(owningParent); try context.save()
+links.receive(retainedListURL)
+check(links.error == nil && navigator.route == .list(renamed.id) && renamed.parentListID == owningParent.id,
+      "A missing owning parent preserves recoverable child document access and the original reference")
+renamed.parentListID = nil; renamed.isArchived = true; try context.save()
+
 let persistedIdentity = try LibraryIdentity.read(at: storeURL)
 let reopened = try ModelContainer(for: schema, configurations: configuration)
 check(try LibraryIdentity.read(at: storeURL) == firstIdentity && persistedIdentity == firstIdentity, "Reopened library retains identity")

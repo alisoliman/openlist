@@ -13,8 +13,8 @@ struct SidebarView: View {
     @Query(filter: #Predicate<SidebarSection> { $0.mergedIntoID == nil }, sort: [SortDescriptor(\SidebarSection.sortIndex)])
     private var sections: [SidebarSection]
 
-    @Query(filter: TaskList.activePredicate, sort: [SortDescriptor(\TaskList.sidebarIndex)])
-    private var lists: [TaskList]
+    @Query(filter: TaskList.availablePredicate, sort: [SortDescriptor(\TaskList.sidebarIndex)])
+    private var fetchedLists: [TaskList]
 
     @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
@@ -32,15 +32,17 @@ struct SidebarView: View {
     var body: some View {
         // The sidebar is always on screen and re-renders on every task change,
         // so counts are accumulated in one pass rather than one scan per row.
+        let hierarchy = ListHierarchy(fetchedLists)
+        let lists = fetchedLists.filter { hierarchy.activeIDs.contains($0.id) }
         let counts = Counts(
-            openTasks: ActiveTaskPolicy(lists: lists).tasks(in: openTasks),
-            inboxCount: InboxPolicy(lists: lists).openCount(openTasks)
+            openTasks: ActiveTaskPolicy(hierarchy: hierarchy).tasks(in: openTasks),
+            inboxCount: InboxPolicy(hierarchy: hierarchy).openCount(openTasks)
         )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 smartDestinations(counts: counts)
-                sectionsList(counts: counts)
+                sectionsList(lists: lists, hierarchy: hierarchy, counts: counts)
                 labelsSection(counts: counts)
                 Color.clear.frame(height: 12)
             }
@@ -166,10 +168,10 @@ struct SidebarView: View {
 
     // MARK: - Sections
 
-    private func sectionsList(counts: Counts) -> some View {
+    private func sectionsList(lists: [TaskList], hierarchy: ListHierarchy, counts: Counts) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(sections) { section in
-                sectionView(section, counts: counts)
+                sectionView(section, lists: lists, hierarchy: hierarchy, counts: counts)
             }
 
             // Lists whose section was removed still need somewhere to live —
@@ -191,14 +193,14 @@ struct SidebarView: View {
                     onAddList: {}
                 )
                 ForEach(orphans) { list in
-                    listRow(list, count: counts.byList[list.id] ?? 0)
+                    listRow(list, count: counts.byList[list.id] ?? 0, hierarchy: hierarchy)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func sectionView(_ section: SidebarSection, counts: Counts) -> some View {
+    private func sectionView(_ section: SidebarSection, lists: [TaskList], hierarchy: ListHierarchy, counts: Counts) -> some View {
         let members = lists.filter { $0.sectionID == section.id && !$0.isSystemInbox }
 
         VStack(alignment: .leading, spacing: 1) {
@@ -242,7 +244,7 @@ struct SidebarView: View {
 
             if !section.isCollapsed {
                 ForEach(members) { list in
-                    listRow(list, count: counts.byList[list.id] ?? 0)
+                    listRow(list, count: counts.byList[list.id] ?? 0, hierarchy: hierarchy)
                 }
 
                 if members.isEmpty {
@@ -273,7 +275,7 @@ struct SidebarView: View {
         }
     }
 
-    private func listRow(_ list: TaskList, count: Int) -> some View {
+    private func listRow(_ list: TaskList, count: Int, hierarchy: ListHierarchy) -> some View {
         SidebarListRow(
             list: list,
             openCount: count,
@@ -293,6 +295,8 @@ struct SidebarView: View {
             },
             onExport: { MarkdownExporter.presentSavePanel(for: list, store: env.store) },
             onDelete: { env.requestDeleteList(list) },
+            onMove: { env.listPendingMove = list },
+            parentPath: hierarchy.path(for: list.id),
             onDropAbove: { draggedID in
                 guard let dragged = env.store.list(id: draggedID), dragged.id != list.id else { return }
                 env.store.move(list: dragged, toSection: list.sectionID, above: list)
@@ -455,6 +459,8 @@ struct SidebarListRow: View {
     let onUseAsTemplate: () -> Void
     let onExport: () -> Void
     let onDelete: () -> Void
+    var onMove: () -> Void = {}
+    var parentPath: String = ""
     /// Another list was dropped onto this row's upper half.
     var onDropAbove: (UUID) -> Void = { _ in }
 
@@ -492,7 +498,7 @@ struct SidebarListRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .help(list.displayTitle)
+        .help(parentPath.isEmpty ? list.displayTitle : parentPath)
         .accessibilityLabel(list.displayTitle)
         .accessibilityValue("\(openCount) open tasks")
         .overlay(alignment: .top) {
@@ -512,6 +518,7 @@ struct SidebarListRow: View {
         .contextMenu {
             Button("Open") { onOpen() }
             Button("Rename List…") { onRename() }
+            Button("Move List…") { onMove() }
             CopyItemLinkButton(target: .list(list.id))
             Divider()
             Button("Duplicate") { onDuplicate() }

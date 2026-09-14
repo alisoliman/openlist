@@ -63,8 +63,8 @@ if phase == "prepare" {
         taskID: task.id, listID: list.id, task: links.link(to: .task(task.id)), list: links.link(to: .list(list.id)))
     try JSONEncoder().encode(copied).write(to: copiedURL)
     let snapshot = try reader.read(at: storage.originalStoreURL, settings: settings)
-    check(snapshot.version == 4 && snapshot.lists.first { $0.id == list.id }?.coverData == coverBytes,
-        "Link-bearing backup preserves schema 4 and the external cover payload")
+    check(snapshot.version == 5 && snapshot.lists.first { $0.id == list.id }?.coverData == coverBytes,
+        "Link-bearing backup preserves schema 5 and the external cover payload")
     try LibraryBackupPackage.write(snapshot, to: package) { _ in throw CocoaError(.fileReadNoSuchFile) }
     try check(LocalLink.parse(copied.task).libraryID == snapshot.libraryID, "Copied task URL records the backed-up library identity")
     try check(LocalLink.parse(copied.list).target == .list(list.id), "Copied list URL records the original stable list identity")

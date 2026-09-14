@@ -295,4 +295,5 @@ rejects("Actual read-only inside-drop cannot persist expansion") {
 check(readOnlyDropParent.isCollapsed && readOnlyDropOne.listID == source.id && readOnlyDropOne.parentID == nil,
       "A real read-only failure restores retained parent expansion and moved rows together")
 try runBulkTrashChecks(at: url.deletingLastPathComponent())
+try runBulkNestedOwnerChecks(at: url.deletingLastPathComponent())
 print("\(checks) bulk action checks passed")

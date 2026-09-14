@@ -6,7 +6,11 @@ struct InboxPolicy {
     let activeListIDs: Set<UUID>
 
     init(lists: [TaskList]) {
-        activeListIDs = Set(lists.filter { !$0.isTrashed && !$0.isArchived && $0.mergedIntoID == nil }.map(\.id))
+        self.init(hierarchy: ListHierarchy(lists))
+    }
+
+    init(hierarchy: ListHierarchy) {
+        activeListIDs = hierarchy.activeIDs
     }
 
     static func selection(_ task: Block) -> InboxMembership? {

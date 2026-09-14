@@ -27,10 +27,11 @@ private struct BulkSelectionSnapshot {
             !$0.isDeleted && !$0.isTrashed && !store.permanentlyErasedBlockIDs.contains($0.id)
         }
         // Alias rows are routing records, never available raw document owners.
-        // A late block reference must be reconciled before a bulk mutation.
-        let allLists = try store.context.fetch(FetchDescriptor<TaskList>()).filter {
-            !$0.isDeleted && !$0.isTrashed && $0.mergedIntoID == nil
-        }
+        // An inherited Trash owner is unavailable even while a late import is
+        // waiting for media before it can receive its own retention fields.
+        let records = try store.context.fetch(FetchDescriptor<TaskList>())
+        let hierarchy = ListHierarchy(records)
+        let allLists = records.filter { hierarchy.availableIDs.contains($0.id) }
         guard Set(all.map(\.id)).count == all.count,
               Set(allLists.map(\.id)).count == allLists.count else { throw BulkActionError.invalidHierarchy }
         let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
@@ -183,7 +184,7 @@ extension Store {
                        undoManager: UndoManager? = nil) throws -> [UUID] {
         let snapshot = try BulkSelectionSnapshot(ids: ids, store: self)
         guard let destination = snapshot.lists[listID], destination.mergedIntoID == nil,
-              !destination.isArchived else { throw BulkActionError.invalidDestination }
+              !destination.isEffectivelyArchived else { throw BulkActionError.invalidDestination }
         let roots = snapshot.roots(of: snapshot.ordered)
         guard !roots.isEmpty else { return [] }
         let subtree = try snapshot.subtree(roots)

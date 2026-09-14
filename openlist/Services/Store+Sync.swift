@@ -80,6 +80,7 @@ extension Store {
         do {
             try reconcileSystemRecords()
             try migrateInboxMembership()
+            guard reconcileRetainedListDescendants() else { throw TrashError.invalidRetention }
             let images = try context.fetch(FetchDescriptor<Block>(
                 predicate: #Predicate { $0.mediaFilename != nil && $0.mediaData == nil }
             ))

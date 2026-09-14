@@ -109,4 +109,33 @@ check(ListGallerySorting.alphabetical.summary(ascending: false) == "Alphabetical
 check(ListGallerySorting.creationDate.summary(ascending: true) == "Creation date · Oldest first", "active date summary includes direction")
 check(ListGallerySorting.existing.summary(ascending: false) == "Existing order", "existing-order summary has no irrelevant direction")
 
+// Sidebar and gallery share a body-local graph for paths and membership.
+let owner = TaskList(title: "Owner")
+let descendant = TaskList(title: "Child")
+descendant.parentListID = owner.id
+var nested = [owner, descendant]
+var hierarchy = ListHierarchy(nested)
+check(hierarchy.path(for: descendant.id) == "Owner › Child", "Shared row projection includes the current owning path")
+owner.title = "Renamed owner"
+hierarchy = ListHierarchy(nested)
+check(hierarchy.path(for: descendant.id) == "Renamed owner › Child", "Rebuilding the parent projection reflects ancestor rename")
+owner.isArchived = true
+hierarchy = ListHierarchy(nested)
+check(ListGallerySorting.existing.visibleLists(from: nested, includingArchived: false, ascending: true, hierarchy: hierarchy).isEmpty
+    && hierarchy.isArchived(descendant.id), "Shared gallery membership and card archive state change together")
+owner.isArchived = false
+descendant.parentListID = UUID()
+hierarchy = ListHierarchy(nested)
+check(hierarchy.ancestors(of: descendant.id).isEmpty && hierarchy.recoveryContext(for: descendant.id) != nil,
+    "Shared projection represents an unavailable parent without a stale breadcrumb")
+let arriving = TaskList(title: "Arriving owner"); arriving.id = descendant.parentListID!
+nested.append(arriving)
+hierarchy = ListHierarchy(nested)
+check(hierarchy.path(for: descendant.id) == "Arriving owner › Child" && hierarchy.recoveryContext(for: descendant.id) == nil,
+    "Late parent arrival updates shared row paths and clears recovery context")
+descendant.parentListID = owner.id
+hierarchy = ListHierarchy(nested)
+check(hierarchy.path(for: descendant.id) == "Renamed owner › Child",
+    "Moving a document updates the shared row projection to its new parent")
+
 print("✅ \(checks) Lists gallery sorting checks passed")

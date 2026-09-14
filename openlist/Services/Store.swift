@@ -110,7 +110,7 @@ final class Store {
             let descriptor = FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id })
             guard let list = try? context.fetch(descriptor).first else { return nil }
             guard !list.isTrashed else { return nil }
-            guard let mergedIntoID = list.mergedIntoID else { return list }
+            guard let mergedIntoID = list.mergedIntoID else { return list.isEffectivelyTrashed ? nil : list }
             nextID = mergedIntoID
         }
         return nil
@@ -119,21 +119,67 @@ final class Store {
     func block(id: UUID?) -> Block? {
         guard let id else { return nil }
         let descriptor = FetchDescriptor<Block>(predicate: #Predicate { $0.id == id && $0.trashID == nil })
-        return try? context.fetch(descriptor).first
+        guard let block = try? context.fetch(descriptor).first else { return nil }
+        if let listID = block.listID, list(id: listID) == nil { return nil }
+        return block
     }
 
     func allLists(includeArchived: Bool = false) -> [TaskList] {
-        var descriptor = FetchDescriptor<TaskList>(
-            predicate: #Predicate { $0.trashID == nil && $0.mergedIntoID == nil },
-            sortBy: [SortDescriptor(\.sortIndex)]
-        )
-        if !includeArchived {
-            descriptor.predicate = #Predicate { !$0.isArchived && $0.trashID == nil && $0.mergedIntoID == nil }
+        let descriptor = FetchDescriptor<TaskList>(sortBy: [SortDescriptor(\.sortIndex)])
+        let lists = (try? context.fetch(descriptor)) ?? []
+        let hierarchy = ListHierarchy(lists)
+        return lists.filter { includeArchived ? hierarchy.availableIDs.contains($0.id) : hierarchy.activeIDs.contains($0.id) }
+    }
+
+    func listHierarchy() -> ListHierarchy {
+        ListHierarchy((try? context.fetch(FetchDescriptor<TaskList>())) ?? [])
+    }
+
+    @discardableResult
+    func createChildList(in parent: TaskList) -> TaskList? {
+        guard listHierarchy().activeIDs.contains(parent.id), !parent.isSystemInbox else { return nil }
+        do { try persistChanges() } catch { persistenceError = error.localizedDescription; return nil }
+        let child = TaskList()
+        child.parentListID = parent.id
+        child.sortIndex = (allLists(includeArchived: true).map(\.sortIndex).max() ?? 0) + BlockTree.indexStep
+        context.insert(child)
+        log(.listCreated, title: child.displayTitle, list: child)
+        do { try persistChanges(); return child }
+        catch {
+            context.rollback()
+            pendingActivity.removeAll()
+            if child.modelContext != nil { context.delete(child) }
+            context.processPendingChanges()
+            persistenceError = "The child list could not be created. \(error.localizedDescription)"
+            return nil
         }
-        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    @discardableResult
+    func moveList(_ list: TaskList, under parentID: UUID?) -> Bool {
+        guard listHierarchy().canMove(list.id, under: parentID) else {
+            editorNotice = "Choose an available parent outside this list's own descendants."
+            return false
+        }
+        do { try persistChanges() } catch { persistenceError = error.localizedDescription; return false }
+        let previous = list.parentListID, updated = list.updatedAt
+        list.parentListID = parentID
+        list.touch()
+        do {
+            try persistChanges()
+            refreshAllReminders()
+            return true
+        } catch {
+            context.rollback()
+            list.parentListID = previous
+            list.updatedAt = updated
+            persistenceError = "The list could not be moved. \(error.localizedDescription)"
+            return false
+        }
     }
 
     func blocks(inList listID: UUID) -> [Block] {
+        guard list(id: listID) != nil else { return [] }
         let listID = resolvedListID(listID) ?? listID
         let descriptor = FetchDescriptor<Block>(
             predicate: #Predicate { $0.trashID == nil && $0.listID == listID },
@@ -184,6 +230,7 @@ final class Store {
             }
             try reconcileSystemRecords()
             try migrateInboxMembership()
+            guard reconcileRetainedListDescendants() else { throw TrashError.invalidRetention }
             save()
         } catch {
             persistenceError = "The Inbox could not be opened. \(error.localizedDescription)"
