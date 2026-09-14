@@ -23,6 +23,11 @@ enum MarkdownExporter {
     @MainActor
     private static func assets(for list: TaskList, store: Store) throws -> [MarkdownExportPackage.Asset] {
         var assets: [MarkdownExportPackage.Asset] = []
+        if let cover = try list.validatedCover() {
+            assets.append(.init(key: cover.filename,
+                source: try MediaStore.shared.materialize(filename: cover.filename, data: list.coverData),
+                preferredFilename: cover.metadata.displayName))
+        }
         for block in store.blocks(inList: list.id) {
             if let filename = block.mediaFilename {
                 assets.append(.init(
@@ -45,6 +50,9 @@ enum MarkdownExporter {
     @MainActor
     private static func render(list: TaskList, store: Store, mediaPath: (String) -> String) -> String {
         var output = "# \(InlineMarkdown.escape(list.icon)) \(InlineMarkdown.escape(list.displayTitle))\n\n"
+        if let filename = list.coverFilename {
+            output += "![\(InlineMarkdown.escape(list.displayTitle + " cover"))](\(InlineMarkdown.destination(mediaPath(filename))))\n\n"
+        }
         if !list.summary.isEmpty { output += InlineMarkdown.escape(list.summary) + "\n\n" }
 
         let rows = BlockTree.flatten(store.blocks(inList: list.id), root: nil, respectCollapse: false)
@@ -127,7 +135,7 @@ enum MarkdownExporter {
     @MainActor
     static func presentSavePanel(for list: TaskList, store: Store) {
         let blocks = store.blocks(inList: list.id)
-        let hasMedia = blocks.contains { $0.mediaFilename != nil || !store.attachments(for: $0.id).isEmpty }
+        let hasMedia = list.coverFilename != nil || blocks.contains { $0.mediaFilename != nil || !store.attachments(for: $0.id).isEmpty }
         let filename = "\(MarkdownExportPackage.safeFilename(list.displayTitle)).md"
         let url: URL
         if hasMedia {

@@ -87,6 +87,16 @@ extension Store {
                 predicate: #Predicate { $0.contentData == nil }
             ))
             var failures: [String] = []
+            let covers = try context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.coverFilename != nil && $0.coverData == nil }))
+            for list in covers {
+                do {
+                    if let cover = try list.validatedCover() {
+                        let bytes = try MediaStore.shared.readFile(filename: cover.filename)
+                        guard bytes.count == cover.metadata.byteCount else { throw ListCoverError.unavailable }
+                        list.coverData = bytes
+                    }
+                } catch { failures.append("\(list.displayTitle) cover: \(error.localizedDescription)") }
+            }
             for image in images {
                 guard let filename = image.mediaFilename else { continue }
                 do {

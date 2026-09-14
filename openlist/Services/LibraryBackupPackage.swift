@@ -67,6 +67,12 @@ nonisolated enum LibraryBackupPackage {
             let path = temporary.appendingPathComponent("Media").appendingPathComponent(hash)
             if !manager.fileExists(atPath: path.path) { try bytes.write(to: path, options: .atomic) }
         }
+        for index in snapshot.lists.indices {
+            if let filename = snapshot.lists[index].coverFilename {
+                try add(filename, data: snapshot.lists[index].coverData)
+                snapshot.lists[index].coverData = nil
+            }
+        }
         for index in snapshot.blocks.indices {
             if let filename = snapshot.blocks[index].mediaFilename {
                 try add(filename, data: snapshot.blocks[index].mediaData)
@@ -119,7 +125,7 @@ nonisolated enum LibraryBackupPackage {
         guard manifest.assets.count <= 1_000_000, Set(manifest.assets.map(\.filename)).count == manifest.assets.count else {
             throw LibraryBackupError.invalid("Duplicate or excessive media entries.")
         }
-        let required = Set(snapshot.blocks.compactMap(\.mediaFilename) + snapshot.attachments.map(\.filename))
+        let required = Set(snapshot.blocks.compactMap(\.mediaFilename) + snapshot.attachments.map(\.filename) + snapshot.lists.compactMap(\.coverFilename))
         guard required == Set(manifest.assets.map(\.filename)) else { throw LibraryBackupError.invalid("The media manifest does not match the library's references.") }
         let media = try directory.subdirectory("Media")
         var assets: [String: Data] = [:]
@@ -137,6 +143,12 @@ nonisolated enum LibraryBackupPackage {
             }
             assets[asset.filename] = data
         }
+        for index in snapshot.lists.indices {
+            if let filename = snapshot.lists[index].coverFilename {
+                guard snapshot.lists[index].coverData == nil else { throw LibraryBackupError.invalid("Cover bytes must use the package media manifest.") }
+                snapshot.lists[index].coverData = assets[filename]
+            }
+        }
         for index in snapshot.blocks.indices {
             if let filename = snapshot.blocks[index].mediaFilename {
                 guard snapshot.blocks[index].mediaData == nil else { throw LibraryBackupError.invalid("Media bytes must use the package media manifest.") }
@@ -151,6 +163,7 @@ nonisolated enum LibraryBackupPackage {
             }
             snapshot.attachments[index].contentData = data
         }
+        try snapshot.validate()
         return Validated(snapshot: snapshot, manifest: manifest)
     }
 
@@ -163,6 +176,12 @@ nonisolated enum LibraryBackupPackage {
     static func fingerprint(_ original: LibraryBackup) throws -> String {
         var snapshot = original
         var media: [String] = []
+        for index in snapshot.lists.indices {
+            if let bytes = snapshot.lists[index].coverData {
+                media.append("cover|\(snapshot.lists[index].id)|\(bytes.count)|\(digest(bytes))")
+                snapshot.lists[index].coverData = nil
+            }
+        }
         for index in snapshot.blocks.indices {
             if let bytes = snapshot.blocks[index].mediaData {
                 media.append("block|\(snapshot.blocks[index].id)|\(bytes.count)|\(digest(bytes))")

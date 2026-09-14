@@ -5,6 +5,7 @@
 
 import AppKit
 import Foundation
+import ImageIO
 import UniformTypeIdentifiers
 
 /// Owns the on-disk copies of images and attachments referenced by blocks.
@@ -81,6 +82,39 @@ nonisolated final class MediaStore: @unchecked Sendable {
             pixelSize: pixelSize,
             data: data
         )
+    }
+
+    /// Reads and fully decodes a bounded local cover before any cache or model mutation.
+    func readCover(at source: URL) throws -> ImportedMedia {
+        guard source.isFileURL else { throw ListCoverError.invalid }
+        let scope = source.startAccessingSecurityScopedResource()
+        defer { if scope { source.stopAccessingSecurityScopedResource() } }
+        let values = try source.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true, let size = values.fileSize, size > 0, size <= 20 * 1_024 * 1_024 else {
+            throw ListCoverError.invalid
+        }
+        // Bound the read itself too, in case the selected file grows after stat.
+        let handle = try FileHandle(forReadingFrom: source)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: 20 * 1_024 * 1_024 + 1) ?? Data()
+        guard !data.isEmpty, data.count <= 20 * 1_024 * 1_024,
+              let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetStatus(imageSource) == .statusComplete,
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              let identifier = CGImageSourceGetType(imageSource),
+              let type = UTType(identifier as String), type.conforms(to: .image) else { throw ListCoverError.invalid }
+        let metadata = ListCoverMetadata(displayName: source.lastPathComponent,
+            contentType: type.preferredMIMEType ?? "image/unknown", byteCount: data.count,
+            pixelWidth: width, pixelHeight: height)
+        try metadata.validate()
+        guard CGImageSourceCreateImageAtIndex(imageSource, 0,
+            [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) != nil else { throw ListCoverError.invalid }
+        let ext = type.preferredFilenameExtension ?? "img"
+        return ImportedMedia(filename: "\(UUID().uuidString).\(ext)", displayName: metadata.displayName,
+            contentType: metadata.contentType, byteCount: data.count,
+            pixelSize: CGSize(width: width, height: height), data: data)
     }
 
     func delete(filename: String) {

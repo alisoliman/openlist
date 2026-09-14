@@ -243,3 +243,18 @@ retained original. `Tools/run-inbox-checks.sh` retains the pre-membership matrix
 Trash adds optional `trashID` and `trashMetadataData` to Block and TaskList;
 these are CloudKit schema changes subject to the production schema gate above.
 Local tests and ad-hoc Dev builds do not verify cloud delivery or Production.
+
+### List covers
+
+`Tools/run-list-cover-checks.sh` exercises bounded local image import, independent
+list/template copy ownership, Markdown assets, Trash recovery, cold relaunch, and
+injected plus actual read-only save failures. It also runs the persisted pre-cover
+nine-model migration matrix: restore reads a private copy and a later Return
+preserves the retained original database, WAL, and external payload bytes.
+
+List covers add optional `coverFilename`, externally stored `coverData`,
+`coverMetadataData`, and `coverPresentationRaw` fields to TaskList. These are
+CloudKit schema changes subject to the production schema gate above. Logical
+backup format 4 includes cover assets and presentation; formats 1, 2, and 3 remain
+readable. Compilation and local fixtures do not verify cloud delivery or the
+Production schema.

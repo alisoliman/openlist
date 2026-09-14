@@ -4,8 +4,8 @@ import SwiftData
 /// A logical, versioned reconstruction of the library, not a SQLite archive.
 /// Historical references intentionally survive deletion of their subject.
 nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
-    static let currentVersion = 3
-    static let readableVersions: Set<Int> = [1, 2, 3]
+    static let currentVersion = 4
+    static let readableVersions: Set<Int> = [1, 2, 3, 4]
     var version = currentVersion
     var libraryID: UUID
     var createdAt: Date
@@ -92,6 +92,11 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
                 throw LibraryBackupError.invalid("An older backup contains unsupported Trash data.")
             }
         }
+        if version < 4 {
+            guard lists.allSatisfy({ $0.coverFilename == nil && $0.coverData == nil && $0.coverMetadataData == nil && $0.coverPresentationRaw == nil }) else {
+                throw LibraryBackupError.invalid("An older backup contains unsupported list cover data.")
+            }
+        }
         version = Self.currentVersion
     }
 
@@ -117,6 +122,8 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
             if let id, !ids.contains(id) { throw LibraryBackupError.invalid("Missing \(description): \(id).") }
         }
         for list in lists {
+            _ = try ListCoverMetadata.validatePayload(filename: list.coverFilename, data: list.coverData,
+                metadataData: list.coverMetadataData, presentationRaw: list.coverPresentationRaw)
             if list.trashID == nil { try reference(list.sectionID, in: sectionIDs, "sidebar section") }
             try reference(list.mergedIntoID, in: listIDs, "list alias destination")
             guard ListSorting(rawValue: list.sortingRaw) != nil else { throw LibraryBackupError.invalid("Unsupported list sorting value.") }

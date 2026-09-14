@@ -107,6 +107,7 @@ struct ListScreen: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
+            ListCoverBanner(list: list)
             HStack(alignment: .center, spacing: 12) {
                 Button {
                     isIconPickerOpen = true
@@ -195,7 +196,8 @@ struct ListScreen: View {
     }
 
     private var headerControls: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 10) {
+            ListCoverMenu(list: list)
             Menu {
                 Section("Calendar availability") {
                     ForEach(AvailabilityCategory.allCases) { category in

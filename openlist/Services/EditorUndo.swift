@@ -217,9 +217,15 @@ extension Store {
 
     /// Copy before the async disk deletion, never after it.
     func removeEditorMedia(filename: String) {
+        // Undo needs independent bytes even when another owner keeps the cache
+        // today: that owner may remove or replace its media before Undo runs.
+        if isRecordingEditorEdit, let data = MediaStore.shared.fileContents(filename: filename) {
+            editorMediaBackups[filename] = data
+        }
         // An old/shared cache filename can still belong to recoverable content.
-        // Retention takes precedence over structural cleanup and session Undo.
+        // Retention prevents cache erasure, without skipping the Undo snapshot.
         do {
+            if try context.fetch(FetchDescriptor<TaskList>()).contains(where: { !$0.isDeleted && $0.coverFilename == filename }) { return }
             let retained = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID != nil }))
             if retained.contains(where: { $0.mediaFilename == filename }) { return }
             let ids = Set(retained.map(\.id))
@@ -229,9 +235,6 @@ extension Store {
         } catch {
             persistenceError = "A file could not be checked for retained references. It has been kept. \(error.localizedDescription)"
             return
-        }
-        if isRecordingEditorEdit, let data = MediaStore.shared.fileContents(filename: filename) {
-            editorMediaBackups[filename] = data
         }
         MediaStore.shared.delete(filename: filename)
     }
@@ -359,9 +362,10 @@ extension Store {
         // Global references include other documents and retained Trash groups.
         // A failed reference read keeps the cache for a later cleanup.
         if let blocks = try? context.fetch(FetchDescriptor<Block>()),
-           let files = try? context.fetch(FetchDescriptor<Attachment>()) {
+           let files = try? context.fetch(FetchDescriptor<Attachment>()),
+           let lists = try? context.fetch(FetchDescriptor<TaskList>()) {
             let referenced = Set(blocks.filter { !$0.isDeleted }.compactMap(\.mediaFilename)
-                + files.filter { !$0.isDeleted }.map(\.filename))
+                + files.filter { !$0.isDeleted }.map(\.filename) + lists.filter { !$0.isDeleted }.compactMap(\.coverFilename))
             for filename in sourceFiles.subtracting(desiredFiles).subtracting(referenced) {
                 MediaStore.shared.delete(filename: filename)
             }

@@ -11,7 +11,7 @@ xcrun swiftc \
     openlist/Model/BlockKind.swift \
     openlist/Model/Recurrence.swift \
     openlist/Model/CalendarTypes.swift \
-    openlist/Model/TaskList.swift \
+    openlist/Model/ListCover.swift openlist/Model/TaskList.swift \
     Shared/ListAccent.swift \
     openlist/Services/ActiveTaskPolicy.swift \
     Tools/VisibilityChecks/main.swift
