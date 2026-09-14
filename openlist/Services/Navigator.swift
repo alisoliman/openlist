@@ -145,6 +145,8 @@ final class Navigator {
     private(set) var searchActivation = 0
 
     func reveal(_ request: ContentReveal) {
+        // Revealing a target is an editing action, including in the same list.
+        clearSelection()
         go(to: .list(request.listID))
         // Exact-content navigation must reveal notes and collapsed hierarchy,
         // including when this list was last viewed as a task-only queue.

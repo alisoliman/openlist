@@ -7,7 +7,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/link-checks"
     openlist/Model/Block.swift openlist/Model/BlockKind.swift openlist/Model/Recurrence.swift openlist/Model/InboxMembership.swift openlist/Model/TrashMetadata.swift \
     openlist/Model/CalendarTypes.swift openlist/Model/TaskList.swift openlist/Model/SidebarSection.swift \
     openlist/Model/SearchOptions.swift openlist/Model/SearchHit.swift openlist/Model/ContentReveal.swift \
-    openlist/Model/LocalLink.swift Shared/ListAccent.swift openlist/Services/LibraryIdentity.swift openlist/Services/NoteItemLink.swift \
+    openlist/Model/LocalLink.swift openlist/Model/BlockSelection.swift openlist/Services/DragPayload.swift Shared/ListAccent.swift openlist/Services/LibraryIdentity.swift openlist/Services/NoteItemLink.swift \
     openlist/Services/LocalLinkNavigation.swift openlist/Services/ReminderNavigation.swift \
     openlist/Services/BlockTree.swift openlist/Model/ListViewMode.swift openlist/Services/Navigator.swift \
     Tools/LocalLinkChecks/main.swift
@@ -22,7 +22,7 @@ cp -R "$OUT/original" "$OUT/restored"
 python3 -B Tools/LocalLinkChecks/check_registration.py
 xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/restore-link-checks" \
     openlist/Model/*.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift \
-    openlist/Services/LibraryIdentity.swift openlist/Services/LocalLinkNavigation.swift openlist/Services/Navigator.swift \
+    openlist/Services/LibraryIdentity.swift openlist/Services/LocalLinkNavigation.swift openlist/Services/Navigator.swift openlist/Services/DragPayload.swift \
     openlist/Services/LibraryBackupPackage.swift openlist/Services/BackupStagedStore.swift \
     openlist/Services/BackupSnapshotReader.swift openlist/Services/LibraryRestoreStorage.swift \
     openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift \

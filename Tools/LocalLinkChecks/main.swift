@@ -100,6 +100,16 @@ check(navigator.listViewMode(for: listID) == .document && navigator.contentRevea
       "Exact nested task link exits Tasks mode and reveals its original document hierarchy")
 check(navigator.listViewMode(for: unrelatedListID) == .tasks,
       "Revealing one list leaves another list's Tasks preference unchanged")
+let linkSelectionScope = UUID()
+navigator.selectRow(task.id, gesture: .replace, scope: linkSelectionScope, visible: [task.id, duplicate.id])
+navigator.selectRow(duplicate.id, gesture: .toggle, scope: linkSelectionScope, visible: [task.id, duplicate.id])
+check(navigator.isSelectingRows && navigator.selection.count == 2, "Fixture starts with a real multi-row selection")
+links.receive(taskURL)
+check(!navigator.isSelectingRows && navigator.rowSelection.scopeID == nil && navigator.orderedSelection.isEmpty,
+      "Exact task link clears stale bulk selection and its ordering scope")
+check(navigator.selection == [taskID] && navigator.openTaskID == taskID,
+      "Exact task link selects its target for editing without entering bulk mode")
+
 let firstActivation = navigator.searchActivation
 links.windowReady(true)
 links.storeReady(resolve: resolve)
