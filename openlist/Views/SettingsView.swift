@@ -337,7 +337,7 @@ struct DataSettingsTab: View {
                 Button("Clear all activity history…") {
                     isConfirmingClearHistory = true
                 }
-                Text("Clears all Updates and per-task Activity entries on this Mac and, when connected, in iCloud. Tasks are kept.")
+                Text("Clears all Updates, per-task Activity entries, and the completion heatmap on this Mac and, when connected, in iCloud. Tasks are kept.")
                     .font(Theme.Font.metadata)
                     .foregroundStyle(Theme.tertiaryText)
             }
@@ -359,7 +359,7 @@ struct DataSettingsTab: View {
             Button("Cancel", role: .cancel) {}
             Button("Clear History", role: .destructive) { env.store.clearActivity() }
         } message: {
-            Text("This removes all Updates and task Activity entries, including older events, on synced devices. Your tasks are kept.")
+            Text("This removes all Updates and task Activity entries, including the completion heatmap and older events, on synced devices. Your tasks are kept.")
         }
         .alert("Delete everything?", isPresented: $isConfirmingReset) {
             Button("Cancel", role: .cancel) {}

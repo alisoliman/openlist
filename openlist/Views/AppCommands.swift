@@ -145,6 +145,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut("5", modifiers: .command)
             Button("Calendar") { env.navigator.go(to: .calendar) }
                 .keyboardShortcut("6", modifiers: .command)
+            Button("Activity") { env.navigator.go(to: .activity) }
 
             Divider()
 

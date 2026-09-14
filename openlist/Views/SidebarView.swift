@@ -110,6 +110,11 @@ struct SidebarView: View {
                 shortcutHint: "⌘3"
             ) { env.navigator.go(to: .updates) }
 
+            SidebarRow(icon: "square.grid.3x3.fill", title: "Activity", accent: .violet, badge: 0,
+                isSelected: env.navigator.route == .activity, shortcutHint: nil) {
+                env.navigator.go(to: .activity)
+            }
+
             SidebarRow(
                 icon: "checklist",
                 title: "Tasks",

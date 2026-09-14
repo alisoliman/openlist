@@ -28,6 +28,7 @@ extension Store {
 
         if var rule = block.recurrence,
            let next = RecurrenceEngine.nextDate(rule: rule, dueDate: block.dueDate, completedAt: now) {
+            let completedCycleID = recurringCompletionCycle(for: block) ?? block.occurrenceID
             // Repeating tasks never sit in the completed state: they advance.
             rule.completedOccurrences += 1
             let previousDue = block.dueDate
@@ -47,7 +48,7 @@ extension Store {
             shiftReminder(on: block, fromDue: previousDue)
 
             // Subtasks reset so the next occurrence starts fresh.
-            resetSubtasks(of: block, now: now, nextEligible: nextEligible)
+            resetSubtasks(of: block, now: now, nextEligible: nextEligible, completedCycleID: completedCycleID)
 
             log(
                 .completed,
@@ -82,9 +83,11 @@ extension Store {
     }
 
     func reopen(_ block: Block) {
+        let unadvancedCycle = block.recurrence == nil ? nil : recurringCompletionCycle(for: block)
         discardTaskSchedule(for: block, reason: "Reopened")
         let oldOccurrenceID = block.occurrenceID
         block.occurrenceID = UUID()
+        pendingReopenedCycleIDs[block.occurrenceID] = unadvancedCycle
         carryInboxSelection(block, from: oldOccurrenceID)
         block.isCompleted = false
         block.completedAt = nil
@@ -93,10 +96,15 @@ extension Store {
         log(.reopened, title: block.displayTitle, block: block)
     }
 
-    private func resetSubtasks(of block: Block, now: Date, nextEligible: Date?) {
+    private func resetSubtasks(of block: Block, now: Date, nextEligible: Date?, completedCycleID: UUID) {
         guard let listID = block.listID else { return }
-        for descendant in BlockTree.descendants(of: block.id, in: blocks(inList: listID)) where descendant.isTask {
-            if !descendant.isCompleted { recordCalendarCompletion(for: descendant, now: now) }
+        let descendants = BlockTree.descendants(of: block.id, in: blocks(inList: listID)).filter(\.isTask)
+        // Capture the whole subtree before resetting any intermediate parent.
+        let cycles = Dictionary(uniqueKeysWithValues: descendants.compactMap { descendant -> (UUID, UUID)? in
+            recurringCompletionCycle(for: descendant, completingAncestor: (block.id, completedCycleID)).map { (descendant.id, $0) }
+        })
+        for descendant in descendants {
+            if !descendant.isCompleted { recordCalendarCompletion(for: descendant, now: now, recurringCycleID: cycles[descendant.id]) }
             discardTaskSchedule(for: descendant, reason: "Next occurrence", now: now)
             descendant.occurrenceID = UUID()
             clearInboxForNextOccurrence(descendant)

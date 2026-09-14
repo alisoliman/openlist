@@ -183,6 +183,12 @@ Updates; **Clear History** clears both after confirmation. Older entries retain
 only the facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md)
 for save, retention, and export behavior.
 
+The sidebar's **Activity** heatmap shows 12 weeks of recorded completions with
+daily counts and saved task details. Ordinary tasks count once; recurring tasks
+and subtasks count once per recorded occurrence. Missing history stays explicit,
+and clearing Updates history also clears the heatmap. See
+[activity heatmap](docs/ACTIVITY_HEATMAP.md) for counting and coverage details.
+
 Today's **Sort** menu orders tasks within each section by priority (highest first),
 due date (earliest first, undated last), title (A–Z), creation date (oldest first),
 or list position and stored document order. **Default** restores the original
