@@ -69,3 +69,22 @@ pre-Trash migration (122), sync/schema (245), capture (45), task history (94).
 The development build, bundle/signing verification and nine isolation checks
 passed. These are targeted regression checks; the full repository check runner,
 Release distribution, VoiceOver speech, and two-device CloudKit sync were not run.
+
+## Combined Inbox and Work verification
+
+The Inbox and Work companion commits were combined on `codex/inbox-work-interactions`.
+A separately signed `Openlist Combined Review.app` used a new disposable sample
+library, with CloudKit disabled. Native integration checks confirmed:
+
+- Inbox has one capture document, aligned count/checkboxes, contextual row icons,
+  and the Work toolbar without the former document-displacing banner.
+- Start Selected Task from the Work menu starts the selected Inbox occurrence.
+- Filing that actively recorded task into Personal removes it from Inbox while
+  the toolbar continues recording the same task. Undo restores Inbox ownership.
+- At the end of available hours, recording pauses with an explanatory notice.
+- Completing from Work reduces the Inbox count. Work's Undo completion restores
+  the pending task and count without restarting recording.
+
+See [integrated Inbox and Work](inbox-work-integrated.jpg). This extends the
+native evidence above; the previously recorded drag and accessibility limits
+still apply. Full combined automated/build results are listed in the PR.
