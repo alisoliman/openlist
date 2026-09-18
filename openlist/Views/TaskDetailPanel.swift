@@ -455,7 +455,6 @@ private struct TaskDetailContent: View {
 
             Menu {
                 CopyItemLinkButton(target: .task(taskID))
-                InboxMembershipButton(block: block)
                 Divider()
                 Button("Delete task", role: .destructive) {
                     if env.store.trashBlocks([block], undoManager: NSApp.keyWindow?.undoManager) {

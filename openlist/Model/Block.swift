@@ -65,8 +65,8 @@ final class Block {
     /// Free-form note shown under the title in the task detail page.
     var note: String = ""
 
-    /// Nil is a legacy record awaiting ownership-aware classification. Explicit
-    /// exclusion survives removal/relaunch; it must never become nil again.
+    /// Inert legacy queue payload, retained for CloudKit and backup compatibility.
+    /// Inbox membership is now determined solely by list ownership.
     var inboxMembershipData: Data?
 
     // MARK: Adaptive calendar
@@ -107,7 +107,6 @@ final class Block {
         self.sortIndex = sortIndex
         self.createdAt = .now
         self.updatedAt = .now
-        self.inboxMembershipData = InboxMembership.excludedData
     }
 }
 

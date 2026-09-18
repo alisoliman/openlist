@@ -102,7 +102,7 @@ final class Block {
         self.sortIndex = sortIndex
         self.createdAt = .now
         self.updatedAt = .now
-        self.inboxMembershipData = InboxMembership.excludedData
+        self.inboxMembershipData = LegacyInboxMembership.excludedData
     }
 }
 

@@ -130,8 +130,8 @@ struct RootView: View {
             }
         }
         .onChange(of: env.navigator.hasDocumentEditor) { _, hasDocumentEditor in
-            // Switching Inbox tabs or starting its review can remove the
-            // editor without changing the route or closing an inspector.
+            // Switching a list presentation can remove the editor without
+            // changing the route or closing an inspector.
             if !hasDocumentEditor {
                 env.activeDocument = nil
                 focusClearedFor = nil
@@ -220,17 +220,6 @@ struct RootView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(ListAccent.blue.softBackground)
-            }
-            if let error = env.store.inboxError {
-                HStack(alignment: .top) {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.callout).lineLimit(4).help(error)
-                    Spacer(minLength: 0)
-                    Button("Dismiss") { env.store.inboxError = nil }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(ListAccent.orange.softBackground)
             }
             if let error = env.store.persistenceError {
                 VStack(alignment: .leading, spacing: 6) {

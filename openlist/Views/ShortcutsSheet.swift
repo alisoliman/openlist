@@ -48,11 +48,6 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "↩", action: "Confirm capture / add another"),
             Shortcut(keys: "Esc", action: "Cancel capture"),
             Shortcut(keys: "↑↓ ↩", action: "Choose a destination or command"),
-            Shortcut(keys: "⇧⌘I", action: "Add selected task to Inbox"),
-            Shortcut(keys: "⇧⌘R", action: "Remove selected task from Inbox"),
-            Shortcut(keys: "⇧⌘M", action: "Move reviewed unfiled task"),
-            Shortcut(keys: "⇧⌘T", action: "Schedule reviewed task today"),
-            Shortcut(keys: "⇧⌘→", action: "Keep reviewed task unfiled"),
         ]),
         Group(title: "Tasks", symbol: "checkmark.circle", shortcuts: [
             Shortcut(keys: "⌘D", action: "Complete or reopen"),
@@ -63,8 +58,6 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⌃L", action: "Add label"),
             Shortcut(keys: "⌃⇧L", action: "Clear labels"),
             Shortcut(keys: "⇧⌘S", action: "Toggle star"),
-            Shortcut(keys: "⇧⌘I", action: "Add to inbox"),
-            Shortcut(keys: "⇧⌘R", action: "Remove from list"),
         ]),
         Group(title: "Selecting rows", symbol: "checklist", shortcuts: [
             Shortcut(keys: "Click gutter", action: "Select a row"),

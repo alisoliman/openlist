@@ -34,8 +34,8 @@ if CommandLine.arguments.last == "reopen" {
     let savedFiles = try container.mainContext.fetch(FetchDescriptor<Attachment>())
     check(savedFiles.first?.blockID == savedChild.id && savedFiles.first?.contentData == Data("bulk selection attachment".utf8),
           "Independent process reads the same attachment owner and bytes")
-    check(InboxPolicy.selection(savedParent) == nil && InboxPolicy.selection(savedFirst) != nil && InboxPolicy.selection(savedChild) != nil,
-          "A separate process observes independent Inbox curation after move Undo and Redo")
+    check(savedParent.inboxMembershipData == Data("later legacy payload".utf8) && savedFirst.inboxMembershipData == Data("legacy".utf8) && savedChild.inboxMembershipData == Data("legacy".utf8),
+          "A separate process observes inert legacy metadata after move Undo and Redo")
     let savedDropParent = saved.first { $0.text == "Collapsed drop target" }!
     let savedDropOne = saved.first { $0.text == "Drop one" }!
     check(savedDropParent.isCollapsed && savedDropOne.listID == lists.first { $0.title == "Source" }!.id && savedDropOne.parentID == nil,
@@ -73,7 +73,7 @@ store.context.insert(attachment)
 store.save()
 let placement = store.setPlacement(for: parent, start: .now, end: .now.addingTimeInterval(1_800), isPinned: true)!
 let placementID = placement.id
-check(store.setInboxMembership(true, taskIDs: [first.id, parent.id, child.id]), "The completion fixture includes selected tasks across the recurring subtree")
+for task in [first, parent, child] { task.inboxMembershipData = Data("legacy".utf8) }; store.save()
 let oldParent = CompletionTaskState(parent)
 let oldChild = CompletionTaskState(child)
 let oldDone = CompletionTaskState(previouslyDone)
@@ -94,8 +94,8 @@ check(parent.recurrence?.completedOccurrences == 1 && !parent.isCompleted && !ch
 check(first.isCompleted && parent.occurrenceID != oldParent.occurrenceID, "Explicit Complete handles ordinary and recurring roots together")
 check(store.completionRecords().count == oldRecords.count + 3, "Only pending parent, child and independent task create completion records")
 check(store.placements(taskID: parent.id).isEmpty, "Completion removes occurrence placement")
-check(InboxPolicy.selection(parent) == nil && InboxPolicy.selection(child) == nil && InboxPolicy.selection(first) != nil,
-      "Bulk recurrence advances clear parent and child Inbox selection while ordinary completion retains curation")
+check([parent, child, first].allSatisfy { $0.inboxMembershipData == Data("legacy".utf8) },
+      "Completion leaves inert legacy bytes unchanged")
 parent.note = "Later note"; store.save()
 manager.undo()
 check(CompletionTaskState(parent) == oldParent && CompletionTaskState(child) == oldChild && CompletionTaskState(previouslyDone) == oldDone,
@@ -111,8 +111,8 @@ manager.beginUndoGrouping()
 let reopened = try store.setBulkCompletion(false, ids: [first.id, parent.id, first.id])
 manager.endUndoGrouping()
 check(reopened == 1 && !first.isCompleted && store.completionUndo?.isReopening == true, "Explicit Reopen skips already pending tasks and has accurate feedback")
-check(InboxPolicy.selection(first)?.occurrenceID == first.occurrenceID,
-      "Bulk reopen carries the same Inbox selection to the reopened occurrence")
+check(first.listID == source.id && first.inboxMembershipData == Data("legacy".utf8),
+      "Reopening leaves ownership and inert legacy metadata unchanged")
 let reopenedOccurrence = first.occurrenceID
 manager.undo()
 check(first.isCompleted && first.occurrenceID != reopenedOccurrence, "Reopen Undo works without creating completion records")
@@ -136,7 +136,7 @@ manager.removeAllActions()
 let anchor = store.appendBlock(kind: .paragraph, text: "Anchor", to: .init(listID: destination.id))
 let originalParentID = parent.parentID
 let originalChildID = child.id
-check(store.setInboxMembership(true, taskIDs: [first.id, parent.id, child.id]), "The move fixture has a curated multi-root selection")
+for task in [first, parent, child] { task.inboxMembershipData = Data("legacy".utf8) }; store.save()
 let membershipBeforeMove = [first, parent, child].map(\.inboxMembershipData)
 manager.beginUndoGrouping()
 let moved = try store.moveSelection([first.id, child.id, parent.id, first.id], to: destination.id, above: anchor.id, undoManager: manager)
@@ -146,20 +146,20 @@ check(store.children(of: nil, listID: destination.id).map(\.id) == [first.id, pa
 check(child.id == originalChildID && child.parentID == parent.id && child.listID == destination.id && attachment.blockID == child.id && attachment.contentData == bytes,
       "Moving preserves complete subtree IDs, attachment identity and bytes")
 check([first, parent, child].map(\.inboxMembershipData) == membershipBeforeMove,
-      "Ownership moves leave Inbox selection and manual queue order byte-for-byte unchanged")
-check(store.setInboxMembership(false, taskIDs: [parent.id]), "A later curation decision removes only the moved parent from Inbox")
+      "Ownership moves leave inert legacy data byte-for-byte unchanged")
+parent.inboxMembershipData = Data("later legacy payload".utf8); store.save()
 parent.text = "Edited after move"; parent.note = "Metadata after move"; store.save()
 manager.undo()
 check(parent.listID == source.id && first.listID == source.id && child.listID == source.id && parent.parentID == originalParentID,
       "One Undo restores all moved roots and descendants")
 check(parent.text == "Edited after move" && parent.note == "Metadata after move" && attachment.contentData == bytes,
       "Move Undo touches only positions and preserves later content")
-check(InboxPolicy.selection(parent) == nil && InboxPolicy.selection(first) != nil && InboxPolicy.selection(child) != nil,
-      "Move Undo preserves the later Inbox exclusion and other tasks' selection")
+check(parent.inboxMembershipData == Data("later legacy payload".utf8) && first.inboxMembershipData == Data("legacy".utf8) && child.inboxMembershipData == Data("legacy".utf8),
+      "Move Undo preserves the later legacy metadata")
 manager.redo()
 check(parent.listID == destination.id && child.parentID == parent.id, "Move Redo preserves subtree structure")
-check(InboxPolicy.selection(parent) == nil && InboxPolicy.selection(first) != nil && InboxPolicy.selection(child) != nil,
-      "Move Redo also preserves independent Inbox curation")
+check(parent.inboxMembershipData == Data("later legacy payload".utf8) && first.inboxMembershipData == Data("legacy".utf8) && child.inboxMembershipData == Data("legacy".utf8),
+      "Move Redo also preserves inert legacy metadata")
 let laterChild = store.insertChild(text: "Added after move", of: parent)
 store.save()
 manager.undo()

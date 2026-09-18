@@ -37,7 +37,6 @@ extension Store {
             block.isCompleted = false
             block.completedAt = nil
             block.occurrenceID = UUID()
-            clearInboxForNextOccurrence(block)
             // Completing today's occurrence must not immediately fill today
             // again with a future repeat. An explicit Today choice clears this.
             let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))!
@@ -85,10 +84,8 @@ extension Store {
     func reopen(_ block: Block) {
         let unadvancedCycle = block.recurrence == nil ? nil : recurringCompletionCycle(for: block)
         discardTaskSchedule(for: block, reason: "Reopened")
-        let oldOccurrenceID = block.occurrenceID
         block.occurrenceID = UUID()
         pendingReopenedCycleIDs[block.occurrenceID] = unadvancedCycle
-        carryInboxSelection(block, from: oldOccurrenceID)
         block.isCompleted = false
         block.completedAt = nil
         block.touch()
@@ -107,7 +104,6 @@ extension Store {
             if !descendant.isCompleted { recordCalendarCompletion(for: descendant, now: now, recurringCycleID: cycles[descendant.id]) }
             discardTaskSchedule(for: descendant, reason: "Next occurrence", now: now)
             descendant.occurrenceID = UUID()
-            clearInboxForNextOccurrence(descendant)
             descendant.isCompleted = false
             descendant.completedAt = nil
             if let nextEligible, descendant.dueDate == nil || descendant.dueDate! >= nextEligible {
@@ -343,14 +339,6 @@ extension Store {
         )
         save()
     }
-
-    /// Physically moves a subtree to its unfiled ownership document. This is
-    /// separate from Add/Remove from Inbox, which only changes membership.
-    func moveToUnfiled(_ block: Block) {
-        guard let inbox = inboxList() else { return }
-        moveToList(block, list: inbox)
-    }
-
 
     // MARK: - Text formatting
 

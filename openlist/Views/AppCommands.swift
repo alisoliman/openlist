@@ -115,15 +115,6 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Add to Inbox") { env.send(.addToInbox) }
-                .keyboardShortcut("i", modifiers: [.command, .shift])
-                .disabled(!hasTaskSelection)
-            Button("Remove from Inbox") { env.send(.removeFromInbox) }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(!hasTaskSelection)
-
-            Divider()
-
             // Deliberately no key equivalent: AppKit matches menu shortcuts
             // before the text view sees the event, so ⌘⌫ here would delete the
             // task instead of the line the user was editing.

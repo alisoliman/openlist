@@ -29,7 +29,6 @@ extension Store {
             sortIndex: BlockTree.index(after: reference.sortIndex, before: next)
         )
         context.insert(block)
-        includeNewUnfiledTask(block)
         respaceIfNeeded(parentID: reference.parentID, listID: reference.listID)
         return block
     }
@@ -64,7 +63,6 @@ extension Store {
             sortIndex: sortIndex
         )
         context.insert(block)
-        includeNewUnfiledTask(block)
         return block
     }
 
@@ -85,7 +83,6 @@ extension Store {
             sortIndex: (siblings.last?.sortIndex ?? 0) + BlockTree.indexStep
         )
         context.insert(block)
-        includeNewUnfiledTask(block)
         return block
     }
 
@@ -103,7 +100,6 @@ extension Store {
             sortIndex: BlockTree.index(after: nil, before: siblings.first?.sortIndex)
         )
         context.insert(block)
-        includeNewUnfiledTask(block)
         return block
     }
 
@@ -183,7 +179,6 @@ extension Store {
         guard block.kind != kind else { return }
         let previous = block.kind
         block.kind = kind
-        if kind == .task { includeNewUnfiledTask(block) }
 
         // Leaving task-hood drops scheduling metadata that no longer applies.
         if previous == .task, kind != .task {
@@ -196,7 +191,6 @@ extension Store {
             block.recurrenceData = nil
             block.isStarred = false
             block.priorityRaw = 0
-            clearInboxForNextOccurrence(block)
         }
         if kind.isVoid {
             block.text = ""

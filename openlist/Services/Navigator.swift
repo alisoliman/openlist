@@ -39,11 +39,6 @@ enum AppRoute: Hashable, Codable {
 final class Navigator {
     private(set) var route: AppRoute = .today
 
-    /// Inbox can show a smart queue, the original document, or its review.
-    /// Command routing and initial-focus protection must follow that content.
-    var showsUnfiledInbox = false
-    var isReviewingUnfiledInbox = false
-
     private var listViewModes: [UUID: ListViewMode] = [:]
     @ObservationIgnored private let defaults: UserDefaults?
     private static let listViewModesKey = "listViewModes"
@@ -73,7 +68,7 @@ final class Navigator {
     var hasDocumentEditor: Bool {
         switch route {
         case let .list(id): listViewMode(for: id) == .document
-        case .inbox: showsUnfiledInbox && !isReviewingUnfiledInbox
+        case .inbox: true
         default: false
         }
     }

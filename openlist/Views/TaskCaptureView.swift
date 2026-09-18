@@ -96,7 +96,7 @@ struct TaskCaptureView: View {
                         }
                     }
                     if destinationID != nil, destinationID != destination?.id {
-                        Text("The selected list is unavailable. This task will be unfiled and added to Inbox.")
+                        Text("The selected list is unavailable. This task will be added to Inbox.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

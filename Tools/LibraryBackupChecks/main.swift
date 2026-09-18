@@ -184,7 +184,7 @@ task.schedulingEstimateMinutes = 67; task.selectedForDay = fixedDate
 task.deferredUntil = fixedDate.addingTimeInterval(9000)
 task.keepsSessionsTogether = true; task.tracksAwayFromMac = true
 task.calendarOccurrenceID = UUID()
-task.inboxMembershipData = try InboxMembership.included(order: 19.25, occurrenceID: task.occurrenceID).encoded()
+task.inboxMembershipData = try LegacyInboxMembership.included(order: 19.25, occurrenceID: task.occurrenceID).encoded()
 let child = Block(kind: .task, text: "Nested child", listID: list.id, parentID: task.id, sortIndex: 0.125)
 let heading = Block(kind: .heading2, text: "Nested section", listID: list.id, parentID: child.id)
 let image = Block(kind: .image, text: "", listID: list.id, parentID: heading.id)

@@ -46,6 +46,7 @@ struct BlockRowView: View {
     /// `true` when this row is the only empty task in an otherwise blank
     /// document, which is when the hint text is worth showing.
     let showsPlaceholder: Bool
+    var usesInboxActions = false
     let actions: BlockRowActions
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -198,7 +199,7 @@ struct BlockRowView: View {
             }
 
             hoverActions
-                .frame(width: block.isTask ? 44 : 20, height: 20, alignment: .topTrailing)
+                .frame(width: usesInboxActions ? (block.isTask ? 112 : 56) : (block.isTask ? 44 : 20), height: usesInboxActions ? 28 : 20, alignment: .topTrailing)
         }
     }
 
@@ -259,7 +260,16 @@ struct BlockRowView: View {
         }
     }
 
+    @ViewBuilder
     private var hoverActions: some View {
+        if usesInboxActions {
+            InboxRowActions(block: block, isRevealed: isHovering || isFocused || isSelected, actions: actions)
+        } else {
+            standardHoverActions
+        }
+    }
+
+    private var standardHoverActions: some View {
         HStack(spacing: 0) {
             if block.isTask {
                 TaskDetailButton(
@@ -308,7 +318,7 @@ struct BlockRowView: View {
     }
 }
 
-/// Right-click menu shared by the row body and its "⋯" button.
+/// Native context menu shared by document and smart rows.
 struct BlockContextMenu: View {
     let block: Block
     let actions: BlockRowActions
@@ -364,20 +374,20 @@ struct BlockContextMenu: View {
 
             Button(block.isStarred ? "Remove Star" : "Star") { env.store.toggleStar(block) }
             Divider()
-
-            Menu("Move to List") {
-                ForEach(env.store.allLists()) { list in
-                    Button(list.isSystemInbox ? "📥  Unfiled content" : "\(list.icon)  \(list.displayTitle)") {
-                        edit("Move block", including: list.id) { current in
-                            env.store.moveToList(current, list: list)
-                        }
-                    }
-                    .disabled(list.id == block.listID && block.parentID == nil)
-                }
-            }
-            InboxMembershipButton(block: block)
-            Divider()
         }
+
+        Menu("Move to List") {
+            ForEach(env.store.allLists()) { list in
+                Button(list.isSystemInbox ? "📥  Inbox" : "\(list.icon)  \(list.displayTitle)") {
+                    edit("Move block", including: list.id) { current in
+                        env.store.moveToList(current, list: list)
+                    }
+                }
+                .disabled(list.id == block.listID && block.parentID == nil)
+            }
+        }
+
+        Divider()
 
         Menu("Turn Into") {
             ForEach(BlockKind.allCases.filter { $0 != .image }, id: \.self) { kind in

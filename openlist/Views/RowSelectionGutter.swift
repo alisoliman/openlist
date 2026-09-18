@@ -8,6 +8,7 @@ struct RowSelectionGutter: View {
     let title: String
     var isPrimaryAppearance = true
     var isRevealed = false
+    var requiresSelectionMode = false
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.rowSelectionContext) private var scope
@@ -18,7 +19,8 @@ struct RowSelectionGutter: View {
         if let scope {
             RowSelectionControl(
                 title: title,
-                isSelected: env.navigator.selection.contains(id)
+                isSelected: (!requiresSelectionMode || env.navigator.isSelectingRows)
+                    && env.navigator.selection.contains(id)
                     && (env.navigator.rowSelection.scopeID == nil || env.navigator.rowSelection.scopeID == scope.scopeID),
                 isSelectionFocus: env.navigator.isSelectingRows
                     && env.navigator.rowSelection.scopeID == scope.scopeID

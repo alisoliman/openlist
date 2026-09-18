@@ -54,7 +54,7 @@ root.recurrence = Recurrence(frequency: .weekly, weekdays: [2], completedOccurre
 root.selectedForDay = .now
 root.deferredUntil = .now.addingTimeInterval(600)
 root.calendarOccurrenceID = UUID()
-root.inboxMembershipData = try InboxMembership.included(order: 0, occurrenceID: root.occurrenceID).encoded()
+root.inboxMembershipData = try LegacyInboxMembership.included(order: 0, occurrenceID: root.occurrenceID).encoded()
 root.isStarred = true
 root.priority = .high
 root.isCollapsed = true
@@ -152,7 +152,7 @@ let copy = store.block(id: copyID)!
 check(copy.id != root.id && copy.occurrenceID == copy.id, "Paste creates independent identities and a fresh occurrence")
 check(copy.isCompleted && copy.completedAt == root.completedAt && copy.isStarred && copy.priority == .high, "Content copy preserves completion, stars and priority")
 check(copy.dueDate == nil && copy.reminderAt == nil && copy.recurrence == nil && copy.selectedForDay == nil && copy.deferredUntil == nil, "Default paste clears all scheduling payload")
-check(copy.inboxMembershipData == InboxMembership.excludedData && InboxPolicy.selection(root) != nil, "Content paste excludes independent copy from Inbox without changing source membership")
+check(copy.inboxMembershipData == nil && root.inboxMembershipData != nil, "Content paste does not copy legacy queue metadata or change the source")
 check(copy.note == root.note && copy.isCollapsed && copy.schedulingEstimateMinutes == 45, "Content, collapse and estimate retained")
 check(copy.labelIDs == [label.id] && store.allLabels().count == 1 && label.accent == .orange, "Same-name destination label identity/color reused")
 let copiedFile = store.attachments(for: copy.id)[0]
@@ -163,13 +163,13 @@ undo.undo()
 check(store.block(id: copyID) == nil && store.allLabels().count == 1, "One Undo removes whole insertion without existing labels")
 undo.redo()
 check(BlockTree.descendants(of: copyID, in: store.blocks(inList: target.id)).count == 25, "One Redo restores complete hierarchy")
-check(store.block(id: copyID)?.inboxMembershipData == InboxMembership.excludedData, "Paste Redo retains explicit excluded membership")
+check(store.block(id: copyID)?.inboxMembershipData == nil, "Paste Redo retains clean metadata")
 check(try store.taskActivity(for: copyID).map(\.kind).contains(.restored), "Redo records Restored under pasted UUID")
 let scheduledID = try store.pasteFragment(fragment, in: .init(listID: target.id), after: copyID, includeSchedules: true)[0]
 let scheduled = store.block(id: scheduledID)!
 check(scheduled.dueDate == root.dueDate && scheduled.reminderAt == root.reminderAt && scheduled.recurrence?.frequency == .weekly, "Explicit schedule inclusion retains dates/reminders/rules")
 check(scheduled.recurrence?.completedOccurrences == 0 && scheduled.occurrenceID == scheduled.id, "Schedule inclusion still resets occurrence identity and progress")
-check(scheduled.inboxMembershipData == InboxMembership.excludedData, "Include schedules never copies Inbox selection")
+check(scheduled.inboxMembershipData == nil, "Including schedules never copies legacy queue metadata")
 var active = fragment
 active.blocks[0].isCompleted = false
 active.blocks[0].completedAt = nil
@@ -260,7 +260,7 @@ try other.persistChanges()
 let crossID = try other.pasteFragment(fragment, in: .init(listID: otherList.id), after: nil)[0]
 check(other.block(id: crossID)?.labelIDs == [match.id] && match.accent == .blue && collision.name == "Unrelated identity collision", "Cross-library matching ignores source UUID collisions and preserves destination color")
 check(other.allLabels().count == 2 && other.block(id: crossID)?.listID == otherList.id, "Cross-library insertion creates no dangling label or source list reference")
-check(other.block(id: crossID)?.inboxMembershipData == InboxMembership.excludedData, "Cross-library paste has no source Inbox membership")
+check(other.block(id: crossID)?.inboxMembershipData == nil, "Cross-library paste has no source Inbox membership")
 
 for literal in ["```swift\n# not a heading\n\n- not a bullet\n```", "first\n\nlast", "first  \nsecond", "  indented\nnext", " one space\nnext", "\u{00a0}nonbreaking indent\nnext", "[title](https://example.com)\n<script>data</script>"] {
     let parsed = MarkdownInputRules.parseClipboard(literal)
