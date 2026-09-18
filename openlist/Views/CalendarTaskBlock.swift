@@ -97,8 +97,8 @@ struct CalendarTaskBlock: View {
                 Button("Occurrence history", systemImage: "clock.arrow.circlepath") { showsHistory = true }
             } else if let task {
                 if block.isActive {
-                    Button("Pause") { env.calendar.pause(reason: "Paused") }
-                } else { Button("Start working") { _ = env.calendar.start(task: task) } }
+                    Button("Stop working") { env.calendar.stopWorking() }
+                } else { Button("Start working") { env.calendar.requestWork(WorkTaskReference(task)) } }
                 Button("Complete task") { env.calendar.complete(task: task) }
                 Divider()
                 Button("Move time…") { showsMove = true }.disabled(block.isActive)

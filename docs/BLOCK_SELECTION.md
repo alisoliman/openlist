@@ -20,9 +20,11 @@ Implementation snapshot: gutter-only native NSControl selection and private-type
 Pre-integration evidence: 14 block-selection checks and 14 drag-payload checks pass. RowSelectionControl with its pure model/payload dependencies and RowSelectionContext pass isolated Swift 6 typechecking. `git diff --check` passes. The first full Dev build was deliberately interrupted for concurrent Store rollback corrections; no app was launched and no native UI journey is claimed. The delivery owner subsequently integrated BRI-24 Inbox changes; the integration evidence below supersedes that interrupted build.
 
 
-BRI-24 integration: the Selected tasks Inbox queue emits its complete displayed member order outside lazy row realization and has its own selection scope. Its separate reorder handle uses the private `InboxQueueDrag` transfer type, preserving queue order independently of the selection gutter's content moves. Bulk Move labels the system-owned destination “Unfiled content”. The merged command routing still uses Navigator.hasDocumentEditor for the active Inbox tab/review state.
+Inbox uses the rich document's complete visible row order and selection scope.
+Filing uses the shared transactional Move operation. The system destination is
+named Inbox; its command ownership always follows the document editor. Legacy
+independent Inbox ordering and membership commands have been removed.
 
-Integrated focused validation: 50 bulk-action checks and 5 separate-process reopen checks pass, including recurrence membership clearing/restoration and preserving later Inbox curation through positional Move Undo/Redo. All 19 Inbox navigation, 14 selection, 14 payload, and 76 hidden inspector lifetime checks pass. The Dev app builds and passes development bundle/entitlement verification plus 9 storage, preference and coexistence checks. No native user journey has been performed by the implementation agent. Full suite, Release build, and delivery-owner native QA follow this checkpoint.
 
 Async drop liveness: both private-content and plain-text provider callbacks recheck the target model before dispatching a mutation. Enter/update/drop position handling also rejects unavailable models, and DocumentView checks again before reading destination parentage. A target deleted during payload loading produces an unavailable-target notice and no partial drop. Full suite and Release were interrupted deliberately to include this guard in the frozen validation checkpoint.
 

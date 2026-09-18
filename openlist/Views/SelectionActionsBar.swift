@@ -45,7 +45,7 @@ struct SelectionActionsBar: View {
                 .disabled(!ids.contains { env.store.block(id: $0).map { $0.isTask && $0.isCompleted } ?? false })
             Menu("Move", systemImage: "folder") {
                 ForEach(env.store.allLists().filter { !$0.isEffectivelyArchived && $0.mergedIntoID == nil }) { list in
-                    Button(list.isSystemInbox ? "Unfiled content" : list.displayTitle) { move(to: list.id) }
+                    Button(list.isSystemInbox ? "Inbox" : list.displayTitle) { move(to: list.id) }
                 }
             }
             .help("Move selected rows and their descendants to a list")

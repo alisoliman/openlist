@@ -2,7 +2,7 @@
 
 Settings > Data provides **Back up library** and **Restore backup**. Markdown
 export remains a readable document export; an `.openlistbackup` directory
-package is the versioned reconstruction format. Current exports use format 5, including Inbox selection, Trash, covers, and list ownership. Formats 1–4 upgrade explicitly; version 1 retains legacy unclassified membership. An older already-queued restore must be cancelled and its backup selected again so that the staged schema and fingerprint can be revalidated.
+package is the versioned reconstruction format. Current exports use format 5, including retained legacy Inbox metadata, Trash, covers, and list ownership. Formats 1–4 upgrade explicitly; Inbox visibility follows ownership, never the legacy metadata. An older already-queued restore must be cancelled and its backup selected again so that the staged schema and fingerprint can be revalidated.
 
 Backups are **unencrypted**. They contain private task and note text, files,
 labels, calendar history, and activity for subjects that may since have been

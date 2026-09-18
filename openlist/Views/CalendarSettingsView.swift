@@ -30,6 +30,12 @@ struct CalendarSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Work reminders") {
+                @Bindable var calendar = env.calendar
+                Toggle("Notify me about planned work when Openlist is in the background", isOn: $calendar.workNotificationsEnabled)
+                Text("Suggestions stay quiet in the app. Time never starts automatically; extensions ask before moving other planned work.")
+                    .font(.caption).foregroundStyle(Theme.secondaryText)
+            }
             Section("Planning") {
                 HStack {
                     Text("Default estimate")
@@ -41,7 +47,7 @@ struct CalendarSettingsView: View {
                     Text("minutes").foregroundStyle(Theme.secondaryText)
                 }
                 Stepper("Minimum session: \(preferences.minimumSessionMinutes) minutes", value: $preferences.minimumSessionMinutes, in: 5...120, step: 5)
-                Text("A rolling four-week plan. Flexible sessions move when work runs over.")
+                Text("A rolling four-week plan. Review affected tasks before extending work into their time.")
                     .font(.caption).foregroundStyle(Theme.secondaryText)
                     .help("Tasks shorter than the minimum session can still use shorter slots.")
             }

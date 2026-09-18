@@ -1,8 +1,8 @@
 import Foundation
 
-/// A task's independent place in the focus queue. One optional persisted blob
-/// keeps the decision, order and occurrence together during synchronization.
-nonisolated struct InboxMembership: Codable, Equatable, Sendable {
+/// Frozen former queue format, used only to generate historical backup fixtures.
+/// This type is not compiled into the app.
+nonisolated struct LegacyInboxMembership: Codable, Equatable, Sendable {
     static let currentVersion = 1
     static let excludedData = Data(#"{"version":1,"included":false}"#.utf8)
 
@@ -31,14 +31,14 @@ nonisolated struct InboxMembership: Codable, Equatable, Sendable {
     }
 
     private func validate() throws {
-        guard version == Self.currentVersion else { throw InboxMembershipError.unsupportedVersion(version) }
+        guard version == Self.currentVersion else { throw LegacyInboxMembershipError.unsupportedVersion(version) }
         guard order?.isFinite != false, !included || (order != nil && occurrenceID != nil) else {
-            throw InboxMembershipError.invalid
+            throw LegacyInboxMembershipError.invalid
         }
     }
 }
 
-nonisolated enum InboxMembershipError: LocalizedError {
+nonisolated enum LegacyInboxMembershipError: LocalizedError {
     case unsupportedVersion(Int), invalid, unavailable, ordering
 
     var errorDescription: String? {

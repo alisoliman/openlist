@@ -23,7 +23,6 @@ struct CompletionTaskState: Equatable {
     var reminderAt: Date?
     var selectedForDay: Date?
     var deferredUntil: Date?
-    var inboxMembershipData: Data?
 
     init(_ task: Block) {
         id = task.id
@@ -35,12 +34,9 @@ struct CompletionTaskState: Equatable {
         reminderAt = task.reminderAt
         selectedForDay = task.selectedForDay
         deferredUntil = task.deferredUntil
-        inboxMembershipData = task.inboxMembershipData
     }
 
     func apply(to task: Block, replacing source: Self) {
-        let previousOccurrenceID = task.occurrenceID
-        let previousSelection = task.inboxMembershipData
         if occurrenceID != source.occurrenceID, task.occurrenceID == source.occurrenceID { task.occurrenceID = occurrenceID }
         if isCompleted != source.isCompleted, task.isCompleted == source.isCompleted { task.isCompleted = isCompleted }
         if completedAt != source.completedAt, task.completedAt == source.completedAt { task.completedAt = completedAt }
@@ -49,24 +45,7 @@ struct CompletionTaskState: Equatable {
         if reminderAt != source.reminderAt, task.reminderAt == source.reminderAt { task.reminderAt = reminderAt }
         if selectedForDay != source.selectedForDay, task.selectedForDay == source.selectedForDay { task.selectedForDay = selectedForDay }
         if deferredUntil != source.deferredUntil, task.deferredUntil == source.deferredUntil { task.deferredUntil = deferredUntil }
-        if inboxMembershipData != source.inboxMembershipData, previousSelection == source.inboxMembershipData {
-            // Restore the completion-owned selection only with its occurrence.
-            if task.occurrenceID == occurrenceID { task.inboxMembershipData = inboxMembershipData }
-        } else if previousSelection != source.inboxMembershipData, task.occurrenceID != previousOccurrenceID {
-            // An explicit Add made after completion is still the user's latest
-            // curation decision. Carry its order to the restored occurrence.
-            // Unknown payloads and deliberate exclusions remain untouched.
-            storeIndependentInboxSelection(on: task, from: previousOccurrenceID)
-        }
         task.touch()
-    }
-
-    private func storeIndependentInboxSelection(on task: Block, from previousOccurrenceID: UUID) {
-        guard let data = task.inboxMembershipData,
-              var selection = try? InboxMembership.decode(data), selection.included,
-              selection.occurrenceID == previousOccurrenceID else { return }
-        selection.occurrenceID = task.occurrenceID
-        task.inboxMembershipData = try? selection.encoded()
     }
 }
 

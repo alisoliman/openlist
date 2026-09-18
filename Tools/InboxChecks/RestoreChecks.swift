@@ -97,7 +97,7 @@ if phase == "restore" {
         let context = opened.container.mainContext; context.autosaveEnabled = false
         let task = try context.fetch(FetchDescriptor<Block>()).first { $0.text == "Restored task only" }!
         task.text = "Edited restored generation"
-        task.inboxMembershipData = try InboxMembership.included(order: 8192, occurrenceID: task.occurrenceID).encoded()
+        task.inboxMembershipData = try LegacyInboxMembership.included(order: 8192, occurrenceID: task.occurrenceID).encoded()
         try context.save()
     }
     try check(try files(in: originalDirectory) == originalFiles, "Editing new selected-generation schema leaves old original unchanged")

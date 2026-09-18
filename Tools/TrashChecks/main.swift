@@ -47,7 +47,7 @@ if phase == "delete" {
     let attachment = Attachment(blockID: root.id, filename: "retained.txt", displayName: "Original file", contentType: "text/plain", byteCount: 7, contentData: Data("payload".utf8))
     context.insert(attachment)
     try store.persistChanges()
-    try check(store.setInboxMembership(true, taskIDs: [root.id]), "Inbox membership saved before deletion")
+    root.inboxMembershipData = Data("legacy".utf8); try store.persistChanges()
     let expected = try snapshot()
     try JSONEncoder().encode(expected).write(to: manifest)
     var closed = Set<UUID>()
@@ -59,7 +59,7 @@ if phase == "delete" {
     try check(store.trashEntries().count == 1, "Selected descendants are owned by selected ancestor")
     try check(store.block(id: root.id) == nil && store.blocks(inList: list.id).isEmpty, "Active lookup and outline exclude retained content")
     try check(ActiveTaskPolicy(lists: [list]).tasks(in: [root, child]).isEmpty, "Active policy excludes all retained tasks")
-    try check(InboxPolicy(lists: [list]).ordered([root, child]).isEmpty, "Inbox retains curation without including retained tasks")
+    try check([root, child].allSatisfy { !InboxPolicy(lists: [list]).includes($0) }, "Inbox excludes retained tasks")
     try check(!NotificationService.shared.scheduled.contains(root.id), "Saved deletion cancels reminder eligibility")
     let corpus = SearchCorpus(blocks: [root, child], lists: [list])
     try check(corpus.blocks.isEmpty, "Ordinary search excludes retained content")
@@ -212,7 +212,7 @@ if phase == "delete" {
     try check(rejects(listGroup), "Backup rejects list-group content owned by another list")
     var version2 = base
     version2.blocks = [BackupBlock(Block(kind: .task, text: "Version 2 queue", listID: list.id))]
-    version2.blocks[0].inboxMembershipData = try InboxMembership.included(order: 827.25, occurrenceID: UUID()).encoded()
+    version2.blocks[0].inboxMembershipData = try LegacyInboxMembership.included(order: 827.25, occurrenceID: UUID()).encoded()
     let bytes = version2.blocks[0].inboxMembershipData
     version2.version = 2
     try version2.upgradeToCurrentVersion()
@@ -222,16 +222,11 @@ if phase == "delete" {
     let list = store.createList(title: "Prior actions")
     let task = store.appendBlock(kind: .task, text: "Inbox retained", to: DocumentContext(listID: list.id))
     try store.persistChanges()
-    let inboxUndo = UndoManager(); inboxUndo.groupsByEvent = false
-    inboxUndo.beginUndoGrouping()
-    try check(store.setInboxMembership(true, taskIDs: [task.id], undoManager: inboxUndo), "Set Inbox before deletion")
-    inboxUndo.endUndoGrouping()
+    task.inboxMembershipData = Data("legacy payload".utf8)
+    try store.persistChanges()
     let selection = task.inboxMembershipData
-    try check(store.trashList(list), "Retain owning list without adding a list Undo")
-    inboxUndo.undo()
-    try check(task.inboxMembershipData == selection, "Earlier Inbox Undo cannot mutate retained task curation")
-    try check(!store.setInboxMembership(false, taskIDs: [task.id]), "Direct stale-ID Inbox write rejects retained task")
-    try check(store.restoreTrash(ids: [list.id]) && task.inboxMembershipData == selection, "Restore keeps deletion-time Inbox selection")
+    try check(store.trashList(list), "Retain owning list")
+    try check(store.restoreTrash(ids: [list.id]) && task.inboxMembershipData == selection, "Restore keeps inert legacy data")
 
     let source = store.findOrCreateLabel(named: "Trash merge source")!
     let destination = store.findOrCreateLabel(named: "Trash merge destination")!

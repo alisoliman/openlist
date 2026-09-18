@@ -270,12 +270,6 @@ extension Store {
         case .toggleStar:
             batch { for block in targets where block.isTask { toggleStar(block) } }
 
-        case .addToInbox:
-            _ = setInboxMembership(true, taskIDs: targets.filter(\.isTask).map(\.id), undoManager: undoManager)
-
-        case .removeFromInbox:
-            _ = setInboxMembership(false, taskIDs: targets.filter(\.isTask).map(\.id), undoManager: undoManager)
-
         case .deleteSelection:
             return trashBlocks(targets, undoManager: undoManager)
 

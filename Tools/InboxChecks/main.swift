@@ -12,230 +12,97 @@ let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.s
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 let phase = CommandLine.arguments[2]
 let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)])
-var failures = 0
-let store = Store(context: container.mainContext) { context in
-    if failures > 0 { failures -= 1; throw CocoaError(.fileWriteNoPermission) }
-    try context.save()
-}
+let store = Store(context: container.mainContext)
 func all() throws -> [Block] { try store.context.fetch(FetchDescriptor<Block>()) }
 func policy() throws -> InboxPolicy { InboxPolicy(lists: try store.context.fetch(FetchDescriptor<TaskList>())) }
-func queue() throws -> [UUID] { try policy().ordered(all()).map(\.id) }
-func nativeUndo(_ name: String, _ body: (UndoManager) -> Void) -> UndoManager {
-    let manager = UndoManager(); manager.groupsByEvent = false
-    manager.beginUndoGrouping(); body(manager); manager.endUndoGrouping()
-    check(manager.canUndo && manager.undoActionName == name, "Successful operation registers one native Undo action")
-    return manager
-}
+let oldPayload = Data(#"{"version":50,"included":true}"#.utf8)
 
 if phase == "verify-failure" {
-    check(store.block(id: id(7))?.inboxMembershipData == InboxMembership.excludedData, "Real failed save remains excluded in an actual later process")
-    check(store.block(id: id(7))?.note == "", "Unrelated failed draft was not persisted after actual relaunch")
+    check(store.block(id: id(5))?.listID == id(1), "Failed filing does not persist across a separate process")
+    check(store.block(id: id(5))?.parentID == id(3), "Failed filing preserves nesting on disk")
     print("\(checks) failed-save relaunch checks passed")
     exit(0)
 }
 if phase == "failure" {
     let readonly = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: url, allowsSave: false, cloudKitDatabase: .none)])
     let failing = Store(context: readonly.mainContext)
-    let task = failing.block(id: id(7))!
-    let old = task.inboxMembershipData
-    task.note = "Unrelated unsaved retryable draft"
-    let manager = UndoManager()
-    check(!failing.setInboxMembership(true, taskIDs: [task.id], undoManager: manager), "Real readonly save rejects membership")
-    check(task.inboxMembershipData == old, "Real save failure restores original retained payload immediately")
-    check(task.note == "Unrelated unsaved retryable draft", "Membership failure preserves unrelated live edits")
-    check(failing.inboxError != nil && !manager.canUndo, "Failed membership reports error without Undo registration")
-    let fetched = try readonly.mainContext.fetch(FetchDescriptor<Block>()).first { $0.id == task.id }!
-    check(fetched.inboxMembershipData == old, "First live fetch after failed save has original selection")
-    let reader = ModelContext(container)
-    let saved = try reader.fetch(FetchDescriptor<Block>()).first { $0.id == task.id }!
-    check(saved.inboxMembershipData == old && saved.note != task.note, "Failed selection and unrelated draft did not reach disk")
-    print("\(checks) real save failure Inbox checks passed")
+    let task = failing.block(id: id(5))!
+    let manager = UndoManager(); manager.groupsByEvent = false
+    do {
+        _ = try failing.moveSelection([task.id], to: id(2), undoManager: manager)
+        fatalError("Read-only filing must fail")
+    } catch { }
+    check(task.listID == id(1) && task.parentID == id(3), "Real save failure restores Inbox ownership and nesting")
+    check(!manager.canUndo, "Failed filing registers no Undo")
+    print("\(checks) read-only Inbox checks passed")
     exit(0)
 }
 if phase == "reopen" {
     store.bootstrap()
-    check(InboxPolicy.selection(store.block(id: id(4))!) == nil, "Removed unfiled task is not reseeded after actual relaunch")
-    check(store.block(id: id(4))?.listID == id(1), "Removed task remains in unfiled ownership")
-    check(store.block(id: id(3))?.richData == Data("retained rich bytes".utf8), "Non-task rich content survives migration and relaunch")
+    check(try !policy().includes(store.block(id: id(4))!), "Filed task stays out of Inbox after relaunch")
+    check(try policy().includes(store.block(id: id(3))!), "Rich note remains in Inbox")
     check(store.block(id: id(5))?.parentID == id(3), "Nested structure survives relaunch")
-    let expected = try JSONDecoder().decode([UUID].self, from: Data(contentsOf: url.appendingPathExtension("queue.json")))
-    check(try queue() == expected, "Independent manual queue order survives relaunch")
-    check(store.block(id: id(7))?.inboxMembershipData == InboxMembership.excludedData, "Known other-list legacy records stay explicitly excluded")
-    check(store.block(id: id(50))?.inboxMembershipData == Data(#"{"version":50,"included":true}"#.utf8), "Unknown version remains byte-for-byte intact across relaunch")
-    check(InboxPolicy.issue(in: try all()) != nil, "Unknown version remains a visible recoverable issue")
+    check(store.block(id: id(3))?.richData == Data("retained rich bytes".utf8), "Rich bytes survive migration and relaunch")
+    check(store.block(id: id(7))?.inboxMembershipData == oldPayload, "Legacy payload survives byte-for-byte")
+    check(try !policy().includes(store.block(id: id(7))!), "Old cross-list selection never resurfaces in Inbox")
     print("\(checks) Inbox reopen checks passed")
     exit(0)
 }
 
-check(try all().allSatisfy { $0.inboxMembershipData == nil }, "Real old-schema rows migrate with nil optional field before bootstrap")
-check(Block(kind: .task).inboxMembershipData == InboxMembership.excludedData, "New model initialization explicitly excludes independent tasks")
 let original = try all().map(BackupBlock.init)
 store.bootstrap()
-check(try Set(queue()) == Set([id(4), id(5), id(6)]), "Migration includes all legacy Inbox tasks including nested and completed")
-check(try queue() == [id(5), id(4), id(6)], "Initial queue follows stable rich-document outline order")
-check(store.block(id: id(3))?.inboxMembershipData == nil, "Migration leaves legacy non-task content untouched")
 for record in original {
-    var after = BackupBlock(store.block(id: record.id)!)
-    after.inboxMembershipData = nil
-    check(after == record, "Migration changes only the new membership field for \(record.id)")
+    check(BackupBlock(store.block(id: record.id)!) == record, "Opening old library never rewrites content or metadata")
 }
-check(try policy().openCount(all()) == 2, "Open count excludes completed member")
-check(try policy().ordered(all(), showsCompleted: false).count == 2, "Completed visibility independently hides ordinary completed members")
-let ownership = BackupBlock(store.block(id: id(5))!)
-let remove = nativeUndo("Remove from Inbox") { check(store.setInboxMembership(false, taskIDs: [id(5)], undoManager: $0), "Remove selected nested task succeeds") }
-check(!((try queue()).contains(id(5))), "Removed member leaves queue")
-var removed = BackupBlock(store.block(id: id(5))!); removed.inboxMembershipData = ownership.inboxMembershipData
-check(removed == ownership, "Removing nested task never changes ownership, hierarchy, title, labels or history metadata")
-remove.undo(); check(try queue().contains(id(5)), "Undo restores membership")
-remove.redo(); check(try !queue().contains(id(5)), "Redo removes membership again")
-check(store.setInboxMembership(true, taskIDs: [id(5)]), "Add nested task succeeds")
-let selected = store.block(id: id(5))!.inboxMembershipData
-check(store.setInboxMembership(true, taskIDs: [id(5), id(5)]), "Repeated Add is idempotent")
-check(store.block(id: id(5))!.inboxMembershipData == selected, "Idempotent Add does not reorder or duplicate selection")
-let orderBefore = try queue()
-let reorder = nativeUndo("Reorder Inbox") { check(store.moveInboxTask(id(6), before: id(5), undoManager: $0), "Persistent manual reorder succeeds") }
-check(try queue().first == id(6), "Reorder changes queue order")
-check(store.block(id: id(6))!.sortIndex == 600, "Reorder leaves document sort index unchanged")
-reorder.undo(); check(try queue() == orderBefore, "Reorder Undo restores queue")
-reorder.redo(); check(try queue().first == id(6), "Reorder Redo restores reordered queue")
-let task = store.block(id: id(5))!
+check(Block(kind: .task).inboxMembershipData == nil, "New captures do not create legacy metadata")
+check(try policy().openCount(all()) == 2, "Badge counts only open tasks owned by Inbox")
+check(try policy().includes(store.block(id: id(3))!), "Inbox contains standalone notes")
+let inbox = store.inboxList()!
 let project = store.list(id: id(2))!
-store.moveToList(task, list: project)
-check(try queue().contains(task.id), "Move to another list preserves membership")
-store.moveToList(task, list: store.inboxList()!)
-// Restore fixture nesting for the relaunch identity assertion.
-task.parentID = id(3); task.sortIndex = 500; store.save()
-project.isArchived = true; store.save()
-check(store.setInboxMembership(true, taskIDs: [task.id]), "Unfiled selection unaffected by another archived list")
-store.moveToList(task, list: project)
-check(try !queue().contains(task.id), "Archived owner hides selected task")
-let archivedSelection = task.inboxMembershipData
-project.isArchived = false; store.save()
-check(try queue().contains(task.id), "Unarchiving restores retained membership")
-check(task.inboxMembershipData == archivedSelection, "Archiving does not mutate authoritative selection")
-store.moveToList(task, list: store.inboxList()!); task.parentID = id(3); task.sortIndex = 500; store.save()
-store.toggleCompletion(task)
-check(InboxPolicy.selection(task) != nil, "Ordinary completion retains membership for completed visibility")
-store.toggleCompletion(task)
-check(InboxPolicy.selection(task) != nil, "Ordinary reopen retains membership despite new calendar occurrence")
-let recurrence = store.appendBlock(kind: .task, text: "Repeat", to: .init(listID: id(1)))
-recurrence.recurrence = .daily; recurrence.dueDate = .now
-let child = store.insertChild(text: "Recurring child", of: recurrence)
+let task = store.block(id: id(4))!
+let nested = store.block(id: id(5))!
+let other = store.block(id: id(7))!
+other.inboxMembershipData = oldPayload
 store.save()
-check(InboxPolicy.selection(recurrence) != nil && InboxPolicy.selection(child) != nil, "New unfiled task and child captures join queue")
-let oldOccurrence = recurrence.occurrenceID
-store.toggleCompletion(recurrence)
-check(recurrence.occurrenceID != oldOccurrence && InboxPolicy.selection(recurrence) == nil, "Recurrence advances and clears selected occurrence")
-check(InboxPolicy.selection(child) == nil, "Recurring descendant reset clears child focus too")
-check(store.undoCompletion(store.completionUndo!.id), "Completion Undo succeeds")
-check(InboxPolicy.selection(recurrence) != nil && InboxPolicy.selection(child) != nil, "Completion Undo restores selection and occurrence together")
-store.toggleCompletion(recurrence)
-let pendingCompletionID = store.completionUndo!.id
-check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Explicit Add selects the advanced recurring occurrence")
-let laterOrder = InboxPolicy.selection(recurrence)?.order
-check(store.undoCompletion(pendingCompletionID), "Undo prior completion after a new explicit Add succeeds")
-check(InboxPolicy.selection(recurrence)?.order == laterOrder, "Completion Undo rebinds the later Add while preserving its manual order")
-store.toggleCompletion(recurrence)
-let removalCompletionID = store.completionUndo!.id
-check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Re-add next occurrence for deliberate removal test")
-check(store.setInboxMembership(false, taskIDs: [recurrence.id]), "Explicit Remove after completion succeeds")
-check(store.undoCompletion(removalCompletionID), "Completion Undo after explicit removal succeeds")
-check(InboxPolicy.selection(recurrence) == nil, "Completion Undo preserves the later explicit Remove")
-store.toggleCompletion(recurrence)
-let explicitExcludedCompletionID = store.completionUndo!.id
-check(store.setInboxMembership(false, taskIDs: [recurrence.id]), "Explicit Remove records intent even after automatic recurrence clearing")
-check(store.undoCompletion(explicitExcludedCompletionID), "Undo after a deliberate already-excluded choice succeeds")
-check(InboxPolicy.selection(recurrence) == nil, "Explicit already-excluded decision survives prior completion Undo")
-check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Restore fixture selected state")
-store.toggleCompletion(recurrence)
-let addToastID = store.completionUndo!.id
-let addAfterCompletion = nativeUndo("Add to Inbox") { check(store.setInboxMembership(true, taskIDs: [recurrence.id], undoManager: $0), "Add next occurrence with native Undo") }
-check(store.undoCompletion(addToastID), "Completion toast Undo carries the explicit Add")
-addAfterCompletion.undo()
-check(InboxPolicy.selection(recurrence) == nil && store.inboxError == nil, "Native Undo of Add remains usable after automatic occurrence rebinding")
-addAfterCompletion.redo()
-check(InboxPolicy.selection(recurrence) != nil && store.inboxError == nil, "Native Redo of Add binds to the actual restored occurrence")
-store.toggleCompletion(recurrence)
-let removeToastID = store.completionUndo!.id
-check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Select next occurrence before native Remove")
-let removeAfterCompletion = nativeUndo("Remove from Inbox") { check(store.setInboxMembership(false, taskIDs: [recurrence.id], undoManager: $0), "Remove next occurrence with native Undo") }
-check(store.undoCompletion(removeToastID), "Completion toast Undo keeps explicit exclusion")
-removeAfterCompletion.undo()
-check(InboxPolicy.selection(recurrence) != nil && store.inboxError == nil, "Native Undo Remove re-adds to actual restored occurrence")
-removeAfterCompletion.redo()
-check(InboxPolicy.selection(recurrence) == nil && store.inboxError == nil, "Native Redo Remove stays coherent after rebinding")
-check(store.setInboxMembership(true, taskIDs: [recurrence.id]), "Restore selected state for old-client occurrence test")
-let stale = recurrence.inboxMembershipData
-recurrence.occurrenceID = UUID(); store.save()
-check(InboxPolicy.selection(recurrence) == nil && recurrence.inboxMembershipData == stale, "Old-client occurrence advance cannot silently rejoin without clearing data")
-let addOverStale = nativeUndo("Add to Inbox") { check(store.setInboxMembership(true, taskIDs: [recurrence.id], undoManager: $0), "Explicit Add replaces a stale old-client selection") }
-check(InboxPolicy.selection(recurrence) != nil, "Explicit Add selects the actual current occurrence")
-addOverStale.undo()
-check(InboxPolicy.selection(recurrence) == nil && recurrence.inboxMembershipData == stale && store.inboxError == nil, "Undo Add restores stale bytes without reactivating their previous occurrence")
-addOverStale.redo()
-check(InboxPolicy.selection(recurrence) != nil && store.inboxError == nil, "Redo Add selects the current occurrence after restoring stale state")
-let duplicateID = try store.copyBlock(task, mode: .duplicate)
-check(store.block(id: duplicateID)?.inboxMembershipData == InboxMembership.excludedData, "Independent duplicate excludes source curation")
-let templateID = try store.copyBlock(task, mode: .template(keepingRecurrence: true))
-check(store.block(id: templateID)?.inboxMembershipData == InboxMembership.excludedData, "Template excludes source curation even retaining recurrence")
-let paragraph = store.appendBlock(kind: .paragraph, text: "Convert", to: .init(listID: id(1)))
-store.changeKind(paragraph, to: .task); store.save()
-check(InboxPolicy.selection(paragraph) != nil, "Converting unfiled text to a task joins queue")
-store.changeKind(paragraph, to: .paragraph); store.save()
-check(InboxPolicy.selection(paragraph) == nil, "Converting a task to text removes task focus")
-let unknown = store.appendBlock(kind: .task, text: "Future selection", to: .init(listID: id(2)))
-unknown.id = id(50); unknown.inboxMembershipData = Data(#"{"version":50,"included":true}"#.utf8); store.save()
-check(!store.setInboxMembership(false, taskIDs: [unknown.id]), "Unknown membership version cannot be overwritten by Remove")
-check(InboxPolicy.issue(in: [unknown]) != nil, "Unknown membership provides user-visible recovery guidance")
-let unknownBytes = unknown.inboxMembershipData
-store.moveToList(unknown, list: store.inboxList()!)
-store.changeKind(unknown, to: .paragraph); store.changeKind(unknown, to: .task); store.save()
-check(unknown.inboxMembershipData == unknownBytes, "Unknown membership survives task -> paragraph -> task conversion in Unfiled")
-store.moveToList(unknown, list: project)
-
-let missing = Block(kind: .task, text: "Late cloud owner", listID: UUID())
-missing.inboxMembershipData = nil; store.context.insert(missing); try store.migrateInboxMembership(); store.save()
-check(missing.inboxMembershipData == nil, "Incomplete CloudKit owner leaves legacy membership undecided")
-let late = TaskList(title: "Late Inbox", isSystemInbox: true); late.id = missing.listID!; store.context.insert(late)
-try store.migrateInboxMembership(); store.save()
-check(InboxPolicy.selection(missing) != nil, "Later imported owner permits one-time legacy classification")
-// No alias reconciliation here: this fixture intentionally models a late owner.
-let conflictUndo = nativeUndo("Remove from Inbox") { check(store.setInboxMembership(false, taskIDs: [task.id], undoManager: $0), "Prepare independent selection Undo") }
-check(store.setInboxMembership(true, taskIDs: [task.id]), "Later deliberate selection succeeds")
-let laterSelection = task.inboxMembershipData
-conflictUndo.undo()
-check(task.inboxMembershipData == laterSelection && store.inboxError != nil, "Stale membership Undo does not overwrite later selection")
-let ordinaryPosition = task.inboxMembershipData
-// Imported finite numbers can still exhaust subtraction precision. Reject the
-// Add rather than claim it landed first with an unchanged floating-point key.
-task.inboxMembershipData = try InboxMembership.included(order: -Double.greatestFiniteMagnitude, occurrenceID: task.occurrenceID).encoded()
-store.save()
-check(!store.setInboxMembership(true, taskIDs: [id(7)]), "Exhausted finite order fails without a guessed position")
-check(store.block(id: id(7))?.inboxMembershipData == InboxMembership.excludedData, "Unrepresentable order does not change destination selection")
-task.inboxMembershipData = ordinaryPosition; store.save()
-let priorHistory = try store.taskActivity(for: task.id, limit: 1000).count
-let oldPayload = task.inboxMembershipData
-failures = 1
-check(!store.setInboxMembership(false, taskIDs: [task.id]), "Injected save failure is reported")
-check(task.inboxMembershipData == oldPayload, "Injected save failure restores retained membership")
-check(store.setInboxMembership(false, taskIDs: [task.id]), "Retry explicitly reapplies the requested mutation")
-check(store.setInboxMembership(true, taskIDs: [task.id]), "Selection remains usable after recoverable retry")
-check(!store.setInboxMembership(true, taskIDs: [task.id, UUID()]), "Missing multi-selection identity fails before mutation")
-check(try store.taskActivity(for: task.id, limit: 1000).count == priorHistory, "Membership retries do not fabricate activity history")
-let widget = WidgetSnapshotPublisher(store: store).buildSnapshot()
-check(try widget.inboxCount == policy().openCount(all()), "Widget open count uses exactly the queue policy")
-check(store.setInboxMembership(false, taskIDs: [id(4)]), "Explicitly removed unfiled task remains excluded")
-// Avoid the deliberate second-system-record fixture altering canonical IDs at relaunch.
-missing.listID = id(1); store.context.delete(late); store.save()
-try JSONEncoder().encode(queue()).write(to: url.appendingPathExtension("queue.json"))
-let deletedID = task.id
-let delete = nativeUndo("Delete selected task") { manager in
-    store.undoableEditorEdit(in: id(1), name: "Delete selected task", undoManager: manager) { store.deleteBlock(task); store.save() }
+check(try !policy().includes(other), "Legacy selected tasks in real lists stay filed")
+store.setDueTomorrow(nested)
+check(try policy().includes(nested), "Setting a date keeps a capture in Inbox")
+let originalID = task.id, originalNote = task.note, labels = task.labelIDs
+let descendants = BlockTree.descendants(of: task.id, in: store.blocks(inList: inbox.id))
+let attachments = try store.context.fetch(FetchDescriptor<Attachment>()).map { ($0.id, $0.blockID, $0.contentData) }
+let manager = UndoManager(); manager.groupsByEvent = false
+manager.beginUndoGrouping()
+_ = try store.moveSelection([task.id], to: project.id, undoManager: manager)
+manager.endUndoGrouping()
+check(try !policy().includes(task), "Filing immediately removes the task from Inbox")
+check(task.id == originalID && task.note == originalNote && task.labelIDs == labels, "Filing preserves identity and metadata")
+check(descendants.allSatisfy { $0.listID == project.id && $0.parentID == task.id }, "Filing moves the complete branch")
+check(try policy().openCount(all()) == 1, "Filing updates the badge")
+manager.undo()
+check(try policy().includes(task), "Native Undo returns the item to Inbox")
+check(descendants.allSatisfy { $0.listID == inbox.id }, "Undo returns the whole branch")
+manager.redo()
+check(try !policy().includes(task), "Redo files the same identity again")
+let note = store.block(id: id(3))!
+manager.removeAllActions(); manager.beginUndoGrouping()
+_ = try store.moveSelection([note.id], to: project.id, undoManager: manager)
+manager.endUndoGrouping()
+check(try !policy().includes(note) && !policy().includes(nested), "Filing a note includes its nested tasks")
+manager.undo()
+check(note.listID == inbox.id && nested.parentID == note.id, "Undo restores note hierarchy")
+for (attachmentID, owner, bytes) in attachments {
+    let restored = try store.context.fetch(FetchDescriptor<Attachment>()).first { $0.id == attachmentID }
+    check(restored?.blockID == owner && restored?.contentData == bytes, "Filing and Undo retain attachment IDs and bytes")
 }
-check(store.block(id: deletedID) == nil, "Task deletion removes its reference naturally")
-delete.undo()
-check(store.block(id: deletedID)?.inboxMembershipData != nil && InboxPolicy.selection(store.block(id: deletedID)!) != nil, "Editor deletion Undo restores original membership for restored identity")
-// Store schema stays CloudKit-compatible offline: optional field, no uniqueness.
-let property = schema.entities.first { $0.name == "Block" }!.properties.first { $0.name == "inboxMembershipData" }!
-check(property.isOptional, "New CloudKit field is optional for old/new record imports")
-print("\(checks) Inbox migration and membership checks passed")
+let recurring = store.appendBlock(kind: .task, text: "Recurring capture", to: .init(listID: inbox.id))
+recurring.recurrence = .weekly; recurring.dueDate = .now
+store.toggleCompletion(recurring)
+check(try policy().includes(recurring) && !recurring.isCompleted, "Recurrence stays in Inbox until filed")
+let completion = store.completionUndo!
+check(store.undoCompletion(completion.id), "Recurring completion can be undone")
+check(try policy().includes(recurring), "Completion Undo preserves capture ownership")
+let copiedID = try store.copyBlock(nested, mode: .duplicate)
+check(try policy().includes(store.block(id: copiedID)!), "A copy made in Inbox remains an unorganized capture")
+check(BlockTree.hidingCompletedTasks(in: BlockTree.flatten(store.blocks(inList: inbox.id))).contains { $0.id == note.id }, "Hiding completed tasks never hides standalone notes")
+try store.persistChanges()
+print("\(checks) Inbox ownership checks passed")

@@ -56,7 +56,6 @@ final class Store {
     @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
     var persistenceError: String?
     var editorNotice: String?
-    var inboxError: String?
     var trashError: String?
     var trashNotice: String?
     @ObservationIgnored var permanentlyErasedBlockIDs: Set<UUID> = []
@@ -229,7 +228,6 @@ final class Store {
                 context.insert(SidebarSection(title: "My lists", sortIndex: 0, isDefault: true))
             }
             try reconcileSystemRecords()
-            try migrateInboxMembership()
             guard reconcileRetainedListDescendants() else { throw TrashError.invalidRetention }
             save()
         } catch {

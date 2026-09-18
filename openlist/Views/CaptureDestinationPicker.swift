@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared by task capture and unfiled review. Selection is always explicit.
+/// Capture destination picker. Selection is always explicit.
 struct CaptureDestinationPicker: View {
     let lists: [TaskList]
     @Binding var selection: UUID?
@@ -12,7 +12,7 @@ struct CaptureDestinationPicker: View {
     @FocusState private var isFocused: Bool
 
     private var matches: [TaskList] {
-        lists.filter { query.isEmpty || $0.displayTitle.localizedCaseInsensitiveContains(query) || ($0.isSystemInbox && "Unfiled content".localizedCaseInsensitiveContains(query)) }
+        lists.filter { query.isEmpty || $0.displayTitle.localizedCaseInsensitiveContains(query) || ($0.isSystemInbox && "Inbox".localizedCaseInsensitiveContains(query)) }
     }
 
     var body: some View {
@@ -77,7 +77,7 @@ struct CaptureDestinationPicker: View {
     }
 
     private func sourceTitle(_ list: TaskList?) -> String {
-        guard let list, !list.isSystemInbox else { return "Unfiled" }
+        guard let list, !list.isSystemInbox else { return "Inbox" }
         return list.displayTitle
     }
 

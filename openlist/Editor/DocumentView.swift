@@ -46,6 +46,8 @@ struct SlashState: Equatable {
 
 /// Renders and edits one document: a list, or a task's detail page.
 struct DocumentView: View {
+    /// Selection gutter (22), row inset (6), and disclosure slot (14).
+    static let markerInset: CGFloat = 42
     let document: DocumentContext
     /// Placeholder shown on the sole empty block of an empty document.
     var emptyPlaceholder: String = "Add a task…"
@@ -61,6 +63,7 @@ struct DocumentView: View {
     /// wants a generous target; an inspector panel would just show a gap.
     var trailingSpace: CGFloat = 120
     var appendButtonTitle: String?
+    var usesInboxActions = false
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -84,7 +87,8 @@ struct DocumentView: View {
         sorting: ListSorting = .manual,
         seedsEmptyBlock: Bool = true,
         trailingSpace: CGFloat = 120,
-        appendButtonTitle: String? = nil
+        appendButtonTitle: String? = nil,
+        usesInboxActions: Bool = false
     ) {
         self.document = document
         self.emptyPlaceholder = emptyPlaceholder
@@ -93,6 +97,7 @@ struct DocumentView: View {
         self.seedsEmptyBlock = seedsEmptyBlock
         self.trailingSpace = trailingSpace
         self.appendButtonTitle = appendButtonTitle
+        self.usesInboxActions = usesInboxActions
 
         let listID = document.listID
         _fetchedBlocks = Query(
@@ -191,6 +196,8 @@ struct DocumentView: View {
                         .padding(.vertical, 4)
                 }
                 .buttonStyle(QuietButtonStyle())
+                .padding(.leading, usesInboxActions ? Self.markerInset : 0)
+                .padding(.top, usesInboxActions ? 12 : 0)
                 .accessibilityIdentifier("document-append-task")
                 .contextMenu { pasteMenu }
             } else {
@@ -301,7 +308,7 @@ struct DocumentView: View {
     ) -> some View {
         if row.block.modelContext != nil, !row.block.isDeleted {
             HStack(alignment: .top, spacing: 0) {
-                RowSelectionGutter(id: row.id, title: row.block.displayTitle)
+                RowSelectionGutter(id: row.id, title: row.block.displayTitle, requiresSelectionMode: usesInboxActions)
                 BlockRowView(
                     row: row,
                     listAccent: listAccent,
@@ -317,6 +324,7 @@ struct DocumentView: View {
                     attributedText: env.store.attributedContent(of: row.block),
                     placeholder: emptyPlaceholder,
                     showsPlaceholder: shouldShowPlaceholder(for: row),
+                    usesInboxActions: usesInboxActions,
                     actions: actions(for: row)
                 )
             }

@@ -26,28 +26,17 @@ check(!navigator.hasDocumentEditor, "Back restores the original list's Tasks pre
 navigator.setListViewMode(.document, for: listID)
 check(navigator.hasDocumentEditor, "Returning to Document restores native outline commands")
 navigator.go(to: .inbox)
-check(!navigator.hasDocumentEditor, "Entering the selected queue enables smart-row focus protection")
+check(navigator.hasDocumentEditor, "Inbox owns its rich document editor")
 navigator.openTask(UUID())
-check(!navigator.hasDocumentEditor, "An open inspector does not turn the queue into a list editor")
+check(navigator.hasDocumentEditor, "Inspector does not replace Inbox document ownership")
 navigator.closeTask()
-check(!navigator.hasDocumentEditor, "Closing a queue inspector releases commands to the root handler")
-navigator.showsUnfiledInbox = true
-check(navigator.hasDocumentEditor, "Unfiled content retains the original editor and caret behavior")
-navigator.isReviewingUnfiledInbox = true
-check(!navigator.hasDocumentEditor, "Starting review releases the removed Unfiled editor")
-navigator.isReviewingUnfiledInbox = false
-check(navigator.hasDocumentEditor, "Finishing review returns command ownership to the document")
-navigator.showsUnfiledInbox = false
-check(!navigator.hasDocumentEditor, "Returning to Selected tasks releases the Unfiled editor")
+check(navigator.hasDocumentEditor, "Closing details returns to Inbox editing")
 navigator.goBack()
-check(navigator.route == .list(listID) && navigator.hasDocumentEditor,
-      "Back restores the list editor independently of the Inbox tab")
+check(navigator.route == .list(listID) && navigator.hasDocumentEditor, "Back restores the list editor")
 navigator.goForward()
-check(navigator.route == .inbox && !navigator.hasDocumentEditor,
-      "Forward to the selected queue keeps smart-row focus and command behavior")
-navigator.showsUnfiledInbox = true
+check(navigator.route == .inbox && navigator.hasDocumentEditor, "Forward restores Inbox document commands")
 navigator.go(to: .tasks)
-check(!navigator.hasDocumentEditor, "A retained Unfiled tab cannot make Tasks an outline editor")
+check(!navigator.hasDocumentEditor, "Tasks does not inherit Inbox document ownership")
 
 let suite = "openlist-list-mode-checks-\(UUID().uuidString)"
 let defaults = UserDefaults(suiteName: suite)!
@@ -64,24 +53,23 @@ let reveal = try ContentReveal.resolve(.block(note.id), blocks: [note], lists: [
 reopened.reveal(reveal)
 check(reopened.hasDocumentEditor && reopened.contentReveal == reveal,
       "Exact-content navigation returns to Document before revealing prose")
-let queueScope = UUID(), inspectorScope = UUID()
+let outlineScope = UUID(), inspectorScope = UUID()
 let a = UUID(), b = UUID(), c = UUID()
 navigator.go(to: .inbox)
-navigator.showsUnfiledInbox = false
-navigator.selectRow(a, gesture: .replace, scope: queueScope, visible: [a, b, c])
-navigator.selectRow(c, gesture: .range, scope: queueScope, visible: [a, b, c])
-check(navigator.orderedSelection == [a, b, c] && navigator.isSelectingRows, "Inbox range selection follows eager queue order")
+navigator.selectRow(a, gesture: .replace, scope: outlineScope, visible: [a, b, c])
+navigator.selectRow(c, gesture: .range, scope: outlineScope, visible: [a, b, c])
+check(navigator.orderedSelection == [a, b, c] && navigator.isSelectingRows, "Inbox range selection follows eager outline order")
 navigator.reconcileSelection(scope: inspectorScope, visible: [])
-check(navigator.orderedSelection == [a, b, c], "An inactive inspector cannot prune the Inbox queue selection")
-navigator.reconcileSelection(scope: queueScope, visible: [c, a])
-check(navigator.orderedSelection == [c, a], "Filtered Inbox membership prunes hidden rows and refreshes queue order")
-navigator.selectForEditing(c, scope: queueScope, visible: [c, a])
-check(navigator.selection == [c] && !navigator.isSelectingRows, "Editing a queue task intentionally returns to single native text selection")
-navigator.stepRowSelection(1, extending: true, scope: queueScope, visible: [c, a])
+check(navigator.orderedSelection == [a, b, c], "An inactive inspector cannot prune the Inbox outline selection")
+navigator.reconcileSelection(scope: outlineScope, visible: [c, a])
+check(navigator.orderedSelection == [c, a], "Filtered Inbox visibility prunes hidden rows and refreshes outline order")
+navigator.selectForEditing(c, scope: outlineScope, visible: [c, a])
+check(navigator.selection == [c] && !navigator.isSelectingRows, "Editing a outline task intentionally returns to single native text selection")
+navigator.stepRowSelection(1, extending: true, scope: outlineScope, visible: [c, a])
 check(navigator.selection == [c, a] && navigator.rowFocusRequest == a, "An arrow extension requests the next gutter without losing its range anchor")
 navigator.finishRowFocusRequest(a)
 check(navigator.rowFocusRequest == nil && navigator.rowSelection.anchorID == c, "Keyboard focus handoff preserves the range anchor")
-let payload = navigator.beginBlockDrag(c, scope: queueScope, visible: [c, a])
+let payload = navigator.beginBlockDrag(c, scope: outlineScope, visible: [c, a])
 check(DragPayload.blockDrop(payload, session: navigator.blockDragSessionID, activeLegacyID: nil) == .blocks([c, a]),
       "Queue ownership drag carries visible multi-row order without becoming an Inbox reorder")
 navigator.go(to: .tasks)
