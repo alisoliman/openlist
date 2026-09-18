@@ -21,6 +21,8 @@ final class NotificationService {
     static let calendarStartAction = "openlist.calendar.start-task"
     static let calendarDoneAction = "openlist.calendar.done-task"
     static let calendarKeepGoingAction = "openlist.calendar.keep-going"
+    static let calendarLaterAction = "openlist.calendar.later"
+    static let calendarOpenPlanAction = "openlist.calendar.open-plan"
 
     private lazy var center = UNUserNotificationCenter.current()
     lazy var reminders: ReminderRecovery = {
@@ -44,11 +46,13 @@ final class NotificationService {
         guard ReviewSession.identifier == nil else { return }
         center.delegate = delegate
         calendarCategoryInstallation = Task {
-            let start = UNNotificationAction(identifier: Self.calendarStartAction, title: "Start", options: [])
-            let done = UNNotificationAction(identifier: Self.calendarDoneAction, title: "Done", options: [])
-            let keepGoing = UNNotificationAction(identifier: Self.calendarKeepGoingAction, title: "Keep going", options: [])
+            let start = UNNotificationAction(identifier: Self.calendarStartAction, title: "Start working", options: [.foreground])
+            let done = UNNotificationAction(identifier: Self.calendarDoneAction, title: "Complete task", options: [])
+            let keepGoing = UNNotificationAction(identifier: Self.calendarKeepGoingAction, title: "Review more time", options: [.foreground])
+            let later = UNNotificationAction(identifier: Self.calendarLaterAction, title: "Remind in 15 minutes", options: [])
+            let openPlan = UNNotificationAction(identifier: Self.calendarOpenPlanAction, title: "Open plan", options: [.foreground])
             let categories: Set<UNNotificationCategory> = [
-                UNNotificationCategory(identifier: Self.calendarStartCategory, actions: [start], intentIdentifiers: [], options: []),
+                UNNotificationCategory(identifier: Self.calendarStartCategory, actions: [start, later, openPlan], intentIdentifiers: [], options: []),
                 UNNotificationCategory(identifier: Self.calendarOverrunCategory, actions: [done, keepGoing], intentIdentifiers: [], options: []),
                 UNNotificationCategory(identifier: Self.calendarHeadsUpCategory, actions: [done], intentIdentifiers: [], options: [])
             ]

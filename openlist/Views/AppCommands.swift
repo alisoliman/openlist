@@ -12,6 +12,22 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandMenu("Work") {
+            Button("Show Work") { env.calendar.showWork() }
+            Button("Start Selected Task") {
+                if let task = selectedWorkTask { env.calendar.requestWork(WorkTaskReference(task)) }
+            }.disabled(selectedWorkTask == nil)
+            Divider()
+            Button("Stop Current Session") { env.calendar.stopWorking(); env.calendar.showWork() }
+                .disabled(env.calendar.activeSession == nil)
+            Button("Resume Task") { env.calendar.resume() }
+                .disabled(env.calendar.activeSession != nil || env.calendar.resumableTask == nil)
+            Button("Complete Current Task") {
+                if let id = env.calendar.activeSession?.taskID, let task = env.store.block(id: id) {
+                    env.calendar.complete(task: task); env.calendar.showWork()
+                }
+            }.disabled(env.calendar.activeSession == nil)
+        }
         // File ▸ replaces the template "New Window" with task and list creation.
         CommandGroup(replacing: .newItem) {
             Button("New Task…") {
@@ -167,6 +183,11 @@ struct AppCommands: Commands {
         guard env.taskCaptureRequest == nil, !env.navigator.isCommandPaletteOpen,
               !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return false }
         return env.navigator.selection.count == 1 && env.navigator.selection.contains { env.store.block(id: $0)?.isTask == true }
+    }
+
+    private var selectedWorkTask: Block? {
+        guard hasTaskSelection, let id = env.navigator.selection.first, let task = env.store.block(id: id) else { return nil }
+        return env.calendar.validWorkTask(WorkTaskReference(task))
     }
 
     private var hasBlockSelection: Bool {

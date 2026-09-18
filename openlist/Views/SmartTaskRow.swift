@@ -126,7 +126,7 @@ struct SmartTaskRow: View {
                     env.store.selectForToday(block)
                     env.calendar.storeDidChange()
                 }
-                Button("Start working") { _ = env.calendar.start(task: block) }
+                Button("Start working") { env.calendar.requestWork(WorkTaskReference(block)) }
                 Button("Show calendar") { env.navigator.go(to: .calendar) }
             }
         }

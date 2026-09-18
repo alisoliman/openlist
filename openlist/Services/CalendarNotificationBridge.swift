@@ -21,6 +21,7 @@ final class CalendarNotificationBridge {
     private let service: NotificationService
     private var updateTask: Task<Void, Never>?
     private var lastPostedID: String?
+    private var deliveredStarts: Set<String> = Set(ReviewSession.defaults.stringArray(forKey: "work.deliveredStarts") ?? [])
     private var observers: [NSObjectProtocol] = []
 
     init(store: Store, calendar: CalendarCoordinator, navigator: Navigator,
@@ -46,13 +47,14 @@ final class CalendarNotificationBridge {
         updateTask = Task { [weak self] in
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
-            guard !NSApp.isActive, let nudge = currentNudge else {
+            guard calendar.workNotificationsEnabled, !NSApp.isActive, let nudge = currentNudge else {
                 await service.clearCalendarNudges()
                 return
             }
             let alreadyPresent = await service.clearCalendarNudges(except: nudge.identifier)
             guard !Task.isCancelled, !NSApp.isActive, currentNudge?.identifier == nudge.identifier else { return }
             if alreadyPresent { lastPostedID = nudge.identifier; return }
+            if nudge.category == NotificationService.calendarStartCategory && deliveredStarts.contains(nudge.identifier) { return }
             guard lastPostedID != nudge.identifier, await service.authorizeCalendarNudgeIfNeeded() else { return }
             guard !Task.isCancelled, !NSApp.isActive, currentNudge?.identifier == nudge.identifier else { return }
             let posted = await service.postCalendarNudge(identifier: nudge.identifier, title: nudge.title, body: nudge.body,
@@ -63,7 +65,13 @@ final class CalendarNotificationBridge {
                 service.removeCalendarNudge(identifier: nudge.identifier)
                 return
             }
-            if posted { lastPostedID = nudge.identifier }
+            if posted {
+                lastPostedID = nudge.identifier
+                if nudge.category == NotificationService.calendarStartCategory {
+                    deliveredStarts.insert(nudge.identifier)
+                    ReviewSession.defaults.set(Array(deliveredStarts), forKey: "work.deliveredStarts")
+                }
+            }
         }
     }
 
@@ -73,7 +81,7 @@ final class CalendarNotificationBridge {
         guard ReviewSession.identifier == nil else { return }
         service.removeCalendarNudge(identifier: identifier)
         guard action != UNNotificationDismissActionIdentifier else { return }
-        if action == UNNotificationDefaultActionIdentifier {
+        if action == UNNotificationDefaultActionIdentifier || action == NotificationService.calendarOpenPlanAction {
             navigator.go(to: .calendar)
             if let task = store.block(id: taskID), task.occurrenceID == occurrenceID {
                 navigator.openTask(taskID)
@@ -90,11 +98,13 @@ final class CalendarNotificationBridge {
         }
         switch action {
         case NotificationService.calendarStartAction where nudge.category == NotificationService.calendarStartCategory:
-            _ = calendar.start(task: task)
+            calendar.requestWork(WorkTaskReference(task))
+        case NotificationService.calendarLaterAction where nudge.category == NotificationService.calendarStartCategory:
+            calendar.quietWork(WorkTaskReference(task))
         case NotificationService.calendarDoneAction where nudge.category == NotificationService.calendarOverrunCategory || nudge.category == NotificationService.calendarHeadsUpCategory:
             calendar.complete(task: task)
         case NotificationService.calendarKeepGoingAction where nudge.category == NotificationService.calendarOverrunCategory && calendar.overrunNudge?.needsConfirmation == true:
-            calendar.acceptMoreTime()
+            calendar.showWork(for: task)
         default: break
         }
         update()
@@ -112,16 +122,16 @@ final class CalendarNotificationBridge {
             let duration = minutes.formatted(.number.precision(.fractionLength(0...1)))
             let unit = minutes == 1 ? "minute" : "minutes"
             let body = nudge.needsConfirmation
-                ? "Work is paused. Done, or keep going for \(duration) more \(unit)?\(impact)"
-                : "Still working? I’ll allow \(duration) more \(unit)."
+                ? "Recording is paused. Review \(duration) more \(unit), or complete the task.\(impact)"
+                : "Estimate almost reached. Recording pauses if more time would move other work."
             return Nudge(identifier: id, taskID: nudge.taskID, occurrenceID: nudge.occurrenceID,
                          category: nudge.needsConfirmation ? NotificationService.calendarOverrunCategory : NotificationService.calendarHeadsUpCategory,
                          title: task.displayTitle, body: body)
         }
         if let nudge = calendar.startNudge,
            let task = store.block(id: nudge.taskID), task.occurrenceID == nudge.occurrenceID, !task.isCompleted {
-            let dates = "\(stamp(nudge.scheduledStart)).\(stamp(nudge.graceEndsAt))"
-            let id = "\(NotificationService.calendarRequestPrefix)start.\(nudge.taskID).\(nudge.occurrenceID).\(dates)"
+            let reminder = calendar.quietUntil[nudge.occurrenceID.uuidString] ?? 0
+            let id = "\(NotificationService.calendarRequestPrefix)start.\(nudge.taskID).\(nudge.occurrenceID).\(reminder)"
             return Nudge(identifier: id, taskID: nudge.taskID, occurrenceID: nudge.occurrenceID,
                          category: NotificationService.calendarStartCategory, title: task.displayTitle,
                          body: "Your planned session is ready. Start when you are ready; tracking never starts automatically.")

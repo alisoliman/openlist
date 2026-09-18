@@ -26,6 +26,20 @@ final class CalendarCoordinator {
         return store.workSessions().first { $0.id == activeSessionID }
     }
     private(set) var resumeTaskID: UUID?
+    private(set) var resumeOccurrenceID: UUID?
+    var isWorkPanelPresented = false
+    private(set) var workSelection: WorkTaskReference?
+    private(set) var pendingWorkStart: WorkTaskReference?
+    private var switchingFrom: WorkTaskReference?
+    private(set) var workCompletion: WorkCompletionSummary?
+    private(set) var continuationProposal: WorkContinuationProposal?
+    private(set) var quietUntil: [String: Double] = [:]
+    var workNotificationsEnabled: Bool {
+        didSet {
+            defaults.set(workNotificationsEnabled, forKey: "work.notificationsEnabled")
+            onNudgesChanged?()
+        }
+    }
     var notice: String?
     private let defaults: UserDefaults
     private let deviceID: String
@@ -50,6 +64,10 @@ final class CalendarCoordinator {
     init(store: Store, defaults: UserDefaults = ReviewSession.defaults, externalCalendars: ExternalCalendarSource? = nil) {
         self.store = store
         self.defaults = defaults
+        workNotificationsEnabled = defaults.bool(forKey: "work.notificationsEnabled")
+        quietUntil = defaults.dictionary(forKey: "work.quietUntil") as? [String: Double] ?? [:]
+        resumeTaskID = defaults.string(forKey: "work.resumeTaskID").flatMap(UUID.init(uuidString:))
+        resumeOccurrenceID = defaults.string(forKey: "work.resumeOccurrenceID").flatMap(UUID.init(uuidString:))
         self.externalCalendars = externalCalendars ?? ExternalCalendarSource(defaults: defaults)
         if let data = defaults.data(forKey: "calendar.preferences"),
            let decoded = try? JSONDecoder().decode(CalendarPreferences.self, from: data) {
@@ -84,8 +102,9 @@ final class CalendarCoordinator {
                 recoveryFailed = true
             }
             resumeTaskID = session.taskID
+            resumeOccurrenceID = session.occurrenceID
         }
-        if let id = resumeTaskID, store.block(id: id)?.isCompleted != false { resumeTaskID = nil }
+        validateWorkReferences()
         if recoveryFailed { notice = store.persistenceError ?? "Previous work could not be recovered. Try again after saving is available." }
         else if resumeTaskID != nil { notice = "Previous work was paused at its last recorded time. Resume when ready." }
         refreshCalendars(now: now)
@@ -216,6 +235,12 @@ final class CalendarCoordinator {
         activeBoundary = boundary
         lastObservedAt = now
         resumeTaskID = nil
+        resumeOccurrenceID = nil
+        persistResume()
+        pendingWorkStart = nil
+        workCompletion = nil
+        continuationProposal = nil
+        workSelection = WorkTaskReference(task)
         notice = nil
         replan(now: now)
         return true
@@ -233,6 +258,12 @@ final class CalendarCoordinator {
             isUpdating = wasUpdating
             return
         }
+        if let task = store.block(id: session.taskID), task.occurrenceID == session.occurrenceID, !task.isCompleted {
+            resumeTaskID = task.id
+            resumeOccurrenceID = task.occurrenceID
+            workSelection = WorkTaskReference(task)
+            persistResume()
+        }
         activeSessionID = nil
         activeBoundary = nil
         lastObservedAt = nil
@@ -244,7 +275,22 @@ final class CalendarCoordinator {
     }
 
     func complete(task: Block, now: Date = .now) {
+        guard validWorkTask(WorkTaskReference(task)) != nil else { return }
+        let reference = WorkTaskReference(task)
+        let title = task.displayTitle
+        let minutes = trackedMinutes(for: task, now: now)
         store.toggleCompletion(task, now: now)
+        guard store.persistenceError == nil else { notice = store.persistenceError; return }
+        workCompletion = WorkCompletionSummary(task: reference, title: title, recordedMinutes: minutes,
+            nextDate: task.occurrenceID != reference.occurrenceID ? task.dueDate : nil, undoID: store.completionUndo?.id)
+        // Saving can synchronously replan and invalidate the old occurrence.
+        // This intentional completion has its own confirmation, not a stale-target warning.
+        workSelection = nil
+        notice = nil
+        resumeTaskID = nil
+        resumeOccurrenceID = nil
+        persistResume()
+        pendingWorkStart = nil
         tick(now: now, checkClockGap: false, materialChange: true)
     }
 
@@ -256,11 +302,17 @@ final class CalendarCoordinator {
     }
 
     func resume() {
-        guard let id = resumeTaskID, let task = store.block(id: id) else { resumeTaskID = nil; return }
-        _ = start(task: task)
+        guard let task = resumableTask else { dismissResume(); return }
+        requestWork(WorkTaskReference(task))
     }
 
-    func dismissResume() { resumeTaskID = nil; notice = nil }
+    func dismissResume() {
+        resumeTaskID = nil
+        resumeOccurrenceID = nil
+        persistResume()
+        workSelection = nil
+        notice = nil
+    }
 
     func move(block: PlannedBlock, to start: Date, isPinned: Bool = false, now: Date = .now) {
         guard let task = store.block(id: block.taskID), task.occurrenceID == block.occurrenceID, !block.isActive else { return }
@@ -356,6 +408,7 @@ final class CalendarCoordinator {
         guard hasStarted, !isUpdating else { return }
         isUpdating = true
         defer { isUpdating = false }
+        validateWorkReferences()
         if now.timeIntervalSince(lastCalendarRefresh) >= 300 { refreshCalendars(now: now) }
         let materialChange = materialChange || pendingCalendarChange
         pendingCalendarChange = false
@@ -434,7 +487,7 @@ final class CalendarCoordinator {
         while let end = approvedWorkEnd, end <= now, end < boundary {
             let proposed = min(end.addingTimeInterval(15 * 60), boundary)
             let affected = displacedTaskIDs(from: end, to: proposed, excluding: task.occurrenceID)
-            if usedAutomaticExtension && !affected.isEmpty {
+            if !affected.isEmpty {
                 let nudge = CalendarOverrunNudge(taskID: task.id, occurrenceID: task.occurrenceID,
                     kind: .needsConfirmation, estimatedEnd: end,
                     proposedEnd: proposed, movedTaskCount: affected.count)
@@ -540,18 +593,11 @@ final class CalendarCoordinator {
         guard session.id == activeSessionID, session.deviceID == deviceID,
               var end = approvedWorkEnd else { return min(now, session.lastHeartbeatAt) }
         let boundary = activeBoundary ?? now
-        var usedExtension = usedAutomaticExtension
         while end < now && end < boundary {
             let proposed = min(end.addingTimeInterval(15 * 60), boundary)
             let affected = displacedTaskIDs(from: end, to: proposed, excluding: session.occurrenceID)
-            if usedExtension && !affected.isEmpty { return min(now, end, boundary) }
-            if !usedExtension && !affected.isEmpty {
-                // The first automatic extension would move these blocks to the
-                // next boundary; a second one must then await confirmation.
-                return min(now, proposed, boundary)
-            }
+            if !affected.isEmpty { return min(now, end, boundary) }
             end = proposed
-            usedExtension = true
         }
         return min(now, end, boundary)
     }
@@ -560,6 +606,7 @@ final class CalendarCoordinator {
         guard activeSession == nil, overrunNudge?.needsConfirmation != true else { startNudge = nil; return }
         let next = plan.blocks.first { block in
             !block.isActive && block.start <= now && block.end > block.start &&
+                (quietUntil[block.occurrenceID.uuidString] ?? 0) <= now.timeIntervalSince1970 &&
                 store.block(id: block.taskID)?.occurrenceID == block.occurrenceID &&
                 store.block(id: block.taskID)?.isCompleted == false
         }
@@ -655,6 +702,232 @@ final class CalendarCoordinator {
         guard signature != busySignature else { return false }
         busySignature = signature
         return true
+    }
+
+    // MARK: - Work companion
+
+    func validWorkTask(_ reference: WorkTaskReference) -> Block? {
+        guard let task = store.block(id: reference.taskID), task.isTask, task.trashID == nil,
+              !task.isCompleted, task.occurrenceID == reference.occurrenceID,
+              store.list(id: task.listID)?.isEffectivelyArchived == false else { return nil }
+        return task
+    }
+
+    var resumableTask: Block? {
+        guard let id = resumeTaskID, let task = store.block(id: id), task.occurrenceID == resumeOccurrenceID else { return nil }
+        return validWorkTask(WorkTaskReference(task))
+    }
+
+    var selectedWorkTask: Block? { workSelection.flatMap(validWorkTask) }
+
+    func suggestedWork(now: Date = .now) -> Block? {
+        for block in plan.blocks where !block.isActive && block.end > now {
+            guard (quietUntil[block.occurrenceID.uuidString] ?? 0) <= now.timeIntervalSince1970,
+                  let task = store.block(id: block.taskID), task.occurrenceID == block.occurrenceID,
+                  validWorkTask(WorkTaskReference(task)) != nil else { continue }
+            return task
+        }
+        return nil
+    }
+
+    func showWork(for task: Block? = nil, now: Date = .now) {
+        if let task { workSelection = WorkTaskReference(task); workCompletion = nil }
+        else if let session = activeSession, let task = store.block(id: session.taskID) { workSelection = WorkTaskReference(task) }
+        else if let task = resumableTask { workSelection = WorkTaskReference(task) }
+        else if workCompletion == nil { workSelection = suggestedWork(now: now).map(WorkTaskReference.init) }
+        if overrunNudge?.needsConfirmation == true { continuationProposal = previewContinuation(now: now) }
+        isWorkPanelPresented = true
+    }
+
+    func selectWork(_ reference: WorkTaskReference) {
+        guard validWorkTask(reference) != nil else { return }
+        workSelection = reference
+        workCompletion = nil
+        pendingWorkStart = nil
+        notice = nil
+    }
+
+    @discardableResult
+    func requestWork(_ reference: WorkTaskReference, now: Date = .now) -> Bool {
+        guard let task = validWorkTask(reference) else {
+            notice = "This task occurrence is no longer available. Choose another task."
+            isWorkPanelPresented = true
+            return false
+        }
+        selectWork(reference)
+        isWorkPanelPresented = true
+        if overrunNudge?.needsConfirmation == true, overrunNudge?.occurrenceID == reference.occurrenceID {
+            refreshContinuation(now: now)
+            return false
+        }
+        if let session = activeSession, session.occurrenceID != reference.occurrenceID {
+            pendingWorkStart = reference
+            switchingFrom = store.block(id: session.taskID).map(WorkTaskReference.init)
+            return false
+        }
+        return start(task: task, now: now)
+    }
+
+    func cancelWorkSwitch() { pendingWorkStart = nil; switchingFrom = nil; showWork() }
+
+    @discardableResult
+    func confirmWorkSwitch(now: Date = .now) -> Bool {
+        guard let reference = pendingWorkStart, let task = validWorkTask(reference) else {
+            pendingWorkStart = nil; notice = "That task is no longer available."; return false
+        }
+        let current = activeSession.flatMap { store.block(id: $0.taskID) }.map(WorkTaskReference.init)
+        guard current == switchingFrom else {
+            switchingFrom = current
+            notice = "The current session changed. Review the switch again."
+            return false
+        }
+        return start(task: task, now: now)
+    }
+
+    func stopWorking(now: Date = .now) {
+        pause(reason: "Stopped working", now: now)
+        if activeSession == nil { notice = nil }
+    }
+
+    func quietWork(_ reference: WorkTaskReference, now: Date = .now) {
+        guard validWorkTask(reference) != nil else { return }
+        quietUntil[reference.occurrenceID.uuidString] = now.addingTimeInterval(15 * 60).timeIntervalSince1970
+        defaults.set(quietUntil, forKey: "work.quietUntil")
+        updateStartNudge(now: now)
+        onNudgesChanged?()
+    }
+
+    func undoQuietWork(_ reference: WorkTaskReference, now: Date = .now) {
+        quietUntil.removeValue(forKey: reference.occurrenceID.uuidString)
+        defaults.set(quietUntil, forKey: "work.quietUntil")
+        updateStartNudge(now: now)
+        onNudgesChanged?()
+    }
+
+    func canStartWork(_ reference: WorkTaskReference, now: Date = .now) -> Bool {
+        guard let task = validWorkTask(reference), let end = nextBoundary(for: task, at: now) else { return false }
+        return end > now
+    }
+
+    func plannedWork(_ reference: WorkTaskReference, now: Date = .now) -> PlannedBlock? {
+        plan.blocks.first { $0.occurrenceID == reference.occurrenceID && !$0.isActive && $0.end > now }
+    }
+
+    func workPlanSource(_ task: Block) -> String {
+        if let block = plannedWork(WorkTaskReference(task)), block.isPinned { return "You pinned this time." }
+        if store.placements(taskID: task.id).contains(where: { $0.occurrenceID == task.occurrenceID }) { return "Planned from your preferred time." }
+        if task.selectedForDay != nil { return "Planned from your Today selection." }
+        return "Automatically planned in your \(store.list(id: task.listID)?.availabilityCategoryRaw == "personal" ? "Personal" : "Work") hours."
+    }
+
+    func dismissWorkCompletion() { workCompletion = nil; workSelection = nil }
+
+    func undoWorkCompletion(now: Date = .now) {
+        guard let summary = workCompletion, let id = summary.undoID else { return }
+        guard store.undoCompletion(id) else {
+            notice = store.persistenceError ?? "This completion changed elsewhere and can no longer be undone here."
+            return
+        }
+        workCompletion = nil
+        notice = nil
+        workSelection = summary.task
+        if validWorkTask(summary.task) != nil {
+            resumeTaskID = summary.task.taskID
+            resumeOccurrenceID = summary.task.occurrenceID
+            persistResume()
+        }
+        tick(now: now, checkClockGap: false, materialChange: true)
+    }
+
+    func keepWorkPaused() { overrunNudge = nil; continuationProposal = nil }
+
+    func previewContinuation(now: Date = .now) -> WorkContinuationProposal? {
+        guard let nudge = overrunNudge, nudge.needsConfirmation,
+              let task = store.block(id: nudge.taskID), task.occurrenceID == nudge.occurrenceID,
+              validWorkTask(WorkTaskReference(task)) != nil,
+              let boundary = nextBoundary(for: task, at: now), boundary > now else { return nil }
+        let end = min(now.addingTimeInterval(15 * 60), boundary)
+        let active = ActiveScheduleInput(taskID: task.id, occurrenceID: task.occurrenceID, start: now, end: end)
+        let preview = workPreview(active: active, now: now)
+        return WorkContinuationProposal(task: WorkTaskReference(task), pausedAt: nudge.estimatedEnd,
+            proposedEnd: end, boundary: boundary, changes: workPlanChanges(in: preview, excluding: task.id))
+    }
+
+    func refreshContinuation(now: Date = .now) { continuationProposal = previewContinuation(now: now) }
+
+    @discardableResult
+    func confirmContinuation(_ reviewed: WorkContinuationProposal, now: Date = .now) -> Bool {
+        guard let current = previewContinuation(now: now) else {
+            continuationProposal = nil
+            notice = "Work cannot continue in this time. Review the next available slot."
+            return false
+        }
+        // Compare what the person can actually review (minute-level placements).
+        func signature(_ proposal: WorkContinuationProposal) -> [String] {
+            proposal.changes.map { "\($0.occurrenceID)|\(Int($0.previousStart.timeIntervalSince1970 / 60))|\($0.proposedStart.map { Int($0.timeIntervalSince1970 / 60) } ?? -1)" }
+        }
+        guard current.task == reviewed.task, current.boundary == reviewed.boundary,
+              signature(current) == signature(reviewed) else {
+            continuationProposal = current
+            notice = "The plan changed. Review the updated times before continuing."
+            return false
+        }
+        acceptMoreTime(now: now)
+        return activeSession?.occurrenceID == reviewed.task.occurrenceID
+    }
+
+    func previewMove(_ block: PlannedBlock, to start: Date, now: Date = .now) -> [WorkPlanChange] {
+        guard let task = store.block(id: block.taskID), validWorkTask(WorkTaskReference(task)) != nil,
+              task.occurrenceID == block.occurrenceID else { return [] }
+        let duration = min(block.end.timeIntervalSince(block.start), remainingMinutes(for: task, now: now) * 60)
+        var placements = store.placements().filter { $0.id != block.placementID }.map {
+            PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID, start: $0.start, end: $0.end, isPinned: $0.isPinned)
+        }
+        placements.append(PlacementInput(id: block.placementID ?? UUID(), taskID: task.id, occurrenceID: task.occurrenceID,
+            start: start, end: start.addingTimeInterval(duration), isPinned: false))
+        let active = activeSession.flatMap { session -> ActiveScheduleInput? in
+            guard let task = store.block(id: session.taskID) else { return nil }
+            return ActiveScheduleInput(taskID: task.id, occurrenceID: task.occurrenceID, start: session.startedAt,
+                end: min(targetEnd(for: session, task: task, now: now), activeBoundary ?? .distantFuture))
+        }
+        return workPlanChanges(in: workPreview(active: active, placements: placements, now: now), excluding: task.id)
+    }
+
+    private func workPreview(active: ActiveScheduleInput?, placements: [PlacementInput]? = nil, now: Date) -> CalendarPlan {
+        let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted }))) ?? [])
+            .filter { validWorkTask(WorkTaskReference($0)) != nil }
+        let placements = placements ?? store.placements().filter { !missedPlacementIDs.contains($0.id) }.map {
+            PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID, start: $0.start, end: $0.end, isPinned: $0.isPinned)
+        }
+        return AdaptiveScheduler.plan(tasks: tasks.map { scheduleInput(for: $0, now: now) }, preferences: preferences,
+            busyTimes: externalCalendars.busyTimes, placements: placements, active: active, now: now, calendar: calendar)
+    }
+
+    private func workPlanChanges(in preview: CalendarPlan, excluding taskID: UUID) -> [WorkPlanChange] {
+        var seen: Set<UUID> = []
+        return plan.blocks.compactMap { old -> WorkPlanChange? in
+            guard old.taskID != taskID, !old.isActive, !old.isPinned, !seen.contains(old.occurrenceID),
+                  let task = store.block(id: old.taskID), validWorkTask(WorkTaskReference(task)) != nil,
+                  !preview.blocks.contains(where: { $0.occurrenceID == old.occurrenceID && $0.start == old.start && $0.end == old.end }) else { return nil }
+            seen.insert(old.occurrenceID)
+            let next = preview.blocks.first { $0.occurrenceID == old.occurrenceID }
+            return WorkPlanChange(taskID: old.taskID, occurrenceID: old.occurrenceID, title: task.displayTitle,
+                previousStart: old.start, proposedStart: next?.start)
+        }
+    }
+
+    private func validateWorkReferences() {
+        if resumeTaskID != nil && resumableTask == nil { resumeTaskID = nil; resumeOccurrenceID = nil; persistResume() }
+        if let reference = workSelection, validWorkTask(reference) == nil {
+            workSelection = nil
+            if isWorkPanelPresented && workCompletion == nil { notice = "This task occurrence is no longer available. Choose another task." }
+        }
+        if let reference = pendingWorkStart, validWorkTask(reference) == nil { pendingWorkStart = nil; switchingFrom = nil }
+    }
+
+    private func persistResume() {
+        defaults.set(resumeTaskID?.uuidString, forKey: "work.resumeTaskID")
+        defaults.set(resumeOccurrenceID?.uuidString, forKey: "work.resumeOccurrenceID")
     }
 
     private func nextBoundary(for task: Block, at now: Date) -> Date? {

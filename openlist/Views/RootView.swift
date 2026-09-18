@@ -370,7 +370,6 @@ struct RootView: View {
 
     private var contentArea: some View {
         VStack(spacing: 0) {
-            CalendarWorkBanner()
             routedContent
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -433,6 +432,7 @@ struct RootView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            WorkToolbar()
             Button("Search", systemImage: "magnifyingglass") { env.navigator.isSearchOpen = true }
                 .labelStyle(.iconOnly)
             .help("Search (⌘F)")

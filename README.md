@@ -243,11 +243,29 @@ breaks and date overrides. Estimates start at an editable 30 minutes. Work can
 split into sessions, with a 25-minute minimum by default and a per-task
 **Keep task together** option.
 
-Start work explicitly. Active overruns extend in 15-minute increments and move
-flexible tasks. Meetings, unavailable hours, lock, and sleep pause work; a task
+Use **Work** in the toolbar to review a suggestion's planned time, duration,
+deadline, and source. Suggestions never open the panel or start tracking by
+themselves. **Later → Remind in 15 minutes** quiets that occurrence without
+moving the plan; **Move planned time** previews affected work separately.
+
+Start work explicitly. The toolbar shows the active task and recorded minutes,
+with **Stop** always available. **Stop working** saves the session and leaves the
+task open; **Complete task** completes the occurrence. Stopped work can be resumed
+as a new segment. Switching tasks asks before saving the old segment and starting
+another. Completion can be undone without restarting a timer.
+
+Overruns can continue in free time, but the **first extension that would move
+other work pauses recording** and asks for approval. Work shows the affected
+tasks' old and proposed times, rechecks the plan when accepted, and excludes time
+spent waiting. Meetings, unavailable hours, lock, and sleep pause work; a task
 can opt into tracking away from the Mac. Move blocks to express a preference or
 choose **Pin time** for fixed placements. Deadline coverage distinguishes
 **Scheduled**, **Cannot fit before deadline**, and **Outside planning horizon**.
+
+The **Work** menu and command palette (⌘K) offer Show work, Start selected task,
+Stop current session, Resume task, and Complete current task. Existing selected-task
+shortcuts keep their meaning. Optional background work notifications are enabled
+in Calendar settings; reminder suppression survives replanning and restarting.
 
 Connected macOS calendars supply read-only busy time. Session and completion
 history preserve recurring occurrences, support recorded-time corrections, and
@@ -304,8 +322,9 @@ pointer feedback lasts 140 ms; task rearrangement lasts 200 ms. Reduce Motion
 disables custom movement.
 Back restores native scroll coordinates, including the negative offset beneath
 the toolbar, so returning to a page does not clip its heading or accumulate drift.
-Routine rescheduling summaries stay in Calendar; active-work controls, save
-failures, and actionable warnings remain available across the app.
+Rescheduling summaries and work notices live in the toolbar's Work panel, available
+from every destination. Passive changes never displace the current document.
+Save failures remain visible across the app.
 
 Row-selection handles reveal on hover, selection, or keyboard focus without
 changing the row's hit target. They stay available to accessibility, and

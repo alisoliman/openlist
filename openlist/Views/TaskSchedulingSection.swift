@@ -87,8 +87,8 @@ struct TaskSchedulingSection: View {
             if !block.isCompleted {
                 HStack(spacing: 8) {
                     Button {
-                        if isActive { env.calendar.pause(reason: "Paused") } else { _ = env.calendar.start(task: block) }
-                    } label: { Label(isActive ? "Pause" : "Start", systemImage: isActive ? "pause.fill" : "play.fill") }
+                        if isActive { env.calendar.stopWorking() } else { env.calendar.requestWork(WorkTaskReference(block)) }
+                    } label: { Label(isActive ? "Stop working" : "Start working", systemImage: isActive ? "pause.fill" : "play.fill") }
                     .buttonStyle(.borderedProminent).tint(Theme.accent)
                     Button("Defer…") { showsDeferral = true }
                     Spacer(minLength: 0)

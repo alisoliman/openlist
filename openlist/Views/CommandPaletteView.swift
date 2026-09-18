@@ -106,6 +106,11 @@ struct CommandPaletteView: View {
             case newSection
             case showShortcuts
             case search
+            case showWork
+            case startWork(WorkTaskReference)
+            case stopWork
+            case resumeWork
+            case completeWork(WorkTaskReference)
         }
 
         var id: String
@@ -190,6 +195,18 @@ struct CommandPaletteView: View {
             PaletteItem(id: "shortcuts", title: "Keyboard Shortcuts", subtitle: "", symbol: "keyboard", accent: .graphite, kind: .showShortcuts, shortcut: "⌘/"),
         ]
         result.append(contentsOf: commands.filter { trimmedQuery.isEmpty || matches($0.title) })
+        var workCommands = [PaletteItem(id: "show-work", title: "Show work", subtitle: "Planned tasks and session controls", symbol: "timer", accent: .violet, kind: .showWork)]
+        if env.navigator.selection.count == 1, let id = env.navigator.selection.first,
+           let task = env.store.block(id: id), env.calendar.validWorkTask(WorkTaskReference(task)) != nil {
+            workCommands.append(PaletteItem(id: "start-work", title: "Start selected task", subtitle: task.displayTitle, symbol: "play.circle", accent: .violet, kind: .startWork(WorkTaskReference(task))))
+        }
+        if let session = env.calendar.activeSession, let task = env.store.block(id: session.taskID) {
+            workCommands.append(PaletteItem(id: "stop-work", title: "Stop current session", subtitle: "Keep \(session.title) open", symbol: "stop.circle", accent: .violet, kind: .stopWork))
+            workCommands.append(PaletteItem(id: "complete-work", title: "Complete current task", subtitle: session.title, symbol: "checkmark.circle", accent: .green, kind: .completeWork(WorkTaskReference(task))))
+        } else if let task = env.calendar.resumableTask {
+            workCommands.append(PaletteItem(id: "resume-work", title: "Resume task", subtitle: task.displayTitle, symbol: "play.circle", accent: .violet, kind: .resumeWork))
+        }
+        result.append(contentsOf: workCommands.filter { trimmedQuery.isEmpty || matches($0.title) })
 
         return result.enumerated().sorted { lhs, rhs in
             let left = rank(lhs.element)
@@ -249,6 +266,17 @@ struct CommandPaletteView: View {
             env.navigator.isShortcutSheetOpen = true
         case .search:
             env.navigator.isSearchOpen = true
+        case .showWork:
+            env.calendar.showWork()
+        case let .startWork(reference):
+            env.calendar.requestWork(reference)
+        case .stopWork:
+            env.calendar.stopWorking()
+            env.calendar.showWork()
+        case .resumeWork:
+            env.calendar.resume()
+        case let .completeWork(reference):
+            if let task = env.calendar.validWorkTask(reference) { env.calendar.complete(task: task); env.calendar.showWork() }
         }
         dismiss()
     }

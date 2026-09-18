@@ -42,6 +42,9 @@ coordinator.tick(now: date(14, 9, 20))
 check(coordinator.activeSession == nil && store.workSessions().isEmpty, "passing planned start never implies active work")
 check(coordinator.start(task: a, now: date()), "explicit Start opens an available session")
 check(coordinator.activeSession?.taskID == a.id, "exactly the started task is active")
+coordinator.tick(now: date(14, 9, 30), checkClockGap: false)
+check(coordinator.activeSession == nil, "first displacement requires consent")
+coordinator.acceptMoreTime(now: date(14, 9, 30))
 coordinator.tick(now: date(14, 9, 31), checkClockGap: false)
 let activeForecast = coordinator.plan.blocks.first { $0.isActive }
 check(activeForecast?.end == date(14, 9, 45), "31-minute overrun extends the original estimate to 45 minutes")
@@ -60,6 +63,7 @@ check(store.workSessions(taskID: a.id).first?.durationMinutes() == 5, "lock paus
 coordinator.handleMacReturn(now: date(14, 11, 15))
 check(coordinator.activeSession == nil && coordinator.resumeTaskID == a.id, "return requires approval rather than auto-resuming")
 store.setTracksAway(true, for: a)
+store.setTaskEstimate(180, for: a) // Keep the estimate beyond lunch to isolate the hard-boundary rule.
 check(coordinator.start(task: a, now: date(14, 11, 15)), "away-tracking task can start")
 coordinator.handleMacUnavailable(reason: "Mac slept", now: date(14, 11, 20))
 check(coordinator.activeSession?.taskID == a.id, "per-task away opt-in keeps session active")
@@ -332,11 +336,14 @@ func checkSchedulingNudges() throws {
         check(planner.overrunNudge?.kind == .headsUp && planner.overrunNudge?.estimatedEnd == date(14, 9, 30), "estimated finish gives one quiet heads-up")
         check(planner.startNudge == nil, "an active task suppresses unstarted work nudges")
         planner.tick(now: date(14, 9, 30), checkClockGap: false)
-        check(planner.activeSession != nil && planner.plan.blocks.first { $0.isActive }?.end == date(14, 9, 45), "one 15-minute extension is automatic")
+        check(planner.activeSession == nil && planner.overrunNudge?.needsConfirmation == true, "the first displacement pauses for approval")
+        check(planner.plan.blocks.first { $0.taskID == next.id }?.start == date(14, 9, 30), "unapproved extension preserves the next task")
+        planner.acceptMoreTime(now: date(14, 9, 30))
+        check(planner.activeSession != nil && planner.plan.blocks.first { $0.isActive }?.end == date(14, 9, 45), "explicit approval grants 15 minutes")
         let nextAnchor = planner.plan.blocks.first { $0.taskID == next.id }!
-        check(nextAnchor.start == date(14, 9, 45), "the first extension gently moves the following flexible task")
+        check(nextAnchor.start == date(14, 9, 45), "the approved extension moves the following flexible task")
         check(planner.rescheduleSummary?.taskIDs == [next.id], "extension summary names displaced work")
-        check(planner.overrunNudge == nil, "heads-up clears after the one automatic extension")
+        check(planner.overrunNudge == nil, "heads-up clears after the approved extension")
         planner.tick(now: date(14, 9, 44), checkClockGap: false)
         check(planner.overrunNudge == nil && planner.plan.blocks.first { $0.taskID == next.id }?.start == nextAnchor.start, "routine ticks do not repeat the heads-up or drift the next task")
         planner.tick(now: date(14, 9, 45), checkClockGap: false)
@@ -353,7 +360,7 @@ func checkSchedulingNudges() throws {
         check(planner.activeSession == nil && planner.overrunNudge?.needsConfirmation == true, "explicit approval does not reset an extra automatic extension")
         planner.complete(task: first, now: date(14, 10, 2))
         check(planner.overrunNudge == nil && planner.plan.blocks.allSatisfy { $0.taskID != first.id }, "Done clears the pending overrun and flexible work")
-        check(planner.completedBlocks.filter { $0.taskID == first.id }.count == 2, "completed calendar retains both actual work sessions")
+        check(planner.completedBlocks.filter { $0.taskID == first.id }.count == 3, "completed calendar retains all actual work segments")
         check(planner.visibleBlocks.filter { $0.taskID == first.id }.allSatisfy { $0.isCompleted && $0.isTimeTracked }, "completion display distinguishes tracked history from upcoming work")
         check(planner.completedBlocks.filter { $0.taskID == first.id }.reduce(0, { $0 + $1.durationMinutes }) == 60, "completed history excludes time spent waiting for confirmation")
     }
@@ -365,6 +372,7 @@ func checkSchedulingNudges() throws {
         planner.bootstrap(now: date(), monitorsEnabled: false)
         check(planner.start(task: first, now: date()), "editable active estimate fixture starts")
         planner.tick(now: date(14, 9, 30), checkClockGap: false)
+        planner.acceptMoreTime(now: date(14, 9, 30))
         first.schedulingEstimateMinutes = 60
         fixtureStore.save()
         planner.storeDidChange(now: date(14, 9, 31))
@@ -407,9 +415,9 @@ func checkSchedulingNudges() throws {
         planner.bootstrap(now: date(), monitorsEnabled: false)
         check(planner.start(task: first, now: date()), "late callback fixture starts explicitly")
         planner.tick(now: date(14, 9, 58), checkClockGap: false)
-        check(planner.activeSession == nil && fixtureStore.workSessions(taskID: first.id).first?.endedAt == date(14, 9, 45), "a late callback grants one extension but never records through a second conflicting extension")
+        check(planner.activeSession == nil && fixtureStore.workSessions(taskID: first.id).first?.endedAt == date(14, 9, 30), "a late callback never records through the first unapproved displacement")
         check(planner.overrunNudge?.needsConfirmation == true, "late callbacks retain the required continued-work decision")
-        check(planner.plan.assessments.first { $0.taskID == deadline.id }?.status == .cannotFitBeforeDeadline, "an automatic extension that consumes a deadline's time exposes the resulting risk")
+        check(planner.plan.assessments.first { $0.taskID == deadline.id }?.status == .cannotFitBeforeDeadline, "missed deadline work remains visibly at risk")
     }
     do {
         let (fixtureStore, planner, lifetime) = try fixture(events: [FixedBusyTime(id: "short-extension", title: "Soon meeting", start: date(14, 9, 35), end: date(14, 10))])
@@ -465,14 +473,14 @@ func checkSchedulingNudges() throws {
         planner.bootstrap(now: date(), monitorsEnabled: false)
         check(planner.start(task: first, now: date()), "delayed direct action fixture starts")
         planner.tick(now: date(14, 9, 31), checkClockGap: false)
-        check(planner.trackedMinutes(for: first, now: date(14, 9, 46)) == 45, "elapsed display obeys an expired approval boundary before the timer fires")
+        check(planner.trackedMinutes(for: first, now: date(14, 9, 46)) == 30, "elapsed display obeys the first unapproved boundary before the timer fires")
         if completes {
             fixtureStore.toggleCompletion(first, now: date(14, 9, 46))
             planner.storeDidChange(now: date(14, 9, 46))
         } else {
             planner.pause(now: date(14, 9, 46))
         }
-        check(fixtureStore.workSessions(taskID: first.id).first?.endedAt == date(14, 9, 45), "direct Pause and ordinary checkbox Done cannot record through an unapproved displacement")
+        check(fixtureStore.workSessions(taskID: first.id).first?.endedAt == date(14, 9, 30), "direct Stop and ordinary checkbox completion cannot record through an unapproved displacement")
     }
     do {
         let (fixtureStore, planner, lifetime) = try fixture()
@@ -483,7 +491,7 @@ func checkSchedulingNudges() throws {
         check(planner.start(task: first, now: date()), "direct first-extension fixture starts")
         fixtureStore.toggleCompletion(first, now: date(14, 9, 31))
         planner.storeDidChange(now: date(14, 9, 31))
-        check(fixtureStore.workSessions(taskID: first.id).first?.durationMinutes() == 31, "a direct Done retains actual work inside the allowed first automatic extension")
+        check(fixtureStore.workSessions(taskID: first.id).first?.durationMinutes() == 30, "a direct completion caps recording before any unapproved displacement")
     }
     do {
         let (fixtureStore, planner, lifetime) = try fixture()
@@ -520,6 +528,7 @@ func checkSchedulingNudges() throws {
     }
 }
 try checkSchedulingNudges()
+try checkWorkCompanion()
 try checkManualMoveFeedback()
 try checkReadOnlyRecovery()
 print("Passed \(checks) calendar runtime checks")
