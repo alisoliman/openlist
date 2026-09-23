@@ -671,5 +671,8 @@ private struct NXUnplannedColumn: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
         .contentShape(Rectangle())
         .onTapGesture { env.workbench.inspect(task.id) }
+        // Keeps the Plan button its own element under the card's tap target.
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "Open details") { env.workbench.inspect(task.id) }
     }
 }
