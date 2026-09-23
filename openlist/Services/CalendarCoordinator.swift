@@ -14,7 +14,8 @@ final class CalendarCoordinator {
     /// What the calendar draws. Only explicit planning puts a task there: its
     /// placements at their saved times, past ones included, the running work,
     /// and completed occurrences that had a slot or recorded work. The plan's
-    /// flexible blocks only drive Start nudges and suggestions.
+    /// flexible blocks only drive Start nudges, suggestions and what more time
+    /// for the running work would move.
     private(set) var visibleBlocks: [PlannedBlock] = []
     private(set) var startNudge: CalendarStartNudge? {
         didSet { if oldValue != startNudge { onNudgesChanged?() } }
@@ -694,12 +695,14 @@ final class CalendarCoordinator {
     private func moveMissedWork(now: Date) {
         // Read the established plan before moving anything. A fresh plan starting
         // at `now` would hide missed starts forever and make the whole day drift.
-        let missed = plan.blocks.filter {
-            !$0.isActive && $0.occurrenceID != activeSession?.occurrenceID &&
-                $0.start.addingTimeInterval(5 * 60) <= now &&
-                // A placement keeps its whole slot; it's missed only once the slot is over.
-                ($0.placementID == nil || $0.end <= now) &&
-                $0.occurrenceID != overrunNudge?.occurrenceID
+        let slotEnds = Dictionary(store.placements().map { ($0.id, $0.end) }, uniquingKeysWith: max)
+        let missed = plan.blocks.filter { block in
+            !block.isActive && block.occurrenceID != activeSession?.occurrenceID &&
+                block.start.addingTimeInterval(5 * 60) <= now &&
+                // A placement keeps its whole saved slot, even when less work is
+                // left than it holds; it's missed only once that slot is over.
+                (block.placementID.map { (slotEnds[$0] ?? block.end) <= now } ?? true) &&
+                block.occurrenceID != overrunNudge?.occurrenceID
         }
         var handled = Set<UUID>()
         for block in missed where handled.insert(block.occurrenceID).inserted {
@@ -889,8 +892,10 @@ final class CalendarCoordinator {
         return end > now
     }
 
+    /// The occurrence's next slot as the calendar draws it. Flexible work isn't
+    /// planned until it's placed, so it has none.
     func plannedWork(_ reference: WorkTaskReference, now: Date = .now) -> PlannedBlock? {
-        plan.blocks.first { $0.occurrenceID == reference.occurrenceID && !$0.isActive && $0.end > now }
+        visibleBlocks.first { $0.occurrenceID == reference.occurrenceID && !$0.isActive && !$0.isCompleted && $0.end > now }
     }
 
     func workPlanSource(_ task: Block) -> String {

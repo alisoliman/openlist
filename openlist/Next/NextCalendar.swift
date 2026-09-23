@@ -39,8 +39,9 @@ struct NextCalendarScreen: View {
     static func rangeText(_ dates: [Date]) -> String {
         guard let first = dates.first, let last = dates.last else { return "" }
         if dates.count == 1 { return first.formatted(.dateTime.weekday(.wide).day().month(.wide)) }
-        // The locale orders day and month, and drops a shared month once.
-        return (first..<last).formatted(.interval.day().month(.wide))
+        // The locale orders day and month, and drops a shared month once. The
+        // dash gets the design's plain spaces, not the formatter's thin ones.
+        return (first..<last).formatted(.interval.day().month(.wide)).replacingOccurrences(of: "\u{2009}", with: " ")
     }
 }
 
@@ -251,9 +252,10 @@ private struct NXDayHead: View {
                     .foregroundStyle(isToday ? style.accent : weekend ? NX.ink(0.5) : NX.ink)
                 Spacer(minLength: 0)
                 if load > 0 {
-                    // To a tenth of an hour, and never 0h for a day that has something in it.
-                    let tenths = max(1, (load * 10).rounded())
-                    Text(tenths.truncatingRemainder(dividingBy: 10) == 0 ? "\(Int(tenths / 10))h" : String(format: "%.1fh", tenths / 10))
+                    // Whole hours plain, anything else to a tenth, and never 0h
+                    // for a day that has something in it.
+                    let fractional = abs(load - load.rounded()) > 0.001
+                    Text(fractional ? String(format: "%.1fh", max(0.1, (load * 10).rounded() / 10)) : "\(Int(load.rounded()))h")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(NX.ink(0.36))
                         .lineLimit(1)
@@ -489,10 +491,8 @@ private struct NXCalendarBlock: View {
                 .padding(.top, 1)
                 .contentShape(Circle())
                 .onTapGesture {
-                    // A done block reopens its task, unless a repeat has moved on since.
-                    if !block.isCompleted || (task?.isCompleted == true && task?.occurrenceID == block.occurrenceID) {
-                        workbench.toggle(block.taskID)
-                    }
+                    // A done block reopens its task where it was, unless a repeat has moved on since.
+                    if block.isCompleted { workbench.reopen(block: block) } else { workbench.toggle(block.taskID) }
                 }
                 Text(task?.displayTitle ?? block.titleSnapshot ?? "Task")
                     .font(.system(size: 10.5, weight: .semibold))
@@ -569,8 +569,9 @@ private struct NXCalendarBlock: View {
         let time = "\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))"
         if missed { return time + " · carried forward" }
         if working {
-            // Work cut short by a meeting runs into it.
-            if let meeting = env.calendar.externalCalendars.busyTimes.first(where: { abs($0.start.timeIntervalSince(block.end)) < 1 }) {
+            // In its last minute, work cut short by a meeting runs into it.
+            if block.end.timeIntervalSince(now) <= 60,
+               let meeting = env.calendar.externalCalendars.busyTimes.first(where: { abs($0.start.timeIntervalSince(block.end)) < 1 }) {
                 return time + " · runs into " + (meeting.title.isEmpty ? "busy time" : meeting.title)
             }
             return time + (env.calendar.workExtension?.occurrenceID == block.occurrenceID ? " · extended" : " · working")

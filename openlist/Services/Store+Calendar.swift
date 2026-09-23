@@ -310,12 +310,22 @@ extension Store {
             let tracked = !actual.isEmpty
             let intervals: [CompletionCalendarInterval]
             if tracked {
-                intervals = actual.map { session in
+                var spans = actual.map { session in
                     let seconds = session.durationMinutes() * 60
                     let maximum = max(0, Date.distantFuture.timeIntervalSince(session.startedAt))
                     let duration = seconds.isFinite ? min(maximum, max(0, seconds)) : maximum
                     return CompletionCalendarInterval(start: session.startedAt, end: session.startedAt.addingTimeInterval(duration))
                 }
+                // Work done in a planned slot keeps the slot, as its running block
+                // did, stretched to any work past either end. Work elsewhere shows
+                // where it happened, and a slot nobody worked in shows nothing.
+                for slot in record.plannedIntervals {
+                    let inside = spans.filter { $0.start < slot.end && $0.end > slot.start }
+                    guard let start = inside.map(\.start).min(), let end = inside.map(\.end).max() else { continue }
+                    spans.removeAll { $0.start < slot.end && $0.end > slot.start }
+                    spans.append(CompletionCalendarInterval(start: min(slot.start, start), end: max(slot.end, end)))
+                }
+                intervals = spans.sorted { $0.start < $1.start }
             } else if !record.plannedIntervals.isEmpty {
                 intervals = record.plannedIntervals
             } else {

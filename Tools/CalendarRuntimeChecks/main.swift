@@ -520,6 +520,9 @@ func checkSchedulingNudges() throws {
         planner.bootstrap(now: date(), monitorsEnabled: false)
         let neighbor = planner.plan.blocks.first { $0.taskID == other.id }!
         check(planner.visibleBlocks.map(\.taskID) == [pinned.id] && fixtureStore.calendarPlannedBlocks.map(\.placementID) == [placement.id], "only the explicit placement is drawn and snapshotted, not the flexible neighbor")
+        check(planner.plannedWork(WorkTaskReference(pinned), now: date())?.placementID == placement.id
+                && planner.plannedWork(WorkTaskReference(other), now: date()) == nil,
+              "the Work panel's planned time is the drawn slot, and flexible work has none")
         planner.tick(now: date(14, 9, 20), checkClockGap: false)
         check(planner.plan.blocks.contains { $0.placementID == placement.id } && planner.startNudge?.taskID == pinned.id, "an unstarted pinned block keeps its slot and its Start nudge while the slot runs")
         planner.tick(now: date(14, 9, 31), checkClockGap: false)
@@ -574,6 +577,39 @@ func checkSchedulingNudges() throws {
         planner.storeDidChange(now: date(14, 9, 11))
         check(done(placed).isEmpty && fixtureStore.completionRecords(taskID: placed.id).count == 1, "reopening takes the done block off the calendar and keeps the history")
         check(done(trashed).isEmpty && !planner.visibleBlocks.contains { $0.taskID == trashed.id }, "a trashed task leaves nothing on the calendar")
+    }
+    do {
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let placed = add("Reopened from its done block", to: fixtureStore)
+        fixtureStore.setPlacement(for: placed, start: date(14, 13), end: date(14, 13, 30), isPinned: true)
+        planner.bootstrap(now: date(), monitorsEnabled: false)
+        fixtureStore.toggleCompletion(placed, now: date(14, 9, 10))
+        planner.storeDidChange(now: date(14, 9, 10))
+        let done = planner.visibleBlocks.filter { $0.taskID == placed.id && $0.isCompleted }
+        // What the done block's check does: reopen, then put the new occurrence in the block's slot.
+        fixtureStore.toggleCompletion(placed, now: date(14, 9, 11))
+        for block in done { fixtureStore.setPlacement(for: placed, start: block.start, end: block.end, isPinned: true) }
+        planner.storeDidChange(now: date(14, 9, 11))
+        let drawn = planner.visibleBlocks.filter { $0.taskID == placed.id }
+        check(done.count == 1 && drawn.count == 1 && !drawn[0].isCompleted && drawn[0].occurrenceID == placed.occurrenceID
+                && drawn[0].start == date(14, 13) && drawn[0].end == date(14, 13, 30),
+              "a task reopened from its done block is drawn open at the same slot")
+    }
+    do {
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let pinned = add("A long slot for short work", to: fixtureStore)
+        let placement = fixtureStore.setPlacement(for: pinned, start: date(), end: date(14, 10), isPinned: true)!
+        planner.bootstrap(now: date(), monitorsEnabled: false)
+        func missed() -> Bool {
+            planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0.contains("Pinned time was missed") } == true
+        }
+        planner.tick(now: date(14, 9, 31), checkClockGap: false)
+        check(!missed() && planner.plan.blocks.contains { $0.placementID == placement.id } && planner.startNudge?.taskID == pinned.id,
+              "a slot longer than the work left in it isn't missed once the work would have ended")
+        planner.tick(now: date(14, 10, 1), checkClockGap: false)
+        check(missed(), "the slot is missed once the slot itself is over")
     }
 }
 try checkSchedulingNudges()

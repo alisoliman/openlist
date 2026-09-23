@@ -565,6 +565,33 @@ extension Workbench {
         }
     }
 
+    /// A done block's check. Reopens its task in the slots the block took, as
+    /// one Undo step, so it turns open (or missed) where it was drawn instead
+    /// of leaving the calendar. A repeat that has moved on stays done.
+    func reopen(block: PlannedBlock) {
+        guard let completionID = block.completionID, let task = store.block(id: block.taskID),
+              task.isCompleted, task.occurrenceID == block.occurrenceID else { return }
+        let id = task.id
+        let spans = calendar.visibleBlocks.filter { $0.completionID == completionID && $0.end > $0.start }
+            .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: true) }
+        reopen(id)
+        // Reopening gives the task a new occurrence, with no slot of its own yet.
+        guard let reopened = store.block(id: id), !reopened.isCompleted, !spans.isEmpty else { return }
+        let occurrenceID = reopened.occurrenceID
+        let fields = [TaskFields(reopened)]
+        setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
+        // Grouped with the reopen, so Undo takes the slots back before the task closes again.
+        registerUndo("Reopened \(describe([reopened]))", undo: { workbench in
+            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: [])
+            workbench.restore(fields)
+            workbench.calendar.replan()
+        }, redo: { workbench in
+            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
+            workbench.calendar.replan()
+        })
+        calendar.replan()
+    }
+
     func startWork(_ id: UUID) {
         guard let task = store.block(id: id) else { return }
         let active = calendar.activeSession
@@ -738,9 +765,10 @@ extension Workbench {
     private func pauseReason(for task: Block, notice: String?) -> (text: String, conflict: Bool)? {
         let title = NXFormat.quoted(task.displayTitle)
         if needsMoreTime(task), let nudge = calendar.overrunNudge {
-            // The flexible work more time would push back, as the calendar still shows it.
+            // The placed work more time would push back. Flexible work isn't on
+            // the calendar, so it's only counted, never named.
             let next = calendar.plan.blocks.filter {
-                $0.occurrenceID != task.occurrenceID && !$0.isPinned && !$0.isActive
+                $0.occurrenceID != task.occurrenceID && $0.placementID != nil && !$0.isPinned && !$0.isActive
                     && $0.start < nudge.proposedEnd && $0.end > nudge.estimatedEnd
             }.min { $0.start < $1.start }
             if let next, let other = store.block(id: next.taskID) {
