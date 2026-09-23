@@ -13,8 +13,10 @@ import SwiftUI
 @Observable @MainActor
 final class NXWindowChrome {
     static let barHeight: CGFloat = 52
-    /// From the window's edge to the close button's edge.
-    static let leadingInset: CGFloat = 20
+    /// From the window's edge to the close button's centre: the design's first
+    /// 12pt dot starts 20pt in. Placing by centre keeps the light there
+    /// however wide AppKit draws the button's frame around it.
+    static let firstCentre: CGFloat = 26
     /// Where the lights end, from the window's leading edge. The design's
     /// three 12pt dots 8pt apart end at 72.
     private(set) var trailingEdge: CGFloat = 72
@@ -98,7 +100,7 @@ final class NXWindowChrome {
         for (index, button) in buttons.enumerated() {
             guard let parent = button.superview else { continue }
             let size = button.frame.size
-            let centre = NSPoint(x: Self.leadingInset + size.width / 2 + CGFloat(index) * spacing,
+            let centre = NSPoint(x: Self.firstCentre + CGFloat(index) * spacing,
                                  y: windowHeight - Self.barHeight / 2)
             let local = parent.convert(centre, from: nil)
             let origin = NSPoint(x: (local.x - size.width / 2).rounded(), y: (local.y - size.height / 2).rounded())

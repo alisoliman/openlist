@@ -66,9 +66,10 @@ final class LibraryMaintenance {
     }
 
     /// Takes today's snapshot soon after launch if it's due, and again as each
-    /// new day starts while Openlist runs.
+    /// new day starts while Openlist runs. Review sessions are thrown away, so
+    /// they take none.
     func startDailySnapshots(settings: AppSettings) {
-        guard self.settings == nil else { return }
+        guard self.settings == nil, ReviewSession.identifier == nil else { return }
         self.settings = settings
         dayObserver = NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {

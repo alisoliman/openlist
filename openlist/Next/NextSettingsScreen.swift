@@ -231,7 +231,8 @@ private struct NXSettingToggle: View {
                         .offset(x: isOn ? 16 : 2)
                         .animation(style.spring(200), value: isOn)
                 }
-                .animation(.easeOut(duration: 0.18), value: isOn)
+                // The design's `background 180ms ease` (CSS `ease`).
+                .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: style.ms(180) / 1000), value: isOn)
         }
         .onTapGesture { isOn.toggle() }
         .accessibilityRepresentation { Toggle(label, isOn: $isOn) }
@@ -242,11 +243,17 @@ private struct NXValuePill: View {
     let text: String
     var swatch: Color?
 
+    /// Where the text starts, from the pill's leading edge: its padding, then
+    /// the swatch and its gap.
+    static func textInset(hasSwatch: Bool) -> CGFloat { hasSwatch ? 9 + 9 + 6 : 9 }
+
     var body: some View {
         HStack(spacing: 6) {
             if let swatch { Circle().fill(swatch).frame(width: 9, height: 9) }
             Text(text)
         }
+        // The design's `12px/1` line box, so the pill is 24pt tall.
+        .frame(height: 12)
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(NX.ink(0.55))
         .lineLimit(1)
@@ -290,7 +297,7 @@ private func choices<Value: Hashable>(_ values: [Value], selection: Binding<Valu
 }
 
 /// A row whose value pill pops up a menu, the way a pop-up button does:
-/// the current choice opens over the pill. A click anywhere on the row opens it.
+/// the current choice opens over the pill. Pressing anywhere on the row opens it.
 private struct NXSettingMenu: View {
     let label: String
     let hint: String
@@ -306,10 +313,14 @@ private struct NXSettingMenu: View {
             NXValuePill(text: value, swatch: swatch)
                 .background { NXMenuAnchorView(anchor: anchor) }
         }
-        .onTapGesture { anchor.popUp(entries) }
+        .overlay { NXMenuPress(action: popUp) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction { anchor.popUp(entries) }
+        .accessibilityAction { popUp() }
+    }
+
+    private func popUp() {
+        anchor.popUp(entries, titleInset: NXValuePill.textInset(hasSwatch: swatch != nil))
     }
 }
 
@@ -320,7 +331,8 @@ private final class NXMenuAnchor: NSObject {
     /// The open menu's actions, by item tag.
     private var actions: [() -> Void] = []
 
-    func popUp(_ entries: [NXMenuEntry]) {
+    /// `titleInset` is where the pill's text starts, from its leading edge.
+    func popUp(_ entries: [NXMenuEntry], titleInset: CGFloat) {
         guard let view else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -346,10 +358,21 @@ private final class NXMenuAnchor: NSObject {
                 menu.addItem(.separator())
             }
         }
-        // The current choice lands on the pill; with none, the menu drops from its bottom edge.
-        let top = view.isFlipped ? 0 : view.bounds.height
-        let bottom = view.isFlipped ? view.bounds.height : 0
-        menu.popUp(positioning: current, at: NSPoint(x: 0, y: current == nil ? bottom : top), in: view)
+        guard let current else {
+            // With no current choice, the menu drops from the pill's bottom edge.
+            menu.minimumWidth = view.bounds.width
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.isFlipped ? view.bounds.height : 0), in: view)
+            return
+        }
+        // A pop-up button's cell opens the menu with the current choice's title
+        // over its own and at least as wide as the button. Its frame is moved so
+        // that title sits where the pill's text does.
+        let cell = NSPopUpButtonCell(textCell: "", pullsDown: false)
+        cell.menu = menu
+        cell.select(current)
+        var frame = view.bounds
+        frame.origin.x += titleInset - cell.titleRect(forBounds: frame).minX
+        cell.performClick(withFrame: frame, in: view)
     }
 
     @objc private func run(_ item: NSMenuItem) {
@@ -374,5 +397,27 @@ private struct NXMenuAnchorView: NSViewRepresentable {
 
     final class Anchor: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+/// Opens the row's menu on mouse-down, as a pop-up button does, so a press
+/// can drag to a choice and release on it.
+private struct NXMenuPress: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> Press {
+        let view = Press()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ nsView: Press, context: Context) {
+        nsView.action = action
+    }
+
+    final class Press: NSView {
+        var action: (() -> Void)?
+
+        override func mouseDown(with event: NSEvent) { action?() }
     }
 }

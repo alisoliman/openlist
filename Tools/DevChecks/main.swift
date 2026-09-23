@@ -20,4 +20,5 @@ defer { settingsDefaults.removePersistentDomain(forName: settingsSuite) }
 let settings = AppSettings(defaults: settingsDefaults)
 check(settings.mcpPort == 45874 && !settings.mcpEnabled && !settings.mcpAllowsWrites, "Dev MCP is opt-in on a distinct default port")
 check(!settings.quickCaptureHotKeyEnabled, "Dev does not take production's global shortcut by default")
-print("Passed 9 development storage, preference and coexistence checks")
+check(!settings.showsCompletedTasks && settings.takesDailySnapshots, "Completed sections start collapsed and daily snapshots start on")
+print("Passed 10 development storage, preference and coexistence checks")

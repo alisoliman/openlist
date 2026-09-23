@@ -206,7 +206,7 @@ struct NextSidebar: View {
             HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
-                    .kerning(0.7)
+                    .kerning(0.735)
                     .textCase(.uppercase)
                     .foregroundStyle(NX.ink(0.34))
                 Image(systemName: "chevron.right")
