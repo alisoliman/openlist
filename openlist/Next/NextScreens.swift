@@ -51,18 +51,23 @@ struct NextTodayScreen: View {
     @Environment(\.nextLibrary) private var library
 
     var body: some View {
-        let workbench = env.workbench
-        let model = Self.model(library: library, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
-                               accent: style.accent) { env.store.placements(taskID: $0).isEmpty }
-        NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
-            NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
-                           subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
-                           progress: model.progress)
-            if model.clear {
-                todayClear(done: model.progress.done)
+        // The design's 20s clock: done-ago chips, late times, the date and the
+        // buckets all move on with it, midnight included.
+        TimelineView(.periodic(from: .now, by: 20)) { context in
+            let now = context.date
+            let workbench = env.workbench
+            let model = Self.model(library: library, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
+                                   accent: style.accent, now: now) { env.store.placements(taskID: $0).isEmpty }
+            NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
+                NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
+                               subtitle: now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
+                               progress: model.progress)
+                if model.clear {
+                    todayClear(done: model.progress.done)
+                }
+                NXGroupsStack(groups: model.groups, options: NXRowOptions(now: now))
+                NXAddRow(text: "Add a task for today", forToday: true)
             }
-            NXGroupsStack(groups: model.groups)
-            NXAddRow(text: "Add a task for today", forToday: true)
         }
     }
 
@@ -73,16 +78,19 @@ struct NextTodayScreen: View {
     }
 
     @MainActor
-    static func model(library: NextLibrary, workbench: Workbench, showsCompleted: Bool, accent: Color,
+    static func model(library: NextLibrary, workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
                       isUnplaced: @escaping (UUID) -> Bool) -> Model {
         let visible = library.tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
-        func offset(_ task: Block) -> Int? { task.dueDate.map { NXFormat.dayOffset($0) } }
-        // Overdue as everywhere else: a timed task once its time passes, a dated one from the next day.
-        let overdue = visible.filter { NXFormat.isPastDue($0) }.sorted(by: NXSort.byDue)
-        let due = visible.filter { offset($0) == 0 && !NXFormat.isPastDue($0) }.sorted(by: NXSort.byDue)
+        func offset(_ task: Block) -> Int? { task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
+        // By day, as the design: Overdue is earlier days only. A timed task
+        // whose time has passed stays in Due today, its time chip turned red.
+        let overdue = visible.filter { (offset($0) ?? 0) < 0 }.sorted(by: NXSort.byDue)
+        let due = visible.filter { offset($0) == 0 }.sorted(by: NXSort.byDue)
         let planned = visible.filter { workbench.isPlanned($0) && (offset($0) ?? 1) > 0 }.sorted(by: NXSort.byDue)
         let starred = visible.filter { $0.isStarred && (offset($0) ?? 1) > 0 && !workbench.isPlanned($0) }.sorted(by: NXSort.byDue)
-        let doneToday = library.tasks.filter(\.isCompletedToday).sorted(by: Block.byCompletionDate)
+        let doneToday = library.tasks
+            .filter { $0.isCompleted && $0.completedAt.map { NXFormat.dayOffset($0, now: now) == 0 } == true }
+            .sorted(by: Block.byCompletionDate)
 
         var groups: [NXGroup] = []
         if !overdue.isEmpty {
@@ -220,9 +228,10 @@ struct NextListScreen: View {
 
     var body: some View {
         let workbench = env.workbench
-        let (ordered, depths) = outline()
+        let (ordered, ancestors) = outline()
         let open = ordered.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
         let done = ordered.filter { $0.isCompleted && workbench.closing[$0.id] == nil }.sorted(by: Block.byCompletionDate)
+        let depths = Self.depths(open, ancestors: ancestors)
         let groups = Self.groups(open: open, done: done, showsCompleted: env.settings.showsCompletedTasks)
         let section = library.sectionTitle(for: list)
         let archived = library.archived.contains { $0.id == list.id }
@@ -244,7 +253,11 @@ struct NextListScreen: View {
                 }
                 NXViewModeButton(listID: list.id)
             }
-            NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: list.id, notes: true, depths: depths))
+            // The design's 20s clock, so Completed's done-ago chips move on.
+            TimelineView(.periodic(from: .now, by: 20)) { context in
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: list.id, notes: true,
+                                                                    depths: depths, now: context.date))
+            }
             NXAddRow(text: "Add to \(list.displayTitle)", listID: list.id)
         }
         .onAppear { env.store.markOpened(list) }
@@ -259,31 +272,44 @@ struct NextListScreen: View {
         return groups
     }
 
-    /// Tasks in document order, with their depth among task ancestors.
-    private func outline() -> ([Block], [UUID: Int]) {
+    /// Outline depth within the rows shown: only task ancestors in the same run
+    /// count, so a subtask whose parent is finished, or anything in Completed,
+    /// never looks nested under an unrelated row.
+    static func depths(_ rows: [Block], ancestors: [UUID: [UUID]]) -> [UUID: Int] {
+        let shown = Set(rows.lazy.map(\.id))
+        var depths: [UUID: Int] = [:]
+        for row in rows {
+            let depth = ancestors[row.id, default: []].filter(shown.contains).count
+            if depth > 0 { depths[row.id] = depth }
+        }
+        return depths
+    }
+
+    /// Tasks in document order, with each one's task ancestors, outermost first.
+    private func outline() -> ([Block], [UUID: [UUID]]) {
         // Archived lists opened from the Lists gallery keep their tasks too.
         let tasks = library.tasks(in: list.id)
         let taskIDs = Set(tasks.lazy.map(\.id))
         guard !taskIDs.isEmpty else { return ([], [:]) }
         let rows = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
         var ordered: [Block] = []
-        var depths: [UUID: Int] = [:]
-        // Stack of (document depth, is task) for the current ancestor chain.
-        var chain: [(depth: Int, isTask: Bool)] = []
+        var ancestors: [UUID: [UUID]] = [:]
+        // Stack of (document depth, task id or nil) for the current ancestor chain.
+        var chain: [(depth: Int, taskID: UUID?)] = []
         for row in rows {
             while let last = chain.last, last.depth >= row.depth { chain.removeLast() }
             let isTask = taskIDs.contains(row.id)
             if isTask {
                 ordered.append(row.block)
-                let depth = chain.filter(\.isTask).count
-                if depth > 0 { depths[row.id] = depth }
+                let above = chain.compactMap(\.taskID)
+                if !above.isEmpty { ancestors[row.id] = above }
             }
-            chain.append((row.depth, isTask))
+            chain.append((row.depth, isTask ? row.id : nil))
         }
         // Tasks the outline could not reach still belong on the screen.
         let seen = Set(ordered.map(\.id))
         ordered += tasks.filter { !seen.contains($0.id) }
-        return (ordered, depths)
+        return (ordered, ancestors)
     }
 }
 
@@ -302,7 +328,10 @@ struct NextLabelScreen: View {
             NXScreenHeader(tile: .icon("tag.fill"), color: label.nxColor, title: "#\(label.name)",
                            subtitle: "\(open.count) open \(open.count == 1 ? "task" : "tasks") with this label",
                            progress: (mine.filter(\.isCompleted).count, mine.count))
-            NXGroupsStack(groups: groups, options: NXRowOptions(showList: true, notes: true))
+            // The design's 20s clock, so Completed's done-ago chips move on.
+            TimelineView(.periodic(from: .now, by: 20)) { context in
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: true, notes: true, now: context.date))
+            }
             NXAddRow(text: "Add a task")
         }
     }

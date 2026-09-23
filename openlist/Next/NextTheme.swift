@@ -30,13 +30,13 @@ enum NX {
     // MARK: Semantic
 
     static let green = Color(hex: 0x2F9E6E)
-    /// The text variants are darker in light mode and lighter in dark mode so
-    /// they clear 4.5:1 on paper and on their own tinted chip fill.
-    static let greenText = dynamic(light: 0x1B6E4A, dark: 0x5CC596)
+    /// The text variants: the design's chip text hexes in light mode, lighter
+    /// in dark mode so they stay legible on their own tinted chip fill.
+    static let greenText = dynamic(light: 0x23865B, dark: 0x5CC596)
     static let red = Color(hex: 0xD8434B)
-    static let redText = dynamic(light: 0xB0343C, dark: 0xF07A80)
+    static let redText = dynamic(light: 0xC03A42, dark: 0xF07A80)
     static let amber = Color(hex: 0xE8A917)
-    static let amberText = dynamic(light: 0x8A6405, dark: 0xE8B84A)
+    static let amberText = dynamic(light: 0xA87A06, dark: 0xE8B84A)
     static let inbox = Color(hex: 0x3A7BD8)
     static let today = Color(hex: 0xE0861F)
     static let lists = Color(hex: 0x5B5BD6)

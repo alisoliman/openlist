@@ -27,7 +27,15 @@ struct NXChip: View {
     var fresh = false
     /// Tasks-screen chips: text only, colour only when it means something.
     var quiet = false
-    @State private var appeared = true
+    /// Starts hidden when the chip arrives fresh, so chipIn has somewhere to play from.
+    @State private var appeared: Bool
+
+    init(chip: NXChipModel, fresh: Bool = false, quiet: Bool = false) {
+        self.chip = chip
+        self.fresh = fresh
+        self.quiet = quiet
+        _appeared = State(initialValue: !fresh)
+    }
 
     var body: some View {
         let (fg, bg) = colors
@@ -49,8 +57,7 @@ struct NXChip: View {
         .scaleEffect(appeared ? 1 : 0.85)
         .offset(y: appeared ? 0 : 3)
         .opacity(appeared ? 1 : 0)
-        .onChange(of: fresh) { _, isFresh in if isFresh { pop() } }
-        .onAppear { if fresh { pop() } }
+        .onChange(of: fresh, initial: true) { _, isFresh in if isFresh { pop() } }
     }
 
     private var isLabel: Bool { if case .label = chip.tone { true } else { false } }
@@ -63,9 +70,11 @@ struct NXChip: View {
     }
 
     private func pop() {
-        guard style.lively else { return }
-        appeared = false
-        withAnimation(style.ease(280)) { appeared = true }
+        guard style.lively else { appeared = true; return }
+        withTransaction(\.disablesAnimations, true) { appeared = false }
+        // Showing again on the next update keeps the two changes from
+        // merging into none, which would skip chipIn.
+        Task { @MainActor in withAnimation(style.ease(280)) { appeared = true } }
     }
 
     private var colors: (Color, Color) {
