@@ -231,7 +231,7 @@ final class Workbench {
         navigator.isSearchOpen = false
         guard navigator.route != route else {
             focusID = nil
-            selection = []
+            clearSelection()
             return
         }
         navigator.go(to: route)

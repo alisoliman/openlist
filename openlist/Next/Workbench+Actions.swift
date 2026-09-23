@@ -167,15 +167,18 @@ extension Workbench {
             : "\(describe(tasks)) → \(NXFormat.dueLabel(NXFormat.day(offset: offset!)))"
         edit(tasks, label: label, icon: "calendar", tone: .accent) { task in
             guard let offset else { store.setDueDate(nil, for: task); return }
-            let day = NXFormat.day(offset: offset)
-            // A timed task keeps its time on the new day, unless that time has
-            // already gone by: then it's due that day, so Today still takes it
-            // out of Overdue.
-            let timed = task.includesTime ? task.dueDate.map { NXFormat.day(day, at: $0) } : nil
-            if let timed, timed > .now { store.setDueDate(timed, includesTime: true, for: task) }
-            else { store.setDueDate(day, includesTime: false, for: task) }
+            let due = dueDate(for: task, offset: offset)
+            store.setDueDate(due.date, includesTime: due.includesTime, for: task)
         }
         selection = []
+    }
+
+    /// `task` moved to the day `offset` from today. A timed task keeps its time
+    /// of day, as the design moves `due` and leaves `time` alone.
+    private func dueDate(for task: Block, offset: Int) -> (date: Date, includesTime: Bool) {
+        let day = NXFormat.day(offset: offset)
+        guard task.includesTime, let due = task.dueDate else { return (day, false) }
+        return (NXFormat.day(day, at: due), true)
     }
 
     func star(_ ids: [UUID]) {
@@ -456,7 +459,8 @@ extension Workbench {
             case .up:
                 let label = "\(NXFormat.quoted(task.displayTitle)) → \(NXFormat.dueLabel(NXFormat.day(offset: offset ?? 0))) · still in Inbox"
                 self.edit([task], label: label, icon: "calendar", tone: .accent) { task in
-                    self.store.setDueDate(NXFormat.day(offset: offset ?? 0), includesTime: false, for: task)
+                    let due = self.dueDate(for: task, offset: offset ?? 0)
+                    self.store.setDueDate(due.date, includesTime: due.includesTime, for: task)
                 }
                 keeps = true
             case .right:

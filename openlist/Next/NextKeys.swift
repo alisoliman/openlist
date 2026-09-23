@@ -313,7 +313,9 @@ final class NextKeyHandler {
             if openGlobal(chars, shift: shift) { return true }
         }
 
-        guard !shift else { return false }
+        // ⇧ with an action key does nothing, but quietly, like the key alone
+        // with no target; other ⇧-letters pass through.
+        guard !shift else { return key == Key.delete || key == Key.forwardDelete || Self.actionKeys.contains(chars) }
         // Each action ignores an empty target list.
         let ids = workbench.targetIDs
         if key == Key.delete || key == Key.forwardDelete {
@@ -351,4 +353,7 @@ final class NextKeyHandler {
     private static let goRoutes: [String: AppRoute] = [
         "i": .inbox, "t": .today, "c": .calendar, "a": .tasks, "l": .lists, "h": .activity,
     ]
+
+    /// The design's letter keys besides J/K: x, the row actions, N and G.
+    private static let actionKeys: Set<String> = ["x", "e", "t", "m", "f", "p", "d", "n", "g"]
 }
