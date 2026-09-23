@@ -261,7 +261,7 @@ if phase == "delete" {
     try check(child.parentID == nil && store.block(id: parentID) == nil, "Earlier outdent Undo cannot reattach to permanently erased parent")
     try snapshot().validate()
 } else if phase == "failure" {
-    let list = store.createList(title: "Failures")
+    let list = store.createList(title: "Failures", icon: "🧯")
     let task = store.appendBlock(kind: .task, text: "Atomic task", to: DocumentContext(listID: list.id))
     let attachment = Attachment(blockID: task.id, filename: "shared.dat", displayName: "Shared", contentType: "application/octet-stream", byteCount: 4, contentData: Data("safe".utf8))
     context.insert(attachment)
@@ -274,8 +274,18 @@ if phase == "delete" {
     try check(!task.isTrashed && store.block(id: task.id) != nil, "Failed deletion rolls back active state")
     try check(failing.trashError != nil, "Failed deletion has actionable error")
     try check(store.trashBlocks([task]), "Deletion remains retryable")
+    try check(task.trashMetadata?.listIcon == "🧯" && task.trashMetadata?.listTitle == "Failures",
+              "Deletion records the list's icon with its title")
+    let legacy = try JSONDecoder().decode(TrashMetadata.self, from: Data(#"{"deletedAt":0,"listTitle":"Older","labels":[]}"#.utf8))
+    try check(legacy.listIcon == nil && legacy.listTitle == "Older", "Metadata saved before list icons were recorded still decodes")
+    failing.trashNotice = "Restored to “Failures”."
     try check(!failing.restoreTrash(ids: [task.id]) && task.isTrashed, "Rejected restore save retains recoverable group")
+    try check(failing.trashNotice == nil && failing.trashError != nil,
+              "Failed restore reports its own error, never an earlier restore's notice")
+    failing.trashNotice = "Restored to “Failures”."
     try check(!failing.permanentlyEraseTrash(ids: [task.id]), "Rejected erase save reports failure")
+    try check(failing.trashNotice == nil && failing.trashError != nil,
+              "Failed erase reports its own error, never an earlier restore's notice")
     try check(task.isTrashed && attachment.contentData == Data("safe".utf8), "Failed erase preserves retained data")
     try check(store.restoreTrash(ids: [task.id]), "Restore after failed erase rematerializes bytes")
     try check(MediaStore.shared.readFile(filename: "shared.dat") == Data("safe".utf8), "Files survive rejected erase through durable payload")
@@ -316,6 +326,8 @@ if phase == "delete" {
     eraseUndo.endUndoGrouping()
     try check(store.permanentlyEraseTrash(ids: [editedID]), "Erase edited content")
     eraseUndo.undo()
+    try check(store.trashError == nil && store.block(id: editedID) == nil,
+              "Deletion Undo after erase restores nothing and reports no failure")
     eraseUndo.undo()
     if eraseUndo.canRedo { eraseUndo.redo() }
     try check(store.block(id: editedID) == nil, "Old structural Undo/Redo cannot resurrect permanent erase")
@@ -342,6 +354,34 @@ if phase == "delete" {
               "Attachment-only Undo cannot recreate orphan records after owner erase")
     try check(!FileManager.default.fileExists(atPath: MediaStore.shared.url(for: "undo-erase.txt").path),
               "Older Undo does not rematerialize permanently erased bytes")
+    let kept = store.appendBlock(kind: .task, text: "Kept from partial erase", to: DocumentContext(listID: list.id))
+    let erased = store.appendBlock(kind: .task, text: "Partly erased", to: DocumentContext(listID: list.id))
+    try store.persistChanges()
+    let keptID = kept.id, erasedID = erased.id
+    let partialUndo = UndoManager()
+    partialUndo.groupsByEvent = false
+    partialUndo.beginUndoGrouping()
+    try check(store.trashBlocks([kept, erased], undoManager: partialUndo), "Two tasks move to Trash as one deletion")
+    partialUndo.endUndoGrouping()
+    try check(store.isInTrash(keptID) && store.isInTrash(erasedID), "Each deleted task is its own Trash entry")
+    try check(store.permanentlyEraseTrash(ids: [erasedID]) && !store.isInTrash(erasedID), "One of them is erased")
+    partialUndo.undo()
+    try check(store.trashError == nil && store.block(id: keptID) != nil && store.block(id: erasedID) == nil,
+              "Undo restores what is left of a partly erased deletion")
+    partialUndo.redo()
+    try check(store.trashError == nil && store.block(id: keptID) == nil && store.isInTrash(keptID),
+              "Redo moves the rest to Trash again")
+    try check(!store.isInTrash(list.id), "A live list is not in Trash")
+    store.bootstrap()
+    let inbox = store.inboxList()!
+    let inboxIcon = inbox.icon
+    inbox.icon = "🗂"
+    let inboxTask = store.appendBlock(kind: .task, text: "Inbox deletion", to: DocumentContext(listID: inbox.id))
+    try store.persistChanges()
+    try check(store.trashBlocks([inboxTask]) && inboxTask.trashMetadata?.listIcon == "📥",
+              "Inbox deletion records the icon Inbox shows, whatever it stores")
+    inbox.icon = inboxIcon
+    try store.persistChanges()
     try check(store.permanentlyResetLibrary(), "Explicit Delete everything erases retained and active content")
     try check(context.fetchCount(FetchDescriptor<Block>()) == 0 && store.trashEntries().isEmpty, "Explicit reset leaves no recoverable content")
 }

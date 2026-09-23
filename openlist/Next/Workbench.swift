@@ -88,6 +88,12 @@ final class Workbench {
 
     var tray: TrayMessage?
     private(set) var log: [ChangeEntry] = []
+    /// When this session began. Changes counts saved history from then on as
+    /// this session's.
+    let startedAt = Date.now
+    /// Each moment the log's changes were written, undone or redone, in time
+    /// order, with the tasks and lists they covered.
+    @ObservationIgnored private var logWrites: [(at: Date, ids: Set<UUID>)] = []
     /// Bumped whenever the undo stack may have changed so labels re-read it.
     private(set) var undoRevision = 0
 
@@ -168,6 +174,9 @@ final class Workbench {
     @ObservationIgnored private var completions: [CompletionBatch] = []
     /// Trashes whose rows are still flying out.
     @ObservationIgnored private var trashes: [TrashBatch] = []
+    /// Every change whose window entry only moves tasks into or out of Trash,
+    /// by its log mark; each entry keeps its mark alive.
+    @ObservationIgnored private let trashUndos = NSHashTable<LogMark>.weakObjects()
     /// The pop and strike of each row in the dwell.
     @ObservationIgnored private var closingTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var flashTasks: [String: Task<Void, Never>] = [:]
@@ -361,8 +370,51 @@ final class Workbench {
             ChangeEntry(taskID: $0, label: label, icon: icon, tone: tone, at: now, batch: batchCounter)
         }
         insert(entries)
+        let mark = LogMark(batch: batchCounter, label: label, entries: entries, covers: covered(ids))
+        noteLogWrite(mark)
         undoRevision += 1
-        return LogMark(batch: batchCounter, label: label, entries: entries)
+        return mark
+    }
+
+    /// `ids` with everything their change writes history for too: each task's
+    /// subtasks and child blocks, and each list's nested lists.
+    private func covered(_ ids: [UUID]) -> Set<UUID> {
+        var covered = Set(ids)
+        let blocks = ids.compactMap { store.block(id: $0) }
+        for listID in Set(blocks.compactMap(\.listID)) {
+            let index = BlockTree.childIndex(of: store.blocks(inList: listID))
+            for block in blocks where block.listID == listID {
+                covered.formUnion(BlockTree.descendants(of: block.id, using: index).map(\.id))
+            }
+        }
+        let listIDs = Set(ids).subtracting(blocks.map(\.id))
+        if !listIDs.isEmpty {
+            let hierarchy = store.listHierarchy()
+            for id in listIDs { covered.formUnion(hierarchy.subtree(of: id).map(\.id)) }
+        }
+        return covered
+    }
+
+    private func noteLogWrite(_ mark: LogMark) {
+        logWrites.append((.now, mark.covers))
+        if logWrites.count > 1000 { logWrites.removeFirst(logWrites.count - 1000) }
+    }
+
+    /// Whether saved history from `date` about a task or list came from one of
+    /// the log's own writes — a change, its Undo or Redo — so it's already in
+    /// the log or was taken back. A write accounts for what it covered, saved
+    /// from 2 s before it to 3 s after; one that covered nothing, for all of it.
+    func logWrote(at date: Date, about ids: [UUID?]) -> Bool {
+        let from = date.addingTimeInterval(-3), to = date.addingTimeInterval(2)
+        // Writes are in time order; start at the first one late enough.
+        var low = 0, high = logWrites.count
+        while low < high {
+            let mid = (low + high) / 2
+            if logWrites[mid].at < from { low = mid + 1 } else { high = mid }
+        }
+        return logWrites[low...].prefix { $0.at <= to }.contains { write in
+            write.ids.isEmpty || ids.contains { $0.map(write.ids.contains) == true }
+        }
     }
 
     /// Puts entries back in batch order, so Redo returns a batch to where it was.
@@ -390,6 +442,7 @@ final class Workbench {
 
     private func unlog(_ mark: LogMark) {
         log.removeAll { $0.batch == mark.batch }
+        noteLogWrite(mark)
         markRestored(mark.entries.compactMap(\.taskID))
         showTray("Undid — \(mark.label)", icon: "arrow.uturn.backward", tone: .neutral)
         undoRevision += 1
@@ -397,6 +450,7 @@ final class Workbench {
 
     private func relog(_ mark: LogMark) {
         insert(mark.entries)
+        noteLogWrite(mark)
         undoRevision += 1
     }
 
@@ -603,6 +657,7 @@ final class Workbench {
         completion.pending = []
         for id in ids { closingTasks.removeValue(forKey: id)?.cancel() }
         write(ids.compactMap { store.block(id: $0) }, on: completion.changes)
+        noteLogWrite(completion.mark)
         withAnimation(style.ease(320)) { for id in ids { closing[id] = nil } }
         undoRevision += 1
     }
@@ -699,6 +754,7 @@ final class Workbench {
         changes.groupsByEvent = false
         let trash = TrashBatch(mark: record(label, icon: "trash", tone: .red, ids: ids), ids: ids, changes: changes)
         attach(trash: trash, restores: false)
+        trashUndos.add(trash.mark)
         showTray(label, icon: "trash", tone: .red, undoable: true,
                  destination: TrayDestination(label: "Open Trash", route: .trash))
         trashes.append(trash)
@@ -764,6 +820,50 @@ final class Workbench {
         undoManager.setActionName(trash.mark.label)
     }
 
+    /// Logs a task's restore from Trash with its one window entry: Undo moves
+    /// it back to Trash, Redo restores it again. Erased from Trash meanwhile,
+    /// it leaves the stack instead; see `forgetErasedTrashes`.
+    func snapRestore(_ label: String, id: UUID, icon: String, tone: TrayTone, destination: TrayDestination?) {
+        let mark = record(label, icon: icon, tone: tone, ids: [id])
+        attach(restore: mark, id: id, restores: false)
+        trashUndos.add(mark)
+        showTray(label, icon: icon, tone: tone, undoable: true, destination: destination)
+    }
+
+    private func attach(restore mark: LogMark, id: UUID, restores: Bool) {
+        guard let undoManager else { return }
+        // The manager holds its target weakly; the handler keeps the mark alive.
+        undoManager.registerUndo(withTarget: mark) { [weak self, mark] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if restores {
+                    self.store.restoreTrash(ids: [id])
+                    self.relog(mark)
+                } else {
+                    // The handler keeps the id, never the model, which Trash may erase.
+                    if let block = self.store.block(id: id) { self.store.trashBlocks([block]) }
+                    self.unlog(mark)
+                }
+                self.attach(restore: mark, id: id, restores: !restores)
+            }
+        }
+        undoManager.setActionName(mark.label)
+    }
+
+    /// Takes Undo off every trash or restore whose tasks have all been erased
+    /// since: they're gone for good, so it has nothing left to do. A trash
+    /// with some of its tasks left still undoes those.
+    func forgetErasedTrashes() {
+        let erased = store.permanentlyErasedBlockIDs
+        for mark in trashUndos.allObjects {
+            let ids = mark.entries.compactMap(\.taskID)
+            guard !ids.isEmpty, ids.allSatisfy(erased.contains) else { continue }
+            undoManager?.removeAllActions(withTarget: mark)
+            trashUndos.remove(mark)
+        }
+        undoRevision += 1
+    }
+
     func bumpUndo() { undoRevision += 1 }
 }
 
@@ -778,11 +878,14 @@ private final class LogMark {
     var entries: [ChangeEntry]
     /// The target the log's half of the entry shares with the change, if any.
     var owner: AnyObject?
+    /// The tasks and lists whose saved history the change, its Undo and Redo write.
+    let covers: Set<UUID>
 
-    init(batch: Int, label: String, entries: [ChangeEntry]) {
+    init(batch: Int, label: String, entries: [ChangeEntry], covers: Set<UUID>) {
         self.batch = batch
         self.label = label
         self.entries = entries
+        self.covers = covers
     }
 }
 

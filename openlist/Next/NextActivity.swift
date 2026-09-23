@@ -18,15 +18,17 @@ struct NextActivityScreen: View {
     @State private var loadError: String?
 
     var body: some View {
-        NXPage {
-            NXScreenHeader(tile: .icon("square.grid.2x2"), color: style.accent, title: "Activity",
+        NXPage(wide: true) {
+            NXScreenHeader(tile: .icon("square.grid.2x2.fill"), color: style.accent, title: "Activity",
                            subtitle: "What you finished and what changed")
             Group {
                 if let heatmap {
+                    // The panel wraps below only when less than its 260pt minimum
+                    // is left, however long a title it truncates.
                     ViewThatFits(in: .horizontal) {
                         HStack(alignment: .top, spacing: 22) {
                             NXHeatmapCard(heatmap: heatmap)
-                            NXActivityDayPanel(heatmap: heatmap).frame(minWidth: 260, maxWidth: .infinity)
+                            NXActivityDayPanel(heatmap: heatmap).frame(minWidth: 260, idealWidth: 260, maxWidth: .infinity)
                         }
                         VStack(alignment: .leading, spacing: 22) {
                             NXHeatmapCard(heatmap: heatmap)
@@ -58,7 +60,15 @@ struct NextActivityScreen: View {
             heatmap = nil
             loadError = "Saved activity could not be read. \(error.localizedDescription)"
         }
-        events = env.store.recentActivity(limit: 60)
+        loadEvents()
+    }
+
+    /// Saved history from this session, which Changes merges with the log,
+    /// then the newest from before it for Earlier. Fetched apart so a long
+    /// session never crowds Earlier out.
+    private func loadEvents() {
+        let start = env.workbench.startedAt
+        events = env.store.recentActivity(limit: 200, since: start) + env.store.recentActivity(limit: 40, before: start)
     }
 }
 
@@ -227,7 +237,7 @@ private struct NXActivityDayPanel: View {
         let day = heatmap.days.first { $0.id == selected }
         let items = (day?.completions ?? []).sorted { $0.date > $1.date }
         VStack(alignment: .leading, spacing: 0) {
-            Text(selected == today ? "Today" : selected.formatted(.dateTime.weekday(.abbreviated).day().month(.wide)))
+            Text(selected == today ? "Today" : selected.formatted(.dateTime.weekday(.wide).day().month(.wide)))
                 .font(NX.serif(22))
                 .foregroundStyle(NX.ink)
             Text(items.isEmpty ? "No completions recorded" : "\(items.count) \(items.count == 1 ? "task" : "tasks") completed")
@@ -245,7 +255,7 @@ private struct NXActivityDayPanel: View {
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if let list = item.taskID.flatMap({ env.store.block(id: $0) }).flatMap({ library.list($0.listID) }) {
-                            NXListGlyph(list: list, size: 11).help(list.displayTitle)
+                            NXListGlyph(list: list, size: 10.5).help(list.displayTitle)
                         } else if !item.listTitle.isEmpty {
                             Text(item.listTitle).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.42)).lineLimit(1)
                         }
@@ -321,6 +331,8 @@ private struct NXChangesSection: View {
         }
     }
 
+    /// The log, with the saved history it doesn't tell merged in by time:
+    /// edits in the document, over MCP or from another Mac.
     private var sessionItems: [NXChangeItem] {
         let workbench = env.workbench
         var seen: Set<String> = []
@@ -333,17 +345,29 @@ private struct NXChangesSection: View {
                                       list: list, listTitle: list?.displayTitle ?? "", at: entry.at,
                                       canUndo: items.isEmpty && entry.batch == workbench.latestBatch && workbench.canUndo))
         }
-        return items
+        // History the log's own changes saved, or their Undo and Redo, is
+        // already here or was taken back.
+        var saved = events.filter { event in
+            event.timestamp >= workbench.startedAt
+                && !workbench.logWrote(at: event.timestamp, about: [event.blockID, event.listID])
+        }.map(item)[...]
+        var merged: [NXChangeItem] = []
+        for item in items {
+            while let next = saved.first, next.at > item.at { merged.append(saved.removeFirst()) }
+            merged.append(item)
+        }
+        return merged + saved
     }
 
-    /// Saved history from before this session's first change.
+    /// Saved history from before this session.
     private var earlierItems: [NXChangeItem] {
-        let cutoff = env.workbench.log.last.map { $0.at.addingTimeInterval(-2) } ?? .distantFuture
-        return events.filter { $0.timestamp < cutoff }.prefix(40).map { event in
-            NXChangeItem(id: "e\(event.id)", icon: Self.icon(event.kind), tone: Self.tone(event.kind),
-                         label: Self.label(event), detail: event.recordedDetail,
-                         list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
-        }
+        events.filter { $0.timestamp < env.workbench.startedAt }.prefix(40).map(item)
+    }
+
+    private func item(_ event: ActivityEvent) -> NXChangeItem {
+        NXChangeItem(id: "e\(event.id)", icon: Self.icon(event.kind), tone: Self.tone(event.kind),
+                     label: Self.label(event), detail: event.recordedDetail,
+                     list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
     }
 
     private static func label(_ event: ActivityEvent) -> String {

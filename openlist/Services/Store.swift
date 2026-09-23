@@ -467,10 +467,12 @@ final class Store {
         ))
     }
 
-    func recentActivity(limit: Int = 300) -> [ActivityEvent] {
+    /// The newest saved history, optionally only from `start` on or from before `end`.
+    func recentActivity(limit: Int = 300, since start: Date = .distantPast, before end: Date = .distantFuture) -> [ActivityEvent] {
         let excluded = Array(uncommittedActivityIDs)
-        var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { !excluded.contains($0.id) },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
+        var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate {
+            $0.timestamp >= start && $0.timestamp < end && !excluded.contains($0.id)
+        }, sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
         descriptor.fetchLimit = limit
         return (try? context.fetch(descriptor)) ?? []
     }

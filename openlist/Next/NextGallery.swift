@@ -42,16 +42,16 @@ struct NextListsGallery: View {
 
     var body: some View {
         let shelves = shelves
-        NXPage {
-            NXScreenHeader(tile: .icon("square.stack"), color: NX.lists, title: "Lists", subtitle: subtitle(shelves))
+        NXPage(wide: true) {
+            NXScreenHeader(tile: .icon("square.2.layers.3d.fill"), color: NX.lists, title: "Lists", subtitle: subtitle(shelves))
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(shelves) { shelf in
                     VStack(alignment: .leading, spacing: 0) {
                         NXCapsTitle(text: shelf.title).padding(.bottom, 10)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 14)], alignment: .leading, spacing: 14) {
                             ForEach(shelf.lists) { list in
-                                NXListCard(list: list,
-                                           tasks: library.tasks(in: list.id).filter { !library.isSubtask($0) },
+                                let tasks = library.tasks(in: list.id)
+                                NXListCard(list: list, tasks: tasks, peek: peek(list, tasks: tasks),
                                            path: library.hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "),
                                            isArchived: shelf.id == Shelf.archivedID)
                             }
@@ -66,13 +66,30 @@ struct NextListsGallery: View {
             .padding(.top, 8)
         }
     }
+
+    /// The first three open top-level tasks, in the list's document order.
+    /// Worked out here, once per library change, so hovering a card never fetches.
+    private func peek(_ list: TaskList, tasks: [Block]) -> [Block] {
+        let top = tasks.filter { !$0.isCompleted && !library.isSubtask($0) }
+        guard top.count > 1 else { return top }
+        let ids = Set(top.map(\.id))
+        var ordered = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
+            .map(\.block).filter { ids.contains($0.id) }
+        // Tasks the outline could not reach still belong on the card.
+        let seen = Set(ordered.map(\.id))
+        ordered += top.filter { !seen.contains($0.id) }
+        return Array(ordered.prefix(3))
+    }
 }
 
 private struct NXListCard: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     let list: TaskList
+    /// Every task in the list, subtasks included, as the list header counts them.
     let tasks: [Block]
+    /// The open tasks the card previews.
+    let peek: [Block]
     /// The lists it sits inside, or empty at the top level.
     let path: String
     /// Archived directly or through a parent.
@@ -96,14 +113,16 @@ private struct NXListCard: View {
                 }
                 .zIndex(1)
             VStack(alignment: .leading, spacing: 9) {
+                // Long names and paths wrap, as in the design; every card in
+                // the row grows to match.
                 Text(list.displayTitle)
                     .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text(path.isEmpty ? stats : "In \(path) · \(stats)")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(NX.ink(0.5))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Capsule().fill(NX.ink(0.07))
                     .frame(height: 4)
                     .overlay(alignment: .leading) {
@@ -114,7 +133,7 @@ private struct NXListCard: View {
                     .clipShape(Capsule())
                     .animation(.easeOut(duration: 0.5), value: fraction)
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(open.prefix(3)) { task in
+                    ForEach(peek) { task in
                         HStack(spacing: 7) {
                             Circle().strokeBorder(NX.ink(0.28), lineWidth: 1.3).frame(width: 9, height: 9)
                             Text(task.displayTitle)
@@ -124,13 +143,13 @@ private struct NXListCard: View {
                         }
                     }
                 }
-                // Three peek rows keep every card in a row the same height.
+                // Room for three peek rows, whatever the card previews.
                 .frame(minHeight: 3 * 16 + 8, alignment: .top)
                 .padding(.top, 2)
             }
             .padding(EdgeInsets(top: 20, leading: 16, bottom: 14, trailing: 16))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(hovering ? 0.14 : 0.12), lineWidth: 0.5))
@@ -177,14 +196,16 @@ private struct NXListCard: View {
 struct NextTrashScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
+    @Environment(\.nextLibrary) private var library
     @Query(filter: #Predicate<Block> { $0.trashID != nil }) private var blocks: [Block]
     @Query(filter: #Predicate<TaskList> { $0.trashID != nil }) private var lists: [TaskList]
     @State private var entries: [TrashEntry] = []
 
     var body: some View {
         let workbench = env.workbench
+        let listIDs = Dictionary(blocks.map { ($0.id, $0.listID) }, uniquingKeysWith: { first, _ in first })
         NXPage {
-            NXScreenHeader(tile: .icon("trash"), color: NX.grey, title: "Trash", subtitle: "Stays here until you erase it")
+            NXScreenHeader(tile: .icon("trash.fill"), color: NX.grey, title: "Trash", subtitle: "Stays here until you erase it")
             VStack(alignment: .leading, spacing: 0) {
                 if !entries.isEmpty {
                     HStack(spacing: 10) {
@@ -193,7 +214,7 @@ struct NextTrashScreen: View {
                             .foregroundStyle(NX.ink(0.5))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
-                        NXHoldButton(title: "Hold to empty Trash", holdingTitle: "Keep holding…", icon: "trash.slash",
+                        NXHoldButton(title: "Hold to empty Trash", icon: "trash.slash",
                                      size: 11.5, padding: EdgeInsets(top: 7, leading: 11, bottom: 7, trailing: 11),
                                      radius: 8, rest: 0.1, confirmation: "Erase everything in Trash?",
                                      confirmLabel: "Empty Trash") {
@@ -205,7 +226,7 @@ struct NextTrashScreen: View {
                 }
                 VStack(spacing: 2) {
                     ForEach(entries) { entry in
-                        NXTrashRow(entry: entry)
+                        NXTrashRow(entry: entry, list: listIDs[entry.id].flatMap { library.list($0) })
                             .transition(.opacity.combined(with: .offset(x: -56)))
                     }
                 }
@@ -239,6 +260,8 @@ private struct NXTrashRow: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     let entry: TrashEntry
+    /// The list a trashed task still belongs to, while it exists.
+    let list: TaskList?
     @State private var hovering = false
 
     var body: some View {
@@ -254,10 +277,12 @@ private struct NXTrashRow: View {
                     .font(.system(size: 13.5))
                     .foregroundStyle(NX.ink(0.72))
                     .lineLimit(2)
-                Text(meta)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.4))
-                    .lineLimit(1)
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    meta(now: context.date)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NX.ink(0.4))
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button { workbench.restore(entry) } label: {
@@ -288,14 +313,20 @@ private struct NXTrashRow: View {
 
     private var title: String { entry.title.isEmpty ? "Untitled" : entry.title }
 
-    private var meta: String {
-        let deleted = entry.metadata.map { "deleted \(NXFormat.relative($0.deletedAt))" } ?? "deleted"
+    private func meta(now: Date) -> Text {
+        let deleted = entry.metadata.map { "deleted \(NXFormat.relative($0.deletedAt, now: now))" } ?? "deleted"
         if entry.isList {
             let items = entry.blockCount == 1 ? "1 item" : "\(entry.blockCount) items"
-            return "List · \(items) · \(deleted)"
+            return Text(verbatim: "List · \(items) · \(deleted)")
         }
-        guard let metadata = entry.metadata else { return deleted.capitalizedFirstLetter }
-        return "From \(metadata.formerLocation) · \(deleted)"
+        guard let metadata = entry.metadata else { return Text(verbatim: deleted.capitalizedFirstLetter) }
+        // The icon the list had when this was deleted; older items use the list's current one.
+        let icon = metadata.listIcon.map { $0.isEmpty ? "📋" : $0 } ?? list?.glyph ?? ""
+        if icon.isEmpty { return Text(verbatim: "From \(metadata.formerLocation) · \(deleted)") }
+        if NXListGlyph.isSymbolName(icon) {
+            return Text("From \(Image(systemName: icon)) \(metadata.formerLocation) · \(deleted)")
+        }
+        return Text(verbatim: "From \(icon) \(metadata.formerLocation) · \(deleted)")
     }
 }
 
@@ -304,7 +335,8 @@ private struct NXTrashRow: View {
 /// `confirmation` first.
 struct NXHoldButton: View {
     let title: String
-    let holdingTitle: String
+    /// Replaces the title while held; nil keeps it.
+    var holdingTitle: String?
     var icon: String?
     var size: CGFloat = 11
     var padding = EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9)
@@ -324,7 +356,7 @@ struct NXHoldButton: View {
     var body: some View {
         HStack(spacing: 5) {
             if let icon { Image(systemName: icon).font(.system(size: size + 2)) }
-            Text(holding ? holdingTitle : title)
+            Text(holding ? holdingTitle ?? title : title)
         }
         .font(.system(size: size, weight: .semibold))
         .foregroundStyle(NX.redText)

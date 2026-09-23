@@ -286,26 +286,22 @@ extension Workbench {
             guard let self else { return }
             self.flying.remove(entry.id)
             guard self.store.restoreTrash(ids: [entry.id]) else {
-                self.showTray(self.store.trashNotice ?? "This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
+                self.showTray(self.store.trashError ?? "This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
                 return
-            }
-            if !entry.isList {
-                let id = entry.id
-                self.registerUndo(label, undo: { workbench in
-                    if let block = workbench.store.block(id: id) { _ = workbench.store.trashBlocks([block]) }
-                }, redo: { workbench in
-                    _ = workbench.store.restoreTrash(ids: [id])
-                })
             }
             let restoredList = self.store.block(id: entry.id).flatMap { self.store.list(id: $0.listID) }
                 ?? (entry.isList ? self.store.list(id: entry.id) : nil)
             let destination = restoredList.map { TrayDestination(label: "Open \($0.displayTitle)", route: self.route(for: $0)) }
-            self.snap(restoredList.map {
+            let text = restoredList.map {
                 let place = $0.isEffectivelyArchived ? "archived list \($0.displayTitle)" : $0.displayTitle
                 return "Restored \(NXFormat.quoted(entry.title)) to \(place)"
-            } ?? label,
-                      icon: "arrow.uturn.backward.circle", tone: .accent, ids: [entry.id],
-                      undoable: !entry.isList, destination: destination)
+            } ?? label
+            if entry.isList {
+                self.snap(text, icon: "arrow.uturn.backward.circle", tone: .accent, ids: [entry.id],
+                          undoable: false, destination: destination)
+            } else {
+                self.snapRestore(text, id: entry.id, icon: "arrow.uturn.backward.circle", tone: .accent, destination: destination)
+            }
             self.markRestored([entry.id])
         }
     }
@@ -313,9 +309,10 @@ extension Workbench {
     func erase(_ ids: [UUID]) {
         guard !ids.isEmpty else { return }
         guard store.permanentlyEraseTrash(ids: ids) else {
-            showTray(store.trashNotice ?? "These items could not be erased.", icon: "exclamationmark.triangle", tone: .red)
+            showTray(store.trashError ?? "These items could not be erased.", icon: "exclamationmark.triangle", tone: .red)
             return
         }
+        forgetErasedTrashes()
         showTray(ids.count > 1 ? "Erased \(ids.count) items for good" : "Erased for good", icon: "trash.slash", tone: .red)
     }
 
