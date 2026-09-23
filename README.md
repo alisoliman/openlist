@@ -258,10 +258,11 @@ restarting a timer.
 
 Recording continues past the estimate: the working block grows in 15-minute steps
 and later flexible work moves out of its way, with Undo in the tray. When a
-meeting, a break, a pinned task or the end of available hours leaves no more
-room, work keeps recording and the toolbar names what it is running into. Lock
-and sleep pause work; a task can opt into tracking away from the Mac. Move blocks
-to express a preference or choose **Pin time** for fixed placements. Deadline coverage distinguishes
+meeting, a break or a pinned task leaves no more room, work keeps recording and
+the toolbar names what it is running into; at the end of available hours the block
+simply stops growing. Lock and sleep pause work; a task can opt into tracking away
+from the Mac, which still stops at the next meeting, break, pinned time or the end
+of its hours. Move blocks to express a preference or choose **Pin time** for fixed placements. Deadline coverage distinguishes
 **Scheduled**, **Cannot fit before deadline**, and **Outside planning horizon**.
 
 The **Work** menu and command palette (⌘K) offer Show work, Start selected task,

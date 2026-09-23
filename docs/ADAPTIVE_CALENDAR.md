@@ -87,8 +87,10 @@ risk remains visible in coverage.
 Recording continues past the estimate. A minute before the working block ends,
 it grows to the next quarter hour plus **15 minutes**, clipped to the next fixed
 boundary, and later flexible work moves out of its way. The tray reports each
-extension with Undo, which puts the previous blocks back; work keeps recording,
-and the block is not grown again until Redo or the next start. An optional
+extension with Undo, which puts the previous blocks back (or, once another change
+has replaced them, plans them afresh); work keeps recording, and the block is not
+grown again until Redo or the next start. Undo is offered only while that work is
+still running. An optional
 background notification offers **Complete task** near the estimated finish.
 Reaching an estimate never marks a task complete.
 
@@ -97,17 +99,22 @@ Deadline and pin conflicts remain visible until resolved. Background calendar
 nudges use silent macOS notifications when notification permission is available;
 the in-app work bar remains available without that permission.
 
-When a meeting, a break, another task’s pinned time, or the end of available
-hours leaves the working block no more room, work keeps recording and the toolbar
-and tray turn red, naming what it is running into. Pausing replans the remaining
-work into the next available slot. **Defer…** pauses work, removes that
+When a meeting, a break, or another task’s pinned time leaves the working block
+no more room, work keeps recording and the toolbar and tray turn red, naming what
+it is running into. The end of available hours only stops the block growing, as
+the planner never places work past it. Blocks the running work runs over stay
+where they were rather than being moved as missed; pausing replans them and the
+remaining work into the next available slot. **Defer…** pauses work, removes that
 occurrence’s explicit placements, and chooses the next day on which planning may
 start. Its deadline stays unchanged, so deferral can reveal a deadline conflict.
 
 Lock, screen sleep, system sleep, and inactive user-session notifications pause
 active work and offer **Resume** on return. **Track work away from this Mac** is
-a per-task exception: elapsed work can continue while locked or asleep. Resume
-always requires an explicit action. Quitting Openlist ends active tracking. After
+a per-task exception: elapsed work can continue while locked or asleep, up to the
+next meeting, break, pinned time, or the end of available hours, where it pauses
+as if the Mac had been left then. Leaving the Mac outside those hours or during
+busy time pauses it at once. The block is not grown while away. Resume always
+requires an explicit action. Quitting Openlist ends active tracking. After
 an interrupted process or restart, an unfinished local session is closed at its
 last saved heartbeat and a resume prompt is offered; elapsed time while the app
 was absent is not silently recorded as work.

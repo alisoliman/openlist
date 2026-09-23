@@ -139,6 +139,9 @@ final class Workbench {
     /// The running task, calendar notice, extension, conflict and reschedule the work watch last saw.
     @ObservationIgnored var workWatch: (taskID: UUID?, notice: String?, grant: CalendarWorkExtension?,
                                         conflict: CalendarWorkConflict?, moved: UUID?) = (nil, nil, nil, nil, nil)
+    /// Undo entries about the running work, which the work watch takes off the
+    /// stack once they no longer apply.
+    @ObservationIgnored var workUndos: [WorkUndo] = []
     /// Why the calendar paused work by itself, told again when you come back to
     /// the Mac. `returnedAt` is the first return it was shown for.
     @ObservationIgnored var awayPause: (taskID: UUID, text: String, returnedAt: Date?)?
@@ -313,9 +316,12 @@ final class Workbench {
 
     /// Records a change in the log and announces it in the tray. An undoable
     /// change ties its log batch to the Undo entry the caller just registered.
+    /// An `owner` shares the Undo entry's target, so the whole entry leaves the
+    /// stack with `removeAllActions(withTarget:)`.
     func snap(_ label: String, icon: String, tone: TrayTone, ids: [UUID], undoable: Bool = true,
-              destination: TrayDestination? = nil) {
+              destination: TrayDestination? = nil, owner: AnyObject? = nil) {
         let mark = record(label, icon: icon, tone: tone, ids: ids)
+        mark.owner = owner
         if undoable { attach(mark, restores: false) }
         showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
     }
@@ -348,7 +354,7 @@ final class Workbench {
     private func attach(_ mark: LogMark, restores: Bool) {
         guard let undoManager else { return }
         // The manager holds its target weakly; the handler keeps the mark alive.
-        undoManager.registerUndo(withTarget: mark) { [weak self, mark] _ in
+        undoManager.registerUndo(withTarget: mark.owner ?? mark) { [weak self, mark] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 if restores { self.relog(mark) } else { self.unlog(mark) }
@@ -396,13 +402,16 @@ final class Workbench {
         undoManager.undo()
     }
 
-    func registerUndo(_ label: String, undo: @escaping @MainActor (Workbench) -> Void,
+    /// An `owner` becomes the entry's target in place of the workbench, as in `snap`.
+    func registerUndo(_ label: String, owner: AnyObject? = nil, undo: @escaping @MainActor (Workbench) -> Void,
                       redo: @escaping @MainActor (Workbench) -> Void) {
         guard let undoManager else { return }
-        undoManager.registerUndo(withTarget: self) { workbench in
+        // The manager holds its target weakly; the handler keeps the owner alive.
+        undoManager.registerUndo(withTarget: owner ?? self) { [weak self, owner] _ in
             MainActor.assumeIsolated {
+                guard let workbench = self else { return }
                 undo(workbench)
-                workbench.registerUndo(label, undo: redo, redo: undo)
+                workbench.registerUndo(label, owner: owner, undo: redo, redo: undo)
             }
         }
         undoManager.setActionName(label)
@@ -735,6 +744,8 @@ private final class LogMark {
     let label: String
     /// What Redo puts back in the log; rows cancelled mid-dwell drop out.
     var entries: [ChangeEntry]
+    /// The target the log's half of the entry shares with the change, if any.
+    var owner: AnyObject?
 
     init(batch: Int, label: String, entries: [ChangeEntry]) {
         self.batch = batch

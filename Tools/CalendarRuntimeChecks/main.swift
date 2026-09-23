@@ -77,8 +77,9 @@ check(coordinator.start(task: a, now: date(14, 11, 15)), "away-tracking task can
 coordinator.handleMacUnavailable(reason: "Mac slept", now: date(14, 11, 20))
 check(coordinator.activeSession?.taskID == a.id, "per-task away opt-in keeps session active")
 coordinator.handleMacReturn(now: date(14, 12, 10))
-check(coordinator.activeSession?.taskID == a.id, "away-tracked work keeps recording into a break")
-check(coordinator.workConflict?.kind == .breakTime && coordinator.workConflict?.start == date(14, 12), "running into a break marks the conflict at the break")
+check(coordinator.activeSession == nil && coordinator.resumeTaskID == a.id, "away opt-in still respects end of availability / lunch break")
+check(store.workSessions(taskID: a.id).first?.endedAt == date(14, 12), "away work clips at lunch while asleep")
+check(coordinator.workConflict == nil && coordinator.notice?.contains("while you were away") == true, "the clip is reported as time away, not as work running into the break")
 let short = task("Two-minute reply", minutes: 2)
 check(coordinator.remainingMinutes(for: short, now: date()) == 2, "short tasks retain short estimates")
 check(coordinator.start(task: short, now: date(14, 13)), "short task explicitly starts")
@@ -477,9 +478,84 @@ func checkSchedulingNudges() throws {
         planner.tick(now: date(14, 9, 46), checkClockGap: false)
         check(planner.activeSession != nil && planner.plan.blocks.first { $0.isActive }?.end == date(14, 10, 15), "a material availability extension removes the old still-future pause boundary")
         planner.tick(now: date(14, 10, 20), checkClockGap: false)
-        check(planner.activeSession != nil && planner.workConflict?.kind == .endOfHours && planner.workConflict?.title == "Work"
-              && planner.workConflict?.start == date(14, 10, 15), "the end of the newly established hours stops the block, not the recording")
+        check(planner.activeSession != nil && planner.workConflict == nil && planner.workExtension == nil,
+              "the end of the newly established hours only stops the block growing: no conflict, and recording carries on")
         planner.updatePreferences(originalPreferences, now: date(14, 10, 20))
+    }
+    do {
+        // Undo only offers what it can still take back.
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let first = add("Undo an extension later", to: fixtureStore, priority: 3)
+        let next = add("Moved by the extension", to: fixtureStore, priority: 2)
+        planner.bootstrap(now: date(), monitorsEnabled: false)
+        check(planner.start(task: first, now: date()), "late undo fixture starts")
+        planner.tick(now: date(14, 9, 29), checkClockGap: false)
+        let grant = planner.workExtension!
+        check(planner.canUndoExtension(grant) && !planner.canRedoExtension(grant), "a fresh extension can be undone")
+        next.priorityRaw = 1
+        fixtureStore.save()
+        planner.storeDidChange(now: date(14, 9, 31))
+        check(planner.canUndoExtension(grant) && planner.undoExtension(grant, now: date(14, 9, 32)), "Undo after a material edit still takes the extension back")
+        check(planner.activeSession != nil && planner.workExtension == nil, "undoing after a material edit keeps recording without the extension")
+        check(planner.plan.blocks.first { $0.taskID == next.id }.map { $0.start < date(14, 9, 45) } == true, "without the saved blocks, the moved task is planned afresh without the extension")
+        planner.tick(now: date(14, 9, 36), checkClockGap: false)
+        check(planner.workExtension == nil && planner.canRedoExtension(grant), "an extension undone after a material edit is not granted again by itself")
+        check(planner.redoExtension(grant, now: date(14, 9, 37)), "Redo after a replan gives the extension back")
+        check(planner.workExtension == grant && planner.plan.blocks.first { $0.isActive }?.end == date(14, 9, 45), "the redone extension plans the block to its end again")
+        planner.pause(now: date(14, 9, 40))
+        check(!planner.canUndoExtension(grant) && !planner.undoExtension(grant, now: date(14, 9, 41)), "after a pause there is no extension left to undo")
+        check(planner.start(task: first, now: date(14, 9, 42)), "late undo fixture resumes")
+        check(!planner.canUndoExtension(grant) && !planner.undoExtension(grant, now: date(14, 9, 43)), "a new session never takes back the previous one's extension")
+    }
+    do {
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let first = add("Keep working after Undo", to: fixtureStore, priority: 3)
+        let next = add("Wait for the running work", to: fixtureStore, priority: 2)
+        planner.bootstrap(now: date(), monitorsEnabled: false)
+        check(planner.start(task: first, now: date()), "overrun fixture starts")
+        planner.tick(now: date(14, 9, 29), checkClockGap: false)
+        check(planner.undoExtension(planner.workExtension!, now: date(14, 9, 31)), "overrun fixture undoes its extension")
+        check(planner.plan.blocks.first { $0.taskID == next.id }?.start == date(14, 9, 30), "Undo puts the next task back at its old time")
+        for minute in stride(from: 32, through: 50, by: 2) { planner.tick(now: date(14, 9, minute), checkClockGap: false) }
+        check(planner.plan.blocks.first { $0.taskID == next.id }?.start == date(14, 9, 30), "a block the running work runs over stays put instead of hopping every five minutes")
+        planner.pause(now: date(14, 9, 50))
+        check(planner.plan.blocks.filter { $0.taskID == next.id }.allSatisfy { $0.start >= date(14, 9, 50) }, "once the work stops, the task it ran over is planned from then")
+    }
+    do {
+        // Away from the Mac, time stops counting at the next fixed event or
+        // the end of the list's hours; at the Mac, work records through them.
+        let (fixtureStore, planner, lifetime) = try fixture(events: [FixedBusyTime(id: "away-meeting", title: "Away meeting", start: date(14, 10), end: date(14, 11))])
+        defer { withExtendedLifetime(lifetime) {} }
+        let away = add("Read on paper", to: fixtureStore)
+        fixtureStore.setTracksAway(true, for: away)
+        planner.bootstrap(now: date(), monitorsEnabled: false)
+        check(planner.start(task: away, now: date()), "away fixture starts")
+        planner.handleMacUnavailable(reason: "Mac locked", now: date(14, 9, 10))
+        planner.tick(now: date(14, 9, 29))
+        check(planner.activeSession != nil && planner.workExtension == nil, "while the Mac is away, work keeps recording but its block does not grow")
+        planner.handleMacReturn(now: date(14, 9, 40))
+        check(planner.activeSession != nil && planner.trackedMinutes(for: away, now: date(14, 9, 40)) == 40, "back before the meeting, all the time away is recorded")
+        planner.tick(now: date(14, 9, 41))
+        check(planner.workExtension?.end == date(14, 10), "back at the Mac, the block grows again up to the meeting")
+        planner.tick(now: date(14, 10, 5), checkClockGap: false)
+        check(planner.activeSession != nil && planner.workConflict?.title == "Away meeting", "at the Mac, away-tracked work records into a meeting like any other")
+        planner.handleMacUnavailable(reason: "Mac locked", now: date(14, 10, 20))
+        check(planner.activeSession == nil && fixtureStore.workSessions(taskID: away.id).first?.endedAt == date(14, 10, 20), "leaving the Mac during fixed busy time pauses away-tracked work at once")
+        check(planner.start(task: away, now: date(14, 11, 30)), "away fixture starts before lunch")
+        planner.tick(now: date(14, 11, 44), checkClockGap: false)
+        planner.tick(now: date(14, 11, 59), checkClockGap: false)
+        check(planner.activeSession != nil && planner.workConflict?.kind == .breakTime && planner.workConflict?.start == date(14, 12), "at the Mac, running into a break marks the conflict at the break")
+        planner.pause(now: date(14, 12, 5))
+        check(planner.start(task: away, now: date(14, 16)), "away fixture starts late in the day")
+        planner.handleMacUnavailable(reason: "Mac slept", now: date(14, 16, 5))
+        planner.handleMacReturn(now: date(15, 9))
+        check(planner.activeSession == nil && fixtureStore.workSessions(taskID: away.id).first?.endedAt == date(14, 17), "a night away ends the work at the end of the day's hours")
+        check(planner.workExtension == nil && planner.notice?.contains("while you were away") == true, "the morning reports the pause, not an extension")
+        check(planner.start(task: away, now: date(15, 13)), "away fixture starts after lunch")
+        planner.tick(now: date(15, 18))
+        check(planner.activeSession == nil && fixtureStore.workSessions(taskID: away.id).first?.endedAt == date(15, 17), "an unannounced gap is time away too, clipped at the end of the hours")
     }
     for completes in [false, true] {
         let (fixtureStore, planner, lifetime) = try fixture()

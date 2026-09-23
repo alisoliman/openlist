@@ -641,13 +641,16 @@ extension Workbench {
     /// init, then again after each change it sees.
     func watchWork() {
         let seen = withObservationTracking {
+            // Also follows whatever decides that an Undo entry about the work still applies.
             (taskID: calendar.activeSession?.taskID, notice: calendar.notice, grant: calendar.workExtension,
-             conflict: calendar.workConflict, moved: calendar.rescheduleSummary?.id)
+             conflict: calendar.workConflict, moved: calendar.rescheduleSummary?.id,
+             undos: workUndos.map { $0.applies(self) })
         } onChange: { [weak self] in
             Task { @MainActor in self?.watchWork() }
         }
         let last = workWatch
-        workWatch = seen
+        workWatch = (seen.taskID, seen.notice, seen.grant, seen.conflict, seen.moved)
+        pruneWorkUndos()
         if let running = seen.taskID, let previous = last.taskID, running != previous {
             announceSwitch(from: previous, to: running)
         }
@@ -710,42 +713,80 @@ extension Workbench {
     }
 
     /// Reports work that replaced other running work. Undo switches back, and
-    /// the time recorded in between stays on the task it was recorded on.
+    /// the time recorded in between stays on the task it was recorded on. The
+    /// entry lasts while the work it would switch away from still runs.
     private func announceSwitch(from previousID: UUID, to currentID: UUID) {
         guard let previous = store.block(id: previousID), let current = store.block(id: currentID) else { return }
         let seconds = calendar.trackedMinutes(for: previous) * 60
         let label = "Switched to \(NXFormat.quoted(current.displayTitle)) — \(NXFormat.mmss(seconds)) recorded on \(NXFormat.quoted(previous.displayTitle))"
         let from = WorkTaskReference(previous)
         let to = WorkTaskReference(current)
-        registerUndo(label, undo: { workbench in workbench.switchWork(to: from) },
-                     redo: { workbench in workbench.switchWork(to: to) })
-        snap(label, icon: "arrow.left.arrow.right", tone: .neutral, ids: [currentID, previousID])
+        let entry = WorkUndo { $0.canSwitchWork(from: to, to: from) }
+        registerUndo(label, owner: entry, undo: { workbench in
+            guard workbench.canSwitchWork(from: to, to: from), workbench.switchWork(to: from) else { workbench.dropStale(entry); return }
+            entry.applies = { $0.canSwitchWork(from: from, to: to) }
+        }, redo: { workbench in
+            guard workbench.canSwitchWork(from: from, to: to), workbench.switchWork(to: to) else { workbench.dropStale(entry); return }
+            entry.applies = { $0.canSwitchWork(from: to, to: from) }
+        })
+        snap(label, icon: "arrow.left.arrow.right", tone: .neutral, ids: [currentID, previousID], owner: entry)
+        workUndos.append(entry)
+    }
+
+    /// Whether `current` is still the running work and `target` can take over.
+    private func canSwitchWork(from current: WorkTaskReference, to target: WorkTaskReference) -> Bool {
+        calendar.activeSession?.occurrenceID == current.occurrenceID && calendar.validWorkTask(target) != nil
     }
 
     /// Undo and Redo of a switch: work on `reference` again, which the watch
     /// then sees as the work it already knows rather than another switch.
-    private func switchWork(to reference: WorkTaskReference) {
-        guard let task = calendar.validWorkTask(reference), calendar.start(task: task) else { return }
+    private func switchWork(to reference: WorkTaskReference) -> Bool {
+        guard let task = calendar.validWorkTask(reference), calendar.start(task: task) else { return false }
         workWatch.taskID = task.id
+        return true
     }
 
     /// Reports extra time the calendar gave the running work. Undo puts back the
     /// block it had and those of the tasks moved for it; work keeps recording.
+    /// The entry lasts while that session runs and keeps the extension.
     private func announceExtension(_ grant: CalendarWorkExtension) {
         guard let task = store.block(id: grant.taskID) else { return }
         let moved = grant.movedTaskIDs.count
         let label = "Extended \(NXFormat.quoted(task.displayTitle)) to \(NXFormat.clock(grant.end))"
             + (moved == 0 ? "" : " · moved \(moved) \(moved == 1 ? "task" : "tasks")")
+        let entry = WorkUndo { $0.calendar.canUndoExtension(grant) }
         // Either way the watch already knows the extension it lands on.
-        registerUndo(label, undo: { workbench in
-            guard workbench.calendar.undoExtension(grant) else { return }
+        registerUndo(label, owner: entry, undo: { workbench in
+            guard workbench.calendar.undoExtension(grant) else { workbench.dropStale(entry); return }
             workbench.workWatch.grant = workbench.calendar.workExtension
+            entry.applies = { $0.calendar.canRedoExtension(grant) }
         }, redo: { workbench in
-            guard workbench.calendar.redoExtension(grant) else { return }
+            guard workbench.calendar.redoExtension(grant) else { workbench.dropStale(entry); return }
             workbench.workWatch.grant = grant
+            entry.applies = { $0.calendar.canUndoExtension(grant) }
         })
         snap(label, icon: "calendar.badge.plus", tone: .amber, ids: [grant.taskID] + grant.movedTaskIDs,
-             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
+             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar), owner: entry)
+        workUndos.append(entry)
+    }
+
+    /// Takes Undo entries about the running work off the stack once it has moved
+    /// on, so Undo never claims to take back what it no longer can.
+    private func pruneWorkUndos() {
+        let stale = workUndos.filter { !$0.applies(self) }
+        guard !stale.isEmpty else { return }
+        workUndos.removeAll { entry in stale.contains { $0 === entry } }
+        for entry in stale { undoManager?.removeAllActions(withTarget: entry) }
+        bumpUndo()
+    }
+
+    /// An entry that got past pruning and found nothing to take back. The tray
+    /// says so in place of "Undid", and the entry leaves the stack once this
+    /// Undo or Redo has finished.
+    private func dropStale(_ entry: WorkUndo) {
+        entry.applies = { _ in false }
+        showTray("Nothing to undo — the plan has changed", icon: "arrow.uturn.backward", tone: .neutral)
+        Task { @MainActor [weak self] in self?.pruneWorkUndos() }
     }
 
     /// Reports the fixed event the running work ran into. It keeps recording.
@@ -769,7 +810,17 @@ extension Workbench {
         case .event: conflict.title.isEmpty ? (inSentence ? "busy time" : "Busy time") : conflict.title
         case .task: NXFormat.quoted(conflict.title)
         case .breakTime: inSentence ? "a break" : "Break"
-        case .endOfHours: inSentence ? "the end of \(conflict.title) hours" : "End of \(conflict.title) hours"
         }
+    }
+}
+
+/// An Undo entry about the running work, and the target its actions share, so
+/// the work watch can take it off the stack once it no longer applies.
+final class WorkUndo {
+    /// Whether the entry's next Undo, or Redo once undone, can still do what it says.
+    var applies: @MainActor (Workbench) -> Bool
+
+    init(applies: @escaping @MainActor (Workbench) -> Bool) {
+        self.applies = applies
     }
 }

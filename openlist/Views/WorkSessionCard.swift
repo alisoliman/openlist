@@ -12,7 +12,7 @@ struct WorkSessionCard: View {
 
     var body: some View {
         if task.modelContext != nil, !task.isDeleted {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.periodic(from: .now, by: 30)) { context in
             let reference = WorkTaskReference(task)
             let session = env.calendar.activeSession.flatMap { $0.occurrenceID == reference.occurrenceID ? $0 : nil }
             let paused = env.calendar.resumableTask?.occurrenceID == reference.occurrenceID
@@ -36,30 +36,35 @@ struct WorkSessionCard: View {
                     .padding(.top, 2)
 
                 if session != nil {
-                    let elapsed = env.calendar.trackedMinutes(for: task, now: context.date) * 60
-                    Text(NXFormat.mmss(elapsed))
-                        .font(NX.mono(28, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(elapsed > estimate * 60 ? NX.amberText : style.accent)
-                        .padding(.top, 14)
-                    Text("Recorded · \(minutes(estimate)) estimated")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(NX.ink(0.45))
-                        .padding(.top, 3)
-                    Group {
-                        if let conflict = env.calendar.workConflict, conflict.occurrenceID == reference.occurrenceID {
-                            Text("Running into \(env.workbench.conflictLabel(conflict, inSentence: true)). Still recording.")
-                                .foregroundStyle(NX.redText)
-                        } else if env.calendar.overrunNudge?.occurrenceID == reference.occurrenceID {
-                            Text("Estimate almost reached. Recording continues and the plan makes room.")
-                                .foregroundStyle(NX.ink(0.62))
-                        } else if elapsed >= estimate * 60 {
-                            Text("Past the estimate. Still recording.").foregroundStyle(NX.ink(0.62))
+                    // Only the running timer needs every second.
+                    TimelineView(.periodic(from: .now, by: 1)) { tick in
+                        let elapsed = env.calendar.trackedMinutes(for: task, now: tick.date) * 60
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(NXFormat.mmss(elapsed))
+                                .font(NX.mono(28, weight: .semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(elapsed > estimate * 60 ? NX.amberText : style.accent)
+                                .padding(.top, 14)
+                            Text("Recorded · \(minutes(estimate)) estimated")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(NX.ink(0.45))
+                                .padding(.top, 3)
+                            Group {
+                                if let conflict = env.calendar.workConflict, conflict.occurrenceID == reference.occurrenceID {
+                                    Text("Running into \(env.workbench.conflictLabel(conflict, inSentence: true)). Still recording.")
+                                        .foregroundStyle(NX.redText)
+                                } else if env.calendar.overrunNudge?.occurrenceID == reference.occurrenceID {
+                                    Text("Estimate almost reached. Recording continues and the plan makes room.")
+                                        .foregroundStyle(NX.ink(0.62))
+                                } else if elapsed >= estimate * 60 {
+                                    Text("Past the estimate. Still recording.").foregroundStyle(NX.ink(0.62))
+                                }
+                            }
+                            .font(.system(size: 12))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 10)
                         }
                     }
-                    .font(.system(size: 12))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10)
                     HStack(spacing: 8) {
                         NXWorkButton("Stop working", action: stop)
                         Spacer(minLength: 8)
