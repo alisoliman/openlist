@@ -205,7 +205,9 @@ struct NXInspectorSubtasks: View {
                 emptyPlaceholder: "Add a subtask…",
                 showsCompleted: true,
                 seedsEmptyBlock: false,
-                appendButtonTitle: "Add subtask"
+                appendButtonTitle: "Add subtask",
+                // After Escape, Return and the arrows belong to the Next list.
+                hooks: OutlineHooks(resumesAfterEscape: false)
             )
             .id(task.id)
         }

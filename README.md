@@ -468,8 +468,8 @@ openlist/
                RecurrenceEngine, RichTextCodec, MediaStore, MarkdownExporter,
                NotificationService, QuickCaptureHotKey, WidgetSnapshotPublisher,
                ICloudConfiguration, ICloudSyncMonitor, ICloudSyncState
-  Editor/      BlockTextView (AppKit-backed), DocumentView, BlockRowView,
-               SlashMenuView, MarkdownInputRules, BlockDragAndDrop
+  Editor/      BlockTextView (AppKit-backed), OutlineEditor, DocumentView,
+               BlockRowView, SlashMenuView, MarkdownInputRules, BlockDragAndDrop
   Next/        Openlist Next shell: sidebar, screens, rows, inspector,
                calendar, overlays, Workbench (shared UI state and actions)
   Views/       RootView, document screens, shared pickers, settings
@@ -495,7 +495,9 @@ or reaches the widget.
 SwiftUI's `TextEditor` cannot express what an outliner needs — Return that splits a
 block, ⇥ that re-parents it, ⌫ that merges into the row above, arrow keys that walk
 between blocks. Each block therefore hosts a bare `NSTextView` (explicit TextKit 1,
-so `sizeThatFits` can measure synchronously) and `DocumentView` arbitrates the keys.
+so `sizeThatFits` can measure synchronously) and `OutlineEditor` arbitrates the keys.
+`OutlineEditor` owns the caret, the `/` menu and every structural edit, and knows
+nothing about how rows look, so `DocumentView` is only one renderer over it.
 Everything else is SwiftUI.
 
 ---

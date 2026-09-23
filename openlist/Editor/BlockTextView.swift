@@ -28,6 +28,8 @@ struct BlockEditorCallbacks {
     /// Arrow key that would leave this block.
     var onArrowOut: (_ direction: EditorArrow, _ caret: Int) -> Bool = { _, _ in false }
     var onFocus: () -> Void = {}
+    /// Escape pressed while the `/` menu is closed. The text view has already
+    /// resigned first responder, so the next key reaches the window.
     var onEscape: () -> Void = {}
     /// The `/` menu query changed. `nil` means the menu should close.
     /// `range` covers the trigger and its query, so the outline can remove
@@ -51,6 +53,18 @@ struct BlockTextView: NSViewRepresentable {
     let blockID: UUID
     let kind: BlockKind
     let isCompleted: Bool
+    /// Draws the completion strike whatever `isCompleted` says, so a renderer
+    /// can strike a task during its completion dwell, before the store marks
+    /// it done. `nil` follows `isCompleted`.
+    var struck: Bool? = nil
+    /// The strike's colour while `struck` draws it, such as the accent while
+    /// a task is closing. `nil` uses the editor's strike ink. Pass a stable
+    /// instance: the colour is part of the content signature, so one made per
+    /// render would restyle the text, and reset the caret, on every update.
+    var strikeColor: NSColor? = nil
+    /// Space above and below the text. The legacy document pads a line to
+    /// its gutter; a renderer matching Next's row titles passes 0.
+    var verticalInset: CGFloat = Theme.Editor.textVerticalInset
     let attributedText: NSAttributedString
     var placeholder: String = ""
     var isFocused: Bool
@@ -87,7 +101,7 @@ struct BlockTextView: NSViewRepresentable {
         view.drawsBackground = false
         view.isVerticallyResizable = false
         view.isHorizontallyResizable = false
-        view.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
+        view.textContainerInset = NSSize(width: 0, height: verticalInset)
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -96,13 +110,14 @@ struct BlockTextView: NSViewRepresentable {
         view.isContinuousSpellCheckingEnabled = true
         view.usesFindBar = false
         let linkAttributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.linkColor,
+            .foregroundColor: Theme.Editor.link,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
             .cursor: NSCursor.pointingHand,
         ]
         view.linkTextAttributes = linkAttributes
 
-        context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted)
+        context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
+                                  struck: struck, strikeColor: strikeColor)
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
@@ -114,16 +129,23 @@ struct BlockTextView: NSViewRepresentable {
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
+        if view.textContainerInset.height != verticalInset {
+            view.textContainerInset = NSSize(width: 0, height: verticalInset)
+            view.invalidateIntrinsicContentSize()
+        }
 
         // Only touch the storage when something actually changed underneath us,
         // otherwise every keystroke would reset the caret.
         let signature = ContentSignature(
             attributedText: attributedText,
             kind: kind,
-            isCompleted: isCompleted
+            isCompleted: isCompleted,
+            struck: struck,
+            strikeColor: strikeColor
         )
         if context.coordinator.signature != signature || context.coordinator.consumeRestyleRequest() {
-            context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted)
+            context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
+                                      struck: struck, strikeColor: strikeColor)
         }
 
         context.coordinator.syncFocus(view: view, shouldFocus: isFocused, caret: pendingCaret, token: focusToken)
@@ -136,16 +158,27 @@ struct BlockTextView: NSViewRepresentable {
 
     // MARK: - Coordinator
 
+    /// What the text storage was last built from. `attributedText` is always
+    /// the model's form, never a struck-through presentation of it, so the
+    /// model's echo of a local edit matches without a restyle.
     struct ContentSignature: Equatable {
         let attributedText: NSAttributedString
         let kind: BlockKind
         let isCompleted: Bool
+        let struck: Bool
+        let strikeColor: NSColor?
 
-        init(attributedText: NSAttributedString, kind: BlockKind, isCompleted: Bool) {
+        init(attributedText: NSAttributedString, kind: BlockKind, isCompleted: Bool,
+             struck: Bool? = nil, strikeColor: NSColor? = nil) {
             self.attributedText = NSAttributedString(attributedString: attributedText)
             self.kind = kind
             self.isCompleted = isCompleted
+            self.struck = struck ?? isCompleted
+            self.strikeColor = self.struck ? strikeColor : nil
         }
+
+        /// Whether the storage shows a strike state other than the model's.
+        var overridesCompletion: Bool { struck != isCompleted || strikeColor != nil }
     }
 
     @MainActor
@@ -173,13 +206,19 @@ struct BlockTextView: NSViewRepresentable {
             return needsRestyle
         }
 
-        func apply(_ attributed: NSAttributedString, to view: BlockNSTextView, kind: BlockKind, isCompleted: Bool) {
+        func apply(_ attributed: NSAttributedString, to view: BlockNSTextView, kind: BlockKind, isCompleted: Bool,
+                   struck: Bool? = nil, strikeColor: NSColor? = nil) {
             isApplyingExternalChange = true
             defer { isApplyingExternalChange = false }
 
+            let applied = ContentSignature(attributedText: attributed, kind: kind, isCompleted: isCompleted,
+                                           struck: struck, strikeColor: strikeColor)
             let previousSelection = view.selectedRange()
-            view.textStorage?.setAttributedString(attributed)
-            view.typingAttributes = RichTextCodec.baseAttributes(for: kind, isCompleted: isCompleted)
+            view.textStorage?.setAttributedString(applied.overridesCompletion
+                ? RichTextCodec.restylingCompletion(of: attributed, kind: kind, struck: applied.struck, strikeColor: applied.strikeColor)
+                : attributed)
+            view.typingAttributes = RichTextCodec.baseAttributes(for: kind, isCompleted: applied.struck,
+                                                                 strikeColor: applied.strikeColor)
             view.blockKind = kind
 
             let length = view.textStorage?.length ?? 0
@@ -191,8 +230,24 @@ struct BlockTextView: NSViewRepresentable {
             view.invalidateIntrinsicContentSize()
             view.needsDisplay = true
 
-            signature = ContentSignature(attributedText: attributed, kind: kind, isCompleted: isCompleted)
+            signature = applied
             previousLength = attributed.length
+        }
+
+        /// Records a local edit, so the model's echo of it is not mistaken for
+        /// an outside change. A struck presentation is recorded in the model's
+        /// form, which is what the echo will carry.
+        func recordLocalEdit(_ storage: NSAttributedString, kind: BlockKind) {
+            let current = ContentSignature(attributedText: storage, kind: kind, isCompleted: parent.isCompleted,
+                                           struck: parent.struck, strikeColor: parent.strikeColor)
+            guard current.overridesCompletion else {
+                signature = current
+                return
+            }
+            signature = ContentSignature(
+                attributedText: RichTextCodec.restylingCompletion(of: storage, kind: kind, struck: parent.isCompleted),
+                kind: kind, isCompleted: parent.isCompleted, struck: parent.struck, strikeColor: parent.strikeColor
+            )
         }
 
         /// Applies a *programmatic* focus move.
@@ -247,11 +302,7 @@ struct BlockTextView: NSViewRepresentable {
                 // Persist the stripped text before changing kind, otherwise the
                 // model keeps the "## " the user just consumed.
                 parent.callbacks.onChange(NSAttributedString(attributedString: storage))
-                signature = ContentSignature(
-                    attributedText: storage,
-                    kind: parent.kind,
-                    isCompleted: parent.isCompleted
-                )
+                recordLocalEdit(storage, kind: parent.kind)
                 // The kind is about to change out from under us, and the new
                 // fonts have to be applied even though the text did not move.
                 needsRestyle = true
@@ -264,11 +315,7 @@ struct BlockTextView: NSViewRepresentable {
                 view.invalidateIntrinsicContentSize()
             }
 
-            signature = ContentSignature(
-                attributedText: storage,
-                kind: parent.kind,
-                isCompleted: parent.isCompleted
-            )
+            recordLocalEdit(storage, kind: parent.kind)
             parent.callbacks.onChange(NSAttributedString(attributedString: storage))
             updateSlashQuery(in: view)
             view.invalidateIntrinsicContentSize()
@@ -383,6 +430,13 @@ struct BlockTextView: NSViewRepresentable {
                 if view.isSlashMenuOpen {
                     dismissSlash(in: view)
                     return true
+                }
+                // Leave editing as well, otherwise the text view keeps the
+                // keyboard and the next single-key shortcut types into the row.
+                // Resign first so the outline, and its host, see the window
+                // holding the keyboard and can move it on.
+                if view.window?.firstResponder === view {
+                    view.window?.makeFirstResponder(nil)
                 }
                 parent.callbacks.onEscape()
                 return true
@@ -541,7 +595,7 @@ final class BlockNSTextView: NSTextView {
         guard (textStorage?.length ?? 0) == 0, !placeholderString.isEmpty else { return }
 
         var merged = RichTextCodec.baseAttributes(for: blockKind)
-        merged[.foregroundColor] = NSColor.tertiaryLabelColor
+        merged[.foregroundColor] = Theme.Editor.placeholderInk
 
         NSAttributedString(string: placeholderString, attributes: merged)
             .draw(in: NSRect(origin: textContainerOrigin, size: NSSize(
@@ -716,9 +770,7 @@ final class BlockNSTextView: NSTextView {
         storage.setAttributedString(mutable)
         setSelectedRange(range)
         if let coordinator {
-            coordinator.signature = BlockTextView.ContentSignature(
-                attributedText: storage, kind: blockKind, isCompleted: coordinator.parent.isCompleted
-            )
+            coordinator.recordLocalEdit(storage, kind: blockKind)
             coordinator.parent.callbacks.onChange(NSAttributedString(attributedString: storage))
         }
         invalidateIntrinsicContentSize()

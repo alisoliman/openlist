@@ -1,5 +1,11 @@
 import AppKit
+import CoreText
 import SwiftData
+import SwiftUI
+
+// Register the bundled display serif as the app does at launch, before
+// anything resolves the editor's heading font.
+CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: "openlist/Resources/Fonts/InstrumentSerif-Regular.ttf") as CFURL, .process, nil)
 
 var checks = 0
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -189,6 +195,42 @@ coordinator.textDidChange(Notification(name: NSText.didChangeNotification, objec
 let typingEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
 check(coordinator.signature == BlockTextView.ContentSignature(attributedText: typingEcho, kind: .task, isCompleted: false), "Ordinary typing still produces a matching model echo without resetting native editing")
 
+// A renderer strikes a task during its completion dwell, before the store
+// marks it done. The strike is presentation only.
+let unstruckParent = coordinator.parent
+let closingAccent = NSColor.systemPurple
+let closing = RichTextCodec.decode(nil, plainText: "Closing task", kind: .task)
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent,
+    attributedText: closing, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
+coordinator.apply(closing, to: native, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent)
+let struckAttributes = native.textStorage!.attributes(at: 0, effectiveRange: nil)
+check(struckAttributes[.strikethroughStyle] as? Int == NSUnderlineStyle.single.rawValue
+    && struckAttributes[.strikethroughColor] as? NSColor === closingAccent
+    && struckAttributes[.foregroundColor] as? NSColor === Theme.Editor.completedInk, "A closing task is struck in the accent before it is stored as done")
+check(coordinator.signature == BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent),
+    "A struck presentation keeps the model's content in its signature")
+check(coordinator.signature != BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false),
+    "Starting or cancelling the dwell strike restyles the native editor")
+native.textStorage?.append(NSAttributedString(string: "!", attributes: native.typingAttributes))
+native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
+coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
+let struckEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
+check(native.string == "Closing task!" && struckEcho.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) == nil,
+    "The dwell strike never reaches stored rich text")
+check(coordinator.signature == BlockTextView.ContentSignature(attributedText: struckEcho, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent),
+    "Typing during the dwell matches the model's echo without resetting native editing")
+coordinator.parent = unstruckParent
+coordinator.apply(struckEcho, to: native, kind: .task, isCompleted: false)
+check(native.textStorage?.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) == nil, "Cancelling the dwell removes the strike")
+let completedTitle = RichTextCodec.decode(nil, plainText: "Done", kind: .quote, isCompleted: true)
+check(RichTextCodec.restylingCompletion(of: completedTitle, kind: .quote, struck: true).isEqual(to: completedTitle)
+    && RichTextCodec.restylingCompletion(of: completedTitle, kind: .quote, struck: false).isEqual(to: RichTextCodec.decode(nil, plainText: "Done", kind: .quote)),
+    "Completion restyling matches decoding in either state")
+let userStruck = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Keep this", kind: .task))
+RichTextCodec.toggleStrikethrough(in: userStruck, range: NSRange(location: 0, length: 4))
+check(RichTextCodec.restylingCompletion(of: RichTextCodec.restylingCompletion(of: userStruck, kind: .task, struck: true), kind: .task, struck: false).isEqual(to: userStruck),
+    "Unstriking a task keeps the user's own strikethrough")
+
 let inlineRange = NSRange(location: 0, length: 6)
 let inlineEdits: [(String, (NSMutableAttributedString) -> Void)] = [
     ("italic", { RichTextCodec.toggleTrait(.italicFontMask, in: $0, range: inlineRange, kind: .task) }),
@@ -300,6 +342,22 @@ await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>)
 }
 check(input.selectedRange().location == 5, "Typing in the middle of a focused block does not reapply its pending caret")
 
+// Escape must hand the keyboard back to the window, otherwise the next
+// single-key shortcut is typed into the row.
+var windowHeldKeyboardOnEscape = false
+coordinator.parent.callbacks.onEscape = { windowHeldKeyboardOnEscape = fixtureWindow.firstResponder === fixtureWindow }
+fixtureWindow.makeFirstResponder(input)
+check(fixtureWindow.firstResponder === input, "The fixture editor holds the keyboard before Escape")
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.cancelOperation(_:))), "Escape is consumed by the editor")
+check(windowHeldKeyboardOnEscape && fixtureWindow.firstResponder !== input, "Escape resigns the text view before the outline hears about it")
+input.isSlashMenuOpen = true
+fixtureWindow.makeFirstResponder(input)
+windowHeldKeyboardOnEscape = false
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.cancelOperation(_:))) && fixtureWindow.firstResponder === input && !windowHeldKeyboardOnEscape,
+    "Escape with the slash menu open only closes the menu")
+input.isSlashMenuOpen = false
+coordinator.parent.callbacks.onEscape = {}
+
 // The title's visible cap-height center must agree with its row center. A
 // paragraph line-height multiplier previously shifted that baseline downward.
 input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
@@ -316,6 +374,67 @@ for kind: BlockKind in [.task, .paragraph, .heading1, .heading2, .heading3, .cod
 coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}", kind: .task), to: input, kind: .task, isCompleted: false)
 let trailingLineHeight = input.height(fittingWidth: 180)
 check(input.caretRectLocal(at: 5).maxY <= trailingLineHeight, "Balanced insets still contain the caret after a trailing soft break")
+
+// One editor typography, tuned to the Next rows. With no inset, a task title
+// measures and sits like SwiftUI text set the way `NXStrikeText` sets it.
+check(Theme.Editor.nsFont(for: .heading1).fontName == "InstrumentSerif-Regular", "Heading 1 uses the bundled display serif")
+func nextTitleMetrics(_ text: String) -> (height: CGFloat, baseline: CGFloat) {
+    let size = Theme.Editor.bodyPointSize
+    let host = NSHostingView(rootView: Text(text).font(.system(size: size)).lineSpacing(size * 0.2)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 180, alignment: .leading))
+    host.frame = CGRect(origin: .zero, size: host.fittingSize)
+    host.layoutSubtreeIfNeeded()
+    return (host.frame.height, host.firstBaselineOffsetFromTop)
+}
+input.textContainerInset = .zero
+for (title, next) in [("Task", "Task"), ("Task one\u{2028}Task two", "Task one\nTask two")] {
+    coordinator.apply(RichTextCodec.decode(nil, plainText: title, kind: .task), to: input, kind: .task, isCompleted: false)
+    let height = input.height(fittingWidth: 180)
+    let baseline = input.layoutManager!.location(forGlyphAt: 0).y + input.textContainerOrigin.y
+    let reference = nextTitleMetrics(next)
+    check(reference.height > 0 && abs(height - reference.height) <= 0.5,
+        "A \(title.contains("\u{2028}") ? "two-line" : "one-line") task with no inset is as tall as a Next row's title (\(height) vs \(reference.height))")
+    check(abs(baseline - reference.baseline) <= 0.5,
+        "A task with no inset shares a Next row title's first baseline (\(baseline) vs \(reference.baseline))")
+}
+input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
+coordinator.apply(RichTextCodec.decode(nil, plainText: "Task", kind: .task), to: input, kind: .task, isCompleted: false)
+check(input.height(fittingWidth: 180) == nextTitleMetrics("Task").height + 2 * Theme.Editor.textVerticalInset,
+    "The legacy document's default inset still pads a single line for its gutter")
+let taskAttributes = RichTextCodec.baseAttributes(for: .task)
+check(taskAttributes[.foregroundColor] as? NSColor === Theme.Editor.ink
+    && RichTextCodec.baseAttributes(for: .task)[.foregroundColor] as? NSColor === taskAttributes[.foregroundColor] as? NSColor
+    && RichTextCodec.baseAttributes(for: .quote)[.foregroundColor] as? NSColor === Theme.Editor.secondaryInk
+    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === Theme.Editor.strikeInk
+    && Theme.Editor.link === Theme.Editor.accentViolet,
+    "Editor colours are shared ink and accent tokens, so content signatures stay equal")
+let serifStyled = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Title", kind: .heading1))
+RichTextCodec.toggleTrait(.italicFontMask, in: serifStyled, range: NSRange(location: 0, length: 5), kind: .heading1)
+let serifEcho = RichTextCodec.decode(RichTextCodec.encode(serifStyled, kind: .heading1), plainText: "Title", kind: .heading1)
+check((serifEcho.attribute(.font, at: 0, effectiveRange: nil) as? NSFont).map { NSFontManager.shared.traits(of: $0).contains(.italicFontMask) } == true,
+    "Italic survives in a heading whose face has no italic")
+func fontTraits(_ content: NSAttributedString, at index: Int) -> NSFontTraitMask {
+    NSFontManager.shared.traits(of: content.attribute(.font, at: index, effectiveRange: nil) as! NSFont)
+}
+let serifBold = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Title", kind: .heading1))
+RichTextCodec.toggleTrait(.boldFontMask, in: serifBold, range: NSRange(location: 0, length: 5), kind: .heading1)
+check(fontTraits(RichTextCodec.decode(RichTextCodec.encode(serifBold, kind: .heading1), plainText: "Title", kind: .heading1), at: 0).contains(.boldFontMask),
+    "Bold the user applies in a heading survives a round trip")
+// Heading 1 used to be system bold at 21pt, so runs styled in an older
+// heading were archived bold with it. That weight was the heading's.
+let legacyBold = NSFont.systemFont(ofSize: 21, weight: .bold)
+let legacyHeading = NSMutableAttributedString(string: "Old title", attributes: [.font: legacyBold])
+legacyHeading.addAttribute(.font, value: NSFontManager.shared.convert(legacyBold, toHaveTrait: .italicFontMask), range: NSRange(location: 4, length: 5))
+let legacyArchive = legacyHeading.rtf(from: NSRange(location: 0, length: legacyHeading.length),
+    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+let legacyDecoded = RichTextCodec.decode(legacyArchive, plainText: "Old title", kind: .heading1)
+check(legacyDecoded.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == Theme.Editor.nsFont(for: .heading1),
+    "An older heading's own bold reads as the serif heading")
+check(fontTraits(legacyDecoded, at: 4).contains(.italicFontMask) && !fontTraits(legacyDecoded, at: 4).contains(.boldFontMask),
+    "Italic in an older heading keeps its italic without the old heading's bold")
+check(RichTextCodec.decode(RichTextCodec.encode(legacyDecoded, kind: .heading1), plainText: "Old title", kind: .heading1).isEqual(to: legacyDecoded),
+    "The next save stores an older heading's runs corrected")
 
 // Completion changes presentation, never manual order or parentage.
 let section = Block(kind: .heading1, text: "Section", sortIndex: 0)
@@ -342,5 +461,160 @@ let collapsedProjection = BlockTree.prioritizingPendingTasks(in: BlockTree.flatt
 check(!collapsedProjection.contains(where: { $0.id == doneChild.id || $0.id == pendingChild.id }), "Completion ordering respects collapsed subtrees")
 check(BlockTree.prioritizingPendingTasks(in: []).isEmpty, "Empty outline has no completion projection")
 check(Set(projected.map(\.id)).count == completionBlocks.count, "Completion ordering never loses or duplicates a block")
+
+// The outline engine behind every document renderer, driven without a view.
+let outlineList = store.createList(title: "Outline engine")
+let outlineDocument = DocumentContext(listID: outlineList.id)
+let pageTask = store.appendBlock(kind: .task, text: "Parent", to: outlineDocument)
+let firstSubtask = store.insertChild(kind: .task, text: "First subtask", of: pageTask, at: .last)
+let secondSubtask = store.insertChild(kind: .task, text: "Second subtask", of: pageTask, at: .last)
+store.save()
+let outlineEnv = AppEnvironment(store: store)
+let page = DocumentContext(listID: outlineList.id, rootBlockID: pageTask.id)
+let pageEditor = OutlineEditor(env: outlineEnv, document: page)
+let listEditor = OutlineEditor(env: outlineEnv, document: outlineDocument)
+func outlineRow(_ block: Block, in editor: OutlineEditor) -> BlockRow {
+    editor.visibleRows(in: store.blocks(inList: outlineList.id)).first { $0.id == block.id }!
+}
+func pageRows() -> [BlockRow] { pageEditor.visibleRows(in: store.blocks(inList: outlineList.id)) }
+check(pageRows().map(\.id) == [firstSubtask.id, secondSubtask.id] && pageRows().allSatisfy { $0.depth == 0 },
+    "A task page projects only its own subtree, from depth 0")
+
+// The page's root is a floor: its children never outdent off the page.
+check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).editorCallbacks.onTab(true, 0) && secondSubtask.parentID == pageTask.id,
+    "Shift-Tab on a task page's direct child is consumed and keeps it on the page")
+check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onTab(false, 0) && secondSubtask.parentID == firstSubtask.id,
+    "Tab still nests subtasks on a task page")
+check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onTab(true, 0) && secondSubtask.parentID == pageTask.id,
+    "Shift-Tab still outdents nested subtasks up to the page")
+var focusedIDs: [UUID] = []
+var escapedIDs: [UUID] = []
+pageEditor.hooks.didFocus = { focusedIDs.append($0) }
+pageEditor.hooks.didEscape = { escapedIDs.append($0) }
+pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onFocus()
+check(pageEditor.focus.blockID == firstSubtask.id && focusedIDs.last == firstSubtask.id && outlineEnv.activeDocument == page,
+    "Focusing a row adopts the caret, claims menu commands and tells the host")
+outlineEnv.pendingCommand = .outdent
+pageEditor.receiveCommand()
+check(firstSubtask.parentID == pageTask.id && outlineEnv.pendingCommand == nil, "The Outdent command keeps a task page's children on the page")
+
+// Escape lets go of the caret and tells the host which block it left.
+check(outlineEnv.navigator.selection == [firstSubtask.id], "Editing a row makes it the row selection")
+pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onEscape()
+check(escapedIDs == [firstSubtask.id] && pageEditor.focus.blockID == nil && outlineEnv.navigator.selection.isEmpty,
+    "Escape releases the caret and selection, then reports the block to the host")
+
+// With the window holding the keyboard, Return or an arrow takes it back.
+check(pageEditor.escapedBlockID == firstSubtask.id, "The outline remembers the block Escape left")
+fixtureWindow.makeFirstResponder(nil)
+check(!pageEditor.resumeEditing(onKey: 125, modifiers: .command, in: fixtureWindow)
+    && !pageEditor.resumeEditing(onKey: 0, modifiers: [], in: fixtureWindow), "Only a plain Return or arrow resumes editing")
+fixtureWindow.makeFirstResponder(input)
+check(!pageEditor.resumeEditing(onKey: 36, modifiers: [], in: fixtureWindow), "A key another view holds is left alone")
+fixtureWindow.makeFirstResponder(nil)
+outlineEnv.activeDocument = outlineDocument
+check(!pageEditor.resumeEditing(onKey: 36, modifiers: [], in: fixtureWindow), "Another document taking commands keeps its keys")
+outlineEnv.activeDocument = page
+let tokenBeforeResume = pageEditor.focus.token
+check(pageEditor.resumeEditing(onKey: 125, modifiers: [.numericPad, .function], in: fixtureWindow)
+    && pageEditor.focus.blockID == firstSubtask.id && pageEditor.focus.caret == nil && pageEditor.focus.token != tokenBeforeResume,
+    "↓ with nothing holding the keyboard puts the caret back where the text view had it")
+check(pageEditor.escapedBlockID == nil && !pageEditor.resumeEditing(), "Resuming lets go of the escaped block")
+pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onEscape()
+pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onFocus()
+check(pageEditor.escapedBlockID == nil, "Clicking into any row ends the wait to resume")
+
+// Hooks replace host policy; the defaults are the legacy editor's.
+var toggledIDs: [UUID] = []
+pageEditor.hooks.toggleCompletion = { toggledIDs.append($0) }
+pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onToggleCompletion()
+check(toggledIDs == [firstSubtask.id] && !firstSubtask.isCompleted, "A completion hook replaces the direct store write")
+listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onToggleCompletion()
+check(secondSubtask.isCompleted, "Without a hook, completion writes straight to the store")
+var openedIDs: [UUID] = []
+pageEditor.hooks.openDetails = { openedIDs.append($0) }
+pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onOpenDetails()
+check(openedIDs == [firstSubtask.id] && outlineEnv.navigator.openTaskID == nil, "A details hook replaces the navigator's detail panel")
+var claimed: [(EditorCommand, [UUID])] = []
+pageEditor.hooks.taskCommand = { command, ids in
+    claimed.append((command, ids))
+    return command == .toggleStar
+}
+pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onFocus()
+outlineEnv.pendingCommand = .toggleStar
+pageEditor.receiveCommand()
+check(claimed.last?.0 == .toggleStar && claimed.last?.1 == [firstSubtask.id] && !firstSubtask.isStarred,
+    "A host claims task commands for the command targets before the store")
+outlineEnv.pendingCommand = .setDueToday
+pageEditor.receiveCommand()
+check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate != nil, "Commands a host declines fall back to the store")
+outlineEnv.activeDocument = outlineDocument
+outlineEnv.pendingCommand = .clearDueDate
+pageEditor.receiveCommand()
+check(outlineEnv.pendingCommand == .clearDueDate && firstSubtask.dueDate != nil, "Only the active document runs menu commands")
+outlineEnv.pendingCommand = nil
+
+// Completion visibility is the host's to decide.
+pageEditor.showsCompleted = false
+check(!pageRows().contains { $0.id == secondSubtask.id }, "Hidden completed tasks leave the visible rows")
+pageEditor.completedTasksKeptVisible = [secondSubtask.id]
+check(pageRows().map(\.id) == [firstSubtask.id, secondSubtask.id], "The host can keep a completed task on screen")
+pageEditor.documentDidChange()
+check(pageEditor.completedTasksKeptVisible.isEmpty && pageEditor.focus.blockID == nil,
+    "A document changing in place forgets the tasks its host kept visible")
+pageEditor.showsCompleted = true
+secondSubtask.isCompleted = false
+let doneFirst = store.insertChild(kind: .task, text: "Done first", of: pageTask, at: .first)
+doneFirst.isCompleted = true
+check(pageRows().last?.id == doneFirst.id, "Completed tasks settle below pending siblings")
+
+// The list's floor is the document root: nested rows still outdent there.
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
+outlineEnv.pendingCommand = .outdent
+listEditor.receiveCommand()
+check(firstSubtask.parentID == nil, "A list document still outdents nested rows to its top level")
+
+// Slash selection and arrows through void rows.
+let noteBlock = store.appendBlock(kind: .paragraph, text: "/div", to: outlineDocument)
+let afterNote = store.appendBlock(kind: .paragraph, text: "After", to: outlineDocument)
+store.save()
+listEditor.actions(for: outlineRow(noteBlock, in: listEditor)).onSlashQuery("div", NSRange(location: 0, length: 4), .zero, .zero)
+check(listEditor.isSlashMenuOpen(on: noteBlock.id), "Typing a slash query opens the menu on its row")
+listEditor.handleSlashCommand(.confirm)
+let dividerRows = listEditor.visibleRows(in: store.blocks(inList: outlineList.id))
+let dividerIndex = dividerRows.firstIndex { $0.id == noteBlock.id }!
+check(noteBlock.kind == .divider && listEditor.slash == nil && dividerRows[dividerIndex + 1].block.kind == .paragraph
+    && listEditor.focus.blockID == dividerRows[dividerIndex + 1].id, "A divider from the slash menu is followed by a focused paragraph")
+let beforeDivider = dividerRows[dividerIndex - 1]
+// Drawn, then deleted behind the renderer's back: handlers must not reuse it.
+_ = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
+store.deleteBlock(dividerRows[dividerIndex + 1].block)
+store.save()
+check(listEditor.actions(for: beforeDivider).onArrowOut(.down, 0) && listEditor.focus.blockID == afterNote.id,
+    "Arrows step over dividers to the next text row, past a drawn row that has gone")
+let rowsBeforeReturn = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
+check(rowsBeforeReturn.last?.id == afterNote.id, "The drawn rows end with the last text row")
+check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onReturn(5, store.attributedContent(of: afterNote))
+    && listEditor.focus.blockID != afterNote.id && store.block(id: listEditor.focus.blockID)?.kind == .paragraph,
+    "Return at the end of a row focuses a new row after it")
+let returned = listEditor.focus.blockID
+check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onArrowOut(.down, 0) && listEditor.focus.blockID == returned,
+    "An edit made here retires the drawn rows, so the next key sees the new row")
+
+// Between renders, handlers read the drawn rows rather than the store.
+let drawnBeforeAppend = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
+let undrawn = store.appendBlock(kind: .paragraph, text: "Not drawn yet", to: outlineDocument)
+store.save()
+check(!listEditor.actions(for: drawnBeforeAppend.last!).onArrowOut(.down, 0), "Handlers between renders reuse the drawn rows")
+_ = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
+check(listEditor.actions(for: drawnBeforeAppend.last!).onArrowOut(.down, 0) && listEditor.focus.blockID == undrawn.id,
+    "The next render's rows reach the handlers")
+let shownRows = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
+let parentRow = shownRows.first { $0.id == pageTask.id }!
+check(shownRows[shownRows.firstIndex { $0.id == pageTask.id }! + 1].id == doneFirst.id, "A completed subtask is drawn under its parent")
+listEditor.showsCompleted = false
+check(listEditor.actions(for: parentRow).onArrowOut(.down, 0) && listEditor.focus.blockID != doneFirst.id && listEditor.focus.blockID != nil,
+    "Hiding completed tasks retires the drawn rows")
+listEditor.showsCompleted = true
 
 print("✅ \(checks) editor/store checks passed")

@@ -94,20 +94,50 @@ enum Theme {
         static let chip = SwiftUI.Font.system(size: 11, weight: .medium)
     }
 
-    /// Font metrics used by the AppKit-backed block editor. Kept here so the
-    /// SwiftUI chrome and the NSTextView content stay optically aligned.
+    /// Font metrics and text colours used by the AppKit-backed block editor.
+    /// Kept here so the SwiftUI chrome and the NSTextView content stay
+    /// optically aligned.
+    ///
+    /// There is one editor typography for every renderer: stored rich text
+    /// drops fonts that match these, so a renderer-specific face would be
+    /// saved into the document. The values follow the Next rows.
     enum Editor {
-        static let bodyPointSize: CGFloat = 13.5
-        static let heading1PointSize: CGFloat = 21
+        /// Matches `NXStrikeText`: with no vertical inset, a task title in a
+        /// document sits exactly where a task title does on any Next screen.
+        static let bodyPointSize: CGFloat = 13.8
+        nonisolated static let heading1PointSize: CGFloat = 26
         static let heading2PointSize: CGFloat = 17
-        static let heading3PointSize: CGFloat = 15
+        static let heading3PointSize: CGFloat = 14
         static let codePointSize: CGFloat = 12.5
-        static let lineHeightMultiple: CGFloat = 1.28
+        /// Space between wrapped lines, as a fraction of the point size. Like
+        /// SwiftUI's `lineSpacing` on the Next rows, none is added above the
+        /// first line or below the last, so a single line keeps the font's
+        /// natural height and never sits low in its selection highlight.
+        static let lineSpacingRatio: CGFloat = 0.2
+        static let codeLineHeightMultiple: CGFloat = 1.15
+        /// Space above and below a block's text, the default for
+        /// `BlockTextView.verticalInset`. The legacy document's gutter controls
+        /// are tuned to a single line padded to 20pt. A single 13.8pt line is
+        /// 16pt with its baseline at 13, like `NXStrikeText`, and a Next row
+        /// takes its height from its controls rather than a line box, so a
+        /// renderer lining titles up with Next rows passes 0.
         static let textVerticalInset: CGFloat = 2
+
+        /// The display serif Next uses for titles. Resolved once, after
+        /// `NX.registerFonts()` has run at launch; the system serif stands in
+        /// wherever the bundled face is not registered. Fonts are immutable,
+        /// so sharing one across isolation domains is safe.
+        private nonisolated(unsafe) static let heading1Font = serifFont(ofSize: heading1PointSize)
+
+        private nonisolated static func serifFont(ofSize size: CGFloat) -> NSFont {
+            NSFont(name: "InstrumentSerif-Regular", size: size)
+                ?? NSFont.systemFont(ofSize: size).fontDescriptor.withDesign(.serif).flatMap { NSFont(descriptor: $0, size: size) }
+                ?? .systemFont(ofSize: size)
+        }
 
         static func nsFont(for kind: BlockKind) -> NSFont {
             switch kind {
-            case .heading1: .systemFont(ofSize: heading1PointSize, weight: .bold)
+            case .heading1: heading1Font
             case .heading2: .systemFont(ofSize: heading2PointSize, weight: .semibold)
             case .heading3: .systemFont(ofSize: heading3PointSize, weight: .semibold)
             case .code: .monospacedSystemFont(ofSize: codePointSize, weight: .regular)
@@ -119,9 +149,9 @@ enum Theme {
         /// Extra space above a block, used to give headings breathing room.
         static func topPadding(for kind: BlockKind) -> CGFloat {
             switch kind {
-            case .heading1: 18
-            case .heading2: 14
-            case .heading3: 10
+            case .heading1: 22
+            case .heading2: 16
+            case .heading3: 12
             case .divider: 8
             case .image: 6
             default: 0
@@ -130,12 +160,47 @@ enum Theme {
 
         static func bottomPadding(for kind: BlockKind) -> CGFloat {
             switch kind {
-            case .heading1: 4
-            case .heading2: 3
+            case .heading1: 6
+            case .heading2: 4
             case .heading3: 2
             case .divider: 8
             case .image: 6
             default: 0
+            }
+        }
+
+        // MARK: Colours
+
+        // Next's ink at the strengths the editor uses, and its accents. These
+        // must stay singletons: attributed strings compare dynamic colours by
+        // identity, so a colour made per call would fail every content
+        // signature and restyle the text view on each update, resetting the
+        // caret and IME.
+
+        nonisolated static let ink = inkColor(1)
+        /// Quotes.
+        nonisolated static let secondaryInk = inkColor(0.62)
+        nonisolated static let placeholderInk = inkColor(0.36)
+        /// Completed task text.
+        nonisolated static let completedInk = inkColor(0.42)
+        /// The strike through completed task text.
+        nonisolated static let strikeInk = inkColor(0.36)
+
+        /// Next's accents, for `BlockTextView.strikeColor` while a task closes.
+        /// `NextAccent.editorColor` picks the one the settings choose.
+        nonisolated static let accentViolet = NSColor(srgbRed: 0x7C / 255, green: 0x4D / 255, blue: 0xF0 / 255, alpha: 1)
+        nonisolated static let accentBlue = NSColor(srgbRed: 0x2F / 255, green: 0x6F / 255, blue: 0xE0 / 255, alpha: 1)
+        nonisolated static let accentGreen = NSColor(srgbRed: 0x1F / 255, green: 0x8A / 255, blue: 0x6D / 255, alpha: 1)
+        nonisolated static let accentOrange = NSColor(srgbRed: 0xC2 / 255, green: 0x53 / 255, blue: 0x2B / 255, alpha: 1)
+        /// Links take Next's default accent.
+        nonisolated static let link = accentViolet
+
+        /// `NX.ink` (#17161A, #F1EFEC in dark mode) at `alpha`.
+        private nonisolated static func inkColor(_ alpha: CGFloat) -> NSColor {
+            NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                    ? NSColor(srgbRed: 0xF1 / 255, green: 0xEF / 255, blue: 0xEC / 255, alpha: alpha)
+                    : NSColor(srgbRed: 0x17 / 255, green: 0x16 / 255, blue: 0x1A / 255, alpha: alpha)
             }
         }
     }

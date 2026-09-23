@@ -11,6 +11,9 @@ struct InlineMetadataEdits {
     }
     private var edits: [UUID: Edit] = [:]
 
+    /// No block has a draft waiting to be committed.
+    var isEmpty: Bool { edits.isEmpty }
+
     mutating func recordTextChange(for block: Block, to text: String) {
         guard block.modelContext != nil, !block.isDeleted, block.text != text else { return }
         let original: String
