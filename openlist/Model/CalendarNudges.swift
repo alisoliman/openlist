@@ -7,15 +7,14 @@ struct CalendarStartNudge: Equatable, Sendable {
     var graceEndsAt: Date
 }
 
+/// A heads-up that running work is about to reach its estimate. Work keeps
+/// recording past it; the block then grows by itself.
 struct CalendarOverrunNudge: Equatable, Sendable {
-    enum Kind: Equatable, Sendable { case headsUp, needsConfirmation }
     var taskID: UUID
     var occurrenceID: UUID
-    var kind: Kind
     var estimatedEnd: Date
     var proposedEnd: Date
     var movedTaskCount: Int
-    var needsConfirmation: Bool { kind == .needsConfirmation }
 }
 
 struct CalendarRescheduleSummary: Identifiable, Equatable, Sendable {

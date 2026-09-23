@@ -60,7 +60,7 @@ struct TaskSchedulingSection: View {
             Toggle("Track work away from this Mac", isOn: Binding(get: { block.tracksAwayFromMac }, set: {
                 env.store.setTracksAway($0, for: block)
             }))
-            .help(block.tracksAwayFromMac ? "Tracking continues through lock or sleep, until a meeting or unavailable time." : "Locking or sleeping pauses active work.")
+            .help(block.tracksAwayFromMac ? "Tracking continues through lock or sleep." : "Locking or sleeping pauses active work.")
             HStack {
                 let category = env.store.list(id: block.listID)?.availabilityCategoryRaw == "personal" ? "Personal" : "Work"
                 Label("\(category) hours", systemImage: category == "Personal" ? "house" : "briefcase")

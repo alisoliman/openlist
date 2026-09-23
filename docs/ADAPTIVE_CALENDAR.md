@@ -73,20 +73,23 @@ are shown rather than represented as a successfully connected calendar.
 ## Work must be explicitly started
 
 A calendar block is a plan, not a running timer. Click **Start** in task details
-or **Start working** in a block’s context menu. Starting is allowed within the
-list’s available hours, outside meetings and other tasks’ pinned times. A global
-banner keeps **Pause** and **Done** available while navigating the app.
+or **Start working** in a block’s context menu. Starting always records, even
+outside the list’s available hours or during a meeting: hours and busy time shape
+the plan and its warnings, not whether work may start. Starting another task
+switches straight away, and the tray offers Undo. A global banner keeps
+**Pause** and **Done** available while navigating the app.
 
 At a planned start, **Up next** offers one-click **Start**. If it is ignored for
 five minutes, only the missed task moves into the next free gap; the rest of the
 day stays steady. Missed time is never logged as work. Any resulting deadline
 risk remains visible in coverage.
 
-Near the estimated finish, **Still working?** offers **Done** and explains the
-extra time. An active task receives one automatic extension of up to **15 minutes**,
-clipped to the next fixed boundary. Subsequent flexible work can move. Further
-extensions that would move other tasks require **Keep going**; while waiting,
-tracking is paused. Empty space can be used without another interruption.
+Recording continues past the estimate. A minute before the working block ends,
+it grows to the next quarter hour plus **15 minutes**, clipped to the next fixed
+boundary, and later flexible work moves out of its way. The tray reports each
+extension with Undo, which puts the previous blocks back; work keeps recording,
+and the block is not grown again until Redo or the next start. An optional
+background notification offers **Complete task** near the estimated finish.
 Reaching an estimate never marks a task complete.
 
 Routine moves animate quietly and produce an expandable rescheduling message.
@@ -94,20 +97,20 @@ Deadline and pin conflicts remain visible until resolved. Background calendar
 nudges use silent macOS notifications when notification permission is available;
 the in-app work bar remains available without that permission.
 
-At a meeting, a break, another task’s pinned time, or the end of available hours,
-active work pauses at that boundary. Remaining work is replanned into the next
-available slot. **Defer…** pauses work, removes that occurrence’s explicit
-placements, and chooses the next day on which planning may start. Its deadline
-stays unchanged, so deferral can reveal a deadline conflict.
+When a meeting, a break, another task’s pinned time, or the end of available
+hours leaves the working block no more room, work keeps recording and the toolbar
+and tray turn red, naming what it is running into. Pausing replans the remaining
+work into the next available slot. **Defer…** pauses work, removes that
+occurrence’s explicit placements, and chooses the next day on which planning may
+start. Its deadline stays unchanged, so deferral can reveal a deadline conflict.
 
 Lock, screen sleep, system sleep, and inactive user-session notifications pause
 active work and offer **Resume** on return. **Track work away from this Mac** is
-a per-task exception: elapsed work can continue while locked or asleep, while
-meetings and availability boundaries still apply. Resume always requires an
-explicit action. Quitting Openlist ends active tracking. After an interrupted
-process or restart, an unfinished local session is closed at its last saved
-heartbeat and a resume prompt is offered; elapsed time while the app was absent
-is not silently recorded as work.
+a per-task exception: elapsed work can continue while locked or asleep. Resume
+always requires an explicit action. Quitting Openlist ends active tracking. After
+an interrupted process or restart, an unfinished local session is closed at its
+last saved heartbeat and a resume prompt is offered; elapsed time while the app
+was absent is not silently recorded as work.
 
 ## Move a preference or pin a time
 

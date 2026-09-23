@@ -103,8 +103,6 @@ final class CalendarNotificationBridge {
             calendar.quietWork(WorkTaskReference(task))
         case NotificationService.calendarDoneAction where nudge.category == NotificationService.calendarOverrunCategory || nudge.category == NotificationService.calendarHeadsUpCategory:
             calendar.complete(task: task)
-        case NotificationService.calendarKeepGoingAction where nudge.category == NotificationService.calendarOverrunCategory && calendar.overrunNudge?.needsConfirmation == true:
-            calendar.showWork(for: task)
         default: break
         }
         update()
@@ -113,20 +111,13 @@ final class CalendarNotificationBridge {
     private var currentNudge: Nudge? {
         if let nudge = calendar.overrunNudge,
            let task = store.block(id: nudge.taskID), task.occurrenceID == nudge.occurrenceID, !task.isCompleted {
-            let kind = nudge.needsConfirmation ? "confirmation" : "heads-up"
             let dates = "\(stamp(nudge.estimatedEnd)).\(stamp(nudge.proposedEnd))"
-            let id = "\(NotificationService.calendarRequestPrefix)overrun.\(nudge.taskID).\(nudge.occurrenceID).\(kind).\(dates).\(nudge.movedTaskCount)"
+            let id = "\(NotificationService.calendarRequestPrefix)overrun.\(nudge.taskID).\(nudge.occurrenceID).heads-up.\(dates).\(nudge.movedTaskCount)"
             let count = nudge.movedTaskCount
-            let impact = count == 0 ? "" : " Keeping going will move \(count) other \(count == 1 ? "task" : "tasks")."
-            let minutes = max(0, nudge.proposedEnd.timeIntervalSince(nudge.estimatedEnd) / 60)
-            let duration = minutes.formatted(.number.precision(.fractionLength(0...1)))
-            let unit = minutes == 1 ? "minute" : "minutes"
-            let body = nudge.needsConfirmation
-                ? "Recording is paused. Review \(duration) more \(unit), or complete the task.\(impact)"
-                : "Estimate almost reached. Recording pauses if more time would move other work."
+            let impact = count == 0 ? "" : ", moving \(count) other \(count == 1 ? "task" : "tasks")"
+            let body = "Estimate almost reached. Recording continues and the plan makes room\(impact)."
             return Nudge(identifier: id, taskID: nudge.taskID, occurrenceID: nudge.occurrenceID,
-                         category: nudge.needsConfirmation ? NotificationService.calendarOverrunCategory : NotificationService.calendarHeadsUpCategory,
-                         title: task.displayTitle, body: body)
+                         category: NotificationService.calendarHeadsUpCategory, title: task.displayTitle, body: body)
         }
         if let nudge = calendar.startNudge,
            let task = store.block(id: nudge.taskID), task.occurrenceID == nudge.occurrenceID, !task.isCompleted {

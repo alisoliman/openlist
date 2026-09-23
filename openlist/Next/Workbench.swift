@@ -136,11 +136,12 @@ final class Workbench {
         }
     }
 
-    /// The running task, calendar notice, extension and reschedule the work watch last saw.
-    @ObservationIgnored var workWatch: (taskID: UUID?, notice: String?, grant: CalendarWorkExtension?, moved: UUID?) = (nil, nil, nil, nil)
+    /// The running task, calendar notice, extension, conflict and reschedule the work watch last saw.
+    @ObservationIgnored var workWatch: (taskID: UUID?, notice: String?, grant: CalendarWorkExtension?,
+                                        conflict: CalendarWorkConflict?, moved: UUID?) = (nil, nil, nil, nil, nil)
     /// Why the calendar paused work by itself, told again when you come back to
     /// the Mac. `returnedAt` is the first return it was shown for.
-    @ObservationIgnored var awayPause: (taskID: UUID, text: String, conflict: Bool, returnedAt: Date?)?
+    @ObservationIgnored var awayPause: (taskID: UUID, text: String, returnedAt: Date?)?
     /// Until the calendar's first notice: work paused when Openlist last quit
     /// comes back with one.
     @ObservationIgnored var awaitsLaunchNotice = true

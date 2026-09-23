@@ -97,7 +97,7 @@ struct NextToolbar: View {
             }
         }
         .popover(isPresented: $calendar.isWorkPanelPresented, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
-            WorkPopover().environment(env)
+            WorkPopover().environment(env).environment(\.nextStyle, style)
         }
         .onChange(of: recordingAnnouncement) { _, announcement in
             guard let announcement else { return }
@@ -113,8 +113,10 @@ struct NextToolbar: View {
     private var recordingAnnouncement: String? {
         let calendar = env.calendar
         if let notice = calendar.notice { return notice }
+        if let conflict = calendar.workConflict, let session = calendar.activeSession, session.occurrenceID == conflict.occurrenceID {
+            return "Still recording. \(session.title) is running into \(workbench.conflictLabel(conflict, inSentence: true))."
+        }
         if let session = calendar.activeSession { return "Recording work on \(session.title)." }
-        if calendar.overrunNudge?.needsConfirmation == true { return "Recording paused. Review the plan before continuing." }
         if let summary = calendar.workCompletion { return "Completed \(summary.title). Recording stopped." }
         if let task = calendar.resumableTask { return "Recording stopped for \(task.displayTitle). The task is still open." }
         return nil
@@ -161,20 +163,16 @@ struct NXWorkNotch: View {
                         NXWidthCap(440) {
                             HStack(spacing: 10) {
                                 panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: false)
-                                if let nudge = env.calendar.overrunNudge, nudge.taskID == task.id {
-                                    extensionChip(nudge)
-                                } else if let extended = env.calendar.workExtension, extended.taskID == task.id {
-                                    // The time already given stays visible once the nudge is gone.
-                                    Text("+\(extended.minutes)m")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(NX.amberText)
-                                        .padding(.vertical, 3)
-                                        .padding(.horizontal, 6)
-                                        .background(NX.amber.opacity(0.16), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                                        .fixedSize()
+                                // What the work ran into, in red, takes the place of the time it was given, in amber.
+                                if let conflict = env.calendar.workConflict, conflict.occurrenceID == task.occurrenceID {
+                                    let sentence = workbench.conflictLabel(conflict, inSentence: true)
+                                    extensionChip(workbench.conflictLabel(conflict), color: NX.redText, fill: NX.red.opacity(0.12))
+                                        .help("Still recording. Running into \(sentence)")
+                                        .accessibilityLabel("Running into \(sentence)")
+                                } else if let extended = env.calendar.workExtension, extended.occurrenceID == task.occurrenceID {
+                                    extensionChip("+\(extended.minutes)m", color: NX.amberText, fill: NX.amber.opacity(0.16))
                                         .help("Extended by \(extended.minutes) min")
                                         .accessibilityLabel("Extended by \(extended.minutes) minutes")
-                                        .transition(.scale(scale: 0.85).combined(with: .opacity))
                                 }
                                 controls {
                                     notchButton(paused ? "play.fill" : "pause.fill", help: paused ? "Resume" : "Pause",
@@ -233,12 +231,6 @@ struct NXWorkNotch: View {
                     .monospacedDigit()
                     .foregroundStyle(over ? NX.amberText : style.accent)
                     .fixedSize()
-                if !compact {
-                    Text("of \(Int(estimate / 60)) min")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.4))
-                        .fixedSize()
-                }
             }
             .contentShape(Rectangle())
         }
@@ -265,23 +257,17 @@ struct NXWorkNotch: View {
         }
     }
 
-    @ViewBuilder
-    private func extensionChip(_ nudge: CalendarOverrunNudge) -> some View {
-        let minutes = max(1, Int(nudge.proposedEnd.timeIntervalSince(nudge.estimatedEnd) / 60))
-        let conflict = nudge.needsConfirmation && nudge.movedTaskCount > 0
-        Button { env.calendar.acceptMoreTime() } label: {
-            Text(conflict ? "+\(minutes)m · moves \(nudge.movedTaskCount)" : "+\(minutes)m")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(conflict ? NX.redText : NX.amberText)
-                .padding(.vertical, 3)
-                .padding(.horizontal, 6)
-                .background(conflict ? NX.red.opacity(0.12) : NX.amber.opacity(0.16),
-                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .fixedSize()
-        }
-        .buttonStyle(.plain)
-        .help("Give this task more time")
-        .transition(.scale(scale: 0.85).combined(with: .opacity))
+    /// The chip after the timer: the minutes the work was given, or what it ran into.
+    private func extensionChip(_ label: String, color: Color, fill: Color) -> some View {
+        Text(label)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .background(fill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .fixedSize()
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
 
     private func notchButton(_ icon: String, help: String, color: Color, hover: Color, weight: Font.Weight = .semibold,
