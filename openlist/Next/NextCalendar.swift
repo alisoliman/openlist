@@ -39,11 +39,8 @@ struct NextCalendarScreen: View {
     static func rangeText(_ dates: [Date]) -> String {
         guard let first = dates.first, let last = dates.last else { return "" }
         if dates.count == 1 { return first.formatted(.dateTime.weekday(.wide).day().month(.wide)) }
-        let cal = Calendar.current
-        if cal.isDate(first, equalTo: last, toGranularity: .month) {
-            return "\(cal.component(.day, from: first)) – \(last.formatted(.dateTime.day().month(.wide)))"
-        }
-        return "\(first.formatted(.dateTime.day().month(.wide))) – \(last.formatted(.dateTime.day().month(.wide)))"
+        // The locale orders day and month, and drops a shared month once.
+        return (first..<last).formatted(.interval.day().month(.wide))
     }
 }
 
@@ -66,15 +63,9 @@ private struct NXCalendarBody: View {
             if let current = plannedNow, let task = env.store.block(id: current.taskID) {
                 banner(current, task: task)
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    grid(range).frame(minWidth: max(640, NXCal.gutter + CGFloat(dates.count) * NXCal.minColumn))
-                    NXUnplannedColumn(now: now).frame(width: 236)
-                }
-                VStack(alignment: .leading, spacing: 16) {
-                    grid(range)
-                    NXUnplannedColumn(now: now)
-                }
+            NXCalendarColumns {
+                grid(range)
+                NXUnplannedColumn(now: now)
             }
         }
     }
@@ -154,6 +145,18 @@ private struct NXCalendarBody: View {
     }
 
     private func grid(_ range: ClosedRange<Int>) -> some View {
+        let minWidth = NXCal.gutter + CGFloat(dates.count) * NXCal.minColumn
+        return ScrollView(.horizontal) {
+            // Days share the card's width down to their minimum, then the card scrolls.
+            columns(range).containerRelativeFrame(.horizontal) { length, _ in max(length, minWidth) }
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .background(NX.card)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+    }
+
+    private func columns(_ range: ClosedRange<Int>) -> some View {
         let height = CGFloat(range.upperBound - range.lowerBound) * NXCal.hourHeight
         let cal = Calendar.current
         let blocksByDay = Dictionary(grouping: blocks) { cal.startOfDay(for: $0.start) }
@@ -179,9 +182,6 @@ private struct NXCalendarBody: View {
                 }
             }
         }
-        .background(NX.card)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
     }
 
     /// Booked hours in one day's blocks and events.
@@ -189,6 +189,41 @@ private struct NXCalendarBody: View {
         let seconds = blocks.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
             + events.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
         return seconds / 3600
+    }
+}
+
+/// The grid (basis 640) and the tray (basis 236) side by side, sharing any
+/// extra width equally; once both don't fit, each takes a full-width line.
+private struct NXCalendarColumns: Layout {
+    private let grid: CGFloat = 640
+    private let tray: CGFloat = 236
+    private let spacing: CGFloat = 16
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = frames(width: proposal.width, subviews: subviews)
+        return CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, frames(width: bounds.width, subviews: subviews)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func frames(width: CGFloat?, subviews: Subviews) -> [CGRect] {
+        guard subviews.count == 2 else { return [] }
+        let width = width.flatMap { $0.isFinite ? $0 : nil } ?? grid + spacing + tray
+        func height(_ index: Int, _ width: CGFloat) -> CGFloat {
+            subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        }
+        if width >= grid + spacing + tray {
+            let extra = (width - grid - spacing - tray) / 2
+            return [CGRect(x: 0, y: 0, width: grid + extra, height: height(0, grid + extra)),
+                    CGRect(x: grid + extra + spacing, y: 0, width: tray + extra, height: height(1, tray + extra))]
+        }
+        let top = height(0, width)
+        return [CGRect(x: 0, y: 0, width: width, height: top),
+                CGRect(x: 0, y: top + spacing, width: width, height: height(1, width))]
     }
 }
 
@@ -215,9 +250,10 @@ private struct NXDayHead: View {
                     .monospacedDigit()
                     .foregroundStyle(isToday ? style.accent : weekend ? NX.ink(0.5) : NX.ink)
                 Spacer(minLength: 0)
-                if load > 0.01 {
-                    let rounded = (load * 2).rounded() / 2
-                    Text(rounded.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(rounded))h" : String(format: "%.1fh", rounded))
+                if load > 0 {
+                    // To a tenth of an hour, and never 0h for a day that has something in it.
+                    let tenths = max(1, (load * 10).rounded())
+                    Text(tenths.truncatingRemainder(dividingBy: 10) == 0 ? "\(Int(tenths / 10))h" : String(format: "%.1fh", tenths / 10))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(NX.ink(0.36))
                         .lineLimit(1)
@@ -306,8 +342,10 @@ private struct NXDayColumn: View {
                 }
                 if isPast {
                     NX.ink(0.022)
-                } else if isToday, let y = Self.offset(of: now, range: range) {
-                    NX.ink(0.022).frame(height: y)
+                } else if isToday {
+                    // After the last hour, the whole of today has gone by.
+                    NX.ink(0.022).frame(height: Self.offset(of: now, range: range)
+                        ?? (cal.component(.hour, from: now) >= range.upperBound ? geo.size.height : 0))
                 }
 
                 ForEach(events) { event in
@@ -416,7 +454,11 @@ private struct NXCalendarBlock: View {
     let height: CGFloat
     let isToday: Bool
     let isPastDay: Bool
-    @State private var popped = true
+    @State private var entered = true
+    @State private var hovering = false
+    /// Briefly true after running work pushed this block to a new time.
+    @State private var shifted = false
+    @State private var shifts = 0
 
     var body: some View {
         let workbench = env.workbench
@@ -425,7 +467,7 @@ private struct NXCalendarBlock: View {
         let closing = workbench.closing[block.taskID] != nil
         let done = block.isCompleted || task?.isCompleted == true || closing
         let missed = (isPastDay || (isToday && block.end <= now)) && !done
-        let working = !block.isCompleted && task != nil && env.calendar.activeSession?.taskID == block.taskID
+        let working = block.isActive
         let isNow = isToday && block.start <= now && now < block.end
         let focused = env.navigator.openTaskID == block.taskID
         let fg: Color = working ? .white : done ? NX.ink(0.5) : NX.ink
@@ -446,7 +488,12 @@ private struct NXCalendarBlock: View {
                 .frame(width: 12, height: 12)
                 .padding(.top, 1)
                 .contentShape(Circle())
-                .onTapGesture { if !block.isCompleted { workbench.toggle(block.taskID) } }
+                .onTapGesture {
+                    // A done block reopens its task, unless a repeat has moved on since.
+                    if !block.isCompleted || (task?.isCompleted == true && task?.occurrenceID == block.occurrenceID) {
+                        workbench.toggle(block.taskID)
+                    }
+                }
                 Text(task?.displayTitle ?? block.titleSnapshot ?? "Task")
                     .font(.system(size: 10.5, weight: .semibold))
                     .strikethrough(done)
@@ -480,9 +527,13 @@ private struct NXCalendarBlock: View {
             }
         }
         .shadow(color: working ? color.opacity(0.33) : .clear, radius: 8, y: 6)
-        .scaleEffect(popped ? 1 : 0.96)
-        .opacity(popped ? 1 : 0.4)
+        .brightness(hovering ? -0.03 : 0)
+        // The design's rowIn entrance.
+        .offset(y: entered ? 0 : -8)
+        .scaleEffect(entered ? 1 : 0.99)
+        .opacity(entered ? 1 : 0)
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .onTapGesture {
             workbench.focusID = nil
             env.navigator.openTask(block.taskID)
@@ -490,28 +541,42 @@ private struct NXCalendarBlock: View {
         .animation(.easeOut(duration: 0.24), value: done)
         .animation(.easeOut(duration: 0.24), value: working)
         .onChange(of: fresh, initial: true) { _, isFresh in
-            guard isFresh else { return }
-            popped = false
-            // A planned block usually arrives already fresh. Animating back on
-            // the next update keeps both changes from merging into one.
-            Task { @MainActor in withAnimation(style.ease(380)) { popped = true } }
+            if isFresh { enter() }
+        }
+        .onChange(of: block.start) { _, _ in
+            guard env.calendar.workExtension?.movedTaskIDs.contains(block.taskID) == true else { return }
+            shifted = true
+            shifts += 1
+            enter()
+        }
+        .task(id: shifts) {
+            guard shifted else { return }
+            try? await Task.sleep(for: .milliseconds(1400))
+            if !Task.isCancelled { shifted = false }
         }
         .help(task?.displayTitle ?? "")
     }
 
+    private func enter() {
+        entered = false
+        // A planned block usually arrives already fresh. Animating back on
+        // the next update keeps both changes from merging into one.
+        Task { @MainActor in withAnimation(style.ease(380)) { entered = true } }
+    }
+
+    /// The slot, with one note in the design's order of precedence.
     private func meta(missed: Bool, working: Bool, isNow: Bool) -> String {
-        var text = "\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))"
-        if missed { text += " · carried forward" }
-        else if working { text += block.conflicts.first.map { " · runs into \($0)" } ?? " · working" }
-        else if isNow { text += " · now" }
-        let calendar = env.calendar
-        if let extended = calendar.workExtension, extended.occurrenceID == block.occurrenceID {
-            text += " · extended"
-        } else if calendar.workExtension?.movedTaskIDs.contains(block.taskID) == true
-                    || calendar.rescheduleSummary?.taskIDs.contains(block.taskID) == true {
-            text += " · rescheduled"
+        let time = "\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))"
+        if missed { return time + " · carried forward" }
+        if working {
+            // Work cut short by a meeting runs into it.
+            if let meeting = env.calendar.externalCalendars.busyTimes.first(where: { abs($0.start.timeIntervalSince(block.end)) < 1 }) {
+                return time + " · runs into " + (meeting.title.isEmpty ? "busy time" : meeting.title)
+            }
+            return time + (env.calendar.workExtension?.occurrenceID == block.occurrenceID ? " · extended" : " · working")
         }
-        return text
+        if shifted { return time + " · rescheduled" }
+        return isNow ? time + " · now" : time
     }
 }
 
@@ -556,6 +621,7 @@ private struct NXUnplannedColumn: View {
 
     private var unplanned: [Block] {
         let workbench = env.workbench
+        // Only a placement (or running work) gives a task its block, as Today's Fit into calendar counts it.
         let placed = Set(env.calendar.visibleBlocks.filter { !$0.isCompleted }.map(\.taskID))
         return library.open.filter { task in
             guard !placed.contains(task.id), workbench.closing[task.id] == nil else { return false }

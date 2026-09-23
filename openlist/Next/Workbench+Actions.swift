@@ -499,12 +499,10 @@ extension Workbench {
         let cal = settings.calendar
         let now = Date.now
         let category = store.list(id: task.listID).map { hours(for: $0) } ?? .work
-        let pinned = store.placements().filter { $0.taskID != id }
+        // Around meetings and whatever the calendar shows for other tasks:
+        // their placements, running work and done blocks.
         var busy: [(Date, Date)] = calendar.externalCalendars.busyTimes.map { ($0.start, $0.end) }
-        busy += pinned.map { ($0.start, $0.end) }
-        if let session = calendar.activeSession, session.taskID != id {
-            busy.append((session.startedAt, now.addingTimeInterval(30 * 60)))
-        }
+        busy += calendar.visibleBlocks.filter { $0.taskID != id }.map { ($0.start, $0.end) }
         let quarter = TimeInterval(15 * 60)
         // On a quarter hour, not before a deferral, and only inside the list's hours:
         // the scheduler's windows already leave out breaks, overrides and days off,
@@ -679,7 +677,7 @@ extension Workbench {
         let last = workWatch
         workWatch = seen
         if let grant = seen.grant, grant != last.grant { announceExtension(grant) }
-        // Blocks read "rescheduled" for a minute after a move, not until the next one.
+        // The Work panel's move summary lasts a minute after a move, not until the next one.
         if let moved = seen.moved, moved != last.moved {
             after(60_000, key: "rescheduled") { workbench in
                 if workbench.calendar.rescheduleSummary?.id == moved { workbench.calendar.dismissRescheduleSummary() }

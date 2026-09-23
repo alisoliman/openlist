@@ -11,6 +11,10 @@ final class CalendarCoordinator {
     private(set) var preferences: CalendarPreferences
     private(set) var plan: CalendarPlan = .empty
     private(set) var completedBlocks: [PlannedBlock] = []
+    /// What the calendar draws. Only explicit planning puts a task there: its
+    /// placements at their saved times, past ones included, the running work,
+    /// and completed occurrences that had a slot or recorded work. The plan's
+    /// flexible blocks only drive Start nudges and suggestions.
     private(set) var visibleBlocks: [PlannedBlock] = []
     private(set) var startNudge: CalendarStartNudge? {
         didSet { if oldValue != startNudge { onNudgesChanged?() } }
@@ -175,7 +179,7 @@ final class CalendarCoordinator {
     func storeDidChange(now: Date = .now) {
         guard hasStarted, !isUpdating else { return }
         guard schedulingSignature() != storeSchedulingSignature else {
-            refreshCompletedDisplay()
+            refreshVisibleBlocks(now: now)
             return
         }
         tick(now: now, checkClockGap: false, materialChange: true)
@@ -605,18 +609,56 @@ final class CalendarCoordinator {
             if !next.assessments[index].conflicts.contains(conflict) { next.assessments[index].conflicts.append(conflict) }
         }
         plan = next
-        store.calendarPlannedBlocks = next.blocks
         storeSchedulingSignature = schedulingSignature()
-        refreshCompletedDisplay()
+        refreshVisibleBlocks(now: now)
         if let nudge = overrunNudge, store.block(id: nudge.taskID)?.occurrenceID != nudge.occurrenceID || store.block(id: nudge.taskID)?.isCompleted != false {
             overrunNudge = nil
         }
         updateStartNudge(now: now)
     }
 
-    private func refreshCompletedDisplay() {
+    private func refreshVisibleBlocks(now: Date) {
         completedBlocks = store.completedCalendarBlocks()
-        visibleBlocks = (plan.blocks + completedBlocks).sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+        var blocks = store.placements().compactMap { placement -> PlannedBlock? in
+            guard placement.end > placement.start, let task = store.block(id: placement.taskID),
+                  task.occurrenceID == placement.occurrenceID, validWorkTask(WorkTaskReference(task)) != nil else { return nil }
+            return PlannedBlock(id: "\(placement.occurrenceID.uuidString)-\(placement.id.uuidString)", taskID: task.id,
+                                occurrenceID: task.occurrenceID, start: placement.start, end: placement.end,
+                                isPinned: placement.isPinned, placementID: placement.id,
+                                conflicts: plan.blocks.first { $0.placementID == placement.id }?.conflicts ?? [])
+        }
+        // A completion keeps the slots it was shown in, not the plan's flexible ones.
+        store.calendarPlannedBlocks = blocks
+        if let working = workingBlock(placed: blocks, now: now) {
+            blocks.removeAll { $0.id == working.id }
+            blocks.append(working)
+        }
+        let recurring = Set(store.completionRecords().filter(\.wasRecurring).map(\.id))
+        blocks += completedBlocks.filter { block in
+            // A tick with neither a slot nor recorded work leaves nothing to draw.
+            guard block.isTimeTracked || block.end > block.start,
+                  let task = store.block(id: block.taskID), task.trashID == nil else { return false }
+            // Reopening a task takes its done block away; a repeat rolling on doesn't.
+            return block.completionID.map(recurring.contains) == true
+                || (task.isCompleted && task.occurrenceID == block.occurrenceID)
+        }
+        visibleBlocks = blocks.sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+    }
+
+    /// The running work, from the start of the slot it's working through (or
+    /// from when it started, if that's earlier or it has none) to where the
+    /// plan lets it run. It takes that slot's place on the calendar.
+    private func workingBlock(placed: [PlannedBlock], now: Date) -> PlannedBlock? {
+        guard let session = activeSession, session.endedAt == nil, let task = store.block(id: session.taskID),
+              task.occurrenceID == session.occurrenceID, !task.isCompleted else { return nil }
+        let end = plan.blocks.first { $0.isActive && $0.occurrenceID == session.occurrenceID }?.end
+            ?? max(now, min(targetEnd(for: session, task: task, now: now), activeBoundary ?? .distantFuture))
+        let slot = placed.first { $0.occurrenceID == session.occurrenceID && $0.start < end && $0.end > session.startedAt }
+        let start = min(slot?.start ?? session.startedAt, session.startedAt)
+        guard end > start else { return nil }
+        return PlannedBlock(id: slot?.id ?? "\(session.occurrenceID.uuidString)-active", taskID: task.id,
+                            occurrenceID: session.occurrenceID, start: start, end: end, isPinned: slot?.isPinned ?? false,
+                            placementID: slot?.placementID, conflicts: [], isActive: true)
     }
 
     /// The timer, Pause, checkbox completion and displayed elapsed time share
@@ -655,6 +697,8 @@ final class CalendarCoordinator {
         let missed = plan.blocks.filter {
             !$0.isActive && $0.occurrenceID != activeSession?.occurrenceID &&
                 $0.start.addingTimeInterval(5 * 60) <= now &&
+                // A placement keeps its whole slot; it's missed only once the slot is over.
+                ($0.placementID == nil || $0.end <= now) &&
                 $0.occurrenceID != overrunNudge?.occurrenceID
         }
         var handled = Set<UUID>()
