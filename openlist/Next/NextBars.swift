@@ -27,21 +27,18 @@ struct NXSelectionBar: View {
         .shadow(color: Color(hex: 0x17161A).opacity(0.36), radius: 20, y: 16)
     }
 
-    /// The selected rows the current screen shows: what the count reports and
-    /// the buttons act on, read when a button is pressed.
+    /// The selected rows the current screen shows, in screen order: what the
+    /// bar counts and acts on, and whether it shows at all.
     static func selected(_ workbench: Workbench) -> [UUID] {
-        workbench.visibleIDs.isEmpty ? Array(workbench.selection) : workbench.visibleIDs.filter(workbench.selection.contains)
+        workbench.visibleIDs.filter(workbench.selection.contains)
     }
 
     private func bar(_ fit: Fit) -> some View {
         let workbench = env.workbench
-        let count = Self.selected(workbench).count
-        let act: (@escaping ([UUID]) -> Void) -> () -> Void = { body in
-            {
-                let ids = Self.selected(workbench)
-                if !ids.isEmpty { body(ids) }
-            }
-        }
+        // The buttons act on the rows the count was taken from, so the two
+        // agree even if rows leave the screen before the bar is drawn again.
+        let ids = Self.selected(workbench)
+        let count = ids.count
         return HStack(spacing: 2) {
             Text("\(count)")
                 .font(.system(size: 12, weight: .bold))
@@ -60,18 +57,15 @@ struct NXSelectionBar: View {
                     .accessibilityHidden(true)
             }
             divider
-            barButton("Done", icon: "checkmark.circle", key: "E", tint: Color(hex: 0x6FD3A4), fit: fit,
-                      action: act { workbench.complete($0) })
-            barButton("Today", icon: "calendar", key: "T", tint: Color(hex: 0xC9AEFF), fit: fit,
-                      action: act { workbench.schedule($0, offset: 0) })
-            barButton("Tomorrow", icon: "sunset", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit,
-                      action: act { workbench.schedule($0, offset: 1) })
-            barButton("Plan", icon: "calendar.badge.clock", key: "P", tint: Color(hex: 0xC9AEFF), fit: fit,
-                      action: act { workbench.plan($0) })
-            barButton("Star", icon: "star", key: "F", tint: Color(hex: 0xF2C14E), fit: fit,
-                      action: act { workbench.star($0) })
+            barButton("Done", icon: "checkmark.circle", key: "E", tint: Color(hex: 0x6FD3A4), fit: fit) { workbench.complete(ids) }
+            barButton("Today", icon: "calendar", key: "T", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 0) }
+            barButton("Tomorrow", icon: "sunset", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 1) }
+            barButton("Plan", icon: "calendar.badge.clock", key: "P", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.plan(ids) }
+            barButton("Star", icon: "star", key: "F", tint: Color(hex: 0xF2C14E), fit: fit) { workbench.star(ids) }
             barButton("Trash", icon: "trash", key: "D", tint: Color(hex: 0xFF8A8A), hover: Color(red: 1, green: 0.47, blue: 0.47).opacity(0.14),
-                      fit: fit, action: act { workbench.trash($0) })
+                      fit: fit) {
+                workbench.trash(ids)
+            }
             divider
             Button { workbench.selection = [] } label: {
                 Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
@@ -115,7 +109,9 @@ struct NXOutsideCompletionFeedback: View {
 
     var body: some View {
         let workbench = env.workbench
-        if workbench.tray == nil, workbench.selection.isEmpty, let action = env.store.completionUndo, !isReported(action) {
+        // The same bottom slot as the selection bar, so the same rule.
+        if workbench.tray == nil, NXSelectionBar.selected(workbench).isEmpty,
+           let action = env.store.completionUndo, !isReported(action) {
             CalendarCompletionFeedback()
         }
     }

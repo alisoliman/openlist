@@ -14,7 +14,8 @@ final class NXOverlayState {
     @ObservationIgnored let search = SearchSession()
     /// Why the chosen result can't open, shown until the search changes.
     var searchUnavailable: String?
-    /// The search Return was pressed on before its results arrived.
+    /// The search Return was pressed on before its results arrived, with no
+    /// listed row chosen: its first result opens once it's in.
     @ObservationIgnored var pendingSearchOpen: SearchOptions?
     /// Task lists a search result switched to Document to reveal a note or
     /// heading; the shell switches each back once you leave it.
@@ -265,7 +266,8 @@ private struct NXCaptureCard: View {
         let text = parse.segments.reduce(Text(verbatim: "")) { text, segment in
             guard let kind = segment.kind else { return Text("\(text)\(Text(verbatim: segment.text).foregroundStyle(NX.ink))") }
             let tone = Self.tone(kind, accent: style.accent)
-            let token = Text(verbatim: segment.text).foregroundStyle(tone).customAttribute(NXCaptureToken(tone: tone))
+            let token = Text(verbatim: segment.text).foregroundStyle(tone)
+                .customAttribute(NXCaptureToken(segment: segment.id, tone: tone))
             return Text("\(text)\(token)")
         }
         return text.textRenderer(NXTokenRenderer())
@@ -349,8 +351,11 @@ private struct NXCaptureCard: View {
     }
 }
 
-/// Marks a capture token's run so `NXTokenRenderer` can draw its chip.
+/// Marks a capture token's runs so `NXTokenRenderer` can draw its chip. The
+/// segment tells one token from the next, since a token set in more than one
+/// font (a fallback for another script, say) arrives as several runs.
 private struct NXCaptureToken: TextAttribute {
+    let segment: Int
     let tone: Color
 }
 
@@ -360,18 +365,26 @@ private struct NXCaptureToken: TextAttribute {
 private struct NXTokenRenderer: TextRenderer {
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
         for line in layout {
+            // One chip per token, across all of its runs.
+            var chips: [(token: NXCaptureToken, bounds: CGRect)] = []
             for run in line {
-                if let token = run[NXCaptureToken.self] {
-                    let bounds = run.typographicBounds.rect
-                    let chip = Path(roundedRect: bounds, cornerRadius: 5, style: .continuous)
-                    context.fill(chip, with: .color(token.tone.opacity(0.1)))
-                    var rule = context
-                    rule.clip(to: chip)
-                    rule.fill(Path(CGRect(x: bounds.minX, y: bounds.maxY - 1.5, width: bounds.width, height: 1.5)),
-                              with: .color(token.tone.opacity(0.33)))
+                guard let token = run[NXCaptureToken.self] else { continue }
+                let bounds = run.typographicBounds.rect
+                if let last = chips.last, last.token.segment == token.segment {
+                    chips[chips.count - 1].bounds = last.bounds.union(bounds)
+                } else {
+                    chips.append((token, bounds))
                 }
-                context.draw(run)
             }
+            for (token, bounds) in chips {
+                let chip = Path(roundedRect: bounds, cornerRadius: 5, style: .continuous)
+                context.fill(chip, with: .color(token.tone.opacity(0.1)))
+                var rule = context
+                rule.clip(to: chip)
+                rule.fill(Path(CGRect(x: bounds.minX, y: bounds.maxY - 1.5, width: bounds.width, height: 1.5)),
+                          with: .color(token.tone.opacity(0.33)))
+            }
+            for run in line { context.draw(run) }
         }
     }
 }
@@ -402,24 +415,33 @@ enum NXSearch {
     }
 
     /// Whether the results for the query typed now are still to come; the
-    /// listed ones answer an older query and don't open meanwhile.
+    /// listed ones answer an older query.
     @MainActor
     static func isAnswering(_ session: SearchSession, workbench: Workbench) -> Bool {
         let options = options(workbench)
         return !options.needle.isEmpty && (session.isSearching || session.hitsOptions != options)
     }
 
+    /// Whether Return waits for the answer to open its first result. Typing
+    /// puts the choice back on the first row, so a choice further down was
+    /// made among the listed rows, and it opens as they are.
+    @MainActor
+    static func waitsForAnswer(_ session: SearchSession, workbench: Workbench) -> Bool {
+        workbench.searchIndex == 0 && isAnswering(session, workbench: workbench)
+    }
+
     /// Tasks open in the inspector on their Next screen and lists on theirs.
     /// Notes, headings, summaries and archived content are revealed in the
     /// list's document, as the app's search always has; a task list goes back
-    /// to Tasks once you leave it.
+    /// to Tasks once you leave it. A listed result opens with the query it
+    /// was found for, even while a newer one is searched.
     @MainActor
     static func open(_ hit: SearchHit, env: AppEnvironment, library: NextLibrary, overlays: NXOverlayState) {
         let workbench = env.workbench
         let request: ContentReveal
         do {
             let context = env.store.context
-            request = try ContentReveal.resolve(hit.id, field: hit.field, query: options(workbench).needle,
+            request = try ContentReveal.resolve(hit.id, field: hit.field, query: overlays.search.hitsOptions.needle,
                                                 blocks: context.fetch(FetchDescriptor<Block>()),
                                                 lists: context.fetch(FetchDescriptor<TaskList>()))
         } catch {
@@ -499,15 +521,8 @@ private struct NXSearchCard: View {
                     NXSearchRow(hit: hit, needle: session.hitsOptions.needle, isOn: offset == index)
                         .id(hit.id)
                         .onHover { if $0 { workbench.searchIndex = offset } }
-                        .onTapGesture {
-                            // Like Return: a click before the answer opens the chosen result once it's in.
-                            guard !NXSearch.isAnswering(session, workbench: workbench) else {
-                                workbench.searchIndex = offset
-                                overlays.pendingSearchOpen = options
-                                return
-                            }
-                            NXSearch.open(hit, env: env, library: library, overlays: overlays)
-                        }
+                        // The row clicked opens, even while a newer query is searched.
+                        .onTapGesture { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
                 }
                 Text(footer(hits, session: session, typed: options))
                     .font(.system(size: 12.5))
@@ -524,14 +539,14 @@ private struct NXSearchCard: View {
             overlays.searchUnavailable = nil
             session.update(options: updated)
         }
-        // Return pressed before the answer opens the chosen result once it
+        // Return pressed before the answer opens its first result once it
         // arrives, unless the query changed in between.
         .onChange(of: NXSearch.isAnswering(session, workbench: workbench)) { _, answering in
             guard !answering, let pending = overlays.pendingSearchOpen else { return }
             overlays.pendingSearchOpen = nil
-            let hits = NXSearch.hits(session, workbench: workbench)
-            guard pending == NXSearch.options(workbench), !hits.isEmpty else { return }
-            NXSearch.open(hits[min(workbench.searchIndex, hits.count - 1)], env: env, library: library, overlays: overlays)
+            guard pending == NXSearch.options(workbench),
+                  let first = NXSearch.hits(session, workbench: workbench).first else { return }
+            NXSearch.open(first, env: env, library: library, overlays: overlays)
         }
         .onDisappear {
             session.cancel()
