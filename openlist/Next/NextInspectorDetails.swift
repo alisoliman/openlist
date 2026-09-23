@@ -381,7 +381,7 @@ private struct NXInspectorHistoryPage: View {
         let place = [event.listIcon, event.listTitle].filter { !$0.isEmpty }.joined(separator: " ")
         let when = event.timestamp.formatted(date: .abbreviated, time: .shortened)
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
-            Image(systemName: event.kind.symbol).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
+            Image(systemName: event.kind.symbol).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(event.kind.verb) “\(event.title)”")
                     .font(.system(size: 12))

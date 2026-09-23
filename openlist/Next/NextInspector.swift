@@ -45,7 +45,7 @@ struct NextInspector: View {
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 Button { env.navigator.closeTask() } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 16, height: 16)
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .medium)).frame(width: 16, height: 16)
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
                                                 padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
@@ -105,7 +105,7 @@ struct NextInspector: View {
                     workbench.trash([task.id])
                 } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: "trash").font(.system(size: 12.5))
+                        Image(systemName: "trash").font(.system(size: 12.5, weight: .medium))
                         Text("Trash").font(.system(size: 12, weight: .medium))
                     }
                 }
@@ -114,7 +114,7 @@ struct NextInspector: View {
                                                 foreground: NX.ink(0.6), hoverForeground: NX.redText))
                 Button(action: copyLink) {
                     HStack(spacing: 5) {
-                        Image(systemName: "link").font(.system(size: 12))
+                        Image(systemName: "link").font(.system(size: 12, weight: .medium))
                         Text("Copy Link").font(.system(size: 12, weight: .medium))
                     }
                 }
@@ -240,6 +240,8 @@ struct NextInspector: View {
             TextField("Task", text: $title.value, selection: $titleSelection, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 18, weight: .semibold))
+                // The design's 1.3 line height, over the system font's own.
+                .lineSpacing(2)
                 .foregroundStyle(task.isCompleted ? NX.ink(0.45) : NX.ink)
                 .strikethrough(task.isCompleted, color: NX.ink(0.45))
                 .focused($focus, equals: .title)
@@ -291,13 +293,14 @@ struct NextInspector: View {
                 let customLabel = options.count > 4 ? options.first?.label : nil
                 NXFlow(spacing: 4) {
                     ForEach(options, id: \.label) { option in
-                        NXInspectorPill(isOn: isDue(option.offset), padding: Self.duePillPadding) {
-                            if option.label == customLabel { openPicker(.due) }
+                        let custom = option.label == customLabel
+                        let pill = NXInspectorPill(isOn: isDue(option.offset), padding: Self.duePillPadding) {
+                            if custom { openPicker(.due) }
                             else { workbench.schedule([task.id], offset: option.offset) }
                         } label: {
                             Text(option.label)
                         }
-                        .help(option.label == customLabel ? "Date and time (⌃D)" : "")
+                        if custom { pill.help("Date and time (⌃D)") } else { pill }
                     }
                 }
                 .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
@@ -306,7 +309,7 @@ struct NextInspector: View {
                 propertyLabel("Repeat")
                 NXInspectorPill(isOn: recurrence != nil) { openPicker(.repeatRule) } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: "repeat").font(.system(size: 10.5, weight: .semibold))
+                        Image(systemName: "repeat").font(.system(size: 10.5, weight: .medium))
                         Text(recurrence?.displayText ?? "Never")
                     }
                 }
@@ -317,7 +320,7 @@ struct NextInspector: View {
                 propertyLabel("Reminder")
                 NXInspectorPill(isOn: task.reminderAt != nil) { openPicker(.reminder) } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: "bell").font(.system(size: 10.5, weight: .semibold))
+                        Image(systemName: "bell").font(.system(size: 10.5, weight: .medium))
                         Text(task.reminderAt.map { "\(NXFormat.dueLabel($0)) \(NXFormat.clock($0))" } ?? "None")
                     }
                 }
@@ -357,7 +360,7 @@ struct NextInspector: View {
                     }
                     NXInspectorPill(isOn: false) { openPicker(.labels) } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                            Image(systemName: "plus").font(.system(size: 10, weight: .medium))
                             if library.labels.isEmpty { Text("Add label") }
                         }
                     }
@@ -433,6 +436,7 @@ struct NextInspector: View {
         .padding(.leading, -5)
         .help("Date and time (⌃D)")
         .accessibilityLabel("Due date and time")
+        .accessibilityValue(task.includesTime ? task.dueDate.map(NXFormat.clock) ?? "" : "")
         .frame(width: 78, alignment: .leading)
         .gridColumnAlignment(.leading)
     }
@@ -478,15 +482,17 @@ struct NextInspector: View {
         let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "calendar.badge.clock").font(.system(size: 13)).foregroundStyle(style.accent)
+                Image(systemName: "calendar.badge.clock").font(.system(size: 13, weight: .medium)).foregroundStyle(style.accent)
                 Text("Plan for today").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(NX.ink)
                 Spacer(minLength: 6)
                 NXToggle(isOn: planned, label: "Plan for today") { workbench.plan([task.id]) }
-                    .help(task.isCompleted ? "Completed tasks can’t be planned" : "Plan for today (P)")
                     .disabled(task.isCompleted)
             }
-            // Planning skips completed tasks, so the switch says so.
+            // Planning skips completed tasks, so the switch says so. The row
+            // carries the tooltip, which a disabled switch wouldn't show.
             .opacity(task.isCompleted ? 0.45 : 1)
+            .contentShape(Rectangle())
+            .help(task.isCompleted ? "Completed tasks can’t be planned" : "Plan for today (P)")
             HStack(spacing: 8) {
                 Text("Estimate").font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.5))
                 Spacer(minLength: 6)
@@ -532,7 +538,7 @@ struct NextInspector: View {
 
     private func stepper(_ icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 11, weight: .semibold)).frame(width: 15, height: 15)
+            Image(systemName: icon).font(.system(size: 11, weight: .medium)).frame(width: 15, height: 15)
         }
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
                                         padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
@@ -545,7 +551,8 @@ struct NextInspector: View {
         TextField("Add a note", text: $note.value, selection: $noteSelection, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 13))
-            .lineSpacing(3)
+            // The design's 1.55 line height, over the system font's own.
+            .lineSpacing(4.5)
             .foregroundStyle(NX.ink(0.7))
             .focused($focus, equals: .note)
             .onExitCommand { focus = nil }
@@ -586,7 +593,7 @@ struct NextInspector: View {
 
     private func activityRow(icon: String, text: String, date: Date) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 9) {
-            Image(systemName: icon).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
+            Image(systemName: icon).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             Text(text).font(.system(size: 12)).foregroundStyle(NX.ink(0.66)).frame(maxWidth: .infinity, alignment: .leading)
             // "just now" moves on while the panel stays open.
             TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -604,7 +611,7 @@ struct NextInspector: View {
             if paused { workbench.toggleWorkPause() } else if !working { workbench.startWork(task.id) }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: working ? "timer" : "play.fill").font(.system(size: 12))
+                Image(systemName: working ? "timer" : "play.fill").font(.system(size: 12, weight: .medium))
                 Text(working ? "Working…" : paused ? "Resume" : "Start working").font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(working ? NX.ink(0.55) : .white)

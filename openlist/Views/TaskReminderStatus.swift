@@ -27,7 +27,9 @@ struct TaskReminderStatus: View {
                 // Unsaved changes are left to the app's save notice.
                 let status = recovery.statuses[block.id] ?? .checking
                 if recovery.libraryReadError != nil || (matchesSaved && status.needsRecovery) {
-                    attentionNotice(status: matchesSaved ? status : nil, date: date)
+                    // A read failure keeps the last good snapshot, whose status
+                    // would contradict the error beneath it.
+                    attentionNotice(status: recovery.libraryReadError == nil ? status : nil, date: date)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -73,7 +75,7 @@ struct TaskReminderStatus: View {
     private func attentionNotice(status: ReminderStatus?, date: Date?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "bell.badge").font(.system(size: 10.5, weight: .semibold))
+                Image(systemName: "bell.badge").font(.system(size: 10.5, weight: .medium))
                 Text(status.map { recovery.title(for: $0) } ?? "Reminder status unavailable")
                     .font(.system(size: 11.5, weight: .semibold))
             }
@@ -81,9 +83,7 @@ struct TaskReminderStatus: View {
             .help(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "Reminder status")
             Group {
                 if let error = recovery.libraryReadError { Text(error).textSelection(.enabled) }
-                if case .failed(let message) = status, message != recovery.libraryReadError {
-                    Text(message).textSelection(.enabled)
-                }
+                if case .failed(let message) = status { Text(message).textSelection(.enabled) }
                 if let error = recovery.authorizationError { Text(error) }
                 if recovery.isSimulated { Text("Review simulation only. No macOS notification is scheduled or displayed.") }
             }
