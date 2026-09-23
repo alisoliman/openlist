@@ -163,6 +163,13 @@ final class NextKeyHandler {
             }
         }
 
+        // An open sentence-bar menu takes Esc before the inspector, the selection and the focus do.
+        if key == Key.escape && flags.isEmpty && !isComposing && workbench.tasksMenu != nil
+            && (navigator.route == .tasks || navigator.route == .completed) {
+            workbench.tasksMenu = nil
+            return true
+        }
+
         // Every other text field and the document editor keep their keys.
         if isEditingText { return false }
         // So do controls and views outside the shell's own hosting view, such

@@ -104,6 +104,8 @@ final class Workbench {
     var tasksTitleFilter = ""
     /// Whether the query field on Tasks has keyboard focus (drives its popover).
     var tasksQueryFocused = false
+    /// The sentence-bar menu open on Tasks, if any; Esc closes it first.
+    var tasksMenu: NXTasksMenu?
     var captureOpen = false
     var captureText = ""
     var captureListID: UUID?

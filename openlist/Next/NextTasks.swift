@@ -203,38 +203,13 @@ struct NXTaskQuery {
 // MARK: - Screen
 
 struct NextTasksScreen: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     /// Every document block, for the order the lists show their tasks in.
     @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
-    /// Completed opens this screen on Done; leaving it hands Tasks back its Open default.
-    @State private var showsCompleted = false
 
     var body: some View {
-        let workbench = env.workbench
-        let queryMode = env.settings.tasksFilterStyle == .query
-        let tasks = Self.outlineOrder(library: library, blocks: blocks)
-        let pool = Self.pool(tasks: tasks, library: library, workbench: workbench, queryMode: queryMode)
-        let groups = Self.groups(pool: pool, library: library, workbench: workbench, accent: style.accent)
-        let listCount = library.lists.count
-        NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
-            NXScreenHeader(tile: .icon("checklist"), color: NX.green, title: "Tasks",
-                           subtitle: "\(library.open.count) open across \(listCount) \(listCount == 1 ? "list" : "lists")")
-            Group {
-                if queryMode {
-                    NXTasksQueryBar(count: pool.count)
-                } else {
-                    NXTasksSentenceBar(count: pool.count)
-                }
-            }
-            .zIndex(10)
-            NXGroupsStack(groups: groups, options: NXRowOptions(showList: workbench.tasksGrouping != .list, quiet: true))
-        }
-        .onAppear { showsCompleted = env.navigator.route == .completed }
-        .onDisappear {
-            if showsCompleted, workbench.tasksStatus == .done { workbench.tasksStatus = .open }
-        }
+        // Ordered here, where nothing reads the filters, so typing in them doesn't walk every outline again.
+        NXTasksPage(tasks: Self.outlineOrder(library: library, blocks: blocks))
     }
 
     /// Every task in the order the lists show it: lists in sidebar order, each in its document's
@@ -315,6 +290,41 @@ struct NextTasksScreen: View {
     }
 }
 
+/// The Tasks screen for tasks already in outline order.
+private struct NXTasksPage: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    @Environment(\.nextLibrary) private var library
+    let tasks: [Block]
+    /// Completed opens this screen on Done; leaving it hands Tasks back its Open default.
+    @State private var showsCompleted = false
+
+    var body: some View {
+        let workbench = env.workbench
+        let queryMode = env.settings.tasksFilterStyle == .query
+        let pool = NextTasksScreen.pool(tasks: tasks, library: library, workbench: workbench, queryMode: queryMode)
+        let groups = NextTasksScreen.groups(pool: pool, library: library, workbench: workbench, accent: style.accent)
+        let listCount = library.lists.count
+        NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
+            NXScreenHeader(tile: .icon("checklist"), color: NX.green, title: "Tasks",
+                           subtitle: "\(library.open.count) open across \(listCount) \(listCount == 1 ? "list" : "lists")")
+            Group {
+                if queryMode {
+                    NXTasksQueryBar(count: pool.count)
+                } else {
+                    NXTasksSentenceBar(count: pool.count)
+                }
+            }
+            .zIndex(10)
+            NXGroupsStack(groups: groups, options: NXRowOptions(showList: workbench.tasksGrouping != .list, quiet: true))
+        }
+        .onAppear { showsCompleted = env.navigator.route == .completed }
+        .onDisappear {
+            if showsCompleted, workbench.tasksStatus == .done { workbench.tasksStatus = .open }
+        }
+    }
+}
+
 // MARK: - Query bar
 
 private struct NXTasksQueryBar: View {
@@ -387,13 +397,17 @@ private struct NXTasksQueryBar: View {
         }
         .onAppear {
             clicks.install { clicks, event in
-                // Clicking a row, tab or the group label blurs the field, as in a browser, so the
-                // popover goes and E, T or J act on the rows instead of typing into the query.
+                // Clicking a row, tab or the group label blurs the field, as in a browser, so E, T or J
+                // act on the rows instead of typing into the query.
                 guard let window = event.window, clicks.isEditing(in: "field", window: window),
-                      !clicks.contains(event, in: "field", "pills") else { return false }
+                      !clicks.contains(event, in: "field", "pills") else { return }
                 window.makeFirstResponder(nil)
-                workbench.tasksQueryFocused = false
-                return false
+                // Like the design's blur, the popover and the field's width wait for the click to
+                // finish, so the bar doesn't unwrap and move what was clicked out from under it.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(120))
+                    if !clicks.isEditing(in: "field", window: window) { workbench.tasksQueryFocused = false }
+                }
             }
         }
         // Switching to the sentence bar must not leave the keyboard thinking the field is active.
@@ -762,20 +776,19 @@ private struct NXWrapBar: Layout {
 @MainActor
 private final class NXBarClicks {
     private var monitor: Any?
-    private var handler: ((NXBarClicks, NSEvent) -> Bool)?
+    private var handler: ((NXBarClicks, NSEvent) -> Void)?
     private var regions: [String: NSHashTable<NSView>] = [:]
 
-    /// The handler returns true to swallow the event.
-    func install(matching mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown],
-                 _ handler: @escaping (NXBarClicks, NSEvent) -> Bool) {
+    /// The handler sees every mouse-down in the app; the event always carries on.
+    func install(_ handler: @escaping (NXBarClicks, NSEvent) -> Void) {
         self.handler = handler
         guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            let handled = MainActor.assumeIsolated {
-                guard let self, let handler = self.handler else { return false }
-                return handler(self, event)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, let handler = self.handler else { return }
+                handler(self, event)
             }
-            return handled ? nil : event
+            return event
         }
     }
 
@@ -843,16 +856,27 @@ private extension View {
 
 // MARK: - Sentence bar
 
+/// The sentence bar's menus. The workbench holds the open one so Esc can close it first.
+enum NXTasksMenu { case status, lists, group }
+
 private struct NXTasksSentenceBar: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let count: Int
-    @State private var menu: Menu?
     @FocusState private var titleFocused: Bool
     @State private var clicks = NXBarClicks()
+    /// The bar's width and where each token starts in it, so a menu stays on the page.
+    @State private var barWidth: CGFloat = .infinity
+    @State private var tokenStarts: [NXTasksMenu: CGFloat] = [:]
 
-    enum Menu { case status, lists, group }
+    private nonisolated static let space = "tasks-sentence-bar"
+    private static let menuWidth: CGFloat = 250
+
+    private var menu: NXTasksMenu? {
+        get { env.workbench.tasksMenu }
+        nonmutating set { env.workbench.tasksMenu = newValue }
+    }
 
     var body: some View {
         let workbench = env.workbench
@@ -912,9 +936,13 @@ private struct NXTasksSentenceBar: View {
             .frame(minWidth: 0, idealWidth: 200, maxWidth: 200, minHeight: 28, maxHeight: 28)
             .padding(.leading, 2)
             .padding(.trailing, 4)
+            // The design's transparent 1 pt bottom border.
+            .padding(.bottom, 1)
             .nxClickRegion("title", in: clicks)
             .padding(.bottom, 10)
         }
+        .coordinateSpace(.named(Self.space))
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { barWidth = $0 }
         .padding(.top, 18)
         .padding(.bottom, 4)
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
@@ -922,13 +950,7 @@ private struct NXTasksSentenceBar: View {
         .animation(style.ease(160), value: menu)
         .onChange(of: env.navigator.route) { _, _ in menu = nil }
         .onAppear {
-            clicks.install(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { clicks, event in
-                if event.type == .keyDown {
-                    // Esc closes a menu, as the popovers these menus replace did.
-                    guard event.keyCode == 53, clicks.shows("menu", in: event.window) else { return false }
-                    menu = nil
-                    return true
-                }
+            clicks.install { clicks, event in
                 // A click outside the open menu closes it; the tokens open and close their own.
                 if clicks.shows("menu", in: event.window), !clicks.contains(event, in: "menu", "tokens") {
                     menu = nil
@@ -939,10 +961,13 @@ private struct NXTasksSentenceBar: View {
                    !clicks.contains(event, in: "title") {
                     window.makeFirstResponder(nil)
                 }
-                return false
             }
         }
-        .onDisappear { clicks.uninstall() }
+        // The menu goes with the bar, so Esc never closes one that isn't on screen.
+        .onDisappear {
+            clicks.uninstall()
+            menu = nil
+        }
     }
 
     private var isDirty: Bool {
@@ -958,16 +983,22 @@ private struct NXTasksSentenceBar: View {
         return "\(filter.count) lists"
     }
 
-    private func token(_ key: Menu, _ label: String) -> some View {
+    private func token(_ key: NXTasksMenu, _ label: String) -> some View {
         NXSentenceToken(label: label, isOpen: menu == key) {
             menu = menu == key ? nil : key
         }
         .nxClickRegion("tokens", in: clicks)
+        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.space)).minX }) { tokenStarts[key] = $0 }
         // The design's dropdown: a card flush with the token's leading edge, 6 pt below it.
         .overlay(alignment: .bottomLeading) {
             if menu == key {
+                // Moved left only as far as keeps it inside the page's trailing edge.
+                let start = tokenStarts[key] ?? 0
+                let shift = max(0, min(start, start + Self.menuWidth - barWidth))
                 menuView(key)
                     .alignmentGuide(.bottom) { $0[.top] - 6 }
+                    // Guides rather than an offset, so its click region moves with it.
+                    .alignmentGuide(.leading) { $0[.leading] + shift }
                     .transition(.scale(scale: 0.97, anchor: .topLeading).combined(with: .opacity)
                         .combined(with: .offset(y: -4)))
             }
@@ -976,7 +1007,7 @@ private struct NXTasksSentenceBar: View {
         .zIndex(menu == key ? 1 : 0)
     }
 
-    private func menuView(_ key: Menu) -> some View {
+    private func menuView(_ key: NXTasksMenu) -> some View {
         let workbench = env.workbench
         return VStack(alignment: .leading, spacing: 1) {
             switch key {
@@ -1013,7 +1044,7 @@ private struct NXTasksSentenceBar: View {
             }
         }
         .padding(5)
-        .frame(width: 250)
+        .frame(width: Self.menuWidth)
         .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .nxClickRegion("menu", in: clicks)
         .nxCardShadow(radius: 11, hairline: 0.14, drop: 0.18, y: 16, blur: 40)
