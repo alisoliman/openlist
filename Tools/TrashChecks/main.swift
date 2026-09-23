@@ -261,7 +261,7 @@ if phase == "delete" {
     try check(child.parentID == nil && store.block(id: parentID) == nil, "Earlier outdent Undo cannot reattach to permanently erased parent")
     try snapshot().validate()
 } else if phase == "failure" {
-    let list = store.createList(title: "Failures")
+    let list = store.createList(title: "Failures", icon: "🧯")
     let task = store.appendBlock(kind: .task, text: "Atomic task", to: DocumentContext(listID: list.id))
     let attachment = Attachment(blockID: task.id, filename: "shared.dat", displayName: "Shared", contentType: "application/octet-stream", byteCount: 4, contentData: Data("safe".utf8))
     context.insert(attachment)
@@ -274,8 +274,18 @@ if phase == "delete" {
     try check(!task.isTrashed && store.block(id: task.id) != nil, "Failed deletion rolls back active state")
     try check(failing.trashError != nil, "Failed deletion has actionable error")
     try check(store.trashBlocks([task]), "Deletion remains retryable")
+    try check(task.trashMetadata?.listIcon == "🧯" && task.trashMetadata?.listTitle == "Failures",
+              "Deletion records the list's icon with its title")
+    let legacy = try JSONDecoder().decode(TrashMetadata.self, from: Data(#"{"deletedAt":0,"listTitle":"Older","labels":[]}"#.utf8))
+    try check(legacy.listIcon == nil && legacy.listTitle == "Older", "Metadata saved before list icons were recorded still decodes")
+    failing.trashNotice = "Restored to “Failures”."
     try check(!failing.restoreTrash(ids: [task.id]) && task.isTrashed, "Rejected restore save retains recoverable group")
+    try check(failing.trashNotice == nil && failing.trashError != nil,
+              "Failed restore reports its own error, never an earlier restore's notice")
+    failing.trashNotice = "Restored to “Failures”."
     try check(!failing.permanentlyEraseTrash(ids: [task.id]), "Rejected erase save reports failure")
+    try check(failing.trashNotice == nil && failing.trashError != nil,
+              "Failed erase reports its own error, never an earlier restore's notice")
     try check(task.isTrashed && attachment.contentData == Data("safe".utf8), "Failed erase preserves retained data")
     try check(store.restoreTrash(ids: [task.id]), "Restore after failed erase rematerializes bytes")
     try check(MediaStore.shared.readFile(filename: "shared.dat") == Data("safe".utf8), "Files survive rejected erase through durable payload")

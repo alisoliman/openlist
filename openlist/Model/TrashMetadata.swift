@@ -4,6 +4,8 @@ import Foundation
 nonisolated struct TrashMetadata: Codable, Equatable, Sendable {
     var deletedAt: Date
     var listTitle: String
+    /// The list's icon at deletion; nil for items deleted before it was recorded.
+    var listIcon: String?
     var parentTitle: String?
     var labels: [TrashLabel]
     var recoveryNote: String?

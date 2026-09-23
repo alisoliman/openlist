@@ -150,7 +150,7 @@ extension Store {
 
     private func deletionMetadata(for members: [Block], list: TaskList?, parent: Block?) -> TrashMetadata {
         let labelIDs = Set(members.flatMap(\.labelIDs))
-        return TrashMetadata(deletedAt: .now, listTitle: list?.displayTitle ?? "Unavailable list",
+        return TrashMetadata(deletedAt: .now, listTitle: list?.displayTitle ?? "Unavailable list", listIcon: list?.icon,
             parentTitle: parent?.displayTitle, labels: allLabels().filter { labelIDs.contains($0.id) }.map { TrashLabel(id: $0.id, name: $0.name, accentRaw: $0.accentRaw, sortIndex: $0.sortIndex, createdAt: $0.createdAt) })
     }
 
@@ -214,6 +214,8 @@ extension Store {
 
     @discardableResult
     func restoreTrash(ids: [UUID]) -> Bool {
+        // Feedback from an earlier restore never describes this one.
+        trashNotice = nil
         guard reconcileRetainedListDescendants() else { return false }
         var notices: [String] = []
         let succeeded = trashTransaction("Content could not be restored; it remains in Trash", scope: .groups(Set(ids))) {
@@ -315,6 +317,7 @@ extension Store {
     /// The UI must confirm this action. No timer or retention period calls it.
     @discardableResult
     func permanentlyEraseTrash(ids: [UUID]) -> Bool {
+        trashNotice = nil
         guard reconcileRetainedListDescendants() else { return false }
         var erasedBlockIDs = Set<UUID>()
         let succeeded = trashTransaction("Permanent deletion failed; the retained content can still be restored", scope: .groups(Set(ids))) {
