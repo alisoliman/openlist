@@ -45,22 +45,6 @@ struct NextSettingsScreen: View {
                     NXSettingMenu(label: "Undo window", hint: "How long a finished task stays in place",
                                   value: "\(settings.undoDwellSeconds) s",
                                   entries: choices([2, 3, 5, 8], selection: $settings.undoDwellSeconds) { "\($0) seconds" })
-                    NXSettingMenu(label: "Motion", hint: "How lively completions, triage and transitions feel",
-                                  value: settings.motion.title,
-                                  entries: choices(NextMotion.allCases, selection: $settings.motion, title: \.title))
-                }
-                NXSettingsGroup(title: "Appearance") {
-                    NXSettingMenu(label: "Appearance", hint: "Light, dark or follow the system", value: settings.appearance.title,
-                                  entries: choices(AppSettings.Appearance.allCases, selection: $settings.appearance, title: \.title))
-                    NXSettingMenu(label: "Accent", hint: "Selection, focus and today’s highlights", value: settings.accent.title,
-                                  swatch: settings.accent.color,
-                                  entries: choices(NextAccent.allCases, selection: $settings.accent, title: \.title))
-                    NXSettingMenu(label: "Density", hint: "Row spacing in lists", value: settings.density.title,
-                                  entries: choices(NextDensity.allCases, selection: $settings.density, title: \.title))
-                    NXSettingToggle(label: "Serif titles", hint: "Screen titles in Instrument Serif", isOn: $settings.serifTitles)
-                    NXSettingMenu(label: "Tasks filter", hint: "Type a query, or build a sentence from pills",
-                                  value: settings.tasksFilterStyle.title,
-                                  entries: choices(TasksFilterStyle.allCases, selection: $settings.tasksFilterStyle, title: \.title))
                 }
                 NXSettingsGroup(title: "Calendar") {
                     let preferences = env.calendar.preferences
@@ -97,6 +81,23 @@ struct NextSettingsScreen: View {
                     NXSettingValue(label: "All settings", hint: "Menu bar, notifications, integrations and more", value: "Open…") {
                         openSettings()
                     }
+                }
+                // Native additions follow the design's groups.
+                NXSettingsGroup(title: "Appearance") {
+                    NXSettingMenu(label: "Appearance", hint: "Light, dark or follow the system", value: settings.appearance.title,
+                                  entries: choices(AppSettings.Appearance.allCases, selection: $settings.appearance, title: \.title))
+                    NXSettingMenu(label: "Motion", hint: "How lively completions, triage and transitions feel",
+                                  value: settings.motion.title,
+                                  entries: choices(NextMotion.allCases, selection: $settings.motion, title: \.title))
+                    NXSettingMenu(label: "Accent", hint: "Selection, focus and today’s highlights", value: settings.accent.title,
+                                  swatch: settings.accent.color,
+                                  entries: choices(NextAccent.allCases, selection: $settings.accent, title: \.title))
+                    NXSettingMenu(label: "Density", hint: "Row spacing in lists", value: settings.density.title,
+                                  entries: choices(NextDensity.allCases, selection: $settings.density, title: \.title))
+                    NXSettingToggle(label: "Serif titles", hint: "Screen titles in Instrument Serif", isOn: $settings.serifTitles)
+                    NXSettingMenu(label: "Tasks filter", hint: "Type a query, or build a sentence from pills",
+                                  value: settings.tasksFilterStyle.title,
+                                  entries: choices(TasksFilterStyle.allCases, selection: $settings.tasksFilterStyle, title: \.title))
                 }
             }
             .frame(maxWidth: 620, alignment: .leading)
