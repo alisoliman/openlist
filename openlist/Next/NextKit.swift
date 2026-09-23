@@ -287,7 +287,7 @@ struct NXSegmented<Value: Hashable>: View {
     var onSelect: (Value) -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(options, id: \.0) { value, label in
                 Button { onSelect(value) } label: {
                     Text(label)

@@ -515,12 +515,10 @@ extension Workbench {
         let cal = settings.calendar
         let now = Date.now
         let category = store.list(id: task.listID).map { hours(for: $0) } ?? .work
-        let pinned = store.placements().filter { $0.taskID != id }
+        // Around meetings and whatever the calendar shows for other tasks:
+        // their placements, running work and done blocks.
         var busy: [(Date, Date)] = calendar.externalCalendars.busyTimes.map { ($0.start, $0.end) }
-        busy += pinned.map { ($0.start, $0.end) }
-        if let session = calendar.activeSession, session.taskID != id {
-            busy.append((session.startedAt, now.addingTimeInterval(30 * 60)))
-        }
+        busy += calendar.visibleBlocks.filter { $0.taskID != id }.map { ($0.start, $0.end) }
         let quarter = TimeInterval(15 * 60)
         // On a quarter hour, not before a deferral, and only inside the list's hours:
         // the scheduler's windows already leave out breaks, overrides and days off,
@@ -581,6 +579,33 @@ extension Workbench {
             }
             for span in spans { store.setPlacement(for: task, start: span.start, end: span.end, isPinned: span.isPinned) }
         }
+    }
+
+    /// A done block's check. Reopens its task in the slots the block took, as
+    /// one Undo step, so it turns open (or missed) where it was drawn instead
+    /// of leaving the calendar. A repeat that has moved on stays done.
+    func reopen(block: PlannedBlock) {
+        guard let completionID = block.completionID, let task = store.block(id: block.taskID),
+              task.isCompleted, task.occurrenceID == block.occurrenceID else { return }
+        let id = task.id
+        let spans = calendar.visibleBlocks.filter { $0.completionID == completionID && $0.end > $0.start }
+            .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: true) }
+        reopen(id)
+        // Reopening gives the task a new occurrence, with no slot of its own yet.
+        guard let reopened = store.block(id: id), !reopened.isCompleted, !spans.isEmpty else { return }
+        let occurrenceID = reopened.occurrenceID
+        let fields = [TaskFields(reopened)]
+        setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
+        // Grouped with the reopen, so Undo takes the slots back before the task closes again.
+        registerUndo("Reopened \(describe([reopened]))", undo: { workbench in
+            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: [])
+            workbench.restore(fields)
+            workbench.calendar.replan()
+        }, redo: { workbench in
+            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
+            workbench.calendar.replan()
+        })
+        calendar.replan()
     }
 
     func startWork(_ id: UUID) {
@@ -695,7 +720,7 @@ extension Workbench {
         let last = workWatch
         workWatch = seen
         if let grant = seen.grant, grant != last.grant { announceExtension(grant) }
-        // Blocks read "rescheduled" for a minute after a move, not until the next one.
+        // The Work panel's move summary lasts a minute after a move, not until the next one.
         if let moved = seen.moved, moved != last.moved {
             after(60_000, key: "rescheduled") { workbench in
                 if workbench.calendar.rescheduleSummary?.id == moved { workbench.calendar.dismissRescheduleSummary() }
@@ -756,9 +781,10 @@ extension Workbench {
     private func pauseReason(for task: Block, notice: String?) -> (text: String, conflict: Bool)? {
         let title = NXFormat.quoted(task.displayTitle)
         if needsMoreTime(task), let nudge = calendar.overrunNudge {
-            // The flexible work more time would push back, as the calendar still shows it.
+            // The placed work more time would push back. Flexible work isn't on
+            // the calendar, so it's only counted, never named.
             let next = calendar.plan.blocks.filter {
-                $0.occurrenceID != task.occurrenceID && !$0.isPinned && !$0.isActive
+                $0.occurrenceID != task.occurrenceID && $0.placementID != nil && !$0.isPinned && !$0.isActive
                     && $0.start < nudge.proposedEnd && $0.end > nudge.estimatedEnd
             }.min { $0.start < $1.start }
             if let next, let other = store.block(id: next.taskID) {

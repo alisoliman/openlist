@@ -58,6 +58,24 @@ extension CalendarPersistenceChecks {
         store.deleteBlocks([tracked])
         check(store.completedCalendarBlocks().filter { $0.completionID == trackedRecord.id }.allSatisfy { $0.titleSnapshot == "Tracked calendar snapshot" && $0.isTimeTracked }, "Deleting or renaming the task preserves immutable completed titles and actual work")
 
+        let inSlot = store.appendBlock(kind: .task, text: "Worked inside its slot", to: .init(listID: list.id))
+        store.calendarPlannedBlocks = [slot(inSlot, nine, 30), slot(inSlot, nine.addingTimeInterval(7_200), 30)]
+        let inside = store.startWorkSession(for: inSlot, deviceID: "completion-check", now: nine.addingTimeInterval(300))!
+        store.pauseWorkSession(inside, reason: "Break", now: nine.addingTimeInterval(900))
+        let overrun = store.startWorkSession(for: inSlot, deviceID: "completion-check", now: nine.addingTimeInterval(1_200))!
+        let elsewhere = nine.addingTimeInterval(3_600)
+        store.pauseWorkSession(overrun, reason: "Break", now: nine.addingTimeInterval(2_100))
+        let away = store.startWorkSession(for: inSlot, deviceID: "completion-check", now: elsewhere)!
+        store.toggleCompletion(inSlot, now: elsewhere.addingTimeInterval(600))
+        let inSlotRecord = store.completionRecords(taskID: inSlot.id).first!
+        let settled = store.completedCalendarBlocks().filter { $0.completionID == inSlotRecord.id }
+        check(away.endedAt == elsewhere.addingTimeInterval(600) && settled.allSatisfy(\.isTimeTracked)
+                && settled.map { CompletionCalendarInterval(start: $0.start, end: $0.end) }
+                == [CompletionCalendarInterval(start: nine, end: nine.addingTimeInterval(2_100)),
+                    CompletionCalendarInterval(start: elsewhere, end: elsewhere.addingTimeInterval(600))],
+              "Work done in a planned slot settles at the slot, stretched past its end, while work elsewhere and an unworked slot keep to what happened")
+        store.calendarPlannedBlocks = []
+
         let legacyTask = store.appendBlock(kind: .task, text: "Legacy completion marker", to: .init(listID: list.id))
         let legacy = CompletionRecord(task: legacyTask, completedAt: completedAt)
         legacy.plannedIntervalsData = Data("not json".utf8)

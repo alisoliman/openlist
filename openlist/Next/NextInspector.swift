@@ -523,7 +523,7 @@ struct NextInspector: View {
         .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
     }
 
-    /// Reads the plan the calendar grid draws, so flexible blocks count and past ones don't.
+    /// Reads what the calendar grid draws: explicit placements and running work, not past ones.
     private var slotText: String {
         let now = Date.now
         guard let placement = env.calendar.visibleBlocks
