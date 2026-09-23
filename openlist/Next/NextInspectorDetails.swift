@@ -77,7 +77,10 @@ struct NXInspectorPlanOptions: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let assessment = env.calendar.plan.assessments.first(where: { $0.taskID == task.id }),
+            // Only work you asked the calendar to hold can fall short; an
+            // unplanned task just reads "Not in the calendar yet", as in the design.
+            if env.workbench.isPlanned(task) || !env.store.placements(taskID: task.id).isEmpty,
+               let assessment = env.calendar.plan.assessments.first(where: { $0.taskID == task.id }),
                assessment.status != .scheduled || !assessment.conflicts.isEmpty {
                 shortfall(assessment)
             }
