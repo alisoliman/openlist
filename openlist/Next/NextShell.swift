@@ -114,13 +114,17 @@ private struct NextMain: View {
                     .clipped()
             }
 
-            if let inspected {
-                NextInspector(task: inspected)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                    .padding(.top, 52)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .zIndex(30)
+            // The panel itself is what comes and goes, so it slides by its own
+            // width rather than the whole window's.
+            ZStack(alignment: .topTrailing) {
+                if let inspected {
+                    NextInspector(task: inspected)
+                        .transition(.move(edge: .trailing))
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            .padding(.top, 52)
+            .zIndex(30)
 
             NXBottomBars()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -136,7 +140,8 @@ private struct NextMain: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(NX.paper)
-        .animation(style.ease(280), value: inspected?.id)
+        // Opening and closing slide; moving from one task to the next is instant.
+        .animation(style.ease(300), value: inspected != nil)
     }
 
     private var crumb: String {
