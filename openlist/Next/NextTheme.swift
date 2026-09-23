@@ -1,0 +1,128 @@
+//
+//  NextTheme.swift
+//  openlist
+//
+
+import AppKit
+import CoreText
+import SwiftUI
+
+/// Tokens for the Openlist Next interface: warm paper surfaces, one ink colour
+/// used at several strengths, and a small semantic palette.
+enum NX {
+    // MARK: Surfaces
+
+    static let paper = dynamic(light: 0xFCFBFA, dark: 0x1D1C20)
+    static let sidebar = dynamic(light: 0xF1EEEA, dark: 0x252328)
+    static let inspector = dynamic(light: 0xF7F5F2, dark: 0x222025)
+    /// Raised cards, focused rows, popovers.
+    static let card = dynamic(light: 0xFFFFFF, dark: 0x2B292F)
+    /// Ink — every text and hairline colour is this at some opacity.
+    static let ink = dynamic(light: 0x17161A, dark: 0xF1EFEC)
+    /// The tray and other inverted surfaces.
+    static let inverse = dynamic(light: 0x1F1D22, dark: 0x3A3740)
+
+    static func ink(_ opacity: Double) -> Color { ink.opacity(opacity) }
+
+    // MARK: Semantic
+
+    static let green = Color(hex: 0x2F9E6E)
+    /// The text variants are darker in light mode and lighter in dark mode so
+    /// they clear 4.5:1 on paper and on their own tinted chip fill.
+    static let greenText = dynamic(light: 0x1B6E4A, dark: 0x5CC596)
+    static let red = Color(hex: 0xD8434B)
+    static let redText = dynamic(light: 0xB0343C, dark: 0xF07A80)
+    static let amber = Color(hex: 0xE8A917)
+    static let amberText = dynamic(light: 0x8A6405, dark: 0xE8B84A)
+    static let inbox = Color(hex: 0x3A7BD8)
+    static let today = Color(hex: 0xE0861F)
+    static let lists = Color(hex: 0x5B5BD6)
+    static let grey = Color(hex: 0x6E6A73)
+
+    static func priorityStroke(_ priority: TaskPriority) -> Color? {
+        switch priority {
+        case .high: red
+        case .medium: amber
+        case .low: inbox
+        case .none: nil
+        }
+    }
+
+    // MARK: Type
+
+    /// Looked up once, after `registerFonts()` has run at launch.
+    private static let hasSerif = NSFont(name: "InstrumentSerif-Regular", size: 12) != nil
+
+    static func serif(_ size: CGFloat) -> Font {
+        hasSerif ? .custom("InstrumentSerif-Regular", size: size) : .system(size: size, design: .serif)
+    }
+
+    static func mono(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
+        .system(size: size, weight: weight, design: .monospaced)
+    }
+
+    /// Registers the bundled display face once per process.
+    static func registerFonts() {
+        guard let url = Bundle.main.url(forResource: "InstrumentSerif-Regular", withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+
+    // MARK: Motion
+
+    /// `cubic-bezier(0.2, 0.9, 0.2, 1)` — the house ease-out.
+    static func ease(_ ms: Double) -> Animation { .timingCurve(0.2, 0.9, 0.2, 1, duration: ms / 1000) }
+    /// `cubic-bezier(0.34, 1.56, 0.64, 1)` — the overshooting spring.
+    static func spring(_ ms: Double) -> Animation { .timingCurve(0.34, 1.56, 0.64, 1, duration: ms / 1000) }
+    static func standard(_ ms: Double) -> Animation { .timingCurve(0.4, 0, 0.2, 1, duration: ms / 1000) }
+
+    // MARK: Shadows
+
+    static let shadowWarm = Color(red: 40 / 255, green: 30 / 255, blue: 20 / 255)
+
+    // MARK: Helpers
+
+    static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(hex: isDark ? dark : light)
+        })
+    }
+}
+
+/// Per-window style resolved from settings and the system reduce-motion flag.
+struct NextStyle: Equatable {
+    var accent: Color = NextAccent.violet.color
+    /// Multiplies animation durations: 0.6 restrained, 1 expressive, 1.2 playful, 0.4 reduced.
+    var motion: Double = 1
+    /// Whether bounces, rings and slides play.
+    var lively = true
+    var dwell: Double = 5
+    var compact = false
+    var serifTitles = true
+
+    var rowVerticalPadding: CGFloat { compact ? 3 : 5 }
+    func ms(_ base: Double) -> Double { (base * motion).rounded() }
+    func ease(_ base: Double) -> Animation { NX.ease(ms(base)) }
+    func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }
+    func standard(_ base: Double) -> Animation { NX.standard(ms(base)) }
+}
+
+private struct NextStyleKey: EnvironmentKey {
+    static let defaultValue = NextStyle()
+}
+
+extension EnvironmentValues {
+    var nextStyle: NextStyle {
+        get { self[NextStyleKey.self] }
+        set { self[NextStyleKey.self] = newValue }
+    }
+}
+
+extension NSColor {
+    convenience init(hex: UInt32) {
+        self.init(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255,
+                  alpha: 1)
+    }
+}

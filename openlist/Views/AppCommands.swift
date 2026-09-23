@@ -12,11 +12,18 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        // Each Task item reads the same targets, so resolve them once per update.
+        // Only a single target is fetched; RootView resolves the rest on use.
+        let targets = taskTargetIDs
+        let single = singleTask(among: targets)
+
         CommandMenu("Work") {
             Button("Show Work") { env.calendar.showWork() }
             Button("Start Selected Task") {
-                if let task = selectedWorkTask { env.calendar.requestWork(WorkTaskReference(task)) }
-            }.disabled(selectedWorkTask == nil)
+                if let task = workTask(singleTask(among: taskTargetIDs)) {
+                    env.calendar.requestWork(WorkTaskReference(task))
+                }
+            }.disabled(workTask(single) == nil)
             Divider()
             Button("Stop Current Session") { env.calendar.stopWorking(); env.calendar.showWork() }
                 .disabled(env.calendar.activeSession == nil)
@@ -96,38 +103,39 @@ struct AppCommands: Commands {
                 .disabled(!hasDocumentContext || !hasBlockSelection)
         }
 
-        // Task ▸ everything that acts on the current selection.
+        // Task ▸ everything that acts on the current targets. Items that open
+        // one task's details need exactly one; the rest take every target.
         CommandMenu("Task") {
             Button("Complete / Reopen") { env.send(.toggleCompletion) }
                 .keyboardShortcut("d", modifiers: .command)
-                .disabled(!hasTaskSelection)
+                .disabled(targets.isEmpty)
             Button("Open Details") { env.send(.openDetails) }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!hasTaskSelection)
+                .disabled(single == nil)
 
             Divider()
 
             Button("Due Today") { env.send(.setDueToday) }
                 .keyboardShortcut("t", modifiers: .control)
-                .disabled(!hasTaskSelection)
+                .disabled(targets.isEmpty)
             Button("Add Due Date…") { env.send(.pickDueDate) }
                 .keyboardShortcut("d", modifiers: .control)
-                .disabled(!hasTaskSelection)
+                .disabled(single == nil)
             Button("Clear Due Date") { env.send(.clearDueDate) }
                 .keyboardShortcut("d", modifiers: [.control, .shift])
-                .disabled(!hasTaskSelection)
+                .disabled(targets.isEmpty)
 
             Divider()
 
             Button("Add Label…") { env.send(.pickLabel) }
                 .keyboardShortcut("l", modifiers: .control)
-                .disabled(!hasTaskSelection)
+                .disabled(single == nil)
             Button("Clear Labels") { env.send(.clearLabels) }
                 .keyboardShortcut("l", modifiers: [.control, .shift])
-                .disabled(!hasTaskSelection)
+                .disabled(targets.isEmpty)
             Button("Toggle Star") { env.send(.toggleStar) }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
-                .disabled(!hasTaskSelection)
+                .disabled(targets.isEmpty)
 
             Divider()
 
@@ -135,24 +143,24 @@ struct AppCommands: Commands {
             // before the text view sees the event, so ⌘⌫ here would delete the
             // task instead of the line the user was editing.
             Button("Delete Task", role: .destructive) { env.send(.deleteSelection) }
-                .disabled(!hasTaskSelection)
+                .disabled(targets.isEmpty)
         }
 
-        // View ▸ navigation between the five fixed destinations.
+        // View ▸ navigation, in sidebar order.
         CommandGroup(before: .sidebar) {
-            Button("Inbox") { env.navigator.go(to: .inbox) }
+            Button("Inbox") { env.workbench.go(.inbox) }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("Today") { env.navigator.go(to: .today) }
+            Button("Today") { env.workbench.go(.today) }
                 .keyboardShortcut("2", modifiers: .command)
-            Button("Updates") { env.navigator.go(to: .updates) }
+            Button("Calendar") { env.workbench.go(.calendar) }
                 .keyboardShortcut("3", modifiers: .command)
-            Button("Tasks") { env.navigator.go(to: .tasks) }
+            Button("Tasks") { env.workbench.go(.tasks) }
                 .keyboardShortcut("4", modifiers: .command)
-            Button("Lists") { env.navigator.go(to: .lists) }
+            Button("Lists") { env.workbench.go(.lists) }
                 .keyboardShortcut("5", modifiers: .command)
-            Button("Calendar") { env.navigator.go(to: .calendar) }
+            Button("Activity") { env.workbench.go(.activity) }
                 .keyboardShortcut("6", modifiers: .command)
-            Button("Activity") { env.navigator.go(to: .activity) }
+            Button("Trash") { env.workbench.go(.trash) }
 
             Divider()
 
@@ -162,6 +170,11 @@ struct AppCommands: Commands {
             Button("Forward") { env.navigator.goForward() }
                 .keyboardShortcut("]", modifiers: .command)
                 .disabled(!env.navigator.canGoForward)
+
+            Divider()
+
+            Button(env.workbench.showsSidebar ? "Hide Sidebar" : "Show Sidebar") { env.workbench.toggleSidebar() }
+                .keyboardShortcut("s", modifiers: [.control, .command])
 
             Divider()
 
@@ -179,19 +192,32 @@ struct AppCommands: Commands {
         }
     }
 
-    private var hasTaskSelection: Bool {
-        guard env.taskCaptureRequest == nil, !env.navigator.isCommandPaletteOpen,
-              !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return false }
-        return env.navigator.selection.count == 1 && env.navigator.selection.contains { env.store.block(id: $0)?.isTask == true }
+    /// What the Task menu acts on, only while the main window is key. A
+    /// document editor that has claimed commands keeps its single selected
+    /// task; the Next screens use the workbench targets (selection, focused
+    /// row, inspected task) that `RootView.handleGlobalCommand` runs on.
+    private var taskTargetIDs: [UUID] {
+        guard env.isMainWindowKey, !env.workbench.captureOpen, !env.navigator.isCommandPaletteOpen,
+              !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return [] }
+        guard env.activeDocument != nil else { return env.workbench.targetIDs }
+        guard env.navigator.selection.count == 1, let id = env.navigator.selection.first,
+              env.store.block(id: id)?.isTask == true else { return [] }
+        return [id]
     }
 
-    private var selectedWorkTask: Block? {
-        guard hasTaskSelection, let id = env.navigator.selection.first, let task = env.store.block(id: id) else { return nil }
-        return env.calendar.validWorkTask(WorkTaskReference(task))
+    /// The only target, when it is a task.
+    private func singleTask(among ids: [UUID]) -> Block? {
+        guard ids.count == 1, let task = env.store.block(id: ids[0]), task.isTask else { return nil }
+        return task
+    }
+
+    /// The task, when it can start a Work session.
+    private func workTask(_ task: Block?) -> Block? {
+        task.flatMap { env.calendar.validWorkTask(WorkTaskReference($0)) }
     }
 
     private var hasBlockSelection: Bool {
-        env.taskCaptureRequest == nil && !env.navigator.isCommandPaletteOpen
+        !env.workbench.captureOpen && !env.navigator.isCommandPaletteOpen
             && env.navigator.selection.count == 1 && env.navigator.selection.contains { env.store.block(id: $0) != nil }
     }
 

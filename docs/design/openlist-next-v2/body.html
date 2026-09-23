@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="07a53fd2-a21d-496c-9001-fb080ef89bed"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<style>/* latin-ext */
+
+/* latin */
+
+/* latin-ext */
+
+/* latin */
+
+/* fallback */
+
+
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+</style>
+<style>
+  body { margin:0; background:#DFDAD3; font-family:-apple-system,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#7C4DF0; text-decoration:none; }
+  a:hover { color:#5F32CC; }
+  .ms { font-family:'Material Symbols Rounded'; font-weight:400; font-style:normal; line-height:1; letter-spacing:normal; text-transform:none; display:inline-block; white-space:nowrap; direction:ltr; font-feature-settings:'liga'; -webkit-font-smoothing:antialiased; font-variation-settings:'FILL' 0,'wght' 500,'GRAD' 0,'opsz' 20; }
+  .ms.f { font-variation-settings:'FILL' 1,'wght' 500,'GRAD' 0,'opsz' 20; }
+  input { font-family:inherit; }
+  @keyframes drain { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+  @keyframes drainB { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+  @keyframes drainV { from { transform:scaleY(1); } to { transform:scaleY(0); } }
+  @keyframes ring { 0% { transform:scale(0.6); opacity:0.6; } 100% { transform:scale(2.6); opacity:0; } }
+  @keyframes rowIn { from { opacity:0; transform:translateY(-8px) scale(0.99); } to { opacity:1; transform:none; } }
+  @keyframes chipIn { from { opacity:0; transform:translateY(3px) scale(0.85); } to { opacity:1; transform:none; } }
+  @keyframes liftIn { from { opacity:0; transform:translateY(10px) scale(0.985); } to { opacity:1; transform:none; } }
+  @keyframes liftIn2 { from { opacity:0; transform:translateY(10px) scale(0.985); } to { opacity:1; transform:none; } }
+  @keyframes screenIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  @keyframes screenIn2 { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  @keyframes popIn { from { opacity:0; transform:translateY(-4px) scale(0.97); } to { opacity:1; transform:none; } }
+  @keyframes barIn { from { opacity:0; transform:translate(-50%,10px) scale(0.97); } to { opacity:1; transform:translate(-50%,0); } }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  @keyframes bump { 0% { transform:scale(1); } 40% { transform:scale(1.35); } 100% { transform:scale(1); } }
+  @keyframes notchDrop { from { transform:translateY(-110%); } to { transform:translateY(0); } }
+  @keyframes notchIn { from { transform:translate(-50%,-110%); } to { transform:translate(-50%,0); } }
+  @keyframes breathe { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.45; transform:scale(0.8); } }
+</style>
+</helmet>
+
+<div style="padding:26px 26px 60px; display:flex; flex-direction:column; align-items:center; gap:16px;">
+
+  <div style="display:flex; align-items:center; gap:12px; width:1400px; max-width:100%; flex-wrap:wrap;">
+    <div style="font:600 11px/1.2 -apple-system,sans-serif; letter-spacing:0.09em; text-transform:uppercase; color:rgba(23,22,26,0.42);">Openlist — every screen, one interaction model</div>
+    <div style="flex:1; min-width:40px; height:1px; background:rgba(23,22,26,0.14);"></div>
+    <div style="display:flex; align-items:center; gap:10px; font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.46); flex-wrap:wrap;">
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">N</span>capture</span>
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">/</span>search</span>
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">G then I T C A L</span>go to</span>
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">J K</span>move</span>
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">↩</span>details</span>
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">E T M F P D</span>act</span>
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">⌘K</span>everything</span>
+      <span style="display:flex; gap:4px; align-items:center;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.07); padding:2px 5px; border-radius:4px; white-space:nowrap;">⌘Z</span>undo</span>
+    </div>
+  </div>
+
+  <div style="position:relative; width:1400px; max-width:100%; height:880px; border-radius:12px; overflow:hidden; box-shadow:0 34px 80px rgba(40,30,20,0.3), 0 0 0 0.5px rgba(23,22,26,0.25); background:#FCFBFA; display:flex;">
+
+    <!-- Sidebar -->
+    <div style="width:236px; flex:none; background:#F1EEEA; border-right:0.5px solid rgba(23,22,26,0.09); display:flex; flex-direction:column;">
+      <div style="height:52px; flex:none; display:flex; align-items:center; padding:0 20px; gap:8px;">
+        <div style="width:12px; height:12px; border-radius:50%; background:#FF5F57;"></div>
+        <div style="width:12px; height:12px; border-radius:50%; background:#FEBC2E;"></div>
+        <div style="width:12px; height:12px; border-radius:50%; background:#28C840;"></div>
+      </div>
+      <div style="padding:0 8px 8px;">
+        <div sc-camel-on-click="{{ openSearch }}" style="display:flex; align-items:center; gap:8px; height:28px; padding:0 9px; border-radius:8px; background:rgba(23,22,26,0.05); color:rgba(23,22,26,0.45); cursor:text;" style-hover="background:rgba(23,22,26,0.08)">
+          <span class="ms" style="font-size:15px;">search</span>
+          <span style="font:500 12.5px/1 -apple-system,sans-serif; flex:1;">Search</span>
+          <span style="font:500 10px/1 ui-monospace,Menlo,monospace; opacity:0.7;">/</span>
+        </div>
+      </div>
+      <div style="flex:1; padding:2px 8px 0; overflow:auto;">
+        <div style="display:flex; flex-direction:column; gap:1px;">
+          <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+            <div sc-camel-on-click="{{ n.onClick }}" style="{{ n.style }}" style-hover="background:rgba(23,22,26,0.045)">
+              <span class="ms" style="{{ n.iconStyle }}">{{ n.icon }}</span>
+              <span style="{{ n.labelStyle }}">{{ n.label }}</span>
+              <span style="flex:1;"></span>
+              <span style="{{ n.countStyle }}">{{ n.count }}</span>
+            </div>
+          </sc-for>
+          
+        </div>
+
+        <sc-for list="{{ sideSections }}" as="sec" hint-placeholder-count="2">
+          <div style="padding-top:14px;">
+            <div sc-camel-on-click="{{ sec.onToggle }}" style="display:flex; align-items:center; gap:4px; padding:4px 8px 5px; cursor:pointer; border-radius:6px;" style-hover="background:rgba(23,22,26,0.035)">
+              <span style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.34);">{{ sec.title }}</span>
+              <span class="ms" style="{{ sec.chevStyle }}">chevron_right</span>
+            </div>
+            <sc-if value="{{ sec.open }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; flex-direction:column; gap:1px;">
+                <sc-for list="{{ sec.lists }}" as="l" hint-placeholder-count="3">
+                  <div sc-camel-on-click="{{ l.onClick }}" style="{{ l.style }}" style-hover="background:rgba(23,22,26,0.045)">
+                    <span style="font-size:12px; width:16px; text-align:center;">{{ l.emoji }}</span>
+                    <span style="{{ l.nameStyle }}">{{ l.name }}</span>
+                    <span style="flex:1;"></span>
+                    <span style="{{ l.countStyle }}">{{ l.count }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+
+        <div style="padding-top:14px;">
+          <div sc-camel-on-click="{{ toggleLabels }}" style="display:flex; align-items:center; gap:4px; padding:4px 8px 5px; cursor:pointer; border-radius:6px;" style-hover="background:rgba(23,22,26,0.035)">
+            <span style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.34);">Labels</span>
+            <span class="ms" style="{{ labelsChevStyle }}">chevron_right</span>
+          </div>
+          <sc-if value="{{ labelsOpen }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; flex-direction:column; gap:1px; padding-bottom:12px;">
+            <sc-for list="{{ sideLabels }}" as="l" hint-placeholder-count="3">
+              <div sc-camel-on-click="{{ l.onClick }}" style="{{ l.style }}" style-hover="background:rgba(23,22,26,0.045)">
+                <span style="{{ l.dotStyle }}"></span>
+                <span style="{{ l.nameStyle }}">{{ l.name }}</span>
+                <span style="flex:1;"></span>
+                <span style="{{ l.countStyle }}">{{ l.count }}</span>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+        </div>
+      </div>
+      <div style="flex:none; border-top:0.5px solid rgba(23,22,26,0.09); padding:6px 8px; display:flex; align-items:center; gap:4px;">
+        <div sc-camel-on-click="{{ newList }}" style="display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:7px; color:rgba(23,22,26,0.6); cursor:pointer;" style-hover="background:rgba(23,22,26,0.05)">
+          <span class="ms" style="font-size:14px;">add</span>
+          <span style="font:500 12.5px/1 -apple-system,sans-serif;">New list</span>
+        </div>
+        <span style="flex:1;"></span>
+        <div sc-camel-on-click="{{ goTrash }}" style="{{ trashBtnStyle }}" style-hover="background:rgba(23,22,26,0.05)">
+          <span class="ms" style="font-size:16px;">delete</span>
+          <sc-if value="{{ trashHasCount }}" hint-placeholder-val="{{ false }}"><span style="font:500 10.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4); font-variant-numeric:tabular-nums;">{{ trashCount }}</span></sc-if>
+        </div>
+        <div sc-camel-on-click="{{ goSettings }}" style="{{ settingsBtnStyle }}" style-hover="background:rgba(23,22,26,0.05)">
+          <span class="ms" style="font-size:16px;">settings</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main pane -->
+    <div style="flex:1; min-width:0; display:flex; flex-direction:column; position:relative; overflow:hidden;">
+      <div style="position:relative; height:52px; flex:none; display:flex; align-items:center; gap:6px; padding:0 18px; border-bottom:0.5px solid rgba(23,22,26,0.07);">
+        <sc-if value="{{ isWorking }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute; top:0; left:0; right:0; z-index:40; display:flex; justify-content:center; pointer-events:none;">
+          <div style="pointer-events:auto; position:relative; width:max-content; display:flex; align-items:center; gap:10px; height:38px; max-width:min(440px, calc(100% - 320px)); min-width:0; padding:0 5px 0 14px; box-sizing:border-box; border-radius:0 0 15px 15px; background:#FFFFFF; box-shadow:0 0 0 0.5px rgba(23,22,26,0.12), 0 10px 26px rgba(40,30,20,0.12); overflow:hidden; animation:notchDrop 420ms cubic-bezier(0.2,0.9,0.2,1);">
+            <span style="{{ workDotStyle }}"></span>
+            <span style="font:600 12.5px/1.2 -apple-system,sans-serif; color:#17161A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;">{{ workTitle }}</span>
+            <span style="{{ workElapsedStyle }}">{{ workElapsed }}</span>
+            <sc-if value="{{ workHasExt }}" hint-placeholder-val="{{ false }}">
+              <span style="{{ workExtStyle }}">{{ workExt }}</span>
+            </sc-if>
+            <div style="display:flex; align-items:center; gap:1px; padding-left:5px; border-left:0.5px solid rgba(23,22,26,0.1); flex:none;">
+              <div sc-camel-on-click="{{ workPause }}" title="{{ workPauseLabel }}" style="width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:rgba(23,22,26,0.6);" style-hover="background:rgba(23,22,26,0.06); color:#17161A"><span class="ms f" style="font-size:16px;">{{ workPauseIcon }}</span></div>
+              <div sc-camel-on-click="{{ workDone }}" title="Done" style="width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#2F9E6E;" style-hover="background:rgba(47,158,110,0.12)"><span class="ms" style="font-size:17px; font-variation-settings:'wght' 600;">check</span></div>
+              <div sc-camel-on-click="{{ workStop }}" title="Stop" style="width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:rgba(23,22,26,0.42);" style-hover="background:rgba(23,22,26,0.06); color:#17161A"><span class="ms" style="font-size:15px;">close</span></div>
+            </div>
+            <div style="position:absolute; left:14px; right:14px; bottom:0; height:2px; border-radius:2px; background:rgba(23,22,26,0.06); overflow:hidden;"><div style="{{ workBarStyle }}"></div></div>
+          </div>
+          </div>
+        </sc-if>
+        <div sc-camel-on-click="{{ goBack }}" style="{{ backStyle }}"><span class="ms" style="font-size:17px;">chevron_left</span></div>
+        <span style="font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4); padding-left:4px;">{{ crumb }}</span>
+        <span style="flex:1;"></span>
+        <sc-if value="{{ canUndo }}" hint-placeholder-val="{{ false }}">
+          <div sc-camel-on-click="{{ undoLast }}" style="display:flex; align-items:center; gap:6px; padding:5px 9px; border-radius:8px; color:rgba(23,22,26,0.6); cursor:pointer; animation:fadeIn 200ms ease;" style-hover="background:rgba(23,22,26,0.06)">
+            <span class="ms" style="font-size:15px;">undo</span>
+            <span style="{{ undoLabelStyle }}">{{ undoLabel }}</span>
+          </div>
+        </sc-if>
+        <div sc-camel-on-click="{{ openPalette }}" style="display:flex; align-items:center; gap:6px; padding:5px 9px; border-radius:8px; color:rgba(23,22,26,0.6); cursor:pointer;" style-hover="background:rgba(23,22,26,0.06)">
+          <span class="ms" style="font-size:15px;">bolt</span>
+          <span style="{{ actionsLabelStyle }}">Actions</span>
+          <span style="{{ actionsKeyStyle }}">⌘K</span>
+        </div>
+        <div sc-camel-on-click="{{ openCapture }}" style="{{ captureBtnStyle }}">
+          <span class="ms" style="font-size:14px;">add</span>
+          <span style="{{ newLabelStyle }}">New task</span>
+          <span style="{{ newKeyStyle }}">N</span>
+        </div>
+      </div>
+
+      <div sc-camel-on-click="{{ onBackgroundClick }}" style="flex:1; overflow:auto; padding:26px 40px 120px;">
+        <div style="{{ contentStyle }}">
+
+          <!-- Screen header -->
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div style="{{ hdrTileStyle }}">
+              <sc-if value="{{ hdrIsEmoji }}" hint-placeholder-val="{{ false }}"><span style="font-size:24px;">{{ hdrEmoji }}</span></sc-if>
+              <sc-if value="{{ hdrIsIcon }}" hint-placeholder-val="{{ true }}"><span class="ms f" style="font-size:22px;">{{ hdrIcon }}</span></sc-if>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:5px; min-width:0;">
+              <div style="{{ titleStyle }}">{{ hdrTitle }}</div>
+              <div style="font:500 12px/1.2 -apple-system,sans-serif; color:rgba(23,22,26,0.48);">{{ hdrSub }}</div>
+            </div>
+            <span style="flex:1;"></span>
+            <sc-if value="{{ hdrHasProgress }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.5); font-variant-numeric:tabular-nums;">{{ hdrProgressText }}</span>
+                <div style="width:110px; height:4px; border-radius:3px; background:rgba(23,22,26,0.08); overflow:hidden;"><div style="{{ hdrProgressFill }}"></div></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ isCalendar }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="display:flex; padding:2px; border-radius:9px; background:rgba(23,22,26,0.06); gap:2px;">
+                  <sc-for list="{{ calRanges }}" as="r" hint-placeholder-count="3">
+                    <div sc-camel-on-click="{{ r.onClick }}" style="{{ r.style }}">{{ r.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- INBOX TRIAGE -->
+          <sc-if value="{{ isInbox }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-top:22px;">
+              <sc-if value="{{ triageHas }}" hint-placeholder-val="{{ true }}">
+                <div style="{{ triageCardStyle }}">
+                  <div style="display:flex; align-items:center; gap:10px; padding:14px 18px 0;">
+                    <span style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.08em; text-transform:uppercase; color:#3A7BD8;">Triage</span>
+                    <div style="display:flex; gap:3px;">
+                      <sc-for list="{{ triageDots }}" as="d" hint-placeholder-count="6">
+                        <span style="{{ d.style }}"></span>
+                      </sc-for>
+                    </div>
+                    <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.42);">{{ triageCountText }}</span>
+                    <span style="flex:1;"></span>
+                    <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4);">{{ triageAge }}</span>
+                  </div>
+                  <div style="padding:12px 18px 4px; font:500 22px/1.3 -apple-system,sans-serif; color:#17161A; text-wrap:pretty; letter-spacing:-0.005em;">{{ triageTitle }}</div>
+                  <div style="display:flex; gap:6px; padding:4px 18px 0; flex-wrap:wrap; min-height:4px;">
+                    <sc-for list="{{ triageChips }}" as="chip" hint-placeholder-count="0">
+                      <span style="{{ chip.style }}"><sc-if value="{{ chip.hasIcon }}" hint-placeholder-val="{{ false }}"><span class="ms" style="{{ chip.iconStyle }}">{{ chip.icon }}</span></sc-if>{{ chip.label }}</span>
+                    </sc-for>
+                  </div>
+
+                  <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; padding:18px 18px 16px;">
+                    <div>
+                      <div style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.36); padding-bottom:8px;">File into</div>
+                      <div style="display:flex; flex-direction:column; gap:2px;">
+                        <sc-for list="{{ triageLists }}" as="m" hint-placeholder-count="5">
+                          <div sc-camel-on-click="{{ m.onClick }}" style="display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:8px; cursor:pointer; color:#17161A;" style-hover="background:rgba(58,123,216,0.1)">
+                            <span style="font:600 10px/1 ui-monospace,Menlo,monospace; width:16px; height:16px; border-radius:4px; background:rgba(23,22,26,0.06); display:inline-flex; align-items:center; justify-content:center; color:rgba(23,22,26,0.5);">{{ m.key }}</span>
+                            <span style="font-size:13px;">{{ m.emoji }}</span>
+                            <span style="font:500 13px/1 -apple-system,sans-serif;">{{ m.name }}</span>
+                            <span style="flex:1;"></span>
+                            <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.34);">{{ m.count }}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </div>
+                    <div>
+                      <div style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.36); padding-bottom:8px;">Or schedule — stays in Inbox</div>
+                      <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px;">
+                        <sc-for list="{{ triageDays }}" as="d" hint-placeholder-count="8">
+                          <div sc-camel-on-click="{{ d.onClick }}" style="display:flex; flex-direction:column; align-items:center; gap:4px; padding:8px 0 7px; border-radius:9px; cursor:pointer; background:rgba(23,22,26,0.035);" style-hover="background:rgba(124,77,240,0.12)">
+                            <span style="font:600 9.5px/1 -apple-system,sans-serif; letter-spacing:0.04em; text-transform:uppercase; color:rgba(23,22,26,0.42);">{{ d.top }}</span>
+                            <span style="font:500 16px/1 -apple-system,sans-serif; color:#17161A; font-variant-numeric:tabular-nums;">{{ d.num }}</span>
+                            <span style="display:flex; gap:2px; height:4px; align-items:center;">
+                              <sc-for list="{{ d.dots }}" as="dot" hint-placeholder-count="0"><span style="{{ dot.style }}"></span></sc-for>
+                            </span>
+                          </div>
+                        </sc-for>
+                      </div>
+                      <div style="font:500 10.5px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.4); padding-top:8px;">T today · M tomorrow · dots show what’s already due</div>
+                    </div>
+                  </div>
+
+                  <div style="display:flex; align-items:center; gap:6px; padding:12px 14px; border-top:0.5px solid rgba(23,22,26,0.08); background:rgba(23,22,26,0.02);">
+                    <div sc-camel-on-click="{{ triageDone }}" style="display:flex; align-items:center; gap:5px; padding:7px 10px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.7);" style-hover="background:rgba(47,158,110,0.12); color:#23865B"><span class="ms" style="font-size:15px;">check_circle</span>Already done<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">E</span></div>
+                    <div sc-camel-on-click="{{ triageTrash }}" style="display:flex; align-items:center; gap:5px; padding:7px 10px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.7);" style-hover="background:rgba(216,67,75,0.1); color:#C03A42"><span class="ms" style="font-size:15px;">delete</span>Discard<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">D</span></div>
+                    <div sc-camel-on-click="{{ triageOpen }}" style="display:flex; align-items:center; gap:5px; padding:7px 10px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.7);" style-hover="background:rgba(23,22,26,0.06)"><span class="ms" style="font-size:15px;">right_panel_open</span>Details<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">↩</span></div>
+                    <span style="flex:1;"></span>
+                    <div sc-camel-on-click="{{ triageKeep }}" style="display:flex; align-items:center; gap:6px; padding:8px 12px; border-radius:8px; cursor:pointer; font:600 12px/1 -apple-system,sans-serif; color:#fff; background:#17161A;" style-hover="background:#2C2A31">Keep for later<span style="font:500 10px/1 ui-monospace,Menlo,monospace; opacity:0.6;">→</span></div>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ triageEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="border-radius:16px; padding:34px 28px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.1), 0 10px 30px rgba(40,30,20,0.06); display:flex; align-items:center; gap:18px; animation:liftIn 320ms cubic-bezier(0.2,0.9,0.2,1);">
+                  <div style="width:48px; height:48px; border-radius:50%; background:#2F9E6E; display:flex; align-items:center; justify-content:center; flex:none;"><span class="ms" style="font-size:26px; color:#fff; font-variation-settings:'wght' 700;">check</span></div>
+                  <div style="flex:1;">
+                    <div style="font:400 26px/1.1 'Instrument Serif',Georgia,serif; color:#17161A;">Inbox triaged</div>
+                    <div style="font:400 13px/1.45 -apple-system,sans-serif; color:rgba(23,22,26,0.56); padding-top:4px;">{{ triageSummary }}</div>
+                  </div>
+                  <div sc-camel-on-click="{{ triageAgain }}" style="padding:8px 12px; border-radius:8px; background:rgba(23,22,26,0.06); font:600 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.7); cursor:pointer;" style-hover="background:rgba(23,22,26,0.1)">Review kept tasks</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- TASKS FILTER · QUERY -->
+          <sc-if value="{{ tqShow }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; align-items:flex-end; gap:20px; padding-top:22px; border-bottom:0.5px solid rgba(23,22,26,0.08); flex-wrap:wrap;">
+              <div style="display:flex; gap:22px;">
+                <sc-for list="{{ tqTabs }}" as="t" hint-placeholder-count="3">
+                  <div sc-camel-on-click="{{ t.onClick }}" style="{{ t.style }}">{{ t.label }}<span style="{{ t.countStyle }}">{{ t.count }}</span><span style="{{ t.barStyle }}"></span></div>
+                </sc-for>
+              </div>
+              <span style="flex:1;"></span>
+              <div style="position:relative; display:flex; align-items:flex-end; gap:22px;">
+                <div sc-camel-on-click="{{ tqFocusField }}" style="{{ tqFieldStyle }}">
+                                    <div style="flex:1; min-width:0; position:relative; height:20px;">
+                    <div style="position:absolute; inset:0; font:400 13.5px/20px -apple-system,sans-serif; white-space:nowrap; overflow:hidden; pointer-events:none;">
+                      <sc-for list="{{ tqSegs }}" as="sg" hint-placeholder-count="0"><span style="{{ sg.style }}">{{ sg.text }}</span></sc-for><span style="color:rgba(23,22,26,0.3);">{{ tqGhost }}</span><span style="{{ tqPlaceholderStyle }}">{{ tqPlaceholder }}</span>
+                    </div>
+                    <input value="{{ tqText }}" ref="{{ tqRef }}" sc-camel-on-change="{{ onTqChange }}" sc-camel-on-key-down="{{ onTqKey }}" sc-camel-on-focus="{{ onTqFocus }}" sc-camel-on-blur="{{ onTqBlur }}" style="position:absolute; inset:0; width:100%; border:none; outline:none; background:transparent; color:transparent; caret-color:#17161A; font:400 13.5px/20px -apple-system,sans-serif; padding:0; margin:0;">
+                  </div>
+                  <span style="{{ tqBarStyle }}"></span>
+                  <sc-if value="{{ tqHasQ }}" hint-placeholder-val="{{ false }}">
+                    <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4); font-variant-numeric:tabular-nums; animation:fadeIn 160ms ease;">{{ tqCount }}</span>
+                    <span sc-camel-on-click="{{ tqClear }}" sc-camel-on-mouse-down="{{ tqKeep }}" class="ms" style="font-size:14px; color:rgba(23,22,26,0.4); cursor:pointer; padding:2px; border-radius:5px;" style-hover="background:rgba(23,22,26,0.07); color:#17161A">close</span>
+                  </sc-if>
+                </div>
+                <div sc-camel-on-click="{{ tqCycleGroup }}" style="display:flex; align-items:baseline; padding:0 0 13px; cursor:pointer; color:rgba(23,22,26,0.42); font:500 13.5px/1 -apple-system,sans-serif; white-space:nowrap; transition:color 160ms ease;" style-hover="color:#17161A">
+                  {{ tqGroupLabel }}
+                </div>
+                <sc-if value="{{ tqFocus }}" hint-placeholder-val="{{ false }}">
+                  <div sc-camel-on-mouse-down="{{ tqKeep }}" style="position:absolute; right:0; top:calc(100% + 8px); width:460px; max-width:calc(100vw - 80px); padding:10px 12px 8px; border-radius:13px; background:#fff; box-shadow:0 18px 44px rgba(40,30,20,0.16), 0 0 0 0.5px rgba(23,22,26,0.14); z-index:20; animation:popIn 170ms cubic-bezier(0.2,0.9,0.2,1); transform-origin:top right;">
+                    <sc-for list="{{ tqGroups }}" as="g" hint-placeholder-count="4">
+                      <div style="display:flex; gap:10px; align-items:flex-start; padding:5px 0;">
+                        <span style="width:44px; flex:none; padding-top:7px; font:600 9.5px/1 -apple-system,sans-serif; letter-spacing:0.08em; text-transform:uppercase; color:rgba(23,22,26,0.34);">{{ g.title }}</span>
+                        <div style="display:flex; gap:5px; flex-wrap:wrap; flex:1; min-width:0;">
+                          <sc-for list="{{ g.pills }}" as="p" hint-placeholder-count="3">
+                            <span sc-camel-on-click="{{ p.onClick }}" style="{{ p.style }}"><sc-if value="{{ p.hasEmoji }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;">{{ p.emoji }}</span></sc-if>{{ p.label }}</span>
+                          </sc-for>
+                        </div>
+                      </div>
+                    </sc-for>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:6px; padding-top:9px; border-top:0.5px solid rgba(23,22,26,0.07); font:500 10.5px/1.3 -apple-system,sans-serif; color:rgba(23,22,26,0.42);">
+                      <span style="flex:1;">Words combine — “kyoto overdue #travel”. Anything else matches the title.</span>
+                      <span style="white-space:nowrap;">⇥ complete · esc clear</span>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- TASKS FILTER · SENTENCE -->
+          <sc-if value="{{ tfSentenceShow }}" hint-placeholder-val="{{ false }}">
+            <div style="position:relative; display:flex; align-items:center; gap:12px; padding:18px 0 4px; flex-wrap:wrap; border-bottom:0.5px solid rgba(23,22,26,0.07);">
+              <div style="display:flex; align-items:center; gap:3px; flex-wrap:wrap; font:400 13px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45); padding-bottom:10px;">
+                <span>Showing</span>
+                <span sc-camel-on-click="{{ tfOpenStatus }}" style="{{ tfTokStatus }}" style-hover="background:rgba(23,22,26,0.06)">{{ tfStatusLabel }}<span class="ms" style="font-size:14px; opacity:0.5;">expand_more</span></span>
+                <span>tasks in</span>
+                <span sc-camel-on-click="{{ tfOpenLists }}" style="{{ tfTokLists }}" style-hover="background:rgba(23,22,26,0.06)">{{ tfListsLabel }}<span class="ms" style="font-size:14px; opacity:0.5;">expand_more</span></span>
+                <span>by</span>
+                <span sc-camel-on-click="{{ tfOpenGroup }}" style="{{ tfTokGroup }}" style-hover="background:rgba(23,22,26,0.06)">{{ tfGroupLabel }}<span class="ms" style="font-size:14px; opacity:0.5;">expand_more</span></span>
+                <sc-if value="{{ tfDirty }}" hint-placeholder-val="{{ false }}">
+                  <span sc-camel-on-click="{{ tfReset }}" style="font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45); cursor:pointer; padding:5px 7px; margin-left:4px; border-radius:6px; animation:fadeIn 160ms ease;" style-hover="background:rgba(23,22,26,0.05); color:#17161A">Reset</span>
+                </sc-if>
+              </div>
+              <span style="flex:1;"></span>
+              <div style="display:flex; align-items:center; gap:6px; height:28px; padding:0 4px 0 2px; margin-bottom:10px; width:200px; max-width:100%; border-bottom:1px solid transparent;">
+                <span class="ms" style="font-size:15px; color:rgba(23,22,26,0.35);">filter_list</span>
+                <input value="{{ tfQ }}" sc-camel-on-change="{{ onTfQ }}" sc-camel-on-key-down="{{ onTfQKey }}" placeholder="Filter by title" style="flex:1; min-width:0; border:none; outline:none; background:transparent; font:400 13px/1 -apple-system,sans-serif; color:#17161A; padding:0;">
+                <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.38); font-variant-numeric:tabular-nums;">{{ tfCount }}</span>
+              </div>
+              <sc-if value="{{ tfMenuOpen }}" hint-placeholder-val="{{ false }}">
+                <div sc-camel-on-click="{{ stop }}" style="{{ tfMenuStyle }}">
+                  <sc-for list="{{ tfMenuItems }}" as="m" hint-placeholder-count="3">
+                    <div sc-camel-on-click="{{ m.onClick }}" style="{{ m.style }}" style-hover="background:rgba(23,22,26,0.05)">
+                      <span style="font-size:12px; width:16px; text-align:center;">{{ m.emoji }}</span>
+                      <span style="font:500 13px/1 -apple-system,sans-serif; flex:1; white-space:nowrap;">{{ m.label }}</span>
+                      <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.36); font-variant-numeric:tabular-nums;">{{ m.count }}</span>
+                      <span class="ms" style="{{ m.checkStyle }}">check</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- TODAY EMPTY -->
+          <sc-if value="{{ todayClear }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:24px; border-radius:16px; padding:30px 28px; background:linear-gradient(180deg, rgba(224,134,31,0.08), rgba(224,134,31,0.02)); display:flex; align-items:center; gap:18px; animation:liftIn 320ms cubic-bezier(0.2,0.9,0.2,1);">
+              <span class="ms f" style="font-size:40px; color:#E0861F;">wb_sunny</span>
+              <div style="flex:1;">
+                <div style="font:400 26px/1.1 'Instrument Serif',Georgia,serif; color:#17161A;">Today is clear</div>
+                <div style="font:400 13px/1.45 -apple-system,sans-serif; color:rgba(23,22,26,0.56); padding-top:4px;">{{ todayClearText }}</div>
+              </div>
+              <div sc-camel-on-click="{{ goCalendar }}" style="padding:8px 12px; border-radius:8px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.14); font:600 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.7); cursor:pointer;" style-hover="background:#F7F5F2">Look at tomorrow</div>
+            </div>
+          </sc-if>
+
+          <!-- GROUPED ROWS (Today / Tasks / List / Label / Inbox queue / Completed) -->
+          <sc-if value="{{ showGroups }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ groupsWrapStyle }}">
+              <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+                <div style="padding-top:16px;">
+                  <sc-if value="{{ g.showHead }}" hint-placeholder-val="{{ true }}">
+                    <div sc-camel-on-click="{{ g.onToggle }}" style="{{ g.headStyle }}">
+                      <span class="ms f" style="{{ g.iconStyle }}">{{ g.icon }}</span>
+                      <span style="font:600 12.5px/1.2 -apple-system,sans-serif; color:#17161A; white-space:nowrap; flex:none;">{{ g.title }}</span>
+                      <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.38); font-variant-numeric:tabular-nums;">{{ g.count }}</span>
+                      <sc-if value="{{ g.collapsible }}" hint-placeholder-val="{{ false }}"><span class="ms" style="{{ g.chevStyle }}">chevron_right</span></sc-if>
+                      <span style="flex:1;"></span>
+                      <sc-if value="{{ g.hasAction }}" hint-placeholder-val="{{ false }}">
+                        <span sc-camel-on-click="{{ g.onAction }}" style="font:600 11px/1 -apple-system,sans-serif; color:#7C4DF0; cursor:pointer; padding:5px 8px; border-radius:6px; background:rgba(124,77,240,0.08);" style-hover="background:rgba(124,77,240,0.16)">{{ g.actionLabel }}</span>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:flex; flex-direction:column; gap:1px; padding-top:2px;">
+                      <sc-for list="{{ g.rows }}" as="row" hint-placeholder-count="4">
+                        <div sc-camel-on-click="{{ row.onClick }}" sc-camel-on-double-click="{{ row.onOpen }}" style="{{ row.wrapStyle }}" style-hover="background:rgba(23,22,26,0.03)">
+                          <div style="{{ row.railStyle }}"></div>
+                          <div style="{{ row.indentStyle }}"></div>
+                          <div sc-camel-on-click="{{ row.onToggle }}" style="width:26px; flex:none; padding-top:2px; cursor:pointer; position:relative;">
+                            <div style="{{ row.ringStyle }}"></div>
+                            <div style="{{ row.boxStyle }}"><span class="ms" style="{{ row.checkStyle }}">check</span></div>
+                          </div>
+                          <div style="flex:1; min-width:0;">
+                            <div style="{{ row.textStyle }}">{{ row.text }}<span style="{{ row.strikeStyle }}"></span></div>
+                            <sc-if value="{{ row.hasNote }}" hint-placeholder-val="{{ false }}">
+                              <div style="font:400 12px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.45); padding-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ row.note }}</div>
+                            </sc-if>
+                          </div>
+                          <div style="display:flex; align-items:center; gap:6px; padding-top:1px; flex-wrap:wrap; justify-content:flex-end;">
+                            <sc-for list="{{ row.chips }}" as="chip" hint-placeholder-count="1">
+                              <span style="{{ chip.style }}"><sc-if value="{{ chip.hasIcon }}" hint-placeholder-val="{{ false }}"><span class="ms" style="{{ chip.iconStyle }}">{{ chip.icon }}</span></sc-if>{{ chip.label }}</span>
+                            </sc-for>
+                            <sc-if value="{{ row.isSelected }}" hint-placeholder-val="{{ false }}">
+                              <span style="{{ row.selMarkStyle }}"><span class="ms" style="font-size:11px; color:#fff; font-variation-settings:'wght' 700;">check</span></span>
+                            </sc-if>
+                            <span sc-camel-on-click="{{ row.onOpen }}" class="ms" style="{{ row.openStyle }}" style-hover="background:rgba(23,22,26,0.07); color:#17161A">right_panel_open</span>
+                          </div>
+                        </div>
+                      </sc-for>
+                      <sc-if value="{{ g.isEmpty }}" hint-placeholder-val="{{ false }}">
+                        <div style="padding:10px 12px; font:400 12.5px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.4);">{{ g.emptyText }}</div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+              <sc-if value="{{ showAddRow }}" hint-placeholder-val="{{ false }}">
+                <div sc-camel-on-click="{{ openCapture }}" style="display:flex; align-items:center; gap:10px; margin-top:8px; padding:7px 10px; border-radius:9px; cursor:text; color:rgba(23,22,26,0.36);" style-hover="background:rgba(23,22,26,0.035); color:rgba(23,22,26,0.55)">
+                  <div style="width:15px; height:15px; border-radius:50%; border:1.5px dashed rgba(23,22,26,0.24); box-sizing:border-box;"></div>
+                  <span style="font:400 13.5px/1.3 -apple-system,sans-serif;">{{ addRowText }}</span>
+                  <span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px;">N</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- CALENDAR -->
+          <sc-if value="{{ isCalendar }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-top:18px; display:flex; flex-direction:column; gap:12px;">
+              <sc-if value="{{ upNextShow }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; align-items:center; gap:12px; padding:10px 12px 10px 14px; border-radius:11px; background:rgba(124,77,240,0.08); box-shadow:inset 0 0 0 1px rgba(124,77,240,0.2); animation:liftIn 260ms ease;">
+                  <span style="width:8px; height:8px; border-radius:50%; background:#7C4DF0; animation:breathe 1.6s ease-in-out infinite;"></span>
+                  <span style="font:600 11px/1 -apple-system,sans-serif; letter-spacing:0.06em; text-transform:uppercase; color:#7C4DF0;">Planned now</span>
+                  <span style="font:600 13px/1.2 -apple-system,sans-serif; color:#17161A;">{{ upNextTitle }}</span>
+                  <span style="font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.5);">{{ upNextTime }}</span>
+                  <span style="flex:1;"></span>
+                  <div sc-camel-on-click="{{ upNextStart }}" style="display:flex; align-items:center; gap:5px; padding:7px 12px; border-radius:8px; background:#7C4DF0; color:#fff; cursor:pointer; font:600 12px/1 -apple-system,sans-serif;" style-hover="background:#6A3BDE"><span class="ms f" style="font-size:14px;">play_arrow</span>Start</div>
+                </div>
+              </sc-if>
+              <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+                <div style="flex:1 1 640px; min-width:0; border-radius:12px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.12); overflow-x:auto; overflow-y:hidden;">
+                  <div style="{{ calHeadGrid }}">
+                    <div></div>
+                    <sc-for list="{{ calDays }}" as="d" hint-placeholder-count="7">
+                      <div style="{{ d.headStyle }}">
+                        <span style="{{ d.dowStyle }}">{{ d.dow }}</span>
+                        <span style="{{ d.numStyle }}">{{ d.num }}</span>
+                        <span style="{{ d.loadStyle }}">{{ d.load }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="{{ calBodyGrid }}">
+                    <div style="position:relative;">
+                      <sc-for list="{{ calHours }}" as="h" hint-placeholder-count="12">
+                        <div style="{{ h.style }}">{{ h.label }}</div>
+                      </sc-for>
+                      <div style="{{ calNowLabelStyle }}">10:40</div>
+                    </div>
+                    <sc-for list="{{ calDays }}" as="d" hint-placeholder-count="7">
+                      <div style="{{ d.colStyle }}">
+                        <sc-for list="{{ d.bands }}" as="b" hint-placeholder-count="0"><div style="{{ b.style }}"></div></sc-for>
+                        <sc-for list="{{ d.events }}" as="ev" hint-placeholder-count="1">
+                          <div style="{{ ev.style }}"><span style="font:600 10.5px/1.25 -apple-system,sans-serif;">{{ ev.title }}</span><span style="font:500 9.5px/1.3 -apple-system,sans-serif; opacity:0.7;">{{ ev.time }}</span></div>
+                        </sc-for>
+                        <sc-for list="{{ d.blocks }}" as="b" hint-placeholder-count="1">
+                          <div sc-camel-on-click="{{ b.onOpen }}" style="{{ b.style }}" style-hover="filter:brightness(0.97)">
+                            <div style="display:flex; align-items:flex-start; gap:5px;">
+                              <div sc-camel-on-click="{{ b.onToggle }}" style="{{ b.boxStyle }}"><span class="ms" style="{{ b.checkStyle }}">check</span></div>
+                              <span style="{{ b.titleStyle }}">{{ b.title }}</span>
+                            </div>
+                            <span style="{{ b.metaStyle }}">{{ b.meta }}</span>
+                          </div>
+                        </sc-for>
+                        <sc-if value="{{ d.isToday }}" hint-placeholder-val="{{ false }}">
+                          <div style="{{ calNowLineStyle }}"><div style="position:absolute; left:-4px; top:-3.5px; width:8px; height:8px; border-radius:50%; background:#D8434B;"></div></div>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="flex:1 1 236px; max-width:100%; min-width:220px; display:flex; flex-direction:column; gap:8px;">
+                  <div style="display:flex; align-items:baseline; gap:8px; padding:4px 2px 2px;">
+                    <span style="font:600 12.5px/1 -apple-system,sans-serif; color:#17161A;">Not planned yet</span>
+                    <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4);">{{ unplannedCount }}</span>
+                  </div>
+                  <div style="font:400 11.5px/1.45 -apple-system,sans-serif; color:rgba(23,22,26,0.5); padding:0 2px 4px; text-wrap:pretty;">Due soon or picked for today. Plan finds the next free slot around meetings and your hours.</div>
+                  <sc-for list="{{ unplanned }}" as="u" hint-placeholder-count="3">
+                    <div style="display:flex; flex-direction:column; gap:7px; padding:10px 11px; border-radius:10px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.12); animation:liftIn 220ms ease;">
+                      <div style="display:flex; gap:7px; align-items:flex-start;">
+                        <span style="font-size:12px;">{{ u.emoji }}</span>
+                        <span style="font:500 12.5px/1.35 -apple-system,sans-serif; color:#17161A; flex:1; min-width:0;">{{ u.text }}</span>
+                      </div>
+                      <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="{{ u.dueStyle }}">{{ u.due }}</span>
+                        <span style="font:500 10.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">{{ u.est }}</span>
+                        <span style="flex:1;"></span>
+                        <span sc-camel-on-click="{{ u.onPlan }}" style="display:flex; align-items:center; gap:3px; font:600 11px/1 -apple-system,sans-serif; color:#7C4DF0; cursor:pointer; padding:5px 8px; border-radius:6px; background:rgba(124,77,240,0.1);" style-hover="background:rgba(124,77,240,0.18)"><span class="ms" style="font-size:13px;">auto_awesome</span>Plan</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ unplannedEmpty }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:16px; border-radius:10px; border:1px dashed rgba(23,22,26,0.16); font:400 12px/1.45 -apple-system,sans-serif; color:rgba(23,22,26,0.45); text-align:center;">Everything due this week has a slot.</div>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- LISTS GALLERY -->
+          <sc-if value="{{ isLists }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-top:8px;">
+              <sc-for list="{{ gallery }}" as="sec" hint-placeholder-count="2">
+                <div style="padding-top:20px;">
+                  <div style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.36); padding-bottom:10px;">{{ sec.title }}</div>
+                  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(230px,1fr)); gap:14px;">
+                    <sc-for list="{{ sec.cards }}" as="c" hint-placeholder-count="3">
+                      <div sc-camel-on-click="{{ c.onClick }}" style="border-radius:14px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.12), 0 2px 6px rgba(40,30,20,0.04); overflow:hidden; cursor:pointer; transition:transform 200ms cubic-bezier(0.2,0.9,0.2,1), box-shadow 200ms ease;" style-hover="transform:translateY(-2px); box-shadow:0 0 0 0.5px rgba(23,22,26,0.14), 0 12px 28px rgba(40,30,20,0.1)">
+                        <div style="{{ c.coverStyle }}"><span style="font-size:30px; position:absolute; left:16px; bottom:-14px; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.12));">{{ c.emoji }}</span></div>
+                        <div style="padding:20px 16px 14px; display:flex; flex-direction:column; gap:9px;">
+                          <span style="font:600 14.5px/1.2 -apple-system,sans-serif; color:#17161A;">{{ c.name }}</span>
+                          <span style="font:500 11.5px/1.3 -apple-system,sans-serif; color:rgba(23,22,26,0.5);">{{ c.meta }}</span>
+                          <div style="height:4px; border-radius:2px; background:rgba(23,22,26,0.07); overflow:hidden;"><div style="{{ c.barStyle }}"></div></div>
+                          <div style="display:flex; flex-direction:column; gap:4px; padding-top:2px;">
+                            <sc-for list="{{ c.peek }}" as="p" hint-placeholder-count="2">
+                              <div style="display:flex; align-items:center; gap:7px; font:400 12px/1.3 -apple-system,sans-serif; color:rgba(23,22,26,0.62);"><span style="width:9px; height:9px; border-radius:50%; border:1.3px solid rgba(23,22,26,0.28); flex:none;"></span><span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ p.text }}</span></div>
+                            </sc-for>
+                          </div>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- ACTIVITY -->
+          <sc-if value="{{ isActivity }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-top:22px; display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap;">
+              <div style="padding:18px 20px; border-radius:14px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.12);">
+                <div style="display:flex; gap:4px; padding-left:34px; padding-bottom:6px;">
+                  <sc-for list="{{ heatMonths }}" as="m" hint-placeholder-count="12"><span style="{{ m.style }}">{{ m.label }}</span></sc-for>
+                </div>
+                <div style="display:flex; gap:4px;">
+                  <div style="display:flex; flex-direction:column; gap:4px; width:30px;">
+                    <sc-for list="{{ heatDow }}" as="d" hint-placeholder-count="7"><span style="height:30px; display:flex; align-items:center; font:500 10px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4);">{{ d.label }}</span></sc-for>
+                  </div>
+                  <sc-for list="{{ heatWeeks }}" as="w" hint-placeholder-count="12">
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                      <sc-for list="{{ w.cells }}" as="c" hint-placeholder-count="7">
+                        <div sc-camel-on-click="{{ c.onClick }}" style="{{ c.style }}">{{ c.label }}</div>
+                      </sc-for>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; padding:14px 0 0 34px; font:500 10.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">
+                  <span>Fewer</span>
+                  <sc-for list="{{ heatLegend }}" as="l" hint-placeholder-count="5"><span style="{{ l.style }}">{{ l.label }}</span></sc-for>
+                  <span>More</span>
+                  <span style="flex:1; min-width:20px;"></span>
+                  <span>{{ heatSummary }}</span>
+                </div>
+              </div>
+              <div style="flex:1; min-width:260px; padding:16px 18px; border-radius:14px; background:#F7F5F2; box-shadow:inset 0 0 0 0.5px rgba(23,22,26,0.08); animation:fadeIn 200ms ease;">
+                <div style="font:400 22px/1.1 'Instrument Serif',Georgia,serif; color:#17161A;">{{ heatDayTitle }}</div>
+                <div style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.48); padding:6px 0 12px;">{{ heatDaySub }}</div>
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                  <sc-for list="{{ heatDayItems }}" as="i" hint-placeholder-count="3">
+                    <div style="display:flex; align-items:center; gap:9px; padding:7px 4px; border-top:0.5px solid rgba(23,22,26,0.06);">
+                      <span class="ms f" style="font-size:14px; color:#2F9E6E;">check_circle</span>
+                      <span style="font:400 12.5px/1.3 -apple-system,sans-serif; color:#17161A; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ i.text }}</span>
+                      <span style="font:500 10.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.42);">{{ i.list }}</span>
+                      <span style="font:500 10.5px/1 ui-monospace,Menlo,monospace; color:rgba(23,22,26,0.4);">{{ i.time }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+            <div style="padding-top:28px;">
+              <div style="display:flex; align-items:baseline; gap:10px; padding-bottom:4px; flex-wrap:wrap;">
+                <span style="font:400 22px/1.1 'Instrument Serif',Georgia,serif; color:#17161A;">Changes</span>
+                <span style="font:500 11.5px/1.3 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">Every edit, newest first. The latest one can be undone here.</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:12px;">
+              <sc-for list="{{ updates }}" as="day" hint-placeholder-count="2">
+                <div>
+                  <div style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.36); padding:6px 0 8px;">{{ day.title }}</div>
+                  <div style="display:flex; flex-direction:column; gap:2px;">
+                    <sc-for list="{{ day.items }}" as="u" hint-placeholder-count="3">
+                      <div style="display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:9px;" style-hover="background:rgba(23,22,26,0.035)">
+                        <span style="{{ u.iconWrapStyle }}"><span class="ms" style="font-size:13px;">{{ u.icon }}</span></span>
+                        <span style="font:500 13px/1.3 -apple-system,sans-serif; color:#17161A; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ u.label }}</span>
+                        <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4);">{{ u.list }}</span>
+                        <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.34); width:64px; text-align:right;">{{ u.when }}</span>
+                        <sc-if value="{{ u.canRevert }}" hint-placeholder-val="{{ false }}">
+                          <span sc-camel-on-click="{{ u.onRevert }}" style="font:600 10.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.6); cursor:pointer; padding:5px 8px; border-radius:6px; background:rgba(23,22,26,0.06);" style-hover="background:rgba(124,77,240,0.14); color:#7C4DF0">Undo</span>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- TRASH -->
+          <sc-if value="{{ isTrash }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-top:18px;">
+              <sc-if value="{{ trashHas }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; gap:10px; padding:0 4px 10px;">
+                  <span style="font:400 12.5px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.5); flex:1;">Restoring puts a task back in its list, in its old position. Erasing can’t be undone — press and hold.</span>
+                  <div sc-camel-on-mouse-down="{{ holdAllStart }}" sc-camel-on-mouse-up="{{ holdEnd }}" sc-camel-on-mouse-leave="{{ holdEnd }}" style="position:relative; overflow:hidden; display:flex; align-items:center; gap:5px; padding:7px 11px; border-radius:8px; background:rgba(216,67,75,0.1); color:#C03A42; font:600 11.5px/1 -apple-system,sans-serif; cursor:pointer; user-select:none;">
+                    <span style="{{ holdAllFill }}"></span>
+                    <span class="ms" style="font-size:14px; position:relative;">delete_forever</span><span style="position:relative;">Hold to empty Trash</span>
+                  </div>
+                </div>
+              </sc-if>
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ trashRows }}" as="t" hint-placeholder-count="3">
+                  <div style="{{ t.wrapStyle }}" style-hover="background:rgba(23,22,26,0.03)">
+                    <span class="ms" style="font-size:15px; color:rgba(23,22,26,0.3);">{{ t.icon }}</span>
+                    <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:3px;">
+                      <span style="font:400 13.5px/1.3 -apple-system,sans-serif; color:rgba(23,22,26,0.72);">{{ t.text }}</span>
+                      <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4);">{{ t.meta }}</span>
+                    </div>
+                    <span sc-camel-on-click="{{ t.onRestore }}" style="display:flex; align-items:center; gap:4px; font:600 11px/1 -apple-system,sans-serif; color:#7C4DF0; cursor:pointer; padding:6px 9px; border-radius:7px; background:rgba(124,77,240,0.1);" style-hover="background:rgba(124,77,240,0.18)"><span class="ms" style="font-size:13px;">restore_from_trash</span>Restore</span>
+                    <div sc-camel-on-mouse-down="{{ t.onHoldStart }}" sc-camel-on-mouse-up="{{ holdEnd }}" sc-camel-on-mouse-leave="{{ holdEnd }}" style="position:relative; overflow:hidden; display:flex; align-items:center; gap:4px; font:600 11px/1 -apple-system,sans-serif; color:#C03A42; cursor:pointer; padding:6px 9px; border-radius:7px; background:rgba(216,67,75,0.08); user-select:none;">
+                      <span style="{{ t.holdFill }}"></span>
+                      <span style="position:relative;">{{ t.holdLabel }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ trashEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:6px; padding:34px; border-radius:14px; border:1px dashed rgba(23,22,26,0.14); text-align:center; font:400 13px/1.5 -apple-system,sans-serif; color:rgba(23,22,26,0.45); animation:fadeIn 240ms ease;">Trash is empty.</div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- SETTINGS -->
+          <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-top:20px; display:flex; flex-direction:column; gap:18px; max-width:620px;">
+              <sc-for list="{{ settingsGroups }}" as="sg" hint-placeholder-count="3">
+                <div>
+                  <div style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.36); padding:0 4px 8px;">{{ sg.title }}</div>
+                  <div style="border-radius:12px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.12); overflow:hidden;">
+                    <sc-for list="{{ sg.items }}" as="it" hint-placeholder-count="3">
+                      <div sc-camel-on-click="{{ it.onClick }}" style="display:flex; align-items:center; gap:12px; padding:12px 14px; border-top:0.5px solid rgba(23,22,26,0.06); cursor:pointer;" style-hover="background:rgba(23,22,26,0.02)">
+                        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:3px;">
+                          <span style="font:500 13px/1.25 -apple-system,sans-serif; color:#17161A;">{{ it.label }}</span>
+                          <span style="font:400 11.5px/1.35 -apple-system,sans-serif; color:rgba(23,22,26,0.48);">{{ it.hint }}</span>
+                        </div>
+                        <sc-if value="{{ it.isToggle }}" hint-placeholder-val="{{ true }}">
+                          <div style="{{ it.trackStyle }}"><div style="{{ it.knobStyle }}"></div></div>
+                        </sc-if>
+                        <sc-if value="{{ it.isValue }}" hint-placeholder-val="{{ false }}">
+                          <span style="font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.55); padding:6px 9px; border-radius:7px; background:rgba(23,22,26,0.05);">{{ it.value }}</span>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+
+      <!-- Inspector -->
+      <div sc-camel-on-click="{{ stop }}" style="{{ insStyle }}">
+        <sc-if value="{{ insHas }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; align-items:center; gap:8px; padding:12px 14px; border-bottom:0.5px solid rgba(23,22,26,0.07);">
+            <span style="font-size:12px;">{{ ins.listEmoji }}</span>
+            <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.55);">{{ ins.listName }}</span>
+            <span style="flex:1;"></span>
+            <span sc-camel-on-click="{{ closeInspector }}" class="ms" style="font-size:16px; color:rgba(23,22,26,0.45); cursor:pointer; padding:4px; border-radius:6px;" style-hover="background:rgba(23,22,26,0.06)">close</span>
+          </div>
+          <div style="flex:1; overflow:auto; padding:16px 16px 20px; display:flex; flex-direction:column; gap:16px;">
+            <div style="display:flex; gap:10px; align-items:flex-start;">
+              <div sc-camel-on-click="{{ ins.onToggle }}" style="padding-top:3px; cursor:pointer; position:relative;">
+                <div style="{{ ins.boxStyle }}"><span class="ms" style="{{ ins.checkStyle }}">check</span></div>
+              </div>
+              <div style="{{ ins.titleStyle }}">{{ ins.text }}</div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:78px minmax(0,1fr); row-gap:11px; column-gap:10px; align-items:center;">
+              <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">List</span>
+              <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+                <span style="font:600 12px/1.2 -apple-system,sans-serif; color:#17161A; width:100%; padding-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ ins.listName }}</span>
+                <sc-for list="{{ ins.listOpts }}" as="o" hint-placeholder-count="3"><span sc-camel-on-click="{{ o.onClick }}" style="{{ o.style }}">{{ o.emoji }}</span></sc-for>
+              </div>
+              <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">Due</span>
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <sc-for list="{{ ins.dueOpts }}" as="o" hint-placeholder-count="4"><span sc-camel-on-click="{{ o.onClick }}" style="{{ o.style }}">{{ o.label }}</span></sc-for>
+              </div>
+              <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">Priority</span>
+              <div style="display:flex; gap:4px;">
+                <sc-for list="{{ ins.prioOpts }}" as="o" hint-placeholder-count="4"><span sc-camel-on-click="{{ o.onClick }}" style="{{ o.style }}"><span style="{{ o.dotStyle }}"></span>{{ o.label }}</span></sc-for>
+              </div>
+              <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">Labels</span>
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <sc-for list="{{ ins.labelOpts }}" as="o" hint-placeholder-count="3"><span sc-camel-on-click="{{ o.onClick }}" style="{{ o.style }}">{{ o.label }}</span></sc-for>
+              </div>
+              <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">Starred</span>
+              <div sc-camel-on-click="{{ ins.onStar }}" style="{{ ins.starStyle }}"><span class="ms" style="{{ ins.starIconStyle }}">star</span>{{ ins.starLabel }}</div>
+            </div>
+
+            <div style="border-radius:11px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.1); padding:12px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="ms" style="font-size:15px; color:#7C4DF0;">calendar_clock</span>
+                <span style="font:600 12.5px/1 -apple-system,sans-serif; color:#17161A; flex:1;">Plan for today</span>
+                <div sc-camel-on-click="{{ ins.onPlan }}" style="{{ ins.planTrack }}"><div style="{{ ins.planKnob }}"></div></div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; padding-top:11px;">
+                <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.5); flex:1;">Estimate</span>
+                <span sc-camel-on-click="{{ ins.estDown }}" class="ms" style="font-size:15px; padding:3px; border-radius:6px; background:rgba(23,22,26,0.05); cursor:pointer; color:rgba(23,22,26,0.6);" style-hover="background:rgba(23,22,26,0.1)">remove</span>
+                <span style="font:600 12px/1 -apple-system,sans-serif; color:#17161A; width:44px; text-align:center; font-variant-numeric:tabular-nums;">{{ ins.est }}</span>
+                <span sc-camel-on-click="{{ ins.estUp }}" class="ms" style="font-size:15px; padding:3px; border-radius:6px; background:rgba(23,22,26,0.05); cursor:pointer; color:rgba(23,22,26,0.6);" style-hover="background:rgba(23,22,26,0.1)">add</span>
+              </div>
+              <div style="font:500 11px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.45); padding-top:9px;">{{ ins.slot }}</div>
+            </div>
+
+            <sc-if value="{{ ins.hasNote }}" hint-placeholder-val="{{ false }}">
+              <div style="font:400 13px/1.55 -apple-system,sans-serif; color:rgba(23,22,26,0.7); padding:10px 12px; border-radius:10px; background:rgba(23,22,26,0.035); text-wrap:pretty;">{{ ins.note }}</div>
+            </sc-if>
+
+            <div>
+              <div style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.36); padding-bottom:8px;">Activity</div>
+              <div style="display:flex; flex-direction:column; gap:0;">
+                <sc-for list="{{ ins.activity }}" as="a" hint-placeholder-count="2">
+                  <div style="display:flex; gap:9px; align-items:flex-start; padding:5px 0; animation:liftIn 220ms ease;">
+                    <span class="ms" style="font-size:13px; color:rgba(23,22,26,0.4); padding-top:1px;">{{ a.icon }}</span>
+                    <span style="font:400 12px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.66); flex:1;">{{ a.text }}</span>
+                    <span style="font:500 10.5px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.36);">{{ a.when }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; padding:10px 14px; border-top:0.5px solid rgba(23,22,26,0.07);">
+            <div sc-camel-on-click="{{ ins.onTrash }}" style="display:flex; align-items:center; gap:5px; padding:7px 9px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.6);" style-hover="background:rgba(216,67,75,0.1); color:#C03A42"><span class="ms" style="font-size:15px;">delete</span>Trash</div>
+            <span style="flex:1;"></span>
+            <div sc-camel-on-click="{{ ins.onStart }}" style="{{ ins.startStyle }}"><span class="ms f" style="font-size:14px;">{{ ins.startIcon }}</span>{{ ins.startLabel }}</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <!-- Selection bar -->
+      <sc-if value="{{ barVisible }}" hint-placeholder-val="{{ false }}">
+        <div sc-camel-on-click="{{ stop }}" style="position:absolute; left:50%; bottom:26px; transform:translateX(-50%); display:flex; align-items:center; gap:2px; padding:6px; border-radius:13px; background:#17161A; color:#fff; box-shadow:0 16px 40px rgba(23,22,26,0.36); animation:barIn 220ms cubic-bezier(0.2,0.9,0.2,1); z-index:30;">
+          <span style="{{ barCountStyle }}">{{ selectedCount }}</span>
+          <span style="font:500 12px/1 -apple-system,sans-serif; padding:0 10px 0 6px; white-space:nowrap;">selected</span>
+          <span style="width:1px; height:18px; background:rgba(255,255,255,0.14); margin:0 4px;"></span>
+          <div sc-camel-on-click="{{ barDone }}" style="display:flex; align-items:center; gap:5px; padding:7px 9px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif;" style-hover="background:rgba(255,255,255,0.1)"><span class="ms" style="font-size:14px; color:#6FD3A4;">check_circle</span>Done<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">E</span></div>
+          <div sc-camel-on-click="{{ barToday }}" style="display:flex; align-items:center; gap:5px; padding:7px 9px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif;" style-hover="background:rgba(255,255,255,0.1)"><span class="ms" style="font-size:14px; color:#C9AEFF;">today</span>Today<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">T</span></div>
+          <div sc-camel-on-click="{{ barTomorrow }}" style="display:flex; align-items:center; gap:5px; padding:7px 9px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif;" style-hover="background:rgba(255,255,255,0.1)"><span class="ms" style="font-size:14px; color:#C9AEFF;">wb_twilight</span>Tomorrow<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">M</span></div>
+          <div sc-camel-on-click="{{ barPlan }}" style="display:flex; align-items:center; gap:5px; padding:7px 9px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif;" style-hover="background:rgba(255,255,255,0.1)"><span class="ms" style="font-size:14px; color:#C9AEFF;">calendar_clock</span>Plan<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">P</span></div>
+          <div sc-camel-on-click="{{ barStar }}" style="display:flex; align-items:center; gap:5px; padding:7px 9px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif;" style-hover="background:rgba(255,255,255,0.1)"><span class="ms" style="font-size:14px; color:#F2C14E;">star</span>Star<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">F</span></div>
+          <div sc-camel-on-click="{{ barTrash }}" style="display:flex; align-items:center; gap:5px; padding:7px 9px; border-radius:8px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif;" style-hover="background:rgba(255,120,120,0.14)"><span class="ms" style="font-size:14px; color:#FF8A8A;">delete</span>Trash<span style="font:500 9.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">D</span></div>
+          <span style="width:1px; height:18px; background:rgba(255,255,255,0.14); margin:0 4px;"></span>
+          <div sc-camel-on-click="{{ clearSelection }}" style="display:flex; align-items:center; padding:7px; border-radius:8px; cursor:pointer; opacity:0.7;" style-hover="background:rgba(255,255,255,0.1); opacity:1"><span class="ms" style="font-size:15px;">close</span></div>
+        </div>
+      </sc-if>
+
+      <!-- Tray -->
+      <sc-if value="{{ trayVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; left:50%; bottom:26px; transform:translateX(-50%); display:flex; align-items:center; gap:10px; padding:8px 8px 8px 12px; border-radius:11px; background:#17161A; color:#fff; box-shadow:0 14px 34px rgba(23,22,26,0.34); animation:barIn 200ms cubic-bezier(0.2,0.9,0.2,1); overflow:hidden; z-index:25;">
+          <span class="ms" style="{{ trayIconStyle }}">{{ trayIcon }}</span>
+          <span style="font:500 12px/1 -apple-system,sans-serif; white-space:nowrap;">{{ trayText }}</span>
+          <sc-if value="{{ trayHasGo }}" hint-placeholder-val="{{ false }}">
+            <span sc-camel-on-click="{{ trayGo }}" style="font:600 11.5px/1 -apple-system,sans-serif; color:#fff; cursor:pointer; padding:6px 9px; border-radius:7px; background:rgba(255,255,255,0.1); white-space:nowrap;" style-hover="background:rgba(255,255,255,0.18)">{{ trayGoLabel }}</span>
+          </sc-if>
+          <sc-if value="{{ trayHasUndo }}" hint-placeholder-val="{{ true }}">
+            <span sc-camel-on-click="{{ undoLast }}" style="font:600 11.5px/1 -apple-system,sans-serif; color:#C9AEFF; cursor:pointer; padding:6px 9px; border-radius:7px; background:rgba(201,174,255,0.14); white-space:nowrap;" style-hover="background:rgba(201,174,255,0.24)">Undo ⌘Z</span>
+          </sc-if>
+          <div style="{{ trayDrainStyle }}"></div>
+        </div>
+      </sc-if>
+
+      <!-- Capture -->
+      <sc-if value="{{ captureOpen }}" hint-placeholder-val="{{ false }}">
+        <div sc-camel-on-click="{{ closeCapture }}" style="position:absolute; inset:0; background:rgba(23,22,26,0.16); animation:fadeIn 140ms ease; z-index:50; display:flex; justify-content:center; align-items:flex-start; padding-top:96px;">
+          <div sc-camel-on-click="{{ stop }}" style="width:600px; max-width:calc(100% - 40px); border-radius:14px; background:#fff; box-shadow:0 30px 70px rgba(23,22,26,0.3), 0 0 0 0.5px rgba(23,22,26,0.18); overflow:hidden; animation:popIn 180ms cubic-bezier(0.2,0.9,0.2,1);">
+            <div style="display:flex; align-items:flex-start; gap:11px; padding:16px 18px 6px;">
+              <div style="width:17px; height:17px; flex:none; margin-top:3px; border-radius:50%; border:1.5px dashed rgba(124,77,240,0.55); box-sizing:border-box;"></div>
+              <div style="flex:1; min-width:0; position:relative; height:24px;">
+                <div style="position:absolute; inset:0; font:400 16px/24px -apple-system,'SF Pro Text',sans-serif; white-space:nowrap; overflow:hidden; pointer-events:none;">
+                  <sc-for list="{{ capSegments }}" as="seg" hint-placeholder-count="0"><span style="{{ seg.style }}">{{ seg.text }}</span></sc-for>
+                  <span style="color:rgba(23,22,26,0.3);">{{ capGhost }}</span>
+                </div>
+                <input value="{{ capText }}" sc-camel-on-change="{{ onCapChange }}" sc-camel-on-key-down="{{ onCapKey }}" ref="{{ capRef }}" style="position:absolute; inset:0; width:100%; border:none; outline:none; background:transparent; color:transparent; caret-color:#7C4DF0; font:400 16px/24px -apple-system,'SF Pro Text',sans-serif; padding:0; margin:0;">
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; padding:6px 18px 12px 46px; flex-wrap:wrap; min-height:22px;">
+              <sc-for list="{{ capChips }}" as="chip" hint-placeholder-count="0">
+                <span style="{{ chip.style }}"><sc-if value="{{ chip.hasIcon }}" hint-placeholder-val="{{ false }}"><span class="ms" style="{{ chip.iconStyle }}">{{ chip.icon }}</span></sc-if>{{ chip.label }}</span>
+              </sc-for>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; padding:10px 14px; border-top:0.5px solid rgba(23,22,26,0.08); background:rgba(23,22,26,0.02); flex-wrap:wrap;">
+              <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45); padding-right:2px;">Add to</span>
+              <sc-for list="{{ capDests }}" as="d" hint-placeholder-count="6">
+                <span sc-camel-on-click="{{ d.onClick }}" style="{{ d.style }}"><span style="font-size:11px;">{{ d.emoji }}</span>{{ d.name }}</span>
+              </sc-for>
+              <span style="flex:1;"></span>
+              <span style="font:500 10.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.4);">⇥ destination · ↩ add · ⇧↩ add another</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- Search -->
+      <sc-if value="{{ searchOpen }}" hint-placeholder-val="{{ false }}">
+        <div sc-camel-on-click="{{ closeSearch }}" style="position:absolute; inset:0; background:rgba(23,22,26,0.16); animation:fadeIn 140ms ease; z-index:50; display:flex; justify-content:center; align-items:flex-start; padding-top:72px;">
+          <div sc-camel-on-click="{{ stop }}" style="width:640px; max-width:calc(100% - 40px); border-radius:14px; background:#fff; box-shadow:0 30px 70px rgba(23,22,26,0.3), 0 0 0 0.5px rgba(23,22,26,0.18); overflow:hidden; animation:popIn 180ms cubic-bezier(0.2,0.9,0.2,1);">
+            <div style="display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:0.5px solid rgba(23,22,26,0.08);">
+              <span class="ms" style="font-size:18px; color:rgba(23,22,26,0.4);">search</span>
+              <input value="{{ searchQ }}" sc-camel-on-change="{{ onSearchChange }}" sc-camel-on-key-down="{{ onSearchKey }}" ref="{{ searchRef }}" placeholder="Find a task, note, or list" style="flex:1; border:none; outline:none; background:transparent; font:400 15.5px/22px -apple-system,sans-serif; color:#17161A; padding:0;">
+              <div sc-camel-on-click="{{ toggleSearchDone }}" style="{{ searchDoneStyle }}">Include completed</div>
+            </div>
+            <div style="padding:6px; max-height:380px; overflow:auto; display:flex; flex-direction:column; gap:1px;">
+              <sc-for list="{{ searchHits }}" as="h" hint-placeholder-count="0">
+                <div sc-camel-on-click="{{ h.onRun }}" sc-camel-on-mouse-enter="{{ h.onHover }}" style="{{ h.style }}">
+                  <span class="ms" style="{{ h.iconStyle }}">{{ h.icon }}</span>
+                  <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:3px;">
+                    <span style="font:500 13px/1.25 -apple-system,sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><span>{{ h.pre }}</span><span style="{{ h.markStyle }}">{{ h.mark }}</span><span>{{ h.post }}</span></span>
+                    <span style="{{ h.subStyle }}">{{ h.sub }}</span>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="padding:14px; text-align:center; font:400 12.5px/1.4 -apple-system,sans-serif; color:rgba(23,22,26,0.42);">{{ searchFooter }}</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- Palette -->
+      <sc-if value="{{ paletteOpen }}" hint-placeholder-val="{{ false }}">
+        <div sc-camel-on-click="{{ closePalette }}" style="position:absolute; inset:0; background:rgba(23,22,26,0.16); animation:fadeIn 140ms ease; z-index:50; display:flex; justify-content:center; align-items:flex-start; padding-top:84px;">
+          <div sc-camel-on-click="{{ stop }}" style="width:560px; max-width:calc(100% - 40px); border-radius:14px; background:#fff; box-shadow:0 30px 70px rgba(23,22,26,0.3), 0 0 0 0.5px rgba(23,22,26,0.18); overflow:hidden; animation:popIn 180ms cubic-bezier(0.2,0.9,0.2,1);">
+            <div style="display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:0.5px solid rgba(23,22,26,0.08);">
+              <span class="ms" style="font-size:18px; color:rgba(23,22,26,0.4);">bolt</span>
+              <input value="{{ paletteQ }}" sc-camel-on-change="{{ onPaletteChange }}" sc-camel-on-key-down="{{ onPaletteKey }}" ref="{{ paletteRef }}" placeholder="Type an action or a place…" style="flex:1; border:none; outline:none; background:transparent; font:400 15.5px/22px -apple-system,sans-serif; color:#17161A; padding:0;">
+              <span style="{{ paletteTargetStyle }}">{{ paletteTarget }}</span>
+            </div>
+            <div style="padding:6px; max-height:380px; overflow:auto; display:flex; flex-direction:column; gap:1px;">
+              <sc-for list="{{ paletteItems }}" as="c" hint-placeholder-count="6">
+                <div sc-camel-on-click="{{ c.onRun }}" sc-camel-on-mouse-enter="{{ c.onHover }}" style="{{ c.style }}">
+                  <span class="ms" style="{{ c.iconStyle }}">{{ c.icon }}</span>
+                  <span style="font:500 13px/1 -apple-system,sans-serif;">{{ c.label }}</span>
+                  <span style="flex:1;"></span>
+                  <span style="font:500 10.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">{{ c.key }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<!--SCRIPT-->
+
+
+<div id="__claude_design_branding"><style>#__claude_design_branding{position:fixed;right:16px;bottom:16px;z-index:2147483646;display:flex;align-items:center;gap:7px;height:30px;padding:0 5px 0 10px;border-radius:999px;font-family:"Anthropic Sans",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:12.5px;font-weight:400;line-height:1;letter-spacing:normal;text-transform:none;color:#141413;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:0 0 0 .5px rgba(31,30,29,.14),0 2px 10px rgba(0,0,0,.09)}
+#__claude_design_branding *{box-sizing:border-box;margin:0}
+#__claude_design_branding a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+#__claude_design_branding a:hover span{text-decoration:underline}
+#__claude_design_branding svg{flex:none}
+#__claude_design_branding a svg{color:#D97757}
+#__claude_design_branding button{width:20px;height:20px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:currentColor;opacity:.55;border:0;background:none;cursor:pointer;flex:none;font:inherit;transition:opacity .14s}
+#__claude_design_branding button:hover{opacity:1;background:rgba(127,127,127,.22)}
+@media print{#__claude_design_branding{display:none}}</style><a href="https://claude.com/product/design" target="_blank" rel="noopener noreferrer"><svg width="14" height="14" viewBox="0 0 20 21" fill="none" aria-hidden="true"><path fill="currentColor" d="M9.99902 0C15.5258 0.000170936 19.999 4.50643 19.999 10.0547C19.999 11.7656 19.5863 12.9976 18.7861 13.8203C17.9924 14.6362 16.9465 14.9138 15.9854 15.0078C15.05 15.0993 14.0097 15.0262 13.2549 15.0186C12.8524 15.0145 12.5177 15.0267 12.2441 15.0703C11.9682 15.1144 11.8143 15.1813 11.7305 15.2432C11.4745 15.4322 11.3353 15.7121 11.2656 16.1602C11.2303 16.3875 11.2168 16.6362 11.209 16.9131C11.2017 17.1715 11.1986 17.4893 11.1807 17.7705C11.1469 18.2975 11.0495 19.0865 10.4199 19.5908C9.7846 20.0996 8.88652 20.1057 7.85449 19.877C7.36399 19.7682 6.88652 19.6232 6.42578 19.4453C2.66989 17.9949 0.000187748 14.3414 0 10.0547C0 4.50643 4.47223 0.000171048 9.99902 0ZM9.99902 1.60547C5.36781 1.60564 1.60547 5.38391 1.60547 10.0547C1.60566 13.6582 3.84823 16.7296 7.00391 17.9482C7.39027 18.0974 7.79085 18.2184 8.20215 18.3096C9.1375 18.5169 9.384 18.3633 9.41602 18.3379C9.4524 18.3087 9.54558 18.1915 9.5791 17.668C9.5947 17.4239 9.59473 17.1786 9.60352 16.8672C9.61179 16.5742 9.62831 16.2435 9.67969 15.9131C9.78359 15.2455 10.0474 14.4906 10.7764 13.9521C11.1479 13.6778 11.5842 13.5493 11.9912 13.4844C12.4007 13.4191 12.8434 13.4088 13.2705 13.4131C14.1753 13.4222 15.0071 13.4905 15.8291 13.4102C16.6257 13.3322 17.2249 13.1235 17.6357 12.7012C18.0401 12.2855 18.3935 11.5261 18.3936 10.0547C18.3936 5.38391 14.6302 1.60564 9.99902 1.60547ZM5.11621 9.86719C5.86386 9.91468 6.45486 10.5348 6.45508 11.2939C6.45506 12.0838 5.81519 12.7245 5.02539 12.7246C4.28481 12.7246 3.67573 12.1617 3.60254 11.4404L3.59473 11.2939L3.60156 11.1533C3.66942 10.4596 4.23282 9.91186 4.93359 9.86719H5.11621ZM14.9814 7.19141C15.729 7.23889 16.3199 7.85919 16.3203 8.61816C16.3203 9.40801 15.6804 10.0487 14.8906 10.0488C14.1501 10.0487 13.5409 9.48586 13.4678 8.76465L13.46 8.61816L13.4668 8.47754C13.5348 7.78403 14.0983 7.23618 14.7988 7.19141H14.9814ZM6.4541 4.93457C7.20161 4.9822 7.79275 5.60231 7.79297 6.36133C7.79288 7.151 7.15291 7.7917 6.36328 7.79199C5.62274 7.79199 5.01369 7.22903 4.94043 6.50781L4.93262 6.36133L4.93945 6.2207C5.00731 5.52698 5.5707 4.97922 6.27148 4.93457H6.4541ZM11.3867 3.59668C12.1343 3.64419 12.7253 4.26436 12.7256 5.02344C12.7256 5.81326 12.0857 6.45393 11.2959 6.4541C10.5553 6.4541 9.94622 5.89123 9.87305 5.16992L9.86523 5.02344L9.87207 4.88281C9.93996 4.18912 10.5033 3.64133 11.2041 3.59668H11.3867Z"></path></svg><span>Made with Claude Design</span></a><button type="button" aria-label="Dismiss" onclick="this.parentElement.remove()"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button></div></body></html>

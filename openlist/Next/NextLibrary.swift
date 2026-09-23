@@ -1,0 +1,242 @@
+//
+//  NextLibrary.swift
+//  openlist
+//
+
+import SwiftUI
+
+/// One render pass's view of the library, built from the shell's queries so
+/// every screen reads the same lists, labels and tasks.
+struct NextLibrary {
+    /// Active lists in sidebar order: Inbox, each section's lists, then the
+    /// rest, with nested lists straight after their parent.
+    var lists: [TaskList] = []
+    /// Archived lists, directly or through a parent, nested after their parent.
+    private(set) var archived: [TaskList] = []
+    var sections: [SidebarSection] = []
+    var labels: [TaskLabel] = []
+    /// Every non-trashed task in an active list, open and completed.
+    private(set) var tasks: [Block] = []
+    /// The open subset of `tasks`.
+    private(set) var open: [Block] = []
+    var hierarchy = ListHierarchy([])
+    var inboxIDs: Set<UUID> = []
+
+    /// Active and archived lists.
+    private var listsByID: [UUID: TaskList] = [:]
+    private var activeListIDs: Set<UUID> = []
+    private var labelsByID: [UUID: TaskLabel] = [:]
+    /// Non-trashed tasks of active and archived lists.
+    private var tasksByList: [UUID: [Block]] = [:]
+    private var taskIDs: Set<UUID> = []
+    private var openByList: [UUID: Int] = [:]
+    private var openByLabel: [UUID: Int] = [:]
+
+    init() {}
+
+    init(lists allLists: [TaskList], sections: [SidebarSection], labels: [TaskLabel], tasks: [Block]) {
+        hierarchy = ListHierarchy(allLists)
+        self.sections = sections.sorted { $0.sortIndex < $1.sortIndex }
+        self.labels = labels.sorted { $0.sortIndex < $1.sortIndex }
+        let active = allLists.filter { hierarchy.activeIDs.contains($0.id) }
+        let archived = allLists.filter { hierarchy.isArchived($0.id) }
+        lists = Self.sidebarOrder(active, sections: self.sections, hierarchy: hierarchy)
+        self.archived = Self.nested(archived.sorted { $0.sortIndex < $1.sortIndex }, hierarchy: hierarchy)
+        listsByID = Dictionary((active + archived).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        activeListIDs = Set(active.map(\.id))
+        labelsByID = Dictionary(labels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for task in tasks where task.trashID == nil {
+            guard let listID = task.listID, listsByID[listID] != nil else { continue }
+            tasksByList[listID, default: []].append(task)
+            taskIDs.insert(task.id)
+            if !task.isCompleted { openByList[listID, default: 0] += 1 }
+            guard activeListIDs.contains(listID) else { continue }
+            self.tasks.append(task)
+            guard !task.isCompleted else { continue }
+            open.append(task)
+            for id in Set(task.labelIDs) { openByLabel[id, default: 0] += 1 }
+        }
+        inboxIDs = hierarchy.inboxIDs
+    }
+
+    /// Inbox first, then top-level lists by section and position, each
+    /// followed by its nested lists.
+    private static func sidebarOrder(_ active: [TaskList], sections: [SidebarSection], hierarchy: ListHierarchy) -> [TaskList] {
+        let sectionRank = Dictionary(sections.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Lists with no surviving section sit under "Other lists", pinned ones
+        // first; unpinned ones are only in the gallery.
+        func rank(_ list: TaskList) -> Int {
+            if list.isSystemInbox { return -1 }
+            if let index = list.sectionID.flatMap({ sectionRank[$0] }) { return index }
+            return sections.count + (list.isPinned ? 0 : 1)
+        }
+        let roots = active.filter { hierarchy.parent(of: $0.id) == nil }
+            .sorted { (rank($0), $0.sidebarIndex) < (rank($1), $1.sidebarIndex) }
+        return nested(roots, among: active, hierarchy: hierarchy)
+    }
+
+    /// Each list followed by its nested lists, depth first. Lists whose parent
+    /// is in `lists` come after it rather than at the top level.
+    private static func nested(_ lists: [TaskList], hierarchy: ListHierarchy) -> [TaskList] {
+        let ids = Set(lists.map(\.id))
+        let roots = lists.filter { hierarchy.parent(of: $0.id).map { ids.contains($0.id) } != true }
+        return nested(roots, among: lists, hierarchy: hierarchy)
+    }
+
+    private static func nested(_ roots: [TaskList], among lists: [TaskList], hierarchy: ListHierarchy) -> [TaskList] {
+        let ids = Set(lists.map(\.id))
+        var ordered: [TaskList] = []
+        var seen = Set<UUID>()
+        func visit(_ list: TaskList) {
+            guard seen.insert(list.id).inserted else { return }
+            ordered.append(list)
+            for child in hierarchy.children(of: list.id) where ids.contains(child.id) { visit(child) }
+        }
+        for root in roots { visit(root) }
+        // A list the walk can't reach still belongs in the library.
+        return ordered + lists.filter { !seen.contains($0.id) }
+    }
+
+    /// Resolves active and archived lists.
+    func list(_ id: UUID?) -> TaskList? { id.flatMap { listsByID[$0] } }
+    func label(_ id: UUID) -> TaskLabel? { labelsByID[id] }
+
+    var inbox: TaskList? { lists.first(where: \.isSystemInbox) }
+    /// Lists you can file into: everything except Inbox.
+    var destinations: [TaskList] { lists.filter { !$0.isSystemInbox } }
+
+    /// Every non-trashed task in a list, active or archived, open and completed.
+    func tasks(in listID: UUID) -> [Block] { tasksByList[listID] ?? [] }
+
+    func isInbox(_ task: Block) -> Bool { task.listID.map(inboxIDs.contains) == true }
+
+    func openCount(in listID: UUID) -> Int { openByList[listID] ?? 0 }
+
+    /// Open tasks in active lists with the label.
+    func openCount(label id: UUID) -> Int { openByLabel[id] ?? 0 }
+
+    /// Top-level lists in a section; nested lists follow their parent.
+    func lists(in section: SidebarSection) -> [TaskList] {
+        lists.filter { !$0.isSystemInbox && $0.sectionID == section.id && hierarchy.parent(of: $0.id) == nil }
+    }
+
+    /// Lists with no surviving section.
+    var unsectioned: [TaskList] {
+        let ids = Set(sections.map(\.id))
+        return lists.filter { list in
+            !list.isSystemInbox && hierarchy.parent(of: list.id) == nil
+                && (list.sectionID == nil || !ids.contains(list.sectionID!))
+        }
+    }
+
+    /// Active nested lists, in order.
+    func children(of list: TaskList) -> [TaskList] {
+        hierarchy.children(of: list.id).filter { activeListIDs.contains($0.id) }
+    }
+
+    /// Each list followed by its active nested lists, depth first.
+    func outline(_ roots: [TaskList]) -> [NXOutlineRow] {
+        var rows: [NXOutlineRow] = []
+        var seen = Set<UUID>()
+        func visit(_ list: TaskList, depth: Int) {
+            guard seen.insert(list.id).inserted else { return }
+            rows.append(NXOutlineRow(list: list, depth: depth))
+            for child in children(of: list) { visit(child, depth: depth + 1) }
+        }
+        for root in roots { visit(root, depth: 0) }
+        return rows
+    }
+
+    /// The section a list is filed under, through its top-level ancestor.
+    func sectionTitle(for list: TaskList) -> String {
+        if list.isSystemInbox { return "" }
+        let root = hierarchy.ancestors(of: list.id).first ?? list
+        return sections.first { $0.id == root.sectionID }?.displayTitle ?? ""
+    }
+}
+
+/// A list in an outline, with how far below its top-level list it sits.
+struct NXOutlineRow: Identifiable {
+    let list: TaskList
+    let depth: Int
+    var id: UUID { list.id }
+}
+
+extension TaskList {
+    /// The emoji shown for a list; Inbox has a fixed one.
+    var glyph: String {
+        if isSystemInbox { return "📥" }
+        return icon.isEmpty ? "📋" : icon
+    }
+
+    @MainActor var nxColor: Color { isSystemInbox ? NX.inbox : accent.color }
+}
+
+extension TaskLabel {
+    @MainActor var nxColor: Color { accent.color }
+}
+
+private struct NextLibraryKey: EnvironmentKey {
+    static let defaultValue = NextLibrary()
+}
+
+extension EnvironmentValues {
+    var nextLibrary: NextLibrary {
+        get { self[NextLibraryKey.self] }
+        set { self[NextLibraryKey.self] = newValue }
+    }
+}
+
+/// Glyph for list icons that may be an emoji or an SF Symbol name.
+struct NXListGlyph: View {
+    let list: TaskList
+    var size: CGFloat = 14
+
+    var body: some View {
+        let icon = list.glyph
+        if icon.allSatisfy({ $0.isASCII }), icon.contains(".") || icon.count > 2, NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
+            Image(systemName: icon)
+                .font(.system(size: size * 0.9, weight: .medium))
+                .foregroundStyle(list.nxColor)
+        } else {
+            Text(icon).font(.system(size: size))
+        }
+    }
+}
+
+// MARK: - Shared queries
+
+extension NextLibrary {
+    /// Whether a task sits under another task rather than at a list's top level.
+    func isSubtask(_ task: Block) -> Bool {
+        guard let parentID = task.parentID else { return false }
+        return taskIDs.contains(parentID)
+    }
+
+    /// Inbox tasks waiting for a decision, oldest first.
+    @MainActor
+    func inboxQueue(_ workbench: Workbench) -> [Block] {
+        tasks.filter { isInbox($0) && !$0.isCompleted && !workbench.kept.contains($0.id) && workbench.closing[$0.id] == nil }
+            .filter { !isSubtask($0) }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    @MainActor
+    func keptInbox(_ workbench: Workbench) -> [Block] {
+        tasks.filter { isInbox($0) && !$0.isCompleted && workbench.kept.contains($0.id) }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Open work that belongs on Today: due or overdue, planned, or starred.
+    @MainActor
+    func isToday(_ task: Block, _ workbench: Workbench) -> Bool {
+        guard !task.isCompleted || workbench.closing[task.id] != nil else { return false }
+        if task.isDueOnOrBeforeToday { return true }
+        return workbench.isPlanned(task) || task.isStarred
+    }
+
+    @MainActor
+    func todayCount(_ workbench: Workbench) -> Int {
+        open.filter { isToday($0, workbench) }.count
+    }
+}

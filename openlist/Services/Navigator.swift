@@ -19,6 +19,7 @@ enum AppRoute: Hashable, Codable {
     case label(UUID)
     case completed
     case trash
+    case settings
 
     var isSmartView: Bool {
         switch self {
@@ -51,24 +52,42 @@ final class Navigator {
         }
     }
 
-    func listViewMode(for listID: UUID) -> ListViewMode { listViewModes[listID] ?? .document }
+    /// The system Inbox list, so `.inbox` follows that list's presentation.
+    /// Set by the app once the store is ready; nil in standalone checks.
+    var inboxListID: UUID?
+
+    /// The list a reveal opened as a document for this visit only. Leaving the
+    /// list or choosing a presentation ends it; it is never saved.
+    private var revealedDocumentListID: UUID?
+
+    /// Lists open as a task list until this Mac chooses Document for them.
+    func listViewMode(for listID: UUID) -> ListViewMode {
+        if listID == revealedDocumentListID, route == .list(listID) { return .document }
+        return listViewModes[listID] ?? .tasks
+    }
 
     func setListViewMode(_ mode: ListViewMode, for listID: UUID) {
-        guard listViewMode(for: listID) != mode else { return }
-        listViewModes[listID] = mode
-        defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
-                      forKey: Self.listViewModesKey)
-        if route == .list(listID) {
+        let shown = listViewMode(for: listID)
+        if revealedDocumentListID == listID { revealedDocumentListID = nil }
+        if (listViewModes[listID] ?? .tasks) != mode {
+            listViewModes[listID] = mode
+            defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
+                          forKey: Self.listViewModesKey)
+        }
+        guard shown != mode else { return }
+        if route == .list(listID) || (route == .inbox && listID == inboxListID) {
             contentReveal = nil
             openTaskID = nil
             clearSelection()
         }
     }
 
+    /// Whether the screen on show is a document editor that owns menu commands.
+    /// Everything else is a Next screen served by the workbench targets.
     var hasDocumentEditor: Bool {
         switch route {
         case let .list(id): listViewMode(for: id) == .document
-        case .inbox: true
+        case .inbox: inboxListID.map { listViewMode(for: $0) == .document } ?? false
         default: false
         }
     }
@@ -144,8 +163,9 @@ final class Navigator {
         clearSelection()
         go(to: .list(request.listID))
         // Exact-content navigation must reveal notes and collapsed hierarchy,
-        // including when this list was last viewed as a task-only queue.
-        setListViewMode(.document, for: request.listID)
+        // including when this list was last viewed as a task-only queue. The
+        // document is for this visit: the list's saved presentation stays.
+        revealedDocumentListID = request.listID
         openTaskID = request.taskID
         selection = request.blockID.map { [$0] } ?? []
         contentReveal = request
@@ -176,6 +196,7 @@ final class Navigator {
         backStack.append(route)
         forwardStack.removeAll()
         route = newRoute
+        revealedDocumentListID = nil
         contentReveal = nil
         openTaskID = nil
         clearSelection()
@@ -186,6 +207,7 @@ final class Navigator {
         guard let previous = backStack.popLast() else { return }
         forwardStack.append(route)
         route = previous
+        revealedDocumentListID = nil
         contentReveal = nil
         openTaskID = nil
         clearSelection()
@@ -195,6 +217,7 @@ final class Navigator {
         guard let next = forwardStack.popLast() else { return }
         backStack.append(route)
         route = next
+        revealedDocumentListID = nil
         contentReveal = nil
         openTaskID = nil
         clearSelection()
@@ -204,6 +227,7 @@ final class Navigator {
     /// list you are viewing is deleted underneath you.
     func replace(with newRoute: AppRoute) {
         route = newRoute
+        revealedDocumentListID = nil
         contentReveal = nil
         openTaskID = nil
         clearSelection()

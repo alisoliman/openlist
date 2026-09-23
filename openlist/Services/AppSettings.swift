@@ -83,6 +83,32 @@ final class AppSettings {
         didSet { defaults.set(mcpPort, forKey: Key.mcpPort) }
     }
 
+    // MARK: Interface
+
+    var accent: NextAccent {
+        didSet { defaults.set(accent.rawValue, forKey: Key.accent) }
+    }
+    var density: NextDensity {
+        didSet { defaults.set(density.rawValue, forKey: Key.density) }
+    }
+    var serifTitles: Bool {
+        didSet { defaults.set(serifTitles, forKey: Key.serifTitles) }
+    }
+    var motion: NextMotion {
+        didSet { defaults.set(motion.rawValue, forKey: Key.motion) }
+    }
+    /// Keeps state changes but drops bounces, rings and slides.
+    var reducesMotion: Bool {
+        didSet { defaults.set(reducesMotion, forKey: Key.reducesMotion) }
+    }
+    /// How long a finished task stays in place before it settles, 2–8 seconds.
+    var undoDwellSeconds: Int {
+        didSet { defaults.set(undoDwellSeconds, forKey: Key.undoDwell) }
+    }
+    var tasksFilterStyle: TasksFilterStyle {
+        didSet { defaults.set(tasksFilterStyle.rawValue, forKey: Key.tasksFilterStyle) }
+    }
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = ReviewSession.defaults) {
@@ -105,6 +131,8 @@ final class AppSettings {
             Key.mcpEnabled: false,
             Key.mcpAllowsWrites: false,
             Key.mcpPort: defaultMCPPort,
+            Key.serifTitles: true,
+            Key.undoDwell: 5,
         ])
 
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -120,6 +148,13 @@ final class AppSettings {
         mcpEnabled = defaults.bool(forKey: Key.mcpEnabled)
         mcpAllowsWrites = defaults.bool(forKey: Key.mcpAllowsWrites)
         mcpPort = defaults.integer(forKey: Key.mcpPort)
+        accent = NextAccent(rawValue: defaults.string(forKey: Key.accent) ?? "") ?? .violet
+        density = NextDensity(rawValue: defaults.string(forKey: Key.density) ?? "") ?? .comfortable
+        serifTitles = defaults.bool(forKey: Key.serifTitles)
+        motion = NextMotion(rawValue: defaults.string(forKey: Key.motion) ?? "") ?? .expressive
+        reducesMotion = defaults.bool(forKey: Key.reducesMotion)
+        undoDwellSeconds = min(8, max(2, defaults.integer(forKey: Key.undoDwell)))
+        tasksFilterStyle = TasksFilterStyle(rawValue: defaults.string(forKey: Key.tasksFilterStyle) ?? "") ?? .query
     }
 
     /// A calendar honouring the user's chosen first day of the week.
@@ -145,5 +180,64 @@ final class AppSettings {
         static let mcpEnabled = "settings.mcpEnabled"
         static let mcpAllowsWrites = "settings.mcpAllowsWrites"
         static let mcpPort = "settings.mcpPort"
+        static let accent = "settings.accent"
+        static let density = "settings.density"
+        static let serifTitles = "settings.serifTitles"
+        static let motion = "settings.motion"
+        static let reducesMotion = "settings.reducesMotion"
+        static let undoDwell = "settings.undoDwellSeconds"
+        static let tasksFilterStyle = "settings.tasksFilterStyle"
     }
+}
+
+enum NextAccent: String, CaseIterable, Identifiable {
+    case violet, blue, green, orange
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .violet: "Violet"
+        case .blue: "Blue"
+        case .green: "Green"
+        case .orange: "Orange"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .violet: Color(.sRGB, red: 0x7C / 255, green: 0x4D / 255, blue: 0xF0 / 255)
+        case .blue: Color(.sRGB, red: 0x2F / 255, green: 0x6F / 255, blue: 0xE0 / 255)
+        case .green: Color(.sRGB, red: 0x1F / 255, green: 0x8A / 255, blue: 0x6D / 255)
+        case .orange: Color(.sRGB, red: 0xC2 / 255, green: 0x53 / 255, blue: 0x2B / 255)
+        }
+    }
+}
+
+enum NextDensity: String, CaseIterable, Identifiable {
+    case comfortable, compact
+    var id: String { rawValue }
+    var title: String { self == .comfortable ? "Comfortable" : "Compact" }
+}
+
+enum NextMotion: String, CaseIterable, Identifiable {
+    case restrained, expressive, playful
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .restrained: "Restrained"
+        case .expressive: "Expressive"
+        case .playful: "Playful"
+        }
+    }
+    var scale: Double {
+        switch self {
+        case .restrained: 0.6
+        case .expressive: 1
+        case .playful: 1.2
+        }
+    }
+}
+
+enum TasksFilterStyle: String, CaseIterable, Identifiable {
+    case query, sentence
+    var id: String { rawValue }
+    var title: String { self == .query ? "Query" : "Sentence" }
 }

@@ -19,7 +19,12 @@ final class CalendarCoordinator {
         didSet { if oldValue != overrunNudge { onNudgesChanged?() } }
     }
     private(set) var rescheduleSummary: CalendarRescheduleSummary?
+    /// Extra time the running work has been given, automatically or from
+    /// "more time", and the flexible tasks its latest extension moved.
+    private(set) var workExtension: CalendarWorkExtension?
     @ObservationIgnored var onNudgesChanged: (() -> Void)?
+    /// Runs each time the Mac reports you back: waking, the screen, unlocking.
+    @ObservationIgnored var onMacReturn: (() -> Void)?
     private var activeSessionID: UUID?
     var activeSession: WorkSession? {
         guard let activeSessionID else { return nil }
@@ -229,6 +234,7 @@ final class CalendarCoordinator {
         estimatedWorkEnd = baseline
         approvedWorkEnd = baseline
         usedAutomaticExtension = false
+        workExtension = nil
         showedFinishHeadsUp = false
         overrunNudge = nil
         startNudge = nil
@@ -269,6 +275,7 @@ final class CalendarCoordinator {
         lastObservedAt = nil
         approvedWorkEnd = nil
         estimatedWorkEnd = nil
+        workExtension = nil
         overrunNudge = nil
         isUpdating = wasUpdating
         if replanning { replan(now: now) }
@@ -312,6 +319,16 @@ final class CalendarCoordinator {
         persistResume()
         workSelection = nil
         notice = nil
+    }
+
+    /// Offers paused work again after a caller dismissed it, as long as the
+    /// occurrence can still be worked and nothing else has taken its place.
+    func restoreResume(_ reference: WorkTaskReference) {
+        guard activeSession == nil, resumeTaskID == nil, validWorkTask(reference) != nil else { return }
+        resumeTaskID = reference.taskID
+        resumeOccurrenceID = reference.occurrenceID
+        persistResume()
+        workSelection = reference
     }
 
     func move(block: PlannedBlock, to start: Date, isPinned: Bool = false, now: Date = .now) {
@@ -400,6 +417,7 @@ final class CalendarCoordinator {
     func handleMacReturn(now: Date = .now) {
         tick(now: now, checkClockGap: true)
         refreshCalendars(now: now)
+        onMacReturn?()
     }
 
     /// Timer ticks retain the last promised placements. Only a real task/calendar
@@ -478,12 +496,14 @@ final class CalendarCoordinator {
         showedFinishHeadsUp = true
         overrunNudge = nil
         replan(now: now)
-        summarizeMoves(from: previous, message: "Made room for continued work.", excluding: task.id)
+        let moved = summarizeMoves(from: previous, message: "Made room for continued work.", excluding: task.id)
+        extendWork(task, by: 15, moved: moved)
     }
 
     func dismissRescheduleSummary() { rescheduleSummary = nil }
 
     private func advanceActiveWork(session: WorkSession, task: Block, through now: Date, boundary: Date) {
+        var moved = Set<UUID>()
         while let end = approvedWorkEnd, end <= now, end < boundary {
             let proposed = min(end.addingTimeInterval(15 * 60), boundary)
             let affected = displacedTaskIDs(from: end, to: proposed, excluding: task.occurrenceID)
@@ -507,8 +527,18 @@ final class CalendarCoordinator {
             // Replan at the approved boundary, not a late callback: another block
             // may need to stay anchored there for the next extension decision.
             replan(now: end)
-            summarizeMoves(from: previous, message: "Made room for continued work.", excluding: task.id)
+            moved.formUnion(summarizeMoves(from: previous, message: "Made room for continued work.", excluding: task.id))
+            extendWork(task, by: Int((proposed.timeIntervalSince(end) / 60).rounded()),
+                       moved: moved.sorted { $0.uuidString < $1.uuidString })
         }
+    }
+
+    /// Records more time given to the running work, for the window to report.
+    private func extendWork(_ task: Block, by minutes: Int, moved: [UUID]) {
+        guard let end = approvedWorkEnd else { return }
+        let earlier = workExtension.flatMap { $0.occurrenceID == task.occurrenceID ? $0.minutes : nil } ?? 0
+        workExtension = CalendarWorkExtension(taskID: task.id, occurrenceID: task.occurrenceID, end: end,
+                                              minutes: earlier + minutes, movedTaskIDs: moved)
     }
 
     private func updateFinishNudge(task: Block, now: Date, boundary: Date) {
@@ -543,6 +573,8 @@ final class CalendarCoordinator {
         // Openlist has already moved another task without asking.
         showedFinishHeadsUp = usedAutomaticExtension
         overrunNudge = nil
+        // The new estimate replaces any time given past the old one.
+        workExtension = nil
     }
 
     private func clearActiveState() {
@@ -551,6 +583,7 @@ final class CalendarCoordinator {
         lastObservedAt = nil
         approvedWorkEnd = nil
         estimatedWorkEnd = nil
+        workExtension = nil
         overrunNudge = nil
     }
 
@@ -664,16 +697,19 @@ final class CalendarCoordinator {
             .sorted { $0.uuidString < $1.uuidString }
     }
 
-    private func summarizeMoves(from previous: CalendarPlan, message: String, excluding taskID: UUID? = nil) {
+    /// Reports the flexible tasks that moved since `previous`, and returns them.
+    @discardableResult
+    private func summarizeMoves(from previous: CalendarPlan, message: String, excluding taskID: UUID? = nil) -> [UUID] {
         let moved = Set(previous.blocks.filter { block in
             guard !block.isActive, !block.isPinned, block.taskID != taskID,
                   let task = store.block(id: block.taskID), !task.isCompleted,
                   task.occurrenceID == block.occurrenceID, store.list(id: task.listID)?.isEffectivelyArchived == false else { return false }
             return !plan.blocks.contains { $0.occurrenceID == block.occurrenceID && $0.start == block.start && $0.end == block.end }
         }.map(\.taskID)).sorted { $0.uuidString < $1.uuidString }
-        guard !moved.isEmpty else { return }
+        guard !moved.isEmpty else { return [] }
         rescheduleSummary = CalendarRescheduleSummary(message: "\(moved.count) \(moved.count == 1 ? "task" : "tasks") rescheduled.",
             movedTaskCount: moved.count, taskIDs: moved, reason: message)
+        return moved
     }
 
     /// Store saves also happen for notes, titles and editor selections. Those
@@ -946,4 +982,16 @@ final class CalendarCoordinator {
         guard !fixed.contains(where: { $0.start <= now && $0.end > now }) else { return nil }
         return min(interval.end, fixed.filter { $0.start > now }.map(\.start).min() ?? interval.end)
     }
+}
+
+/// More time given to the running work, and the flexible tasks moved for it.
+struct CalendarWorkExtension: Equatable, Sendable {
+    var taskID: UUID
+    var occurrenceID: UUID
+    /// Where the work may now run until.
+    var end: Date
+    /// The extra minutes this session has been given in all.
+    var minutes: Int
+    /// The tasks the latest extension moved, if any.
+    var movedTaskIDs: [UUID]
 }

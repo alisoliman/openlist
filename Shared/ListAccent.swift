@@ -43,17 +43,17 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
     /// Saturated fill used for checkboxes, chips and icon backgrounds.
     var color: Color {
         switch self {
-        case .graphite: Color(red: 0.44, green: 0.46, blue: 0.51)
-        case .red: Color(red: 0.90, green: 0.28, blue: 0.31)
-        case .orange: Color(red: 0.96, green: 0.53, blue: 0.20)
-        case .amber: Color(red: 0.95, green: 0.72, blue: 0.16)
-        case .green: Color(red: 0.24, green: 0.71, blue: 0.44)
-        case .teal: Color(red: 0.16, green: 0.68, blue: 0.68)
-        case .blue: Color(red: 0.20, green: 0.55, blue: 0.95)
-        case .indigo: Color(red: 0.36, green: 0.40, blue: 0.90)
-        case .violet: Color(red: 0.55, green: 0.36, blue: 0.93)
-        case .pink: Color(red: 0.92, green: 0.35, blue: 0.62)
-        case .brown: Color(red: 0.60, green: 0.45, blue: 0.34)
+        case .graphite: Color(hex: 0x6E6A73)
+        case .red: Color(hex: 0xD8434B)
+        case .orange: Color(hex: 0xE0861F)
+        case .amber: Color(hex: 0xE8A917)
+        case .green: Color(hex: 0x2F9E6E)
+        case .teal: Color(hex: 0x12807F)
+        case .blue: Color(hex: 0x2F6FE0)
+        case .indigo: Color(hex: 0x5B5BD6)
+        case .violet: Color(hex: 0x7C4DF0)
+        case .pink: Color(hex: 0xB8479A)
+        case .brown: Color(hex: 0xA0694B)
         }
     }
 
@@ -62,4 +62,15 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
 
     /// Readable text colour when drawn on `softBackground`.
     var textColor: Color { color }
+}
+
+extension Color {
+    /// An sRGB colour from 0xRRGGBB.
+    init(hex: UInt32, opacity: Double = 1) {
+        self.init(.sRGB,
+                  red: Double((hex >> 16) & 0xFF) / 255,
+                  green: Double((hex >> 8) & 0xFF) / 255,
+                  blue: Double(hex & 0xFF) / 255,
+                  opacity: opacity)
+    }
 }

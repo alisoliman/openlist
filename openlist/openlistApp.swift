@@ -19,6 +19,7 @@ struct openlistApp: App {
     init() {
         // Observe before opening the store so early CloudKit setup errors are
         // visible. Review/unsigned builds explicitly opt out, not into another DB.
+        NX.registerFonts()
         let reason = ICloudConfiguration.unavailableReason
         let sync = ICloudSyncMonitor(unavailableReason: reason)
         let storage = LibraryRestoreStorage(originalStoreURL: StoreLocation.storeURL, originalMediaURL: MediaStore.defaultDirectory)
@@ -52,6 +53,8 @@ struct openlistApp: App {
             applicationDelegate.finishPendingNotifications = { await NotificationService.shared.reminders.drainForTermination() }
             applicationDelegate.persistPendingChanges = { [weak environment] in
                 guard let environment else { return }
+                // Rows still in the completion dwell show as done; write them first.
+                environment.workbench.flushClosings()
                 do { try environment.store.persistChanges() }
                 catch {
                     environment.store.persistenceError = "Your latest changes could not be saved. \(error.localizedDescription)"
@@ -118,6 +121,7 @@ struct openlistApp: App {
             }
         }
         .defaultSize(width: 1_180, height: 780)
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .handlesExternalEvents(matching: ["*"])
         .commands {

@@ -47,6 +47,7 @@ final class AppEnvironment {
     let sync: ICloudSyncMonitor
     let calendar: CalendarCoordinator
     let mcp: MCPIntegration
+    let workbench: Workbench
     let libraryMaintenance: LibraryMaintenance?
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
@@ -57,10 +58,9 @@ final class AppEnvironment {
     @ObservationIgnored private var notificationActivityObserver: NSObjectProtocol?
     @ObservationIgnored private var derivedRecoveryTask: Task<Void, Never>?
 
-    /// A command awaiting pickup by the focused document view.
-    var taskCaptureRequest: TaskCaptureRequest?
     var templateCopyRequest: TemplateCopyRequest?
 
+    /// A command awaiting pickup by the focused document view.
     var pendingCommand: EditorCommand?
     /// Bumped to make the focused document re-read `pendingCommand` even when
     /// the same command is issued twice in a row.
@@ -79,6 +79,10 @@ final class AppEnvironment {
     /// screen at once — a list plus an open task's detail page — so exactly one
     /// of them claims each command.
     var activeDocument: DocumentContext?
+
+    /// Whether the main window is key. The Task menu acts on that window's
+    /// rows, so it stays off while Quick Add or Settings has the keyboard.
+    var isMainWindowKey = false
 
     /// Only captures created by the empty-title flow can be removed on cancel.
     /// Keeping their inherited defaults distinguishes them from existing blank
@@ -104,6 +108,7 @@ final class AppEnvironment {
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
+        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar)
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
 
@@ -157,12 +162,11 @@ final class AppEnvironment {
         commandToken &+= 1
     }
 
+    /// ⌘N and the screens' Add buttons. The capture lives on the workbench, so
+    /// a main window opened for it shows the capture as soon as it appears.
+    /// On Calendar the workbench plans the task for today by itself.
     func presentTaskCapture(text: String = "") {
-        taskCaptureRequest = TaskCaptureRequest(
-            text: text, suggestedListID: navigator.route.listID,
-            plansForToday: navigator.route == .calendar,
-            appendsToSuggestedList: navigator.route.listID.map { navigator.listViewMode(for: $0) == .tasks } ?? false
-        )
+        workbench.openCapture(text: text)
     }
 
     func showCopiedTask(id: UUID, listID: UUID) {
@@ -192,6 +196,7 @@ final class AppEnvironment {
             if store.persistenceError == nil { settings.hasSeededSampleData = true }
         }
         store.refreshAllReminders()
+        navigator.inboxListID = store.inboxList()?.id
         navigator.replace(with: .today)
         reminderNavigation.storeReady { [weak store] id in
             guard let store, let task = store.block(id: id), task.isTask,
@@ -227,6 +232,8 @@ final class AppEnvironment {
         guard hasBootstrapped else { return }
         store.context.processPendingChanges()
         store.prepareForSync()
+        // A synced Inbox from another Mac can win the merge and take over.
+        navigator.inboxListID = store.inboxList()?.id
         store.refreshAllReminders()
         calendar.storeDidChange()
         widgetPublisher.refreshNow()
