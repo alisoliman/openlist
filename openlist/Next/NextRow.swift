@@ -67,14 +67,18 @@ struct NextTaskRow: View {
                         .foregroundStyle(NX.ink(0.45))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        // The design's 1.4 line box, its leading split above and below.
+                        .padding(.vertical, max(0, 12 * 1.4 - NXStrikeText.glyphLineHeight(12)) / 2)
                 }
             }
             // The title takes what the chips leave and wraps into it.
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
             // Chips claim their natural width first and wrap onto trailing lines
-            // when the row is too narrow, so none is ever hidden.
-            NXChipFlow(spacing: 6, titleRoom: 96) {
+            // when the row is too narrow, so none is ever hidden. They wrap early
+            // only to keep a title that doesn't fit beside them its first 96pt,
+            // where the design would squeeze it to nothing.
+            NXChipFlow(spacing: 6, titleRoom: min(96, NXStrikeText.lineWidth(task.displayTitle))) {
                 ForEach(NXRowChips.chips(for: task, options: options, library: library, workbench: workbench)) { chip in
                     NXChip(chip: chip, fresh: chipFresh, quiet: options.quiet)
                 }
@@ -86,8 +90,8 @@ struct NextTaskRow: View {
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
-                .opacity(focused ? 1 : options.quiet ? 0 : 0.22)
-                .animation(.easeOut(duration: 0.14), value: focused)
+                // Only the fade is animated, so the icon never trails a reflow.
+                .animation(.easeOut(duration: 0.14)) { $0.opacity(focused ? 1 : options.quiet ? 0 : 0.22) }
                 .help("Open details (↩)")
                 .accessibilityLabel("Open details")
             }
@@ -101,18 +105,19 @@ struct NextTaskRow: View {
             if closing != nil { NXDrainRail(duration: style.dwell) }
         }
         .background {
+            let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
             let fill = background(focused: focused, selected: selected, fresh: fresh, restored: restored)
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(fill)
-                // As the design: the fill eases over 700ms, the focus shadow and ring over 180ms.
-                .animation(.easeOut(duration: 0.7), value: fill)
-                .shadow(color: focused ? NX.shadowWarm.opacity(0.09) : .clear, radius: 8, y: 4)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(focused ? style.accent.opacity(0.25) : selected ? style.accent.opacity(0.19) : .clear, lineWidth: 1)
-                }
-                .animation(.easeOut(duration: 0.18), value: focused)
-                .animation(.easeOut(duration: 0.18), value: selected)
+            let ring = focused ? style.accent.opacity(0.25) : selected ? style.accent.opacity(0.19) : Color.clear
+            // As the design: the fill eases over 700ms, the focus shadow and ring
+            // over 180ms. Each animation covers only its colour or opacity, so a
+            // row that resizes in the same update never drags its background.
+            ZStack {
+                NXRowShadow()
+                    .animation(.easeOut(duration: 0.18)) { $0.opacity(focused ? 1 : 0) }
+                shape.animation(.easeOut(duration: 0.7)) { $0.foregroundStyle(fill) }
+                shape.strokeBorder(lineWidth: 1)
+                    .animation(.easeOut(duration: 0.18)) { $0.foregroundStyle(ring) }
+            }
         }
         .contentShape(Rectangle())
         // rowIn: a freshly captured row slides down into place.
@@ -145,6 +150,28 @@ struct NextTaskRow: View {
         if fresh { return style.accent.opacity(0.11) }
         if restored { return style.accent.opacity(0.07) }
         return hovering ? NX.ink(0.03) : .clear
+    }
+}
+
+/// A focused row's drop shadow on a layer of its own, cut away inside the
+/// row, so it fades at the design's box-shadow pace however far the fill
+/// has eased in underneath.
+private struct NXRowShadow: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(NX.card)
+            .shadow(color: NX.shadowWarm.opacity(0.09), radius: 8, y: 4)
+            .clipShape(Outside(), style: FillStyle(eoFill: true))
+            .allowsHitTesting(false)
+    }
+
+    /// Everywhere the shadow reaches except the row itself.
+    private nonisolated struct Outside: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path(rect.insetBy(dx: -24, dy: -24))
+            path.addRoundedRect(in: rect, cornerSize: CGSize(width: 9, height: 9), style: .continuous)
+            return path
+        }
     }
 }
 
@@ -205,6 +232,11 @@ struct NXStrikeText: View {
     static func glyphLineHeight(_ size: CGFloat) -> CGFloat {
         let font = NSFont.systemFont(ofSize: size)
         return font.ascender - font.descender + font.leading
+    }
+
+    /// The width `text` needs to sit on one line at `size`.
+    static func lineWidth(_ text: String, size: CGFloat = 13.8) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width)
     }
 }
 

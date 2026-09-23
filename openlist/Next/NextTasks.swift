@@ -145,23 +145,23 @@ struct NXTaskQuery {
     @MainActor
     func apply(_ query: String, to pool: [Block], workbench: Workbench) -> [Block] {
         let filter = parse(query).filter
-        // Overdue follows the app rule, so a timed task already past today counts as overdue, not today.
-        func dueMatches(_ word: String, _ offset: Int?, _ pastDue: Bool) -> Bool {
+        // By day, as the design and the row chips: overdue is earlier days, so a
+        // time already past today still counts as today.
+        func dueMatches(_ word: String, _ offset: Int?) -> Bool {
             switch word {
-            case "overdue": pastDue
-            case "today": offset == 0 && !pastDue
+            case "overdue": offset.map { $0 < 0 } ?? false
+            case "today": offset == 0
             case "tomorrow": offset == 1
-            case "week": !pastDue && offset.map { (0...6).contains($0) } ?? false
+            case "week": offset.map { (0...6).contains($0) } ?? false
             case "later": offset.map { $0 > 6 } ?? false
             default: offset == nil
             }
         }
         return pool.filter { task in
             let offset = task.dueDate.map { NXFormat.dayOffset($0) }
-            let pastDue = Self.isOverdue(task, workbench: workbench)
             let title = task.displayTitle.lowercased()
             return (filter.lists.isEmpty || task.listID.map(filter.lists.contains) == true)
-                && (filter.due.isEmpty || filter.due.contains { dueMatches($0, offset, pastDue) })
+                && (filter.due.isEmpty || filter.due.contains { dueMatches($0, offset) })
                 && (filter.labels.isEmpty || filter.labels.contains { task.labelIDs.contains($0) })
                 && filter.flags.allSatisfy { flag in
                     switch flag {
@@ -172,14 +172,6 @@ struct NXTaskQuery {
                 }
                 && filter.text.allSatisfy { title.contains($0) }
         }
-    }
-
-    /// Open tasks, and ones still closing, follow the app's overdue rule. Finished ones keep
-    /// their day, so a task done before its time today stays under Today.
-    @MainActor
-    static func isOverdue(_ task: Block, workbench: Workbench) -> Bool {
-        guard task.isCompleted, workbench.closing[task.id] == nil else { return NXFormat.isPastDue(task) }
-        return task.dueDate.map { NXFormat.dayOffset($0) < 0 } ?? false
     }
 
     /// Adds or removes one word, leaving a trailing space to keep typing.
@@ -268,8 +260,8 @@ struct NextTasksScreen: View {
             let muted = NX.ink(0.5)
             let offset = { (task: Block) in task.dueDate.map { NXFormat.dayOffset($0) } }
             let buckets: [(String, Color, (Block) -> Bool)] = [
-                ("Overdue", NX.red, { NXTaskQuery.isOverdue($0, workbench: workbench) }),
-                ("Today", accent, { offset($0) == 0 && !NXTaskQuery.isOverdue($0, workbench: workbench) }),
+                ("Overdue", NX.red, { offset($0).map { $0 < 0 } ?? false }),
+                ("Today", accent, { offset($0) == 0 }),
                 ("Tomorrow", muted, { offset($0) == 1 }),
                 ("This week", muted, { offset($0).map { $0 > 1 && $0 <= 6 } ?? false }),
                 ("Later", muted, { offset($0).map { $0 > 6 } ?? false }),
