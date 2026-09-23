@@ -286,7 +286,7 @@ struct NextInspector: View {
                 }
             }
             GridRow {
-                dueLabel
+                propertyLabel("Due")
                 // A date that isn't one of the fixed choices comes first, as
                 // its own pill; it opens the picker rather than rescheduling.
                 let options = dueOptions
@@ -294,7 +294,7 @@ struct NextInspector: View {
                 NXFlow(spacing: 4) {
                     ForEach(options, id: \.label) { option in
                         let custom = option.label == customLabel
-                        let pill = NXInspectorPill(isOn: isDue(option.offset), padding: Self.duePillPadding) {
+                        let pill = NXInspectorPill(isOn: isDue(option.offset)) {
                             if custom { openPicker(.due) }
                             else { workbench.schedule([task.id], offset: option.offset) }
                         } label: {
@@ -302,6 +302,16 @@ struct NextInspector: View {
                         }
                         if custom { pill.help("Date and time (⌃D)") } else { pill }
                     }
+                    // Native addition: the design has no picker. It wraps with the
+                    // pills, as the design's row already does at this width.
+                    NXInspectorPill(isOn: false) { openPicker(.due) } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "calendar").font(.system(size: 10.5, weight: .medium))
+                            if task.includesTime, let due = task.dueDate { Text(NXFormat.clock(due)).monospacedDigit() }
+                        }
+                    }
+                    .help("Date and time (⌃D)")
+                    .accessibilityLabel("Due date and time")
                 }
                 .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
             }
@@ -415,35 +425,6 @@ struct NextInspector: View {
             .frame(width: 78, alignment: .leading)
             .gridColumnAlignment(.leading)
     }
-
-    /// The Due label doubles as the date and time picker, so the four day
-    /// pills keep the row to themselves. It shows the due time when there is one.
-    private var dueLabel: some View {
-        Button { openPicker(.due) } label: {
-            HStack(spacing: 5) {
-                Text("Due")
-                if task.includesTime, let due = task.dueDate {
-                    Text(NXFormat.clock(due)).monospacedDigit()
-                } else {
-                    Image(systemName: "calendar").font(.system(size: 10.5, weight: .medium))
-                }
-            }
-            .font(.system(size: 11.5, weight: .medium))
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                        padding: EdgeInsets(top: 3, leading: 5, bottom: 3, trailing: 5),
-                                        foreground: NX.ink(0.45), hoverForeground: NX.ink))
-        .padding(.leading, -5)
-        .help("Date and time (⌃D)")
-        .accessibilityLabel("Due date and time")
-        .accessibilityValue(task.includesTime ? task.dueDate.map(NXFormat.clock) ?? "" : "")
-        .frame(width: 78, alignment: .leading)
-        .gridColumnAlignment(.leading)
-    }
-
-    /// Native type sets wider than the design's, so the day pills trim their
-    /// sides to fit Today, Tomorrow, Next week and None on one line.
-    private static let duePillPadding = EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 6)
 
     /// The coming Monday, matching `Store.setDueNextWeek`, so it never equals Tomorrow.
     private var nextWeekOffset: Int { NXFormat.nextWeekOffset() }
