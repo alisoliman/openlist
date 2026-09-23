@@ -10,8 +10,13 @@ import Foundation
 extension Workbench {
     /// A new list at the end of a section.
     func createList(in section: SidebarSection) {
-        let list = store.createList(title: "Untitled list", in: section)
+        let list = makeUntitledList(in: section)
         announceCreated(list, in: section.displayTitle)
+    }
+
+    /// An empty list as the design makes one: 📝 in the current accent.
+    func makeUntitledList(in section: SidebarSection?) -> TaskList {
+        store.createList(title: "Untitled list", icon: "📝", accent: settings.accent.listAccent, in: section)
     }
 
     /// A new list nested under another.
@@ -80,5 +85,17 @@ extension Workbench {
         let label = archived ? "Archived “\(list.displayTitle)”" : "Unarchived “\(list.displayTitle)”"
         registerUndo(label, undo: { apply($0, !archived) }, redo: { apply($0, archived) })
         snap(label, icon: archived ? "archivebox" : "tray.and.arrow.up", tone: .neutral, ids: [])
+    }
+}
+
+private extension NextAccent {
+    /// The list colour closest to this accent, for lists made in it.
+    var listAccent: ListAccent {
+        switch self {
+        case .violet: .violet
+        case .blue: .blue
+        case .green: .green
+        case .orange: .orange
+        }
     }
 }

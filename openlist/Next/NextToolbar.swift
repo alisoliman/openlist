@@ -12,6 +12,7 @@ struct NextToolbar: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    @Environment(\.nxTrafficLightsInset) private var trafficLightsInset
     let crumb: String
     /// Widths of the back-and-crumb and button groups, which the notch keeps clear of.
     @State private var leadingWidth: CGFloat = 0
@@ -84,7 +85,8 @@ struct NextToolbar: View {
             }
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { trailingWidth = $0 }
         }
-        .padding(.horizontal, 18)
+        .padding(.leading, 18 + trafficLightsInset)
+        .padding(.trailing, 18)
         .frame(height: 52)
         .background {
             Color.clear.contentShape(Rectangle()).gesture(WindowDragGesture())
@@ -92,7 +94,7 @@ struct NextToolbar: View {
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
         .overlay(alignment: .top) {
             // Centred, but never over the crumb or the buttons.
-            NXNotchPlacement(leading: 18 + leadingWidth + 8, trailing: 18 + trailingWidth + 8) {
+            NXNotchPlacement(leading: 18 + trafficLightsInset + leadingWidth + 8, trailing: 18 + trailingWidth + 8) {
                 if working { NXWorkNotch().transition(.move(edge: .top)) }
             }
         }

@@ -63,7 +63,7 @@ struct NextSidebar: View {
                 .padding(.top, 2)
                 .padding(.bottom, 12)
             }
-            .scrollIndicators(.never)
+            .scrollIndicators(.automatic)
             footer
         }
         .frame(width: 236)
@@ -103,7 +103,7 @@ struct NextSidebar: View {
             NavItem(route: .today, icon: "sun.max", filledIcon: "sun.max.fill", label: "Today", color: NX.today),
             NavItem(route: .calendar, icon: "calendar", filledIcon: "calendar", label: "Calendar"),
             NavItem(route: .tasks, icon: "checklist", filledIcon: "checklist", label: "Tasks", color: NX.green),
-            NavItem(route: .lists, icon: "square.stack", filledIcon: "square.stack.fill", label: "Lists", color: NX.lists),
+            NavItem(route: .lists, icon: "square.2.layers.3d", filledIcon: "square.2.layers.3d.fill", label: "Lists", color: NX.lists),
             NavItem(route: .activity, icon: "square.grid.2x2", filledIcon: "square.grid.2x2.fill", label: "Activity"),
         ]
     }
@@ -142,7 +142,7 @@ struct NextSidebar: View {
             .foregroundStyle(pulsing ? style.accent : NX.ink(opacity))
             .monospacedDigit()
             .contentTransition(.numericText())
-            .modifier(NXBump(trigger: pulsing ? workbench.pulseRevision : 0))
+            .modifier(NXBump(trigger: workbench.pulseRevision, active: pulsing))
     }
 
     // MARK: Sections
@@ -206,7 +206,7 @@ struct NextSidebar: View {
             HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
-                    .kerning(0.7)
+                    .kerning(0.735)
                     .textCase(.uppercase)
                     .foregroundStyle(NX.ink(0.34))
                 Image(systemName: "chevron.right")
@@ -378,7 +378,7 @@ struct NextSidebar: View {
                     ForEach(library.labels, id: \.id) { label in
                         let on = route == .label(label.id)
                         let count = library.openCount(label: label.id)
-                        NXSidebarRow(on: on, pulsing: false, height: 27, title: label.name,
+                        NXSidebarRow(on: on, pulsing: false, fades: false, height: 27, title: label.name,
                                      value: "\(count) open \(count == 1 ? "task" : "tasks")") {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(label.nxColor)
@@ -464,6 +464,8 @@ private struct NXSidebarRow<Content: View>: View {
     @Environment(\.nextStyle) private var style
     let on: Bool
     let pulsing: Bool
+    /// Nav and list rows fade between rest, hover and current; label rows snap.
+    var fades = true
     var ring: Color?
     let height: CGFloat
     let title: String
@@ -486,6 +488,8 @@ private struct NXSidebarRow<Content: View>: View {
                             .strokeBorder(on ? NX.ink(0.06) : ring ?? .clear, lineWidth: on ? 0.5 : 1)
                     }
                     .animation(.easeOut(duration: 0.3), value: pulsing)
+                    .animation(fades ? fade : nil, value: on)
+                    .animation(fades ? fade : nil, value: hovering)
             }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -496,17 +500,28 @@ private struct NXSidebarRow<Content: View>: View {
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
             .accessibilityAction { action() }
     }
+
+    /// The design's `300ms ease` (CSS `ease`) on the background and shadow.
+    private var fade: Animation { .timingCurve(0.25, 0.1, 0.25, 1, duration: style.ms(300) / 1000) }
 }
 
-/// The count bump when something lands in a list.
+/// The count bump when something lands in a list. It plays when `trigger`
+/// moves on while `active`, and when the count first appears mid-pulse, so a
+/// list's first task bumps too and the pulse ending doesn't bump again.
 struct NXBump: ViewModifier {
     let trigger: Int
+    var active = true
+    @State private var plays = 0
+
     func body(content: Content) -> some View {
-        content.keyframeAnimator(initialValue: 1.0, trigger: trigger) { view, scale in
-            view.scaleEffect(scale)
-        } keyframes: { _ in
-            CubicKeyframe(1.35, duration: 0.17)
-            CubicKeyframe(1, duration: 0.25)
-        }
+        content
+            .keyframeAnimator(initialValue: 1.0, trigger: plays) { view, scale in
+                view.scaleEffect(scale)
+            } keyframes: { _ in
+                CubicKeyframe(1.35, duration: 0.17)
+                CubicKeyframe(1, duration: 0.25)
+            }
+            .onChange(of: trigger) { if active { plays += 1 } }
+            .onAppear { if active { plays += 1 } }
     }
 }

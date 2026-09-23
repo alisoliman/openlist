@@ -233,9 +233,9 @@ struct AppCommands: Commands {
         NSApp.sendAction(Selector((selectorName)), to: nil, from: nil)
     }
 
+    /// The same list the sidebar's New list makes, with its tray and undo.
     private func newList() {
-        let list = env.store.createList()
-        env.navigator.go(to: .list(list.id))
+        env.workbench.createList()
     }
 
     private func exportCurrentList() {

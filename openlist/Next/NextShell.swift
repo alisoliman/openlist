@@ -15,6 +15,7 @@ struct NextShell: View {
     @Query private var labels: [TaskLabel]
     @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" }) private var tasks: [Block]
     @State private var overlays = NXOverlayState()
+    @State private var chrome = NXWindowChrome()
     @State private var width: CGFloat = 0
     @State private var sidebarFrame: CGRect = .zero
 
@@ -33,14 +34,18 @@ struct NextShell: View {
                 .disabled(!showsSidebar)
                 .allowsHitTesting(showsSidebar)
                 .accessibilityHidden(!showsSidebar)
+            // The overlays dim and centre on the main pane; the sidebar stays clear.
             NextMain()
+                .overlay { NextOverlays(overlays: overlays) }
+                // With no sidebar to hold them, the traffic lights sit on the toolbar.
+                .environment(\.nxTrafficLightsInset, showsSidebar || chrome.isFullScreen ? 0 : chrome.trailingEdge)
         }
-        .overlay { NextOverlays(overlays: overlays) }
         .environment(\.nextLibrary, library)
         .environment(\.nextStyle, style)
         .tint(style.accent)
         .background(NX.paper)
         .background { NextKeyMonitorHost(library: library, overlays: overlays) }
+        .background { NXWindowChromeHost(chrome: chrome) }
         .onGeometryChange(for: CGFloat.self, of: \.size.width) {
             width = $0
             adaptSidebar()
@@ -316,7 +321,7 @@ struct NXCapsTitle: View {
     var body: some View {
         Text(text)
             .font(.system(size: 10.5, weight: .semibold))
-            .kerning(0.84)
+            .kerning(0.735)
             .textCase(.uppercase)
             .foregroundStyle(NX.ink(0.36))
     }

@@ -18,7 +18,7 @@ nonisolated struct LibraryBackupSettings: Codable, Equatable, Sendable {
         func bool(_ key: String, fallback: Bool) -> Bool {
             defaults.object(forKey: key) == nil ? fallback : defaults.bool(forKey: key)
         }
-        showsCompletedTasks = bool("settings.showsCompleted", fallback: true)
+        showsCompletedTasks = bool("settings.showsCompleted", fallback: false)
         parsesNaturalLanguageDates = bool("settings.naturalLanguage", fallback: true)
         defaultDestination = defaults.string(forKey: "settings.defaultDestination") ?? "inbox"
         confirmsBeforeDeletingLists = bool("settings.confirmDelete", fallback: true)

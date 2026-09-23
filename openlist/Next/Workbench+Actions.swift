@@ -306,7 +306,7 @@ extension Workbench {
 
     func createList() {
         let section = store.defaultSection()
-        let list = store.createList(title: "Untitled list", in: section)
+        let list = makeUntitledList(in: section)
         let id = list.id
         let label = "Created “Untitled list” in \(section?.displayTitle ?? "Lists")"
         registerUndo(label, undo: { workbench in
