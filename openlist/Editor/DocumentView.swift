@@ -27,6 +27,9 @@ struct DocumentView: View {
     var trailingSpace: CGFloat = 120
     var appendButtonTitle: String?
     var usesInboxActions = false
+    /// Host policy for completion, details, focus, Escape and task commands.
+    /// The defaults are this editor's own.
+    var hooks = OutlineHooks()
 
     @Environment(AppEnvironment.self) private var env
 
@@ -38,7 +41,8 @@ struct DocumentView: View {
         seedsEmptyBlock: Bool = true,
         trailingSpace: CGFloat = 120,
         appendButtonTitle: String? = nil,
-        usesInboxActions: Bool = false
+        usesInboxActions: Bool = false,
+        hooks: OutlineHooks = OutlineHooks()
     ) {
         self.document = document
         self.emptyPlaceholder = emptyPlaceholder
@@ -48,6 +52,7 @@ struct DocumentView: View {
         self.trailingSpace = trailingSpace
         self.appendButtonTitle = appendButtonTitle
         self.usesInboxActions = usesInboxActions
+        self.hooks = hooks
     }
 
     var body: some View {
@@ -70,8 +75,10 @@ private struct DocumentOutline: View {
 
     init(configuration: DocumentView, env: AppEnvironment) {
         self.configuration = configuration
+        // SwiftUI keeps the first editor for the view's lifetime and drops the
+        // one built on each later init. Building one only assigns its inputs.
         _editor = State(initialValue: OutlineEditor(env: env, document: configuration.document,
-            showsCompleted: configuration.showsCompleted, sorting: configuration.sorting))
+            showsCompleted: configuration.showsCompleted, sorting: configuration.sorting, hooks: configuration.hooks))
         _fetchedBlocks = OutlineEditor.blocksQuery(for: configuration.document)
     }
 
@@ -93,12 +100,13 @@ private struct DocumentOutline: View {
     }
 
     var body: some View {
-        editor.configure(document: document, showsCompleted: configuration.showsCompleted, sorting: configuration.sorting)
+        editor.configure(document: document, showsCompleted: configuration.showsCompleted,
+                         sorting: configuration.sorting, hooks: configuration.hooks)
         // Computed once per render and shared by every row, so drawing a
         // document costs one pass over the block list rather than one fetch
         // per row.
         let liveBlocks = blocks
-        let visibleRows = editor.visibleRows(in: liveBlocks)
+        let visibleRows = editor.rowsToDraw(in: liveBlocks)
         let visibleIDs = visibleRows.map(\.id)
         let labelLookup = labelsByID
         let progress = BlockTree.subtaskCounts(in: liveBlocks)

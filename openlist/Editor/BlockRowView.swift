@@ -160,7 +160,7 @@ struct BlockRowView: View {
                     focusToken: focusToken,
                     isSlashMenuOpen: isSlashMenuOpen,
                     onSlashCommand: onSlashCommand,
-                    callbacks: editorCallbacks
+                    callbacks: actions.editorCallbacks
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .anchorPreference(key: EditorTextBoundsKey.self, value: .bounds) { [block.id: $0] }
@@ -276,23 +276,6 @@ struct BlockRowView: View {
                 Color.clear.frame(width: 20, height: 20)
             }
         }
-    }
-
-    private var editorCallbacks: BlockEditorCallbacks {
-        BlockEditorCallbacks(
-            onChange: actions.onChange,
-            onReturn: actions.onReturn,
-            onTab: actions.onTab,
-            onBackspaceAtStart: actions.onBackspaceAtStart,
-            onDeleteAtEnd: actions.onDeleteAtEnd,
-            onArrowOut: actions.onArrowOut,
-            onFocus: actions.onFocus,
-            onEscape: actions.onEscape,
-            onSlashQuery: actions.onSlashQuery,
-            onMarkdownPrefix: actions.onMarkdownPrefix,
-            onPasteMultiline: actions.onPasteMultiline,
-            onPasteFragment: actions.onPasteFragment
-        )
     }
 }
 

@@ -102,8 +102,8 @@ enum Theme {
     /// drops fonts that match these, so a renderer-specific face would be
     /// saved into the document. The values follow the Next rows.
     enum Editor {
-        /// Matches `NXStrikeText`, so a task in a document lines up with a
-        /// task row on any Next screen.
+        /// Matches `NXStrikeText`: with no vertical inset, a task title in a
+        /// document sits exactly where a task title does on any Next screen.
         static let bodyPointSize: CGFloat = 13.8
         nonisolated static let heading1PointSize: CGFloat = 26
         static let heading2PointSize: CGFloat = 17
@@ -115,8 +115,12 @@ enum Theme {
         /// natural height and never sits low in its selection highlight.
         static let lineSpacingRatio: CGFloat = 0.2
         static let codeLineHeightMultiple: CGFloat = 1.15
-        /// Pads a single 13.8pt line (16pt in TextKit) to the Next rows' 20pt
-        /// line box, so a one-line row is as tall as a Next row.
+        /// Space above and below a block's text, the default for
+        /// `BlockTextView.verticalInset`. The legacy document's gutter controls
+        /// are tuned to a single line padded to 20pt. A single 13.8pt line is
+        /// 16pt with its baseline at 13, like `NXStrikeText`, and a Next row
+        /// takes its height from its controls rather than a line box, so a
+        /// renderer lining titles up with Next rows passes 0.
         static let textVerticalInset: CGFloat = 2
 
         /// The display serif Next uses for titles. Resolved once, after
@@ -167,22 +171,29 @@ enum Theme {
 
         // MARK: Colours
 
-        // Next's ink at the strengths the editor uses. These must stay
-        // singletons: attributed strings compare dynamic colours by identity,
-        // so a colour made per call would fail every content signature and
-        // restyle the text view on each update, resetting the caret and IME.
-        // Colours are immutable, so sharing them across isolation domains is safe.
+        // Next's ink at the strengths the editor uses, and its accents. These
+        // must stay singletons: attributed strings compare dynamic colours by
+        // identity, so a colour made per call would fail every content
+        // signature and restyle the text view on each update, resetting the
+        // caret and IME.
 
-        nonisolated(unsafe) static let ink = inkColor(1)
+        nonisolated static let ink = inkColor(1)
         /// Quotes.
-        nonisolated(unsafe) static let secondaryInk = inkColor(0.62)
-        nonisolated(unsafe) static let placeholderInk = inkColor(0.36)
+        nonisolated static let secondaryInk = inkColor(0.62)
+        nonisolated static let placeholderInk = inkColor(0.36)
         /// Completed task text.
-        nonisolated(unsafe) static let completedInk = inkColor(0.42)
+        nonisolated static let completedInk = inkColor(0.42)
         /// The strike through completed task text.
-        nonisolated(unsafe) static let strikeInk = inkColor(0.36)
-        /// Next's default accent.
-        nonisolated(unsafe) static let link = NSColor(srgbRed: 0x7C / 255, green: 0x4D / 255, blue: 0xF0 / 255, alpha: 1)
+        nonisolated static let strikeInk = inkColor(0.36)
+
+        /// Next's accents, for `BlockTextView.strikeColor` while a task closes.
+        /// `NextAccent.editorColor` picks the one the settings choose.
+        nonisolated static let accentViolet = NSColor(srgbRed: 0x7C / 255, green: 0x4D / 255, blue: 0xF0 / 255, alpha: 1)
+        nonisolated static let accentBlue = NSColor(srgbRed: 0x2F / 255, green: 0x6F / 255, blue: 0xE0 / 255, alpha: 1)
+        nonisolated static let accentGreen = NSColor(srgbRed: 0x1F / 255, green: 0x8A / 255, blue: 0x6D / 255, alpha: 1)
+        nonisolated static let accentOrange = NSColor(srgbRed: 0xC2 / 255, green: 0x53 / 255, blue: 0x2B / 255, alpha: 1)
+        /// Links take Next's default accent.
+        nonisolated static let link = accentViolet
 
         /// `NX.ink` (#17161A, #F1EFEC in dark mode) at `alpha`.
         private nonisolated static func inkColor(_ alpha: CGFloat) -> NSColor {

@@ -66,6 +66,26 @@ struct BlockRowActions {
     var onSelect: () -> Void = {}
 }
 
+extension BlockRowActions {
+    /// The part of a row's actions its ``BlockTextView`` reports to.
+    var editorCallbacks: BlockEditorCallbacks {
+        BlockEditorCallbacks(
+            onChange: onChange,
+            onReturn: onReturn,
+            onTab: onTab,
+            onBackspaceAtStart: onBackspaceAtStart,
+            onDeleteAtEnd: onDeleteAtEnd,
+            onArrowOut: onArrowOut,
+            onFocus: onFocus,
+            onEscape: onEscape,
+            onSlashQuery: onSlashQuery,
+            onMarkdownPrefix: onMarkdownPrefix,
+            onPasteMultiline: onPasteMultiline,
+            onPasteFragment: onPasteFragment
+        )
+    }
+}
+
 /// Host policy an outline defers to. Every default is the legacy document
 /// editor's, so a renderer overrides only what it does differently.
 struct OutlineHooks {
@@ -79,6 +99,11 @@ struct OutlineHooks {
     /// Escape left a block. The text view has already resigned first
     /// responder and the outline has let go of the caret.
     var didEscape: (UUID) -> Void = { _ in }
+    /// Whether Return or ↑/↓, pressed while the window itself holds the
+    /// keyboard, takes the caret back to the block Escape left. A host with
+    /// its own meaning for those keys turns this off and can call
+    /// ``OutlineEditor/resumeEditing()`` when it wants.
+    var resumesAfterEscape = true
     /// Offered each menu command and its targets before the store's shared
     /// task commands and the outline's own. Return `true` to claim it.
     var taskCommand: (EditorCommand, [UUID]) -> Bool = { _, _ in false }
@@ -89,23 +114,31 @@ struct OutlineHooks {
 /// It owns the caret, the `/` menu, the row projection and every key, paste,
 /// drop and menu command, and knows nothing about how rows look, so the
 /// legacy ``DocumentView`` and a Next-styled renderer can share it. A renderer
-/// fetches with ``blocksQuery(for:)``, calls ``configure(document:showsCompleted:sorting:)``
-/// and draws ``visibleRows(in:)`` in `body`, gives each row ``actions(for:)``,
+/// fetches with ``blocksQuery(for:)``, calls ``configure(document:showsCompleted:sorting:hooks:)``
+/// and draws ``rowsToDraw(in:)`` in `body`, gives each row ``actions(for:)``,
 /// and attaches ``OutlineEditorLifecycle`` and ``OutlineSlashMenu``.
+///
+/// One editor serves one document. Key the view that owns it on the document,
+/// as every `DocumentView` call site does with `.id(...)`, so another list or
+/// inspected task gets a fresh editor; ``documentDidChange()`` only resets the
+/// caret, menu, drafts and kept-visible tasks if a document changes in place.
 @MainActor
 @Observable
 final class OutlineEditor {
     let env: AppEnvironment
     @ObservationIgnored var hooks: OutlineHooks
     /// The list or task page being edited.
-    @ObservationIgnored private(set) var document: DocumentContext
+    @ObservationIgnored private(set) var document: DocumentContext { didSet { drawnRows = nil } }
     /// Hides done tasks, and everything nested under them, when `false`.
-    @ObservationIgnored var showsCompleted: Bool
+    @ObservationIgnored var showsCompleted: Bool { didSet { drawnRows = nil } }
     /// Completed tasks the host keeps on screen while `showsCompleted` is off.
-    @ObservationIgnored var completedTasksKeptVisible: Set<UUID> = []
+    @ObservationIgnored var completedTasksKeptVisible: Set<UUID> = [] { didSet { drawnRows = nil } }
     /// Order applied to top-level task runs. `.manual` keeps the stored order
     /// and is the only mode that allows rearranging.
-    @ObservationIgnored var sorting: ListSorting
+    @ObservationIgnored var sorting: ListSorting { didSet { drawnRows = nil } }
+    /// The rows last drawn, for handlers that run before the next render.
+    /// Cleared by any edit made here, or a change to what the rows depend on.
+    @ObservationIgnored private var drawnRows: [BlockRow]?
 
     private(set) var focus = EditorFocus()
     private(set) var slash: SlashState?
@@ -122,14 +155,19 @@ final class OutlineEditor {
         self.hooks = hooks
     }
 
+    isolated deinit {
+        if let resumeMonitor { NSEvent.removeMonitor(resumeMonitor) }
+    }
+
     /// Adopts a renderer's current inputs. Call it from `body`: it writes only
     /// untracked state, so the rows drawn in the same pass see the new values
     /// without invalidating the view. A new document's caret and menu reset in
     /// ``documentDidChange()``.
-    func configure(document: DocumentContext, showsCompleted: Bool, sorting: ListSorting) {
+    func configure(document: DocumentContext, showsCompleted: Bool, sorting: ListSorting, hooks: OutlineHooks) {
         self.document = document
         self.showsCompleted = showsCompleted
         self.sorting = sorting
+        self.hooks = hooks
     }
 
     // MARK: - Rows
@@ -171,15 +209,31 @@ final class OutlineEditor {
             revealing: (reveal?.visiblePath ?? []).union(completedTasksKeptVisible))
     }
 
+    /// ``visibleRows(in:)``, for the renderer to draw this pass. The outline
+    /// keeps them for the key, focus and command handlers that run before the
+    /// next render, so a click or keystroke costs no fetch or projection.
+    func rowsToDraw(in blocks: [Block]) -> [BlockRow] {
+        let rows = visibleRows(in: blocks)
+        drawnRows = rows
+        return rows
+    }
+
     /// Handlers run outside `body`, where a renderer's query is out of reach,
-    /// so they read the same blocks from the store at the moment they act.
+    /// so anything beyond the drawn rows is read from the store as it is.
     private var blocks: [Block] {
         let descriptor = FetchDescriptor<Block>(predicate: Self.blocksPredicate(listID: document.listID),
                                                 sortBy: [SortDescriptor(\.sortIndex)])
         return ((try? env.store.context.fetch(descriptor)) ?? []).filter { $0.modelContext != nil && !$0.isDeleted }
     }
 
-    private var rows: [BlockRow] { visibleRows(in: blocks) }
+    /// The rows last drawn while none has been deleted and nothing here has
+    /// edited since, otherwise a fresh projection of the store.
+    private var rows: [BlockRow] {
+        if let drawnRows, drawnRows.allSatisfy({ $0.block.modelContext != nil && !$0.block.isDeleted }) {
+            return drawnRows
+        }
+        return visibleRows(in: blocks)
+    }
 
     // MARK: - Row state
 
@@ -327,6 +381,8 @@ final class OutlineEditor {
                 guard let current = env.store.block(id: blockID) else { return }
                 inlineMetadataEdits.recordTextChange(for: current, to: attributed.string)
                 env.store.setContent(current, attributed: attributed)
+                // A sorted document can reorder on a title change.
+                if sorting != .manual { drawnRows = nil }
                 // Typing only mutates the model; without this the save that
                 // fires `onDidSave` never happens, so the widget snapshot
                 // would stay stale until some other action saved.
@@ -351,6 +407,7 @@ final class OutlineEditor {
                 guard block.modelContext != nil, !block.isDeleted else { return }
                 guard !(NSApp?.keyWindow?.firstResponder is RowSelectionNSControl) else { return }
                 if slash?.blockID != blockID { slash = nil }
+                stopWaitingToResume()
                 focus.adopt(blockID)
                 env.navigator.selectForEditing(blockID, scope: selectionScopeID, visible: rows.map(\.id))
                 // Typing inside a document makes it the target for menu commands.
@@ -362,6 +419,7 @@ final class OutlineEditor {
                 slash = nil
                 focus.request(nil)
                 env.navigator.clearSelection()
+                waitToResume(blockID)
                 hooks.didEscape(blockID)
             },
             onSlashQuery: { [self] query, range, caretRect, viewport in
@@ -408,9 +466,11 @@ final class OutlineEditor {
                 if reveal?.ancestorIDs.contains(block.id) == true, block.isCollapsed {
                     env.navigator.finishReveal()
                 } else { env.store.toggleCollapse(block) }
+                drawnRows = nil
             },
             onToggleCompletion: { [self] in
                 if let toggle = hooks.toggleCompletion { toggle(blockID) } else { env.store.toggleCompletion(block) }
+                drawnRows = nil
             },
             onOpenDetails: { [self] in
                 openDetails(block)
@@ -418,6 +478,7 @@ final class OutlineEditor {
             onSelect: { [self] in
                 env.navigator.selectRow(block.id, gesture: .replace, scope: selectionScopeID, visible: rows.map(\.id))
                 env.activeDocument = document
+                stopWaitingToResume()
                 focus.request(nil)
             }
         )
@@ -616,6 +677,7 @@ final class OutlineEditor {
 
     /// Takes the caret to the first of `ids`, just pasted from a menu.
     func didPasteFragment(_ ids: [UUID]) {
+        drawnRows = nil
         env.activeDocument = document
         focus.request(ids.first, caret: 0)
     }
@@ -623,6 +685,7 @@ final class OutlineEditor {
     /// The gutter started a row selection, so the caret steps aside.
     func beginRowSelection() {
         env.activeDocument = document
+        stopWaitingToResume()
         focus.request(nil)
         slash = nil
     }
@@ -633,7 +696,8 @@ final class OutlineEditor {
 
     @discardableResult
     private func editorEdit<T>(_ name: String, _ body: () -> T) -> T {
-        env.store.undoableEditorEdit(in: document.listID, name: name, undoManager: NSApp?.keyWindow?.undoManager, body)
+        defer { drawnRows = nil }
+        return env.store.undoableEditorEdit(in: document.listID, name: name, undoManager: NSApp?.keyWindow?.undoManager, body)
     }
 
     func move(_ draggedIDs: [UUID], relativeTo target: BlockRow, position: DropPosition) {
@@ -645,6 +709,7 @@ final class OutlineEditor {
             env.store.editorNotice = "The drop target is no longer available. No rows were changed."
             return
         }
+        defer { drawnRows = nil }
         NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
         let parentID: UUID?
         let aboveID: UUID?
@@ -711,6 +776,7 @@ final class OutlineEditor {
     }
 
     private func editorEditFragment(after blockID: UUID) {
+        defer { drawnRows = nil }
         env.store.undoableEditorEdit(in: document.listID, name: "Paste content",
             undoManager: NSApp?.keyWindow?.undoManager, includingNewLabels: true) {
             do {
@@ -729,6 +795,7 @@ final class OutlineEditor {
         // Only the document the user is actually working in should respond,
         // otherwise ⌘N would fire in both the list and the open task panel.
         guard env.activeDocument == document else { return }
+        defer { drawnRows = nil }
         let structural: [EditorCommand] = [.newTask, .indent, .outdent, .moveUp, .moveDown]
         if let command = env.pendingCommand, structural.contains(command) {
             editorEdit("Edit outline") { handleCommand() }
@@ -827,6 +894,64 @@ final class OutlineEditor {
         }
     }
 
+    // MARK: - Resuming after Escape
+
+    /// The block Escape left, until a row takes the caret again.
+    @ObservationIgnored private(set) var escapedBlockID: UUID?
+    /// The window Escape left holding the keyboard. A sheet or popover over it
+    /// keeps its own Return. `nil` only off screen, as in the checks.
+    @ObservationIgnored private weak var escapeWindow: NSWindow?
+    @ObservationIgnored private var resumeMonitor: Any?
+
+    private func waitToResume(_ id: UUID) {
+        escapedBlockID = id
+        escapeWindow = NSApp?.keyWindow
+        // Escape leaves the window holding the keyboard, where a legacy
+        // document screen has no keys of its own. Listen for the one that
+        // should take the caret back, until a row takes it some other way.
+        guard hooks.resumesAfterEscape, resumeMonitor == nil else { return }
+        resumeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let resumed = MainActor.assumeIsolated {
+                self.resumeEditing(onKey: event.keyCode, modifiers: event.modifierFlags, in: event.window)
+            }
+            return resumed ? nil : event
+        }
+    }
+
+    private func stopWaitingToResume() {
+        escapedBlockID = nil
+        escapeWindow = nil
+        if let resumeMonitor { NSEvent.removeMonitor(resumeMonitor) }
+        resumeMonitor = nil
+    }
+
+    /// Resumes editing for a key pressed while `window` itself holds the
+    /// keyboard, if it is the window Escape was pressed in. Only Return,
+    /// Enter, ↑ and ↓ without modifiers resume, and only while this document
+    /// takes menu commands. Returns `true` when the key was spent putting the
+    /// caret back.
+    func resumeEditing(onKey keyCode: UInt16, modifiers: NSEvent.ModifierFlags, in window: NSWindow?) -> Bool {
+        // Return, keypad Enter, ↓ and ↑.
+        guard [36, 76, 125, 126].contains(keyCode),
+              modifiers.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function, .capsLock]).isEmpty,
+              let window, window.firstResponder === window, escapeWindow.map({ $0 === window }) ?? true,
+              env.activeDocument == document else { return false }
+        return resumeEditing()
+    }
+
+    /// Puts the caret back in the block Escape left, wherever the text view
+    /// last had it. `false` when that block has gone or is hidden.
+    @discardableResult
+    func resumeEditing() -> Bool {
+        guard let id = escapedBlockID else { return false }
+        stopWaitingToResume()
+        guard rows.contains(where: { $0.id == id && !$0.block.kind.isVoid }) else { return false }
+        env.activeDocument = document
+        focus.request(id)
+        return true
+    }
+
     // MARK: - Lifecycle
 
     /// A list document claims menu commands on appear; a task's page waits
@@ -836,6 +961,7 @@ final class OutlineEditor {
     }
 
     func didDisappear() {
+        stopWaitingToResume()
         if env.navigator.rowSelection.scopeID == selectionScopeID { env.navigator.clearSelection() }
     }
 
@@ -843,6 +969,9 @@ final class OutlineEditor {
         inlineMetadataEdits = InlineMetadataEdits()
         focus = EditorFocus()
         slash = nil
+        completedTasksKeptVisible = []
+        stopWaitingToResume()
+        drawnRows = nil
         if document.rootBlockID == nil { env.activeDocument = document }
     }
 
@@ -871,6 +1000,8 @@ final class OutlineEditor {
 
     /// Lifecycle persistence is about to save: finish every row's draft first.
     func commitPendingInlineMetadata() {
+        // Every open document hears this, and most have nothing typed.
+        guard !inlineMetadataEdits.isEmpty else { return }
         for block in blocks { commitInlineMetadata(block) }
     }
 

@@ -27,6 +27,10 @@ enum RichTextCodec {
     /// The canonical font used when writing RTF, so archives stay comparable.
     private static var canonicalFont: NSFont { .systemFont(ofSize: Theme.Editor.bodyPointSize) }
 
+    /// Heading 1 was once system bold at this size, so a run styled inside an
+    /// older heading was archived bold along with its own trait.
+    private static let legacyHeading1PointSize: CGFloat = 21
+
     // MARK: - Encoding
 
     static func encode(_ attributed: NSAttributedString, kind: BlockKind = .paragraph) -> Data? {
@@ -111,7 +115,12 @@ enum RichTextCodec {
 
             if let font = attributes[.font] as? NSFont {
                 let mask = NSFontManager.shared.traits(of: font)
-                if mask.contains(.boldFontMask) { traits.insert(.boldFontMask) }
+                // That bold was the old heading's weight, not the user's: the
+                // regular serif shows it as plain, and the next `encode`
+                // stores the run without it.
+                let isLegacyHeadingWeight = kind == .heading1
+                    && abs(font.pointSize - legacyHeading1PointSize) < 0.01
+                if mask.contains(.boldFontMask), !isLegacyHeadingWeight { traits.insert(.boldFontMask) }
                 if mask.contains(.italicFontMask) { traits.insert(.italicFontMask) }
                 isCode = font.fontDescriptor.symbolicTraits.contains(.monoSpace)
                     || (font.fontName.lowercased().contains("mono") && kind != .code)

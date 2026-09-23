@@ -62,6 +62,9 @@ struct BlockTextView: NSViewRepresentable {
     /// instance: the colour is part of the content signature, so one made per
     /// render would restyle the text, and reset the caret, on every update.
     var strikeColor: NSColor? = nil
+    /// Space above and below the text. The legacy document pads a line to
+    /// its gutter; a renderer matching Next's row titles passes 0.
+    var verticalInset: CGFloat = Theme.Editor.textVerticalInset
     let attributedText: NSAttributedString
     var placeholder: String = ""
     var isFocused: Bool
@@ -98,7 +101,7 @@ struct BlockTextView: NSViewRepresentable {
         view.drawsBackground = false
         view.isVerticallyResizable = false
         view.isHorizontallyResizable = false
-        view.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
+        view.textContainerInset = NSSize(width: 0, height: verticalInset)
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
@@ -126,6 +129,10 @@ struct BlockTextView: NSViewRepresentable {
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
+        if view.textContainerInset.height != verticalInset {
+            view.textContainerInset = NSSize(width: 0, height: verticalInset)
+            view.invalidateIntrinsicContentSize()
+        }
 
         // Only touch the storage when something actually changed underneath us,
         // otherwise every keystroke would reset the caret.
