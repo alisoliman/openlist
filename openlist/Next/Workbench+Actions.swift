@@ -457,7 +457,11 @@ extension Workbench {
             case .done:
                 // A repeat rolls to its next date and stays in Inbox.
                 keeps = task.recurrence != nil
+                // Triaging the card leaves the rows' selection alone, as in the
+                // design; complete() on its own clears it.
+                let selection = self.selection
                 self.complete([id])
+                self.selection = selection.subtracting([id])
             case .down:
                 let label = "Discarded \(NXFormat.quoted(task.displayTitle))"
                 if self.store.trashBlocks([task], undoManager: self.undoManager) {

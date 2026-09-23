@@ -105,9 +105,16 @@ private struct NXTriageCard: View {
         }
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .strokeBorder(exit == .done ? NX.green : NX.ink(0.12), lineWidth: exit == .done ? 2 : 0.5))
-        .shadow(color: NX.shadowWarm.opacity(0.09), radius: 20, y: 14)
+        // Done rings the card in place of its shadow, on the design's own
+        // `box-shadow 200ms ease`, which motion doesn't scale.
+        .transaction { transaction in
+            if exit != nil, transaction.animation != nil { transaction.animation = NX.cssEase(200) }
+        } body: { card in
+            card
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(exit == .done ? NX.green : NX.ink(0.12), lineWidth: exit == .done ? 2 : 0.5))
+                .shadow(color: NX.shadowWarm.opacity(exit == .done ? 0 : 0.09), radius: 20, y: 14)
+        }
         .offset(x: exit == .left ? -90 : exit == .right ? 90 : 0,
                 y: exit == .up ? -26 : exit == .down ? 26 : 0)
         .rotationEffect(.degrees(exit == .left ? -1.5 : exit == .right ? 1.5 : 0))
@@ -115,7 +122,7 @@ private struct NXTriageCard: View {
         // The card moves on the standard curve but fades on plain `ease`.
         .transaction { transaction in
             if exit != nil, transaction.animation != nil {
-                transaction.animation = .timingCurve(0.25, 0.1, 0.25, 1, duration: style.ms(230) / 1000)
+                transaction.animation = style.cssEase(230)
             }
         } body: { $0.opacity(exit == nil ? 1 : 0) }
         .offset(y: lifted ? 0 : 10)
@@ -157,7 +164,7 @@ private struct NXTriageCard: View {
                 }
             }
             // The design's `transition: all 300ms ease`.
-            .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.3), value: workbench.reviewed)
+            .animation(NX.cssEase(300), value: workbench.reviewed)
             Text("\(remaining) to go")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.42))
@@ -195,11 +202,13 @@ private struct NXTriageCard: View {
                     }
                 }
             }
+            // The design's 10.5/1.4 over a 13pt line: 1.7pt between lines, half of it above and below.
             Text("T today · M tomorrow · dots show what’s already due")
                 .font(.system(size: 10.5, weight: .medium))
-                .lineSpacing(2.7)
+                .lineSpacing(1.7)
                 .foregroundStyle(NX.ink(0.4))
-                .padding(.top, 8)
+                .padding(.top, 8.85)
+                .padding(.bottom, 0.85)
         }
     }
 
@@ -223,7 +232,7 @@ private struct NXTriageCard: View {
                     Text("→").font(NX.mono(10, weight: .medium)).opacity(0.6)
                 }
             }
-            .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0x2C2A31), rest: NX.primaryButton, radius: 8,
+            .buttonStyle(NXHoverButtonStyle(hover: NX.primaryButtonHover, rest: NX.primaryButton, radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: .white, hoverForeground: .white))
             .accessibilityLabel("Keep for later")
@@ -349,11 +358,13 @@ private struct NXTriageEmpty: View {
                 .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 4) {
                 Text("Inbox triaged").font(NX.serif(26)).foregroundStyle(NX.ink)
+                // The design's 13/1.45 over a 16pt line: 2.85pt between lines, half of it above and below.
                 Text("\(workbench.reviewed) reviewed this session. Tasks you kept or scheduled stay in Inbox until you file them.")
                     .font(.system(size: 13))
-                    .lineSpacing(3)
+                    .lineSpacing(2.85)
                     .foregroundStyle(NX.ink(0.56))
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 1.425)
             }
             Spacer(minLength: 8)
             // Always offered, as in the design; with nothing kept it just starts the count again.
