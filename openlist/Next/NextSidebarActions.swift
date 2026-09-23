@@ -26,6 +26,8 @@ extension Workbench {
         registerUndo(label, undo: { workbench in
             if let list = workbench.store.list(id: id) { _ = workbench.store.trashList(list) }
         }, redo: { workbench in
+            // Erased or restored since this Undo put it in Trash.
+            guard workbench.store.isInTrash(id) else { return }
             _ = workbench.store.restoreTrash(ids: [id])
         })
         snap(label, icon: "plus.circle.fill", tone: .accent, ids: [])

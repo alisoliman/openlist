@@ -192,9 +192,15 @@ struct NXListGlyph: View {
     let list: TaskList
     var size: CGFloat = 14
 
+    /// Whether a list icon names an SF Symbol rather than being an emoji.
+    static func isSymbolName(_ icon: String) -> Bool {
+        icon.allSatisfy { $0.isASCII } && (icon.contains(".") || icon.count > 2)
+            && NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil
+    }
+
     var body: some View {
         let icon = list.glyph
-        if icon.allSatisfy({ $0.isASCII }), icon.contains(".") || icon.count > 2, NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
+        if Self.isSymbolName(icon) {
             Image(systemName: icon)
                 .font(.system(size: size * 0.9, weight: .medium))
                 .foregroundStyle(list.nxColor)

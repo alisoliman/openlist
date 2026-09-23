@@ -272,25 +272,19 @@ extension Workbench {
                 self.showTray(self.store.trashError ?? "This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
                 return
             }
-            if !entry.isList {
-                let id = entry.id
-                self.registerUndo(label, undo: { workbench in
-                    if let block = workbench.store.block(id: id) { _ = workbench.store.trashBlocks([block]) }
-                }, redo: { workbench in
-                    // Erased after this Undo put it back in Trash: nothing to restore.
-                    guard !workbench.store.permanentlyErasedBlockIDs.contains(id) else { return }
-                    _ = workbench.store.restoreTrash(ids: [id])
-                })
-            }
             let restoredList = self.store.block(id: entry.id).flatMap { self.store.list(id: $0.listID) }
                 ?? (entry.isList ? self.store.list(id: entry.id) : nil)
             let destination = restoredList.map { TrayDestination(label: "Open \($0.displayTitle)", route: self.route(for: $0)) }
-            self.snap(restoredList.map {
+            let text = restoredList.map {
                 let place = $0.isEffectivelyArchived ? "archived list \($0.displayTitle)" : $0.displayTitle
                 return "Restored \(NXFormat.quoted(entry.title)) to \(place)"
-            } ?? label,
-                      icon: "arrow.uturn.backward.circle", tone: .accent, ids: [entry.id],
-                      undoable: !entry.isList, destination: destination)
+            } ?? label
+            if entry.isList {
+                self.snap(text, icon: "arrow.uturn.backward.circle", tone: .accent, ids: [entry.id],
+                          undoable: false, destination: destination)
+            } else {
+                self.snapRestore(text, id: entry.id, icon: "arrow.uturn.backward.circle", tone: .accent, destination: destination)
+            }
             self.markRestored([entry.id])
         }
     }
@@ -315,6 +309,8 @@ extension Workbench {
         registerUndo(label, undo: { workbench in
             if let list = workbench.store.list(id: id) { _ = workbench.store.trashList(list) }
         }, redo: { workbench in
+            // Erased or restored since this Undo put it in Trash.
+            guard workbench.store.isInTrash(id) else { return }
             _ = workbench.store.restoreTrash(ids: [id])
         })
         snap(label, icon: "plus.circle.fill", tone: .accent, ids: [])
@@ -393,6 +389,8 @@ extension Workbench {
         registerUndo("Added to \(name)", undo: { workbench in
             if let block = workbench.store.block(id: id) { _ = workbench.store.trashBlocks([block]) }
         }, redo: { workbench in
+            // Erased after this Undo put it in Trash: nothing to restore.
+            guard !workbench.store.permanentlyErasedBlockIDs.contains(id) else { return }
             _ = workbench.store.restoreTrash(ids: [id])
         })
         snap("Added to \(name)", icon: "plus.circle.fill", tone: .accent, ids: [block.id],

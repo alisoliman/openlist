@@ -68,9 +68,12 @@ extension Store {
             onEditorBlocksRemoved?(removedIDs)
             if let undoManager {
                 undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
-                    if store.restoreTrash(ids: rootIDs), let undoManager {
+                    // Content erased since is gone for good; Undo restores the rest.
+                    let remaining = rootIDs.filter { !store.permanentlyErasedBlockIDs.contains($0) }
+                    guard !remaining.isEmpty else { return }
+                    if store.restoreTrash(ids: remaining), let undoManager {
                         undoManager.registerUndo(withTarget: store) { [weak undoManager] store in
-                            _ = store.trashBlocks(rootIDs.compactMap { store.block(id: $0) }, undoManager: undoManager)
+                            _ = store.trashBlocks(remaining.compactMap { store.block(id: $0) }, undoManager: undoManager)
                         }
                         undoManager.setActionName("Move to Trash")
                     }
@@ -150,7 +153,9 @@ extension Store {
 
     private func deletionMetadata(for members: [Block], list: TaskList?, parent: Block?) -> TrashMetadata {
         let labelIDs = Set(members.flatMap(\.labelIDs))
-        return TrashMetadata(deletedAt: .now, listTitle: list?.displayTitle ?? "Unavailable list", listIcon: list?.icon,
+        // The icon the list shows: Inbox always shows its own, whatever it stores.
+        return TrashMetadata(deletedAt: .now, listTitle: list?.displayTitle ?? "Unavailable list",
+            listIcon: list.map { $0.isSystemInbox ? "📥" : $0.icon },
             parentTitle: parent?.displayTitle, labels: allLabels().filter { labelIDs.contains($0.id) }.map { TrashLabel(id: $0.id, name: $0.name, accentRaw: $0.accentRaw, sortIndex: $0.sortIndex, createdAt: $0.createdAt) })
     }
 
@@ -210,6 +215,14 @@ extension Store {
             return "Restore to Recovered items — original parent or list is unavailable"
         }
         return "Restore to \(entry.metadata?.formerLocation ?? owner.displayTitle)"
+    }
+
+    /// Whether `id` is still in Trash as an entry of its own. An older Redo
+    /// checks first: the entry may have been erased or restored since.
+    func isInTrash(_ id: UUID) -> Bool {
+        let lists = (try? context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id }))) ?? []
+        let blocks = (try? context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id }))) ?? []
+        return lists.contains { $0.trashID == id } || blocks.contains { $0.trashID == id }
     }
 
     @discardableResult

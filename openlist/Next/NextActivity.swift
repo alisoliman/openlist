@@ -68,16 +68,7 @@ struct NextActivityScreen: View {
     /// session never crowds Earlier out.
     private func loadEvents() {
         let start = env.workbench.startedAt
-        let excluded = Array(env.store.uncommittedActivityIDs)
-        let order = [SortDescriptor(\ActivityEvent.timestamp, order: .reverse), SortDescriptor(\ActivityEvent.id)]
-        var session = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.timestamp >= start && !excluded.contains($0.id) },
-                                                     sortBy: order)
-        session.fetchLimit = 200
-        var earlier = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.timestamp < start && !excluded.contains($0.id) },
-                                                     sortBy: order)
-        earlier.fetchLimit = 40
-        let context = env.store.context
-        events = ((try? context.fetch(session)) ?? []) + ((try? context.fetch(earlier)) ?? [])
+        events = env.store.recentActivity(limit: 200, since: start) + env.store.recentActivity(limit: 40, before: start)
     }
 }
 
@@ -354,12 +345,11 @@ private struct NXChangesSection: View {
                                       list: list, listTitle: list?.displayTitle ?? "", at: entry.at,
                                       canUndo: items.isEmpty && entry.batch == workbench.latestBatch && workbench.canUndo))
         }
-        // History saved within moments of the log's own changes, or of their
-        // Undo and Redo, is already here or was taken back.
-        let writes = workbench.logWrites
+        // History the log's own changes saved, or their Undo and Redo, is
+        // already here or was taken back.
         var saved = events.filter { event in
             event.timestamp >= workbench.startedAt
-                && !writes.contains { event.timestamp >= $0.addingTimeInterval(-2) && event.timestamp <= $0.addingTimeInterval(3) }
+                && !workbench.logWrote(at: event.timestamp, about: [event.blockID, event.listID])
         }.map(item)[...]
         var merged: [NXChangeItem] = []
         for item in items {

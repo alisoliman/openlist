@@ -5,7 +5,6 @@
 //  Lists gallery and Trash.
 //
 
-import AppKit
 import SwiftData
 import SwiftUI
 
@@ -51,8 +50,8 @@ struct NextListsGallery: View {
                         NXCapsTitle(text: shelf.title).padding(.bottom, 10)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 14)], alignment: .leading, spacing: 14) {
                             ForEach(shelf.lists) { list in
-                                NXListCard(list: list,
-                                           tasks: library.tasks(in: list.id),
+                                let tasks = library.tasks(in: list.id)
+                                NXListCard(list: list, tasks: tasks, peek: peek(list, tasks: tasks),
                                            path: library.hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "),
                                            isArchived: shelf.id == Shelf.archivedID)
                             }
@@ -67,15 +66,30 @@ struct NextListsGallery: View {
             .padding(.top, 8)
         }
     }
+
+    /// The first three open top-level tasks, in the list's document order.
+    /// Worked out here, once per library change, so hovering a card never fetches.
+    private func peek(_ list: TaskList, tasks: [Block]) -> [Block] {
+        let top = tasks.filter { !$0.isCompleted && !library.isSubtask($0) }
+        guard top.count > 1 else { return top }
+        let ids = Set(top.map(\.id))
+        var ordered = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
+            .map(\.block).filter { ids.contains($0.id) }
+        // Tasks the outline could not reach still belong on the card.
+        let seen = Set(ordered.map(\.id))
+        ordered += top.filter { !seen.contains($0.id) }
+        return Array(ordered.prefix(3))
+    }
 }
 
 private struct NXListCard: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
-    @Environment(\.nextLibrary) private var library
     let list: TaskList
     /// Every task in the list, subtasks included, as the list header counts them.
     let tasks: [Block]
+    /// The open tasks the card previews.
+    let peek: [Block]
     /// The lists it sits inside, or empty at the top level.
     let path: String
     /// Archived directly or through a parent.
@@ -99,14 +113,16 @@ private struct NXListCard: View {
                 }
                 .zIndex(1)
             VStack(alignment: .leading, spacing: 9) {
+                // Long names and paths wrap, as in the design; every card in
+                // the row grows to match.
                 Text(list.displayTitle)
                     .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text(path.isEmpty ? stats : "In \(path) · \(stats)")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(NX.ink(0.5))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Capsule().fill(NX.ink(0.07))
                     .frame(height: 4)
                     .overlay(alignment: .leading) {
@@ -117,7 +133,7 @@ private struct NXListCard: View {
                     .clipShape(Capsule())
                     .animation(.easeOut(duration: 0.5), value: fraction)
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(peek(open)) { task in
+                    ForEach(peek) { task in
                         HStack(spacing: 7) {
                             Circle().strokeBorder(NX.ink(0.28), lineWidth: 1.3).frame(width: 9, height: 9)
                             Text(task.displayTitle)
@@ -127,13 +143,13 @@ private struct NXListCard: View {
                         }
                     }
                 }
-                // Three peek rows keep every card in a row the same height.
+                // Room for three peek rows, whatever the card previews.
                 .frame(minHeight: 3 * 16 + 8, alignment: .top)
                 .padding(.top, 2)
             }
             .padding(EdgeInsets(top: 20, leading: 16, bottom: 14, trailing: 16))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(hovering ? 0.14 : 0.12), lineWidth: 0.5))
@@ -147,19 +163,6 @@ private struct NXListCard: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { env.workbench.go(env.workbench.route(for: list)) }
         .contextMenu { menu }
-    }
-
-    /// The first three open top-level tasks, in the list's document order.
-    private func peek(_ open: [Block]) -> [Block] {
-        let top = open.filter { !library.isSubtask($0) }
-        guard top.count > 1 else { return top }
-        let ids = Set(top.map(\.id))
-        var ordered = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
-            .map(\.block).filter { ids.contains($0.id) }
-        // Tasks the outline could not reach still belong on the card.
-        let seen = Set(ordered.map(\.id))
-        ordered += top.filter { !seen.contains($0.id) }
-        return Array(ordered.prefix(3))
     }
 
     @ViewBuilder
@@ -320,8 +323,7 @@ private struct NXTrashRow: View {
         // The icon the list had when this was deleted; older items use the list's current one.
         let icon = metadata.listIcon.map { $0.isEmpty ? "📋" : $0 } ?? list?.glyph ?? ""
         if icon.isEmpty { return Text(verbatim: "From \(metadata.formerLocation) · \(deleted)") }
-        if icon.allSatisfy(\.isASCII), icon.contains(".") || icon.count > 2,
-           NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
+        if NXListGlyph.isSymbolName(icon) {
             return Text("From \(Image(systemName: icon)) \(metadata.formerLocation) · \(deleted)")
         }
         return Text(verbatim: "From \(icon) \(metadata.formerLocation) · \(deleted)")

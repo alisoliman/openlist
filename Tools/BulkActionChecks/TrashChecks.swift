@@ -122,11 +122,14 @@ func runBulkTrashChecks(at directory: URL) throws {
         let succeeded = try store.trashSelection([undoRoot.id, undoOther.id], undoManager: undo)
         check(succeeded, "A multi-list Delete is available for stale recovery Undo")
     }
-    check(store.permanentlyEraseTrash(ids: [undoRoot.id]), "One bulk-deleted root is erased before Delete Undo")
-    let beforeTrashUndo = try records()
+    let undoRootID = undoRoot.id
+    check(store.permanentlyEraseTrash(ids: [undoRootID]), "One bulk-deleted root is erased before Delete Undo")
     undo.undo()
-    try checkThrowing(try records() == beforeTrashUndo && undoOther.isTrashed && !undo.canRedo && store.trashError != nil,
-          "Old bulk Delete Undo cannot partially recover the remaining root after another was erased")
+    check(!undoOther.isTrashed && store.block(id: undoRootID) == nil && undo.canRedo && store.trashError == nil,
+          "Old bulk Delete Undo restores the remaining root after another was erased, reporting no failure")
+    undo.redo()
+    check(undoOther.isTrashed && store.block(id: undoRootID) == nil && store.trashError == nil,
+          "Its Redo moves only the remaining root back to Trash")
     undo.removeAllActions()
 
     // Move Undo may refer to an unchanged parent or to a list that was deleted
