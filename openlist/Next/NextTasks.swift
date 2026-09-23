@@ -3,6 +3,8 @@
 //  openlist
 //
 
+import AppKit
+import SwiftData
 import SwiftUI
 
 // MARK: - Query language
@@ -204,13 +206,16 @@ struct NextTasksScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    /// Every document block, for the order the lists show their tasks in.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
     /// Completed opens this screen on Done; leaving it hands Tasks back its Open default.
     @State private var showsCompleted = false
 
     var body: some View {
         let workbench = env.workbench
         let queryMode = env.settings.tasksFilterStyle == .query
-        let pool = Self.pool(library: library, workbench: workbench, queryMode: queryMode)
+        let tasks = Self.outlineOrder(library: library, blocks: blocks)
+        let pool = Self.pool(tasks: tasks, library: library, workbench: workbench, queryMode: queryMode)
         let groups = Self.groups(pool: pool, library: library, workbench: workbench, accent: style.accent)
         let listCount = library.lists.count
         NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
@@ -232,9 +237,26 @@ struct NextTasksScreen: View {
         }
     }
 
+    /// Every task in the order the lists show it: lists in sidebar order, each in its document's
+    /// order. Like the design, Tasks keeps that order in every grouping rather than sorting.
     @MainActor
-    static func pool(library: NextLibrary, workbench: Workbench, queryMode: Bool) -> [Block] {
-        var pool = library.tasks.filter { task in
+    static func outlineOrder(library: NextLibrary, blocks: [Block]) -> [Block] {
+        let blocksByList = Dictionary(grouping: blocks) { $0.listID }
+        return library.lists.flatMap { list -> [Block] in
+            let tasks = library.tasks(in: list.id)
+            guard !tasks.isEmpty else { return [] }
+            let taskIDs = Set(tasks.lazy.map(\.id))
+            let ordered = BlockTree.flatten(blocksByList[list.id] ?? [], respectCollapse: false)
+                .compactMap { taskIDs.contains($0.id) ? $0.block : nil }
+            // Tasks the outline could not reach still belong on the screen.
+            let seen = Set(ordered.lazy.map(\.id))
+            return ordered + tasks.filter { !seen.contains($0.id) }
+        }
+    }
+
+    @MainActor
+    static func pool(tasks: [Block], library: NextLibrary, workbench: Workbench, queryMode: Bool) -> [Block] {
+        var pool = tasks.filter { task in
             switch workbench.tasksStatus {
             case .open: !task.isCompleted || workbench.closing[task.id] != nil
             case .done: task.isCompleted
@@ -250,7 +272,7 @@ struct NextTasksScreen: View {
             let text = workbench.tasksTitleFilter.trimmingCharacters(in: .whitespaces).lowercased()
             if !text.isEmpty { pool = pool.filter { $0.displayTitle.lowercased().contains(text) } }
         }
-        return pool.sorted(by: NXSort.byDue)
+        return pool
     }
 
     @MainActor
@@ -304,34 +326,50 @@ private struct NXTasksQueryBar: View {
     /// Natural width of the coloured query text, and the room the field gives it.
     @State private var queryWidth: CGFloat = 0
     @State private var fieldWidth: CGFloat = .infinity
+    /// The bar's width and where the field and group label end in it, so the popover fits the page.
+    @State private var barWidth: CGFloat = 460
+    @State private var clusterEnd: CGFloat = 460
+    @State private var clicks = NXBarClicks()
+
+    private nonisolated static let space = "tasks-query-bar"
 
     var body: some View {
         let workbench = env.workbench
         let focused = workbench.tasksQueryFocused
         let query = workbench.tasksQuery
         let hasQuery = !query.trimmingCharacters(in: .whitespaces).isEmpty
-        HStack(alignment: .bottom, spacing: 20) {
+        // The field and group label drop below the tabs when the page is too narrow for both.
+        NXWrapBar(gap: 20, alignment: .bottom) {
             tabs
-            Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: 22) {
                 field(query: query, focused: focused, hasQuery: hasQuery)
                 Button { workbench.tasksGrouping = workbench.tasksGrouping.next } label: {
                     Text(workbench.tasksGrouping.title)
                         .font(.system(size: 13.5, weight: .medium))
+                        .fixedSize()
                         .padding(.bottom, 13)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(NXTextHoverStyle(color: NX.ink(0.42), hover: NX.ink))
                 .help("Group by list, date or nothing")
             }
+            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.space)).maxX }) { clusterEnd = $0 }
             .overlay(alignment: .topTrailing) {
                 if focused {
-                    pillPopover(query: query)
-                        .offset(y: 38)
-                        .transition(.scale(scale: 0.96, anchor: .topTrailing).combined(with: .opacity))
+                    let width = min(460, barWidth)
+                    // Right-aligned with the field, unless that would push it past the page's leading edge.
+                    let shift = max(0, width - clusterEnd)
+                    pillPopover(query: query, width: width)
+                        // Guides rather than an offset, so its click region moves with it.
+                        .alignmentGuide(.top) { $0[.top] - 38 }
+                        .alignmentGuide(.trailing) { $0[.trailing] - shift }
+                        .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity)
+                            .combined(with: .offset(y: -4)))
                 }
             }
         }
+        .coordinateSpace(.named(Self.space))
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { barWidth = $0 }
         .padding(.top, 22)
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
         .animation(style.ease(170), value: focused)
@@ -347,8 +385,22 @@ private struct NXTasksQueryBar: View {
         .onChange(of: workbench.tasksQueryFocused) { _, value in
             if fieldFocused != value { fieldFocused = value }
         }
+        .onAppear {
+            clicks.install { clicks, event in
+                // Clicking a row, tab or the group label blurs the field, as in a browser, so the
+                // popover goes and E, T or J act on the rows instead of typing into the query.
+                guard let window = event.window, clicks.isEditing(in: "field", window: window),
+                      !clicks.contains(event, in: "field", "pills") else { return false }
+                window.makeFirstResponder(nil)
+                workbench.tasksQueryFocused = false
+                return false
+            }
+        }
         // Switching to the sentence bar must not leave the keyboard thinking the field is active.
-        .onDisappear { workbench.tasksQueryFocused = false }
+        .onDisappear {
+            clicks.uninstall()
+            workbench.tasksQueryFocused = false
+        }
     }
 
     private var tabs: some View {
@@ -370,19 +422,21 @@ private struct NXTasksQueryBar: View {
                             .monospacedDigit()
                             .foregroundStyle(NX.ink(on ? 0.45 : 0.28))
                     }
+                    .animation(.easeOut(duration: 0.16), value: on)
                     .padding(.bottom, 13)
                     .overlay(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 2).fill(NX.ink)
                             .frame(height: 2)
                             .scaleEffect(x: on ? 1 : 0, anchor: .center)
                             .offset(y: 0.5)
+                            .animation(style.ease(280), value: on)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .animation(style.ease(280), value: on)
             }
         }
+        .fixedSize()
     }
 
     private func field(query: String, focused: Bool, hasQuery: Bool) -> some View {
@@ -392,6 +446,7 @@ private struct NXTasksQueryBar: View {
         // field the real text shows instead and scrolls with the caret.
         let overflowing = queryWidth + 4 > fieldWidth
         let showsGhost = focused && !parsed.ghost.isEmpty
+        let width: CGFloat = focused ? 300 : hasQuery ? 240 : 44
         return HStack(spacing: 8) {
             HStack(spacing: 0) {
                 ZStack(alignment: .leading) {
@@ -449,7 +504,9 @@ private struct NXTasksQueryBar: View {
                     workbench.tasksQuery = ""
                     fieldFocused = true
                 } label: {
+                    // The design's 14 pt icon box.
                     Image(systemName: "xmark").font(.system(size: 10.5, weight: .semibold))
+                        .frame(width: 14, height: 14)
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 5,
                                                 padding: EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2),
@@ -459,7 +516,8 @@ private struct NXTasksQueryBar: View {
         }
         // 20 pt field + 11 pt puts the text on the same line as the tabs' 13 pt padding.
         .padding(.bottom, 11)
-        .frame(width: focused ? 300 : hasQuery ? 240 : 44, alignment: .leading)
+        // Narrower than its width only when the bar has wrapped and the page is narrower still.
+        .frame(minWidth: 0, idealWidth: width, maxWidth: width, alignment: .leading)
         .clipped()
         .overlay(alignment: .bottom) {
             RoundedRectangle(cornerRadius: 2)
@@ -470,6 +528,7 @@ private struct NXTasksQueryBar: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { fieldFocused = true }
+        .nxClickRegion("field", in: clicks)
         .animation(style.ease(280), value: focused)
         .animation(style.ease(280), value: hasQuery)
     }
@@ -481,14 +540,16 @@ private struct NXTasksQueryBar: View {
             let fill = kind == .flag ? NX.amber : color
             Text(segment.text)
                 .foregroundStyle(color)
-                .background(fill.opacity(0.11), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .background(fill.opacity(0.11))
                 .overlay(alignment: .bottom) { Rectangle().fill(color.opacity(0.33)).frame(height: 1.5) }
+                // The underline is an inset shadow in the design, so it follows the rounded corners.
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         } else {
             Text(segment.text).foregroundStyle(NX.ink)
         }
     }
 
-    private func pillPopover(query: String) -> some View {
+    private func pillPopover(query: String, width: CGFloat) -> some View {
         let words = NXTaskQuery.words(in: query)
         let vocabulary = NXTaskQuery(library: library)
         let rows: [(String, [(word: String, label: String, color: Color, list: TaskList?)])] = [
@@ -535,9 +596,13 @@ private struct NXTasksQueryBar: View {
         .padding(.top, 10)
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
-        .frame(width: 460)
+        .frame(width: width)
         .background(NX.card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        // Like the design's mouse-down guard, clicks on the pills keep the field focused.
+        .nxClickRegion("pills", in: clicks)
         .nxCardShadow(radius: 13, hairline: 0.14, drop: 0.16, y: 18, blur: 44)
+        // Its own height, not the field's it is overlaid on, so wrapped pills and copy never clip.
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -594,6 +659,8 @@ struct NXTextHoverStyle: ButtonStyle {
 /// Left-to-right wrapping layout for pills.
 struct NXFlow: Layout {
     var spacing: CGFloat = 6
+    /// Where shorter views sit in a row of taller ones.
+    var alignment: VerticalAlignment = .top
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
@@ -608,7 +675,9 @@ struct NXFlow: Layout {
             var x = bounds.minX
             for index in row.indices {
                 let size = subviews[index].sizeThatFits(.unspecified)
-                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                let inset = alignment == .center ? (row.height - size.height) / 2
+                    : alignment == .bottom ? row.height - size.height : 0
+                subviews[index].place(at: CGPoint(x: x, y: y + inset), proposal: ProposedViewSize(size))
                 x += size.width + spacing
             }
             y += row.height + spacing
@@ -636,6 +705,142 @@ struct NXFlow: Layout {
     }
 }
 
+/// The design's wrapping filter bars: the first view on the leading edge and the second on
+/// the trailing edge of one line or, when they don't both fit, the second on a line of its
+/// own below, leading-aligned and no wider than the bar, with the first wrapping to the bar.
+private struct NXWrapBar: Layout {
+    /// The design's flex `gap`. Its spacer between the two views takes a gap on each side, so
+    /// on one line they keep two gaps apart; a wrapped line sits one gap below.
+    var gap: CGFloat
+    /// Where the views sit against each other when they share a line.
+    var alignment: VerticalAlignment
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let sizes = sizes(width: proposal.width, subviews: subviews) else { return .zero }
+        if sizes.wraps {
+            return CGSize(width: proposal.width ?? max(sizes.lead.width, sizes.trail.width),
+                          height: sizes.lead.height + gap + sizes.trail.height)
+        }
+        return CGSize(width: proposal.width ?? sizes.lead.width + 2 * gap + sizes.trail.width,
+                      height: max(sizes.lead.height, sizes.trail.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let sizes = sizes(width: bounds.width, subviews: subviews) else { return }
+        let (lead, trail) = (sizes.lead, sizes.trail)
+        if sizes.wraps {
+            subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(lead))
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + lead.height + gap),
+                              proposal: ProposedViewSize(trail))
+        } else {
+            let line = max(lead.height, trail.height)
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY + inset(lead.height, in: line)),
+                              proposal: ProposedViewSize(lead))
+            subviews[1].place(at: CGPoint(x: bounds.maxX - trail.width, y: bounds.minY + inset(trail.height, in: line)),
+                              proposal: ProposedViewSize(trail))
+        }
+    }
+
+    private func sizes(width: CGFloat?, subviews: Subviews) -> (lead: CGSize, trail: CGSize, wraps: Bool)? {
+        guard subviews.count == 2 else { return nil }
+        let lead = subviews[0].sizeThatFits(.unspecified)
+        let trail = subviews[1].sizeThatFits(.unspecified)
+        guard let width, lead.width + 2 * gap + trail.width > width else { return (lead, trail, false) }
+        return (subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)),
+                subviews[1].sizeThatFits(ProposedViewSize(width: min(trail.width, width), height: nil)), true)
+    }
+
+    private func inset(_ height: CGFloat, in line: CGFloat) -> CGFloat {
+        alignment == .center ? (line - height) / 2 : alignment == .bottom ? line - height : 0
+    }
+}
+
+/// A local mouse-down monitor for the Tasks bars. AppKit leaves a text field first responder
+/// when a SwiftUI row, tab or label is clicked, and the sentence menus are overlays rather than
+/// popovers, so the bars blur their fields and close their menus themselves. Views mark the
+/// areas a click is judged against with `nxClickRegion(_:in:)`.
+@MainActor
+private final class NXBarClicks {
+    private var monitor: Any?
+    private var handler: ((NXBarClicks, NSEvent) -> Bool)?
+    private var regions: [String: NSHashTable<NSView>] = [:]
+
+    /// The handler returns true to swallow the event.
+    func install(matching mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown],
+                 _ handler: @escaping (NXBarClicks, NSEvent) -> Bool) {
+        self.handler = handler
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            let handled = MainActor.assumeIsolated {
+                guard let self, let handler = self.handler else { return false }
+                return handler(self, event)
+            }
+            return handled ? nil : event
+        }
+    }
+
+    func uninstall() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        handler = nil
+    }
+
+    fileprivate func mark(_ view: NSView, as name: String) {
+        regions[name, default: .weakObjects()].add(view)
+    }
+
+    /// Whether a region with this name is on screen in `window`.
+    func shows(_ name: String, in window: NSWindow?) -> Bool {
+        !views(name, in: window).isEmpty
+    }
+
+    /// Whether the event landed in a region with one of these names.
+    func contains(_ event: NSEvent, in names: String...) -> Bool {
+        names.contains { name in
+            views(name, in: event.window).contains { $0.bounds.contains($0.convert(event.locationInWindow, from: nil)) }
+        }
+    }
+
+    /// Whether the window's field editor is editing a text field inside the named region.
+    func isEditing(in name: String, window: NSWindow) -> Bool {
+        guard let editor = window.firstResponder as? NSText else { return false }
+        let field = editor.delegate as? NSView ?? editor
+        let frame = field.convert(field.visibleRect, to: nil)
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        return views(name, in: window).contains { $0.convert($0.bounds, to: nil).contains(center) }
+    }
+
+    private func views(_ name: String, in window: NSWindow?) -> [NSView] {
+        guard let window else { return [] }
+        return regions[name]?.allObjects.filter { $0.window === window } ?? []
+    }
+}
+
+/// Marks the area of the view it backs for `NXBarClicks`.
+private struct NXClickRegion: NSViewRepresentable {
+    let name: String
+    let clicks: NXBarClicks
+
+    func makeNSView(context: Context) -> NSView {
+        let view = RegionView()
+        clicks.mark(view, as: name)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    /// Takes no clicks from the views drawn over it.
+    private final class RegionView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+private extension View {
+    func nxClickRegion(_ name: String, in clicks: NXBarClicks) -> some View {
+        background(NXClickRegion(name: name, clicks: clicks))
+    }
+}
+
 // MARK: - Sentence bar
 
 private struct NXTasksSentenceBar: View {
@@ -645,13 +850,15 @@ private struct NXTasksSentenceBar: View {
     let count: Int
     @State private var menu: Menu?
     @FocusState private var titleFocused: Bool
+    @State private var clicks = NXBarClicks()
 
     enum Menu { case status, lists, group }
 
     var body: some View {
         let workbench = env.workbench
-        HStack(alignment: .center, spacing: 12) {
-            HStack(spacing: 3) {
+        // The sentence wraps, and the title field drops below it when the page is too narrow for both.
+        NXWrapBar(gap: 12, alignment: .center) {
+            NXFlow(spacing: 3, alignment: .center) {
                 Text("Showing")
                 token(.status, workbench.tasksStatus.word)
                 Text("tasks in")
@@ -677,8 +884,8 @@ private struct NXTasksSentenceBar: View {
             .font(.system(size: 13))
             .foregroundStyle(NX.ink(0.45))
             .padding(.bottom, 10)
-
-            Spacer(minLength: 0)
+            // An open menu stays over the title field once that wraps below the sentence.
+            .zIndex(1)
 
             HStack(spacing: 6) {
                 Image(systemName: "line.3.horizontal.decrease")
@@ -701,9 +908,11 @@ private struct NXTasksSentenceBar: View {
                         .foregroundStyle(NX.ink(0.38))
                 }
             }
+            // 200 pt wide inside the padding, as the design's box measures it, and no wider than the bar.
+            .frame(minWidth: 0, idealWidth: 200, maxWidth: 200, minHeight: 28, maxHeight: 28)
             .padding(.leading, 2)
             .padding(.trailing, 4)
-            .frame(width: 200, height: 28)
+            .nxClickRegion("title", in: clicks)
             .padding(.bottom, 10)
         }
         .padding(.top, 18)
@@ -712,6 +921,28 @@ private struct NXTasksSentenceBar: View {
         .animation(style.ease(160), value: isDirty)
         .animation(style.ease(160), value: menu)
         .onChange(of: env.navigator.route) { _, _ in menu = nil }
+        .onAppear {
+            clicks.install(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { clicks, event in
+                if event.type == .keyDown {
+                    // Esc closes a menu, as the popovers these menus replace did.
+                    guard event.keyCode == 53, clicks.shows("menu", in: event.window) else { return false }
+                    menu = nil
+                    return true
+                }
+                // A click outside the open menu closes it; the tokens open and close their own.
+                if clicks.shows("menu", in: event.window), !clicks.contains(event, in: "menu", "tokens") {
+                    menu = nil
+                }
+                // Clicking anywhere else blurs the title field, as in a browser, so J, K and E
+                // reach the rows instead of the filter.
+                if let window = event.window, clicks.isEditing(in: "title", window: window),
+                   !clicks.contains(event, in: "title") {
+                    window.makeFirstResponder(nil)
+                }
+                return false
+            }
+        }
+        .onDisappear { clicks.uninstall() }
     }
 
     private var isDirty: Bool {
@@ -731,11 +962,18 @@ private struct NXTasksSentenceBar: View {
         NXSentenceToken(label: label, isOpen: menu == key) {
             menu = menu == key ? nil : key
         }
-        // A popover closes itself on Esc and on clicks elsewhere, and its keys never reach NextKeys.
-        .popover(isPresented: Binding(get: { menu == key }, set: { if !$0, menu == key { menu = nil } }),
-                 arrowEdge: .bottom) {
-            menuView(key)
+        .nxClickRegion("tokens", in: clicks)
+        // The design's dropdown: a card flush with the token's leading edge, 6 pt below it.
+        .overlay(alignment: .bottomLeading) {
+            if menu == key {
+                menuView(key)
+                    .alignmentGuide(.bottom) { $0[.top] - 6 }
+                    .transition(.scale(scale: 0.97, anchor: .topLeading).combined(with: .opacity)
+                        .combined(with: .offset(y: -4)))
+            }
         }
+        // Over the words and tokens after it.
+        .zIndex(menu == key ? 1 : 0)
     }
 
     private func menuView(_ key: Menu) -> some View {
@@ -776,6 +1014,10 @@ private struct NXTasksSentenceBar: View {
         }
         .padding(5)
         .frame(width: 250)
+        .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .nxClickRegion("menu", in: clicks)
+        .nxCardShadow(radius: 11, hairline: 0.14, drop: 0.18, y: 16, blur: 40)
+        .fixedSize()
     }
 
     private func menuRow(label: String, list: TaskList? = nil, count: Int? = nil, isOn: Bool,
@@ -803,8 +1045,9 @@ private struct NXSentenceToken: View {
     var body: some View {
         HStack(spacing: 1) {
             Text(label).font(.system(size: 13, weight: .semibold)).foregroundStyle(NX.ink).lineLimit(1)
+            // The design's 14 pt icon box, which spaces the chevron from the label and the edge.
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(NX.ink(0.5))
-                .padding(.leading, 2)
+                .frame(width: 14, height: 14)
         }
         .padding(.vertical, 5)
         .padding(.leading, 7)
@@ -814,6 +1057,7 @@ private struct NXSentenceToken: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
+        .animation(.easeOut(duration: 0.14), value: hovering)
     }
 }
 

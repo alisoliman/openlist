@@ -147,10 +147,10 @@ final class NextKeyHandler {
         if workbench.tasksQueryFocused && isEditingText && (navigator.route == .tasks || navigator.route == .completed) {
             guard !isComposing, flags.isEmpty || flags == .shift else { return false }
             switch key {
-            case Key.tab where flags.isEmpty:
+            // Tab never leaves the field; without Shift it takes the completion, if there is one.
+            case Key.tab:
                 let ghost = NXTaskQuery(library: library).parse(workbench.tasksQuery).ghost
-                guard !ghost.isEmpty else { return false }
-                workbench.tasksQuery += ghost + " "
+                if flags.isEmpty, !ghost.isEmpty { workbench.tasksQuery += ghost + " " }
                 return true
             case Key.escape:
                 if workbench.tasksQuery.isEmpty { blurQuery(window) } else { workbench.tasksQuery = "" }
