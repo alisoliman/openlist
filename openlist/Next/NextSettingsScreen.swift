@@ -5,6 +5,7 @@
 //  In-window preferences. The Settings window keeps the full set.
 //
 
+import AppKit
 import SwiftUI
 
 struct NextSettingsScreen: View {
@@ -19,15 +20,15 @@ struct NextSettingsScreen: View {
                 NXSettingsGroup(title: "Tasks") {
                     NXSettingToggle(label: "Show completed tasks", hint: "Lists and Today expand their Completed section by default",
                                     isOn: $settings.showsCompletedTasks)
-                    NXSettingMenu(label: "Week starts on", hint: "Used by Calendar and Activity", value: weekStartTitle) {
-                        Picker("Week starts on", selection: $settings.firstWeekday) {
-                            Text("System default").tag(0)
-                            Text("Sunday").tag(1)
-                            Text("Monday").tag(2)
-                            Text("Saturday").tag(7)
-                        }
-                        .pickerStyle(.inline)
-                    }
+                    NXSettingMenu(label: "Week starts on", hint: "Used by Calendar and Activity", value: weekStartTitle,
+                                  entries: choices([0, 1, 2, 7], selection: $settings.firstWeekday) { weekday in
+                                      switch weekday {
+                                      case 1: "Sunday"
+                                      case 2: "Monday"
+                                      case 7: "Saturday"
+                                      default: "System default"
+                                      }
+                                  })
                     NXSettingToggle(label: "Quick Add from anywhere", hint: "⇧⌥Space opens capture over any app",
                                     isOn: $settings.quickCaptureHotKeyEnabled)
                         .onChange(of: settings.quickCaptureHotKeyEnabled) { _, enabled in
@@ -42,48 +43,24 @@ struct NextSettingsScreen: View {
                     NXSettingToggle(label: "Reduce motion", hint: "Keeps state changes, drops the bounce, ring and slides",
                                     isOn: $settings.reducesMotion)
                     NXSettingMenu(label: "Undo window", hint: "How long a finished task stays in place",
-                                  value: "\(settings.undoDwellSeconds) s") {
-                        Picker("Undo window", selection: $settings.undoDwellSeconds) {
-                            ForEach([2, 3, 5, 8], id: \.self) { Text("\($0) seconds").tag($0) }
-                        }
-                        .pickerStyle(.inline)
-                    }
+                                  value: "\(settings.undoDwellSeconds) s",
+                                  entries: choices([2, 3, 5, 8], selection: $settings.undoDwellSeconds) { "\($0) seconds" })
                     NXSettingMenu(label: "Motion", hint: "How lively completions, triage and transitions feel",
-                                  value: settings.motion.title) {
-                        Picker("Motion", selection: $settings.motion) {
-                            ForEach(NextMotion.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.inline)
-                    }
+                                  value: settings.motion.title,
+                                  entries: choices(NextMotion.allCases, selection: $settings.motion, title: \.title))
                 }
                 NXSettingsGroup(title: "Appearance") {
-                    NXSettingMenu(label: "Appearance", hint: "Light, dark or follow the system", value: settings.appearance.title) {
-                        Picker("Appearance", selection: $settings.appearance) {
-                            ForEach(AppSettings.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.inline)
-                    }
+                    NXSettingMenu(label: "Appearance", hint: "Light, dark or follow the system", value: settings.appearance.title,
+                                  entries: choices(AppSettings.Appearance.allCases, selection: $settings.appearance, title: \.title))
                     NXSettingMenu(label: "Accent", hint: "Selection, focus and today’s highlights", value: settings.accent.title,
-                                  swatch: settings.accent.color) {
-                        Picker("Accent", selection: $settings.accent) {
-                            ForEach(NextAccent.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.inline)
-                    }
-                    NXSettingMenu(label: "Density", hint: "Row spacing in lists", value: settings.density.title) {
-                        Picker("Density", selection: $settings.density) {
-                            ForEach(NextDensity.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.inline)
-                    }
+                                  swatch: settings.accent.color,
+                                  entries: choices(NextAccent.allCases, selection: $settings.accent, title: \.title))
+                    NXSettingMenu(label: "Density", hint: "Row spacing in lists", value: settings.density.title,
+                                  entries: choices(NextDensity.allCases, selection: $settings.density, title: \.title))
                     NXSettingToggle(label: "Serif titles", hint: "Screen titles in Instrument Serif", isOn: $settings.serifTitles)
                     NXSettingMenu(label: "Tasks filter", hint: "Type a query, or build a sentence from pills",
-                                  value: settings.tasksFilterStyle.title) {
-                        Picker("Tasks filter", selection: $settings.tasksFilterStyle) {
-                            ForEach(TasksFilterStyle.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.inline)
-                    }
+                                  value: settings.tasksFilterStyle.title,
+                                  entries: choices(TasksFilterStyle.allCases, selection: $settings.tasksFilterStyle, title: \.title))
                 }
                 NXSettingsGroup(title: "Calendar") {
                     let preferences = env.calendar.preferences
@@ -92,34 +69,30 @@ struct NextSettingsScreen: View {
                     NXSettingValue(label: "Personal hours", hint: "Planning uses these for Personal lists",
                                    value: NXHours.summary(preferences.personal, calendar: settings.calendar)) { openSettings() }
                     NXSettingMenu(label: "Default estimate", hint: "For tasks without their own",
-                                  value: NXFormat.minutes(env.workbench.defaultEstimate)) {
-                        ForEach([15, 30, 45, 60, 90], id: \.self) { minutes in
-                            Button {
-                                var updated = env.calendar.preferences
-                                updated.defaultEstimateMinutes = Double(minutes)
-                                env.calendar.updatePreferences(updated)
-                            } label: {
-                                if minutes == env.workbench.defaultEstimate {
-                                    Label(NXFormat.minutes(minutes), systemImage: "checkmark")
-                                } else {
-                                    Text(NXFormat.minutes(minutes))
-                                }
-                            }
-                        }
-                    }
+                                  value: Self.estimate(env.workbench.defaultEstimate),
+                                  entries: choices([15, 30, 45, 60, 90], selection: defaultEstimate, title: Self.estimate))
                 }
                 NXSettingsGroup(title: "Library") {
                     let sync = env.sync.state
                     NXSettingValue(label: "iCloud sync", hint: syncHint(sync), value: syncValue(sync)) { openSettings() }
                     if let maintenance = env.libraryMaintenance {
-                        let failure = maintenance.error ?? maintenance.pendingQuitError
-                        NXSettingValue(label: "Back up library",
-                                       hint: failure ?? maintenance.status ?? "A complete package of your library, history and files",
-                                       isError: failure != nil,
-                                       value: maintenance.isBusy ? "Working…" : "Back up now…",
-                                       isEnabled: !maintenance.isBusy && !maintenance.hasPendingRestore) {
-                            Task { await maintenance.exportBackup() }
-                        }
+                        let failure = maintenance.error ?? maintenance.pendingQuitError ?? maintenance.snapshotError
+                        let daily = settings.takesDailySnapshots
+                        NXSettingMenu(label: "Back up library",
+                                      hint: failure ?? maintenance.status
+                                          ?? (daily ? "Keeps \(LibrarySnapshots.retained) daily snapshots" : "Daily snapshots are off"),
+                                      isError: failure != nil,
+                                      value: maintenance.isBusy ? "Working…" : daily ? "Daily" : "Off",
+                                      entries: choices([true, false], selection: $settings.takesDailySnapshots) { $0 ? "Daily" : "Off" } + [
+                                          .divider,
+                                          .command("Back up now…", isEnabled: !maintenance.isBusy && !maintenance.hasPendingRestore) {
+                                              Task { await maintenance.exportBackup() }
+                                          },
+                                          .command("Show Snapshots in Finder") { maintenance.showSnapshots() },
+                                      ])
+                            .onChange(of: settings.takesDailySnapshots) { _, daily in
+                                if daily { Task { await maintenance.snapshotIfDue() } }
+                            }
                     }
                     NXSettingValue(label: "All settings", hint: "Menu bar, notifications, integrations and more", value: "Open…") {
                         openSettings()
@@ -129,6 +102,22 @@ struct NextSettingsScreen: View {
             .frame(maxWidth: 620, alignment: .leading)
             .padding(.top, 20)
         }
+    }
+
+    /// Planning's estimate for tasks without their own.
+    private var defaultEstimate: Binding<Int> {
+        Binding(get: { env.workbench.defaultEstimate }, set: { minutes in
+            var updated = env.calendar.preferences
+            updated.defaultEstimateMinutes = Double(minutes)
+            env.calendar.updatePreferences(updated)
+        })
+    }
+
+    /// "30 min", "1 h", "1 h 30 min": the design's roomy form for an estimate.
+    private static func estimate(_ minutes: Int) -> String {
+        let hours = minutes / 60, rest = minutes % 60
+        guard hours > 0 else { return "\(minutes) min" }
+        return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
     }
 
     private var weekStartTitle: String {
@@ -270,41 +259,120 @@ private struct NXValuePill: View {
 private struct NXSettingValue: View {
     let label: String
     let hint: String
-    /// Shows the hint as a failure, like a backup that could not be written.
-    var isError = false
     let value: String
-    /// Off while the action cannot run; the row stays visible and dimmed.
-    var isEnabled = true
     let action: () -> Void
 
     var body: some View {
-        NXSettingRow(label: label, hint: hint, hintColor: isError ? NX.redText : NX.ink(0.48)) {
-            NXValuePill(text: value).opacity(isEnabled ? 1 : 0.5)
+        NXSettingRow(label: label, hint: hint) {
+            NXValuePill(text: value)
         }
-        .onTapGesture { if isEnabled { action() } }
-        .disabled(!isEnabled)
+        .onTapGesture(perform: action)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction { if isEnabled { action() } }
+        .accessibilityAction { action() }
     }
 }
 
-private struct NXSettingMenu<Options: View>: View {
+/// One line in a setting's pop-up menu.
+private enum NXMenuEntry {
+    /// A value to pick; the current one is checked and opens over the pill.
+    case choice(String, isSelected: Bool, action: () -> Void)
+    case command(String, isEnabled: Bool = true, action: () -> Void)
+    case divider
+}
+
+/// A choice for each value, checked for the one `selection` holds.
+private func choices<Value: Hashable>(_ values: [Value], selection: Binding<Value>,
+                                      title: (Value) -> String) -> [NXMenuEntry] {
+    values.map { value in
+        .choice(title(value), isSelected: selection.wrappedValue == value) { selection.wrappedValue = value }
+    }
+}
+
+/// A row whose value pill pops up a menu, the way a pop-up button does:
+/// the current choice opens over the pill. A click anywhere on the row opens it.
+private struct NXSettingMenu: View {
     let label: String
     let hint: String
+    /// Shows the hint as a failure, like a backup that could not be written.
+    var isError = false
     let value: String
     var swatch: Color?
-    @ViewBuilder var options: Options
+    let entries: [NXMenuEntry]
+    @State private var anchor = NXMenuAnchor()
 
     var body: some View {
-        Menu {
-            options
-        } label: {
-            NXSettingRow(label: label, hint: hint) { NXValuePill(text: value, swatch: swatch) }
+        NXSettingRow(label: label, hint: hint, hintColor: isError ? NX.redText : NX.ink(0.48)) {
+            NXValuePill(text: value, swatch: swatch)
+                .background { NXMenuAnchorView(anchor: anchor) }
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .accessibilityLabel("\(label): \(value)")
+        .onTapGesture { anchor.popUp(entries) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { anchor.popUp(entries) }
+    }
+}
+
+/// Pops an AppKit menu from the pill it's attached to.
+@MainActor
+private final class NXMenuAnchor: NSObject {
+    weak var view: NSView?
+    /// The open menu's actions, by item tag.
+    private var actions: [() -> Void] = []
+
+    func popUp(_ entries: [NXMenuEntry]) {
+        guard let view else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.appearance = view.effectiveAppearance
+        actions = []
+        var current: NSMenuItem?
+        func add(_ title: String, _ action: @escaping () -> Void) -> NSMenuItem {
+            let item = menu.addItem(withTitle: title, action: #selector(run(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = actions.count
+            actions.append(action)
+            return item
+        }
+        for entry in entries {
+            switch entry {
+            case let .choice(title, isSelected, action):
+                let item = add(title, action)
+                item.state = isSelected ? .on : .off
+                if isSelected { current = item }
+            case let .command(title, isEnabled, action):
+                add(title, action).isEnabled = isEnabled
+            case .divider:
+                menu.addItem(.separator())
+            }
+        }
+        // The current choice lands on the pill; with none, the menu drops from its bottom edge.
+        let top = view.isFlipped ? 0 : view.bounds.height
+        let bottom = view.isFlipped ? view.bounds.height : 0
+        menu.popUp(positioning: current, at: NSPoint(x: 0, y: current == nil ? bottom : top), in: view)
+    }
+
+    @objc private func run(_ item: NSMenuItem) {
+        guard actions.indices.contains(item.tag) else { return }
+        actions[item.tag]()
+    }
+}
+
+/// Gives the anchor the pill's frame in AppKit; clicks pass through to the row.
+private struct NXMenuAnchorView: NSViewRepresentable {
+    let anchor: NXMenuAnchor
+
+    func makeNSView(context: Context) -> Anchor {
+        let view = Anchor()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ nsView: Anchor, context: Context) {
+        anchor.view = nsView
+    }
+
+    final class Anchor: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
