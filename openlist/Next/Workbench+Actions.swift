@@ -433,7 +433,7 @@ extension Workbench {
 
     func triage(_ task: Block, action: TriageExit, listID: UUID? = nil, offset: Int? = nil) {
         guard triageExit == nil else { return }
-        withAnimation(style.ease(230)) { triageExit = action }
+        withAnimation(style.standard(230)) { triageExit = action }
         let id = task.id
         let delay = Int(ms(230))
         Task { [weak self] in

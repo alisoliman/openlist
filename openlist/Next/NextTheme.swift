@@ -21,6 +21,8 @@ enum NX {
     static let ink = dynamic(light: 0x17161A, dark: 0xF1EFEC)
     /// The tray and other inverted surfaces.
     static let inverse = dynamic(light: 0x1F1D22, dark: 0x3A3740)
+    /// Filled primary buttons, like triage's "Keep for later".
+    static let primaryButton = dynamic(light: 0x17161A, dark: 0x3A3740)
 
     static func ink(_ opacity: Double) -> Color { ink.opacity(opacity) }
 

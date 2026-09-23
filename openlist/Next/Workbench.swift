@@ -502,16 +502,24 @@ final class Workbench {
             return
         }
         completions.append(completion)
+        let strike = Int(ms(130))
         for (index, id) in plain.enumerated() {
-            let stagger = Double(index) * ms(75)
+            let stagger = Int(Double(index) * ms(75))
             closingTasks[id]?.cancel()
+            // The first row pops in this turn, so a screen that drops closing
+            // rows, like the Inbox triage card, never shows it open again.
+            if index == 0 {
+                withAnimation(style.spring(260)) { closing[id] = false }
+                pulseCheck(id)
+            }
             closingTasks[id] = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(Int(stagger)))
+                if index > 0 {
+                    try? await Task.sleep(for: .milliseconds(stagger))
+                    guard !Task.isCancelled, let self else { return }
+                    withAnimation(self.style.spring(260)) { self.closing[id] = false }
+                }
+                try? await Task.sleep(for: .milliseconds(strike))
                 guard !Task.isCancelled, let self else { return }
-                withAnimation(self.style.spring(260)) { self.closing[id] = false }
-                if index == 0 { self.pulseCheck(id) }
-                try? await Task.sleep(for: .milliseconds(Int(self.ms(130))))
-                guard !Task.isCancelled else { return }
                 withAnimation(self.style.ease(340)) { self.closing[id] = true }
                 self.closingTasks[id] = nil
             }
