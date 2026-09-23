@@ -7,28 +7,6 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Callbacks a row hands back to the document that owns it.
-struct BlockRowActions {
-    var onChange: (NSAttributedString) -> Void = { _ in }
-    var onReturn: (Int, NSAttributedString) -> Bool = { _, _ in false }
-    var onTab: (Bool, Int) -> Bool = { _, _ in false }
-    var onBackspaceAtStart: (NSAttributedString) -> Bool = { _ in false }
-    var onDeleteAtEnd: () -> Bool = { false }
-    var onArrowOut: (EditorArrow, Int) -> Bool = { _, _ in false }
-    var onFocus: () -> Void = {}
-    var onEscape: () -> Void = {}
-    var onSlashQuery: (String?, NSRange, CGRect, CGRect) -> Void = { _, _, _, _ in }
-    var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
-    var onPasteMultiline: (String) -> Bool = { _ in false }
-    var onPasteFragment: () -> Bool = { false }
-    var onSetCaption: (String) -> Void = { _ in }
-    var onCommitCaption: () -> Void = {}
-    var onToggleCollapse: () -> Void = {}
-    var onToggleCompletion: () -> Void = {}
-    var onOpenDetails: () -> Void = {}
-    var onSelect: () -> Void = {}
-}
-
 /// One line of a document: gutter marker, editable text, trailing metadata.
 struct BlockRowView: View {
     let row: BlockRow
