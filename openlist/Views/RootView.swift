@@ -53,6 +53,7 @@ struct RootView: View {
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
+                env.isMainWindowKey = window?.isKeyWindow == true
                 env.reminderNavigation.windowReady(window != nil)
                 env.localLinks.windowReady(window != nil)
                 installUndo(in: window)
@@ -63,14 +64,19 @@ struct RootView: View {
         }
         .task { installQuickCapture() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-            guard let window = notification.object as? NSWindow,
-                  window === hostWindow.window else { return }
+            guard let window = notification.object as? NSWindow else { return }
+            env.isMainWindowKey = isMainWindow(window)
+            guard window === hostWindow.window else { return }
             env.reminderNavigation.windowReady(true)
             env.localLinks.windowReady(true)
             installUndo(in: window)
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
             clearInitialFocus(for: env.navigator.route)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
+            guard let window = notification.object as? NSWindow, isMainWindow(window) else { return }
+            env.isMainWindowKey = false
         }
         .onChange(of: dockBadgeCount) { _, _ in updateDockBadge() }
         .onChange(of: env.settings.showsDockBadge) { _, _ in updateDockBadge() }
@@ -84,6 +90,7 @@ struct RootView: View {
             env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
         }
         .onDisappear {
+            env.isMainWindowKey = false
             env.reminderNavigation.windowReady(false)
             env.localLinks.windowReady(false)
         }
@@ -112,12 +119,12 @@ struct RootView: View {
                 clearInitialFocus(for: env.navigator.route)
             }
         }
-        .onChange(of: env.taskCaptureRequest?.id) { _, _ in
-            // ⌘N and the menu ask for the old capture sheet; the Next capture replaces it.
-            guard let request = env.taskCaptureRequest else { return }
-            env.taskCaptureRequest = nil
-            env.workbench.openCapture(text: request.text, listID: request.suggestedListID,
-                                      forToday: request.plansForToday ? true : nil)
+        .onChange(of: env.navigator.selection) { _, selection in
+            // Esc in an inspector subtask drops its selection but not its
+            // claim. With no row left to act on, the Next screen takes over.
+            if selection.isEmpty, env.activeDocument?.rootBlockID != nil, !env.navigator.hasDocumentEditor {
+                env.activeDocument = nil
+            }
         }
         .onChange(of: env.commandToken) { _, newValue in
             guard newValue != lastCommandToken else { return }
@@ -165,6 +172,17 @@ struct RootView: View {
 
     // MARK: - Commands outside a document
 
+    /// This window, or a popover shown from it (a child window). Quick Add,
+    /// Settings and the menu bar window are not, so the Task menu ignores them.
+    private func isMainWindow(_ window: NSWindow) -> Bool {
+        var candidate: NSWindow? = window
+        while let current = candidate {
+            if current === hostWindow.window { return true }
+            candidate = current.parent
+        }
+        return false
+    }
+
     private func installUndo(in window: NSWindow?) {
         guard let window else { return }
         env.workbench.undoManager = window.undoManager
@@ -177,24 +195,24 @@ struct RootView: View {
     }
 
     /// Runs menu commands on the Next screens, where the targets are the
-    /// selection, else the focused row, else the inspected task.
+    /// selection, else the focused row, else the inspected task. These are
+    /// the tasks AppCommands enables the Task menu for.
     private func handleGlobalCommand() {
         guard let command = env.consumeCommand() else { return }
         let workbench = env.workbench
-        let ids = workbench.targetIDs
+        let ids = workbench.targetTasks.map(\.id)
 
         switch command {
         case .newTask:
             workbench.openCapture()
         case .toggleCompletion:
-            let tasks = workbench.tasks(ids)
-            if !tasks.isEmpty, tasks.allSatisfy(\.isCompleted) {
-                tasks.forEach { workbench.reopen($0.id) }
-            } else {
-                workbench.complete(tasks.filter { !$0.isCompleted }.map(\.id))
-            }
-        case .openDetails, .pickDueDate, .pickLabel:
-            if let first = ids.first { workbench.inspect(first) }
+            workbench.toggleCompletion(ids)
+        case .openDetails:
+            if let first = ids.first { inspect(first) }
+        case .pickDueDate, .pickLabel:
+            guard let first = ids.first else { return }
+            env.requestedPicker = command == .pickDueDate ? .due : .labels
+            inspect(first)
         case .setDueToday:
             workbench.schedule(ids, offset: 0)
         case .clearDueDate:
@@ -204,13 +222,18 @@ struct RootView: View {
         case .deleteSelection:
             workbench.trash(ids)
         case .clearLabels:
-            let targets = workbench.tasks(ids)
-            guard !SelectionCommandPolicy.reject(command, selectedCount: targets.count, store: env.store) else { return }
-            _ = env.store.perform(command, on: targets, undoManager: workbench.undoManager)
+            workbench.clearLabels(ids)
         case .indent, .outdent, .moveUp, .moveDown, .expandAll, .collapseAll:
             // Outline-only operations have no meaning in a cross-list view.
             break
         }
+    }
+
+    /// Opens a task in the inspector. The task already on show keeps the focus
+    /// it has, so the Inbox triage keys still work once the inspector closes.
+    private func inspect(_ id: UUID) {
+        guard id != env.navigator.openTaskID else { return }
+        env.workbench.inspect(id)
     }
 
     // MARK: - Quick capture & Dock
@@ -223,21 +246,14 @@ struct RootView: View {
     /// Document editors are left alone: their first responder is an
     /// `NSTextView`, which takes a caret rather than a selection.
     private func clearInitialFocus(for route: AppRoute) {
-        guard !env.navigator.hasDocumentEditor, focusClearedFor != route,
-              !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-              !env.navigator.isShortcutSheetOpen, !env.workbench.captureOpen,
-              env.navigator.openTaskID == nil,
-              let initialWindow = hostWindow.window, initialWindow.isKeyWindow
+        guard mayClearFocus(on: route), let initialWindow = hostWindow.window, initialWindow.isKeyWindow
         else { return }
 
         // Deferred because AppKit assigns the initial first responder after the
         // window becomes key. Recorded per route so this runs once per
         // navigation and cannot steal focus the user establishes afterwards.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak initialWindow] in
-            guard env.navigator.route == route, !env.navigator.hasDocumentEditor, focusClearedFor != route,
-                  !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-                  !env.navigator.isShortcutSheetOpen, !env.workbench.captureOpen,
-                  env.navigator.openTaskID == nil,
+            guard env.navigator.route == route, mayClearFocus(on: route),
                   let window = initialWindow, window === hostWindow.window,
                   window === NSApp.keyWindow, window.sheetParent == nil, window.attachedSheet == nil
             else { return }
@@ -255,6 +271,15 @@ struct RootView: View {
         }
     }
 
+    /// Whether nothing on screen wants the focus AppKit handed out: no document
+    /// editor, overlay or open task, and this route not already settled.
+    private func mayClearFocus(on route: AppRoute) -> Bool {
+        !env.navigator.hasDocumentEditor && focusClearedFor != route
+            && !env.navigator.isSearchOpen && !env.navigator.isCommandPaletteOpen
+            && !env.navigator.isShortcutSheetOpen && !env.workbench.captureOpen
+            && env.navigator.openTaskID == nil
+    }
+
     private func installQuickCapture() {
         QuickCaptureHotKey.shared.onTrigger = {
             openWindow(id: WindowID.quickAdd)
@@ -265,10 +290,11 @@ struct RootView: View {
         }
     }
 
-    /// Overdue plus due-today work — the number worth surfacing on the Dock.
+    /// Overdue, due-today, starred and planned-for-today work — the number
+    /// worth surfacing on the Dock.
     private var dockBadgeCount: Int {
         ActiveTaskPolicy(lists: allLists).tasks(in: openTasks)
-            .filter { $0.isDueOnOrBeforeToday || $0.isStarred || ($0.selectedForDay.map { Calendar.current.startOfDay(for: $0) <= Calendar.current.startOfDay(for: .now) } ?? false) }.count
+            .filter { $0.isDueOnOrBeforeToday || $0.isStarred || env.workbench.isPlanned($0) }.count
     }
 
     private func updateDockBadge() {

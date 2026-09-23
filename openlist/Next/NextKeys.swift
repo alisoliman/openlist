@@ -13,11 +13,13 @@ import SwiftUI
 struct NextKeyMonitorHost: NSViewRepresentable {
     @Environment(AppEnvironment.self) private var env
     let library: NextLibrary
+    let overlays: NXOverlayState
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         context.coordinator.view = view
         context.coordinator.install()
+        overlays.host = view
         return view
     }
 
@@ -30,19 +32,22 @@ struct NextKeyMonitorHost: NSViewRepresentable {
         coordinator.uninstall()
     }
 
-    func makeCoordinator() -> NextKeyHandler { NextKeyHandler(env: env, library: library) }
+    func makeCoordinator() -> NextKeyHandler { NextKeyHandler(env: env, library: library, overlays: overlays) }
 }
 
 @MainActor
 final class NextKeyHandler {
     var env: AppEnvironment
     var library: NextLibrary
+    let overlays: NXOverlayState
     weak var view: NSView?
     private var monitor: Any?
+    private var clickMonitor: Any?
 
-    init(env: AppEnvironment, library: NextLibrary) {
+    init(env: AppEnvironment, library: NextLibrary, overlays: NXOverlayState) {
         self.env = env
         self.library = library
+        self.overlays = overlays
     }
 
     func install() {
@@ -51,11 +56,18 @@ final class NextKeyHandler {
             let handled = MainActor.assumeIsolated { self.handle(event) }
             return handled ? nil : event
         }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self else { return event }
+            MainActor.assumeIsolated { self.releaseForeignFocus(for: event) }
+            return event
+        }
     }
 
     func uninstall() {
         if let monitor { NSEvent.removeMonitor(monitor) }
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         monitor = nil
+        clickMonitor = nil
     }
 
     private enum Key {
@@ -85,6 +97,16 @@ final class NextKeyHandler {
             return true
         }
 
+        // The in-window Settings page, wherever focus is and over any overlay,
+        // never the Settings window.
+        if flags == .command && chars == "," {
+            overlays.willNavigate()
+            if workbench.captureOpen { workbench.closeCapture() }
+            if workbench.tasksQueryFocused { blurQuery(window) }
+            workbench.go(.settings)
+            return true
+        }
+
         if workbench.captureOpen {
             guard !isComposing else { return false }
             if isEnter && !flags.contains(.command) {
@@ -104,45 +126,25 @@ final class NextKeyHandler {
 
         if navigator.isCommandPaletteOpen {
             guard !isComposing else { return false }
-            let commands = NXPalette.commands(env: env, library: library)
-            switch key {
-            case Key.down, Key.up:
-                guard !commands.isEmpty else { return true }
-                let current = min(workbench.paletteIndex, commands.count - 1)
-                workbench.paletteIndex = max(0, min(commands.count - 1, current + (key == Key.down ? 1 : -1)))
-                return true
-            case Key.enter, Key.keypadEnter:
-                if !commands.isEmpty { NXPalette.run(commands[min(workbench.paletteIndex, commands.count - 1)], env: env) }
-                return true
-            case Key.escape:
-                navigator.isCommandPaletteOpen = false
-                return true
-            default:
-                return false
-            }
+            return handleList(key, index: \.paletteIndex, items: { NXPalette.commands(env: env, library: library) },
+                              run: { NXPalette.run($0, env: env, overlays: overlays) },
+                              close: { navigator.isCommandPaletteOpen = false })
         }
 
         if navigator.isSearchOpen {
             guard !isComposing else { return false }
-            let hits = NXSearch.hits(env: env, library: library)
-            switch key {
-            case Key.down, Key.up:
-                guard !hits.isEmpty else { return true }
-                let current = min(workbench.searchIndex, hits.count - 1)
-                workbench.searchIndex = max(0, min(hits.count - 1, current + (key == Key.down ? 1 : -1)))
+            // Return before the results are in opens the chosen one once they are.
+            if isEnter && NXSearch.isAnswering(overlays.search, workbench: workbench) {
+                overlays.pendingSearchOpen = NXSearch.options(workbench)
                 return true
-            case Key.enter, Key.keypadEnter:
-                if !hits.isEmpty { hits[min(workbench.searchIndex, hits.count - 1)].run() }
-                return true
-            case Key.escape:
-                navigator.isSearchOpen = false
-                return true
-            default:
-                return false
             }
+            return handleList(key, index: \.searchIndex, items: { NXSearch.hits(overlays.search, workbench: workbench) },
+                              run: { NXSearch.open($0, env: env, library: library, overlays: overlays) },
+                              close: { navigator.isSearchOpen = false })
         }
 
-        if workbench.tasksQueryFocused && isEditingText {
+        // Only the Tasks screen has the query; the flag alone can outlive it.
+        if workbench.tasksQueryFocused && isEditingText && (navigator.route == .tasks || navigator.route == .completed) {
             guard !isComposing, flags.isEmpty || flags == .shift else { return false }
             switch key {
             case Key.tab where flags.isEmpty:
@@ -163,16 +165,19 @@ final class NextKeyHandler {
 
         // Every other text field and the document editor keep their keys.
         if isEditingText { return false }
+        // So do controls and views outside the shell's own hosting view, such
+        // as a document list's row gutter, pickers and date fields.
+        if isForeign(responder) { return false }
 
         if flags == .command {
+            // A document keeps its own Undo and Select All.
+            guard !navigator.hasDocumentEditor else { return false }
             switch chars {
             case "z":
                 workbench.undoLast()
                 return true
-            case ",":
-                workbench.go(.settings)
-                return true
             case "a":
+                guard !workbench.visibleIDs.isEmpty else { return false }
                 workbench.selectAllVisible()
                 return true
             default:
@@ -183,8 +188,53 @@ final class NextKeyHandler {
         return handleSingleKey(key: key, chars: chars, shift: flags == .shift)
     }
 
+    /// ↑/↓ move `index`, Return runs the current item, Escape closes, and Tab
+    /// stays in the overlay rather than moving focus behind it. `items` is only
+    /// built for keys that use it, not for typing.
+    private func handleList<Item>(_ key: UInt16, index: ReferenceWritableKeyPath<Workbench, Int>,
+                                  items: () -> [Item], run: (Item) -> Void, close: () -> Void) -> Bool {
+        let workbench = env.workbench
+        switch key {
+        case Key.down, Key.up:
+            let items = items()
+            guard !items.isEmpty else { return true }
+            let current = min(workbench[keyPath: index], items.count - 1)
+            workbench[keyPath: index] = max(0, min(items.count - 1, current + (key == Key.down ? 1 : -1)))
+            return true
+        case Key.enter, Key.keypadEnter:
+            let items = items()
+            if !items.isEmpty { run(items[min(workbench[keyPath: index], items.count - 1)]) }
+            return true
+        case Key.escape:
+            close()
+            return true
+        case Key.tab:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func blurQuery(_ window: NSWindow) {
         env.workbench.tasksQueryFocused = false
+        window.makeFirstResponder(nil)
+    }
+
+    /// A view other than the shell's hosting view (or the window) has the keys.
+    private func isForeign(_ responder: NSResponder?) -> Bool {
+        guard let focused = responder as? NSView, let host = view else { return false }
+        return !host.isDescendant(of: focused)
+    }
+
+    /// Clicking a Next row doesn't move the first responder, so a control that
+    /// had it (a picker, a date field) would keep the keys from the rows. A
+    /// click anywhere outside it hands them back to the shell; a click on
+    /// another control or field still lets that one take focus. Text fields
+    /// and document screens keep AppKit's own behaviour.
+    private func releaseForeignFocus(for event: NSEvent) {
+        guard let window = view?.window, event.window === window, !env.navigator.hasDocumentEditor,
+              let focused = window.firstResponder as? NSView, !(focused is NSText), isForeign(focused),
+              !focused.bounds.contains(focused.convert(event.locationInWindow, from: nil)) else { return }
         window.makeFirstResponder(nil)
     }
 
@@ -202,6 +252,16 @@ final class NextKeyHandler {
             }
         }
 
+        // A document list keeps its keys; only going, capturing, searching and
+        // closing the inspector stay global there.
+        if navigator.hasDocumentEditor {
+            if key == Key.escape, !shift, navigator.openTaskID != nil {
+                navigator.closeTask()
+                return true
+            }
+            return openGlobal(chars, shift: shift)
+        }
+
         if navigator.route == .inbox, workbench.focusID == nil, workbench.selection.isEmpty, !shift,
            let task = library.inboxQueue(workbench).first {
             if let digit = Int(chars), (1...9).contains(digit) {
@@ -216,17 +276,17 @@ final class NextKeyHandler {
             case (Key.right, _): workbench.triage(task, action: .right); return true
             case (_, "e"): workbench.triage(task, action: .done); return true
             case (_, "d"): workbench.triage(task, action: .down); return true
-            case (Key.enter, _), (Key.keypadEnter, _): workbench.inspect(task.id); return true
+            // Like the card's Details button: no focus, so triage keys still work once it closes.
+            case (Key.enter, _), (Key.keypadEnter, _): navigator.openTask(task.id); return true
             default: break
             }
         }
 
         switch key {
-        case Key.down:
-            workbench.moveFocus(by: 1, extending: shift)
-            return true
-        case Key.up:
-            workbench.moveFocus(by: -1, extending: shift)
+        case Key.down, Key.up:
+            // Nothing on screen publishes rows: let the event reach the screen.
+            guard !workbench.visibleIDs.isEmpty else { return false }
+            workbench.moveFocus(by: key == Key.down ? 1 : -1, extending: shift)
             return true
         case Key.enter, Key.keypadEnter:
             guard let id = workbench.focusID ?? workbench.targetIDs.first else { return false }
@@ -243,46 +303,49 @@ final class NextKeyHandler {
         }
 
         switch chars {
-        case "g" where !shift:
-            workbench.gPressedAt = .now
-            return true
-        case "n" where !shift:
-            workbench.openCapture()
-            return true
-        case "/":
-            navigator.isSearchOpen = true
-            return true
-        case "j":
-            workbench.moveFocus(by: 1, extending: shift)
-            return true
-        case "k":
-            workbench.moveFocus(by: -1, extending: shift)
+        case "j", "k":
+            guard !workbench.visibleIDs.isEmpty else { return false }
+            workbench.moveFocus(by: chars == "j" ? 1 : -1, extending: shift)
             return true
         case "x" where !shift:
             guard let id = workbench.focusID else { return false }
             workbench.toggleSelection(id)
             return true
         default:
-            break
+            if openGlobal(chars, shift: shift) { return true }
         }
 
         guard !shift else { return false }
         let ids = workbench.targetIDs
         guard !ids.isEmpty else { return false }
+        if key == Key.delete || key == Key.forwardDelete {
+            workbench.trash(ids)
+            return true
+        }
         switch chars {
-        case "e":
-            let tasks = workbench.tasks(ids)
-            if !tasks.isEmpty, tasks.allSatisfy(\.isCompleted) {
-                tasks.forEach { workbench.reopen($0.id) }
-            } else {
-                workbench.complete(tasks.filter { !$0.isCompleted }.map(\.id))
-            }
+        case "e": workbench.toggleCompletion(ids)
         case "t": workbench.schedule(ids, offset: 0)
         case "m": workbench.schedule(ids, offset: 1)
         case "f": workbench.star(ids)
         case "p": workbench.plan(ids)
         case "d": workbench.trash(ids)
         default: return false
+        }
+        return true
+    }
+
+    /// G (then a route key), N and / work on every screen.
+    private func openGlobal(_ chars: String, shift: Bool) -> Bool {
+        let workbench = env.workbench
+        switch chars {
+        case "g" where !shift:
+            workbench.gPressedAt = .now
+        case "n" where !shift:
+            workbench.openCapture()
+        case "/":
+            env.navigator.isSearchOpen = true
+        default:
+            return false
         }
         return true
     }

@@ -43,23 +43,18 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
     /// Saturated fill used for checkboxes, chips and icon backgrounds.
     var color: Color {
         switch self {
-        case .graphite: Self.rgb(0x6E6A73)
-        case .red: Self.rgb(0xD8434B)
-        case .orange: Self.rgb(0xE0861F)
-        case .amber: Self.rgb(0xE8A917)
-        case .green: Self.rgb(0x2F9E6E)
-        case .teal: Self.rgb(0x12807F)
-        case .blue: Self.rgb(0x2F6FE0)
-        case .indigo: Self.rgb(0x5B5BD6)
-        case .violet: Self.rgb(0x7C4DF0)
-        case .pink: Self.rgb(0xB8479A)
-        case .brown: Self.rgb(0xA0694B)
+        case .graphite: Color(hex: 0x6E6A73)
+        case .red: Color(hex: 0xD8434B)
+        case .orange: Color(hex: 0xE0861F)
+        case .amber: Color(hex: 0xE8A917)
+        case .green: Color(hex: 0x2F9E6E)
+        case .teal: Color(hex: 0x12807F)
+        case .blue: Color(hex: 0x2F6FE0)
+        case .indigo: Color(hex: 0x5B5BD6)
+        case .violet: Color(hex: 0x7C4DF0)
+        case .pink: Color(hex: 0xB8479A)
+        case .brown: Color(hex: 0xA0694B)
         }
-    }
-
-    private static func rgb(_ hex: UInt32) -> Color {
-        Color(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
-              blue: Double(hex & 0xFF) / 255)
     }
 
     /// Tinted background for chips and soft badges.
@@ -67,4 +62,15 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
 
     /// Readable text colour when drawn on `softBackground`.
     var textColor: Color { color }
+}
+
+extension Color {
+    /// An sRGB colour from 0xRRGGBB.
+    init(hex: UInt32, opacity: Double = 1) {
+        self.init(.sRGB,
+                  red: Double((hex >> 16) & 0xFF) / 255,
+                  green: Double((hex >> 8) & 0xFF) / 255,
+                  blue: Double(hex & 0xFF) / 255,
+                  opacity: opacity)
+    }
 }

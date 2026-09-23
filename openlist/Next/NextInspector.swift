@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 
 /// The 360pt panel that slides in from the right with one task's details.
@@ -11,15 +12,27 @@ struct NextInspector: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let task: Block
-    @State private var title = ""
-    @State private var note = ""
-    @State private var pickingDate = false
-    @State private var pickedDate = Date.now
+    /// Drafts belong to `draftID`, which lags `task` until they are committed.
+    @State private var title = SyncedTextDraft()
+    @State private var note = SyncedTextDraft()
+    @State private var draftID: UUID?
+    /// The open popover, and the task it was opened on. The shell reuses this
+    /// view for every task, so a popover never carries over to the next one.
+    @State private var picker: (section: DetailPicker, taskID: UUID)?
+    @State private var titleSelection: TextSelection?
+    @State private var noteSelection: TextSelection?
     @FocusState private var focus: Field?
 
     enum Field { case title, note }
 
     private var workbench: Workbench { env.workbench }
+
+    /// A search hit or link that landed in this task's title or note.
+    private var reveal: ContentReveal? {
+        guard let request = env.navigator.contentReveal, request.taskID == task.id else { return nil }
+        return request
+    }
+    private var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
 
     var body: some View {
         let list = library.list(task.listID)
@@ -43,22 +56,54 @@ struct NextInspector: View {
             .padding(.horizontal, 14)
             .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    titleRow
-                    properties(list: list)
-                    planCard
-                    noteBox
-                    activity
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let reveal {
+                            ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
+                        }
+                        titleRow
+                            .id(ContentReveal.Anchor.taskTitle(task.id))
+                        properties(list: list)
+                        TaskReminderStatus(block: task)
+                        planCard
+                        VStack(alignment: .leading, spacing: 8) {
+                            noteBox
+                                .id(ContentReveal.Anchor.taskNote(task.id))
+                            TaskNoteLinks(note: task.note)
+                        }
+                        NXInspectorSubtasks(task: task)
+                        NXInspectorFiles(task: task)
+                        activity
+                    }
+                    .padding(.top, 16)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 20)
                 }
-                .padding(.top, 16)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 20)
+                .scrollIndicators(.never)
+                .task(id: readyRevealID) {
+                    guard readyRevealID != nil, let reveal else { return }
+                    await Task.yield()
+                    guard !Task.isCancelled else { return }
+                    if reveal.field == .note {
+                        focus = .note
+                        noteSelection = SearchProjection.range(of: reveal.query, in: note.value).map { TextSelection(range: $0) }
+                        proxy.scrollTo(ContentReveal.Anchor.taskNote(task.id), anchor: .center)
+                    } else {
+                        focus = .title
+                        titleSelection = SearchProjection.range(of: reveal.query, in: title.value).map { TextSelection(range: $0) }
+                        proxy.scrollTo(ContentReveal.Anchor.taskTitle(task.id), anchor: .top)
+                    }
+                }
             }
-            .scrollIndicators(.never)
 
             HStack(spacing: 6) {
-                Button { workbench.trash([task.id]) } label: {
+                Button {
+                    // Save what is being typed first, so it goes to Trash, and
+                    // comes back on Undo, with the task and its subtasks.
+                    NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+                    workbench.trash([task.id])
+                } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "trash").font(.system(size: 12.5))
                         Text("Trash").font(.system(size: 12, weight: .medium))
@@ -67,6 +112,16 @@ struct NextInspector: View {
                 .buttonStyle(NXHoverButtonStyle(hover: NX.red.opacity(0.1), radius: 8,
                                                 padding: EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9),
                                                 foreground: NX.ink(0.6), hoverForeground: NX.redText))
+                Button(action: copyLink) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "link").font(.system(size: 12))
+                        Text("Copy Link").font(.system(size: 12, weight: .medium))
+                    }
+                }
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 8,
+                                                padding: EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9),
+                                                foreground: NX.ink(0.6), hoverForeground: NX.ink))
+                .help("Copy a link to this item in this Mac’s Openlist library")
                 Spacer(minLength: 8)
                 startButton
             }
@@ -81,12 +136,32 @@ struct NextInspector: View {
         .shadow(color: NX.shadowWarm.opacity(0.1), radius: 17, x: -14)
         .contentShape(Rectangle())
         .onTapGesture {}
-        .onAppear(perform: load)
-        .onChange(of: task.id) { _, _ in load() }
-        .onChange(of: task.text) { _, _ in if focus != .title { title = task.displayTitle } }
-        .onChange(of: focus) { old, _ in
+        .onAppear {
+            load()
+            adoptRequestedPicker()
+        }
+        .onChange(of: task.id) { oldID, _ in
+            // The shell reuses this view for every task: save the old task's
+            // drafts before loading the new one's.
+            commitTitle()
+            commitNote()
+            releaseSubtaskCommands(for: oldID)
+            if picker?.taskID != task.id { picker = nil }
+            load()
+        }
+        .onChange(of: task.text) { _, _ in title.receive(task.displayTitle) }
+        .onChange(of: task.note) { _, _ in note.receive(task.note) }
+        .onChange(of: focus) { old, new in
             if old == .title { commitTitle() }
             if old == .note { commitNote() }
+            if new != nil { releaseSubtaskCommands(for: task.id) }
+        }
+        .onChange(of: workbench.focusID) { _, _ in releaseSubtaskCommands(for: task.id) }
+        .onChange(of: workbench.selection) { _, _ in releaseSubtaskCommands(for: task.id) }
+        .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
+        .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
+            commitTitle()
+            commitNote()
         }
         .onDisappear {
             commitTitle()
@@ -95,19 +170,61 @@ struct NextInspector: View {
     }
 
     private func load() {
-        title = task.displayTitle
-        note = task.note
+        draftID = task.id
+        title.reset(to: task.displayTitle)
+        note.reset(to: task.note)
+        titleSelection = nil
+        noteSelection = nil
     }
 
+    /// The task the drafts were loaded from. Unlike `store.block(id:)` this
+    /// also finds it in Trash, so when a menu or shortcut trashes the open
+    /// task, what was typed goes with it and comes back on Undo or Restore.
+    private var draftTarget: Block? {
+        guard let id = draftID else { return nil }
+        let descriptor = FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })
+        guard let block = try? env.store.context.fetch(descriptor).first,
+              block.modelContext != nil, !block.isDeleted else { return nil }
+        return block
+    }
+
+    /// Writes only what the user typed, to the task the draft was loaded from.
     private func commitTitle() {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != task.displayTitle else { title = task.displayTitle; return }
-        env.store.setText(trimmed, for: task)
+        guard let target = draftTarget else { return }
+        if let edited = title.editedValue(normalize: { $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
+           !edited.isEmpty, edited != target.displayTitle {
+            env.store.setText(edited, for: target)
+        }
+        title.reset(to: target.displayTitle)
     }
 
     private func commitNote() {
-        guard note != task.note else { return }
-        env.store.setNote(note, for: task)
+        guard let target = draftTarget else { return }
+        if let edited = note.editedValue(normalize: { $0 }), edited != target.note {
+            env.store.setNote(edited, for: target)
+        }
+        note.reset(to: target.note)
+    }
+
+    /// Editing a subtask hands menu commands to its outline. Working anywhere
+    /// else, or on another task, hands them back to the Next screens.
+    private func releaseSubtaskCommands(for id: UUID?) {
+        guard let id, env.activeDocument?.rootBlockID == id else { return }
+        env.activeDocument = nil
+    }
+
+    /// ⌃D and ⌃L open their popover on the inspected task.
+    private func adoptRequestedPicker() {
+        guard let requested = env.requestedPicker else { return }
+        env.requestedPicker = nil
+        openPicker(requested)
+    }
+
+    private func copyLink() {
+        // An earlier link's error would otherwise hide this copy's result.
+        env.localLinks.error = nil
+        env.copyLink(to: .task(task.id))
+        if env.localLinks.error == nil { workbench.showTray("Link copied", icon: "link") }
     }
 
     // MARK: Title
@@ -115,11 +232,12 @@ struct NextInspector: View {
     private var titleRow: some View {
         let closing = workbench.closing[task.id]
         return HStack(alignment: .top, spacing: 10) {
-            NXCheckbox(filled: task.isCompleted || closing != nil, closing: closing, priority: task.priority, size: 18) {
+            NXCheckbox(filled: task.isCompleted || closing != nil, closing: closing, priority: task.priority,
+                       title: task.displayTitle, size: 18) {
                 workbench.toggle(task.id)
             }
             .padding(.top, 3)
-            TextField("Task", text: $title, axis: .vertical)
+            TextField("Task", text: $title.value, selection: $titleSelection, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(task.isCompleted ? NX.ink(0.45) : NX.ink)
@@ -127,12 +245,21 @@ struct NextInspector: View {
                 .focused($focus, equals: .title)
                 .onSubmit { focus = nil }
         }
+        .overlay {
+            if let reveal, reveal.field != .note {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(style.accent, lineWidth: 1.5)
+                    .padding(-5)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     // MARK: Properties
 
     private func properties(list: TaskList?) -> some View {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 11) {
+        let recurrence = task.recurrence
+        return Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 11) {
             GridRow {
                 propertyLabel("List")
                 VStack(alignment: .leading, spacing: 4) {
@@ -163,15 +290,36 @@ struct NextInspector: View {
                             Text(option.label)
                         }
                     }
-                    NXInspectorPill(isOn: false) {
-                        pickedDate = task.dueDate ?? .now
-                        pickingDate = true
-                    } label: {
-                        Image(systemName: "calendar").font(.system(size: 11))
+                    NXInspectorPill(isOn: false) { openPicker(.due) } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar").font(.system(size: 11))
+                            if task.includesTime, let due = task.dueDate { Text(NXFormat.clock(due)) }
+                        }
                     }
-                    .help("Pick a date (⌃D)")
-                    .popover(isPresented: $pickingDate, arrowEdge: .bottom) { datePicker }
+                    .help("Date and time (⌃D)")
+                    .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
                 }
+            }
+            GridRow {
+                propertyLabel("Repeat")
+                NXInspectorPill(isOn: recurrence != nil) { openPicker(.repeatRule) } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "repeat").font(.system(size: 10.5, weight: .semibold))
+                        Text(recurrence?.displayText ?? "Never")
+                    }
+                }
+                .help(recurrence?.displayText ?? "Repeat this task")
+                .popover(isPresented: pickerBinding(.repeatRule), arrowEdge: .bottom) { schedulePopover(.repeatRule) }
+            }
+            GridRow {
+                propertyLabel("Reminder")
+                NXInspectorPill(isOn: task.reminderAt != nil) { openPicker(.reminder) } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "bell").font(.system(size: 10.5, weight: .semibold))
+                        Text(task.reminderAt.map { "\(NXFormat.dueLabel($0)) \(NXFormat.clock($0))" } ?? "None")
+                    }
+                }
+                .popover(isPresented: pickerBinding(.reminder), arrowEdge: .bottom) { schedulePopover(.reminder) }
             }
             GridRow {
                 propertyLabel("Priority")
@@ -187,25 +335,34 @@ struct NextInspector: View {
                     }
                 }
             }
-            if !library.labels.isEmpty {
-                GridRow {
-                    propertyLabel("Labels")
-                    NXFlow(spacing: 4) {
-                        ForEach(library.labels, id: \.id) { label in
-                            let on = task.labelIDs.contains(label.id)
-                            let color = label.nxColor
-                            Button { workbench.toggleLabel(task.id, labelID: label.id) } label: {
-                                Text("#\(label.name)")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(on ? .white : color)
-                                    .padding(.vertical, 5)
-                                    .padding(.horizontal, 8)
-                                    .background(on ? color : color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .animation(.easeOut(duration: 0.14), value: on)
+            GridRow {
+                propertyLabel("Labels")
+                NXFlow(spacing: 4) {
+                    ForEach(library.labels, id: \.id) { label in
+                        let on = task.labelIDs.contains(label.id)
+                        let color = label.nxColor
+                        Button { workbench.toggleLabel(task.id, labelID: label.id) } label: {
+                            Text("#\(label.name)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(on ? .white : color)
+                                .padding(.vertical, 5)
+                                .padding(.horizontal, 8)
+                                .background(on ? color : color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .animation(.easeOut(duration: 0.14), value: on)
+                    }
+                    NXInspectorPill(isOn: false) { openPicker(.labels) } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                            if library.labels.isEmpty { Text("Add label") }
+                        }
+                    }
+                    .help("Find or create a label (⌃L)")
+                    .accessibilityLabel("Edit labels")
+                    .popover(isPresented: pickerBinding(.labels), arrowEdge: .bottom) {
+                        LabelPicker(block: task).id(task.id).environment(env)
                     }
                 }
             }
@@ -230,26 +387,19 @@ struct NextInspector: View {
         }
     }
 
-    private var datePicker: some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            DatePicker("Due", selection: $pickedDate, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-            HStack {
-                Button("Clear") {
-                    workbench.schedule([task.id], offset: nil)
-                    pickingDate = false
-                }
-                Spacer()
-                Button("Set date") {
-                    workbench.schedule([task.id], offset: NXFormat.dayOffset(pickedDate))
-                    pickingDate = false
-                }
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(14)
-        .frame(width: 260)
+    private func openPicker(_ section: DetailPicker) { picker = (section, task.id) }
+
+    /// One popover per row; the schedule rows each open the shared picker on their section.
+    private func pickerBinding(_ section: DetailPicker) -> Binding<Bool> {
+        Binding(get: { picker?.section == section && picker?.taskID == task.id },
+                set: { if !$0, picker?.section == section { picker = nil } })
+    }
+
+    private func schedulePopover(_ section: DetailPicker) -> some View {
+        // Staged input belongs to the task the popover was opened on.
+        TaskSchedulePicker(block: task, initialSection: section)
+            .id(task.id)
+            .environment(env)
     }
 
     private func propertyLabel(_ text: String) -> some View {
@@ -260,12 +410,8 @@ struct NextInspector: View {
             .gridColumnAlignment(.leading)
     }
 
-    private var nextWeekOffset: Int {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: .now)
-        let days = (calendar.firstWeekday - weekday + 7) % 7
-        return days == 0 ? 7 : days
-    }
+    /// A week from today, matching `Store.setDueNextWeek`, so it never equals Tomorrow.
+    private var nextWeekOffset: Int { 7 }
 
     private var dueOptions: [(label: String, offset: Int?)] {
         var options: [(String, Int?)] = [("Today", 0), ("Tomorrow", 1), ("Next week", nextWeekOffset), ("None", nil)]
@@ -282,12 +428,7 @@ struct NextInspector: View {
     }
 
     static func priorityColor(_ priority: TaskPriority) -> Color {
-        switch priority {
-        case .none: NX.ink(0.25)
-        case .low: NX.inbox
-        case .medium: NX.amber
-        case .high: NX.red
-        }
+        NX.priorityStroke(priority) ?? NX.ink(0.25)
     }
 
     static func priorityTitle(_ priority: TaskPriority) -> String {
@@ -309,7 +450,7 @@ struct NextInspector: View {
                 Image(systemName: "calendar.badge.clock").font(.system(size: 13)).foregroundStyle(style.accent)
                 Text("Plan for today").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(NX.ink)
                 Spacer(minLength: 6)
-                NXToggle(isOn: planned) { workbench.plan([task.id]) }
+                NXToggle(isOn: planned, label: "Plan for today") { workbench.plan([task.id]) }
                     .help("Plan for today (P)")
             }
             HStack(spacing: 8) {
@@ -330,14 +471,22 @@ struct NextInspector: View {
                 .foregroundStyle(NX.ink(0.45))
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 9)
+            // Its popover, sheet and expansion belong to one task.
+            NXInspectorPlanOptions(task: task)
+                .id(task.id)
+                .padding(.top, 9)
         }
         .padding(12)
         .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
     }
 
+    /// Reads the plan the calendar grid draws, so flexible blocks count and past ones don't.
     private var slotText: String {
-        guard let placement = env.store.placements(taskID: task.id).min(by: { $0.start < $1.start }) else {
+        let now = Date.now
+        guard let placement = env.calendar.visibleBlocks
+            .filter({ $0.taskID == task.id && $0.occurrenceID == task.occurrenceID && !$0.isCompleted && $0.end > now })
+            .min(by: { $0.start < $1.start }) else {
             return "Not in the calendar yet — ⌘K › Find a slot"
         }
         let offset = NXFormat.dayOffset(placement.start)
@@ -358,7 +507,7 @@ struct NextInspector: View {
     // MARK: Note & activity
 
     private var noteBox: some View {
-        TextField("Add a note", text: $note, axis: .vertical)
+        TextField("Add a note", text: $note.value, selection: $noteSelection, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             .lineSpacing(3)
@@ -367,6 +516,13 @@ struct NextInspector: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                if reveal?.field == .note {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(style.accent, lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
     }
 
     private var activity: some View {
@@ -384,6 +540,9 @@ struct NextInspector: View {
                     .transition(.offset(y: 6).combined(with: .opacity))
             }
             activityRow(icon: "plus.circle", text: "Captured in \(captured)", date: task.createdAt)
+            NXInspectorHistory(task: task)
+                .id(task.id)
+                .padding(.top, 6)
         }
         .animation(style.ease(220), value: workbench.entries(for: task.id).count)
     }
@@ -398,11 +557,15 @@ struct NextInspector: View {
     }
 
     private var startButton: some View {
-        let working = workbench.workTask?.id == task.id
-        return Button { if !working { workbench.startWork(task.id) } } label: {
+        let working = env.calendar.activeSession?.taskID == task.id
+        // Paused work on this task resumes where it left off rather than starting over.
+        let paused = workbench.isWorkPaused && workbench.workTask?.id == task.id
+        return Button {
+            if paused { workbench.toggleWorkPause() } else if !working { workbench.startWork(task.id) }
+        } label: {
             HStack(spacing: 5) {
                 Image(systemName: working ? "timer" : "play.fill").font(.system(size: 12))
-                Text(working ? "Working…" : "Start working").font(.system(size: 12, weight: .semibold))
+                Text(working ? "Working…" : paused ? "Resume" : "Start working").font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(working ? NX.ink(0.55) : .white)
             .padding(.vertical, 8)

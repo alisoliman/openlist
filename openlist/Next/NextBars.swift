@@ -10,10 +10,26 @@ struct NXSelectionBar: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
 
+    /// How much of each button fits, e.g. beside the inspector in a narrow window.
+    private enum Fit { case full, titles, icons }
+
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            bar(.full)
+            bar(.titles)
+            bar(.icons)
+        }
+        .foregroundStyle(.white)
+        .padding(6)
+        .background(NX.inverse, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .shadow(color: Color(hex: 0x17161A).opacity(0.36), radius: 20, y: 16)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func bar(_ fit: Fit) -> some View {
         let workbench = env.workbench
         let ids = workbench.targetIDs
-        HStack(spacing: 2) {
+        return HStack(spacing: 2) {
             Text("\(workbench.selection.count)")
                 .font(.system(size: 12, weight: .bold))
                 .monospacedDigit()
@@ -21,17 +37,23 @@ struct NXSelectionBar: View {
                 .frame(minWidth: 22, minHeight: 22)
                 .padding(.horizontal, workbench.selection.count > 9 ? 6 : 0)
                 .background(style.accent, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            Text("selected")
-                .font(.system(size: 12, weight: .medium))
-                .padding(.leading, 6)
-                .padding(.trailing, 10)
+                .padding(.trailing, fit == .icons ? 4 : 0)
+                .accessibilityLabel("\(workbench.selection.count) selected")
+            if fit != .icons {
+                Text("selected")
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.leading, 6)
+                    .padding(.trailing, 10)
+                    .accessibilityHidden(true)
+            }
             divider
-            barButton("Done", icon: "checkmark.circle", key: "E", tint: Color(hex: 0x6FD3A4)) { workbench.complete(ids) }
-            barButton("Today", icon: "calendar", key: "T", tint: Color(hex: 0xC9AEFF)) { workbench.schedule(ids, offset: 0) }
-            barButton("Tomorrow", icon: "sunset", key: "M", tint: Color(hex: 0xC9AEFF)) { workbench.schedule(ids, offset: 1) }
-            barButton("Plan", icon: "calendar.badge.clock", key: "P", tint: Color(hex: 0xC9AEFF)) { workbench.plan(ids) }
-            barButton("Star", icon: "star", key: "F", tint: Color(hex: 0xF2C14E)) { workbench.star(ids) }
-            barButton("Trash", icon: "trash", key: "D", tint: Color(hex: 0xFF8A8A), hover: Color(red: 1, green: 0.47, blue: 0.47).opacity(0.14)) {
+            barButton("Done", icon: "checkmark.circle", key: "E", tint: Color(hex: 0x6FD3A4), fit: fit) { workbench.complete(ids) }
+            barButton("Today", icon: "calendar", key: "T", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 0) }
+            barButton("Tomorrow", icon: "sunset", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 1) }
+            barButton("Plan", icon: "calendar.badge.clock", key: "P", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.plan(ids) }
+            barButton("Star", icon: "star", key: "F", tint: Color(hex: 0xF2C14E), fit: fit) { workbench.star(ids) }
+            barButton("Trash", icon: "trash", key: "D", tint: Color(hex: 0xFF8A8A), hover: Color(red: 1, green: 0.47, blue: 0.47).opacity(0.14),
+                      fit: fit) {
                 workbench.trash(ids)
             }
             divider
@@ -42,12 +64,8 @@ struct NXSelectionBar: View {
                                             padding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7),
                                             foreground: .white.opacity(0.7), hoverForeground: .white))
             .help("Clear selection (Esc)")
+            .accessibilityLabel("Clear selection")
         }
-        .foregroundStyle(.white)
-        .padding(6)
-        .background(NX.inverse, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .shadow(color: Color(hex: 0x17161A).opacity(0.36), radius: 20, y: 16)
-        .environment(\.colorScheme, .dark)
     }
 
     private var divider: some View {
@@ -55,17 +73,50 @@ struct NXSelectionBar: View {
     }
 
     private func barButton(_ title: String, icon: String, key: String, tint: Color, hover: Color = .white.opacity(0.1),
-                           action: @escaping () -> Void) -> some View {
+                           fit: Fit, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
-                Text(title).font(.system(size: 12, weight: .medium))
-                NXKey(key, opacity: 0.5, size: 9.5)
+                if fit != .icons { Text(title).font(.system(size: 12, weight: .medium)) }
+                if fit == .full { NXKey(key, opacity: 0.5, size: 9.5) }
             }
         }
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8,
-                                        padding: EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9),
+                                        padding: EdgeInsets(top: 7, leading: fit == .icons ? 7 : 9,
+                                                            bottom: 7, trailing: fit == .icons ? 7 : 9),
                                         foreground: .white))
+        .help("\(title) (\(key))")
+        .accessibilityLabel(title)
+    }
+}
+
+/// The Store's completion Undo for tasks completed outside Next's rows: the
+/// menu bar, calendar, notifications and MCP. Completions made here already
+/// report in the tray, so their Store action stays quiet.
+struct NXOutsideCompletionFeedback: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+
+    var body: some View {
+        let workbench = env.workbench
+        if workbench.tray == nil, workbench.selection.isEmpty, let action = env.store.completionUndo, !isReported(action) {
+            CalendarCompletionFeedback()
+        }
+    }
+
+    /// Whether the change log already holds this completion or reopen of the
+    /// same tasks. Next writes a completion once its dwell ends, so the Store's
+    /// action arrives up to the dwell (plus the row stagger) after its entry.
+    private func isReported(_ action: CompletionUndoAction) -> Bool {
+        guard let change = env.store.completionUndoChanges[action.id] else { return false }
+        let roots = Set([change.rootTaskID] + change.additionalRootTaskIDs)
+        let window = style.dwell + 5 + Double(roots.count) * style.ms(75) / 1000
+        let since = action.createdAt.addingTimeInterval(-window)
+        // Newest first, so only the recent entries are read.
+        return env.workbench.log.lazy.prefix { $0.at >= since }.contains { entry in
+            guard let id = entry.taskID, roots.contains(id) else { return false }
+            return action.isReopening ? entry.icon == "arrow.uturn.backward" : entry.tone == .green
+        }
     }
 }
 

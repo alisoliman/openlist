@@ -3,13 +3,74 @@
 //  openlist
 //
 
+import AppKit
+import SwiftData
 import SwiftUI
+
+/// What the overlays and the key monitor share: the search session behind the
+/// search card, and the keyboard focus to hand back once the last overlay closes.
+@Observable @MainActor
+final class NXOverlayState {
+    @ObservationIgnored let search = SearchSession()
+    /// Why the chosen result can't open, shown until the search changes.
+    var searchUnavailable: String?
+    /// The search Return was pressed on before its results arrived.
+    @ObservationIgnored var pendingSearchOpen: SearchOptions?
+    /// Task lists a search result switched to Document to reveal a note or
+    /// heading; the shell switches each back once you leave it.
+    var revealedDocuments: Set<UUID> = []
+    /// The shell's key-handling view, whose window the overlays borrow focus from.
+    @ObservationIgnored weak var host: NSView?
+    @ObservationIgnored private weak var returnView: NSView?
+    @ObservationIgnored private var returnRange: NSRange?
+    @ObservationIgnored private var activation = 0
+    @ObservationIgnored private var rememberedActivation = 0
+
+    /// A command or result is about to navigate or inspect a task, so the
+    /// caret must not jump back into a field that is being replaced.
+    func willNavigate() { activation &+= 1 }
+
+    /// Notes the first responder as the first overlay opens. A text field's
+    /// responder is the window's shared field editor, which the overlay's own
+    /// field is about to borrow, so the field it edits is kept instead.
+    func rememberFocus() {
+        guard let window = host?.window else { return }
+        let responder = window.firstResponder
+        if let editor = responder as? NSTextView, editor.isFieldEditor {
+            returnView = editor.delegate as? NSView
+        } else {
+            returnView = responder as? NSView
+        }
+        returnRange = (responder as? NSTextView)?.selectedRange()
+        rememberedActivation = activation
+    }
+
+    /// Returns focus to the remembered view and selection when the overlay
+    /// closed in place; otherwise to the window, so the shell gets the keys.
+    func restoreFocus() {
+        defer {
+            returnView = nil
+            returnRange = nil
+        }
+        guard let window = host?.window else { return }
+        guard rememberedActivation == activation, let view = returnView, view.window === window,
+              window.makeFirstResponder(view) else {
+            window.makeFirstResponder(nil)
+            return
+        }
+        let text = view as? NSTextView ?? (view as? NSControl)?.currentEditor() as? NSTextView
+        if let text, let range = returnRange, NSMaxRange(range) <= (text.string as NSString).length {
+            text.setSelectedRange(range)
+        }
+    }
+}
 
 /// Capture, search and the command palette. Only one shows at a time; the
 /// key monitor drives their arrows, Return, Tab and Escape.
 struct NextOverlays: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
+    let overlays: NXOverlayState
 
     var body: some View {
         let workbench = env.workbench
@@ -21,17 +82,23 @@ struct NextOverlays: View {
                 }
             } else if navigator.isSearchOpen {
                 NXOverlayBackdrop(top: 72, close: { navigator.isSearchOpen = false }) {
-                    NXSearchCard()
+                    NXSearchCard(overlays: overlays)
                 }
             } else if navigator.isCommandPaletteOpen {
                 NXOverlayBackdrop(top: 84, close: { navigator.isCommandPaletteOpen = false }) {
-                    NXPaletteCard()
+                    NXPaletteCard(overlays: overlays)
                 }
             }
         }
         .animation(style.ease(140), value: workbench.captureOpen)
         .animation(style.ease(140), value: navigator.isSearchOpen)
         .animation(style.ease(140), value: navigator.isCommandPaletteOpen)
+        // Switching straight from one overlay to another keeps the first
+        // remembered responder: the flags only all drop on the final close.
+        .onChange(of: workbench.captureOpen || navigator.isSearchOpen || navigator.isCommandPaletteOpen) { wasOpen, isOpen in
+            if isOpen && !wasOpen { overlays.rememberFocus() }
+            if wasOpen && !isOpen { overlays.restoreFocus() }
+        }
         .onChange(of: navigator.isCommandPaletteOpen) { _, isOpen in
             guard isOpen else { return }
             workbench.paletteQuery = ""
@@ -188,35 +255,57 @@ private struct NXCaptureCard: View {
         }
     }
 
+    /// Date, time and repeat come from the same whole-text draft the save path
+    /// reads, so the chips show what Return will store.
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
         let workbench = env.workbench
+        // Only a titled capture saves; until then, show just where it will be due.
+        let preview = parse.title.isEmpty
+            ? TaskCaptureDraft.Preview(title: "", date: workbench.captureForToday ? NXFormat.day(offset: 0) : nil)
+            : workbench.captureDraft(parse).preview
         var chips: [NXChipModel] = []
-        var hasDate = false
+        if workbench.capturePlansForToday {
+            chips.append(NXChipModel(id: "plan-today", label: "Plan for today", icon: "sun.max", tone: .accent))
+        }
+        if let date = preview.date {
+            let due = NXFormat.dueLabel(date)
+            let relative = NXFormat.relativeDay(date)
+            let label = relative.caseInsensitiveCompare(due) == .orderedSame ? due : "\(due) · \(relative)"
+            chips.append(NXChipModel(id: "date-\(label)", label: label, icon: "calendar", tone: .accent))
+            if preview.includesTime {
+                chips.append(NXChipModel(id: "time", label: NXFormat.clock(date), icon: "bell", tone: .accent))
+            }
+        }
+        if let recurrence = preview.recurrence {
+            chips.append(NXChipModel(id: "repeat", label: parse.first(.repeatRule)?.raw ?? recurrence.displayText,
+                                     icon: "repeat", tone: .accent))
+        }
         for (index, mark) in parse.marks.enumerated() {
             let id = "\(index)-\(mark.kind.rawValue)-\(mark.raw.lowercased())"
             switch mark.kind {
-            case .date:
-                if let date = TaskCaptureDraft(text: mark.raw).preview.date {
-                    hasDate = true
-                    chips.append(NXChipModel(id: id, label: "\(NXFormat.dueLabel(date)) · \(NXFormat.relativeDay(date))",
-                                             icon: "calendar", tone: .accent))
-                }
-            case .time:
-                chips.append(NXChipModel(id: id, label: CaptureParse.timeLabel(mark.raw) ?? mark.raw, icon: "bell", tone: .accent))
-            case .repeatRule:
-                chips.append(NXChipModel(id: id, label: mark.raw, icon: "repeat", tone: .accent))
             case .label:
                 let name = String(mark.raw.dropFirst())
                 let color = library.labels.first { $0.name.lowercased() == name.lowercased() }?.nxColor ?? Color(hex: 0x12807F)
                 chips.append(NXChipModel(id: id, label: name, tone: .label(color)))
-            case .priority:
-                chips.append(NXChipModel(id: id, label: "High", icon: "exclamationmark", tone: .over, fill: true))
             case .estimate:
                 chips.append(NXChipModel(id: id, label: "\(mark.raw.dropFirst()) estimate", icon: "timer", tone: .accent))
+            case .date, .time, .repeatRule, .priority:
+                break
             }
         }
-        if workbench.captureForToday && !hasDate {
-            chips.insert(NXChipModel(id: "today", label: "Today", icon: "calendar", tone: .accent), at: 0)
+        // A label screen adds its own label, unless the text names it already.
+        if let label = workbench.captureLabelID.flatMap({ env.store.label(id: $0) }),
+           !parse.labels.contains(label.name.lowercased()) {
+            chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor)))
+        }
+        if let priority = parse.priority {
+            let tone: NXTone = switch priority {
+            case .high: .over
+            case .medium: .amber
+            case .low, .none: .neutral
+            }
+            chips.append(NXChipModel(id: "priority", label: priority.title, icon: "exclamationmark", tone: tone,
+                                     fill: priority == .high))
         }
         return chips
     }
@@ -243,51 +332,81 @@ private struct NXCaptureCard: View {
 
 // MARK: - Search
 
-struct NXSearchHit: Identifiable {
-    var id: UUID
-    var text: String
-    var match: Range<String.Index>?
-    var icon: String
-    var list: TaskList?
-    var sub: String
-    var run: @MainActor () -> Void
+/// The app's search (tasks, notes, headings, list titles and summaries,
+/// archived lists, diacritic-insensitive) in the Next overlay.
+enum NXSearch {
+    /// Results listed at once; typing more narrows the rest.
+    static let shownLimit = 30
+
+    @MainActor
+    static func options(_ workbench: Workbench) -> SearchOptions {
+        var options = SearchOptions()
+        options.query = workbench.searchQuery
+        options.includesCompleted = workbench.searchIncludesCompleted
+        return options
+    }
+
+    /// The listed results; none while the session still answers an older query.
+    @MainActor
+    static func hits(_ session: SearchSession, workbench: Workbench) -> [SearchHit] {
+        guard !session.isSearching, session.options == options(workbench) else { return [] }
+        return Array(session.hits.prefix(shownLimit))
+    }
+
+    /// Whether the results for the query typed now are still to come.
+    @MainActor
+    static func isAnswering(_ session: SearchSession, workbench: Workbench) -> Bool {
+        let options = options(workbench)
+        return !options.needle.isEmpty && (session.isSearching || session.options != options)
+    }
+
+    /// Tasks open in the inspector on their Next screen and lists on theirs.
+    /// Notes, headings, summaries and archived content are revealed in the
+    /// list's document, as the app's search always has; a task list goes back
+    /// to Tasks once you leave it.
+    @MainActor
+    static func open(_ hit: SearchHit, env: AppEnvironment, library: NextLibrary, overlays: NXOverlayState) {
+        let workbench = env.workbench
+        let request: ContentReveal
+        do {
+            let context = env.store.context
+            request = try ContentReveal.resolve(hit.id, field: hit.field, query: options(workbench).needle,
+                                                blocks: context.fetch(FetchDescriptor<Block>()),
+                                                lists: context.fetch(FetchDescriptor<TaskList>()))
+        } catch {
+            overlays.searchUnavailable = error.localizedDescription
+            return
+        }
+        overlays.willNavigate()
+        env.navigator.isSearchOpen = false
+        let list = request.isArchived ? nil : library.list(request.listID)
+        if let list, request.destination == .list(list.id), request.field == .text {
+            workbench.go(workbench.route(for: list))
+        } else if let list, let taskID = request.taskID, request.blockID == taskID {
+            workbench.go(workbench.route(for: list))
+            // Once the new screen is up, so it scrolls to the row.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { workbench.inspect(taskID) }
+        } else {
+            let wasTasks = env.navigator.listViewMode(for: request.listID) == .tasks
+            env.navigator.reveal(request)
+            if wasTasks { overlays.revealedDocuments.insert(request.listID) }
+        }
+    }
 }
 
-enum NXSearch {
-    @MainActor
-    static func hits(env: AppEnvironment, library: NextLibrary) -> [NXSearchHit] {
-        let workbench = env.workbench
-        let query = workbench.searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return [] }
-        var hits: [NXSearchHit] = []
-        for list in library.lists {
-            guard let match = list.displayTitle.range(of: query, options: .caseInsensitive) else { continue }
-            hits.append(NXSearchHit(id: list.id, text: list.displayTitle, match: match, icon: "square.stack", sub: "List") {
-                workbench.go(workbench.route(for: list))
-            })
-        }
-        for task in library.tasks {
-            if task.isCompleted && !workbench.searchIncludesCompleted { continue }
-            let title = task.displayTitle
-            let match = title.range(of: query, options: .caseInsensitive)
-            guard match != nil || task.note.localizedCaseInsensitiveContains(query) else { continue }
-            let list = library.list(task.listID)
-            var sub = list?.displayTitle ?? "Inbox"
-            if let due = task.dueDate, !task.isCompleted { sub += " · " + NXFormat.dueLabel(due) }
-            if task.isCompleted { sub += " · Completed" }
-            if match == nil { sub += " · matched in note" }
-            let id = task.id
-            hits.append(NXSearchHit(id: id, text: title, match: match,
-                                    icon: task.isCompleted ? "checkmark.circle.fill" : "circle", list: list, sub: sub) {
-                if let list { workbench.go(workbench.route(for: list)) }
-                workbench.navigator.isSearchOpen = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                    workbench.focusID = id
-                    workbench.inspect(id)
-                }
-            })
-        }
-        return Array(hits.prefix(12))
+/// Feeds the search session the library, rebuilt only when records change,
+/// not on every keystroke.
+private struct NXSearchCorpus: View {
+    let session: SearchSession
+    @Query private var blocks: [Block]
+    @Query private var lists: [TaskList]
+
+    var body: some View {
+        let corpus = SearchCorpus(blocks: blocks, lists: lists)
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onChange(of: corpus, initial: true) { _, updated in session.update(corpus: updated) }
+            .accessibilityHidden(true)
     }
 }
 
@@ -295,10 +414,13 @@ private struct NXSearchCard: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    let overlays: NXOverlayState
 
     var body: some View {
         @Bindable var workbench = env.workbench
-        let hits = NXSearch.hits(env: env, library: library)
+        let session = overlays.search
+        let options = NXSearch.options(workbench)
+        let hits = NXSearch.hits(session, workbench: workbench)
         let index = min(workbench.searchIndex, max(0, hits.count - 1))
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -323,56 +445,87 @@ private struct NXSearchCard: View {
             .padding(.horizontal, 16)
             .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
 
-            NXOverlayList(selection: hits.isEmpty ? nil : hits[index].id) {
+            NXOverlayList {
                 ForEach(Array(hits.enumerated()), id: \.element.id) { offset, hit in
-                    NXSearchRow(hit: hit, isOn: offset == index)
+                    NXSearchRow(hit: hit, needle: options.needle, isOn: offset == index)
                         .id(hit.id)
                         .onHover { if $0 { workbench.searchIndex = offset } }
-                        .onTapGesture { hit.run() }
+                        .onTapGesture { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
                 }
-                Text(footer(hits))
+                Text(footer(hits, session: session, options: options))
                     .font(.system(size: 12.5))
                     .foregroundStyle(NX.ink(0.42))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(14)
             }
+            .modifier(NXScrollToIndex(ids: hits.map(\.id), index: index))
         }
         .frame(maxWidth: 640)
+        .background { NXSearchCorpus(session: session) }
+        .onChange(of: options, initial: true) { _, updated in
+            overlays.searchUnavailable = nil
+            session.update(options: updated)
+        }
+        // Return pressed before the answer opens the chosen result once it
+        // arrives, unless the query changed in between.
+        .onChange(of: NXSearch.isAnswering(session, workbench: workbench)) { _, answering in
+            guard !answering, let pending = overlays.pendingSearchOpen else { return }
+            overlays.pendingSearchOpen = nil
+            let hits = NXSearch.hits(session, workbench: workbench)
+            guard pending == NXSearch.options(workbench), !hits.isEmpty else { return }
+            NXSearch.open(hits[min(workbench.searchIndex, hits.count - 1)], env: env, library: library, overlays: overlays)
+        }
+        .onDisappear {
+            session.cancel()
+            overlays.pendingSearchOpen = nil
+        }
     }
 
-    private func footer(_ hits: [NXSearchHit]) -> String {
-        let workbench = env.workbench
-        let query = workbench.searchQuery
-        if query.trimmingCharacters(in: .whitespaces).isEmpty { return "Search tasks, notes and lists" }
-        if !hits.isEmpty { return "\(hits.count) \(hits.count == 1 ? "result" : "results") · ↑↓ choose · ↩ open" }
-        return "Nothing matches “\(query)”" + (workbench.searchIncludesCompleted ? "" : " — try including completed")
+    private func footer(_ hits: [SearchHit], session: SearchSession, options: SearchOptions) -> String {
+        if let unavailable = overlays.searchUnavailable { return unavailable }
+        if options.needle.isEmpty { return "Search tasks, notes and lists" }
+        if session.isSearching || session.options != options { return "Searching…" }
+        let total = session.hits.count
+        if hits.count < total { return "Showing \(hits.count) of \(total) · keep typing to narrow" }
+        if !hits.isEmpty { return "\(total) \(total == 1 ? "result" : "results") · ↑↓ choose · ↩ open" }
+        return "Nothing matches “\(options.needle)”" + (options.includesCompleted ? "" : " — try including completed")
     }
 }
 
 private struct NXSearchRow: View {
     @Environment(\.nextStyle) private var style
-    let hit: NXSearchHit
+    let hit: SearchHit
+    let needle: String
     let isOn: Bool
 
     var body: some View {
-        HStack(spacing: 11) {
-            Image(systemName: hit.icon)
-                .font(.system(size: 14))
-                .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
-                .frame(width: 16)
+        HStack(alignment: .top, spacing: 11) {
+            Group {
+                if let emoji = hit.emoji { Text(emoji) }
+                else { Image(systemName: hit.symbol ?? "square.stack") }
+            }
+            .font(.system(size: 14))
+            .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
+            .frame(width: 16)
+            .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(highlighted(hit.title))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(NX.ink)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                HStack(spacing: 4) {
-                    if let list = hit.list { NXListGlyph(list: list, size: 10) }
-                    Text(hit.sub).lineLimit(1)
+                if !hit.snippet.isEmpty {
+                    Text(highlighted(hit.snippet))
+                        .font(.system(size: 12))
+                        .foregroundStyle(NX.ink(0.7))
+                        .lineLimit(2)
                 }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NX.ink(0.45))
+                Text(hit.context)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NX.ink(0.45))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             Spacer(minLength: 0)
         }
@@ -383,38 +536,30 @@ private struct NXSearchRow: View {
         .contentShape(Rectangle())
     }
 
-    private var title: AttributedString {
-        var text = AttributedString(hit.text)
-        if let match = hit.match,
-           let lower = AttributedString.Index(match.lowerBound, within: text),
-           let upper = AttributedString.Index(match.upperBound, within: text) {
-            text[lower..<upper].backgroundColor = style.accent.opacity(0.15)
-            text[lower..<upper].foregroundColor = style.accent
+    /// Tints the match with the same folding the search used.
+    private func highlighted(_ text: String) -> AttributedString {
+        var value = AttributedString(text)
+        if !needle.isEmpty,
+           let range = value.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) {
+            value[range].backgroundColor = style.accent.opacity(0.15)
+            value[range].foregroundColor = style.accent
         }
-        return text
+        return value
     }
 }
 
-/// Up to 380pt of rows, scrolling only when they overflow, keeping the
-/// chosen row in view.
+/// Up to 380pt of rows, scrolling only when they overflow.
 private struct NXOverlayList<Content: View>: View {
-    var selection: UUID?
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 1) {
-                    content()
-                }
-                .padding(6)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 1) {
+                content()
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .onChange(of: selection) { _, id in
-                guard let id else { return }
-                proxy.scrollTo(id)
-            }
+            .padding(6)
         }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(maxHeight: 380)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -429,6 +574,8 @@ struct NXCommand: Identifiable {
     var key = ""
     var tone: Color?
     var needsTarget = false
+    /// Leaves the current screen or task, so focus isn't handed back to it.
+    var navigates = false
     var run: @MainActor () -> Void
 }
 
@@ -475,19 +622,21 @@ enum NXPalette {
                       run: act { workbench.move($0, to: list.id) })
         }
         all += [
-            NXCommand(id: "details", icon: "sidebar.right", label: "Open details", key: "↩", needsTarget: true,
+            NXCommand(id: "details", icon: "sidebar.right", label: "Open details", key: "↩", needsTarget: true, navigates: true,
                       run: act { workbench.inspect($0[0]) }),
             NXCommand(id: "trash", icon: "trash", label: "Move to Trash", key: "D", tone: NX.redText, needsTarget: true,
-                      run: act { workbench.trash($0) }),
+                      navigates: true, run: act { workbench.trash($0) }),
             NXCommand(id: "new", icon: "plus.circle", label: "New task", key: "N") { workbench.openCapture() },
             NXCommand(id: "search", icon: "magnifyingglass", label: "Search", key: "/") { env.navigator.isSearchOpen = true },
             NXCommand(id: "undo", icon: "arrow.uturn.backward", label: "Undo last change", key: "⌘Z") { workbench.undoLast() },
         ]
         all += nav.map { route, icon, label, key in
-            NXCommand(id: "go-\(label)", icon: icon, label: label, key: key) { workbench.go(route) }
+            NXCommand(id: "go-\(label)", icon: icon, label: label, key: key, navigates: true) { workbench.go(route) }
         }
         all += library.destinations.map { list in
-            NXCommand(id: "open-\(list.id)", icon: "square.stack", label: "Open \(list.displayTitle)") { workbench.go(.list(list.id)) }
+            NXCommand(id: "open-\(list.id)", icon: "square.stack", label: "Open \(list.displayTitle)", navigates: true) {
+                workbench.go(.list(list.id))
+            }
         }
         let filtered = all.enumerated().filter { _, command in
             (!command.needsTarget || hasTarget) && (query.isEmpty || command.label.lowercased().contains(query))
@@ -502,7 +651,8 @@ enum NXPalette {
 
     /// Closes the palette, then runs the command once the card is gone.
     @MainActor
-    static func run(_ command: NXCommand, env: AppEnvironment) {
+    static func run(_ command: NXCommand, env: AppEnvironment, overlays: NXOverlayState) {
+        if command.navigates { overlays.willNavigate() }
         env.navigator.isCommandPaletteOpen = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { command.run() }
     }
@@ -512,6 +662,7 @@ private struct NXPaletteCard: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    let overlays: NXOverlayState
 
     var body: some View {
         @Bindable var workbench = env.workbench
@@ -544,11 +695,11 @@ private struct NXPaletteCard: View {
             .padding(.horizontal, 16)
             .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
 
-            NXOverlayList(selection: nil) {
+            NXOverlayList {
                 ForEach(Array(commands.enumerated()), id: \.element.id) { offset, command in
                     NXPaletteRow(command: command, isOn: offset == index)
                         .onHover { if $0 { workbench.paletteIndex = offset } }
-                        .onTapGesture { NXPalette.run(command, env: env) }
+                        .onTapGesture { NXPalette.run(command, env: env, overlays: overlays) }
                 }
             }
             .modifier(NXScrollToIndex(ids: commands.map(\.id), index: index))
@@ -557,9 +708,9 @@ private struct NXPaletteCard: View {
     }
 }
 
-/// Keeps the palette's chosen row visible as arrows move through it.
-private struct NXScrollToIndex: ViewModifier {
-    let ids: [String]
+/// Keeps the chosen row visible as arrows move through the palette or results.
+private struct NXScrollToIndex<ID: Hashable>: ViewModifier {
+    let ids: [ID]
     let index: Int
 
     func body(content: Content) -> some View {

@@ -13,7 +13,6 @@ struct NXRowOptions {
     var notes = false
     /// Tasks screen: text-only chips, the open icon hidden until focus.
     var quiet = false
-    var showPlanned = true
     /// Outline depth for subtasks on a list screen.
     var depths: [UUID: Int] = [:]
 }
@@ -44,7 +43,7 @@ struct NextTaskRow: View {
                 Color.clear.frame(width: CGFloat(depth) * 22, height: 1)
             }
             NXCheckbox(filled: task.isCompleted || closing != nil,
-                       closing: closing, priority: task.priority,
+                       closing: closing, priority: task.priority, title: task.displayTitle,
                        ringing: workbench.pulseTaskID == id && closing != nil) {
                 workbench.toggle(id)
             }
@@ -121,7 +120,7 @@ struct NextTaskRow: View {
                     .overlay(Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white))
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
-            Button { workbench.focusID = task.id; workbench.inspect(task.id) } label: {
+            Button { workbench.inspect(task.id) } label: {
                 Image(systemName: "sidebar.right")
                     .font(.system(size: 12.5, weight: .medium))
             }
@@ -130,6 +129,7 @@ struct NextTaskRow: View {
                                             foreground: NX.ink(0.45), hoverForeground: NX.ink))
             .opacity(focused ? 1 : hovering ? 0.6 : options.quiet ? 0 : 0.22)
             .help("Open details (↩)")
+            .accessibilityLabel("Open details")
         }
     }
 
@@ -177,6 +177,8 @@ struct NXCheckbox: View {
     let filled: Bool
     let closing: Bool?
     let priority: TaskPriority
+    /// Spoken with the action, e.g. "Complete Buy milk".
+    var title = ""
     var ringing = false
     var size: CGFloat = 16
     var action: () -> Void
@@ -194,6 +196,7 @@ struct NXCheckbox: View {
                     .opacity(filled ? 1 : 0)
                     .scaleEffect(filled ? 1 : 0.3)
                     .animation(style.spring(200), value: filled)
+                    .accessibilityHidden(true)
                 if ringing { NXRing(color: style.accent, size: size) }
             }
             .frame(width: size, height: size)
@@ -203,6 +206,10 @@ struct NXCheckbox: View {
             .contentShape(Rectangle().inset(by: -5))
         }
         .buttonStyle(.plain)
+        // Filled covers the completion dwell too; clicking then cancels it, so it reads as Reopen.
+        .accessibilityLabel("\(filled ? "Reopen" : "Complete") \(title.isEmpty ? "task" : title)")
+        .accessibilityValue(closing != nil ? "Completing" : filled ? "Completed" : "Open")
+        .accessibilityAddTraits(filled ? .isSelected : [])
     }
 }
 
@@ -261,16 +268,16 @@ enum NXRowChips {
         if task.includesTime, let due = task.dueDate, !done {
             chips.append(NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill", fill: true))
         }
-        if options.showPlanned, !done, workbench.isPlanned(task) {
+        if !done, workbench.isPlanned(task) {
             let minutes = task.schedulingEstimateMinutes
             chips.append(NXChipModel(id: "planned", label: minutes > 0 ? "\(minutes)m" : "Planned",
                                      icon: "calendar.badge.clock", tone: .accent))
         }
         if let due = task.dueDate, !done {
-            let offset = NXFormat.dayOffset(due)
+            let overdue = task.isOverdue
             chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due),
-                                     icon: offset < 0 ? "exclamationmark.circle.fill" : "calendar",
-                                     tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0))
+                                     icon: overdue ? "exclamationmark.circle.fill" : "calendar",
+                                     tone: overdue ? .over : NXFormat.dayOffset(due) == 0 ? .accent : .neutral, fill: overdue))
         }
         if task.isStarred {
             chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true))
@@ -427,7 +434,20 @@ struct NXTaskMenu: View {
 
     var body: some View {
         let workbench = env.workbench
-        Button("Mark as Done", systemImage: "checkmark.circle") { workbench.complete(ids) }
+        let tasks = workbench.tasks(ids)
+        // A task in the completion dwell isn't completed yet; Reopen cancels the pending completion.
+        let pending = tasks.filter { workbench.closing[$0.id] != nil }.map(\.id)
+        let completed = tasks.filter(\.isCompleted).map(\.id)
+        if tasks.count > pending.count + completed.count {
+            Button("Mark as Done", systemImage: "checkmark.circle") { workbench.complete(ids) }
+        }
+        if !pending.isEmpty || !completed.isEmpty {
+            Button("Reopen", systemImage: "arrow.uturn.backward.circle") {
+                if !pending.isEmpty { workbench.cancelClosing(pending) }
+                // One Undo step for the whole selection.
+                workbench.reopen(completed)
+            }
+        }
         Button("Due Today", systemImage: "calendar") { workbench.schedule(ids, offset: 0) }
         Button("Due Tomorrow", systemImage: "sunset") { workbench.schedule(ids, offset: 1) }
         Button("Plan for Today", systemImage: "calendar.badge.clock") { workbench.plan(ids) }
@@ -442,6 +462,7 @@ struct NXTaskMenu: View {
         if ids.count == 1 {
             Button("Open Details", systemImage: "sidebar.right") { workbench.inspect(ids[0]) }
             Button("Start Working", systemImage: "play") { workbench.startWork(ids[0]) }
+            CopyItemLinkButton(target: .task(ids[0]))
         }
         Divider()
         Button("Move to Trash", systemImage: "trash", role: .destructive) { workbench.trash(ids) }

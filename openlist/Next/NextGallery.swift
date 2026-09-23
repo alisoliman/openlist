@@ -15,37 +15,52 @@ struct NextListsGallery: View {
     @Environment(\.nextLibrary) private var library
 
     private struct Shelf: Identifiable {
+        static let archivedID = "archived"
         var id: String
         var title: String
         var lists: [TaskList]
     }
 
+    /// Each section's lists, then the rest, then archived lists, with nested
+    /// lists after their parent.
     private var shelves: [Shelf] {
-        var shelves = library.sections.map { Shelf(id: $0.id.uuidString, title: $0.displayTitle, lists: library.lists(in: $0)) }
-        shelves.append(Shelf(id: "other", title: "Other lists", lists: library.unsectioned))
+        var shelves = library.sections.map { Shelf(id: $0.id.uuidString, title: $0.displayTitle, lists: nested(library.lists(in: $0))) }
+        shelves.append(Shelf(id: "other", title: "Other lists", lists: nested(library.unsectioned)))
+        shelves.append(Shelf(id: Shelf.archivedID, title: "Archived", lists: library.archived))
         return shelves.filter { !$0.lists.isEmpty }
+    }
+
+    private func nested(_ lists: [TaskList]) -> [TaskList] { library.outline(lists).map { $0.list } }
+
+    private func subtitle(_ shelves: [Shelf]) -> String {
+        let filed = shelves.filter { $0.id != Shelf.archivedID }
+        let count = filed.reduce(0) { $0 + $1.lists.count }
+        var text = "\(count) \(count == 1 ? "list" : "lists") in \(filed.count) \(filed.count == 1 ? "section" : "sections")"
+        if !library.archived.isEmpty { text += " · \(library.archived.count) archived" }
+        return text
     }
 
     var body: some View {
         let shelves = shelves
-        let count = shelves.reduce(0) { $0 + $1.lists.count }
         NXPage {
-            NXScreenHeader(tile: .icon("square.stack"), color: NX.lists, title: "Lists",
-                           subtitle: "\(count) \(count == 1 ? "list" : "lists") in \(shelves.count) \(shelves.count == 1 ? "section" : "sections")")
+            NXScreenHeader(tile: .icon("square.stack"), color: NX.lists, title: "Lists", subtitle: subtitle(shelves))
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(shelves) { shelf in
                     VStack(alignment: .leading, spacing: 0) {
                         NXCapsTitle(text: shelf.title).padding(.bottom, 10)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 14)], alignment: .leading, spacing: 14) {
                             ForEach(shelf.lists) { list in
-                                NXListCard(list: list, tasks: library.tasks.filter { $0.listID == list.id && !library.isSubtask($0) })
+                                NXListCard(list: list,
+                                           tasks: library.tasks(in: list.id).filter { !library.isSubtask($0) },
+                                           path: library.hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "),
+                                           isArchived: shelf.id == Shelf.archivedID)
                             }
                         }
                     }
                     .padding(.top, 20)
                 }
                 if shelves.isEmpty {
-                    NXDashedEmpty(text: "No lists yet. Press ⌘N in the sidebar to make one.").padding(.top, 20)
+                    NXDashedEmpty(text: "No lists yet. Press ⇧⌘N to make one.").padding(.top, 20)
                 }
             }
             .padding(.top, 8)
@@ -58,14 +73,19 @@ private struct NXListCard: View {
     @Environment(\.nextStyle) private var style
     let list: TaskList
     let tasks: [Block]
+    /// The lists it sits inside, or empty at the top level.
+    let path: String
+    /// Archived directly or through a parent.
+    let isArchived: Bool
     @State private var hovering = false
 
     var body: some View {
         let open = tasks.filter { !$0.isCompleted }
         let done = tasks.count - open.count
-        let dueToday = open.filter { $0.dueDate.map { NXFormat.dayOffset($0) <= 0 } == true }.count
+        let dueToday = open.filter(\.isDueOnOrBeforeToday).count
         let fraction = tasks.isEmpty ? 0 : Double(done) / Double(tasks.count)
         let color = list.nxColor
+        let stats = "\(open.count) open" + (dueToday > 0 ? " · \(dueToday) due today" : "") + (done > 0 ? " · \(done) done" : "")
         VStack(alignment: .leading, spacing: 0) {
             LinearGradient(colors: [color.opacity(0.2), color.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .frame(height: 58)
@@ -80,7 +100,7 @@ private struct NXListCard: View {
                     .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
                     .lineLimit(1)
-                Text("\(open.count) open" + (dueToday > 0 ? " · \(dueToday) due today" : "") + (done > 0 ? " · \(done) done" : ""))
+                Text(path.isEmpty ? stats : "In \(path) · \(stats)")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(NX.ink(0.5))
                     .lineLimit(1)
@@ -123,6 +143,32 @@ private struct NXListCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { env.workbench.go(env.workbench.route(for: list)) }
+        .contextMenu { menu }
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        let workbench = env.workbench
+        Button("Open") { workbench.go(workbench.route(for: list)) }
+        CopyItemLinkButton(target: .list(list.id))
+        Divider()
+        // Nested lists show under their parent, so only top-level ones can be pinned.
+        if !isArchived && path.isEmpty {
+            Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") { workbench.setPinned(!list.isPinned, for: list) }
+        }
+        Button("Duplicate") { workbench.go(.list(env.store.duplicateList(list).id)) }
+        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
+        Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
+        Button("Move List…") { env.listPendingMove = list }
+        Button("New Child List") { workbench.createChildList(in: list) }
+            .disabled(isArchived)
+        // A list archived with its parent comes back when the parent does.
+        if list.isArchived || !isArchived {
+            Button(list.isArchived ? "Unarchive List" : "Archive List") { workbench.setArchived(!list.isArchived, for: list) }
+                .help("Archived lists stay here and stop contributing tasks or reminders.")
+        }
+        Divider()
+        Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
     }
 }
 
@@ -149,7 +195,8 @@ struct NextTrashScreen: View {
                             .fixedSize(horizontal: false, vertical: true)
                         NXHoldButton(title: "Hold to empty Trash", holdingTitle: "Keep holding…", icon: "trash.slash",
                                      size: 11.5, padding: EdgeInsets(top: 7, leading: 11, bottom: 7, trailing: 11),
-                                     radius: 8, rest: 0.1) {
+                                     radius: 8, rest: 0.1, confirmation: "Erase everything in Trash?",
+                                     confirmLabel: "Empty Trash") {
                             workbench.erase(entries.map(\.id))
                         }
                     }
@@ -203,7 +250,7 @@ private struct NXTrashRow: View {
                 .foregroundStyle(NX.ink(0.3))
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.title.isEmpty ? "Untitled" : entry.title)
+                Text(title)
                     .font(.system(size: 13.5))
                     .foregroundStyle(NX.ink(0.72))
                     .lineLimit(2)
@@ -226,7 +273,8 @@ private struct NXTrashRow: View {
             .background(style.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help("Put it back where it was")
             NXHoldButton(title: "Hold to erase", holdingTitle: "Keep holding…", size: 11,
-                         padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9), radius: 7, rest: 0.08) {
+                         padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9), radius: 7, rest: 0.08,
+                         confirmation: "Erase “\(title)”?") {
                 workbench.erase([entry.id])
             }
         }
@@ -239,23 +287,22 @@ private struct NXTrashRow: View {
         .onHover { hovering = $0 }
     }
 
+    private var title: String { entry.title.isEmpty ? "Untitled" : entry.title }
+
     private var meta: String {
         let deleted = entry.metadata.map { "deleted \(NXFormat.relative($0.deletedAt))" } ?? "deleted"
         if entry.isList {
             let items = entry.blockCount == 1 ? "1 item" : "\(entry.blockCount) items"
             return "List · \(items) · \(deleted)"
         }
-        guard let metadata = entry.metadata else { return deleted.capitalizedFirst }
+        guard let metadata = entry.metadata else { return deleted.capitalizedFirstLetter }
         return "From \(metadata.formerLocation) · \(deleted)"
     }
 }
 
-private extension String {
-    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-}
-
 /// Press and hold for 900 ms; releasing or leaving early cancels. The fill
-/// grows left to right while held.
+/// grows left to right while held. VoiceOver can't hold, so its action asks
+/// `confirmation` first.
 struct NXHoldButton: View {
     let title: String
     let holdingTitle: String
@@ -265,12 +312,15 @@ struct NXHoldButton: View {
     var radius: CGFloat = 7
     /// Red opacity at rest.
     var rest: Double = 0.08
+    let confirmation: String
+    var confirmLabel = "Erase"
     let action: () -> Void
 
     @State private var holding = false
     @State private var progress: CGFloat = 0
     @State private var bounds: CGSize = .zero
     @State private var timer: Task<Void, Never>?
+    @State private var confirming = false
 
     var body: some View {
         HStack(spacing: 5) {
@@ -304,7 +354,13 @@ struct NXHoldButton: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction { action() }
+        .accessibilityAction { confirming = true }
+        .confirmationDialog(confirmation, isPresented: $confirming) {
+            Button(confirmLabel, role: .destructive, action: action)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can’t be undone.")
+        }
     }
 
     private func start() {

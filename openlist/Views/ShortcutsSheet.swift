@@ -33,6 +33,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "G then I T C A L H", action: "Go to Inbox, Today, Calendar, Tasks, Lists, Activity"),
             Shortcut(keys: "⌘[", action: "Back"),
             Shortcut(keys: "⌘]", action: "Forward"),
+            Shortcut(keys: "⌃⌘S", action: "Hide or show the sidebar"),
             Shortcut(keys: "⌘F", action: "Search"),
             Shortcut(keys: "⌘K", action: "Every action"),
             Shortcut(keys: "/", action: "Search"),

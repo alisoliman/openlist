@@ -39,29 +39,63 @@ struct NXTaskQuery {
     static let flagWords = ["starred", "planned", "high"]
 
     let vocab: [Word]
+    private let listKeys: [UUID: String]
+    private let labelKeys: [UUID: String]
 
+    /// Every word means one thing: date and flag words are reserved, then each list claims its
+    /// last title word (else its full slug, else a numbered slug), then labels, then extra title words.
     @MainActor
     init(library: NextLibrary) {
+        var taken = Set(Self.dateWords + Self.flagWords + ["inbox"])
+        var listKeys: [UUID: String] = [:]
+        for list in library.lists {
+            let words = Self.titleWords(list)
+            listKeys[list.id] = list.isSystemInbox ? "inbox"
+                : Self.claim(words.last ?? "list", fallback: words.isEmpty ? "list" : words.joined(separator: "-"), in: &taken)
+        }
+        var labelKeys: [UUID: String] = [:]
+        for label in library.labels {
+            let slug = "#" + label.name.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: "-")
+            labelKeys[label.id] = Self.claim(slug, fallback: slug, in: &taken)
+        }
         var vocab = Self.dateWords.map { Word(word: $0, kind: .date) } + Self.flagWords.map { Word(word: $0, kind: .flag) }
         for list in library.lists {
-            var keys = [Self.key(for: list)]
-            for word in list.displayTitle.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
-            where word.count >= 4 && !keys.contains(word) {
+            guard let key = listKeys[list.id] else { continue }
+            var keys = [key]
+            for word in Self.titleWords(list) where word.count >= 4 && !taken.contains(word) {
+                taken.insert(word)
                 keys.append(word)
             }
             vocab += keys.map { Word(word: $0, kind: .list, listID: list.id, color: list.nxColor) }
         }
-        vocab += library.labels.map { Word(word: Self.key(for: $0), kind: .label, labelID: $0.id, color: $0.nxColor) }
+        for label in library.labels {
+            guard let key = labelKeys[label.id] else { continue }
+            vocab.append(Word(word: key, kind: .label, labelID: label.id, color: label.nxColor))
+        }
         self.vocab = vocab
+        self.listKeys = listKeys
+        self.labelKeys = labelKeys
     }
 
-    static func key(for list: TaskList) -> String {
-        if list.isSystemInbox { return "inbox" }
-        return list.displayTitle.lowercased().split(whereSeparator: \.isWhitespace).last.map(String.init) ?? "list"
+    func key(for list: TaskList) -> String { listKeys[list.id] ?? "list" }
+
+    func key(for label: TaskLabel) -> String { labelKeys[label.id] ?? "#" }
+
+    @MainActor
+    private static func titleWords(_ list: TaskList) -> [String] {
+        list.displayTitle.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
     }
 
-    static func key(for label: TaskLabel) -> String {
-        "#" + label.name.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: "-")
+    /// `base` if free, else `fallback`, else `fallback-2`, `-3`…; marks the result as taken.
+    private static func claim(_ base: String, fallback: String, in taken: inout Set<String>) -> String {
+        var key = taken.contains(base) ? fallback : base
+        var suffix = 2
+        while taken.contains(key) {
+            key = "\(fallback)-\(suffix)"
+            suffix += 1
+        }
+        taken.insert(key)
+        return key
     }
 
     func parse(_ query: String) -> (segments: [Segment], filter: Filter, ghost: String) {
@@ -111,21 +145,23 @@ struct NXTaskQuery {
     @MainActor
     func apply(_ query: String, to pool: [Block], workbench: Workbench) -> [Block] {
         let filter = parse(query).filter
-        func dueMatches(_ word: String, _ offset: Int?) -> Bool {
+        // Overdue follows the app rule, so a timed task already past today counts as overdue, not today.
+        func dueMatches(_ word: String, _ offset: Int?, _ pastDue: Bool) -> Bool {
             switch word {
-            case "overdue": offset.map { $0 < 0 } ?? false
-            case "today": offset == 0
+            case "overdue": pastDue
+            case "today": offset == 0 && !pastDue
             case "tomorrow": offset == 1
-            case "week": offset.map { (0...6).contains($0) } ?? false
+            case "week": !pastDue && offset.map { (0...6).contains($0) } ?? false
             case "later": offset.map { $0 > 6 } ?? false
             default: offset == nil
             }
         }
         return pool.filter { task in
             let offset = task.dueDate.map { NXFormat.dayOffset($0) }
+            let pastDue = Self.isOverdue(task, workbench: workbench)
             let title = task.displayTitle.lowercased()
             return (filter.lists.isEmpty || task.listID.map(filter.lists.contains) == true)
-                && (filter.due.isEmpty || filter.due.contains { dueMatches($0, offset) })
+                && (filter.due.isEmpty || filter.due.contains { dueMatches($0, offset, pastDue) })
                 && (filter.labels.isEmpty || filter.labels.contains { task.labelIDs.contains($0) })
                 && filter.flags.allSatisfy { flag in
                     switch flag {
@@ -136,6 +172,14 @@ struct NXTaskQuery {
                 }
                 && filter.text.allSatisfy { title.contains($0) }
         }
+    }
+
+    /// Open tasks, and ones still closing, follow the app's overdue rule. Finished ones keep
+    /// their day, so a task done before its time today stays under Today.
+    @MainActor
+    static func isOverdue(_ task: Block, workbench: Workbench) -> Bool {
+        guard task.isCompleted, workbench.closing[task.id] == nil else { return NXFormat.isPastDue(task) }
+        return task.dueDate.map { NXFormat.dayOffset($0) < 0 } ?? false
     }
 
     /// Adds or removes one word, leaving a trailing space to keep typing.
@@ -160,6 +204,8 @@ struct NextTasksScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    /// Completed opens this screen on Done; leaving it hands Tasks back its Open default.
+    @State private var showsCompleted = false
 
     var body: some View {
         let workbench = env.workbench
@@ -179,6 +225,10 @@ struct NextTasksScreen: View {
             }
             .zIndex(10)
             NXGroupsStack(groups: groups, options: NXRowOptions(showList: workbench.tasksGrouping != .list, quiet: true))
+        }
+        .onAppear { showsCompleted = env.navigator.route == .completed }
+        .onDisappear {
+            if showsCompleted, workbench.tasksStatus == .done { workbench.tasksStatus = .open }
         }
     }
 
@@ -216,16 +266,17 @@ struct NextTasksScreen: View {
             }
         case .due:
             let muted = NX.ink(0.5)
-            let buckets: [(String, Color, (Int?) -> Bool)] = [
-                ("Overdue", NX.red, { $0.map { $0 < 0 } ?? false }),
-                ("Today", accent, { $0 == 0 }),
-                ("Tomorrow", muted, { $0 == 1 }),
-                ("This week", muted, { $0.map { $0 > 1 && $0 <= 6 } ?? false }),
-                ("Later", muted, { $0.map { $0 > 6 } ?? false }),
-                ("No date", NX.ink(0.35), { $0 == nil }),
+            let offset = { (task: Block) in task.dueDate.map { NXFormat.dayOffset($0) } }
+            let buckets: [(String, Color, (Block) -> Bool)] = [
+                ("Overdue", NX.red, { NXTaskQuery.isOverdue($0, workbench: workbench) }),
+                ("Today", accent, { offset($0) == 0 && !NXTaskQuery.isOverdue($0, workbench: workbench) }),
+                ("Tomorrow", muted, { offset($0) == 1 }),
+                ("This week", muted, { offset($0).map { $0 > 1 && $0 <= 6 } ?? false }),
+                ("Later", muted, { offset($0).map { $0 > 6 } ?? false }),
+                ("No date", NX.ink(0.35), { $0.dueDate == nil }),
             ]
             for (title, color, matches) in buckets {
-                let rows = pool.filter { matches($0.dueDate.map { NXFormat.dayOffset($0) }) }
+                let rows = pool.filter(matches)
                 if !rows.isEmpty {
                     groups.append(NXGroup(id: "d-\(title)", title: title, icon: "calendar", color: color, rows: rows, collapsible: true))
                 }
@@ -250,6 +301,9 @@ private struct NXTasksQueryBar: View {
     @Environment(\.nextLibrary) private var library
     let count: Int
     @FocusState private var fieldFocused: Bool
+    /// Natural width of the coloured query text, and the room the field gives it.
+    @State private var queryWidth: CGFloat = 0
+    @State private var fieldWidth: CGFloat = .infinity
 
     var body: some View {
         let workbench = env.workbench
@@ -293,6 +347,8 @@ private struct NXTasksQueryBar: View {
         .onChange(of: workbench.tasksQueryFocused) { _, value in
             if fieldFocused != value { fieldFocused = value }
         }
+        // Switching to the sentence bar must not leave the keyboard thinking the field is active.
+        .onDisappear { workbench.tasksQueryFocused = false }
     }
 
     private var tabs: some View {
@@ -332,36 +388,57 @@ private struct NXTasksQueryBar: View {
     private func field(query: String, focused: Bool, hasQuery: Bool) -> some View {
         let workbench = env.workbench
         let parsed = NXTaskQuery(library: library).parse(query)
+        // The overlay can't follow the field editor's scroll, so once the query outgrows the
+        // field the real text shows instead and scrolls with the caret.
+        let overflowing = queryWidth + 4 > fieldWidth
+        let showsGhost = focused && !parsed.ghost.isEmpty
         return HStack(spacing: 8) {
-            ZStack(alignment: .leading) {
-                HStack(spacing: 0) {
-                    ForEach(parsed.segments) { segment in
-                        segmentText(segment)
+            HStack(spacing: 0) {
+                ZStack(alignment: .leading) {
+                    HStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            ForEach(parsed.segments) { segment in
+                                segmentText(segment)
+                            }
+                        }
+                        .onGeometryChange(for: CGFloat.self, of: \.size.width) { queryWidth = $0 }
+                        if showsGhost, !overflowing {
+                            Text(parsed.ghost).foregroundStyle(NX.ink(0.3))
+                        }
+                        if query.isEmpty {
+                            Text(focused ? "Try “kyoto overdue”" : "Filter")
+                                .fontWeight(focused ? .regular : .medium)
+                                .foregroundStyle(NX.ink(focused ? 0.34 : 0.42))
+                        }
                     }
-                    if focused, !parsed.ghost.isEmpty {
-                        Text(parsed.ghost).foregroundStyle(NX.ink(0.3))
-                    }
-                    if query.isEmpty {
-                        Text(focused ? "Try “kyoto overdue”" : "Filter")
-                            .fontWeight(focused ? .regular : .medium)
-                            .foregroundStyle(NX.ink(focused ? 0.34 : 0.42))
-                    }
-                }
-                .font(.system(size: 13.5))
-                .lineLimit(1)
-                .fixedSize()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .clipped()
-                .allowsHitTesting(false)
-
-                TextField("", text: Binding(get: { workbench.tasksQuery }, set: { workbench.tasksQuery = $0 }))
-                    .textFieldStyle(.plain)
                     .font(.system(size: 13.5))
-                    .foregroundStyle(.clear)
-                    .focused($fieldFocused)
-                    .onSubmit { fieldFocused = false }
+                    .lineLimit(1)
+                    .fixedSize()
+                    // The field sets the width, never the text, so `fieldWidth` is the room on offer.
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                    .opacity(overflowing ? 0 : 1)
+                    .allowsHitTesting(false)
+
+                    TextField("", text: Binding(get: { workbench.tasksQuery }, set: { workbench.tasksQuery = $0 }))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(overflowing ? NX.ink : Color.clear)
+                        .focused($fieldFocused)
+                        .onSubmit { fieldFocused = false }
+                        .accessibilityLabel("Filter tasks")
+                }
+                .frame(height: 20)
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { fieldWidth = $0 }
+                // The scrolled text ends at the field's edge, so the completion Tab adds still shows after it.
+                if showsGhost, overflowing {
+                    Text(parsed.ghost)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(NX.ink(0.3))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
             }
-            .frame(height: 20)
             if hasQuery {
                 Text("\(count)")
                     .font(.system(size: 11, weight: .medium))
@@ -413,11 +490,12 @@ private struct NXTasksQueryBar: View {
 
     private func pillPopover(query: String) -> some View {
         let words = NXTaskQuery.words(in: query)
+        let vocabulary = NXTaskQuery(library: library)
         let rows: [(String, [(word: String, label: String, color: Color, list: TaskList?)])] = [
             ("When", [("overdue", "Overdue"), ("today", "Today"), ("tomorrow", "Tomorrow"), ("week", "This week"),
                       ("later", "Later"), ("undated", "No date")].map { ($0.0, $0.1, style.accent, nil) }),
-            ("List", library.lists.map { (NXTaskQuery.key(for: $0), $0.displayTitle, $0.nxColor, $0) }),
-            ("Label", library.labels.map { (NXTaskQuery.key(for: $0), "#\($0.name)", $0.nxColor, nil) }),
+            ("List", library.lists.map { (vocabulary.key(for: $0), $0.displayTitle, $0.nxColor, $0) }),
+            ("Label", library.labels.map { (vocabulary.key(for: $0), "#\($0.name)", $0.nxColor, nil) }),
             ("Only", [("starred", "Starred"), ("planned", "Planned"), ("high", "High priority")]
                 .map { ($0.0, $0.1, NX.amberText, nil) }),
         ]
@@ -432,6 +510,7 @@ private struct NXTasksQueryBar: View {
                         .frame(width: 44, alignment: .leading)
                         .padding(.top, 7)
                     NXFlow(spacing: 5) {
+                        // NXTaskQuery gives every list and label its own word, so words identify pills.
                         ForEach(pills, id: \.word) { pill in
                             NXQueryPill(label: pill.label, list: pill.list, color: pill.color, isOn: words.contains(pill.word)) {
                                 env.workbench.tasksQuery = NXTaskQuery.toggle(pill.word, in: env.workbench.tasksQuery)
@@ -515,12 +594,11 @@ struct NXTextHoverStyle: ButtonStyle {
 /// Left-to-right wrapping layout for pills.
 struct NXFlow: Layout {
     var spacing: CGFloat = 6
-    var lineSpacing: CGFloat?
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
         let width = rows.map { $0.width }.max() ?? 0
-        let height = rows.reduce(0) { $0 + $1.height } + CGFloat(max(0, rows.count - 1)) * (lineSpacing ?? spacing)
+        let height = rows.reduce(0) { $0 + $1.height } + CGFloat(max(0, rows.count - 1)) * spacing
         return CGSize(width: proposal.width ?? width, height: height)
     }
 
@@ -533,7 +611,7 @@ struct NXFlow: Layout {
                 subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
                 x += size.width + spacing
             }
-            y += row.height + (lineSpacing ?? spacing)
+            y += row.height + spacing
         }
     }
 
@@ -653,14 +731,11 @@ private struct NXTasksSentenceBar: View {
         NXSentenceToken(label: label, isOpen: menu == key) {
             menu = menu == key ? nil : key
         }
-        .overlay(alignment: .topLeading) {
-            if menu == key {
-                menuView(key)
-                    .offset(y: 32)
-                    .transition(.scale(scale: 0.96, anchor: .topLeading).combined(with: .opacity))
-            }
+        // A popover closes itself on Esc and on clicks elsewhere, and its keys never reach NextKeys.
+        .popover(isPresented: Binding(get: { menu == key }, set: { if !$0, menu == key { menu = nil } }),
+                 arrowEdge: .bottom) {
+            menuView(key)
         }
-        .zIndex(menu == key ? 5 : 0)
     }
 
     private func menuView(_ key: Menu) -> some View {
@@ -701,8 +776,6 @@ private struct NXTasksSentenceBar: View {
         }
         .padding(5)
         .frame(width: 250)
-        .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .nxCardShadow(radius: 11, hairline: 0.14, drop: 0.18, y: 16, blur: 40)
     }
 
     private func menuRow(label: String, list: TaskList? = nil, count: Int? = nil, isOn: Bool,

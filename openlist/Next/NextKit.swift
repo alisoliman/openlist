@@ -99,23 +99,12 @@ struct NXKey: View {
     }
 }
 
-/// A 16px key badge used by triage and the add row.
-struct NXKeyBadge: View {
-    let text: String
-    var body: some View {
-        Text(text)
-            .font(NX.mono(10, weight: .semibold))
-            .foregroundStyle(NX.ink(0.5))
-            .frame(minWidth: 16, minHeight: 16)
-            .padding(.horizontal, text.count > 1 ? 3 : 0)
-            .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-    }
-}
-
 /// The design's 34×20 switch.
 struct NXToggle: View {
     @Environment(\.nextStyle) private var style
     let isOn: Bool
+    /// What VoiceOver announces; the visible label sits beside the switch.
+    var label: String = ""
     var action: () -> Void
 
     var body: some View {
@@ -131,31 +120,9 @@ struct NXToggle: View {
             .animation(style.spring(200), value: isOn)
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Rounded pill used for inspector options, capture destinations and filters.
-struct NXPill<Label: View>: View {
-    @Environment(\.nextStyle) private var style
-    var isOn: Bool
-    var onColor: Color?
-    var action: () -> Void
-    @ViewBuilder var label: () -> Label
-
-    var body: some View {
-        Button(action: action) {
-            label()
-                .font(.system(size: 11.5, weight: .medium))
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .foregroundStyle(isOn ? Color.white : NX.ink(0.66))
-                .background(isOn ? (onColor ?? style.accent) : NX.ink(0.05),
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .contentShape(Rectangle())
-                .animation(style.ease(140), value: isOn)
-        }
-        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
     }
 }
 
@@ -198,21 +165,6 @@ extension View {
         self
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(NX.ink(hairline), lineWidth: 0.5))
             .shadow(color: NX.shadowWarm.opacity(drop), radius: blur / 2, y: y)
-    }
-
-    func nxSectionTitle() -> some View {
-        self.font(.system(size: 10.5, weight: .semibold))
-            .kerning(0.5)
-            .textCase(.uppercase)
-            .foregroundStyle(NX.ink(0.42))
-    }
-}
-
-/// Tracks hover for custom rows.
-struct NXHover: ViewModifier {
-    @Binding var isHovering: Bool
-    func body(content: Content) -> some View {
-        content.onHover { isHovering = $0 }
     }
 }
 

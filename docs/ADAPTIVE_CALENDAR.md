@@ -1,7 +1,7 @@
 # Adaptive calendar
 
 Openlist plans task sessions around available hours and the busy time in connected
-macOS calendars. Open **Calendar** in the sidebar or press **⌘6**. The **1 day**,
+macOS calendars. Open **Calendar** in the sidebar or press **⌘3**. The **1 day**,
 **3 days**, **1 week**, and **1 month** controls show the same schedule at different
 scales. Browsing another date does not change the rolling plan.
 

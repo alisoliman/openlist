@@ -19,6 +19,14 @@ enum NXFormat {
         calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)) ?? now
     }
 
+    /// The app's overdue rule (`Block.isOverdue`, TasksProjection): a timed task is late once its
+    /// time passes, an all-day task once its day ends. Ignores completion, so a task still closing
+    /// keeps its place; callers decide where finished tasks go.
+    static func isPastDue(_ task: Block, now: Date = .now) -> Bool {
+        guard let due = task.dueDate else { return false }
+        return due < (task.includesTime ? now : calendar.startOfDay(for: now))
+    }
+
     /// "Today", "Tomorrow", "Yesterday", "Fri 25" within the week, else "3 Oct".
     static func dueLabel(_ date: Date?, now: Date = .now) -> String {
         guard let date else { return "No date" }
@@ -91,20 +99,28 @@ struct CaptureParse {
     let segments: [Segment]
     let title: String
 
-    private static let patterns: [(Kind, String)] = [
+    /// Labels need whitespace or the start before `#`, as in the store's capture draft,
+    /// so `issue#42` and URL fragments stay plain text.
+    private static let sources: [(Kind, String)] = [
         (.repeatRule, #"\bevery\s(?:day|weekday|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"#),
         (.date, #"\b(?:today|tonight|tomorrow|tmrw|next\sweek|(?:next\s)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|in\s\d+\s(?:days?|weeks?))\b"#),
         (.time, #"\b(?:at\s)?\d{1,2}(?::\d{2})?\s?(?:am|pm)\b"#),
-        (.label, #"#[\p{L}0-9_-]+"#),
+        (.label, #"(?<!\S)#[\p{L}0-9_-]+"#),
         (.priority, #"!(?:high|med|medium|low|[1-3])\b"#),
         (.estimate, #"~\d+\s?(?:m|min|h)\b"#),
     ]
 
+    /// Compiled once rather than on every keystroke.
+    private static let patterns: [(Kind, NSRegularExpression)] = sources.compactMap { kind, pattern in
+        (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { (kind, $0) }
+    }
+
+    private static let clockPattern = try? NSRegularExpression(pattern: #"(\d{1,2})(?::(\d{2}))?\s?(am|pm)"#, options: .caseInsensitive)
+
     init(_ text: String) {
         self.text = text
         var marks: [Mark] = []
-        for (kind, pattern) in Self.patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+        for (kind, regex) in Self.patterns {
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let range = Range(match.range, in: text) else { continue }
                 if marks.contains(where: { $0.range.overlaps(range) }) { continue }
@@ -134,12 +150,25 @@ struct CaptureParse {
 
     var labels: [String] { marks.filter { $0.kind == .label }.map { String($0.raw.dropFirst()).lowercased() } }
 
-    var hasPriority: Bool { first(.priority) != nil }
+    var hasPriority: Bool { priority != nil }
 
+    /// `!high`/`!3`, `!med`/`!medium`/`!2` and `!low`/`!1`; nil without a token.
+    var priority: TaskPriority? {
+        guard let raw = first(.priority)?.raw else { return nil }
+        switch raw.dropFirst().lowercased() {
+        case "high", "3": return .high
+        case "med", "medium", "2": return .medium
+        case "low", "1": return .low
+        default: return nil
+        }
+    }
+
+    /// Minutes from `~45m`/`~2h`, capped at the store's four-week limit so a huge number can't overflow.
     var estimateMinutes: Int? {
         guard let raw = first(.estimate)?.raw else { return nil }
-        let digits = Int(raw.filter(\.isNumber)) ?? 0
-        return raw.lowercased().contains("h") ? digits * 60 : digits
+        let cap = 60 * 24 * 28
+        let value = raw.compactMap(\.wholeNumberValue).reduce(0) { min($0 * 10 + $1, cap) }
+        return min(raw.lowercased().contains("h") ? value * 60 : value, cap)
     }
 
     /// Text with the design-only tokens (priority, estimate) removed, for the date parser.
@@ -153,8 +182,7 @@ struct CaptureParse {
 
     /// "Today · today" style label for the date token preview.
     static func timeLabel(_ raw: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,2})(?::(\d{2}))?\s?(am|pm)"#, options: .caseInsensitive),
-              let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+        guard let match = clockPattern?.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
               let hourRange = Range(match.range(at: 1), in: raw),
               let meridiemRange = Range(match.range(at: 3), in: raw) else { return nil }
         let hour = (Int(raw[hourRange]) ?? 0) % 12 + (raw[meridiemRange].lowercased() == "pm" ? 12 : 0)

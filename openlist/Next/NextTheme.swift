@@ -27,11 +27,13 @@ enum NX {
     // MARK: Semantic
 
     static let green = Color(hex: 0x2F9E6E)
-    static let greenText = Color(hex: 0x23865B)
+    /// The text variants are darker in light mode and lighter in dark mode so
+    /// they clear 4.5:1 on paper and on their own tinted chip fill.
+    static let greenText = dynamic(light: 0x1B6E4A, dark: 0x5CC596)
     static let red = Color(hex: 0xD8434B)
-    static let redText = Color(hex: 0xC03A42)
+    static let redText = dynamic(light: 0xB0343C, dark: 0xF07A80)
     static let amber = Color(hex: 0xE8A917)
-    static let amberText = Color(hex: 0xA87A06)
+    static let amberText = dynamic(light: 0x8A6405, dark: 0xE8B84A)
     static let inbox = Color(hex: 0x3A7BD8)
     static let today = Color(hex: 0xE0861F)
     static let lists = Color(hex: 0x5B5BD6)
@@ -48,20 +50,15 @@ enum NX {
 
     // MARK: Type
 
-    static let serifFamily = "Instrument Serif"
+    /// Looked up once, after `registerFonts()` has run at launch.
+    private static let hasSerif = NSFont(name: "InstrumentSerif-Regular", size: 12) != nil
 
     static func serif(_ size: CGFloat) -> Font {
-        NSFont(name: "InstrumentSerif-Regular", size: size) != nil
-            ? .custom("InstrumentSerif-Regular", size: size)
-            : .system(size: size, design: .serif)
+        hasSerif ? .custom("InstrumentSerif-Regular", size: size) : .system(size: size, design: .serif)
     }
 
     static func mono(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
-    }
-
-    static func ui(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight)
     }
 
     /// Registers the bundled display face once per process.
@@ -118,16 +115,6 @@ extension EnvironmentValues {
     var nextStyle: NextStyle {
         get { self[NextStyleKey.self] }
         set { self[NextStyleKey.self] = newValue }
-    }
-}
-
-extension Color {
-    init(hex: UInt32, opacity: Double = 1) {
-        self.init(.sRGB,
-                  red: Double((hex >> 16) & 0xFF) / 255,
-                  green: Double((hex >> 8) & 0xFF) / 255,
-                  blue: Double(hex & 0xFF) / 255,
-                  opacity: opacity)
     }
 }
 

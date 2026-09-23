@@ -179,15 +179,16 @@ text instead of being silently discarded. No multi-selection UI is added here.
 
 ### Views
 
-**Inbox** (⌘1) · **Today** (⌘2) · **Updates** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5) ·
-**Calendar** (⌘6), plus per-label views and a completed archive. Today groups
+**Inbox** (⌘1) · **Today** (⌘2) · **Calendar** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5) ·
+**Activity** (⌘6), plus per-label views and a completed archive. Today groups
 overdue, due-today, planned-for-today, and starred work; Tasks filters and groups
-by date, list, label or priority; Updates is a personal activity feed grouped by day.
+by list or date; Activity shows the completion heatmap, the selected day, and the
+log of recent changes. Updates now lives under Activity.
 
-Inbox, Today, Calendar, Tasks, and Lists stay visible in the sidebar.
-**More** contains Updates, Activity, Completed, and Trash. Its expansion is
-remembered on this Mac; navigating to a destination inside it reveals that row.
-The toolbar's **+** is the shared task capture action on every page.
+The sidebar is flat: Inbox, Today, Calendar, Tasks, Lists, and Activity sit at the
+top, followed by your list sections, pinned lists, and labels. Trash and Settings
+are in the sidebar footer, and Trash also opens from the View menu.
+The toolbar's **New task** button (N) is the shared task capture action on every page.
 
 Inbox holds unorganized tasks and notes. Filing into a list moves the complete
 branch out of Inbox; setting a due date keeps it there. Hover or focus a row for
@@ -467,7 +468,9 @@ openlist/
                ICloudConfiguration, ICloudSyncMonitor, ICloudSyncState
   Editor/      BlockTextView (AppKit-backed), DocumentView, BlockRowView,
                SlashMenuView, MarkdownInputRules, BlockDragAndDrop
-  Views/       RootView, SidebarView, screens, pickers, palette, settings
+  Next/        Openlist Next shell: sidebar, screens, rows, inspector,
+               calendar, overlays, Workbench (shared UI state and actions)
+  Views/       RootView, document screens, shared pickers, settings
   Design/      Theme
 Shared/        ListAccent, WidgetSnapshot, AppGroup   (app + widget)
 OpenlistWidget/  WidgetKit extension

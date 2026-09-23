@@ -62,7 +62,9 @@ final class Workbench {
     var focusID: UUID?
     var selection: Set<UUID> = []
     /// Row order on screen, published by the visible screen for J/K and ⌘A.
-    @ObservationIgnored var visibleIDs: [UUID] = []
+    @ObservationIgnored var visibleIDs: [UUID] = [] {
+        didSet { visibleRoute = navigator.route }
+    }
 
     // MARK: Row feedback
 
@@ -89,18 +91,14 @@ final class Workbench {
     var kept: Set<UUID> = []
     var reviewed = 0
     var triageExit: TriageExit?
-    var triageFlip = false
 
     // MARK: Screens
 
-    var screenFlip = false
     var collapsedGroups: Set<String> = []
     var calendarDays = 7
-    var calendarAnchor = Calendar.current.startOfDay(for: .now)
     var tasksStatus: TasksStatusFilter = .open
     var tasksGrouping: TasksGroupingMode = .list
     var tasksQuery = ""
-    var tasksPills = TasksPillFilter()
     /// Sentence mode: the lists picked in "in [all lists▾]" and the title filter.
     var tasksListFilter: Set<UUID> = []
     var tasksTitleFilter = ""
@@ -110,6 +108,10 @@ final class Workbench {
     var captureText = ""
     var captureListID: UUID?
     var captureForToday = false
+    /// Capture on Calendar plans the task for today instead of setting a due date.
+    var capturePlansForToday = false
+    /// The label screen capture opened on; the new task gets that label.
+    var captureLabelID: UUID?
     var paletteQuery = ""
     var paletteIndex = 0
     var searchQuery = ""
@@ -117,33 +119,65 @@ final class Workbench {
     var searchIncludesCompleted = false
     var activityDay: Date?
 
-    var workStartedAt: Date?
-    var workPausedTaskID: UUID?
-    var workCarrySeconds: Double = 0
-    /// Lists shown as their editable document instead of Next's task view.
-    var documentListIDs: Set<UUID> = []
+    /// View ▸ Hide Sidebar. The shell also folds the sidebar away while a
+    /// narrow window shows the inspector; either one hides it.
+    var isSidebarHidden = false
+    var isSidebarFoldedForRoom = false
+    var showsSidebar: Bool { !isSidebarHidden && !isSidebarFoldedForRoom }
+
+    func toggleSidebar() {
+        withAnimation(style.ease(280)) {
+            if showsSidebar {
+                isSidebarHidden = true
+            } else {
+                isSidebarHidden = false
+                isSidebarFoldedForRoom = false
+            }
+        }
+    }
+
+    /// The running task, calendar notice, extension and reschedule the work watch last saw.
+    @ObservationIgnored var workWatch: (taskID: UUID?, notice: String?, grant: CalendarWorkExtension?, moved: UUID?) = (nil, nil, nil, nil)
+    /// Why the calendar paused work by itself, told again when you come back to
+    /// the Mac. `returnedAt` is the first return it was shown for.
+    @ObservationIgnored var awayPause: (taskID: UUID, text: String, conflict: Bool, returnedAt: Date?)?
+    /// Until the calendar's first notice: work paused when Openlist last quit
+    /// comes back with one.
+    @ObservationIgnored var awaitsLaunchNotice = true
 
     @ObservationIgnored var gPressedAt: Date?
     /// Names the Store's completion Undo after the design action that caused it.
     @ObservationIgnored var completionLabel: String?
-    /// Set while replaying design Undo so the Store doesn't register a second entry.
-    @ObservationIgnored var suppressesStoreUndo = false
+    /// Where the Store's completion Undo goes while a completion batch writes;
+    /// nil sends it to the window.
+    @ObservationIgnored private(set) var completionUndoTarget: UndoManager?
     @ObservationIgnored weak var undoManager: UndoManager? {
         didSet { if oldValue !== undoManager { observeUndo() } }
     }
     @ObservationIgnored private var batchCounter = 0
-    @ObservationIgnored private var closingBatches: [(batch: Int, label: String, ids: [UUID])] = []
-    @ObservationIgnored private var settleTasks: [UUID: Task<Void, Never>] = [:]
+    /// Completions still in their dwell, oldest first.
+    @ObservationIgnored private var completions: [CompletionBatch] = []
+    /// Trashes whose rows are still flying out.
+    @ObservationIgnored private var trashes: [TrashBatch] = []
+    /// The pop and strike of each row in the dwell.
+    @ObservationIgnored private var closingTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var flashTasks: [String: Task<Void, Never>] = [:]
+    /// Ids each flash key still has to clear when its timer fires.
+    @ObservationIgnored private var flashPending: [String: Set<UUID>] = [:]
     @ObservationIgnored private var trayTask: Task<Void, Never>?
     @ObservationIgnored private var undoObservers: [NSObjectProtocol] = []
-    @ObservationIgnored private var isApplyingOwnUndo = false
+    /// The route the last navigation reset ran for.
+    @ObservationIgnored private var shownRoute: AppRoute?
+    /// The route `visibleIDs` was published on.
+    @ObservationIgnored private var visibleRoute: AppRoute?
 
     init(store: Store, navigator: Navigator, settings: AppSettings, calendar: CalendarCoordinator) {
         self.store = store
         self.navigator = navigator
         self.settings = settings
         self.calendar = calendar
+        watchWork()
+        calendar.onMacReturn = { [weak self] in self?.macDidReturn() }
     }
 
     // MARK: Style
@@ -167,11 +201,12 @@ final class Workbench {
 
     // MARK: Targets
 
-    /// Selection, else keyboard focus, else the inspected task.
+    /// Selection, else keyboard focus, else the inspected task. Selected rows
+    /// the current screen doesn't show are never targets.
     var targetIDs: [UUID] {
         if !selection.isEmpty {
-            let ordered = visibleIDs.filter(selection.contains)
-            return ordered.isEmpty ? Array(selection) : ordered + selection.subtracting(ordered)
+            let ordered = visibleIDs.isEmpty ? Array(selection) : visibleIDs.filter(selection.contains)
+            if !ordered.isEmpty { return ordered }
         }
         if let focusID { return [focusID] }
         if let openID = navigator.openTaskID { return [openID] }
@@ -185,13 +220,30 @@ final class Workbench {
     // MARK: Navigation
 
     func go(_ route: AppRoute) {
-        focusID = nil
-        selection = []
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
-        guard navigator.route != route else { return }
-        withAnimation(style.ease(260)) { screenFlip.toggle() }
+        guard navigator.route != route else {
+            focusID = nil
+            selection = []
+            return
+        }
         navigator.go(to: route)
+        routeDidChange()
+    }
+
+    /// Resets what belongs to the screen being left. Runs for every route
+    /// change — Back/Forward, reveals and deletions as well as `go` — once per route.
+    func routeDidChange() {
+        guard shownRoute != navigator.route else { return }
+        shownRoute = navigator.route
+        focusID = nil
+        selection = []
+        // The new screen may already have published its rows.
+        if visibleRoute != navigator.route { visibleIDs = [] }
+        tasksQueryFocused = false
+        gPressedAt = nil
+        navigator.isCommandPaletteOpen = false
+        navigator.isSearchOpen = false
     }
 
     func inspect(_ id: UUID?) {
@@ -258,53 +310,87 @@ final class Workbench {
 
     // MARK: Change log
 
-    /// Records a change in the log and announces it in the tray.
+    /// Records a change in the log and announces it in the tray. An undoable
+    /// change ties its log batch to the Undo entry the caller just registered.
     func snap(_ label: String, icon: String, tone: TrayTone, ids: [UUID], undoable: Bool = true,
               destination: TrayDestination? = nil) {
-        batchCounter += 1
-        let now = Date.now
-        let entries = (ids.isEmpty ? [nil] : ids.map(Optional.some)).map {
-            ChangeEntry(taskID: $0, label: label, icon: icon, tone: tone, at: now, batch: batchCounter)
-        }
-        log.insert(contentsOf: entries, at: 0)
-        if log.count > 400 { log.removeLast(log.count - 400) }
+        let mark = record(label, icon: icon, tone: tone, ids: ids)
+        if undoable { attach(mark, restores: false) }
         showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
-        undoRevision += 1
     }
 
     var latestBatch: Int? { log.first?.batch }
 
     func entries(for taskID: UUID) -> [ChangeEntry] { log.filter { $0.taskID == taskID } }
 
+    private func record(_ label: String, icon: String, tone: TrayTone, ids: [UUID]) -> LogMark {
+        batchCounter += 1
+        let now = Date.now
+        let entries = (ids.isEmpty ? [nil] : ids.map(Optional.some)).map {
+            ChangeEntry(taskID: $0, label: label, icon: icon, tone: tone, at: now, batch: batchCounter)
+        }
+        insert(entries)
+        undoRevision += 1
+        return LogMark(batch: batchCounter, label: label, entries: entries)
+    }
+
+    /// Puts entries back in batch order, so Redo returns a batch to where it was.
+    private func insert(_ entries: [ChangeEntry]) {
+        guard let batch = entries.first?.batch else { return }
+        log.insert(contentsOf: entries, at: log.firstIndex { $0.batch < batch } ?? log.endIndex)
+        if log.count > 400 { log.removeLast(log.count - 400) }
+    }
+
+    /// Registers the log half of an Undo entry, in the same group as the change
+    /// itself. However that entry is undone — ⌘Z, the tray, Edit › Undo — this
+    /// takes exactly its batch out of the log, and Redo puts it back.
+    private func attach(_ mark: LogMark, restores: Bool) {
+        guard let undoManager else { return }
+        // The manager holds its target weakly; the handler keeps the mark alive.
+        undoManager.registerUndo(withTarget: mark) { [weak self, mark] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if restores { self.relog(mark) } else { self.unlog(mark) }
+                self.attach(mark, restores: !restores)
+            }
+        }
+        undoManager.setActionName(mark.label)
+    }
+
+    private func unlog(_ mark: LogMark) {
+        log.removeAll { $0.batch == mark.batch }
+        markRestored(mark.entries.compactMap(\.taskID))
+        showTray("Undid — \(mark.label)", icon: "arrow.uturn.backward", tone: .neutral)
+        undoRevision += 1
+    }
+
+    private func relog(_ mark: LogMark) {
+        insert(mark.entries)
+        undoRevision += 1
+    }
+
     // MARK: Undo
 
     /// The label the toolbar's Undo button shows, or nil when nothing can be undone.
+    /// It names the entry on top of the stack, which is what Undo will take back.
     var undoLabel: String? {
         _ = undoRevision
-        if let pending = closingBatches.last { return pending.label }
         guard let undoManager, undoManager.canUndo else { return nil }
         let name = undoManager.undoActionName
         return name.isEmpty ? "Undo" : name
     }
 
-    var canUndo: Bool { undoLabel != nil }
+    /// Whether Undo would take back the newest logged change, so the tray and
+    /// Changes only offer Undo for the change they describe.
+    var canUndo: Bool {
+        _ = undoRevision
+        guard let undoManager, undoManager.canUndo, let first = log.first else { return false }
+        return undoManager.undoActionName == first.label
+    }
 
-    /// Toolbar, tray and ⌘Z: cancel a pending completion first, else step the undo stack.
+    /// Toolbar, tray and ⌘Z: step the window's undo stack. A completion still in
+    /// its dwell is an entry there like any other; undoing it cancels the dwell.
     func undoLast() {
-        let stackIsNewer = closingBatches.last.map { pending in
-            (log.first?.batch ?? pending.batch) > pending.batch && undoManager?.canUndo == true
-        } ?? true
-        if !stackIsNewer, let pending = closingBatches.popLast() {
-            for id in pending.ids { settleTasks.removeValue(forKey: id)?.cancel() }
-            withAnimation(style.ease(260)) {
-                for id in pending.ids { closing[id] = nil }
-            }
-            markRestored(pending.ids)
-            log.removeAll { $0.batch == pending.batch }
-            showTray("Undid — \(pending.label)", icon: "arrow.uturn.backward", tone: .neutral)
-            undoRevision += 1
-            return
-        }
         guard let undoManager, undoManager.canUndo else { return }
         undoManager.undo()
     }
@@ -327,45 +413,37 @@ final class Workbench {
         undoObservers = []
         guard let undoManager else { return }
         let center = NotificationCenter.default
-        let names: [Notification.Name] = [.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidRedoChange,
-                                          .NSUndoManagerCheckpoint]
+        let names: [Notification.Name] = [.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange,
+                                          .NSUndoManagerDidRedoChange, .NSUndoManagerCheckpoint]
         for name in names {
             undoObservers.append(center.addObserver(forName: name, object: undoManager, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.undoRevision += 1 }
             })
         }
-        undoObservers.append(center.addObserver(forName: .NSUndoManagerDidUndoChange, object: undoManager,
-                                                queue: .main) { [weak self, weak undoManager] _ in
-            MainActor.assumeIsolated {
-                guard let self, let undoManager else { return }
-                self.didUndo(named: undoManager.redoActionName)
-            }
-        })
-    }
-
-    private func didUndo(named name: String) {
-        undoRevision += 1
-        guard let first = log.first else { return }
-        // Only design actions have log entries; text-editing undo leaves the log alone.
-        let matches = first.label == name || name.hasPrefix("Complete") || name == "Move to Trash"
-        guard matches else { return }
-        let ids = log.filter { $0.batch == first.batch }.compactMap(\.taskID)
-        log.removeAll { $0.batch == first.batch }
-        markRestored(ids)
-        showTray("Undid — \(first.label)", icon: "arrow.uturn.backward", tone: .neutral)
     }
 
     // MARK: Flashes
+
+    /// Runs `clear` after `milliseconds`, replacing the timer pending under `key`.
+    func after(_ milliseconds: Double, key: String, _ clear: @escaping (Workbench) -> Void) {
+        flashTasks[key]?.cancel()
+        flashTasks[key] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int(milliseconds)))
+            guard !Task.isCancelled, let self else { return }
+            self.flashTasks[key] = nil
+            clear(self)
+        }
+    }
 
     func flash(_ keyPath: ReferenceWritableKeyPath<Workbench, Set<UUID>>, _ ids: [UUID], for milliseconds: Double) {
         guard !ids.isEmpty else { return }
         let key = "\(keyPath.hashValue)"
         self[keyPath: keyPath].formUnion(ids)
-        flashTasks[key]?.cancel()
-        flashTasks[key] = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(Int(milliseconds)))
-            guard !Task.isCancelled, let self else { return }
-            withAnimation(self.style.ease(400)) { self[keyPath: keyPath].subtract(ids) }
+        // A later flash restarts the timer, so it clears the earlier ids too.
+        flashPending[key, default: []].formUnion(ids)
+        after(milliseconds, key: key) { workbench in
+            let ids = workbench.flashPending.removeValue(forKey: key) ?? []
+            withAnimation(workbench.style.ease(400)) { workbench[keyPath: keyPath].subtract(ids) }
         }
     }
 
@@ -376,47 +454,58 @@ final class Workbench {
         pulseListID = listID
         pulseRevision += 1
         let revision = pulseRevision
-        flashTasks["pulseList"]?.cancel()
-        flashTasks["pulseList"] = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1100))
-            guard !Task.isCancelled, let self, self.pulseRevision == revision else { return }
-            self.pulseListID = nil
+        after(1100, key: "pulseList") { workbench in
+            guard workbench.pulseRevision == revision else { return }
+            workbench.pulseListID = nil
         }
     }
 
     func pulseCheck(_ id: UUID) {
         guard style.lively else { return }
         pulseTaskID = id
-        flashTasks["pulseTask"]?.cancel()
-        flashTasks["pulseTask"] = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(700))
-            guard !Task.isCancelled, let self else { return }
-            self.pulseTaskID = nil
-        }
+        after(700, key: "pulseTask") { $0.pulseTaskID = nil }
     }
 
     func flashBlock(_ taskID: UUID) {
         freshBlockTaskID = taskID
-        flashTasks["freshBlock"]?.cancel()
-        flashTasks["freshBlock"] = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1400))
-            guard !Task.isCancelled, let self else { return }
-            withAnimation(self.style.ease(400)) { self.freshBlockTaskID = nil }
+        after(1400, key: "freshBlock") { workbench in
+            withAnimation(workbench.style.ease(400)) { workbench.freshBlockTaskID = nil }
         }
     }
 
     // MARK: Completion dwell
 
-    /// Starts the visible completion: pop, strike, then settle after the dwell.
-    func beginClosing(_ tasks: [Block], label: String, batch: Int) {
-        let ids = tasks.map(\.id)
-        closingBatches.append((batch, label, ids))
-        undoRevision += 1
-        for (index, task) in tasks.enumerated() {
-            let id = task.id
+    /// Completes `tasks` as one change: repeats roll forward now, the rest pop,
+    /// strike and settle together once the dwell ends. The window's undo stack
+    /// gets a single entry for all of it straight away. Undone during the dwell
+    /// it cancels what's pending; undone later it restores what was written.
+    /// `resume` is paused work the completion took off the notch, which Undo
+    /// offers again. `makeLabel` runs after rolling, so a lone repeat can name
+    /// its next date.
+    func beginClosing(_ tasks: [Block], resuming resume: WorkTaskReference? = nil, label makeLabel: () -> String) {
+        // A parent covers the subtasks ticked with it: a repeat resets them for
+        // its next date, and the rest complete with their parent as it settles.
+        let rolls = uncovered(tasks.filter { $0.recurrence != nil }, by: Set(tasks.map(\.id)))
+        let rolled = Set(rolls.map(\.id))
+        let plain = uncovered(tasks.filter { !rolled.contains($0.id) }, by: rolled).map(\.id)
+        let changes = UndoManager()
+        changes.groupsByEvent = false
+        write(rolls, on: changes)
+        let label = makeLabel()
+        let icon = !rolls.isEmpty && plain.isEmpty ? "repeat" : "checkmark.circle.fill"
+        let completion = CompletionBatch(mark: record(label, icon: icon, tone: .green, ids: tasks.map(\.id)),
+                                         changes: changes, pending: plain, resume: resume)
+        attach(completion: completion, restores: false)
+        showTray(label, icon: icon, tone: .green, undoable: true)
+        guard !plain.isEmpty else {
+            if let first = rolls.first { pulseCheck(first.id) }
+            return
+        }
+        completions.append(completion)
+        for (index, id) in plain.enumerated() {
             let stagger = Double(index) * ms(75)
-            settleTasks[id]?.cancel()
-            settleTasks[id] = Task { [weak self] in
+            closingTasks[id]?.cancel()
+            closingTasks[id] = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(Int(stagger)))
                 guard !Task.isCancelled, let self else { return }
                 withAnimation(self.style.spring(260)) { self.closing[id] = false }
@@ -424,55 +513,272 @@ final class Workbench {
                 try? await Task.sleep(for: .milliseconds(Int(self.ms(130))))
                 guard !Task.isCancelled else { return }
                 withAnimation(self.style.ease(340)) { self.closing[id] = true }
-                try? await Task.sleep(for: .milliseconds(Int(self.style.dwell * 1000 + 300)))
-                guard !Task.isCancelled else { return }
-                self.settle(id)
+                self.closingTasks[id] = nil
             }
+        }
+        // The batch settles as a unit once its last row has struck and dwelt.
+        let delay = Double(plain.count - 1) * ms(75) + ms(130) + style.dwell * 1000 + 300
+        completion.settleTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int(delay)))
+            guard !Task.isCancelled, let self else { return }
+            self.settle(completion)
         }
     }
 
-    func cancelClosing(_ ids: [UUID]) {
-        for id in ids { settleTasks.removeValue(forKey: id)?.cancel() }
+    /// Takes rows out of the dwell before they're written. A batch left with
+    /// nothing pending or written leaves the log and the undo stack. Paused
+    /// work the completion took off the notch comes back unless `restoresWork`
+    /// is false, as when the rows go to Trash instead.
+    func cancelClosing(_ ids: [UUID], restoresWork: Bool = true) {
+        for id in ids { closingTasks.removeValue(forKey: id)?.cancel() }
         withAnimation(style.ease(240)) { for id in ids { closing[id] = nil } }
-        for index in closingBatches.indices.reversed() {
-            closingBatches[index].ids.removeAll(where: ids.contains)
-            if closingBatches[index].ids.isEmpty {
-                log.removeAll { $0.batch == closingBatches[index].batch }
-                closingBatches.remove(at: index)
+        for completion in completions where completion.pending.contains(where: ids.contains) {
+            let dropped = completion.pending.filter(ids.contains)
+            completion.pending.removeAll(where: dropped.contains)
+            completion.mark.entries.removeAll { $0.taskID.map(dropped.contains) ?? false }
+            log.removeAll { $0.batch == completion.mark.batch && ($0.taskID.map(dropped.contains) ?? false) }
+            if restoresWork, let resume = completion.resume, dropped.contains(resume.taskID) {
+                calendar.restoreResume(resume)
+            }
+            guard completion.pending.isEmpty else { continue }
+            completion.settleTask?.cancel()
+            completion.settleTask = nil
+            completions.removeAll { $0 === completion }
+            if !completion.changes.canUndo {
+                log.removeAll { $0.batch == completion.mark.batch }
+                undoManager?.removeAllActions(withTarget: completion.mark)
             }
         }
         undoRevision += 1
     }
 
-    private func settle(_ id: UUID) {
-        settleTasks[id] = nil
-        let label = closingBatches.first(where: { $0.ids.contains(id) })?.label
-        for index in closingBatches.indices.reversed() {
-            closingBatches[index].ids.removeAll { $0 == id }
-            if closingBatches[index].ids.isEmpty { closingBatches.remove(at: index) }
-        }
-        if let task = store.block(id: id), !task.isCompleted {
-            if calendar.activeSession?.taskID == id { calendar.complete(task: task) }
-            else { store.toggleCompletion(task) }
-            if let label { undoManager?.setActionName(label) }
-        }
-        withAnimation(style.ease(320)) { closing[id] = nil }
+    /// Writes every row still pending in the batch in one turn.
+    private func settle(_ completion: CompletionBatch) {
+        completion.settleTask?.cancel()
+        completion.settleTask = nil
+        completions.removeAll { $0 === completion }
+        let ids = completion.pending
+        completion.pending = []
+        for id in ids { closingTasks.removeValue(forKey: id)?.cancel() }
+        write(ids.compactMap { store.block(id: $0) }, on: completion.changes)
+        withAnimation(style.ease(320)) { for id in ids { closing[id] = nil } }
         undoRevision += 1
     }
 
-    /// Settles every pending completion immediately — used before quitting.
-    func flushClosings() {
-        for id in Array(settleTasks.keys) {
-            settleTasks[id]?.cancel()
-            settle(id)
+    /// Completes tasks through the Store as one group on the batch's own undo
+    /// stack, so the window never gets a second entry for them.
+    private func write(_ tasks: [Block], on changes: UndoManager) {
+        let open = tasks.filter { !$0.isCompleted }
+        // A parent completes the subtasks written with it, and toggling one of
+        // them afterwards would reopen it.
+        let roots = uncovered(open, by: Set(open.map(\.id)))
+        guard !roots.isEmpty else { return }
+        changes.beginUndoGrouping()
+        completionUndoTarget = changes
+        for task in roots where !task.isCompleted {
+            if calendar.activeSession?.taskID == task.id { calendar.complete(task: task) }
+            else { store.toggleCompletion(task) }
         }
+        completionUndoTarget = nil
+        changes.endUndoGrouping()
+    }
+
+    /// The tasks with no parent, at any depth, among `ids`.
+    private func uncovered(_ tasks: [Block], by ids: Set<UUID>) -> [Block] {
+        tasks.filter { task in
+            var parentID = task.parentID
+            var visited: Set<UUID> = [task.id]
+            while let id = parentID, visited.insert(id).inserted {
+                if ids.contains(id) { return false }
+                parentID = store.block(id: id)?.parentID
+            }
+            return true
+        }
+    }
+
+    /// The batch's one window entry. Undo cancels and restores the whole batch;
+    /// Redo writes it again, rows that never settled included.
+    private func attach(completion: CompletionBatch, restores: Bool) {
+        guard let undoManager else { return }
+        // The manager holds its target weakly; the handler keeps the batch alive.
+        undoManager.registerUndo(withTarget: completion.mark) { [weak self, completion] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if restores { self.reapply(completion) } else { self.revert(completion) }
+                self.attach(completion: completion, restores: !restores)
+            }
+        }
+        undoManager.setActionName(completion.mark.label)
+    }
+
+    private func revert(_ completion: CompletionBatch) {
+        completion.settleTask?.cancel()
+        completion.settleTask = nil
+        completions.removeAll { $0 === completion }
+        let pending = completion.pending
+        completion.cancelled = pending
+        completion.pending = []
+        for id in pending { closingTasks.removeValue(forKey: id)?.cancel() }
+        withAnimation(style.ease(260)) { for id in pending { closing[id] = nil } }
+        while completion.changes.canUndo { completion.changes.undo() }
+        if let resume = completion.resume { calendar.restoreResume(resume) }
+        unlog(completion.mark)
+    }
+
+    private func reapply(_ completion: CompletionBatch) {
+        while completion.changes.canRedo { completion.changes.redo() }
+        if !completion.cancelled.isEmpty {
+            write(completion.cancelled.compactMap { store.block(id: $0) }, on: completion.changes)
+            completion.cancelled = []
+            // The batch is written now, so it's logged now: the Store dates its
+            // completion from this write.
+            let now = Date.now
+            for index in completion.mark.entries.indices { completion.mark.entries[index].at = now }
+        }
+        if let resume = completion.resume, calendar.resumeTaskID == resume.taskID { calendar.dismissResume() }
+        relog(completion.mark)
+    }
+
+    /// Settles every pending completion and trash now. Runs before quitting,
+    /// so a row that showed as done or deleted is saved that way.
+    func flushClosings() {
+        for completion in completions { settle(completion) }
+        for trash in trashes { land(trash) }
+    }
+
+    // MARK: Trash
+
+    /// Moves tasks to Trash as one change. The window's undo stack and the log
+    /// get the entry now; the rows fly out and are written once they've gone.
+    /// Undone in flight, nothing is written.
+    func beginTrash(_ ids: [UUID], label: String) {
+        guard !ids.isEmpty else { return }
+        let changes = UndoManager()
+        changes.groupsByEvent = false
+        let trash = TrashBatch(mark: record(label, icon: "trash", tone: .red, ids: ids), ids: ids, changes: changes)
+        attach(trash: trash, restores: false)
+        showTray(label, icon: "trash", tone: .red, undoable: true,
+                 destination: TrayDestination(label: "Open Trash", route: .trash))
+        trashes.append(trash)
+        withAnimation(style.ease(320)) { flying.formUnion(ids) }
+        let delay = ms(320)
+        trash.task = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int(delay)))
+            guard !Task.isCancelled, let self else { return }
+            self.land(trash)
+        }
+    }
+
+    /// Writes a trash whose rows have flown out.
+    private func land(_ trash: TrashBatch) {
+        trash.task?.cancel()
+        trash.task = nil
+        trashes.removeAll { $0 === trash }
+        let wrote = writeTrash(trash)
+        flying.subtract(trash.ids)
+        guard !wrote else { return }
+        // Nothing moved: the change leaves the log and the undo stack, and the
+        // shell's Trash notice says why in place of the tray.
+        log.removeAll { $0.batch == trash.mark.batch }
+        undoManager?.removeAllActions(withTarget: trash.mark)
+        if tray?.text == trash.mark.label { dismissTray() }
+        undoRevision += 1
+    }
+
+    /// Moves the batch's tasks still present to Trash, on its own undo stack.
+    private func writeTrash(_ trash: TrashBatch) -> Bool {
+        let blocks = trash.ids.compactMap { store.block(id: $0) }
+        guard !blocks.isEmpty else { return false }
+        trash.changes.beginUndoGrouping()
+        let wrote = store.trashBlocks(blocks, undoManager: trash.changes)
+        trash.changes.endUndoGrouping()
+        return wrote
+    }
+
+    /// The trash's one window entry. Undo puts the rows back, or stops a trash
+    /// still in flight; Redo moves them to Trash again.
+    private func attach(trash: TrashBatch, restores: Bool) {
+        guard let undoManager else { return }
+        // The manager holds its target weakly; the handler keeps the batch alive.
+        undoManager.registerUndo(withTarget: trash.mark) { [weak self, trash] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if restores {
+                    if trash.changes.canRedo { trash.changes.redo() } else { _ = self.writeTrash(trash) }
+                    self.relog(trash.mark)
+                } else {
+                    if let task = trash.task {
+                        task.cancel()
+                        trash.task = nil
+                        self.trashes.removeAll { $0 === trash }
+                        withAnimation(self.style.ease(260)) { self.flying.subtract(trash.ids) }
+                    }
+                    while trash.changes.canUndo { trash.changes.undo() }
+                    self.unlog(trash.mark)
+                }
+                self.attach(trash: trash, restores: !restores)
+            }
+        }
+        undoManager.setActionName(trash.mark.label)
     }
 
     func bumpUndo() { undoRevision += 1 }
+}
 
-    func nextBatch() -> Int {
-        batchCounter += 1
-        return batchCounter
+// MARK: - Undo records
+
+/// Ties a log batch to the undo entry that made it, so undoing that entry
+/// removes exactly this batch, whatever the entry is called.
+private final class LogMark {
+    let batch: Int
+    let label: String
+    /// What Redo puts back in the log; rows cancelled mid-dwell drop out.
+    var entries: [ChangeEntry]
+
+    init(batch: Int, label: String, entries: [ChangeEntry]) {
+        self.batch = batch
+        self.label = label
+        self.entries = entries
+    }
+}
+
+/// Tasks completed together, undone and redone as one window entry.
+///
+/// The Store's writes, repeats rolling at once and the rest when the dwell
+/// ends, register their exact restores on `changes`. The window entry
+/// unwinds and replays that stack as a unit.
+private final class CompletionBatch {
+    let mark: LogMark
+    let changes: UndoManager
+    /// Rows still in the dwell, in tick order.
+    var pending: [UUID]
+    /// Rows Undo cancelled before they were written; Redo writes them.
+    var cancelled: [UUID] = []
+    var settleTask: Task<Void, Never>?
+    /// Paused work the completion took off the notch; Undo offers it again.
+    let resume: WorkTaskReference?
+
+    init(mark: LogMark, changes: UndoManager, pending: [UUID], resume: WorkTaskReference?) {
+        self.mark = mark
+        self.changes = changes
+        self.pending = pending
+        self.resume = resume
+    }
+}
+
+/// Tasks moved to Trash together. The rows fly out first; the Store's write
+/// then registers its exact restore on `changes`.
+private final class TrashBatch {
+    let mark: LogMark
+    let ids: [UUID]
+    let changes: UndoManager
+    /// Lands the trash once the rows have flown out; nil once written.
+    var task: Task<Void, Never>?
+
+    init(mark: LogMark, ids: [UUID], changes: UndoManager) {
+        self.mark = mark
+        self.ids = ids
+        self.changes = changes
     }
 }
 
@@ -521,13 +827,4 @@ enum TasksGroupingMode: String, CaseIterable, Identifiable {
         case .none: .list
         }
     }
-}
-
-struct TasksPillFilter: Equatable {
-    var when: String?
-    var listID: UUID?
-    var labelID: UUID?
-    var only: String?
-
-    var isEmpty: Bool { when == nil && listID == nil && labelID == nil && only == nil }
 }

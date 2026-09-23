@@ -23,8 +23,21 @@ struct NextInboxScreen: View {
                                   collapsible: true))
         }
         let subtitle = "\(queue.count) to triage" + (workbench.kept.isEmpty ? "" : " · \(kept.count) kept for later")
-        return NXPage(rowIDs: (queue.first.map { [$0.id] } ?? []) + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
-            NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox", subtitle: subtitle)
+        // Only the rows below are focus targets: the triage card's keys work while nothing is focused.
+        let rowIDs = NXGroupsStack.rowIDs(groups, workbench: workbench)
+        return NXPage(rowIDs: rowIDs) {
+            NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox", subtitle: subtitle) {
+                if let inbox = library.inbox {
+                    Button { env.navigator.setListViewMode(.document, for: inbox.id) } label: {
+                        Image(systemName: "doc.text").font(.system(size: 14, weight: .medium))
+                    }
+                    .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 7,
+                                                    padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
+                                                    foreground: NX.ink(0.45), hoverForeground: NX.ink))
+                    .help("Show notes and headings")
+                    .accessibilityLabel("Show as Document")
+                }
+            }
             Group {
                 if let task = queue.first {
                     NXTriageCard(task: task, remaining: queue.count)
@@ -36,6 +49,13 @@ struct NextInboxScreen: View {
             .padding(.top, 22)
             NXGroupsStack(groups: groups, options: NXRowOptions(showList: false), topPadding: 10)
         }
+        // A focused row that becomes the card, or leaves the page, gives the keys back to triage.
+        .onChange(of: rowIDs) { _, ids in dropStaleFocus(ids) }
+        .onChange(of: workbench.focusID) { _, _ in dropStaleFocus(rowIDs) }
+    }
+
+    private func dropStaleFocus(_ rowIDs: [UUID]) {
+        if let id = env.workbench.focusID, !rowIDs.contains(id) { env.workbench.focusID = nil }
     }
 }
 
@@ -93,7 +113,7 @@ private struct NXTriageCard: View {
         var chips: [NXChipModel] = []
         if let due = task.dueDate {
             chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due), icon: "calendar",
-                                     tone: NXFormat.dayOffset(due) <= 0 ? .accent : .neutral))
+                                     tone: task.isDueOnOrBeforeToday ? .accent : .neutral))
         }
         if task.priority != .none {
             chips.append(NXChipModel(id: "prio", label: task.priority == .high ? "High priority" : task.priority.title,
@@ -172,8 +192,9 @@ private struct NXTriageCard: View {
             footerButton("Discard", icon: "trash", key: "D", hover: NX.red.opacity(0.1), hoverText: NX.redText) {
                 workbench.triage(task, action: .down)
             }
+            // Opens the inspector without focusing the card, so triage keys still apply once it closes.
             footerButton("Details", icon: "sidebar.right", key: "↩", hover: NX.ink(0.06), hoverText: NX.ink) {
-                workbench.inspect(task.id)
+                env.navigator.openTask(task.id)
             }
             Spacer(minLength: 8)
             Button { workbench.triage(task, action: .right) } label: {
@@ -186,6 +207,7 @@ private struct NXTriageCard: View {
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: .white, hoverForeground: .white))
             .background(NX.inverse, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .accessibilityLabel("Keep for later")
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
@@ -215,6 +237,7 @@ private struct NXTriageCard: View {
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8,
                                         padding: EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10),
                                         foreground: NX.ink(0.7), hoverForeground: hoverText))
+        .accessibilityLabel(title)
     }
 }
 
@@ -244,6 +267,11 @@ private struct NXTriageListRow: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
         .help("File into \(list.displayTitle) (\(key))")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("File into \(list.displayTitle)")
+        .accessibilityValue("\(count) open")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
     }
 }
 
@@ -281,6 +309,12 @@ private struct NXTriageDay: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
         .help(load == 0 ? "Nothing due" : "\(load) already due")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Schedule for " + (offset == 0 ? "today" : offset == 1 ? "tomorrow"
+            : date.formatted(.dateTime.weekday(.wide).day().month(.wide))))
+        .accessibilityValue(load == 0 ? "Nothing due" : "\(load) already due")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
     }
 }
 

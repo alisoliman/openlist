@@ -11,22 +11,27 @@ struct NextCalendarScreen: View {
 
     var body: some View {
         let workbench = env.workbench
-        let dates = Self.dates(count: workbench.calendarDays)
+        let days = workbench.calendarDays
         NXPage(wide: true) {
-            NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates)) {
-                NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: workbench.calendarDays) { value in
-                    withAnimation(style.ease(260)) { workbench.calendarDays = value }
-                }
-            }
+            // The range comes from the timeline's date, so a screen left open
+            // overnight moves to the new day with its header.
             TimelineView(.everyMinute) { context in
-                NXCalendarBody(dates: dates, now: context.date)
+                let dates = Self.dates(count: days, from: context.date)
+                VStack(alignment: .leading, spacing: 0) {
+                    NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates)) {
+                        NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { value in
+                            withAnimation(style.ease(260)) { workbench.calendarDays = value }
+                        }
+                    }
+                    NXCalendarBody(dates: dates, now: context.date)
+                }
             }
         }
     }
 
     /// The week starts two days back so yesterday's misses stay in view.
-    static func dates(count: Int) -> [Date] {
-        let first = NXFormat.day(offset: count == 7 ? -2 : 0)
+    static func dates(count: Int, from now: Date = .now) -> [Date] {
+        let first = NXFormat.day(offset: count == 7 ? -2 : 0, now: now)
         return (0..<count).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: first) }
     }
 
@@ -106,9 +111,10 @@ private struct NXCalendarBody: View {
     }
 
     private var plannedNow: PlannedBlock? {
-        guard env.workbench.workTask == nil else { return nil }
+        guard env.calendar.activeSession == nil else { return nil }
+        let paused = env.calendar.resumableTask?.id
         return env.calendar.visibleBlocks.first { block in
-            guard !block.isCompleted, block.start <= now, now < block.end,
+            guard !block.isCompleted, block.start <= now, now < block.end, block.taskID != paused,
                   let task = env.store.block(id: block.taskID) else { return false }
             return !task.isCompleted && task.trashID == nil && env.workbench.closing[task.id] == nil
         }
@@ -149,21 +155,25 @@ private struct NXCalendarBody: View {
 
     private func grid(_ range: ClosedRange<Int>) -> some View {
         let height = CGFloat(range.upperBound - range.lowerBound) * NXCal.hourHeight
+        let cal = Calendar.current
+        let blocksByDay = Dictionary(grouping: blocks) { cal.startOfDay(for: $0.start) }
+        let eventsByDay = Dictionary(grouping: events) { cal.startOfDay(for: $0.start) }
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Color.clear.frame(width: NXCal.gutter, height: 1)
                 ForEach(dates, id: \.self) { date in
-                    NXDayHead(date: date, now: now, load: loadHours(on: date))
+                    let day = cal.startOfDay(for: date)
+                    NXDayHead(date: date, now: now, load: Self.hours(blocksByDay[day] ?? [], eventsByDay[day] ?? []))
                 }
             }
             .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.09)).frame(height: 0.5) }
             HStack(alignment: .top, spacing: 0) {
-                NXHourGutter(range: range, now: now, showsNow: dates.contains { Calendar.current.isDate($0, inSameDayAs: now) })
+                NXHourGutter(range: range, now: now, showsNow: dates.contains { cal.isDate($0, inSameDayAs: now) })
                     .frame(width: NXCal.gutter, height: height)
                 ForEach(dates, id: \.self) { date in
+                    let day = cal.startOfDay(for: date)
                     NXDayColumn(date: date, now: now, range: range,
-                                blocks: blocks.filter { Calendar.current.isDate($0.start, inSameDayAs: date) },
-                                events: events.filter { Calendar.current.isDate($0.start, inSameDayAs: date) })
+                                blocks: blocksByDay[day] ?? [], events: eventsByDay[day] ?? [])
                         .frame(minWidth: NXCal.minColumn, maxWidth: .infinity)
                         .frame(height: height)
                 }
@@ -174,10 +184,10 @@ private struct NXCalendarBody: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
     }
 
-    private func loadHours(on date: Date) -> Double {
-        let cal = Calendar.current
-        let seconds = blocks.filter { cal.isDate($0.start, inSameDayAs: date) }.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
-            + events.filter { cal.isDate($0.start, inSameDayAs: date) }.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
+    /// Booked hours in one day's blocks and events.
+    private static func hours(_ blocks: [PlannedBlock], _ events: [FixedBusyTime]) -> Double {
+        let seconds = blocks.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
+            + events.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
         return seconds / 3600
     }
 }
@@ -415,7 +425,7 @@ private struct NXCalendarBlock: View {
         let closing = workbench.closing[block.taskID] != nil
         let done = block.isCompleted || task?.isCompleted == true || closing
         let missed = (isPastDay || (isToday && block.end <= now)) && !done
-        let working = !block.isCompleted && workbench.workTask?.id == block.taskID && !workbench.isWorkPaused
+        let working = !block.isCompleted && task != nil && env.calendar.activeSession?.taskID == block.taskID
         let isNow = isToday && block.start <= now && now < block.end
         let focused = env.navigator.openTaskID == block.taskID
         let fg: Color = working ? .white : done ? NX.ink(0.5) : NX.ink
@@ -479,10 +489,12 @@ private struct NXCalendarBlock: View {
         }
         .animation(.easeOut(duration: 0.24), value: done)
         .animation(.easeOut(duration: 0.24), value: working)
-        .onChange(of: fresh) { _, isFresh in
+        .onChange(of: fresh, initial: true) { _, isFresh in
             guard isFresh else { return }
             popped = false
-            withAnimation(style.ease(380)) { popped = true }
+            // A planned block usually arrives already fresh. Animating back on
+            // the next update keeps both changes from merging into one.
+            Task { @MainActor in withAnimation(style.ease(380)) { popped = true } }
         }
         .help(task?.displayTitle ?? "")
     }
@@ -492,6 +504,13 @@ private struct NXCalendarBlock: View {
         if missed { text += " · carried forward" }
         else if working { text += block.conflicts.first.map { " · runs into \($0)" } ?? " · working" }
         else if isNow { text += " · now" }
+        let calendar = env.calendar
+        if let extended = calendar.workExtension, extended.occurrenceID == block.occurrenceID {
+            text += " · extended"
+        } else if calendar.workExtension?.movedTaskIDs.contains(block.taskID) == true
+                    || calendar.rescheduleSummary?.taskIDs.contains(block.taskID) == true {
+            text += " · rescheduled"
+        }
         return text
     }
 }

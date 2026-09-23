@@ -3,19 +3,34 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 
 struct NextSidebar: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
-    var trashCount: Int
-    @State private var renamingListID: UUID?
+    @Query(filter: #Predicate<Block> { $0.trashID != nil }) private var trashedBlocks: [Block]
+    @Query(filter: #Predicate<TaskList> { $0.trashID != nil }) private var trashedLists: [TaskList]
+    @State private var renaming: Renaming?
     @State private var renameDraft = ""
     @FocusState private var renameFocused: Bool
+    /// The list row or section header a drag is over.
+    @State private var dropTargetID: UUID?
+
+    /// What the shared rename field is editing.
+    private enum Renaming: Equatable {
+        case list(UUID)
+        case section(UUID)
+    }
 
     private var workbench: Workbench { env.workbench }
     private var route: AppRoute { env.navigator.route }
+
+    /// Trash entries: a trashed list counts once, not once per item inside it.
+    private var trashCount: Int {
+        trashedBlocks.filter { $0.trashID == $0.id }.count + trashedLists.filter { $0.trashID == $0.id }.count
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,14 +46,16 @@ struct NextSidebar: View {
                         ForEach(NavItem.all, id: \.route) { item in navRow(item) }
                     }
                     ForEach(library.sections, id: \.id) { section in
-                        sectionBlock(title: section.displayTitle, collapsed: section.isCollapsed,
+                        sectionBlock(section, title: section.displayTitle, collapsed: section.isCollapsed,
                                      lists: library.lists(in: section)) {
                             env.store.setCollapsed(!section.isCollapsed, for: section)
                         }
                     }
-                    if !library.unsectioned.isEmpty {
-                        sectionBlock(title: "Other lists", collapsed: workbench.collapsedGroups.contains("sec-other"),
-                                     lists: library.unsectioned.filter(\.isPinned)) { toggle("sec-other") }
+                    // Unpinned lists are only in the Lists gallery.
+                    let other = library.unsectioned.filter(\.isPinned)
+                    if !other.isEmpty {
+                        sectionBlock(nil, title: "Other lists", collapsed: workbench.collapsedGroups.contains("sec-other"),
+                                     lists: other) { toggle("sec-other") }
                     }
                     labelsBlock
                 }
@@ -104,7 +121,8 @@ struct NextSidebar: View {
         let on = route == item.route || (item.route == .activity && route == .updates)
         let pulsing = item.route == .inbox && workbench.pulseListID != nil && workbench.pulseListID == library.inbox?.id
         let count = count(for: item.route)
-        return NXSidebarRow(on: on, pulsing: pulsing, height: 29) {
+        return NXSidebarRow(on: on, pulsing: pulsing, height: 29, title: item.label,
+                            value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
             Image(systemName: on ? item.filledIcon : item.icon)
                 .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(on ? (item.color ?? style.accent) : NX.ink(0.55))
@@ -130,21 +148,56 @@ struct NextSidebar: View {
 
     // MARK: Sections
 
-    private func sectionBlock(title: String, collapsed: Bool, lists: [TaskList], onToggle: @escaping () -> Void) -> some View {
+    /// A header and its lists, each followed by its nested lists. `section`
+    /// is nil for "Other lists", which can't be renamed or filed into.
+    private func sectionBlock(_ section: SidebarSection?, title: String, collapsed: Bool, lists: [TaskList],
+                              onToggle: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader(title, open: !collapsed, action: onToggle)
+            if let section {
+                sectionHeader(for: section, open: !collapsed, action: onToggle)
+            } else {
+                sectionHeader(title, open: !collapsed, action: onToggle)
+            }
             if !collapsed {
                 VStack(spacing: 1) {
-                    ForEach(lists, id: \.id) { list in
-                        listRow(list, depth: 0)
-                        ForEach(library.children(of: list), id: \.id) { child in
-                            listRow(child, depth: 1)
-                        }
+                    ForEach(library.outline(lists)) { row in
+                        listRow(row.list, depth: row.depth)
                     }
                 }
             }
         }
         .padding(.top, 14)
+    }
+
+    /// A section's header, renamed in place. Dropping a list on it files the
+    /// list at the end of the section.
+    @ViewBuilder
+    private func sectionHeader(for section: SidebarSection, open: Bool, action: @escaping () -> Void) -> some View {
+        if renaming == .section(section.id) {
+            renameField("Section name", .section(section.id))
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(NX.ink(0.6))
+                .padding(.top, 4)
+                .padding(.bottom, 5)
+                .padding(.horizontal, 8)
+        } else {
+            sectionHeader(section.displayTitle, open: open, action: action)
+                .background(dropTargetID == section.id ? style.accent.opacity(0.12) : .clear,
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contextMenu {
+                    Button("Rename Section…") { startRename(.section(section.id), draft: section.title) }
+                    Button("New List in Section") { workbench.createList(in: section) }
+                    if !section.isDefault {
+                        Divider()
+                        Button("Delete Section", role: .destructive) { deleteSection(section) }
+                    }
+                }
+                .dropDestination(for: String.self) { items, _ in
+                    guard let dragged = draggedList(items) else { return false }
+                    env.store.move(list: dragged, toSection: section.id, above: nil)
+                    return true
+                } isTargeted: { setDropTarget(section.id, $0) }
+        }
     }
 
     private func sectionHeader(_ title: String, open: Bool, action: @escaping () -> Void) -> some View {
@@ -168,6 +221,17 @@ struct NextSidebar: View {
             .padding(.horizontal, 8)
         }
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.035), radius: 6, padding: EdgeInsets()))
+        .accessibilityValue(open ? "Expanded" : "Collapsed")
+    }
+
+    /// Its lists stay in the sidebar, under "Other lists".
+    private func deleteSection(_ section: SidebarSection) {
+        if renaming == .section(section.id) { renaming = nil }
+        let title = section.displayTitle
+        let hadLists = !library.lists(in: section).isEmpty
+        env.store.deleteSection(section)
+        workbench.showTray(hadLists ? "Deleted “\(title)”. Its lists moved to Other lists" : "Deleted “\(title)”",
+                           icon: "folder.badge.minus")
     }
 
     @ViewBuilder
@@ -175,17 +239,15 @@ struct NextSidebar: View {
         let on = route == .list(list.id)
         let pulsing = workbench.pulseListID == list.id
         let count = library.openCount(in: list.id)
-        NXSidebarRow(on: on, pulsing: pulsing, ring: pulsing ? style.accent.opacity(0.25) : nil, height: 29) {
+        let editing = renaming == .list(list.id)
+        let ring: Color? = dropTargetID == list.id ? style.accent.opacity(0.6) : pulsing ? style.accent.opacity(0.25) : nil
+        NXSidebarRow(on: on, pulsing: pulsing, ring: ring, height: 29, title: list.displayTitle,
+                     value: "\(count) open \(count == 1 ? "task" : "tasks")", isEditing: editing) {
             NXListGlyph(list: list, size: 12)
                 .frame(width: 16)
-            if renamingListID == list.id {
-                TextField("List name", text: $renameDraft)
-                    .textFieldStyle(.plain)
+            if editing {
+                renameField("List name", .list(list.id))
                     .font(.system(size: 13, weight: .semibold))
-                    .focused($renameFocused)
-                    .onSubmit { commitRename(list) }
-                    .onExitCommand { renamingListID = nil }
-                    .onChange(of: renameFocused) { _, focused in if !focused { commitRename(list) } }
             } else {
                 Text(list.displayTitle)
                     .font(.system(size: 13, weight: on ? .semibold : .medium))
@@ -197,41 +259,113 @@ struct NextSidebar: View {
         } action: {
             workbench.go(workbench.route(for: list))
         }
-        .padding(.leading, CGFloat(depth) * 14)
-        .contextMenu {
-            Button("Open") { workbench.go(workbench.route(for: list)) }
-            Button("Rename List…") { renameDraft = list.title; renamingListID = list.id; renameFocused = true }
-            Button("Move List…") { env.listPendingMove = list }
-            Picker("Hours", selection: Binding(get: { workbench.hours(for: list) },
-                                               set: { workbench.setHours($0, for: list.id) })) {
-                ForEach(AvailabilityCategory.allCases) { Text("\($0.title) Hours").tag($0) }
-            }
-            Button(workbench.documentListIDs.contains(list.id) ? "Show as Tasks" : "Show as Document") {
-                if workbench.documentListIDs.contains(list.id) { workbench.documentListIDs.remove(list.id) }
-                else { workbench.documentListIDs.insert(list.id) }
-                workbench.go(workbench.route(for: list))
-            }
-            Divider()
-            Button("Duplicate") { workbench.go(.list(env.store.duplicateList(list).id)) }
-            Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
-            Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
-            Button("Remove from Sidebar") { env.store.setPinned(false, for: list) }
-            Divider()
-            Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
-        }
+        .draggable(DragPayload.list.encode(list.id))
+        // Past three levels the title keeps its room.
+        .padding(.leading, CGFloat(min(depth, 3)) * 14)
+        .contextMenu { listMenu(list, nested: depth > 0) }
         .dropDestination(for: String.self) { items, _ in
-            let ids = items.compactMap { DragPayload.block.decode($0) }
-            guard !ids.isEmpty else { return false }
-            workbench.move(ids, to: list.id)
-            return true
-        }
+            drop(items, on: list, nested: depth > 0)
+        } isTargeted: { setDropTarget(list.id, $0) }
     }
 
-    private func commitRename(_ list: TaskList) {
-        guard renamingListID == list.id else { return }
+    @ViewBuilder
+    private func listMenu(_ list: TaskList, nested: Bool) -> some View {
+        Button("Open") { workbench.go(workbench.route(for: list)) }
+        Button("Rename List…") { startRename(.list(list.id), draft: list.title) }
+        Button("Move List…") { env.listPendingMove = list }
+        Button("New Child List") { workbench.createChildList(in: list) }
+        CopyItemLinkButton(target: .list(list.id))
+        Picker("Hours", selection: Binding(get: { workbench.hours(for: list) },
+                                           set: { workbench.setHours($0, for: list.id) })) {
+            ForEach(AvailabilityCategory.allCases) { Text("\($0.title) Hours").tag($0) }
+        }
+        let mode = env.navigator.listViewMode(for: list.id)
+        Button(mode == .document ? "Show as Tasks" : "Show as Document") {
+            env.navigator.setListViewMode(mode == .document ? .tasks : .document, for: list.id)
+            workbench.go(workbench.route(for: list))
+        }
+        Divider()
+        Button("Duplicate") { workbench.go(.list(env.store.duplicateList(list).id)) }
+        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
+        Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
+        // A nested list shows under its parent whether pinned or not.
+        if !nested {
+            Button("Remove from Sidebar") { workbench.setPinned(false, for: list) }
+        }
+        Divider()
+        Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
+    }
+
+    // MARK: Drag and drop
+
+    /// Tasks dropped on a list move into it. A list dropped on a top-level
+    /// list moves above it, in its section.
+    private func drop(_ items: [String], on list: TaskList, nested: Bool) -> Bool {
+        if items.contains(where: { DragPayload.list.decode($0) != nil }) {
+            guard !nested, let sectionID = list.sectionID, let dragged = draggedList(items),
+                  dragged.id != list.id else { return false }
+            env.store.move(list: dragged, toSection: sectionID, above: list)
+            return true
+        }
+        let ids = items.compactMap { DragPayload.block.decode($0) }
+        guard !ids.isEmpty else { return false }
+        workbench.move(ids, to: list.id)
+        return true
+    }
+
+    /// The dragged list, when it's one the sidebar can reorder: an active,
+    /// top-level list. Nested lists move with their parent.
+    private func draggedList(_ items: [String]) -> TaskList? {
+        guard let id = items.lazy.compactMap({ DragPayload.list.decode($0) }).first,
+              library.hierarchy.activeIDs.contains(id), library.hierarchy.parent(of: id) == nil,
+              let list = library.list(id), !list.isSystemInbox else { return nil }
+        return list
+    }
+
+    private func setDropTarget(_ id: UUID, _ targeted: Bool) {
+        if targeted { dropTargetID = id } else if dropTargetID == id { dropTargetID = nil }
+    }
+
+    // MARK: Rename
+
+    /// The field that replaces a list's or section's title while renaming.
+    private func renameField(_ prompt: String, _ target: Renaming) -> some View {
+        TextField(prompt, text: $renameDraft)
+            .textFieldStyle(.plain)
+            .focused($renameFocused)
+            // Focus once the field is on screen. Set in the menu action that
+            // inserts it, focus can miss, and typed keys then run commands.
+            .onAppear { DispatchQueue.main.async { renameFocused = true } }
+            .onSubmit { commitRename(target) }
+            .onExitCommand { renaming = nil }
+            .onChange(of: renameFocused) { _, focused in if !focused { commitRename(target) } }
+    }
+
+    /// The draft and focus are shared, so an unfinished rename commits first.
+    private func startRename(_ target: Renaming, draft: String) {
+        // Already open: keep what's typed and just return focus to it.
+        guard renaming != target else {
+            DispatchQueue.main.async { renameFocused = true }
+            return
+        }
+        if let renaming { commitRename(renaming) }
+        renameFocused = false
+        renameDraft = draft
+        renaming = target
+    }
+
+    private func commitRename(_ target: Renaming) {
+        guard renaming == target else { return }
         let name = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty, name != list.title { env.store.rename(list, to: name) }
-        renamingListID = nil
+        switch target {
+        case let .list(id):
+            if let list = library.list(id), !name.isEmpty, name != list.title { env.store.rename(list, to: name) }
+        case let .section(id):
+            if let section = library.sections.first(where: { $0.id == id }), !section.isDeleted, section.modelContext != nil {
+                env.store.rename(section, to: name)
+            }
+        }
+        renaming = nil
     }
 
     // MARK: Labels
@@ -245,7 +379,8 @@ struct NextSidebar: View {
                     ForEach(library.labels, id: \.id) { label in
                         let on = route == .label(label.id)
                         let count = library.openCount(label: label.id)
-                        NXSidebarRow(on: on, pulsing: false, height: 27) {
+                        NXSidebarRow(on: on, pulsing: false, height: 27, title: label.name,
+                                     value: "\(count) open \(count == 1 ? "task" : "tasks")") {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(label.nxColor)
                                 .frame(width: 8, height: 8)
@@ -292,7 +427,8 @@ struct NextSidebar: View {
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.05), radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)))
             Spacer()
-            footerButton(on: route == .trash, help: "Trash") {
+            footerButton(on: route == .trash, title: "Trash",
+                         value: trashCount > 0 ? "\(trashCount) \(trashCount == 1 ? "item" : "items")" : "") {
                 HStack(spacing: 4) {
                     Image(systemName: "trash").font(.system(size: 13, weight: .medium))
                     if trashCount > 0 {
@@ -300,7 +436,7 @@ struct NextSidebar: View {
                     }
                 }
             } action: { workbench.go(.trash) }
-            footerButton(on: route == .settings, help: "Settings (⌘,)") {
+            footerButton(on: route == .settings, title: "Settings", help: "Settings (⌘,)") {
                 Image(systemName: "gearshape").font(.system(size: 13, weight: .medium))
             } action: { workbench.go(.settings) }
         }
@@ -309,23 +445,32 @@ struct NextSidebar: View {
         .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.09)).frame(height: 0.5) }
     }
 
-    private func footerButton<Label: View>(on: Bool, help: String, @ViewBuilder label: () -> Label, action: @escaping () -> Void) -> some View {
+    /// An icon button; `title` is what VoiceOver reads, `help` the tooltip.
+    private func footerButton<Label: View>(on: Bool, title: String, value: String = "", help: String? = nil,
+                                           @ViewBuilder label: () -> Label, action: @escaping () -> Void) -> some View {
         Button(action: action, label: label)
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.05), radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6),
                                             foreground: on ? NX.ink : NX.ink(0.5)))
             .background(on ? NX.ink(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .help(help)
+            .help(help ?? title)
+            .accessibilityLabel(title)
+            .accessibilityValue(value)
+            .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
-/// A sidebar row with the raised "current" look and a hover wash.
+/// A sidebar row with the raised "current" look and a hover wash. To
+/// VoiceOver it's one button named `title`, unless a rename field is open.
 private struct NXSidebarRow<Content: View>: View {
     @Environment(\.nextStyle) private var style
     let on: Bool
     let pulsing: Bool
     var ring: Color?
     let height: CGFloat
+    let title: String
+    var value = ""
+    var isEditing = false
     @ViewBuilder var content: () -> Content
     var action: () -> Void
     @State private var hovering = false
@@ -347,6 +492,11 @@ private struct NXSidebarRow<Content: View>: View {
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
+            .accessibilityElement(children: isEditing ? .contain : .ignore)
+            .accessibilityLabel(title)
+            .accessibilityValue(value)
+            .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { action() }
     }
 }
 

@@ -20,8 +20,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - `NextKeyMonitor` — NSEvent local monitor implementing the global key model when not typing.
 - Shell replaces NavigationSplitView: custom sidebar (236), 52pt toolbar with drag gesture,
   inspector overlay (360), tray, selection bar, capture/search/palette overlays, work notch.
-- Modal flags reuse `navigator.isSearchOpen`, `navigator.isCommandPaletteOpen`,
-  `env.taskCaptureRequest` so menu commands keep working.
+- Modal flags reuse `navigator.isSearchOpen` and `navigator.isCommandPaletteOpen`; ⌘N goes
+  through `env.presentTaskCapture()`, which opens the workbench capture
+  (`workbench.openCapture`), so menu commands keep working.
 - New route `.settings` for the in-window design Settings page (full Settings window stays
   reachable via "More settings…").
 

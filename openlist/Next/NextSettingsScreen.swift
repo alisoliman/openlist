@@ -30,6 +30,13 @@ struct NextSettingsScreen: View {
                     }
                     NXSettingToggle(label: "Quick Add from anywhere", hint: "⇧⌥Space opens capture over any app",
                                     isOn: $settings.quickCaptureHotKeyEnabled)
+                        .onChange(of: settings.quickCaptureHotKeyEnabled) { _, enabled in
+                            if enabled {
+                                QuickCaptureHotKey.shared.register()
+                            } else {
+                                QuickCaptureHotKey.shared.unregister()
+                            }
+                        }
                 }
                 NXSettingsGroup(title: "Motion & feedback") {
                     NXSettingToggle(label: "Reduce motion", hint: "Keeps state changes, drops the bounce, ring and slides",
@@ -105,9 +112,12 @@ struct NextSettingsScreen: View {
                     let sync = env.sync.state
                     NXSettingValue(label: "iCloud sync", hint: syncHint(sync), value: syncValue(sync)) { openSettings() }
                     if let maintenance = env.libraryMaintenance {
+                        let failure = maintenance.error ?? maintenance.pendingQuitError
                         NXSettingValue(label: "Back up library",
-                                       hint: maintenance.status ?? "A complete package of your library, history and files",
-                                       value: maintenance.isBusy ? "Working…" : "Back up now…") {
+                                       hint: failure ?? maintenance.status ?? "A complete package of your library, history and files",
+                                       isError: failure != nil,
+                                       value: maintenance.isBusy ? "Working…" : "Back up now…",
+                                       isEnabled: !maintenance.isBusy && !maintenance.hasPendingRestore) {
                             Task { await maintenance.exportBackup() }
                         }
                     }
@@ -192,6 +202,7 @@ private struct NXSettingsGroup<Content: View>: View {
 private struct NXSettingRow<Accessory: View>: View {
     let label: String
     let hint: String
+    var hintColor = NX.ink(0.48)
     @ViewBuilder var accessory: Accessory
     @State private var hovering = false
 
@@ -199,7 +210,7 @@ private struct NXSettingRow<Accessory: View>: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
-                Text(hint).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.48)).fixedSize(horizontal: false, vertical: true)
+                Text(hint).font(.system(size: 11.5)).foregroundStyle(hintColor).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             accessory
@@ -259,15 +270,22 @@ private struct NXValuePill: View {
 private struct NXSettingValue: View {
     let label: String
     let hint: String
+    /// Shows the hint as a failure, like a backup that could not be written.
+    var isError = false
     let value: String
+    /// Off while the action cannot run; the row stays visible and dimmed.
+    var isEnabled = true
     let action: () -> Void
 
     var body: some View {
-        NXSettingRow(label: label, hint: hint) { NXValuePill(text: value) }
-            .onTapGesture(perform: action)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { action() }
+        NXSettingRow(label: label, hint: hint, hintColor: isError ? NX.redText : NX.ink(0.48)) {
+            NXValuePill(text: value).opacity(isEnabled ? 1 : 0.5)
+        }
+        .onTapGesture { if isEnabled { action() } }
+        .disabled(!isEnabled)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { if isEnabled { action() } }
     }
 }
 

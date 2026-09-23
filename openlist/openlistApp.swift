@@ -53,6 +53,8 @@ struct openlistApp: App {
             applicationDelegate.finishPendingNotifications = { await NotificationService.shared.reminders.drainForTermination() }
             applicationDelegate.persistPendingChanges = { [weak environment] in
                 guard let environment else { return }
+                // Rows still in the completion dwell show as done; write them first.
+                environment.workbench.flushClosings()
                 do { try environment.store.persistChanges() }
                 catch {
                     environment.store.persistenceError = "Your latest changes could not be saved. \(error.localizedDescription)"
