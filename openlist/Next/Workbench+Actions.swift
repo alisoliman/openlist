@@ -55,6 +55,12 @@ private struct PlacementSpan {
     var isPinned: Bool
 }
 
+/// What Undo erased of a new task or list, shared with the Redo that brings it back.
+private final class CreationUndo {
+    var task: BackupBlock?
+    var list: BackupTaskList?
+}
+
 extension Workbench {
     func describe(_ tasks: [Block]) -> String {
         tasks.count == 1 ? NXFormat.quoted(tasks[0].displayTitle) : "\(tasks.count) tasks"
@@ -309,14 +315,32 @@ extension Workbench {
         let list = store.createList(title: "Untitled list", in: section)
         let id = list.id
         let label = "Created “Untitled list” in \(section?.displayTitle ?? "Lists")"
-        registerUndo(label, undo: { workbench in
-            if let list = workbench.store.list(id: id) { _ = workbench.store.trashList(list) }
-        }, redo: { workbench in
-            _ = workbench.store.restoreTrash(ids: [id])
-        })
+        registerListCreationUndo(label, listID: id)
         snap(label, icon: "plus.circle.fill", tone: .accent, ids: [])
         pulse(list: id)
         go(.list(id))
+    }
+
+    /// Undo takes a new list back with no Trash entry while it's still empty,
+    /// and Redo brings back the same list. Once it holds anything it goes to
+    /// Trash instead, so nothing added to it is lost.
+    func registerListCreationUndo(_ label: String, listID id: UUID) {
+        let taken = CreationUndo()
+        registerUndo(label, undo: { workbench in
+            let store = workbench.store
+            if let list = store.discardCreatedList(id: id) {
+                taken.list = list
+            } else if let list = store.list(id: id) {
+                _ = store.trashList(list)
+            }
+        }, redo: { workbench in
+            if let list = taken.list {
+                taken.list = nil
+                _ = workbench.store.restoreDiscardedList(list)
+            } else {
+                _ = workbench.store.restoreTrash(ids: [id])
+            }
+        })
     }
 
     /// The hours Plan and Start working use for a list's tasks.
@@ -341,31 +365,37 @@ extension Workbench {
 
     // MARK: Capture
 
-    /// The draft Return saves, which the capture card's chips preview. A time
-    /// or repeat with no day of its own is due today, as long as dates are read
-    /// from the text at all.
-    func captureDraft(_ parse: CaptureParse) -> TaskCaptureDraft {
-        var draft = TaskCaptureDraft(text: parse.schedulingText, parsesNaturalLanguage: settings.parsesNaturalLanguageDates)
-        draft.dueTodayWhenUndated = captureForToday
-            || (settings.parsesNaturalLanguageDates && (parse.first(.time) != nil || parse.first(.repeatRule) != nil))
-        return draft
+    /// The capture text read as the card tints it and Return saves it, with
+    /// dates only while Settings reads them from typed text.
+    func captureParse() -> CaptureParse {
+        CaptureParse(captureText, parsesDates: settings.parsesNaturalLanguageDates)
+    }
+
+    /// What Return saves, which the capture card's chips preview. A task with
+    /// no date of its own is due today when captured on Today or when New
+    /// tasks go to Today; on a label screen it also gets that label.
+    func capturePreview(_ parse: CaptureParse) -> TaskCaptureDraft.Preview {
+        let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
+        return TaskCaptureDraft.Preview(
+            title: parse.title,
+            date: parse.schedule?.date ?? (captureForToday ? NXFormat.day(offset: 0) : nil),
+            includesTime: parse.schedule?.includesTime ?? false,
+            recurrence: parse.schedule?.recurrence,
+            labels: Array(Set(parse.labels + screenLabel)).sorted())
     }
 
     @discardableResult
     func createFromCapture(keepOpen: Bool) -> Block? {
-        let parse = CaptureParse(captureText)
+        let parse = captureParse()
         guard !parse.title.isEmpty else { return nil }
-        var preview = captureDraft(parse).preview
-        let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
-        preview.labels = Array(Set(preview.labels.map { $0.lowercased() } + parse.labels + screenLabel)).sorted()
+        let preview = capturePreview(parse)
         let destinationID = captureListID ?? store.inboxList()?.id
         // Captured into the list whose Tasks view is showing, a task goes at the
         // end, where that view's add row sits; anywhere else it's prepended.
         let appendsToRoot = navigator.route.listID.map { $0 == destinationID && navigator.listViewMode(for: $0) == .tasks } ?? false
         let block: Block
         do {
-            block = try store.saveCapture(preview, destinationID: destinationID,
-                                          selectedForDay: capturePlansForToday ? .now : nil, appendToRoot: appendsToRoot)
+            block = try store.saveCapture(preview, destinationID: destinationID, appendToRoot: appendsToRoot)
         } catch {
             showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
             return nil
@@ -379,19 +409,12 @@ extension Workbench {
             case let .list(id): id == block.listID
             case .today: block.isDueOnOrBeforeToday || isPlanned(block)
             case let .label(id): block.labelIDs.contains(id)
-            case .calendar: isPlanned(block)
             case .tasks: true
             default: false
             }
         }()
         let name = list?.displayTitle ?? "Inbox"
-        // The closures keep the id, never the model, which Trash may erase.
-        let id = block.id
-        registerUndo("Added to \(name)", undo: { workbench in
-            if let block = workbench.store.block(id: id) { _ = workbench.store.trashBlocks([block]) }
-        }, redo: { workbench in
-            _ = workbench.store.restoreTrash(ids: [id])
-        })
+        registerCreationUndo("Added to \(name)", taskID: block.id)
         snap("Added to \(name)", icon: "plus.circle.fill", tone: .accent, ids: [block.id],
              destination: here || list == nil ? nil : TrayDestination(label: "Show", route: route(for: list!)))
         flash(\.fresh, [block.id], for: 1200)
@@ -400,16 +423,36 @@ extension Workbench {
         return block
     }
 
+    /// Undo takes a capture back as though it was never added: no Trash
+    /// entry, reminder or history. Redo brings back the same task. One that
+    /// has since gained subtasks, files, a plan or work goes to Trash instead,
+    /// so nothing added to it is lost. The closures keep the id, never the model.
+    private func registerCreationUndo(_ label: String, taskID id: UUID) {
+        let taken = CreationUndo()
+        registerUndo(label, undo: { workbench in
+            let store = workbench.store
+            if let task = store.discardCapturedTask(id: id) {
+                taken.task = task
+            } else if let block = store.block(id: id) {
+                _ = store.trashBlocks([block])
+            }
+        }, redo: { workbench in
+            if let task = taken.task {
+                taken.task = nil
+                _ = workbench.store.restoreDiscardedTask(task)
+            } else {
+                _ = workbench.store.restoreTrash(ids: [id])
+            }
+        })
+    }
+
     /// Opens capture for the current screen. `forToday: true` makes an undated
-    /// task due today; otherwise Today and the New tasks setting decide. On
-    /// Calendar the task is planned for today instead, and on a label screen it
-    /// gets that label.
+    /// task due today; otherwise Today and the New tasks setting decide. On a
+    /// label screen the task gets that label.
     func openCapture(text: String = "", listID: UUID? = nil, forToday: Bool? = nil) {
         if case let .list(id) = navigator.route { captureListID = listID ?? id }
         else { captureListID = listID ?? store.inboxList()?.id }
-        capturePlansForToday = navigator.route == .calendar
-        captureForToday = !capturePlansForToday
-            && (forToday == true || navigator.route == .today || settings.defaultDestination == .today)
+        captureForToday = forToday == true || navigator.route == .today || settings.defaultDestination == .today
         if case let .label(id) = navigator.route { captureLabelID = id } else { captureLabelID = nil }
         captureText = text
         navigator.isCommandPaletteOpen = false

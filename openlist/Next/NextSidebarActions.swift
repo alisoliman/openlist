@@ -23,11 +23,7 @@ extension Workbench {
     private func announceCreated(_ list: TaskList, in place: String) {
         let id = list.id
         let label = "Created “\(list.displayTitle)” in \(place)"
-        registerUndo(label, undo: { workbench in
-            if let list = workbench.store.list(id: id) { _ = workbench.store.trashList(list) }
-        }, redo: { workbench in
-            _ = workbench.store.restoreTrash(ids: [id])
-        })
+        registerListCreationUndo(label, listID: id)
         snap(label, icon: "plus.circle.fill", tone: .accent, ids: [])
         pulse(list: id)
         go(.list(id))

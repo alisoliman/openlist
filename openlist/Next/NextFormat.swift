@@ -78,7 +78,10 @@ enum NXFormat {
     }
 }
 
-/// The capture grammar from the design: tokens are coloured as you type.
+/// The capture grammar: the tokens coloured as you type are exactly the ones
+/// Return saves. Dates, times and repeat rules are whatever `DateParser` reads
+/// (none while natural-language dates are off); labels, priority and
+/// estimates are the design's tokens.
 struct CaptureParse {
     enum Kind: String { case repeatRule, date, time, label, priority, estimate }
 
@@ -97,14 +100,14 @@ struct CaptureParse {
     let text: String
     let marks: [Mark]
     let segments: [Segment]
+    /// The text without its tokens: the title Return saves.
     let title: String
+    /// The due date, time and repeat rule read from the text; nil when there are none.
+    let schedule: ParsedSchedule?
 
     /// Labels need whitespace or the start before `#`, as in the store's capture draft,
     /// so `issue#42` and URL fragments stay plain text.
     private static let sources: [(Kind, String)] = [
-        (.repeatRule, #"\bevery\s(?:day|weekday|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"#),
-        (.date, #"\b(?:today|tonight|tomorrow|tmrw|next\sweek|(?:next\s)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|in\s\d+\s(?:days?|weeks?))\b"#),
-        (.time, #"\b(?:at\s)?\d{1,2}(?::\d{2})?\s?(?:am|pm)\b"#),
         (.label, #"(?<!\S)#[\p{L}0-9_-]+"#),
         (.priority, #"!(?:high|med|medium|low|[1-3])\b"#),
         (.estimate, #"~\d+\s?(?:m|min|h)\b"#),
@@ -115,9 +118,7 @@ struct CaptureParse {
         (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { (kind, $0) }
     }
 
-    private static let clockPattern = try? NSRegularExpression(pattern: #"(\d{1,2})(?::(\d{2}))?\s?(am|pm)"#, options: .caseInsensitive)
-
-    init(_ text: String) {
+    init(_ text: String, parsesDates: Bool = true, reference: Date = .now) {
         self.text = text
         var marks: [Mark] = []
         for (kind, regex) in Self.patterns {
@@ -125,6 +126,37 @@ struct CaptureParse {
                 guard let range = Range(match.range, in: text) else { continue }
                 if marks.contains(where: { $0.range.overlaps(range) }) { continue }
                 marks.append(Mark(kind: kind, range: range, raw: String(text[range])))
+            }
+        }
+        var schedule: ParsedSchedule?
+        if parsesDates {
+            // The tokens above are blanked with a character that is neither a
+            // word nor a space, so a date phrase can't reach into or across one.
+            let masked = NSMutableString(string: text)
+            for mark in marks {
+                let range = NSRange(mark.range, in: text)
+                masked.replaceCharacters(in: range, with: String(repeating: "\u{FFFC}", count: range.length))
+            }
+            let parsed = DateParser.parse(masked as String, reference: reference)
+            if !parsed.isEmpty {
+                schedule = parsed
+                for (range, part) in zip(parsed.consumedRanges, parsed.consumedParts) {
+                    guard var found = Range(range, in: text) else { continue }
+                    // A space the phrase took with it stays plain text.
+                    while !found.isEmpty, text[found.lowerBound].isWhitespace {
+                        found = text.index(after: found.lowerBound)..<found.upperBound
+                    }
+                    while !found.isEmpty, text[text.index(before: found.upperBound)].isWhitespace {
+                        found = found.lowerBound..<text.index(before: found.upperBound)
+                    }
+                    guard !found.isEmpty else { continue }
+                    let kind: Kind = switch part {
+                    case .recurrence: .repeatRule
+                    case .day: .date
+                    case .time: .time
+                    }
+                    marks.append(Mark(kind: kind, range: found, raw: String(text[found])))
+                }
             }
         }
         marks.sort { $0.range.lowerBound < $1.range.lowerBound }
@@ -140,10 +172,16 @@ struct CaptureParse {
         if cursor < text.endIndex { segments.append(Segment(id: segments.count, text: String(text[cursor...]))) }
         var title = text
         for mark in marks.reversed() { title.removeSubrange(mark.range) }
+        title = title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        // As the date parser tidies what it strips: "meet by friday" is "meet".
+        if schedule != nil {
+            title = title.replacingOccurrences(of: #"\s+(?:on|at|by|due)\s*$"#, with: "",
+                                               options: [.regularExpression, .caseInsensitive])
+        }
         self.marks = marks
         self.segments = segments
-        self.title = title.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
+        self.title = title.trimmingCharacters(in: .whitespaces)
+        self.schedule = schedule
     }
 
     func first(_ kind: Kind) -> Mark? { marks.first { $0.kind == kind } }
@@ -169,24 +207,5 @@ struct CaptureParse {
         let cap = 60 * 24 * 28
         let value = raw.compactMap(\.wholeNumberValue).reduce(0) { min($0 * 10 + $1, cap) }
         return min(raw.lowercased().contains("h") ? value * 60 : value, cap)
-    }
-
-    /// Text with the design-only tokens (priority, estimate) removed, for the date parser.
-    var schedulingText: String {
-        var result = text
-        for mark in marks.reversed() where mark.kind == .priority || mark.kind == .estimate {
-            result.removeSubrange(mark.range)
-        }
-        return result
-    }
-
-    /// "Today · today" style label for the date token preview.
-    static func timeLabel(_ raw: String) -> String? {
-        guard let match = clockPattern?.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
-              let hourRange = Range(match.range(at: 1), in: raw),
-              let meridiemRange = Range(match.range(at: 3), in: raw) else { return nil }
-        let hour = (Int(raw[hourRange]) ?? 0) % 12 + (raw[meridiemRange].lowercased() == "pm" ? 12 : 0)
-        let minute = Range(match.range(at: 2), in: raw).map { String(raw[$0]) } ?? "00"
-        return String(format: "%02d:", hour) + minute
     }
 }

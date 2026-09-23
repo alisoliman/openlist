@@ -170,7 +170,7 @@ private struct NXCaptureCard: View {
 
     var body: some View {
         @Bindable var workbench = env.workbench
-        let parse = CaptureParse(workbench.captureText)
+        let parse = workbench.captureParse()
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 11) {
                 Circle()
@@ -201,50 +201,74 @@ private struct NXCaptureCard: View {
             .frame(minHeight: 22, alignment: .leading)
             .padding(EdgeInsets(top: 6, leading: 46, bottom: 12, trailing: 18))
 
-            HStack(alignment: .center, spacing: 8) {
-                NXFlow(spacing: 6) {
-                    Text("Add to")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.45))
-                        .padding(.trailing, 2)
-                        .frame(height: 23)
-                    ForEach(library.lists) { list in
-                        destination(list, isOn: workbench.captureListID == list.id)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Text("⇥ destination · ↩ add · ⇧↩ add another")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.4))
-                    .fixedSize()
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .background(NX.ink(0.02))
-            .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
+            destinations
+                .padding(.vertical, 10)
+                .background(NX.ink(0.02))
+                .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
         }
         .frame(maxWidth: 600)
     }
 
-    /// The typed text with its tokens tinted, plus the placeholder ghost.
-    private func styled(_ parse: CaptureParse) -> Text {
-        guard !parse.text.isEmpty else {
-            return Text("Pay deposit friday 6pm #travel ~15m").foregroundStyle(NX.ink(0.3))
-        }
-        var result = AttributedString()
-        for segment in parse.segments {
-            var run = AttributedString(segment.text)
-            if let kind = segment.kind {
-                let tone = Self.tone(kind, accent: style.accent)
-                run.foregroundColor = tone
-                run.backgroundColor = tone.opacity(0.1)
-                run.underlineStyle = Text.LineStyle(pattern: .solid, color: tone.opacity(0.33))
-            } else {
-                run.foregroundColor = NX.ink
+    /// "Add to" and the lists on one row, with the key hints at its end while
+    /// they fit and right-aligned beneath it once they don't. A row too long
+    /// for the card scrolls sideways, following Tab to the chosen list.
+    private var destinations: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                destinationChips
+                Spacer(minLength: 0)
+                hints
             }
-            result += run
+            .padding(.horizontal, 14)
+            VStack(alignment: .trailing, spacing: 6) {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 6) { destinationChips }
+                            .padding(.horizontal, 14)
+                    }
+                    .scrollIndicators(.never)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onAppear { if let id = env.workbench.captureListID { proxy.scrollTo(id) } }
+                    .onChange(of: env.workbench.captureListID) { _, id in
+                        guard let id else { return }
+                        withAnimation(style.ease(180)) { proxy.scrollTo(id) }
+                    }
+                }
+                hints.padding(.horizontal, 14)
+            }
         }
-        return Text(result)
+    }
+
+    @ViewBuilder private var destinationChips: some View {
+        Text("Add to")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(NX.ink(0.45))
+            .padding(.trailing, 2)
+            .frame(height: 23)
+        ForEach(library.lists) { list in
+            destination(list, isOn: env.workbench.captureListID == list.id).id(list.id)
+        }
+    }
+
+    private var hints: some View {
+        Text("⇥ destination · ↩ add · ⇧↩ add another")
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(NX.ink(0.4))
+            .fixedSize()
+    }
+
+    /// The typed text with its tokens tinted, plus the placeholder ghost.
+    private func styled(_ parse: CaptureParse) -> some View {
+        guard !parse.text.isEmpty else {
+            return Text("Pay deposit friday 6pm #travel ~15m").foregroundStyle(NX.ink(0.3)).textRenderer(NXTokenRenderer())
+        }
+        let text = parse.segments.reduce(Text(verbatim: "")) { text, segment in
+            guard let kind = segment.kind else { return Text("\(text)\(Text(verbatim: segment.text).foregroundStyle(NX.ink))") }
+            let tone = Self.tone(kind, accent: style.accent)
+            let token = Text(verbatim: segment.text).foregroundStyle(tone).customAttribute(NXCaptureToken(tone: tone))
+            return Text("\(text)\(token)")
+        }
+        return text.textRenderer(NXTokenRenderer())
     }
 
     static func tone(_ kind: CaptureParse.Kind, accent: Color) -> Color {
@@ -255,18 +279,12 @@ private struct NXCaptureCard: View {
         }
     }
 
-    /// Date, time and repeat come from the same whole-text draft the save path
-    /// reads, so the chips show what Return will store.
+    /// Every token previews as soon as it's typed, from the same parse and
+    /// draft Return saves, so the chips show what it will store.
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
         let workbench = env.workbench
-        // Only a titled capture saves; until then, show just where it will be due.
-        let preview = parse.title.isEmpty
-            ? TaskCaptureDraft.Preview(title: "", date: workbench.captureForToday ? NXFormat.day(offset: 0) : nil)
-            : workbench.captureDraft(parse).preview
+        let preview = workbench.capturePreview(parse)
         var chips: [NXChipModel] = []
-        if workbench.capturePlansForToday {
-            chips.append(NXChipModel(id: "plan-today", label: "Plan for today", icon: "sun.max", tone: .accent))
-        }
         if let date = preview.date {
             let due = NXFormat.dueLabel(date)
             let relative = NXFormat.relativeDay(date)
@@ -323,10 +341,38 @@ private struct NXCaptureCard: View {
             .padding(.horizontal, 8)
             .foregroundStyle(isOn ? Color.white : NX.ink(0.66))
             .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .fixedSize()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .animation(.easeOut(duration: 0.14), value: isOn)
+    }
+}
+
+/// Marks a capture token's run so `NXTokenRenderer` can draw its chip.
+private struct NXCaptureToken: TextAttribute {
+    let tone: Color
+}
+
+/// Draws each token on a softly rounded tint with a 1.5pt rule along the
+/// inside of its bottom edge, behind the unchanged glyphs, so the tinted
+/// text still lines up with the field typed into underneath.
+private struct NXTokenRenderer: TextRenderer {
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        for line in layout {
+            for run in line {
+                if let token = run[NXCaptureToken.self] {
+                    let bounds = run.typographicBounds.rect
+                    let chip = Path(roundedRect: bounds, cornerRadius: 5, style: .continuous)
+                    context.fill(chip, with: .color(token.tone.opacity(0.1)))
+                    var rule = context
+                    rule.clip(to: chip)
+                    rule.fill(Path(CGRect(x: bounds.minX, y: bounds.maxY - 1.5, width: bounds.width, height: 1.5)),
+                              with: .color(token.tone.opacity(0.33)))
+                }
+                context.draw(run)
+            }
+        }
     }
 }
 
@@ -346,18 +392,21 @@ enum NXSearch {
         return options
     }
 
-    /// The listed results; none while the session still answers an older query.
+    /// The listed results. The last answer stays listed while the query typed
+    /// since is searched, so the list narrows rather than blanking; an empty
+    /// field lists nothing, even before the session hears of it.
     @MainActor
     static func hits(_ session: SearchSession, workbench: Workbench) -> [SearchHit] {
-        guard !session.isSearching, session.options == options(workbench) else { return [] }
+        guard !options(workbench).needle.isEmpty else { return [] }
         return Array(session.hits.prefix(shownLimit))
     }
 
-    /// Whether the results for the query typed now are still to come.
+    /// Whether the results for the query typed now are still to come; the
+    /// listed ones answer an older query and don't open meanwhile.
     @MainActor
     static func isAnswering(_ session: SearchSession, workbench: Workbench) -> Bool {
         let options = options(workbench)
-        return !options.needle.isEmpty && (session.isSearching || session.options != options)
+        return !options.needle.isEmpty && (session.isSearching || session.hitsOptions != options)
     }
 
     /// Tasks open in the inspector on their Next screen and lists on theirs.
@@ -447,12 +496,20 @@ private struct NXSearchCard: View {
 
             NXOverlayList {
                 ForEach(Array(hits.enumerated()), id: \.element.id) { offset, hit in
-                    NXSearchRow(hit: hit, needle: options.needle, isOn: offset == index)
+                    NXSearchRow(hit: hit, needle: session.hitsOptions.needle, isOn: offset == index)
                         .id(hit.id)
                         .onHover { if $0 { workbench.searchIndex = offset } }
-                        .onTapGesture { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
+                        .onTapGesture {
+                            // Like Return: a click before the answer opens the chosen result once it's in.
+                            guard !NXSearch.isAnswering(session, workbench: workbench) else {
+                                workbench.searchIndex = offset
+                                overlays.pendingSearchOpen = options
+                                return
+                            }
+                            NXSearch.open(hit, env: env, library: library, overlays: overlays)
+                        }
                 }
-                Text(footer(hits, session: session, options: options))
+                Text(footer(hits, session: session, typed: options))
                     .font(.system(size: 12.5))
                     .foregroundStyle(NX.ink(0.42))
                     .multilineTextAlignment(.center)
@@ -482,10 +539,12 @@ private struct NXSearchCard: View {
         }
     }
 
-    private func footer(_ hits: [SearchHit], session: SearchSession, options: SearchOptions) -> String {
+    /// Describes the listed results; "Searching…" only once a search is slow.
+    private func footer(_ hits: [SearchHit], session: SearchSession, typed: SearchOptions) -> String {
         if let unavailable = overlays.searchUnavailable { return unavailable }
-        if options.needle.isEmpty { return "Search tasks, notes and lists" }
-        if session.isSearching || session.options != options { return "Searching…" }
+        let options = session.hitsOptions
+        if typed.needle.isEmpty || (options.needle.isEmpty && !session.isSlow) { return "Search tasks, notes and lists" }
+        if session.isSlow { return "Searching…" }
         let total = session.hits.count
         if hits.count < total { return "Showing \(hits.count) of \(total) · keep typing to narrow" }
         if !hits.isEmpty { return "\(total) \(total == 1 ? "result" : "results") · ↑↓ choose · ↩ open" }
@@ -500,7 +559,7 @@ private struct NXSearchRow: View {
     let isOn: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
+        HStack(spacing: 11) {
             Group {
                 if let emoji = hit.emoji { Text(emoji) }
                 else { Image(systemName: hit.symbol ?? "square.stack") }
@@ -508,7 +567,6 @@ private struct NXSearchRow: View {
             .font(.system(size: 14))
             .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
             .frame(width: 16)
-            .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
                 Text(highlighted(hit.title))
                     .font(.system(size: 13, weight: .medium))
@@ -521,7 +579,7 @@ private struct NXSearchRow: View {
                         .foregroundStyle(NX.ink(0.7))
                         .lineLimit(2)
                 }
-                Text(hit.context)
+                Text(hit.context + (hit.dueDate.map { " · " + NXFormat.dueLabel($0) } ?? ""))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(NX.ink(0.45))
                     .lineLimit(1)
