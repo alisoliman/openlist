@@ -24,6 +24,7 @@ struct NextCalendarScreen: View {
                         }
                     }
                     NXCalendarBody(dates: dates, now: context.date)
+                        .padding(.top, 18)
                 }
             }
         }
@@ -142,10 +143,9 @@ private struct NXCalendarBody: View {
                     Text("Start").font(.system(size: 12, weight: .semibold))
                 }
             }
-            .buttonStyle(NXHoverButtonStyle(hover: style.accent.mix(with: .black, by: 0.1), radius: 8,
+            .buttonStyle(NXHoverButtonStyle(hover: style.accent.mix(with: .black, by: 0.1), rest: style.accent, radius: 8,
                                             padding: EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 12),
                                             foreground: .white, hoverForeground: .white))
-            .background(style.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 12))
         .background(style.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -593,10 +593,9 @@ private struct NXUnplannedColumn: View {
                         Text("Plan").font(.system(size: 11, weight: .semibold))
                     }
                 }
-                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), radius: 6,
+                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), rest: style.accent.opacity(0.1), radius: 6,
                                                 padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
                                                 foreground: style.accent))
-                .background(style.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
         }
         .padding(.vertical, 10)

@@ -84,9 +84,8 @@ struct NextSidebar: View {
             .frame(height: 28)
             .padding(.horizontal, 9)
         }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.08), radius: 8, padding: EdgeInsets(),
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.08), rest: NX.ink(0.05), radius: 8, padding: EdgeInsets(),
                                         foreground: NX.ink(0.45)))
-        .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .pointerStyle(.horizontalText)
     }
 
@@ -449,10 +448,9 @@ struct NextSidebar: View {
     private func footerButton<Label: View>(on: Bool, title: String, value: String = "", help: String? = nil,
                                            @ViewBuilder label: () -> Label, action: @escaping () -> Void) -> some View {
         Button(action: action, label: label)
-            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.05), radius: 7,
+            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(on ? 0.07 : 0.05), rest: on ? NX.ink(0.07) : .clear, radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6),
                                             foreground: on ? NX.ink : NX.ink(0.5)))
-            .background(on ? NX.ink(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help(help ?? title)
             .accessibilityLabel(title)
             .accessibilityValue(value)

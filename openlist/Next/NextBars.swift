@@ -145,18 +145,16 @@ struct NXTray: View {
                     workbench.dismissTray()
                 }
                 .font(.system(size: 11.5, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.18), radius: 7,
+                .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.18), rest: .white.opacity(0.1), radius: 7,
                                                 padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
                                                 foreground: .white))
-                .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             if message.undoable, workbench.canUndo {
                 Button("Undo ⌘Z") { workbench.undoLast() }
                     .font(.system(size: 11.5, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0xC9AEFF, opacity: 0.24), radius: 7,
+                    .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0xC9AEFF, opacity: 0.24), rest: Color(hex: 0xC9AEFF, opacity: 0.14), radius: 7,
                                                     padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
                                                     foreground: Color(hex: 0xC9AEFF)))
-                    .background(Color(hex: 0xC9AEFF, opacity: 0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
         }
         .foregroundStyle(.white)

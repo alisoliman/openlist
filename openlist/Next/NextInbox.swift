@@ -203,10 +203,9 @@ private struct NXTriageCard: View {
                     Text("→").font(NX.mono(10, weight: .medium)).opacity(0.6)
                 }
             }
-            .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0x2C2A31), radius: 8,
+            .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0x2C2A31), rest: NX.inverse, radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: .white, hoverForeground: .white))
-            .background(NX.inverse, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .accessibilityLabel("Keep for later")
         }
         .padding(.vertical, 12)
@@ -341,10 +340,9 @@ private struct NXTriageEmpty: View {
                     workbench.reviewed = 0
                 }
                 .font(.system(size: 12, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), radius: 8,
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
                                                 padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                                 foreground: NX.ink(0.7)))
-                .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
         .padding(.vertical, 34)

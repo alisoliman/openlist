@@ -123,10 +123,9 @@ struct NextTodayScreen: View {
             Spacer(minLength: 8)
             Button("Look at tomorrow") { env.workbench.go(.calendar) }
                 .font(.system(size: 12, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, radius: 8,
+                .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, rest: NX.card, radius: 8,
                                                 padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                                 foreground: NX.ink(0.7)))
-                .background(NX.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NX.ink(0.14), lineWidth: 0.5))
         }
         .padding(.vertical, 30)

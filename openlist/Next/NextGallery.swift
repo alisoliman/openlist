@@ -267,10 +267,9 @@ private struct NXTrashRow: View {
                 }
                 .font(.system(size: 11, weight: .semibold))
             }
-            .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), radius: 7,
+            .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), rest: style.accent.opacity(0.1), radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
                                             foreground: style.accent, hoverForeground: style.accent))
-            .background(style.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help("Put it back where it was")
             NXHoldButton(title: "Hold to erase", holdingTitle: "Keep holding…", size: 11,
                          padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9), radius: 7, rest: 0.08,

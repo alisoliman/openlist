@@ -128,9 +128,11 @@ struct NXToggle: View {
 
 // MARK: - Hover
 
-/// A plain button whose background appears on hover.
+/// A plain button whose background appears on hover. `rest` is the fill at
+/// rest; the hover fill replaces it, as the design's style-hover does.
 struct NXHoverButtonStyle: ButtonStyle {
     var hover: Color = NX.ink(0.06)
+    var rest: Color = .clear
     var radius: CGFloat = 7
     var padding: EdgeInsets = EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
     var foreground: Color = NX.ink(0.6)
@@ -149,7 +151,7 @@ struct NXHoverButtonStyle: ButtonStyle {
             configuration.label
                 .padding(style.padding)
                 .foregroundStyle(hovering ? (style.hoverForeground ?? style.foreground) : style.foreground)
-                .background(hovering || configuration.isPressed ? style.hover : .clear,
+                .background(hovering || configuration.isPressed ? style.hover : style.rest,
                             in: RoundedRectangle(cornerRadius: style.radius, style: .continuous))
                 .opacity(configuration.isPressed ? 0.8 : 1)
                 .contentShape(Rectangle())
@@ -183,7 +185,7 @@ struct NXScreenHeader<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .center, spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12))
                 switch tile {
@@ -202,7 +204,9 @@ struct NXScreenHeader<Trailing: View>: View {
                     .font(style.serifTitles ? NX.serif(34) : .system(size: 27, weight: .bold))
                     .kerning(style.serifTitles ? 0 : -0.27)
                     .foregroundStyle(NX.ink)
-                    .lineLimit(1)
+                    // Long names wrap, as the design's header does, rather than truncate.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 // The accessory's hover padding stands in for the space after the subtitle.
                 HStack(spacing: -1) {
                     Text(subtitle)
@@ -220,7 +224,6 @@ struct NXScreenHeader<Trailing: View>: View {
             }
             trailing()
         }
-        .padding(.bottom, 18)
     }
 }
 

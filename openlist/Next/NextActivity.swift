@@ -434,10 +434,9 @@ private struct NXChangeRow: View {
             if item.canUndo {
                 Button("Undo") { env.workbench.undoLast() }
                     .font(.system(size: 10.5, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.14), radius: 6,
+                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.14), rest: NX.ink(0.06), radius: 6,
                                                     padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
                                                     foreground: NX.ink(0.6), hoverForeground: style.accent))
-                    .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
         }
         .padding(.vertical, 8)

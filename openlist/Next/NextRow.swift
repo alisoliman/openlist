@@ -374,10 +374,9 @@ struct NXGroupView: View {
             if let label = group.actionLabel, let action = group.action {
                 Button(label, action: action)
                     .font(.system(size: 11, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), radius: 6,
+                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), rest: style.accent.opacity(0.08), radius: 6,
                                                     padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
                                                     foreground: style.accent))
-                    .background(style.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
         }
         .padding(.vertical, 6)

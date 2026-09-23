@@ -498,10 +498,9 @@ struct NextInspector: View {
         Button(action: action) {
             Image(systemName: icon).font(.system(size: 11, weight: .semibold)).frame(width: 15, height: 15)
         }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), radius: 6,
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
                                         padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                         foreground: NX.ink(0.6)))
-        .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     // MARK: Note & activity
