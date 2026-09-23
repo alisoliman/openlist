@@ -210,34 +210,14 @@ private struct NXCaptureCard: View {
         .frame(maxWidth: 600)
     }
 
-    /// "Add to" and the lists on one row, with the key hints at its end while
-    /// they fit and right-aligned beneath it once they don't. A row too long
-    /// for the card scrolls sideways, following Tab to the chosen list.
+    /// "Add to" and the lists wrap like the design's flex row, with the key
+    /// hints on the trailing edge of the last line.
     private var destinations: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                destinationChips
-                Spacer(minLength: 0)
-                hints
-            }
-            .padding(.horizontal, 14)
-            VStack(alignment: .trailing, spacing: 6) {
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 6) { destinationChips }
-                            .padding(.horizontal, 14)
-                    }
-                    .scrollIndicators(.never)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onAppear { if let id = env.workbench.captureListID { proxy.scrollTo(id) } }
-                    .onChange(of: env.workbench.captureListID) { _, id in
-                        guard let id else { return }
-                        withAnimation(style.ease(180)) { proxy.scrollTo(id) }
-                    }
-                }
-                hints.padding(.horizontal, 14)
-            }
+        NXFlow(spacing: 6, alignment: .center, pinsLastToTrailing: true) {
+            destinationChips
+            hints
         }
+        .padding(.horizontal, 14)
     }
 
     @ViewBuilder private var destinationChips: some View {
@@ -247,7 +227,7 @@ private struct NXCaptureCard: View {
             .padding(.trailing, 2)
             .frame(height: 23)
         ForEach(library.lists) { list in
-            destination(list, isOn: env.workbench.captureListID == list.id).id(list.id)
+            destination(list, isOn: env.workbench.captureListID == list.id)
         }
     }
 

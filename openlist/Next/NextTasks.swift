@@ -667,6 +667,9 @@ struct NXFlow: Layout {
     var spacing: CGFloat = 6
     /// Where shorter views sit in a row of taller ones.
     var alignment: VerticalAlignment = .top
+    /// The design's `flex:1` spacer before a final view: the last view sits on the
+    /// trailing edge of whichever line it wraps onto.
+    var pinsLastToTrailing = false
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
@@ -683,6 +686,7 @@ struct NXFlow: Layout {
                 let size = subviews[index].sizeThatFits(.unspecified)
                 let inset = alignment == .center ? (row.height - size.height) / 2
                     : alignment == .bottom ? row.height - size.height : 0
+                if pinsLastToTrailing, index == subviews.indices.last { x = bounds.maxX - size.width }
                 subviews[index].place(at: CGPoint(x: x, y: y + inset), proposal: ProposedViewSize(size))
                 x += size.width + spacing
             }
