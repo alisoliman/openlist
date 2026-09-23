@@ -6,19 +6,16 @@
 import SwiftData
 import SwiftUI
 
-/// The main window: sidebar, content, and the task detail inspector.
+/// The main window. `NextShell` draws everything; this view owns the window
+/// wiring: sheets, alerts, notices, menu commands and the Dock badge.
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.openWindow) private var openWindow
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lastCommandToken = 0
-    @State private var availableWidth: CGFloat = 1180
-    @State private var sidebarBeforeInspector: NavigationSplitViewVisibility?
     /// The route whose unwanted initial focus has already been cleared, so the
     /// clear happens once per navigation and never steals a later click.
     @State private var focusClearedFor: AppRoute?
     @State private var hostWindow = RootWindowReference()
-    @State private var searchReturnFocus = SearchReturnFocus()
 
     @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
     private var openTasks: [Block]
@@ -28,27 +25,11 @@ struct RootView: View {
         @Bindable var navigator = env.navigator
         @Bindable var captureEnvironment = env
 
-        navigationContent
+        NextShell()
+        .ignoresSafeArea()
         .navigationTitle("Openlist")
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-            availableWidth = width
-            adaptInspectorColumns()
-        }
-        .toolbar { toolbarContent }
-        .sheet(item: $captureEnvironment.taskCaptureRequest) { request in
-            TaskCaptureView(request: request)
-                .fixedSize(horizontal: false, vertical: true)
-        }
         .sheet(item: $captureEnvironment.templateCopyRequest) { request in
             TemplateCopySheet(request: request)
-        }
-        .sheet(isPresented: $navigator.isCommandPaletteOpen) {
-            CommandPaletteView()
-        }
-        .sheet(isPresented: $navigator.isSearchOpen, onDismiss: {
-            searchReturnFocus.restore(in: hostWindow.window, activation: env.navigator.searchActivation)
-        }) {
-            SearchView()
         }
         .sheet(isPresented: $navigator.isShortcutSheetOpen) {
             ShortcutsSheet()
@@ -68,27 +49,25 @@ struct RootView: View {
         } message: {
             Text("This moves the list and its child documents, tasks, notes, and files to Trash as one restorable unit. You can restore them later. With iCloud enabled, this change also syncs to your other Macs.")
         }
-        .background(Theme.canvas)
-        .overlay(alignment: .bottom) { CalendarCompletionFeedback() }
+        .overlay(alignment: .top) { statusNotices.padding(.top, 52) }
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
                 env.reminderNavigation.windowReady(window != nil)
                 env.localLinks.windowReady(window != nil)
-                installCompletionUndo(in: window)
+                installUndo(in: window)
                 clearInitialFocus(for: env.navigator.route)
             }
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
         }
-        .safeAreaInset(edge: .top) { statusNotices }
         .task { installQuickCapture() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === hostWindow.window else { return }
             env.reminderNavigation.windowReady(true)
             env.localLinks.windowReady(true)
-            installCompletionUndo(in: window)
+            installUndo(in: window)
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
             clearInitialFocus(for: env.navigator.route)
@@ -100,11 +79,6 @@ struct RootView: View {
             // pre-render pass must not disable protection for their first row.
             clearInitialFocus(for: env.navigator.route)
         }
-        .onChange(of: env.navigator.selection) { _, _ in
-            // Smart rows report focus through the selection. This also catches
-            // AppKit assigning a responder after the first query/layout pass.
-            clearInitialFocus(for: env.navigator.route)
-        }
         .onAppear {
             updateDockBadge()
             env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
@@ -113,21 +87,12 @@ struct RootView: View {
             env.reminderNavigation.windowReady(false)
             env.localLinks.windowReady(false)
         }
-        .onChange(of: env.navigator.isSearchOpen) { _, isOpen in
-            if isOpen {
-                searchReturnFocus.remember(in: hostWindow.window, activation: env.navigator.searchActivation)
-            }
-        }
         .onChange(of: env.navigator.route) { _, route in
             focusClearedFor = nil
             clearInitialFocus(for: route)
             // Screens that aren't documents (Today, Tasks, …) have no editor to
             // claim menu commands, so hand them to the fallback below.
-            if env.navigator.hasDocumentEditor {
-                // The document view claims it on appear.
-            } else {
-                env.activeDocument = nil
-            }
+            if !env.navigator.hasDocumentEditor { env.activeDocument = nil }
         }
         .onChange(of: env.navigator.hasDocumentEditor) { _, hasDocumentEditor in
             // Switching a list presentation can remove the editor without
@@ -139,18 +104,20 @@ struct RootView: View {
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
-            adaptInspectorColumns()
-            // Editing a subtask inside the detail panel makes that panel the
-            // command target. On a smart view there is no list document to hand
-            // control back to, so closing the panel has to release it or ⌘N and
-            // the "+" buttons stay dead.
+            // Editing a subtask inside the inspector makes it the command
+            // target. Closing it has to release that or ⌘N stays dead.
             if newValue == nil, !env.navigator.hasDocumentEditor {
                 env.activeDocument = nil
-                // Dismissing the inspector lets SwiftUI assign the first smart
-                // row as responder again, often with its entire title selected.
                 focusClearedFor = nil
                 clearInitialFocus(for: env.navigator.route)
             }
+        }
+        .onChange(of: env.taskCaptureRequest?.id) { _, _ in
+            // ⌘N and the menu ask for the old capture sheet; the Next capture replaces it.
+            guard let request = env.taskCaptureRequest else { return }
+            env.taskCaptureRequest = nil
+            env.workbench.openCapture(text: request.text, listID: request.suggestedListID,
+                                      forToday: request.plansForToday ? true : nil)
         }
         .onChange(of: env.commandToken) { _, newValue in
             guard newValue != lastCommandToken else { return }
@@ -160,96 +127,48 @@ struct RootView: View {
         }
     }
 
-    /// Keep the document and inspector usable in a narrow window. Restore only
-    /// sidebar visibility that this adaptive behavior changed itself.
-    private func adaptInspectorColumns() {
-        if env.navigator.openTaskID != nil, availableWidth < 980 {
-            if columnVisibility != .detailOnly {
-                sidebarBeforeInspector = columnVisibility
-                columnVisibility = .detailOnly
-            }
-        } else if let previous = sidebarBeforeInspector,
-                  env.navigator.openTaskID == nil || availableWidth >= 1100 {
-            columnVisibility = previous
-            sidebarBeforeInspector = nil
-        }
-    }
-
-    private var navigationContent: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 236, max: 340)
-        } detail: {
-            GeometryReader { viewport in
-                VStack(spacing: 0) {
-                    if env.localLinks.error != nil {
-                        LocalLinkNotice()
-                    }
-                    if env.store.labelMergeUndo != nil || env.store.labelMaintenanceError != nil {
-                        LabelMergeNotice()
-                    }
-                    ReminderNavigationNotice()
-                    TrashNotice()
-                    contentArea
-                        .frame(minHeight: 0, maxHeight: .infinity)
-                }
-                // The notice reserves space inside the detail viewport. Its
-                // wrapping height must not increase the split view's minimum
-                // window size during AppKit's zero-width fitting pass.
-                .frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
-            }
-            .inspector(isPresented: taskPanelBinding) {
-                TaskDetailPanel()
-                    .inspectorColumnWidth(min: 300, ideal: 380, max: 480)
-            }
-        }
-    }
-
     private var statusNotices: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 6) {
             if let notice = env.store.editorNotice {
-                HStack(alignment: .top, spacing: 12) {
-                    Label(notice, systemImage: "info.circle")
-                        .font(.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button("Dismiss") { env.store.editorNotice = nil }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Theme.accent)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(ListAccent.blue.softBackground)
+                noticeCard(text: notice, icon: "info.circle", tint: ListAccent.blue.softBackground, action: ("Dismiss", { env.store.editorNotice = nil }))
             }
             if let error = env.store.persistenceError {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("Changes are not saved", systemImage: "exclamationmark.triangle.fill")
-                        .font(.headline)
-                    Text(error).font(.callout)
-                    Button("Retry saving") { env.store.save() }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(ListAccent.red.softBackground)
+                noticeCard(text: "Changes are not saved. \(error)", icon: "exclamationmark.triangle.fill",
+                       tint: ListAccent.red.softBackground, action: ("Retry saving", { env.store.save() }))
             }
             if let warning = syncWarning {
-                Label(warning, systemImage: "icloud.slash")
-                    .font(.callout)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ListAccent.orange.softBackground)
+                noticeCard(text: warning, icon: "icloud.slash", tint: ListAccent.orange.softBackground, action: nil)
             }
         }
+        .frame(maxWidth: 560)
+        .padding(.horizontal, 20)
+    }
+
+    private func noticeCard(text: String, icon: String, tint: Color, action: (String, () -> Void)?) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Label(text, systemImage: icon)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if let action {
+                Button(action.0, action: action.1)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(NX.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
     }
 
     // MARK: - Commands outside a document
 
-    private func installCompletionUndo(in window: NSWindow?) {
+    private func installUndo(in window: NSWindow?) {
         guard let window else { return }
-        env.store.onCompletionUndoAvailable = { [weak window, weak store = env.store] action in
-            guard let manager = window?.undoManager else { return }
-            store?.registerCompletionUndo(action, with: manager)
-        }
+        env.workbench.undoManager = window.undoManager
+        env.workbench.installCompletionUndo()
     }
 
     private var syncWarning: String? {
@@ -257,39 +176,39 @@ struct RootView: View {
             ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
     }
 
-    /// Runs menu commands on the smart views, where the selection comes from
-    /// tapped rows rather than a text caret.
-    ///
-    /// The task commands themselves live on `Store`, so this only decides what
-    /// the targets are and handles the cases a cross-list screen owns.
+    /// Runs menu commands on the Next screens, where the targets are the
+    /// selection, else the focused row, else the inspected task.
     private func handleGlobalCommand() {
         guard let command = env.consumeCommand() else { return }
-        guard !SelectionCommandPolicy.reject(command, selectedCount: env.navigator.selection.count, store: env.store) else { return }
-        let targets = env.navigator.selection.compactMap { env.store.block(id: $0) }
-
-        if env.store.perform(command, on: targets, undoManager: NSApp.keyWindow?.undoManager) {
-            if command == .deleteSelection { env.navigator.selection.removeAll() }
-            return
-        }
+        let workbench = env.workbench
+        let ids = workbench.targetIDs
 
         switch command {
         case .newTask:
-            env.presentTaskCapture()
-
-        case .openDetails:
-            if let first = targets.first(where: \.isTask) { env.navigator.openTask(first.id) }
-
-        case .pickDueDate:
-            if let first = targets.first(where: \.isTask) { env.openTask(first.id, showing: .due) }
-
-        case .pickLabel:
-            if let first = targets.first(where: \.isTask) { env.openTask(first.id, showing: .labels) }
-
+            workbench.openCapture()
+        case .toggleCompletion:
+            let tasks = workbench.tasks(ids)
+            if !tasks.isEmpty, tasks.allSatisfy(\.isCompleted) {
+                tasks.forEach { workbench.reopen($0.id) }
+            } else {
+                workbench.complete(tasks.filter { !$0.isCompleted }.map(\.id))
+            }
+        case .openDetails, .pickDueDate, .pickLabel:
+            if let first = ids.first { workbench.inspect(first) }
+        case .setDueToday:
+            workbench.schedule(ids, offset: 0)
+        case .clearDueDate:
+            workbench.schedule(ids, offset: nil)
+        case .toggleStar:
+            workbench.star(ids)
+        case .deleteSelection:
+            workbench.trash(ids)
+        case .clearLabels:
+            let targets = workbench.tasks(ids)
+            guard !SelectionCommandPolicy.reject(command, selectedCount: targets.count, store: env.store) else { return }
+            _ = env.store.perform(command, on: targets, undoManager: workbench.undoManager)
         case .indent, .outdent, .moveUp, .moveDown, .expandAll, .collapseAll:
             // Outline-only operations have no meaning in a cross-list view.
-            break
-
-        default:
             break
         }
     }
@@ -299,16 +218,14 @@ struct RootView: View {
     /// Drops the window's first responder when arriving somewhere that focus
     /// would be destructive.
     ///
-    /// AppKit hands initial focus to the first text field it finds. On the
-    /// cross-list screens that is a task's `TextField`, which focuses *with its
-    /// text selected* — one keystroke would silently replace the task. Document
-    /// editors are left alone: their first responder is an `NSTextView`, which
-    /// takes a caret rather than a selection, and on a brand-new list it is the
-    /// title field, which is exactly where you want to be typing.
+    /// AppKit hands initial focus to the first text field it finds, often
+    /// *with its text selected* — one keystroke would silently replace it.
+    /// Document editors are left alone: their first responder is an
+    /// `NSTextView`, which takes a caret rather than a selection.
     private func clearInitialFocus(for route: AppRoute) {
         guard !env.navigator.hasDocumentEditor, focusClearedFor != route,
               !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-              !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
+              !env.navigator.isShortcutSheetOpen, !env.workbench.captureOpen,
               env.navigator.openTaskID == nil,
               let initialWindow = hostWindow.window, initialWindow.isKeyWindow
         else { return }
@@ -319,8 +236,8 @@ struct RootView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak initialWindow] in
             guard env.navigator.route == route, !env.navigator.hasDocumentEditor, focusClearedFor != route,
                   !env.navigator.isSearchOpen, !env.navigator.isCommandPaletteOpen,
-                  !env.navigator.isShortcutSheetOpen, env.taskCaptureRequest == nil,
-              env.navigator.openTaskID == nil,
+                  !env.navigator.isShortcutSheetOpen, !env.workbench.captureOpen,
+                  env.navigator.openTaskID == nil,
                   let window = initialWindow, window === hostWindow.window,
                   window === NSApp.keyWindow, window.sheetParent == nil, window.attachedSheet == nil
             else { return }
@@ -357,90 +274,6 @@ struct RootView: View {
     private func updateDockBadge() {
         let count = dockBadgeCount
         NSApp.dockTile.badgeLabel = (env.settings.showsDockBadge && count > 0) ? "\(count)" : nil
-    }
-
-    private var taskPanelBinding: Binding<Bool> {
-        Binding(
-            get: { env.navigator.openTaskID != nil },
-            set: { if !$0 { env.navigator.closeTask() } }
-        )
-    }
-
-    // MARK: - Content routing
-
-    private var contentArea: some View {
-        VStack(spacing: 0) {
-            routedContent
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            SelectionActionsBar(scopeID: env.navigator.rowSelection.scopeID)
-        }
-    }
-
-    @ViewBuilder
-    private var routedContent: some View {
-        switch env.navigator.route {
-        case .inbox:
-            InboxScreen()
-        case .today:
-            TodayScreen()
-        case .calendar:
-            CalendarScreen()
-        case .updates:
-            UpdatesScreen()
-        case .activity:
-            ActivityScreen()
-        case .tasks:
-            TasksScreen()
-        case .lists:
-            ListsScreen()
-        case .trash:
-            TrashScreen()
-        case .completed:
-            CompletedScreen()
-        case let .list(id):
-            if let list = env.store.list(id: id) {
-                ListScreen(list: list)
-                    .id(id)
-            } else {
-                MissingContentView(message: "This list no longer exists.")
-            }
-        case let .label(id):
-            if let label = env.store.allLabels().first(where: { $0.id == id }) {
-                LabelScreen(label: label)
-                    .id(id)
-            } else {
-                MissingContentView(message: "This label no longer exists.")
-            }
-        }
-    }
-
-    // MARK: - Toolbar
-
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .navigation) {
-            Button("Back", systemImage: "chevron.left") { env.navigator.goBack() }
-                .labelStyle(.iconOnly)
-            .disabled(!env.navigator.canGoBack)
-            .help("Back (⌘[)")
-
-            Button("Forward", systemImage: "chevron.right") { env.navigator.goForward() }
-                .labelStyle(.iconOnly)
-            .disabled(!env.navigator.canGoForward)
-            .help("Forward (⌘])")
-        }
-
-        ToolbarItemGroup(placement: .primaryAction) {
-            WorkToolbar()
-            Button("Search", systemImage: "magnifyingglass") { env.navigator.isSearchOpen = true }
-                .labelStyle(.iconOnly)
-            .help("Search (⌘F)")
-
-            Button("Add task", systemImage: "plus") { env.send(.newTask) }
-                .labelStyle(.iconOnly)
-            .help("New task (⌘N)")
-        }
     }
 }
 

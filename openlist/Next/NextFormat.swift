@@ -1,0 +1,164 @@
+//
+//  NextFormat.swift
+//  openlist
+//
+
+import Foundation
+
+/// Wording shared by rows, the tray and the inspector.
+enum NXFormat {
+    static var calendar: Calendar { Calendar.current }
+
+    static func dayOffset(_ date: Date, now: Date = .now) -> Int {
+        let start = calendar.startOfDay(for: now)
+        let day = calendar.startOfDay(for: date)
+        return calendar.dateComponents([.day], from: start, to: day).day ?? 0
+    }
+
+    static func day(offset: Int, now: Date = .now) -> Date {
+        calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)) ?? now
+    }
+
+    /// "Today", "Tomorrow", "Yesterday", "Fri 25" within the week, else "3 Oct".
+    static func dueLabel(_ date: Date?, now: Date = .now) -> String {
+        guard let date else { return "No date" }
+        let offset = dayOffset(date, now: now)
+        switch offset {
+        case 0: return "Today"
+        case 1: return "Tomorrow"
+        case -1: return "Yesterday"
+        case 2..<7: return date.formatted(.dateTime.weekday(.abbreviated).day())
+        default: return date.formatted(.dateTime.day().month(.abbreviated))
+        }
+    }
+
+    static func relativeDay(_ date: Date, now: Date = .now) -> String {
+        let offset = dayOffset(date, now: now)
+        if offset == 0 { return "today" }
+        if offset == 1 { return "tomorrow" }
+        if offset < 0 { return "\(-offset) days ago" }
+        return "in \(offset) days"
+    }
+
+    static func relative(_ date: Date, now: Date = .now) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 45 { return "just now" }
+        if seconds < 3600 { return "\(Int((seconds / 60).rounded())) min ago" }
+        if seconds < 86_400 { return "\(Int((seconds / 3600).rounded())) h ago" }
+        let days = Int((seconds / 86_400).rounded())
+        return days == 1 ? "yesterday" : "\(days) days ago"
+    }
+
+    static func clock(_ date: Date) -> String {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+    }
+
+    static func short(_ text: String) -> String {
+        text.count > 30 ? String(text.prefix(29)) + "…" : text
+    }
+
+    static func quoted(_ text: String) -> String { "“\(short(text))”" }
+
+    static func mmss(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds))
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    static func minutes(_ value: Int) -> String {
+        value >= 60 && value % 60 == 0 ? "\(value / 60)h" : value > 60 ? "\(value / 60)h \(value % 60)m" : "\(value)m"
+    }
+}
+
+/// The capture grammar from the design: tokens are coloured as you type.
+struct CaptureParse {
+    enum Kind: String { case repeatRule, date, time, label, priority, estimate }
+
+    struct Mark {
+        var kind: Kind
+        var range: Range<String.Index>
+        var raw: String
+    }
+
+    struct Segment: Identifiable {
+        let id: Int
+        var text: String
+        var kind: Kind?
+    }
+
+    let text: String
+    let marks: [Mark]
+    let segments: [Segment]
+    let title: String
+
+    private static let patterns: [(Kind, String)] = [
+        (.repeatRule, #"\bevery\s(?:day|weekday|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"#),
+        (.date, #"\b(?:today|tonight|tomorrow|tmrw|next\sweek|(?:next\s)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|in\s\d+\s(?:days?|weeks?))\b"#),
+        (.time, #"\b(?:at\s)?\d{1,2}(?::\d{2})?\s?(?:am|pm)\b"#),
+        (.label, #"#[\p{L}0-9_-]+"#),
+        (.priority, #"!(?:high|med|medium|low|[1-3])\b"#),
+        (.estimate, #"~\d+\s?(?:m|min|h)\b"#),
+    ]
+
+    init(_ text: String) {
+        self.text = text
+        var marks: [Mark] = []
+        for (kind, pattern) in Self.patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let range = Range(match.range, in: text) else { continue }
+                if marks.contains(where: { $0.range.overlaps(range) }) { continue }
+                marks.append(Mark(kind: kind, range: range, raw: String(text[range])))
+            }
+        }
+        marks.sort { $0.range.lowerBound < $1.range.lowerBound }
+        var segments: [Segment] = []
+        var cursor = text.startIndex
+        for mark in marks {
+            if mark.range.lowerBound > cursor {
+                segments.append(Segment(id: segments.count, text: String(text[cursor..<mark.range.lowerBound])))
+            }
+            segments.append(Segment(id: segments.count, text: mark.raw, kind: mark.kind))
+            cursor = mark.range.upperBound
+        }
+        if cursor < text.endIndex { segments.append(Segment(id: segments.count, text: String(text[cursor...]))) }
+        var title = text
+        for mark in marks.reversed() { title.removeSubrange(mark.range) }
+        self.marks = marks
+        self.segments = segments
+        self.title = title.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    func first(_ kind: Kind) -> Mark? { marks.first { $0.kind == kind } }
+
+    var labels: [String] { marks.filter { $0.kind == .label }.map { String($0.raw.dropFirst()).lowercased() } }
+
+    var hasPriority: Bool { first(.priority) != nil }
+
+    var estimateMinutes: Int? {
+        guard let raw = first(.estimate)?.raw else { return nil }
+        let digits = Int(raw.filter(\.isNumber)) ?? 0
+        return raw.lowercased().contains("h") ? digits * 60 : digits
+    }
+
+    /// Text with the design-only tokens (priority, estimate) removed, for the date parser.
+    var schedulingText: String {
+        var result = text
+        for mark in marks.reversed() where mark.kind == .priority || mark.kind == .estimate {
+            result.removeSubrange(mark.range)
+        }
+        return result
+    }
+
+    /// "Today · today" style label for the date token preview.
+    static func timeLabel(_ raw: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,2})(?::(\d{2}))?\s?(am|pm)"#, options: .caseInsensitive),
+              let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+              let hourRange = Range(match.range(at: 1), in: raw),
+              let meridiemRange = Range(match.range(at: 3), in: raw) else { return nil }
+        let hour = (Int(raw[hourRange]) ?? 0) % 12 + (raw[meridiemRange].lowercased() == "pm" ? 12 : 0)
+        let minute = Range(match.range(at: 2), in: raw).map { String(raw[$0]) } ?? "00"
+        return String(format: "%02d:", hour) + minute
+    }
+}

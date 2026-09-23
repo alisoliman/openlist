@@ -19,6 +19,7 @@ enum AppRoute: Hashable, Codable {
     case label(UUID)
     case completed
     case trash
+    case settings
 
     var isSmartView: Bool {
         switch self {

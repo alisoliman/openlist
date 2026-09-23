@@ -47,6 +47,7 @@ final class AppEnvironment {
     let sync: ICloudSyncMonitor
     let calendar: CalendarCoordinator
     let mcp: MCPIntegration
+    let workbench: Workbench
     let libraryMaintenance: LibraryMaintenance?
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
@@ -104,6 +105,7 @@ final class AppEnvironment {
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
+        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar)
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
 

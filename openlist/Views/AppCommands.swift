@@ -138,21 +138,21 @@ struct AppCommands: Commands {
                 .disabled(!hasTaskSelection)
         }
 
-        // View ▸ navigation between the five fixed destinations.
+        // View ▸ navigation, in sidebar order.
         CommandGroup(before: .sidebar) {
-            Button("Inbox") { env.navigator.go(to: .inbox) }
+            Button("Inbox") { env.workbench.go(.inbox) }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("Today") { env.navigator.go(to: .today) }
+            Button("Today") { env.workbench.go(.today) }
                 .keyboardShortcut("2", modifiers: .command)
-            Button("Updates") { env.navigator.go(to: .updates) }
+            Button("Calendar") { env.workbench.go(.calendar) }
                 .keyboardShortcut("3", modifiers: .command)
-            Button("Tasks") { env.navigator.go(to: .tasks) }
+            Button("Tasks") { env.workbench.go(.tasks) }
                 .keyboardShortcut("4", modifiers: .command)
-            Button("Lists") { env.navigator.go(to: .lists) }
+            Button("Lists") { env.workbench.go(.lists) }
                 .keyboardShortcut("5", modifiers: .command)
-            Button("Calendar") { env.navigator.go(to: .calendar) }
+            Button("Activity") { env.workbench.go(.activity) }
                 .keyboardShortcut("6", modifiers: .command)
-            Button("Activity") { env.navigator.go(to: .activity) }
+            Button("Trash") { env.workbench.go(.trash) }
 
             Divider()
 
