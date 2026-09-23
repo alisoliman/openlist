@@ -79,9 +79,12 @@ enum NXFormat {
 
     static func quoted(_ text: String) -> String { "“\(short(text))”" }
 
+    /// Elapsed time as the notch and the Stopped tray show it: "07:42", and "1:05:12" past an hour.
     static func mmss(_ seconds: Double) -> String {
         let total = max(0, Int(seconds))
-        return String(format: "%02d:%02d", total / 60, total % 60)
+        let hours = total / 3600
+        let rest = String(format: "%02d:%02d", total % 3600 / 60, total % 60)
+        return hours > 0 ? "\(hours):\(rest)" : rest
     }
 
     static func minutes(_ value: Int) -> String {

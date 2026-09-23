@@ -9,22 +9,30 @@ struct WorkTaskChooser: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Find a task", text: $search).textFieldStyle(.roundedBorder)
+            TextField("Find a task", text: $search)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(NX.ink)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 10)
+                .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(candidates) { task in
                         Button { choose(WorkTaskReference(task)) } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(task.displayTitle).font(.body).foregroundStyle(.primary)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(task.displayTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
                                 Text("\(env.store.list(id: task.listID)?.displayTitle ?? "Task") · \(env.calendar.remainingMinutes(for: task).formatted(.number.precision(.fractionLength(0)))) min remaining")
-                                    .font(.caption).foregroundStyle(Theme.secondaryText)
+                                    .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45))
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                            .background(Theme.chrome, in: RoundedRectangle(cornerRadius: 8))
-                            .contentShape(.rect)
-                        }.buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), rest: NX.ink(0.035), radius: 8,
+                                                        padding: EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10)))
                     }
-                    if candidates.isEmpty { Text("No matching tasks").foregroundStyle(Theme.secondaryText).padding() }
+                    if candidates.isEmpty {
+                        Text("No matching tasks").font(.system(size: 12.5)).foregroundStyle(NX.ink(0.45)).padding()
+                    }
                 }
             }.frame(maxHeight: 300)
         }

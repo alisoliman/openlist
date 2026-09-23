@@ -651,49 +651,23 @@ extension Workbench {
         calendar.replan()
     }
 
+    /// Starts recording `id` now, as the design's Start working does: outside
+    /// the list's hours and during busy time too. Other running work is
+    /// replaced, and the work watch reports the switch with Undo.
     func startWork(_ id: UUID) {
         guard let task = store.block(id: id) else { return }
-        let active = calendar.activeSession
-        if let active, active.taskID == id, active.occurrenceID == task.occurrenceID { return }
-        // Switching from other work, or taking time that has to move other tasks,
-        // is reviewed in the Work panel first.
-        if active != nil || needsMoreTime(task) {
-            calendar.requestWork(WorkTaskReference(task))
-            return
-        }
-        calendar.start(task: task)
-        reportRefusal(for: task)
+        if !calendar.start(task: task) { reportStartFailure() }
     }
 
-    /// Whether `task` stopped at its estimate and continuing would move other tasks.
-    private func needsMoreTime(_ task: Block) -> Bool {
-        guard let nudge = calendar.overrunNudge else { return false }
-        return nudge.needsConfirmation && nudge.occurrenceID == task.occurrenceID
-    }
-
-    /// Shows why `task` did not start, once the coordinator has refused it.
-    private func reportRefusal(for task: Block) {
-        guard calendar.activeSession?.taskID != task.id else { return }
-        showTray(workRefusal(for: task), icon: "calendar.badge.exclamationmark", tone: .neutral)
+    /// Shows why work did not start: saving failed, or the task or its list went away.
+    private func reportStartFailure() {
+        showTray(calendar.notice ?? "Work could not be started.", icon: "calendar.badge.exclamationmark", tone: .neutral)
         calendar.notice = nil
     }
 
-    /// Why Start working was refused, short enough for the tray.
-    private func workRefusal(for task: Block) -> String {
-        let category = store.list(id: task.listID).map { hours(for: $0) } ?? .work
-        let cal = settings.calendar
-        let day = cal.startOfDay(for: .now)
-        let intervals = AdaptiveScheduler.availabilityIntervals(for: category, preferences: calendar.preferences, from: day,
-                                                               to: cal.date(byAdding: .day, value: 1, to: day) ?? day, calendar: cal)
-        if !intervals.contains(where: { $0.start <= .now && $0.end > .now }) {
-            return "Outside \(category.title) hours · \(NXHours.summary(calendar.preferences.profile(for: category), calendar: cal))"
-        }
-        return calendar.notice ?? "Work could not be started."
-    }
-
     /// The task shown in the work notch: the running session, or paused work that
-    /// can still resume, whoever paused it — you, a meeting, the end of the list's
-    /// hours, time away from the Mac, or an overrun waiting for more time.
+    /// can still resume, whoever paused it — you, time away from the Mac, or
+    /// Openlist quitting.
     var workTask: Block? {
         if let session = calendar.activeSession { return store.block(id: session.taskID) }
         return calendar.resumableTask
@@ -712,11 +686,8 @@ extension Workbench {
         if calendar.activeSession != nil {
             calendar.pause(reason: "Paused")
             reportPauseFailure()
-        } else if let task = workTask {
-            // Stopped at its estimate: resuming is the go-ahead for the extra time
-            // the notch's chip offers, and for the moves that make room for it.
-            if needsMoreTime(task) { calendar.acceptMoreTime() } else { calendar.start(task: task) }
-            reportRefusal(for: task)
+        } else if let task = workTask, !calendar.start(task: task) {
+            reportStartFailure()
         }
     }
 
@@ -732,8 +703,6 @@ extension Workbench {
             guard !reportPauseFailure() else { return }
         }
         let seconds = calendar.trackedMinutes(for: task) * 60
-        // Stopped work no longer waits on a decision about more time.
-        if calendar.overrunNudge?.taskID == task.id { calendar.keepWorkPaused() }
         calendar.dismissResume()
         showTray("Stopped — \(NXFormat.mmss(seconds)) recorded", icon: "timer", tone: .neutral)
     }
@@ -749,20 +718,28 @@ extension Workbench {
 
     // MARK: Work watch
 
-    /// Follows the running work so what the calendar does to it by itself reaches
-    /// the tray: a pause it made, work it paused when Openlist last quit, and
-    /// extra time along with the tasks moved for it. Runs from init, then again
-    /// after each change it sees.
+    /// Follows the running work so what happens to it reaches the tray, from
+    /// whichever surface started it: a switch from other work, a pause the
+    /// calendar made, work it paused when Openlist last quit, extra time along
+    /// with the tasks moved for it, and a fixed event it ran into. Runs from
+    /// init, then again after each change it sees.
     func watchWork() {
         let seen = withObservationTracking {
+            // Also follows whatever decides that an Undo entry about the work still applies.
             (taskID: calendar.activeSession?.taskID, notice: calendar.notice, grant: calendar.workExtension,
-             moved: calendar.rescheduleSummary?.id)
+             conflict: calendar.workConflict, moved: calendar.rescheduleSummary?.id,
+             undos: workUndos.map { $0.applies(self) })
         } onChange: { [weak self] in
             Task { @MainActor in self?.watchWork() }
         }
         let last = workWatch
-        workWatch = seen
+        workWatch = (seen.taskID, seen.notice, seen.grant, seen.conflict, seen.moved)
+        pruneWorkUndos()
+        if let running = seen.taskID, let previous = last.taskID, running != previous {
+            announceSwitch(from: previous, to: running)
+        }
         if let grant = seen.grant, grant != last.grant { announceExtension(grant) }
+        if let conflict = seen.conflict, conflict != last.conflict { announceConflict(conflict) }
         // The Work panel's move summary lasts a minute after a move, not until the next one.
         if let moved = seen.moved, moved != last.moved {
             after(60_000, key: "rescheduled") { workbench in
@@ -774,25 +751,25 @@ extension Workbench {
             awaitsLaunchNotice = false
             return
         }
+        // A pause made by hand leaves no new notice; one the calendar made says why.
         let notice = seen.notice != last.notice ? seen.notice : nil
         // The calendar's first notice after launch says why work that was running
         // when Openlist quit comes back paused.
         if awaitsLaunchNotice, let notice {
             awaitsLaunchNotice = false
             if last.taskID == nil, !calendar.isWorkPanelPresented, calendar.resumableTask != nil {
-                showPauseTray(notice, conflict: false)
+                showPauseTray(notice)
                 return
             }
         }
         // The Work panel shows its own notice. The calendar's notice stays set:
         // the panel and the toolbar's VoiceOver announcement read it too.
         guard let running = last.taskID, !calendar.isWorkPanelPresented,
-              let task = calendar.resumableTask, task.id == running,
-              let reason = pauseReason(for: task, notice: notice) else { return }
+              let task = calendar.resumableTask, task.id == running, let notice else { return }
         // Told again when you come back to the Mac: a lock or sleep pauses work
         // just as you leave, while the tray is still up.
-        awayPause = (task.id, reason.text, reason.conflict, nil)
-        showPauseTray(reason.text, conflict: reason.conflict)
+        awayPause = (task.id, notice, nil)
+        showPauseTray(notice)
     }
 
     /// The Mac reports you back. Work the calendar paused while you were away
@@ -811,54 +788,123 @@ extension Workbench {
             awayPause = away
         }
         guard !calendar.isWorkPanelPresented else { return }
-        showPauseTray(away.text, conflict: away.conflict)
+        showPauseTray(away.text)
     }
 
-    private func showPauseTray(_ text: String, conflict: Bool) {
-        showTray(text, icon: "calendar.badge.exclamationmark", tone: conflict ? .red : .amber,
+    private func showPauseTray(_ text: String) {
+        showTray(text, icon: "calendar.badge.exclamationmark", tone: .amber,
                  destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
     }
 
-    /// Why the calendar paused `task` by itself, or nil when it was paused by hand,
-    /// which leaves no nudge and no new `notice`. A conflict names what it ran into.
-    private func pauseReason(for task: Block, notice: String?) -> (text: String, conflict: Bool)? {
-        let title = NXFormat.quoted(task.displayTitle)
-        if needsMoreTime(task), let nudge = calendar.overrunNudge {
-            // The placed work more time would push back. Flexible work isn't on
-            // the calendar, so it's only counted, never named.
-            let next = calendar.plan.blocks.filter {
-                $0.occurrenceID != task.occurrenceID && $0.placementID != nil && !$0.isPinned && !$0.isActive
-                    && $0.start < nudge.proposedEnd && $0.end > nudge.estimatedEnd
-            }.min { $0.start < $1.start }
-            if let next, let other = store.block(id: next.taskID) {
-                return ("\(title) is running into \(NXFormat.quoted(other.displayTitle)) at \(NXFormat.clock(next.start))", true)
-            }
-            let count = nudge.movedTaskCount
-            return ("\(title) reached its estimate · more time would move \(count) \(count == 1 ? "task" : "tasks")", true)
-        }
-        guard let notice else { return nil }
-        // Work stopped at a fixed boundary ends exactly where the meeting or pinned task starts.
-        guard let ended = store.workSessions(taskID: task.id).first(where: { $0.occurrenceID == task.occurrenceID })?.endedAt
-        else { return (notice, false) }
-        if let meeting = calendar.externalCalendars.busyTimes.first(where: { abs($0.start.timeIntervalSince(ended)) < 1 }) {
-            return ("\(title) is running into \(NXFormat.quoted(meeting.title)) at \(NXFormat.clock(meeting.start))", true)
-        }
-        if let pin = store.placements().first(where: {
-            $0.isPinned && $0.occurrenceID != task.occurrenceID && abs($0.start.timeIntervalSince(ended)) < 1
-        }), let other = store.block(id: pin.taskID) {
-            return ("\(title) is running into \(NXFormat.quoted(other.displayTitle)) at \(NXFormat.clock(pin.start))", true)
-        }
-        return (notice, false)
+    /// Reports work that replaced other running work. Undo switches back, and
+    /// the time recorded in between stays on the task it was recorded on. The
+    /// entry lasts while the work it would switch away from still runs.
+    private func announceSwitch(from previousID: UUID, to currentID: UUID) {
+        guard let previous = store.block(id: previousID), let current = store.block(id: currentID) else { return }
+        let seconds = calendar.trackedMinutes(for: previous) * 60
+        let label = "Switched to \(NXFormat.quoted(current.displayTitle)) — \(NXFormat.mmss(seconds)) recorded on \(NXFormat.quoted(previous.displayTitle))"
+        let from = WorkTaskReference(previous)
+        let to = WorkTaskReference(current)
+        let entry = WorkUndo { $0.canSwitchWork(from: to, to: from) }
+        registerUndo(label, owner: entry, undo: { workbench in
+            guard workbench.canSwitchWork(from: to, to: from), workbench.switchWork(to: from) else { workbench.dropStale(entry); return }
+            entry.applies = { $0.canSwitchWork(from: from, to: to) }
+        }, redo: { workbench in
+            guard workbench.canSwitchWork(from: from, to: to), workbench.switchWork(to: to) else { workbench.dropStale(entry); return }
+            entry.applies = { $0.canSwitchWork(from: to, to: from) }
+        })
+        snap(label, icon: "arrow.left.arrow.right", tone: .neutral, ids: [currentID, previousID], owner: entry)
+        workUndos.append(entry)
     }
 
-    /// Reports extra time the calendar gave the running work. There is no Undo:
-    /// the calendar can't take time back from work that is still running.
+    /// Whether `current` is still the running work and `target` can take over.
+    private func canSwitchWork(from current: WorkTaskReference, to target: WorkTaskReference) -> Bool {
+        calendar.activeSession?.occurrenceID == current.occurrenceID && calendar.validWorkTask(target) != nil
+    }
+
+    /// Undo and Redo of a switch: work on `reference` again, which the watch
+    /// then sees as the work it already knows rather than another switch.
+    private func switchWork(to reference: WorkTaskReference) -> Bool {
+        guard let task = calendar.validWorkTask(reference), calendar.start(task: task) else { return false }
+        workWatch.taskID = task.id
+        return true
+    }
+
+    /// Reports extra time the calendar gave the running work. Undo puts back the
+    /// block it had and those of the tasks moved for it; work keeps recording.
+    /// The entry lasts while that session runs and keeps the extension.
     private func announceExtension(_ grant: CalendarWorkExtension) {
         guard let task = store.block(id: grant.taskID) else { return }
         let moved = grant.movedTaskIDs.count
-        showTray("Extended \(NXFormat.quoted(task.displayTitle)) to \(NXFormat.clock(grant.end))"
-                    + (moved == 0 ? "" : " · moved \(moved) \(moved == 1 ? "task" : "tasks")"),
-                 icon: "calendar.badge.plus", tone: .amber,
+        let label = "Extended \(NXFormat.quoted(task.displayTitle)) to \(NXFormat.clock(grant.end))"
+            + (moved == 0 ? "" : " · moved \(moved) \(moved == 1 ? "task" : "tasks")")
+        let entry = WorkUndo { $0.calendar.canUndoExtension(grant) }
+        // Either way the watch already knows the extension it lands on.
+        registerUndo(label, owner: entry, undo: { workbench in
+            guard workbench.calendar.undoExtension(grant) else { workbench.dropStale(entry); return }
+            workbench.workWatch.grant = workbench.calendar.workExtension
+            entry.applies = { $0.calendar.canRedoExtension(grant) }
+        }, redo: { workbench in
+            guard workbench.calendar.redoExtension(grant) else { workbench.dropStale(entry); return }
+            workbench.workWatch.grant = grant
+            entry.applies = { $0.calendar.canUndoExtension(grant) }
+        })
+        snap(label, icon: "calendar.badge.plus", tone: .amber, ids: [grant.taskID] + grant.movedTaskIDs,
+             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar), owner: entry)
+        workUndos.append(entry)
+    }
+
+    /// Takes Undo entries about the running work off the stack once it has moved
+    /// on, so Undo never claims to take back what it no longer can.
+    private func pruneWorkUndos() {
+        let stale = workUndos.filter { !$0.applies(self) }
+        guard !stale.isEmpty else { return }
+        workUndos.removeAll { entry in stale.contains { $0 === entry } }
+        for entry in stale { undoManager?.removeAllActions(withTarget: entry) }
+        bumpUndo()
+    }
+
+    /// An entry that got past pruning and found nothing to take back. The tray
+    /// says so in place of "Undid", and the entry leaves the stack once this
+    /// Undo or Redo has finished.
+    private func dropStale(_ entry: WorkUndo) {
+        entry.applies = { _ in false }
+        showTray("Nothing to undo — the plan has changed", icon: "arrow.uturn.backward", tone: .neutral)
+        Task { @MainActor [weak self] in self?.pruneWorkUndos() }
+    }
+
+    /// Reports the fixed event the running work ran into. It keeps recording.
+    private func announceConflict(_ conflict: CalendarWorkConflict) {
+        guard let task = store.block(id: conflict.taskID) else { return }
+        showTray("\(NXFormat.quoted(task.displayTitle)) is running into \(conflictLabel(conflict, inSentence: true))",
+                 icon: "calendar.badge.exclamationmark", tone: .red,
                  destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
+    }
+
+    /// What running work ran into and when, as the notch chip and the tray
+    /// name it: "Standup at 09:30".
+    func conflictLabel(_ conflict: CalendarWorkConflict, inSentence: Bool = false) -> String {
+        "\(conflictName(conflict, inSentence: inSentence)) at \(NXFormat.clock(conflict.start))"
+    }
+
+    /// What running work ran into, for the working block's "runs into". As in
+    /// the design, a meeting is named bare and a task in quotes.
+    func conflictName(_ conflict: CalendarWorkConflict, inSentence: Bool = false) -> String {
+        switch conflict.kind {
+        case .event: conflict.title.isEmpty ? (inSentence ? "busy time" : "Busy time") : conflict.title
+        case .task: NXFormat.quoted(conflict.title)
+        case .breakTime: inSentence ? "a break" : "Break"
+        }
+    }
+}
+
+/// An Undo entry about the running work, and the target its actions share, so
+/// the work watch can take it off the stack once it no longer applies.
+final class WorkUndo {
+    /// Whether the entry's next Undo, or Redo once undone, can still do what it says.
+    var applies: @MainActor (Workbench) -> Bool
+
+    init(applies: @escaping @MainActor (Workbench) -> Bool) {
+        self.applies = applies
     }
 }

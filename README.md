@@ -249,18 +249,20 @@ deadline, and source. Suggestions never open the panel or start tracking by
 themselves. **Later → Remind in 15 minutes** quiets that occurrence without
 moving the plan; **Move planned time** previews affected work separately.
 
-Start work explicitly. The toolbar shows the active task and recorded minutes,
-with **Stop** always available. **Stop working** saves the session and leaves the
-task open; **Complete task** completes the occurrence. Stopped work can be resumed
-as a new segment. Switching tasks asks before saving the old segment and starting
-another. Completion can be undone without restarting a timer.
+Start work explicitly, at any time. The toolbar shows the active task and its
+elapsed time, with **Stop** always available. **Stop working** saves the session
+and leaves the task open; **Complete task** completes the occurrence. Stopped work
+can be resumed as a new segment. Starting another task switches straight away,
+saving the old segment, and the tray offers Undo. Completion can be undone without
+restarting a timer.
 
-Overruns can continue in free time, but the **first extension that would move
-other work pauses recording** and asks for approval. Work shows the affected
-tasks' old and proposed times, rechecks the plan when accepted, and excludes time
-spent waiting. Meetings, unavailable hours, lock, and sleep pause work; a task
-can opt into tracking away from the Mac. Move blocks to express a preference or
-choose **Pin time** for fixed placements. Deadline coverage distinguishes
+Recording continues past the estimate: the working block grows in 15-minute steps
+and later flexible work moves out of its way, with Undo in the tray. When a
+meeting, a break or a pinned task leaves no more room, work keeps recording and
+the toolbar names what it is running into; at the end of available hours the block
+simply stops growing. Lock and sleep pause work; a task can opt into tracking away
+from the Mac, which still stops at the next meeting, break, pinned time or the end
+of its hours. Move blocks to express a preference or choose **Pin time** for fixed placements. Deadline coverage distinguishes
 **Scheduled**, **Cannot fit before deadline**, and **Outside planning horizon**.
 
 The **Work** menu and command palette (⌘K) offer Show work, Start selected task,

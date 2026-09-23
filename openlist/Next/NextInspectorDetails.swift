@@ -137,7 +137,7 @@ struct NXInspectorPlanOptions: View {
             toggle("Track work away from this Mac", isOn: task.tracksAwayFromMac) {
                 env.store.setTracksAway(!task.tracksAwayFromMac, for: task)
             }
-            .help(task.tracksAwayFromMac ? "Tracking continues through lock or sleep, until a meeting or unavailable time."
+            .help(task.tracksAwayFromMac ? "Tracking continues through lock or sleep."
                   : "Locking or sleeping pauses active work.")
             HStack(spacing: 6) {
                 Image(systemName: personal ? "house" : "briefcase").font(.system(size: 10.5))

@@ -9,25 +9,28 @@ struct WorkMovePicker: View {
     @State private var feedback: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Move planned work").font(.headline)
-            Text(env.store.block(id: block.taskID)?.displayTitle ?? "Task").font(.title3)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Move planned work").font(.system(size: 13, weight: .semibold)).foregroundStyle(NX.ink)
+            Text(env.store.block(id: block.taskID)?.displayTitle ?? "Task")
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(NX.ink)
             DatePicker("Start", selection: $date, in: Date.now...)
-            Text("This changes your preferred work time, not your deadline.").font(.callout).foregroundStyle(Theme.secondaryText)
+                .font(.system(size: 12.5))
+            Text("This changes your preferred work time, not your deadline.")
+                .font(.system(size: 12)).foregroundStyle(NX.ink(0.5))
             if !changes.isEmpty {
-                Text("Other planned work would move:").font(.callout)
+                Text("Other planned work would move:").font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.72))
                 ScrollView { WorkPlanChangesView(changes: changes) }
                     .frame(maxHeight: 200)
             }
-            if let feedback { Text(feedback).font(.callout) }
-            HStack {
-                Button("Cancel") { dismiss() }
-                Spacer()
-                Button(changes.isEmpty ? "Move" : "Move and update plan", action: confirm)
-                    .buttonStyle(.borderedProminent)
+            if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(NX.ink(0.72)) }
+            HStack(spacing: 8) {
+                NXWorkButton("Cancel") { dismiss() }
+                Spacer(minLength: 8)
+                NXWorkButton(changes.isEmpty ? "Move" : "Move and update plan", prominent: true, action: confirm)
             }
         }
         .padding(20).frame(width: 400)
+        .background(NX.card)
         .onAppear { date = max(.now, block.start); refresh() }
         .onChange(of: date) { _, _ in refresh() }
     }
