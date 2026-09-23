@@ -67,6 +67,24 @@ store.save()
 check(try !policy().includes(other), "Legacy selected tasks in real lists stay filed")
 store.setDueTomorrow(nested)
 check(try policy().includes(nested), "Setting a date keeps a capture in Inbox")
+// "Next week" is the coming Monday, whatever day the week starts on, and the
+// Monday after when the coming one is tomorrow.
+var gregorian = Calendar(identifier: .gregorian)
+gregorian.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+func day(_ month: Int, _ day: Int) -> Date { gregorian.date(from: DateComponents(year: 2026, month: month, day: day))! }
+for firstWeekday in [1, 2] {
+    gregorian.firstWeekday = firstWeekday
+    check(Store.nextWeekDay(from: day(9, 23).addingTimeInterval(15 * 3600), calendar: gregorian) == day(9, 28),
+          "Next week from a Wednesday afternoon is the coming Monday")
+    check(Store.nextWeekDay(from: day(9, 26), calendar: gregorian) == day(9, 28), "Next week from a Saturday is the coming Monday")
+    check(Store.nextWeekDay(from: day(9, 27), calendar: gregorian) == day(10, 5), "Next week from a Sunday never repeats Tomorrow")
+    check(Store.nextWeekDay(from: day(9, 28), calendar: gregorian) == day(10, 5), "Next week from a Monday is the Monday after")
+    check(Store.nextWeekDay(from: day(10, 24), calendar: gregorian) == day(10, 26), "Next week lands on Monday's midnight across a clock change")
+}
+store.setDueNextWeek(nested)
+check(nested.dueDate == Store.nextWeekDay() && !nested.includesTime && Calendar.current.component(.weekday, from: nested.dueDate!) == 2,
+      "Inbox's Next week sets the coming Monday, all day")
+check(try policy().includes(nested), "Next week keeps a capture in Inbox")
 let originalID = task.id, originalNote = task.note, labels = task.labelIDs
 let descendants = BlockTree.descendants(of: task.id, in: store.blocks(inList: inbox.id))
 let attachments = try store.context.fetch(FetchDescriptor<Attachment>()).map { ($0.id, $0.blockID, $0.contentData) }

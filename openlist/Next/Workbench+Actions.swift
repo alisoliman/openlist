@@ -93,7 +93,8 @@ extension Workbench {
         else { complete([id]) }
     }
 
-    /// E and ⌘↩: reopens the tasks when every one is done, else completes the open ones.
+    /// Task › Complete / Reopen (⌘D): reopens the tasks when every one is done,
+    /// else completes the open ones. E only completes, as in the design.
     func toggleCompletion(_ ids: [UUID]) {
         let tasks = tasks(ids)
         guard !tasks.isEmpty else { return }
@@ -165,9 +166,19 @@ extension Workbench {
         let label = offset == nil ? "Cleared date on \(describe(tasks))"
             : "\(describe(tasks)) → \(NXFormat.dueLabel(NXFormat.day(offset: offset!)))"
         edit(tasks, label: label, icon: "calendar", tone: .accent) { task in
-            store.setDueDate(offset.map { NXFormat.day(offset: $0) }, includesTime: false, for: task)
+            guard let offset else { store.setDueDate(nil, for: task); return }
+            let due = dueDate(for: task, offset: offset)
+            store.setDueDate(due.date, includesTime: due.includesTime, for: task)
         }
         selection = []
+    }
+
+    /// `task` moved to the day `offset` from today. A timed task keeps its time
+    /// of day, as the design moves `due` and leaves `time` alone.
+    private func dueDate(for task: Block, offset: Int) -> (date: Date, includesTime: Bool) {
+        let day = NXFormat.day(offset: offset)
+        guard task.includesTime, let due = task.dueDate else { return (day, false) }
+        return (NXFormat.day(day, at: due), true)
     }
 
     func star(_ ids: [UUID]) {
@@ -199,7 +210,7 @@ extension Workbench {
         let word = switch priority {
         case .none: "none"
         case .low: "low"
-        case .medium: "med"
+        case .medium: "medium"
         case .high: "high"
         }
         edit([task], label: "Priority \(word) · \(describe([task]))", icon: "flag.fill", tone: .red, chip: false) { task in
@@ -448,7 +459,8 @@ extension Workbench {
             case .up:
                 let label = "\(NXFormat.quoted(task.displayTitle)) → \(NXFormat.dueLabel(NXFormat.day(offset: offset ?? 0))) · still in Inbox"
                 self.edit([task], label: label, icon: "calendar", tone: .accent) { task in
-                    self.store.setDueDate(NXFormat.day(offset: offset ?? 0), includesTime: false, for: task)
+                    let due = self.dueDate(for: task, offset: offset ?? 0)
+                    self.store.setDueDate(due.date, includesTime: due.includesTime, for: task)
                 }
                 keeps = true
             case .right:

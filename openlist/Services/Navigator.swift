@@ -190,7 +190,9 @@ final class Navigator {
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
 
-    /// Navigates, pushing the current route onto the back stack.
+    /// Navigates, pushing the current route onto the back stack. The open task
+    /// stays open, as it does going Back and Forward: the inspector belongs to
+    /// the window, not to the screen.
     func go(to newRoute: AppRoute) {
         guard newRoute != route else { return }
         backStack.append(route)
@@ -198,7 +200,6 @@ final class Navigator {
         route = newRoute
         revealedDocumentListID = nil
         contentReveal = nil
-        openTaskID = nil
         clearSelection()
         trimHistory()
     }
@@ -209,7 +210,6 @@ final class Navigator {
         route = previous
         revealedDocumentListID = nil
         contentReveal = nil
-        openTaskID = nil
         clearSelection()
     }
 
@@ -219,7 +219,6 @@ final class Navigator {
         route = next
         revealedDocumentListID = nil
         contentReveal = nil
-        openTaskID = nil
         clearSelection()
     }
 

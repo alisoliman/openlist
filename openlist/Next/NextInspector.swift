@@ -445,8 +445,8 @@ struct NextInspector: View {
     /// sides to fit Today, Tomorrow, Next week and None on one line.
     private static let duePillPadding = EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 6)
 
-    /// A week from today, matching `Store.setDueNextWeek`, so it never equals Tomorrow.
-    private var nextWeekOffset: Int { 7 }
+    /// The coming Monday, matching `Store.setDueNextWeek`, so it never equals Tomorrow.
+    private var nextWeekOffset: Int { NXFormat.nextWeekOffset() }
 
     private var dueOptions: [(label: String, offset: Int?)] {
         var options: [(String, Int?)] = [("Today", 0), ("Tomorrow", 1), ("Next week", nextWeekOffset), ("None", nil)]

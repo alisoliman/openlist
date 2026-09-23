@@ -121,4 +121,22 @@ check(navigator.scrollOffset(for: .tasks) == 188, "Invalid scroll geometry canno
 navigator.rememberScrollOffset(0, for: .tasks)
 check(navigator.scrollOffset(for: .tasks) == 0, "A saved raw zero remains distinct from an unvisited page")
 
+// The inspector belongs to the window: it stays open across screens and
+// closes only when a document takes the list over or the route is replaced.
+let inspecting = Navigator()
+let inspected = UUID(), inspectedListID = UUID()
+inspecting.openTask(inspected)
+inspecting.go(to: .calendar)
+check(inspecting.openTaskID == inspected, "Going to another screen keeps the inspector on the same task")
+inspecting.goBack()
+check(inspecting.openTaskID == inspected, "Back keeps the inspector open")
+inspecting.goForward()
+check(inspecting.openTaskID == inspected, "Forward keeps the inspector open")
+inspecting.go(to: .list(inspectedListID))
+inspecting.setListViewMode(.document, for: inspectedListID)
+check(inspecting.openTaskID == nil, "Handing the list to its document editor closes the inspector")
+inspecting.openTask(inspected)
+inspecting.replace(with: .today)
+check(inspecting.openTaskID == nil, "Stepping off a deleted list closes the inspector")
+
 print("\(checks) Inbox navigation checks passed")
