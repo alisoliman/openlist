@@ -282,6 +282,8 @@ final class NextKeyHandler {
             }
         }
 
+        // The design's keys land even with nothing to act on: they do nothing,
+        // quietly, rather than reach AppKit and beep. Only ↑/↓ pass through.
         switch key {
         case Key.down, Key.up:
             // Nothing on screen publishes rows: let the event reach the screen.
@@ -289,14 +291,12 @@ final class NextKeyHandler {
             workbench.moveFocus(by: key == Key.down ? 1 : -1, extending: shift)
             return true
         case Key.enter, Key.keypadEnter:
-            guard let id = workbench.focusID ?? workbench.targetIDs.first else { return false }
-            workbench.inspect(id)
+            if let id = workbench.focusID ?? workbench.targetIDs.first { workbench.inspect(id) }
             return true
         case Key.escape:
             if navigator.openTaskID != nil { navigator.closeTask() }
-            else if !workbench.selection.isEmpty { workbench.selection = [] }
-            else if workbench.focusID != nil { workbench.focusID = nil }
-            else { return false }
+            else if !workbench.selection.isEmpty { workbench.clearSelection() }
+            else { workbench.focusID = nil }
             return true
         default:
             break
@@ -304,26 +304,24 @@ final class NextKeyHandler {
 
         switch chars {
         case "j", "k":
-            guard !workbench.visibleIDs.isEmpty else { return false }
             workbench.moveFocus(by: chars == "j" ? 1 : -1, extending: shift)
             return true
         case "x" where !shift:
-            guard let id = workbench.focusID else { return false }
-            workbench.toggleSelection(id)
+            if let id = workbench.focusID { workbench.toggleSelection(id) }
             return true
         default:
             if openGlobal(chars, shift: shift) { return true }
         }
 
         guard !shift else { return false }
+        // Each action ignores an empty target list.
         let ids = workbench.targetIDs
-        guard !ids.isEmpty else { return false }
         if key == Key.delete || key == Key.forwardDelete {
             workbench.trash(ids)
             return true
         }
         switch chars {
-        case "e": workbench.toggleCompletion(ids)
+        case "e": workbench.complete(ids)
         case "t": workbench.schedule(ids, offset: 0)
         case "m": workbench.schedule(ids, offset: 1)
         case "f": workbench.star(ids)

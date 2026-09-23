@@ -153,8 +153,17 @@ extension Store {
     }
 
     func setDueNextWeek(_ block: Block) {
-        let next = Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: .now))
-        setDueDate(next, includesTime: false, for: block)
+        setDueDate(Self.nextWeekDay(), includesTime: false, for: block)
+    }
+
+    /// "Next week": the coming Monday, whichever day the week starts on here.
+    /// When that Monday is tomorrow it's the one after, so it never repeats Tomorrow.
+    static func nextWeekDay(from now: Date = .now, calendar: Calendar = .current) -> Date {
+        let today = calendar.startOfDay(for: now)
+        guard let monday = calendar.nextDate(after: today, matching: DateComponents(weekday: 2), matchingPolicy: .nextTime)
+        else { return calendar.date(byAdding: .day, value: 7, to: today) ?? today }
+        guard calendar.dateComponents([.day], from: today, to: monday).day == 1 else { return monday }
+        return calendar.date(byAdding: .day, value: 7, to: monday) ?? monday
     }
 
     func setReminder(_ date: Date?, for block: Block) {

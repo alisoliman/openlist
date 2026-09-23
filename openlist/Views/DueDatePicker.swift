@@ -133,7 +133,7 @@ struct DueDatePicker: View {
                     env.store.setDueDate(date, for: block)
                 }
             }
-            presetRow("Next week", symbol: "calendar", detail: shortWeekday(7)) {
+            presetRow("Next week", symbol: "calendar", detail: shortWeekday(NXFormat.nextWeekOffset())) {
                 env.store.setDueNextWeek(block)
             }
         }

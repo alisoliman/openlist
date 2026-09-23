@@ -19,6 +19,17 @@ enum NXFormat {
         calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)) ?? now
     }
 
+    /// `day` at the hour and minute of `time`, for a timed task moved to another day.
+    static func day(_ day: Date, at time: Date) -> Date {
+        let parts = calendar.dateComponents([.hour, .minute], from: time)
+        return calendar.date(bySettingHour: parts.hour ?? 0, minute: parts.minute ?? 0, second: 0, of: day) ?? day
+    }
+
+    /// Days from today to "Next week", the coming Monday (`Store.nextWeekDay`).
+    static func nextWeekOffset(now: Date = .now) -> Int {
+        dayOffset(Store.nextWeekDay(from: now, calendar: calendar), now: now)
+    }
+
     /// The app's overdue rule (`Block.isOverdue`, TasksProjection): a timed task is late once its
     /// time passes, an all-day task once its day ends. Ignores completion, so a task still closing
     /// keeps its place; callers decide where finished tasks go.

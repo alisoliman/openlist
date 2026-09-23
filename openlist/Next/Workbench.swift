@@ -63,7 +63,12 @@ final class Workbench {
     var selection: Set<UUID> = []
     /// Row order on screen, published by the visible screen for J/K and ⌘A.
     @ObservationIgnored var visibleIDs: [UUID] = [] {
-        didSet { visibleRoute = navigator.route }
+        didSet {
+            visibleRoute = navigator.route
+            // A row that leaves the screen leaves the selection, so the
+            // selection bar never counts rows its buttons can't reach.
+            if !selection.isEmpty, !selection.isSubset(of: visibleIDs) { selection.formIntersection(visibleIDs) }
+        }
     }
 
     // MARK: Row feedback
@@ -201,13 +206,15 @@ final class Workbench {
 
     // MARK: Targets
 
+    /// The selected rows the current screen shows, in screen order: what the
+    /// selection bar counts and acts on.
+    var selectedVisibleIDs: [UUID] { visibleIDs.filter(selection.contains) }
+
     /// Selection, else keyboard focus, else the inspected task. Selected rows
-    /// the current screen doesn't show are never targets.
+    /// the current screen doesn't show are never targets, and while anything
+    /// is selected nothing else is either.
     var targetIDs: [UUID] {
-        if !selection.isEmpty {
-            let ordered = visibleIDs.isEmpty ? Array(selection) : visibleIDs.filter(selection.contains)
-            if !ordered.isEmpty { return ordered }
-        }
+        if !selection.isEmpty { return selectedVisibleIDs }
         if let focusID { return [focusID] }
         if let openID = navigator.openTaskID { return [openID] }
         return []
@@ -233,6 +240,8 @@ final class Workbench {
 
     /// Resets what belongs to the screen being left. Runs for every route
     /// change — Back/Forward, reveals and deletions as well as `go` — once per route.
+    /// The inspector belongs to the window, so it stays open on the new screen
+    /// as long as its task is still there.
     func routeDidChange() {
         guard shownRoute != navigator.route else { return }
         shownRoute = navigator.route
@@ -244,6 +253,10 @@ final class Workbench {
         gPressedAt = nil
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
+        if let openID = navigator.openTaskID,
+           !(store.block(id: openID).map { $0.isTask && $0.trashID == nil } ?? false) {
+            navigator.closeTask()
+        }
     }
 
     func inspect(_ id: UUID?) {
@@ -260,20 +273,31 @@ final class Workbench {
         let next = current.map { min(max($0 + delta, 0), visibleIDs.count - 1) } ?? (delta > 0 ? 0 : visibleIDs.count - 1)
         let id = visibleIDs[next]
         if extending {
-            if let focusID { selection.insert(focusID) }
-            selection.insert(id)
+            withAnimation(style.ease(180)) {
+                if let focusID { selection.insert(focusID) }
+                selection.insert(id)
+            }
         }
         focusID = id
         if navigator.openTaskID != nil { navigator.openTask(id) }
     }
 
     func toggleSelection(_ id: UUID) {
-        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+        withAnimation(style.ease(180)) {
+            if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+        }
         focusID = id
     }
 
     func selectAllVisible() {
-        selection = Set(visibleIDs)
+        withAnimation(style.ease(180)) { selection = Set(visibleIDs) }
+    }
+
+    /// Like every selection change here, clearing animates, so the rows'
+    /// marks and tint ease out rather than snap.
+    func clearSelection() {
+        guard !selection.isEmpty else { return }
+        withAnimation(style.ease(180)) { selection = [] }
     }
 
     /// A plain click: focus, and follow along if the inspector is open.
@@ -283,7 +307,7 @@ final class Workbench {
             toggleSelection(id)
             return
         }
-        selection = []
+        clearSelection()
         focusID = id
         if navigator.openTaskID != nil { navigator.openTask(id) }
     }

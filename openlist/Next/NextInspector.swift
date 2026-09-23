@@ -410,8 +410,8 @@ struct NextInspector: View {
             .gridColumnAlignment(.leading)
     }
 
-    /// A week from today, matching `Store.setDueNextWeek`, so it never equals Tomorrow.
-    private var nextWeekOffset: Int { 7 }
+    /// The coming Monday, matching `Store.setDueNextWeek`, so it never equals Tomorrow.
+    private var nextWeekOffset: Int { NXFormat.nextWeekOffset() }
 
     private var dueOptions: [(label: String, offset: Int?)] {
         var options: [(String, Int?)] = [("Today", 0), ("Tomorrow", 1), ("Next week", nextWeekOffset), ("None", nil)]
