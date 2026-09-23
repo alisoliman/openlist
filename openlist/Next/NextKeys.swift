@@ -262,7 +262,9 @@ final class NextKeyHandler {
             return openGlobal(chars, shift: shift)
         }
 
-        if navigator.route == .inbox, workbench.focusID == nil, workbench.selection.isEmpty, !shift,
+        // The card's keys win whenever no row is focused, selection or not, and
+        // Shift doesn't stop them, as in the design.
+        if navigator.route == .inbox, workbench.focusID == nil,
            let task = library.inboxQueue(workbench).first {
             if let digit = Int(chars), (1...9).contains(digit) {
                 let destinations = library.destinations

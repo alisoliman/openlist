@@ -15,11 +15,11 @@ struct NextInboxScreen: View {
         let kept = library.keptInbox(workbench)
         var groups: [NXGroup] = []
         if queue.count > 1 {
-            groups.append(NXGroup(id: "next", title: "Up next", icon: "text.line.last.and.arrowtriangle.forward", color: NX.inbox,
+            groups.append(NXGroup(id: "next", title: "Up next", icon: "text.append", color: NX.inbox,
                                   rows: Array(queue.dropFirst())))
         }
         if !kept.isEmpty {
-            groups.append(NXGroup(id: "kept", title: "Kept for later", icon: "clock", color: NX.ink(0.45), rows: kept,
+            groups.append(NXGroup(id: "kept", title: "Kept for later", icon: "clock.fill", color: NX.ink(0.45), rows: kept,
                                   collapsible: true))
         }
         let subtitle = "\(queue.count) to triage" + (workbench.kept.isEmpty ? "" : " · \(kept.count) kept for later")
@@ -39,9 +39,10 @@ struct NextInboxScreen: View {
                 }
             }
             Group {
+                // One card for the whole session, as in the design: it takes
+                // each task in turn, so the progress dots can slide between them.
                 if let task = queue.first {
                     NXTriageCard(task: task, remaining: queue.count)
-                        .id(task.id)
                 } else {
                     NXTriageEmpty()
                 }
@@ -65,20 +66,26 @@ private struct NXTriageCard: View {
     @Environment(\.nextLibrary) private var library
     let task: Block
     let remaining: Int
+    /// The task whose lift-in has played. Each new task starts lowered and
+    /// faded, like the design's liftIn, while the dots animate across.
+    @State private var liftedID: UUID?
 
     var body: some View {
         let workbench = env.workbench
         let exit = workbench.triageExit
+        let lifted = liftedID == task.id
         VStack(alignment: .leading, spacing: 0) {
             topLine
+            // The design's 22/1.3: 2.6pt between lines, half of it above and below.
             Text(task.displayTitle)
                 .font(.system(size: 22, weight: .medium))
                 .kerning(-0.11)
+                .lineSpacing(2.6)
                 .foregroundStyle(NX.ink)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 12)
+                .padding(.top, 13.3)
                 .padding(.horizontal, 18)
-                .padding(.bottom, 4)
+                .padding(.bottom, 5.3)
             HStack(spacing: 6) {
                 ForEach(chips) { NXChip(chip: $0) }
             }
@@ -98,15 +105,33 @@ private struct NXTriageCard: View {
         }
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .strokeBorder(exit == .done ? NX.green : NX.ink(0.12), lineWidth: exit == .done ? 2 : 0.5))
-        .shadow(color: NX.shadowWarm.opacity(0.09), radius: 20, y: 14)
+        // Done rings the card in place of its shadow, on the design's own
+        // `box-shadow 200ms ease`, which motion doesn't scale.
+        .transaction { transaction in
+            if exit != nil, transaction.animation != nil { transaction.animation = NX.cssEase(200) }
+        } body: { card in
+            card
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(exit == .done ? NX.green : NX.ink(0.12), lineWidth: exit == .done ? 2 : 0.5))
+                .shadow(color: NX.shadowWarm.opacity(exit == .done ? 0 : 0.09), radius: 20, y: 14)
+        }
         .offset(x: exit == .left ? -90 : exit == .right ? 90 : 0,
                 y: exit == .up ? -26 : exit == .down ? 26 : 0)
         .rotationEffect(.degrees(exit == .left ? -1.5 : exit == .right ? 1.5 : 0))
         .scaleEffect(exit == .up ? 0.97 : exit == .done ? 0.95 : 1)
-        .opacity(exit == nil ? 1 : 0)
-        .modifier(NXLiftIn())
+        // The card moves on the standard curve but fades on plain `ease`.
+        .transaction { transaction in
+            if exit != nil, transaction.animation != nil {
+                transaction.animation = style.cssEase(230)
+            }
+        } body: { $0.opacity(exit == nil ? 1 : 0) }
+        .offset(y: lifted ? 0 : 10)
+        .scaleEffect(lifted ? 1 : 0.985)
+        .opacity(lifted ? 1 : 0)
+        // The next task swaps in at once, hidden, and lifts in on a later
+        // update so the two changes don't merge.
+        .transaction(value: task.id) { $0.animation = nil }
+        .task(id: task.id) { withAnimation(style.ease(320)) { liftedID = task.id } }
     }
 
     private var chips: [NXChipModel] {
@@ -138,7 +163,8 @@ private struct NXTriageCard: View {
                         .frame(width: index == workbench.reviewed ? 16 : 5, height: 5)
                 }
             }
-            .animation(.easeOut(duration: 0.3), value: workbench.reviewed)
+            // The design's `transition: all 300ms ease`.
+            .animation(NX.cssEase(300), value: workbench.reviewed)
             Text("\(remaining) to go")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.42))
@@ -176,10 +202,13 @@ private struct NXTriageCard: View {
                     }
                 }
             }
+            // The design's 10.5/1.4 over a 13pt line: 1.7pt between lines, half of it above and below.
             Text("T today · M tomorrow · dots show what’s already due")
                 .font(.system(size: 10.5, weight: .medium))
+                .lineSpacing(1.7)
                 .foregroundStyle(NX.ink(0.4))
-                .padding(.top, 8)
+                .padding(.top, 8.85)
+                .padding(.bottom, 0.85)
         }
     }
 
@@ -203,7 +232,7 @@ private struct NXTriageCard: View {
                     Text("→").font(NX.mono(10, weight: .medium)).opacity(0.6)
                 }
             }
-            .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0x2C2A31), rest: NX.inverse, radius: 8,
+            .buttonStyle(NXHoverButtonStyle(hover: NX.primaryButtonHover, rest: NX.primaryButton, radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: .white, hoverForeground: .white))
             .accessibilityLabel("Keep for later")
@@ -220,7 +249,8 @@ private struct NXTriageCard: View {
             .kerning(0.74)
             .textCase(.uppercase)
             .foregroundStyle(NX.ink(0.36))
-            .lineLimit(1)
+            // Wraps, as the design's does, when the column is narrow.
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.bottom, 8)
     }
 
@@ -228,7 +258,7 @@ private struct NXTriageCard: View {
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 13))
+                Image(systemName: icon).font(.system(size: 13, weight: .medium))
                 Text(title).font(.system(size: 12, weight: .medium))
                 Text(key).font(NX.mono(9.5, weight: .medium)).opacity(0.5)
             }
@@ -328,22 +358,24 @@ private struct NXTriageEmpty: View {
                 .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 4) {
                 Text("Inbox triaged").font(NX.serif(26)).foregroundStyle(NX.ink)
+                // The design's 13/1.45 over a 16pt line: 2.85pt between lines, half of it above and below.
                 Text("\(workbench.reviewed) reviewed this session. Tasks you kept or scheduled stay in Inbox until you file them.")
                     .font(.system(size: 13))
+                    .lineSpacing(2.85)
                     .foregroundStyle(NX.ink(0.56))
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 1.425)
             }
             Spacer(minLength: 8)
-            if !workbench.kept.isEmpty {
-                Button("Review kept tasks") {
-                    workbench.kept = []
-                    workbench.reviewed = 0
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
-                                                padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
-                                                foreground: NX.ink(0.7)))
+            // Always offered, as in the design; with nothing kept it just starts the count again.
+            Button("Review kept tasks") {
+                workbench.kept = []
+                workbench.reviewed = 0
             }
+            .font(.system(size: 12, weight: .semibold))
+            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
+                                            padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
+                                            foreground: NX.ink(0.7)))
         }
         .padding(.vertical, 34)
         .padding(.horizontal, 28)

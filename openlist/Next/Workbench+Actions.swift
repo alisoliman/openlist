@@ -433,7 +433,7 @@ extension Workbench {
 
     func triage(_ task: Block, action: TriageExit, listID: UUID? = nil, offset: Int? = nil) {
         guard triageExit == nil else { return }
-        withAnimation(style.ease(230)) { triageExit = action }
+        withAnimation(style.standard(230)) { triageExit = action }
         let id = task.id
         let delay = Int(ms(230))
         Task { [weak self] in
@@ -457,7 +457,11 @@ extension Workbench {
             case .done:
                 // A repeat rolls to its next date and stays in Inbox.
                 keeps = task.recurrence != nil
+                // Triaging the card leaves the rows' selection alone, as in the
+                // design; complete() on its own clears it.
+                let selection = self.selection
                 self.complete([id])
+                self.selection = selection.subtracting([id])
             case .down:
                 let label = "Discarded \(NXFormat.quoted(task.displayTitle))"
                 if self.store.trashBlocks([task], undoManager: self.undoManager) {

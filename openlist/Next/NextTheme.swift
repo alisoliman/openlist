@@ -21,6 +21,9 @@ enum NX {
     static let ink = dynamic(light: 0x17161A, dark: 0xF1EFEC)
     /// The tray and other inverted surfaces.
     static let inverse = dynamic(light: 0x1F1D22, dark: 0x3A3740)
+    /// Filled primary buttons, like triage's "Keep for later".
+    static let primaryButton = dynamic(light: 0x17161A, dark: 0x3A3740)
+    static let primaryButtonHover = dynamic(light: 0x2C2A31, dark: 0x46434C)
 
     static func ink(_ opacity: Double) -> Color { ink.opacity(opacity) }
 
@@ -74,6 +77,8 @@ enum NX {
     /// `cubic-bezier(0.34, 1.56, 0.64, 1)` — the overshooting spring.
     static func spring(_ ms: Double) -> Animation { .timingCurve(0.34, 1.56, 0.64, 1, duration: ms / 1000) }
     static func standard(_ ms: Double) -> Animation { .timingCurve(0.4, 0, 0.2, 1, duration: ms / 1000) }
+    /// CSS's plain `ease`, `cubic-bezier(0.25, 0.1, 0.25, 1)`.
+    static func cssEase(_ ms: Double) -> Animation { .timingCurve(0.25, 0.1, 0.25, 1, duration: ms / 1000) }
 
     // MARK: Shadows
 
@@ -105,6 +110,7 @@ struct NextStyle: Equatable {
     func ease(_ base: Double) -> Animation { NX.ease(ms(base)) }
     func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }
     func standard(_ base: Double) -> Animation { NX.standard(ms(base)) }
+    func cssEase(_ base: Double) -> Animation { NX.cssEase(ms(base)) }
 }
 
 private struct NextStyleKey: EnvironmentKey {
