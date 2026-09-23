@@ -123,7 +123,7 @@ struct NextTodayScreen: View {
         HStack(spacing: 18) {
             Image(systemName: "sun.max.fill").font(.system(size: 34)).foregroundStyle(NX.today)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Today is clear").font(NX.serif(26)).foregroundStyle(NX.ink)
+                Text("Today is clear").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
                 Text("\(done) finished today. Nothing is overdue, due, planned or starred.")
                     .font(.system(size: 13))
                     .foregroundStyle(NX.ink(0.56))

@@ -357,7 +357,7 @@ private struct NXTriageEmpty: View {
                 .frame(width: 48, height: 48)
                 .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 4) {
-                Text("Inbox triaged").font(NX.serif(26)).foregroundStyle(NX.ink)
+                Text("Inbox triaged").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
                 // The design's 13/1.45 over a 16pt line: 2.85pt between lines, half of it above and below.
                 Text("\(workbench.reviewed) reviewed this session. Tasks you kept or scheduled stay in Inbox until you file them.")
                     .font(.system(size: 13))

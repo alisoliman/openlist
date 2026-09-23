@@ -216,6 +216,8 @@ struct NXScreenHeader<Trailing: View>: View {
                     // Long names wrap, as the design's header does, rather than truncate.
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    // The design's 34px/1.05 line box, not the serif's taller metrics.
+                    .padding(.vertical, style.serifTitles ? NX.serifLeading(34, lineHeight: 1.05) : 0)
                 // The accessory's hover padding stands in for the space after the subtitle.
                 HStack(spacing: -1) {
                     Text(subtitle)
