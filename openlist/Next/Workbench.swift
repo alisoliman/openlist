@@ -115,8 +115,6 @@ final class Workbench {
     var captureText = ""
     var captureListID: UUID?
     var captureForToday = false
-    /// Capture on Calendar plans the task for today instead of setting a due date.
-    var capturePlansForToday = false
     /// The label screen capture opened on; the new task gets that label.
     var captureLabelID: UUID?
     var paletteQuery = ""

@@ -133,8 +133,8 @@ final class NextKeyHandler {
 
         if navigator.isSearchOpen {
             guard !isComposing else { return false }
-            // Return before the results are in opens the chosen one once they are.
-            if isEnter && NXSearch.isAnswering(overlays.search, workbench: workbench) {
+            // Return before the results are in opens the first once they are.
+            if isEnter && NXSearch.waitsForAnswer(overlays.search, workbench: workbench) {
                 overlays.pendingSearchOpen = NXSearch.options(workbench)
                 return true
             }

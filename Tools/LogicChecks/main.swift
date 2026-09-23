@@ -264,12 +264,39 @@ do {
 }
 
 do {
-    // "tonight" is a day and a time; it used to resolve to midnight.
+    // "tonight" is today with no time of its own, as the design's capture reads it.
     let parsed = DateParser.parse("dinner tonight", reference: reference)
     let d = day(parsed.date)
-    check(d?.day == 3 && d?.hour == 20, "tonight is this evening", describe(parsed.date))
-    check(parsed.includesTime, "tonight carries a time")
+    check(d?.day == 3 && d?.hour == 0, "tonight is due today", describe(parsed.date))
+    check(!parsed.includesTime, "tonight carries no time")
     check(parsed.cleanedText == "dinner", "tonight stripped", "got “\(parsed.cleanedText)”")
+    check(parsed.consumedParts == [.day], "tonight is read as a day")
+
+    let timed = DateParser.parse("dinner tonight at 7pm", reference: reference)
+    check(day(timed.date)?.day == 3 && day(timed.date)?.hour == 19 && timed.includesTime,
+          "tonight takes a time typed with it", describe(timed.date))
+}
+
+do {
+    // "next week" is next Monday: from Wednesday 3 June that's the 8th, and
+    // from Monday 8 June the Monday after.
+    let parsed = DateParser.parse("plan the offsite next week", reference: reference)
+    check(day(parsed.date)?.day == 8 && !parsed.includesTime, "next week is next Monday", describe(parsed.date))
+    check(parsed.cleanedText == "plan the offsite", "next week stripped", "got “\(parsed.cleanedText)”")
+    let monday = calendar.date(bySetting: .day, value: 8, of: reference)!
+    let fromMonday = DateParser.parse("plan next week", reference: monday)
+    check(day(fromMonday.date)?.day == 15, "next week from a Monday is the following Monday", describe(fromMonday.date))
+}
+
+do {
+    // Each consumed range says what it was read as, so capture can tint and
+    // preview exactly what it saves.
+    let parsed = DateParser.parse("call mum tomorrow at 6pm every week", reference: reference)
+    check(parsed.consumedParts == [.recurrence, .day, .time], "parts follow the consumed ranges", "\(parsed.consumedParts)")
+    let ns = "call mum tomorrow at 6pm every week" as NSString
+    check(parsed.consumedRanges.map { ns.substring(with: $0) } == ["every week", "tomorrow", "at 6pm"],
+          "consumed ranges cover the phrases", "\(parsed.consumedRanges.map { ns.substring(with: $0) })")
+    check(DateParser.parse("plain task", reference: reference).consumedParts.isEmpty, "nothing consumed, no parts")
 }
 
 do {

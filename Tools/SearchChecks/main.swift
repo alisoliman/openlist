@@ -73,6 +73,15 @@ let noCompleted = try project(SearchOptions(query: "needle", includesCompleted: 
 check(!noCompleted.contains { $0.id == .block(completed.id) || $0.id == .block(paragraph.id) }, "completion option excludes completed ancestors and tasks")
 check(try project(SearchOptions(query: "project", scope: .lists)).count == 2, "list results include archive and omit merged alias")
 check(try project(SearchOptions(query: "project", scope: .lists, includesArchived: false)).count == 1, "list archive option is explicit")
+let listHits = try project(SearchOptions(query: "project", scope: .lists))
+check(listHits.first { $0.id == .list(list.id) }?.context == "List" && listHits.first { $0.id == .list(archived.id) }?.context == "List · Archived",
+      "list hits say they're a list rather than repeating their own name")
+check(listHits.allSatisfy { $0.emoji == nil && $0.symbol == "square.2.layers.3d" }, "list hits use the layers symbol")
+let child = TaskList(title: "Needle child list")
+child.parentListID = list.id
+let childHit = try SearchProjection(corpus: SearchCorpus(blocks: [], lists: lists + [child]), options: SearchOptions(query: "child list")).hits
+check(childHit.first?.context == "List · Project collection", "a nested list hit names where it sits")
+check(allHits.first { $0.id == .block(completed.id) }?.context == "📋 Project collection · Completed", "task context puts its state after its place")
 for (haystack, needle) in [("café", "CAFE"), ("cafe\u{301}", "CAFÉ"), ("résumé", "resume"), ("ＡＢＣ", "abc"), ("🧑🏽‍💻 note", "🧑🏽‍💻")] {
     check(SearchProjection.matches(haystack, needle), "Unicode match \(needle)")
     check(SearchProjection.snippet(haystack, matching: needle).contains(haystack), "snippet keeps complete graphemes")
@@ -192,6 +201,30 @@ catch { check(true, "deleted retained hit is unavailable") }
 session.update(corpus: SearchCorpus(blocks: blocks, lists: lists))
 for _ in 0..<1000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
 check(session.hits.isEmpty, "deleted hit leaves current search")
+
+// The last answer stays listed while a newer query runs, so typing narrows
+// the list instead of blanking it.
+session.update(options: SearchOptions(query: "needle"))
+for _ in 0..<1000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
+let settled = session.hits
+check(!settled.isEmpty && session.hitsOptions == SearchOptions(query: "needle") && !session.isSlow, "a settled search lists its answer")
+session.update(options: SearchOptions(query: "needle target"))
+check(session.isSearching && session.hits == settled && session.hitsOptions == SearchOptions(query: "needle"),
+      "the previous answer stays listed, marked as older, until the new one arrives")
+for _ in 0..<1000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
+check(session.hitsOptions == SearchOptions(query: "needle target") && session.hits.map(\.id) == [noteHit.id], "the new answer replaces the old")
+session.update(options: SearchOptions(query: " "))
+check(session.hits.isEmpty && !session.isSearching && session.hitsOptions.needle.isEmpty, "clearing the query clears the list at once")
+
+// Open tasks carry their due date for the subtitle; finished ones don't.
+let dueTask = Block(kind: .task, text: "Due soon", listID: list.id)
+dueTask.dueDate = Date(timeIntervalSince1970: 1_800_000_000)
+let doneDue = Block(kind: .task, text: "Due and done", listID: list.id)
+doneDue.dueDate = dueTask.dueDate
+doneDue.isCompleted = true
+let dueHits = try SearchProjection(corpus: SearchCorpus(blocks: [dueTask, doneDue], lists: lists), options: SearchOptions(query: "due")).hits
+check(dueHits.first { $0.id == .block(dueTask.id) }?.dueDate == dueTask.dueDate, "open task hits carry their due date")
+check(dueHits.first { $0.id == .block(doneDue.id) }?.dueDate == nil, "completed task hits show no due date")
 
 // Same saved 10k corpus and query mix as the pre-change benchmark. Timings are
 // evidence, not hardware-dependent pass/fail thresholds.

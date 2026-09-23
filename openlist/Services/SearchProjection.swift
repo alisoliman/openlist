@@ -28,10 +28,14 @@ nonisolated struct SearchProjection: Sendable {
             }
             result += matching.map { list in
                 let field: SearchField = Self.matches(list.title, needle) ? .text : .summary
+                // "List", then where a nested list sits and whether it's archived.
+                let own = " › " + list.displayTitle
+                let parent = list.path.hasSuffix(own) ? String(list.path.dropLast(own.count)) : ""
+                let context = ["List", parent, list.isArchived ? "Archived" : ""].filter { !$0.isEmpty }
                 return SearchHit(id: .list(list.id), title: list.displayTitle,
-                    context: (list.isArchived ? "Archived · " : "") + list.path,
+                    context: context.joined(separator: " · "),
                     snippet: list.summary.isEmpty ? "" : Self.snippet(list.summary, matching: needle),
-                    symbol: nil, emoji: list.icon, accent: list.accent, field: field)
+                    symbol: "square.2.layers.3d", emoji: nil, accent: list.accent, field: field)
             }
         }
 
@@ -56,16 +60,18 @@ nonisolated struct SearchProjection: Sendable {
                 if !options.includesCompleted && completed { continue }
                 let list = block.listID.flatMap { listsByID[$0] }
                 let field: SearchField = Self.matches(block.text, needle) ? .text : .note
-                var context = [list.map { "\($0.icon) \($0.path)" } ?? "Unavailable list"]
-                context += ancestors.reversed().map(\.displayTitle)
+                // Where it is, then what state it's in: "🗻 Kyoto › Parent · Completed".
+                let place = [list.map { "\($0.icon) \($0.path)" } ?? "Unavailable list"] + ancestors.reversed().map(\.displayTitle)
+                var context = [place.joined(separator: " › ")]
                 if list?.isArchived == true { context.append("Archived") }
                 if completed { context.append("Completed") }
                 result.append(SearchHit(id: .block(block.id), title: block.displayTitle,
-                    context: context.joined(separator: " › "),
+                    context: context.joined(separator: " · "),
                     snippet: field == .text && block.text.utf8.count <= 160 && !block.text.contains("\n")
                         ? "" : Self.snippet(field == .note ? block.note : block.text, matching: needle),
                     symbol: block.isTask ? (block.isCompleted ? "checkmark.circle.fill" : "circle") : block.symbol,
-                    emoji: nil, accent: list?.accent ?? .graphite, field: field))
+                    emoji: nil, accent: list?.accent ?? .graphite, field: field,
+                    dueDate: block.isTask && !completed ? block.dueDate : nil))
             }
         }
         try Task.checkCancellation()

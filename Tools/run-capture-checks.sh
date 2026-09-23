@@ -10,6 +10,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/capture-chec
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
-  openlist/Services/CommandMatchRank.swift \
+  openlist/Services/CommandMatchRank.swift openlist/Next/NextFormat.swift \
   Tools/EditorChecks/Support.swift Tools/CaptureChecks/main.swift
 "$OUT/capture-checks"

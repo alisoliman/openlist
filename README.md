@@ -509,9 +509,9 @@ natural-language date parsing (relative days, weekdays, times, explicit dates,
 repeat phrases, and *not* firing on ordinary prose) and the recurrence engine
 (weekday sets, month-end clamping, overdue catch-up, end conditions), plus
 regression checks for every bug found in review: decimals like "swift 6.2" being
-eaten as dates, `9 p.m.` parsing as 09:00, "tonight" resolving to midnight,
-monthly series sticking on the 28th after a February, and every-N-weeks drifting
-across a 53-week year.
+eaten as dates, `9 p.m.` parsing as 09:00, monthly series sticking on the 28th
+after a February, and every-N-weeks drifting across a 53-week year. "tonight"
+reads as today with no time, as the capture design does.
 
 A second suite compiles `RichTextCodec` itself and checks the prefix/suffix
 splice that lets a plain text field retitle a task without dropping its inline

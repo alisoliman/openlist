@@ -138,6 +138,68 @@ check(inlineEdits.consume(for: literalTask), "A new local edit after an external
 store.applyInlineMetadata(to: literalTask, parsesNaturalLanguage: true)
 check(literalTask.text == "Call mum" && literalTask.dueDate != nil, "Typing an earlier title after an external change still commits metadata")
 
+// Capture tints exactly what it saves: the date parser's phrases, with the
+// design's label, priority and estimate tokens kept out of its reach.
+let captureReference = Calendar.current.date(from: DateComponents(year: 2026, month: 6, day: 3, hour: 10))!
+func kinds(_ parse: CaptureParse) -> [String] { parse.marks.map { "\($0.kind.rawValue):\($0.raw)" } }
+let design = CaptureParse("Pay deposit friday 6pm #travel ~15m", reference: captureReference)
+check(kinds(design) == ["date:friday", "time:6pm", "label:#travel", "estimate:~15m"], "Design example tints each token")
+check(design.title == "Pay deposit" && design.schedule?.includesTime == true, "Design example saves its title and time")
+let wider = CaptureParse("Plan trip next weekend !high", reference: captureReference)
+check(kinds(wider) == ["date:next weekend", "priority:!high"], "Phrases only the date parser knows are tinted too")
+check(wider.schedule?.date == DateParser.parse("Plan trip next weekend", reference: captureReference).date,
+      "The tinted phrase is the date that saves")
+check(kinds(CaptureParse("Renew passports in two weeks", reference: captureReference)) == ["date:in two weeks"],
+      "Spelled-out offsets are tinted")
+check(kinds(CaptureParse("pay rent friday", reference: captureReference)) == ["date:friday"],
+      "A space the phrase took with it stays plain")
+let literalParse = CaptureParse("Call friday 6pm #home", parsesDates: false, reference: captureReference)
+check(kinds(literalParse) == ["label:#home"] && literalParse.schedule == nil && literalParse.title == "Call friday 6pm",
+      "With dates off, date words are neither tinted nor saved")
+let labelWord = CaptureParse("Plan #friday", reference: captureReference)
+check(kinds(labelWord) == ["label:#friday"] && labelWord.schedule == nil, "A label is never read as a date")
+check(CaptureParse("meet by friday #work", reference: captureReference).title == "meet", "Dangling joiners go with the date")
+let dateOnly = CaptureParse("tomorrow", reference: captureReference)
+check(dateOnly.title.isEmpty && dateOnly.schedule?.date != nil, "A date typed before any title already previews")
+let designWeek = CaptureParse("Offsite next week", reference: captureReference)
+check(designWeek.title == "Offsite" && Calendar.current.component(.day, from: designWeek.schedule!.date!) == 8,
+      "next week is next Monday")
+check(!(CaptureParse("Dinner tonight", reference: captureReference).schedule?.includesTime ?? true), "tonight has no time")
+
+// Undoing a capture erases the task outright: no Trash entry and no history.
+let undoList = store.createList(title: "Undo target")
+let captured = try store.saveCapture(TaskCaptureDraft(text: "Book ryokan tomorrow #travel").preview, destinationID: undoList.id)
+let capturedID = captured.id
+let capturedFields = BackupBlock(captured)
+let trashBefore = try store.trashEntries().count
+guard let discarded = store.discardCapturedTask(id: capturedID) else { preconditionFailure("A fresh capture can be discarded") }
+check(store.block(id: capturedID) == nil && store.blocks(inList: undoList.id).isEmpty, "Discarding a capture removes the task")
+let trashAfterDiscard = try store.trashEntries().count
+check(trashAfterDiscard == trashBefore, "Discarding a capture leaves nothing in Trash")
+check(store.recentActivity().allSatisfy { $0.blockID != capturedID }, "Discarding a capture leaves no history")
+check(!store.context.hasChanges, "Discarding a capture is saved")
+let restored = store.restoreDiscardedTask(discarded)
+check(restored?.id == capturedID && store.block(id: capturedID) != nil, "Redo brings back the same task")
+check(restored.map(BackupBlock.init) == capturedFields, "Redo brings back every field")
+check(store.recentActivity().filter { $0.blockID == capturedID && $0.kind == .created }.count == 1, "Redo logs the task as created again")
+check(store.restoreDiscardedTask(discarded) == nil, "Redo never duplicates a task that is back")
+_ = store.appendBlock(kind: .task, text: "Subtask", to: .init(listID: undoList.id, rootBlockID: capturedID))
+store.save()
+check(store.discardCapturedTask(id: capturedID) == nil && store.block(id: capturedID) != nil,
+      "A capture that gained subtasks is left for Trash rather than erased")
+
+// Undoing New list erases it too while it is still empty.
+let newList = store.createList(title: "Untitled list")
+let newListID = newList.id
+guard let discardedList = store.discardCreatedList(id: newListID) else { preconditionFailure("An empty new list can be discarded") }
+let trashAfterListDiscard = try store.trashEntries().count
+check(store.list(id: newListID) == nil && trashAfterListDiscard == trashBefore, "Discarding a new list leaves nothing in Trash")
+check(store.recentActivity().allSatisfy { $0.listID != newListID }, "Discarding a new list leaves no history")
+check(store.restoreDiscardedList(discardedList)?.id == newListID && store.list(id: newListID)?.title == "Untitled list",
+      "Redo brings back the same list")
+check(store.discardCreatedList(id: undoList.id) == nil && store.list(id: undoList.id) != nil,
+      "A list with content is left for Trash rather than erased")
+
 // A read-only on-disk fixture exercises a real save failure after insertion.
 let fixtureURL = FileManager.default.temporaryDirectory.appending(path: "capture-failure-\(UUID().uuidString)")
 try FileManager.default.createDirectory(at: fixtureURL, withIntermediateDirectories: true)
