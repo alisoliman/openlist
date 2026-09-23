@@ -45,10 +45,10 @@ struct NextInspector: View {
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 Button { env.navigator.closeTask() } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 16, height: 16)
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
-                                                padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
+                                                padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
                 .help("Close (Esc)")
             }
@@ -65,7 +65,7 @@ struct NextInspector: View {
                         titleRow
                             .id(ContentReveal.Anchor.taskTitle(task.id))
                         properties(list: list)
-                        TaskReminderStatus(block: task)
+                        TaskReminderStatus(block: task, attentionOnly: true)
                         planCard
                         VStack(alignment: .leading, spacing: 8) {
                             noteBox
@@ -80,7 +80,7 @@ struct NextInspector: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 20)
                 }
-                .scrollIndicators(.never)
+                .scrollIndicators(.automatic)
                 .task(id: readyRevealID) {
                     guard readyRevealID != nil, let reveal else { return }
                     await Task.yield()
@@ -244,6 +244,8 @@ struct NextInspector: View {
                 .strikethrough(task.isCompleted, color: NX.ink(0.45))
                 .focused($focus, equals: .title)
                 .onSubmit { focus = nil }
+                // Esc saves and stops editing; the next Esc closes the panel.
+                .onExitCommand { focus = nil }
         }
         .overlay {
             if let reveal, reveal.field != .note {
@@ -259,7 +261,8 @@ struct NextInspector: View {
 
     private func properties(list: TaskList?) -> some View {
         let recurrence = task.recurrence
-        return Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 11) {
+        // Labels sit centred against their values, as in the design's grid.
+        return Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 11) {
             GridRow {
                 propertyLabel("List")
                 VStack(alignment: .leading, spacing: 4) {
@@ -281,24 +284,23 @@ struct NextInspector: View {
                 }
             }
             GridRow {
-                propertyLabel("Due")
+                dueLabel
+                // A date that isn't one of the fixed choices comes first, as
+                // its own pill; it opens the picker rather than rescheduling.
+                let options = dueOptions
+                let customLabel = options.count > 4 ? options.first?.label : nil
                 NXFlow(spacing: 4) {
-                    ForEach(dueOptions, id: \.label) { option in
-                        NXInspectorPill(isOn: isDue(option.offset)) {
-                            workbench.schedule([task.id], offset: option.offset)
+                    ForEach(options, id: \.label) { option in
+                        NXInspectorPill(isOn: isDue(option.offset), padding: Self.duePillPadding) {
+                            if option.label == customLabel { openPicker(.due) }
+                            else { workbench.schedule([task.id], offset: option.offset) }
                         } label: {
                             Text(option.label)
                         }
+                        .help(option.label == customLabel ? "Date and time (⌃D)" : "")
                     }
-                    NXInspectorPill(isOn: false) { openPicker(.due) } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar").font(.system(size: 11))
-                            if task.includesTime, let due = task.dueDate { Text(NXFormat.clock(due)) }
-                        }
-                    }
-                    .help("Date and time (⌃D)")
-                    .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
                 }
+                .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
             }
             GridRow {
                 propertyLabel("Repeat")
@@ -370,7 +372,8 @@ struct NextInspector: View {
                 propertyLabel("Starred")
                 Button { workbench.star([task.id]) } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: task.isStarred ? "star.fill" : "star").font(.system(size: 11.5, weight: .semibold))
+                        Image(systemName: task.isStarred ? "star.fill" : "star")
+                            .font(.system(size: 11.5, weight: task.isStarred ? .semibold : .medium))
                         Text(task.isStarred ? "Starred" : "Not starred")
                     }
                     .font(.system(size: 11.5, weight: .medium))
@@ -409,6 +412,34 @@ struct NextInspector: View {
             .frame(width: 78, alignment: .leading)
             .gridColumnAlignment(.leading)
     }
+
+    /// The Due label doubles as the date and time picker, so the four day
+    /// pills keep the row to themselves. It shows the due time when there is one.
+    private var dueLabel: some View {
+        Button { openPicker(.due) } label: {
+            HStack(spacing: 5) {
+                Text("Due")
+                if task.includesTime, let due = task.dueDate {
+                    Text(NXFormat.clock(due)).monospacedDigit()
+                } else {
+                    Image(systemName: "calendar").font(.system(size: 10.5, weight: .medium))
+                }
+            }
+            .font(.system(size: 11.5, weight: .medium))
+        }
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
+                                        padding: EdgeInsets(top: 3, leading: 5, bottom: 3, trailing: 5),
+                                        foreground: NX.ink(0.45), hoverForeground: NX.ink))
+        .padding(.leading, -5)
+        .help("Date and time (⌃D)")
+        .accessibilityLabel("Due date and time")
+        .frame(width: 78, alignment: .leading)
+        .gridColumnAlignment(.leading)
+    }
+
+    /// Native type sets wider than the design's, so the day pills trim their
+    /// sides to fit Today, Tomorrow, Next week and None on one line.
+    private static let duePillPadding = EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 6)
 
     /// A week from today, matching `Store.setDueNextWeek`, so it never equals Tomorrow.
     private var nextWeekOffset: Int { 7 }
@@ -451,18 +482,23 @@ struct NextInspector: View {
                 Text("Plan for today").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(NX.ink)
                 Spacer(minLength: 6)
                 NXToggle(isOn: planned, label: "Plan for today") { workbench.plan([task.id]) }
-                    .help("Plan for today (P)")
+                    .help(task.isCompleted ? "Completed tasks can’t be planned" : "Plan for today (P)")
+                    .disabled(task.isCompleted)
             }
+            // Planning skips completed tasks, so the switch says so.
+            .opacity(task.isCompleted ? 0.45 : 1)
             HStack(spacing: 8) {
                 Text("Estimate").font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.5))
                 Spacer(minLength: 6)
                 stepper("minus") { workbench.setEstimate(task.id, delta: -5) }
+                // Like the design's 44pt cell, a wider value overflows it evenly.
                 Text("\(estimate) min")
                     .font(.system(size: 12, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(NX.ink)
                     .contentTransition(.numericText())
-                    .frame(width: 52)
+                    .fixedSize()
+                    .frame(width: 44)
                 stepper("plus") { workbench.setEstimate(task.id, delta: 5) }
             }
             .padding(.top, 11)
@@ -512,6 +548,7 @@ struct NextInspector: View {
             .lineSpacing(3)
             .foregroundStyle(NX.ink(0.7))
             .focused($focus, equals: .note)
+            .onExitCommand { focus = nil }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -526,7 +563,8 @@ struct NextInspector: View {
 
     private var activity: some View {
         let captured = library.isInbox(task) ? "Inbox" : library.list(task.listID)?.displayTitle ?? "a list"
-        let entries = workbench.entries(for: task.id).reversed()
+        // Newest first, like the log, with the capture always last.
+        let entries = workbench.entries(for: task.id)
         return VStack(alignment: .leading, spacing: 0) {
             Text("Activity")
                 .font(.system(size: 10.5, weight: .semibold))
@@ -534,7 +572,7 @@ struct NextInspector: View {
                 .textCase(.uppercase)
                 .foregroundStyle(NX.ink(0.36))
                 .padding(.bottom, 8)
-            ForEach(Array(entries)) { entry in
+            ForEach(entries) { entry in
                 activityRow(icon: entry.icon, text: entry.label, date: entry.at)
                     .transition(.offset(y: 6).combined(with: .opacity))
             }
@@ -550,7 +588,10 @@ struct NextInspector: View {
         HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: icon).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             Text(text).font(.system(size: 12)).foregroundStyle(NX.ink(0.66)).frame(maxWidth: .infinity, alignment: .leading)
-            Text(NXFormat.relative(date)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.36))
+            // "just now" moves on while the panel stays open.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(NXFormat.relative(date, now: context.date)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.36))
+            }
         }
         .padding(.vertical, 5)
     }
