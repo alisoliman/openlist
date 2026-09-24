@@ -305,7 +305,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   names the whole list ("Add to Weekend in Kyoto"), as the app's add row does, where the
   design's names a short form lists don't have ("Add to Kyoto"); a name too long to fit
   whole reads "New task", as Today's chip does. Quick Add counts an Inbox task's first hour
-  in minutes ("12m"), a native extra: the design's ages start at "2h". The
+  in minutes ("12m"), a native extra: the design's ages start at "2h". The Activity widget
+  and Summary's week count today as the Activity screen does, every completion saved, a
+  repeat's too, while Today's "N of M done" and Summary's Done tile count the tasks sitting
+  done today, as the app's Today does, so a repeat done today counts in the first and not
+  the second, where the design has one count. The
   gallery's sample week is the one today falls in: today has the design's Wednesday and
   every other day its own weekday's meetings (on a weekday today's own move to Wednesday; a
   weekend's give way), and planned slots stay on their tasks' due days, after any meeting

@@ -104,6 +104,11 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         var slotStart: Date?
         var slotEnd: Date?
         var estimateMinutes: Double
+        /// The task's row, as Today or a list would carry it: Up Next's Done
+        /// queued while the app is quit settles its list's counts, its due
+        /// counts and the Inbox's from it when no other row carries the task.
+        /// Nil in older files, and for a task the counts leave out.
+        var item: Item?
     }
 
     struct AgendaItem: Codable, Equatable, Identifiable, Sendable {

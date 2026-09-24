@@ -202,7 +202,8 @@ enum WidgetSampleData {
             snapshot.work = WidgetSnapshot.Work(taskID: id("q1"), occurrenceID: id("q1"), title: task.title, listName: owner.title,
                                                 listIcon: owner.icon, accent: owner.accent, isRunning: false,
                                                 elapsedAnchor: Date(timeIntervalSinceReferenceDate: 0), pausedElapsed: 18,
-                                                slotStart: at(today, hour: 10), slotEnd: at(today, hour: 11.5), estimateMinutes: 90)
+                                                slotStart: at(today, hour: 10), slotEnd: at(today, hour: 11.5), estimateMinutes: 90,
+                                                item: item(task))
         }
         return snapshot
     }

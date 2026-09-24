@@ -173,6 +173,22 @@ check(waitingInbox.inboxCount == 10 && waitingInbox.inboxItems.map(\.title) == (
 // Inbox task, so a tick queued on it counts the Inbox down all the same.
 check(waitingInbox.todayItems.first { $0.id == filed.id }?.isInbox == true && !waitingInbox.inboxItems.contains { $0.id == filed.id }
       && waitingInbox.todayItems.first { $0.id == mango.id }?.isInbox == false, "A row says whether it's an Inbox task")
+// The work on the timer carries its task's row, so Up Next's Done queued while
+// the app is quit settles the counts where no other row carries the task.
+func timer(_ task: Block) -> WidgetSnapshot.Work {
+    WidgetSnapshot.Work(taskID: task.id, occurrenceID: task.occurrenceID, title: task.displayTitle, listName: "", listIcon: "",
+                        accent: "graphite", isRunning: false, elapsedAnchor: .distantPast, pausedElapsed: 0, estimateMinutes: 30)
+}
+publisher.calendarFeed = { _ in (work: timer(filed), agenda: []) }
+let filedWork = publisher.buildSnapshot()
+check(filedWork.work?.item != nil && filedWork.work?.item == filedWork.todayItems.first { $0.id == filed.id }
+      && filedWork.work?.item?.isInbox == true, "The work carries its task's row, as Today does, Inbox flag and all")
+publisher.calendarFeed = { _ in (work: timer(mango), agenda: []) }
+let mangoWork = publisher.buildSnapshot().work?.item
+check(mangoWork?.listID == list.id && mangoWork?.dueDate == today && mangoWork?.isInbox == false, "and its list and due day")
+publisher.calendarFeed = { _ in (work: timer(second), agenda: []) }
+check(publisher.buildSnapshot().work?.item == nil, "A task the counts leave out carries no row")
+publisher.calendarFeed = nil
 
 // A repeat done today rolls on rather than sit done: today's done tasks leave
 // it out, as the app's Today does, and the heatmap counts it today, as the

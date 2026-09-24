@@ -66,8 +66,11 @@ enum SnapshotOverlay {
         let working = snapshot.work.map { matches($0.taskID, $0.occurrenceID, action) } == true
         guard showsOpen(action, in: snapshot) || action.kind == .finishWork && working else { return }
         let listed = snapshot.lists.contains { $0.openItems.contains { matches($0.id, $0.occurrenceID, action) } }
+        // Work past every row carried brings its own, so its list, its due
+        // day and the Inbox still count it done.
         let row = snapshot.todayItems.first { matches($0.id, $0.occurrenceID, action) }
             ?? snapshot.lists.lazy.compactMap { $0.openItems.first { matches($0.id, $0.occurrenceID, action) } }.first
+            ?? (working ? snapshot.work?.item : nil)
         if let due = row?.dueDate { snapshot.countDue(on: due, by: -1, calendar: calendar) }
         snapshot.todayItems.removeAll { matches($0.id, $0.occurrenceID, action) }
         for index in snapshot.lists.indices {
@@ -75,8 +78,9 @@ enum SnapshotOverlay {
             if let carried = snapshot.lists[index].openItems.firstIndex(where: { matches($0.id, $0.occurrenceID, action) }) {
                 item = snapshot.lists[index].openItems.remove(at: carried)
             } else if !listed, let row, row.listID == snapshot.lists[index].id {
-                // A Today row past the open rows its list carries: the list
-                // still counts it done and shows it among its latest.
+                // A Today row, or the work's, past the open rows its list
+                // carries: the list still counts it done and shows it among
+                // its latest.
                 item = row
             } else {
                 continue
@@ -91,8 +95,8 @@ enum SnapshotOverlay {
             snapshot.inboxItems.remove(at: index)
             snapshot.inboxCount = max(0, snapshot.inboxCount - 1)
         } else if row?.isInbox == true {
-            // An Inbox task past the newest rows carried, due soon: the Inbox
-            // counts it all the same.
+            // An Inbox task past the newest rows carried, due soon or on the
+            // timer: the Inbox counts it all the same.
             snapshot.inboxCount = max(0, snapshot.inboxCount - 1)
         }
         for day in snapshot.agenda.indices {

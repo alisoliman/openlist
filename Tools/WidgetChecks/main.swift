@@ -232,6 +232,31 @@ let workOnlyFinished = SnapshotOverlay.apply([finish], to: workOnly)
 check(workOnlyFinished.work == nil && UpNextModel(workOnlyFinished, clock: clock).state == .next
       && workOnlyFinished.completedTodayCount == 4 && workOnlyFinished.totalOpenCount == workOnly.totalOpenCount - 1,
       "A Done on work past the rows carried still ends it and counts it done")
+// From the row the work carries: its list, Today's due counts and its total
+// settle as they do for a row carried, where Today would read 4 of 10.
+let workListID = session.work!.item!.listID!
+let workList = workOnly.lists.first { $0.id == workListID }!
+let workListFinished = workOnlyFinished.lists.first { $0.id == workListID }!
+check(workListFinished.openCount == workList.openCount - 1 && workListFinished.doneCount == workList.doneCount + 1
+      && workListFinished.doneItems.first?.id == id("q1") && workListFinished.doneItems.first?.isCompleted == true
+      && workOnlyFinished.lists.filter { $0.id != workListID } == workOnly.lists.filter { $0.id != workListID },
+      "and its list counts it done among its latest")
+check(DueCounts(workOnlyFinished, clock: clock) == DueCounts(finished, clock: clock)
+      && TodayModel(workOnlyFinished, clock: clock).total == 9 && TodayModel(finished, clock: clock).total == 9,
+      "and Today and Summary count it off its due day: 4 of 9 done")
+var inboxWork = workOnly
+inboxWork.work!.item!.listID = id("inbox")
+inboxWork.work!.item!.isInbox = true
+inboxWork.inboxCount = WidgetSnapshot.inboxRows + 1
+let inboxWorkFinished = SnapshotOverlay.apply([finish], to: inboxWork)
+check(inboxWorkFinished.inboxCount == WidgetSnapshot.inboxRows && inboxWorkFinished.lists == inboxWork.lists
+      && SnapshotOverlay.apply([finish], to: workOnly).inboxCount == workOnly.inboxCount,
+      "Work on an Inbox task past the newest rows counts one fewer in the Inbox; other work leaves it")
+var olderWork = session
+olderWork.work!.item = nil
+let olderWorkJSON = String(decoding: WidgetSnapshotStore.encode(olderWork)!, as: UTF8.self)
+check(!olderWorkJSON.contains("\"item\"") && WidgetSnapshotStore.decode(Data(olderWorkJSON.utf8))?.work == olderWork.work,
+      "Work written without its row, as an older app does, still decodes")
 
 // MARK: List
 
