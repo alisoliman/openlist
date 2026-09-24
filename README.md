@@ -163,9 +163,11 @@ described by name, without private local file URLs.
 when what it holds can't go there, beside a line that line is under, after the lines
 under it; over selected text it pastes the text of the content's lines, a space
 between them, and in other apps it pastes as Markdown. With nothing selected, Paste
-and Match Style (⌥⇧⌘V) puts the content's Markdown in as lines of their own, as
-pasted Markdown goes in. A list document's lines hold one line each, so a paste over
-selected text puts a space for each line break it brings; a code line keeps them.
+and Match Style (⌥⇧⌘V) puts the content's lines in as lines of their own, as pasted
+Markdown goes in: each line's kind, nesting, plain text, completion and note, without
+formatting, stars, labels, dates, files or images. A list document's lines hold one
+line each, so a paste over selected text puts a space for each line break it brings;
+a code line keeps them.
 Ordinary ⌘C still copies the selected text.
 The insertion has fresh IDs and independent media, and is one editor Undo/Redo
 operation. Pasted into a new empty line, such as one just opened with Return, the

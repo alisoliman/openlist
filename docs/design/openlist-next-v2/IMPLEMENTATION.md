@@ -77,12 +77,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
-  bars, the overlay cards and the Turn into card in rather than sliding them, and chips, the
-  selection check and the cards that lift in (Today is clear, the Inbox's done card,
-  Planned now, Not planned yet) rather than raising them, and eases the tick and switch
-  knobs without their overshoot, as its hint says, where the design shortens the
-  inspector's slide and plays the others unchanged. Each fade takes as long as that slide
-  or rise.
+  bars, the overlay cards and the Turn into card in rather than sliding them, the list
+  document's new and converted lines (its rowIn and morphIn) rather than sliding them into
+  place, and chips, the selection check and the cards that lift in (Today is clear, the
+  Inbox's done card, Planned now, Not planned yet) rather than raising them, and eases the
+  tick and switch knobs without their overshoot, as its hint says, where the design shortens
+  the inspector's slide and plays the others unchanged. Each fade takes as long as that
+  slide or rise. Task rows and calendar blocks keep the design's rowIn slide there, as the
+  design plays it (a task row's shortened, a calendar block's at its fixed 380ms).
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
@@ -119,7 +121,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Next row's chrome with the live text as its title) and the other kinds in the same
   language. Done top-level tasks leave for the Completed group below. Each line's edit is
   one undo step with the design's label and a change-log entry. The Tasks presentation is
-  the same document showing only its tasks. `Navigator.documentListID` (any list, and the
+  the same document showing only its tasks, where a line turns into no kind it wouldn't
+  draw (a native extra): the design's prefixes stay as typed or pasted, "/" opens no Turn
+  into card, a heading pasted or dropped into an empty task goes in after it as a step of
+  its own (a new task left empty going once a pasted task takes the caret, as one left
+  empty does), and the hints, add row and task placeholder offer only ⇥ Subtask, ⇧↩ Note
+  and Space Show note ("Add to …").
+  Return there opens a first subtask only under a task whose tasks show, as the design's
+  does under a subtree that shows. `Navigator.documentListID` (any list, and the
   Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
   writes the new line in the list document (`Workbench.addSubtask`,
@@ -131,7 +140,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (native extras), keep to them too: a line its indent can't put under the one above goes
   beside it, as far out as it must, and copied content steps out beside the lines it was
   pasted under until what it holds fits, anything an older outline holds deeper coming up
-  to the second level.
+  to the second level. Text dropped from another app on a line's row, beside its text,
+  goes in before, after or inside that line as the drop's indicator shows it (before the
+  line holding it when the first can't go that deep, inside only where its lines can nest
+  there, otherwise after it, as a line dragged there does), or,
+  on the line being written while it's still empty, fills it in that line's step. Openlist
+  content pasted after a line, and text dropped on a row, are each a step of their own,
+  after the line being written, named for the lines they put in at their top level
+  ("Added “…”", "Added 3 lines") and logged, as a line's edit is.
   The Inbox's document mode is the same list document under
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
@@ -360,9 +376,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   drop into the line, each break it brings becomes a space, and Openlist content goes in
   as the text of its lines, a space between them. Native extras, with nothing selected:
   Openlist content goes in whole after the line (or as far out as its levels need), and
-  several lines of text, or Openlist content's Markdown under Paste and Match Style even as
-  one line, become lines of their own after it (filling it while it's empty), read as
-  Markdown, so `- [ ] ` there makes a task, under the document's rules: `> ` makes
+  several lines of text become lines of their own after it (filling it while it's empty),
+  read as Markdown, so `- [ ] ` there makes a task. Under Paste and Match Style, Openlist
+  content does too, even as one line, read from the content itself rather than from its
+  Markdown, which is written for other apps: each line's kind, place, plain text,
+  completion and note, without its styling, star, labels, dates or files, a quote as text
+  and an image left out. Both go in under the document's rules: `> ` makes
   text, or right under a pasted task that task's note; a line nests under the line it was
   pasted under only when both are tasks or list items, two levels deep at most, and
   otherwise goes beside it, stepping out after the lines already under it, so a heading or

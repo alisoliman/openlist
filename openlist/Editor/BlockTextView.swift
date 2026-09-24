@@ -43,6 +43,9 @@ struct BlockEditorCallbacks {
     /// dumping the whole thing into this one block.
     var onPasteMultiline: (String) -> Bool = { _ in false }
     var onPasteFragment: () -> Bool = { false }
+    /// Lines to paste as they are, as Paste and Match Style reads them from
+    /// Openlist content. Return `true` to keep the default insert.
+    var onPasteLines: ([MarkdownInputRules.ParsedLine]) -> Bool = { _ in false }
     /// The text view gave up the keyboard. `undoTarget` is what its typing
     /// Undo is registered against, for an outline that folds that typing
     /// into one step of its own.
@@ -90,6 +93,10 @@ struct BlockTextView: NSViewRepresentable {
     /// Changes only when focus is moved programmatically, so ordinary typing
     /// never yanks the caret back.
     var focusToken: Int
+    /// Whether the design's prefixes, typed or pasted at the start, turn the
+    /// line into another kind. A presentation that draws only tasks keeps
+    /// them as typed, so a line never turns into one it doesn't draw.
+    var convertsPrefixes = true
     /// While the `/` menu is showing it takes over Return, ↑, ↓ and Escape.
     /// Tab still nests the line, as the design's does. Only a `/` that
     /// starts the block opens it.
@@ -346,7 +353,7 @@ struct BlockTextView: NSViewRepresentable {
             let wasInsertion = storage.length > previousLength
             previousLength = storage.length
 
-            if !view.isPasting, let rule = MarkdownInputRules.matchBlockPrefix(
+            if parent.convertsPrefixes, !view.isPasting, let rule = MarkdownInputRules.matchBlockPrefix(
                 in: storage,
                 caret: view.selectedRange().location,
                 wasInsertion: wasInsertion,
@@ -372,7 +379,7 @@ struct BlockTextView: NSViewRepresentable {
         /// A paste that went in at the start of the line and left it starting
         /// with one of the design's prefixes converts it, as typing it does.
         func convertPastedPrefix(in view: BlockNSTextView) {
-            guard let storage = view.textStorage,
+            guard parent.convertsPrefixes, let storage = view.textStorage,
                   let rule = MarkdownInputRules.matchPastedPrefix(in: storage, kind: parent.kind) else { return }
             convert(by: rule, in: view, storage: storage)
         }
@@ -758,19 +765,19 @@ final class BlockNSTextView: NSTextView {
     ///
     /// With nothing selected, Openlist content goes in after the line, whole,
     /// and several lines of text become lines of their own, after this one
-    /// or filling it while it's empty, as Openlist content's Markdown does
-    /// under Paste and Match Style, however many lines it has. Over a
-    /// selection, Openlist content goes in as the text of its lines, a space
-    /// between them. Anything else is AppKit's paste, styled text included,
-    /// read as `readSelection(from:type:)` reads it. A code line, one of the
-    /// editor's own kinds, keeps the breaks and prefixes.
+    /// or filling it while it's empty, as Openlist content's lines do under
+    /// Paste and Match Style, however many there are. Over a selection,
+    /// Openlist content goes in as the text of its lines, a space between
+    /// them. Anything else is AppKit's paste, styled text included, read as
+    /// `readSelection(from:type:)` reads it. A code line, one of the editor's
+    /// own kinds, keeps the breaks and prefixes.
     private(set) var isPasting = false
 
     override func paste(_ sender: Any?) {
         paste(from: .general) { super.paste(sender) }
     }
 
-    /// Paste and Match Style reads Openlist content as the Markdown it carries.
+    /// Paste and Match Style reads Openlist content as its lines of text.
     override func pasteAsPlainText(_ sender: Any?) {
         paste(from: .general, structured: false) { super.pasteAsPlainText(sender) }
     }
@@ -784,11 +791,19 @@ final class BlockNSTextView: NSTextView {
             let callbacks = coordinator?.parent.callbacks
             let isContent = pasteboard.availableType(from: [fragment]) != nil
             if structured, isContent, callbacks?.onPasteFragment() == true { return }
-            // One line with a break at its end is still one line. Openlist
-            // content's Markdown is lines even as one, so a copied task
-            // stays a task.
+            // Openlist content is lines even as one, so a copied task stays a
+            // task. They're read from the content, not from its Markdown,
+            // which is written for other apps: escaped, with a task's star,
+            // labels and files as text. Content of only images has no lines
+            // of text: its text goes in as other text does.
+            if blockKind != .code, isContent, let data = pasteboard.data(forType: fragment),
+               let content = try? DocumentFragment.decode(data) {
+                let lines = MarkdownInputRules.pasteLines(of: content)
+                if !lines.isEmpty, callbacks?.onPasteLines(lines) == true { return }
+            }
+            // One line with a break at its end is still one line.
             if blockKind != .code, let text = pasteboard.string(forType: .string),
-               isContent || text.trimmingCharacters(in: .newlines).rangeOfCharacter(from: .newlines) != nil,
+               text.trimmingCharacters(in: .newlines).rangeOfCharacter(from: .newlines) != nil,
                callbacks?.onPasteMultiline(text) == true { return }
         } else if blockKind != .code, let data = pasteboard.data(forType: fragment),
                   let content = try? DocumentFragment.decode(data) {

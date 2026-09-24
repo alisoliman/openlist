@@ -117,6 +117,14 @@ check(try FragmentContent.capture([root.id], store: store).blocks[0].styles == f
 root.richData = RichTextCodec.encode(attributed)
 let markdown = FragmentMarkdown.render(fragment)
 check(markdown.contains("https://example.com/a?q=1") && markdown.contains("Proof") && !markdown.contains("Outside subtree") && !markdown.contains("file://"), "Markdown fallback is subtree-only, rich, readable, and has no private cache links")
+// Paste and Match Style reads the content's own lines, not that Markdown: each
+// line's plain text, depth, completion and note, with no star, label, file or image line.
+let plainLines = MarkdownInputRules.pasteLines(of: fragment)
+check(plainLines.map(\.depth) == Array(0...24) && plainLines.first?.text == root.text && plainLines.first?.kind == .task
+        && plainLines.first?.isCompleted == true && plainLines.first?.note == root.note
+        && plainLines.dropFirst().map(\.text) == (0..<24).map { "Level \($0)" }
+        && !plainLines.contains { $0.text.contains("⭐") || $0.text.contains("#") || $0.text.contains("Proof") || $0.text.contains("Image") },
+    "Openlist content reads as its lines for Paste and Match Style, without its Markdown's styling, star, labels, files or images")
 
 var malformed = fragment
 malformed.version = 999
