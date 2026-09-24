@@ -491,8 +491,10 @@ extension Workbench {
     }
 
     /// The task menu's Copy Content and Subtasks: the task with everything
-    /// under it, notes, formatting and files included, which Paste in an empty
-    /// list document line puts back as lines; elsewhere it pastes as Markdown.
+    /// under it, notes, formatting and files included, which Paste in a list
+    /// document line with nothing selected puts back as lines after it, under
+    /// the document's rules. Over a selection it goes in as its lines' text,
+    /// and elsewhere as Markdown.
     func copyContent(_ id: UUID) {
         document?.commitLine()
         guard let task = store.block(id: id) else { return }
@@ -821,15 +823,14 @@ extension Workbench {
         // The task goes at the end of its list's document, where the add row
         // sits, wherever it was captured from, as the design's does. A folded
         // heading it goes under opens, and folds again on Undo.
-        let folded = (store.list(id: captureListID) ?? store.inboxList())
-            .map { store.foldedSections(atEndOf: $0.id).map(\.id) } ?? []
-        let block: Block
+        let saved: (block: Block, opened: [UUID])
         do {
-            block = try saveCapture(parse)
+            saved = try saveCapture(parse)
         } catch {
             showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
             return nil
         }
+        let block = saved.block
         let list = store.list(id: block.listID)
         let here: Bool = {
             switch navigator.route {
@@ -842,7 +843,7 @@ extension Workbench {
             }
         }()
         let name = list?.displayTitle ?? "Inbox"
-        registerCreationUndo("Added to \(name)", taskID: block.id, opened: folded)
+        registerCreationUndo("Added to \(name)", taskID: block.id, opened: saved.opened)
         snap("Added to \(name)", icon: "plus.circle", tone: .accent, ids: [block.id],
              destination: here || list == nil ? nil : TrayDestination(label: "Show", route: route(for: list!)))
         flash(\.fresh, [block.id], for: 1200)
@@ -857,12 +858,13 @@ extension Workbench {
 
     /// A task Quick Add saved, over this window or another app, taken in as
     /// the window's own capture is: a window Undo entry that takes it back and
-    /// its line in Changes, and the fresh row and list pulse. Quick Add's card
-    /// says what it added, so the tray stays down.
-    func didQuickAdd(_ block: Block) {
+    /// folds again the headings the capture `opened`, its line in Changes, and
+    /// the fresh row and list pulse. Quick Add's card says what it added, so
+    /// the tray stays down.
+    func didQuickAdd(_ block: Block, opened: [UUID]) {
         let name = store.list(id: block.listID)?.displayTitle ?? "Inbox"
         let undoable = undoManager != nil
-        if undoable { registerCreationUndo("Added to \(name)", taskID: block.id) }
+        if undoable { registerCreationUndo("Added to \(name)", taskID: block.id, opened: opened) }
         snap("Added to \(name)", icon: "plus.circle", tone: .accent, ids: [block.id], undoable: undoable, showsTray: false)
         flash(\.fresh, [block.id], for: 1200)
         pulse(list: block.listID)

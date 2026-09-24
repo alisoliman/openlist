@@ -1258,19 +1258,22 @@ private struct NXSlashCard: View {
     }
 }
 
-/// The design's popIn, from the top-left corner, each time a card opens.
-/// A card over its line pops in from the bottom-left, toward the line.
+/// The design's popIn, from the top-left corner, each time a card opens,
+/// at its own speed whatever the Motion setting, as the other cards play
+/// theirs. A card over its line pops in from the bottom-left, toward the
+/// line. With Reduce Motion it only fades.
 private struct NXPopIn: ViewModifier {
     @Environment(\.nextStyle) private var style
     var fromBelow = false
     @State private var shown = false
 
     func body(content: Content) -> some View {
+        let settled = shown || !style.slides
         content
-            .scaleEffect(shown ? 1 : 0.97, anchor: fromBelow ? .bottomLeading : .topLeading)
-            .offset(y: shown ? 0 : fromBelow ? 4 : -4)
+            .scaleEffect(settled ? 1 : 0.97, anchor: fromBelow ? .bottomLeading : .topLeading)
+            .offset(y: settled ? 0 : fromBelow ? 4 : -4)
             .opacity(shown ? 1 : 0)
-            .onAppear { withAnimation(.timingCurve(0.2, 0.9, 0.2, 1, duration: style.ms(160) / 1000)) { shown = true } }
+            .onAppear { withAnimation(NX.ease(160)) { shown = true } }
     }
 }
 

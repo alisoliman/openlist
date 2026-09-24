@@ -13,6 +13,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/fragment-che
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
-  Tools/EditorChecks/Support.swift openlist/Services/FragmentContent.swift openlist/Services/FragmentMarkdown.swift openlist/Services/FragmentClipboard.swift openlist/Services/Store+Fragments.swift openlist/Services/InlineMarkdown.swift openlist/Editor/MarkdownInputRules.swift Tools/FragmentChecks/main.swift
+  Tools/EditorChecks/Support.swift openlist/Services/FragmentContent.swift openlist/Services/FragmentMarkdown.swift openlist/Services/FragmentClipboard.swift openlist/Services/Store+Fragments.swift openlist/Services/InlineMarkdown.swift openlist/Editor/MarkdownInputRules.swift openlist/Editor/OutlinePolicy.swift Tools/FragmentChecks/main.swift
 "$OUT/fragment-checks" "$OUT/Copies.store" write
 "$OUT/fragment-checks" "$OUT/Copies.store" reopen

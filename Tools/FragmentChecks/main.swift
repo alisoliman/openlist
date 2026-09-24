@@ -254,6 +254,77 @@ check(other.block(id: crossID)?.labelIDs == [match.id] && match.accent == .blue 
 check(other.allLabels().count == 2 && other.block(id: crossID)?.listID == otherList.id, "Cross-library insertion creates no dangling label or source list reference")
 check(other.block(id: crossID)?.inboxMembershipData == nil, "Cross-library paste has no source Inbox membership")
 
+// Pasted after a line, Openlist content keeps to the list document's two
+// levels, as pasted Markdown does: it steps out beside the lines the anchor
+// is under until what it holds fits, only tasks and list items go under a
+// line, and a copied hierarchy deeper than two levels comes up to the second.
+let nestedList = store.createList(title: "Nested paste")
+let nestedDocument = DocumentContext(listID: nestedList.id)
+let trip = store.appendBlock(kind: .task, text: "Trip", to: nestedDocument)
+let pack = store.insertChild(kind: .task, text: "Pack", of: trip, at: .last)
+let socks = store.insertChild(kind: .task, text: "Socks", of: pack, at: .last)
+let chapter = store.appendBlock(kind: .heading1, text: "Chapter", to: nestedDocument)
+let kept = store.insertChild(kind: .task, text: "Kept under", of: chapter, at: .last)
+_ = store.appendBlock(kind: .task, text: "Last", to: nestedDocument)
+let tallList = store.createList(title: "Tall source")
+let book = store.appendBlock(kind: .task, text: "Book", to: .init(listID: tallList.id))
+let flights = store.insertChild(kind: .task, text: "Flights", of: book, at: .last)
+let seats = store.insertChild(kind: .task, text: "Seats", of: flights, at: .last)
+try store.persistChanges()
+let tall = try FragmentContent.capture([book.id], store: store)
+func nestedOutline(_ listID: UUID = nestedList.id) -> [String] {
+    BlockTree.flatten(store.blocks(inList: listID), respectCollapse: false).map { "\($0.depth) \($0.block.text)" }
+}
+func pastingNested(_ fragment: DocumentFragment, after anchor: Block, in document: DocumentContext = nestedDocument,
+                   _ body: () -> Void) throws {
+    let pastedIDs = try store.pasteFragment(fragment, in: document, after: anchor.id)
+    body()
+    for id in pastedIDs { store.deleteBlock(store.block(id: id)!) }
+    try store.persistChanges()
+}
+let before = nestedOutline()
+try pastingNested(tall, after: pack) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "0 Book", "1 Flights", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
+        "A task holding two levels, pasted after a subtask, steps out to the top after the task it was under")
+}
+try pastingNested(try FragmentContent.capture([flights.id], store: store), after: socks) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "1 Flights", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
+        "A task holding a level, pasted two levels in, steps out one, after the subtask it was under")
+}
+try pastingNested(try FragmentContent.capture([seats.id], store: store), after: socks) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
+        "A single task pasted two levels in stays beside the line")
+}
+let headingRoot = FragmentBlock(id: UUID(), parentID: nil, kind: "heading2", text: "Pasted heading")
+try pastingNested(DocumentFragment(roots: [headingRoot.id], blocks: [headingRoot], labels: []), after: socks) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "0 Pasted heading", "0 Chapter", "1 Kept under", "0 Last"],
+        "A heading pasted in a nested line goes to the top, after that line's task")
+}
+try pastingNested(try FragmentContent.capture([seats.id], store: store), after: kept) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "0 Chapter", "1 Kept under", "0 Seats", "0 Last"],
+        "A task pasted beside a line a heading keeps goes beside the heading, not under it")
+}
+try pastingNested(tall, after: pack, in: DocumentContext(listID: nestedList.id, rootBlockID: trip.id)) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "1 Book", "2 Flights", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
+        "Content that can't step out of its document comes up to the second level, in order")
+}
+check(nestedOutline() == before, "Taking the pasted lines away leaves the document as it was")
+let deepIDs = (0..<5).map { _ in UUID() }
+let deep = DocumentFragment(roots: [deepIDs[0]], blocks: [
+    FragmentBlock(id: deepIDs[0], parentID: nil, kind: "task", text: "A"),
+    FragmentBlock(id: deepIDs[1], parentID: deepIDs[0], kind: "task", text: "B"),
+    FragmentBlock(id: deepIDs[2], parentID: deepIDs[1], kind: "task", text: "C"),
+    FragmentBlock(id: deepIDs[3], parentID: deepIDs[2], kind: "task", text: "D"),
+    FragmentBlock(id: deepIDs[4], parentID: deepIDs[0], kind: "task", text: "E"),
+], labels: [])
+let deepList = store.createList(title: "Deep paste")
+try store.persistChanges()
+let deepRoots = try store.pasteFragment(deep, in: .init(listID: deepList.id), after: nil)
+check(nestedOutline(deepList.id) == ["0 A", "1 B", "2 C", "2 D", "1 E"] && deepRoots.count == 1,
+    "An older outline's lines past two levels come up to the second, in their order, under the same task")
+check(nestedOutline(target.id).allSatisfy { Int($0.prefix(1))! <= OutlinePolicy.maximumDepth },
+    "The mixed-depth fixture pasted at the top keeps to two levels")
+
 for literal in ["```swift\n# not a heading\n\n- not a bullet\n```", "first\n\nlast", "first  \nsecond", "  indented\nnext", " one space\nnext", "\u{00a0}nonbreaking indent\nnext", "[title](https://example.com)\n<script>data</script>"] {
     let parsed = MarkdownInputRules.parseClipboard(literal)
     check(parsed.count == 1 ? parsed[0].text == literal : parsed.map(\.text).joined(separator: "\n") == literal, "Unsupported external Markdown preserves literal content")

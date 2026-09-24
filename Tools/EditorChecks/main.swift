@@ -235,6 +235,33 @@ check(!isBoldUnderSheet() && linkPrompt == nil && !underSheet.validateUserInterf
 sheetHost.endSheet(linkSheetWindow)
 underSheet.toggleBold(nil)
 check(isBoldUnderSheet() && underSheet.validateUserInterfaceItem(boldItem), "Once the sheet has gone, the Format menu formats the line again")
+// Right-click in a line being written shows the text's own menu with the
+// Format menu's styles after Paste, and none of AppKit's font, colour or
+// layout styles, which the document doesn't keep.
+let rightClick = NSEvent.mouseEvent(with: .rightMouseDown, location: NSPoint(x: 4, y: 20), modifierFlags: [], timestamp: 0,
+                                    windowNumber: sheetHost.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+let writingMenu = underSheet.menu(for: rightClick)!
+func menuActions(_ menu: NSMenu) -> [String] {
+    menu.items.flatMap { item in (item.action.map { [NSStringFromSelector($0)] } ?? []) + (item.submenu.map(menuActions) ?? []) }
+}
+let writingActions = menuActions(writingMenu)
+let topActions = writingMenu.items.map { $0.isSeparatorItem ? "-" : $0.action.map(NSStringFromSelector) ?? "" }
+let formatActions = ["toggleBold:", "toggleItalic:", "toggleStrikethrough:", "toggleInlineCode:", "promptForLink:"]
+check(!["orderFrontFontPanel:", "addFontTrait:", "underline:", "orderFrontColorPanel:", "changeLayoutOrientation:"]
+        .contains(where: writingActions.contains),
+    "A line being written offers none of AppKit's font, underline, colour or layout styles")
+check(topActions.firstIndex(of: "pasteAsPlainText:").map { Array(topActions[($0 + 1)...].prefix(7)) } == ["-"] + formatActions + ["-"]
+        && writingActions.contains("checkSpelling:"),
+    "It offers the Format menu's styles after Paste, and keeps Spelling")
+check(topActions.first != "-" && topActions.last != "-" && !zip(topActions, topActions.dropFirst()).contains { $0 == "-" && $1 == "-" },
+    "Taking the styles out leaves no stray separators")
+let writingBold = writingMenu.items.first { $0.action == #selector(BlockNSTextView.toggleBold(_:)) }!
+writingMenu.update()
+let boldWithSelection = writingBold.isEnabled
+underSheet.setSelectedRange(NSRange(location: 0, length: 0))
+writingMenu.update()
+check(boldWithSelection && !writingBold.isEnabled && writingBold.target === underSheet,
+    "Its styles act on the line's selection, and only while it has one, as the Format menu's")
 underSheet.removeFromSuperview()
 BlockNSTextView.linkPrompter = nil
 coordinator.apply(plain, to: native, kind: .task, isCompleted: false)
@@ -424,19 +451,21 @@ let fragmentData = try DocumentFragment(roots: [fragmentParent.id], blocks: [fra
                                         labels: []).encoded()
 var pastedLines: [String] = []
 var pastedFragments = 0
+var pastedPrefixes: [BlockKind] = []
 let pastingCallbacks = coordinator.parent.callbacks
 func paste(_ text: String, into line: String, selecting selection: NSRange, kind: BlockKind = .task,
-           fragment: Bool = false, matchingStyle: Bool = false, rich: NSAttributedString? = nil) {
+           fragment: Data? = nil, matchingStyle: Bool = false, rich: NSAttributedString? = nil) {
     var callbacks = pastingCallbacks
     callbacks.onPasteMultiline = { pastedLines.append($0); return true }
     callbacks.onPasteFragment = { pastedFragments += 1; return true }
+    callbacks.onMarkdownPrefix = { pastedPrefixes.append($0) }
     coordinator.parent = BlockTextView(blockID: UUID(), kind: kind, isCompleted: false, attributedText: NSAttributedString(),
                                        isFocused: false, focusToken: 0, callbacks: callbacks)
     coordinator.apply(RichTextCodec.decode(nil, plainText: line, kind: kind), to: input, kind: kind, isCompleted: false)
     input.setSelectedRange(selection)
     pasteBoard.clearContents()
     pasteBoard.setString(text, forType: .string)
-    if fragment { pasteBoard.setData(fragmentData, forType: fragmentType) }
+    if let fragment { pasteBoard.setData(fragment, forType: fragmentType) }
     if let rich { pasteBoard.setData(rich.rtf(from: NSRange(location: 0, length: rich.length), documentAttributes: [:]), forType: .rtf) }
     input.paste(from: pasteBoard, structured: !matchingStyle) { _ = input.readSelection(from: pasteBoard) }
 }
@@ -448,22 +477,108 @@ check(pastedLines.count == 1 && input.string == "Buy Eggs Bread" && input.select
 paste("Milk\n", into: "Buy ", selecting: NSRange(location: 4, length: 0))
 check(pastedLines.count == 1 && input.string == "Buy Milk ", "One line with a break at its end pastes into the line, the break a space")
 let fragmentMarkdown = "- [ ] Parent\n  - [ ] Child\n    > note"
-paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: true)
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: fragmentData)
 check(pastedFragments == 1 && input.string == "Groceries", "Openlist content pasted in a line with text goes in after it, whole")
-paste(fragmentMarkdown, into: "", selecting: NSRange(location: 0, length: 0), fragment: true)
+paste(fragmentMarkdown, into: "", selecting: NSRange(location: 0, length: 0), fragment: fragmentData)
 check(pastedFragments == 2 && input.string.isEmpty, "So does content pasted in an empty line")
-paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: true)
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: fragmentData)
 check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2" && input.selectedRange() == NSRange(location: 32, length: 0),
     "Openlist content pasted over a selection goes in as the text of its lines, a space between them, with no Markdown")
-paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: true, matchingStyle: true)
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: fragmentData, matchingStyle: true)
 check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2", "So does Paste and Match Style over a selection")
-paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: true, matchingStyle: true)
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: fragmentData, matchingStyle: true)
 check(pastedFragments == 2 && pastedLines.last == fragmentMarkdown, "Paste and Match Style reads Openlist content as its lines of text")
 paste("\nlet b = 2", into: "let a = 1", selecting: NSRange(location: 9, length: 0), kind: .code)
 check(pastedLines.count == 2 && input.string == "let a = 1\nlet b = 2", "A code line keeps a paste's breaks")
 let richLines = NSAttributedString(string: "Bold\nline", attributes: [.font: NSFont.boldSystemFont(ofSize: 13)])
 paste(richLines.string, into: "Plain", selecting: NSRange(location: 0, length: 5), rich: richLines)
 check(input.string == "Bold line" && isBold(input.attributedString(), at: 0), "Styled text pasted in a line keeps its style, its breaks spaces")
+// A paste at the start of a line that leaves it starting with one of the
+// design's prefixes converts it, as the design's change does. One further
+// along, or in a code line, stays as pasted.
+check(pastedPrefixes.isEmpty, "Pastes that leave no prefix at the start convert nothing")
+paste("# Packing", into: "", selecting: NSRange(location: 0, length: 0))
+check(pastedPrefixes == [.heading1] && input.string == "Packing", "A heading's prefix pasted into an empty line makes it a heading")
+paste("- [ ] Buy yen\n", into: "", selecting: NSRange(location: 0, length: 0))
+check(pastedPrefixes.last == .bullet && input.string == "[ ] Buy yen ",
+    "“- [ ] Buy yen” pasted as one line makes a list item, as only the design's “-” matches at its start")
+paste("## ", into: "Packing", selecting: NSRange(location: 0, length: 0))
+check(pastedPrefixes.last == .heading2 && input.string == "Packing", "A prefix pasted at the start of a line with text converts it")
+paste("> Quoted", into: "Old", selecting: NSRange(location: 0, length: 3))
+check(pastedPrefixes.last == .quote && input.string == "Quoted", "So does one pasted over a selection from the start")
+paste("# Packing", into: "Buy ", selecting: NSRange(location: 4, length: 0))
+check(pastedPrefixes.count == 4 && input.string == "Buy # Packing", "A prefix pasted further along the line stays as pasted")
+paste("# x", into: "", selecting: NSRange(location: 0, length: 0), kind: .code)
+check(pastedPrefixes.count == 4 && input.string == "# x", "A code line keeps a pasted prefix")
+// Openlist content's Markdown goes in as lines of their own under Paste and
+// Match Style even as one line, so a copied task stays a task rather than a
+// list item holding "[ ]".
+let taskContent = DocumentFragment(roots: [fragmentParent.id], blocks: [fragmentParent], labels: [])
+let taskMarkdown = FragmentMarkdown.render(taskContent)
+let linesBeforeTask = pastedLines.count
+paste(taskMarkdown, into: "", selecting: NSRange(location: 0, length: 0), fragment: try taskContent.encoded(), matchingStyle: true)
+check(pastedLines.count == linesBeforeTask + 1 && pastedLines.last == taskMarkdown && pastedPrefixes.count == 4 && input.string.isEmpty
+        && MarkdownInputRules.pasteLines(taskMarkdown).map(\.kind) == [.task],
+    "A copied task pasted with Paste and Match Style into an empty line goes in as its line, a task")
+paste(taskMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: try taskContent.encoded(), matchingStyle: true)
+check(pastedLines.count == linesBeforeTask + 2 && input.string == "Groceries", "So does one pasted in a line with text, after it")
+paste("# x", into: "", selecting: NSRange(location: 0, length: 0), kind: .code, fragment: try taskContent.encoded(), matchingStyle: true)
+check(pastedLines.count == linesBeforeTask + 2 && input.string == "# x", "A code line takes it as it is")
+// A text dropped into a line reads as a paste does: its breaks become spaces,
+// and one at the start that leaves the line starting with a prefix converts
+// it. Text dragged within the line itself stays as dropped.
+final class TextDrop: NSObject, NSDraggingInfo {
+    let draggingPasteboard: NSPasteboard
+    let draggingSource: Any?
+    let draggingLocation: NSPoint
+    let draggingDestinationWindow: NSWindow?
+    init(_ pasteboard: NSPasteboard, from source: Any?, at location: NSPoint, in window: NSWindow?) {
+        (draggingPasteboard, draggingSource, draggingLocation, draggingDestinationWindow) = (pasteboard, source, location, window)
+    }
+    var draggingSourceOperationMask: NSDragOperation { [.copy, .move, .generic] }
+    var draggedImageLocation: NSPoint { draggingLocation }
+    var draggedImage: NSImage? { nil }
+    var draggingSequenceNumber: Int { 1 }
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions, for view: NSView?, classes classArray: [AnyClass],
+                                searchOptions: [NSPasteboard.ReadingOptionKey: Any],
+                                using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+    func resetSpringLoading() {}
+}
+let dropLine = BlockNSTextView(frame: CGRect(x: 0, y: 0, width: 320, height: 40))
+dropLine.coordinator = coordinator
+dropLine.delegate = coordinator
+sheetHost.contentView?.addSubview(dropLine)
+func drop(_ text: String, into line: String, atEnd: Bool = false, fromItself: Bool = false) {
+    var callbacks = pastingCallbacks
+    callbacks.onMarkdownPrefix = { pastedPrefixes.append($0) }
+    coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, attributedText: NSAttributedString(),
+                                       isFocused: false, focusToken: 0, callbacks: callbacks)
+    coordinator.apply(RichTextCodec.decode(nil, plainText: line, kind: .task), to: dropLine, kind: .task, isCompleted: false)
+    pasteBoard.clearContents()
+    pasteBoard.setString(text, forType: .string)
+    let point = dropLine.convert(NSPoint(x: atEnd ? 316 : 0, y: 8), to: nil)
+    let info = TextDrop(pasteBoard, from: fromItself ? dropLine : nil, at: point, in: sheetHost)
+    _ = dropLine.draggingEntered(info)
+    _ = dropLine.draggingUpdated(info)
+    check(dropLine.prepareForDragOperation(info) && dropLine.performDragOperation(info), "The line takes a text dropped on it")
+    dropLine.concludeDragOperation(info)
+}
+drop("# Packing", into: "")
+check(pastedPrefixes.last == .heading1 && pastedPrefixes.count == 5 && dropLine.string == "Packing",
+    "A heading's prefix dropped into an empty line makes it a heading")
+drop("- Eggs\nBread", into: "Milk")
+check(pastedPrefixes.last == .bullet && pastedPrefixes.count == 6 && dropLine.string == "Eggs BreadMilk",
+    "One dropped at the start of a line with text converts it, its breaks spaces")
+drop("# Packing", into: "Buy ", atEnd: true)
+check(pastedPrefixes.count == 6 && dropLine.string == "Buy # Packing", "A prefix dropped further along stays as dropped")
+drop("# Packing", into: "", fromItself: true)
+check(pastedPrefixes.count == 6 && dropLine.string == "# Packing", "Text dragged within the line stays as dropped")
+dropLine.removeFromSuperview()
 coordinator.parent = editor
 
 let selectedText = RichTextCodec.decode(nil, plainText: "Before DELETE After", kind: .task)

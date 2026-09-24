@@ -33,10 +33,11 @@ enum MarkdownInputRules {
     /// Detects a markdown prefix the user just *typed* at the start of a block.
     ///
     /// Two guards matter. The caret must sit immediately after the prefix, so
-    /// pasting a paragraph beginning "- " converts nothing. And the change must
-    /// have been an insertion — otherwise backspacing the "x" out of
-    /// `# xSection` would leave `# Section`, match the heading rule, and
-    /// turn a line the user was editing into a heading.
+    /// typing further along a line that starts with "- " converts nothing (a
+    /// paste or drop is `matchPastedPrefix`'s). And the change must have been
+    /// an insertion — otherwise backspacing the "x" out of `# xSection` would
+    /// leave `# Section`, match the heading rule, and turn a line the user
+    /// was editing into a heading.
     static func matchBlockPrefix(
         in storage: NSTextStorage,
         caret: Int,
@@ -52,6 +53,23 @@ enum MarkdownInputRules {
             let prefixLength = (prefix as NSString).length
             guard caret == prefixLength, text.length >= prefixLength else { continue }
             if text.substring(to: prefixLength).lowercased() == prefix {
+                return BlockPrefixMatch(range: NSRange(location: 0, length: prefixLength), kind: kind)
+            }
+        }
+        return nil
+    }
+
+    /// The design's prefix a paste or drop at the start of a block left it
+    /// starting with, as the design's change converts a pasted `# Packing`
+    /// into a heading "Packing". `- [ ] ` reads as a list item there, as only
+    /// `- ` matches at its start, as in the design's anchored pattern. A code
+    /// block keeps what's pasted.
+    static func matchPastedPrefix(in storage: NSTextStorage, kind: BlockKind) -> BlockPrefixMatch? {
+        guard kind != .code else { return nil }
+        let text = storage.string as NSString
+        for (prefix, kind) in blockPrefixes {
+            let prefixLength = (prefix as NSString).length
+            if text.length >= prefixLength, text.substring(to: prefixLength) == prefix {
                 return BlockPrefixMatch(range: NSRange(location: 0, length: prefixLength), kind: kind)
             }
         }

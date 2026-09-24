@@ -276,11 +276,15 @@ extension NXCaptureDraft {
 
     /// Saves the draft into its list, or Inbox: one capture for the title,
     /// date, repeat, labels and plan, then the priority and estimate its tokens name.
-    func saveCapture(_ parse: CaptureParse) throws -> Block {
-        let block = try store.saveCapture(capturePreview(parse), destinationID: captureListID ?? store.inboxList()?.id)
+    /// Returns the task and the folded headings the capture opened to show
+    /// it, for an Undo that folds them again.
+    func saveCapture(_ parse: CaptureParse) throws -> (block: Block, opened: [UUID]) {
+        let destinationID = captureListID ?? store.inboxList()?.id
+        let folded = (store.list(id: destinationID) ?? store.inboxList()).map { store.foldedSections(atEndOf: $0.id) } ?? []
+        let block = try store.saveCapture(capturePreview(parse), destinationID: destinationID)
         if let priority = parse.priority { store.setPriority(priority, for: block) }
         if let minutes = parse.estimateMinutes, minutes > 0 { store.setTaskEstimate(minutes, for: block) }
-        return block
+        return (block, folded.filter { !$0.isCollapsed }.map(\.id))
     }
 
     /// Tab and Shift-Tab step the destination through Inbox and every list.
