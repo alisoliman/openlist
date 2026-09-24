@@ -60,11 +60,28 @@ final class Navigator {
     /// list or choosing a presentation ends it; it is never saved.
     private var revealedDocumentListID: UUID?
 
+    /// The Inbox shown as triage for this visit only, as the widget's Triage
+    /// link asks, whatever this Mac chose for it. Leaving the Inbox or
+    /// choosing a presentation ends it; it is never saved.
+    private var isTriageVisit = false
+
     /// Lists open as their document, and the Inbox as triage, until this Mac
     /// chooses otherwise for them.
     func listViewMode(for listID: UUID) -> ListViewMode {
         if listID == revealedDocumentListID, route == .list(listID) { return .document }
+        if isTriageVisit, listID == inboxListID, route == .inbox { return .tasks }
         return listViewModes[listID] ?? defaultViewMode(for: listID)
+    }
+
+    /// Turns the Inbox on show to triage until it is left, even where this Mac
+    /// shows it as a document.
+    func showInboxTriage() {
+        guard route == .inbox, let inboxListID else { return }
+        let shown = listViewMode(for: inboxListID)
+        isTriageVisit = true
+        guard shown != .tasks else { return }
+        contentReveal = nil
+        clearSelection()
     }
 
     private func defaultViewMode(for listID: UUID) -> ListViewMode {
@@ -74,6 +91,7 @@ final class Navigator {
     func setListViewMode(_ mode: ListViewMode, for listID: UUID) {
         let shown = listViewMode(for: listID)
         if revealedDocumentListID == listID { revealedDocumentListID = nil }
+        if listID == inboxListID { isTriageVisit = false }
         if (listViewModes[listID] ?? defaultViewMode(for: listID)) != mode {
             listViewModes[listID] = mode
             defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
@@ -208,6 +226,7 @@ final class Navigator {
         forwardStack.removeAll()
         route = newRoute
         revealedDocumentListID = nil
+        isTriageVisit = false
         contentReveal = nil
         clearSelection()
         trimHistory()
@@ -218,6 +237,7 @@ final class Navigator {
         forwardStack.append(route)
         route = previous
         revealedDocumentListID = nil
+        isTriageVisit = false
         contentReveal = nil
         clearSelection()
     }
@@ -227,6 +247,7 @@ final class Navigator {
         backStack.append(route)
         route = next
         revealedDocumentListID = nil
+        isTriageVisit = false
         contentReveal = nil
         clearSelection()
     }
@@ -236,6 +257,7 @@ final class Navigator {
     func replace(with newRoute: AppRoute) {
         route = newRoute
         revealedDocumentListID = nil
+        isTriageVisit = false
         contentReveal = nil
         openTaskID = nil
         clearSelection()

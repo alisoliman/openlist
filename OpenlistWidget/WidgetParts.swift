@@ -192,20 +192,76 @@ struct Hairline: View {
     }
 }
 
-// MARK: - Checkbox
+// MARK: - Rows
 
-/// The row's circle. The checkbox is a toggle so a tick runs its intent and
-/// fills at once; the row itself leaves on the reload that follows.
-struct CheckToggleStyle: ToggleStyle {
-    let ring: Color
-    /// Already completed in the snapshot: green. Ticked just now: the design's
-    /// closing look, the accent a touch larger.
-    let isCompleted: Bool
+/// A task line in Today and List (`mkRow` in the design). The row is its
+/// checkbox's toggle, so a tick runs its intent and at once gives the whole
+/// row the design's closing look; the row itself leaves on the reload that
+/// follows.
+struct TaskRowView: View {
+    let row: WidgetRow
+    /// Small Today: a two-line title with the due text beneath it.
+    var compact = false
+    var showsMeta = true
+    /// Where the title opens: the task, in medium and large widgets.
+    var link: URL?
+    @Environment(\.widgetPalette) private var palette
+
+    var body: some View {
+        Toggle(isOn: row.isDone, intent: SetTaskCompletionIntent(taskID: row.id, occurrenceID: row.occurrenceID)) {
+            Text(row.isDone ? "Reopen \(row.title)" : "Complete \(row.title)")
+        }
+        .toggleStyle(TaskRowStyle(row: row, compact: compact, showsMeta: showsMeta, palette: palette))
+        // Beside the circle, the row opens its link.
+        .overlay {
+            if let link {
+                WidgetLink(destination: link) { Color.clear.contentShape(Rectangle()) }
+                    .padding(.leading, 23)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Draws a task row from its toggle's state. Only the circle takes a tap:
+/// the rest of the row leaves it to the row's link, or the widget's own.
+private struct TaskRowStyle: ToggleStyle {
+    let row: WidgetRow
+    let compact: Bool
+    let showsMeta: Bool
     let palette: WidgetPalette
 
     func makeBody(configuration: Configuration) -> some View {
         let filled = configuration.isOn
-        let closing = filled && !isCompleted
+        // Ticked just now rather than completed in the snapshot: the accent
+        // circle a touch larger, and the row faded.
+        let closing = filled && !row.isDone
+        HStack(alignment: .top, spacing: 8) {
+            checkbox(filled: filled, closing: closing).padding(.top, 1)
+            Group {
+                text(filled: filled)
+                if !compact && row.isStarred {
+                    WidgetSymbol(name: "star.fill", size: 8, weight: .regular, color: palette.amber)
+                        .frame(width: 11, height: 11)
+                        .padding(.top, 2)
+                }
+                if !compact && !row.dueText.isEmpty {
+                    Text(row.dueText)
+                        .monospacedDigit()
+                        .css(.sans(10, .medium), line: 1.3)
+                        .foregroundStyle(row.isLate ? palette.red : palette.sub)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.top, 1)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+        .opacity(closing ? 0.55 : 1)
+    }
+
+    /// Completed: green. Ticked just now: the accent.
+    private func checkbox(filled: Bool, closing: Bool) -> some View {
         ZStack {
             Group {
                 if filled {
@@ -222,18 +278,6 @@ struct CheckToggleStyle: ToggleStyle {
         .scaleEffect(closing ? 1.12 : 1)
         .contentShape(Circle())
     }
-}
-
-struct TaskCheckbox: View {
-    let row: WidgetRow
-    @Environment(\.widgetPalette) private var palette
-
-    var body: some View {
-        Toggle(isOn: row.isDone, intent: SetTaskCompletionIntent(taskID: row.id, occurrenceID: row.occurrenceID)) {
-            Text(row.isDone ? "Reopen \(row.title)" : "Complete \(row.title)")
-        }
-        .toggleStyle(CheckToggleStyle(ring: ring, isCompleted: row.isDone, palette: palette))
-    }
 
     /// Red when late or high priority, amber at medium, else the list's colour.
     private var ring: Color {
@@ -241,60 +285,17 @@ struct TaskCheckbox: View {
         if row.priority == 2 { return palette.amber }
         return palette.col(row.accent)
     }
-}
 
-// MARK: - Rows
-
-/// A task line in Today and List (`mkRow` in the design).
-struct TaskRowView: View {
-    let row: WidgetRow
-    /// Small Today: a two-line title with the due text beneath it.
-    var compact = false
-    var showsMeta = true
-    /// Where the title opens: the task, in medium and large widgets.
-    var link: URL?
-    @Environment(\.widgetPalette) private var palette
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            TaskCheckbox(row: row).padding(.top, 1)
-            if let link {
-                WidgetLink(destination: link) { text }
-            } else {
-                text
-            }
-            if !compact && row.isStarred {
-                WidgetSymbol(name: "star.fill", size: 8, weight: .regular, color: palette.amber)
-                    .frame(width: 11, height: 11)
-                    .padding(.top, 2)
-            }
-            if !compact && !row.dueText.isEmpty {
-                Text(row.dueText)
-                    .monospacedDigit()
-                    .css(.sans(10, .medium), line: 1.3)
-                    .foregroundStyle(row.isLate ? palette.red : palette.sub)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.top, 1)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var label: String {
-        (palette.isDimmed || row.listIcon.isEmpty ? "" : row.listIcon + " ") + row.listName
-    }
-
-    private var text: some View {
+    private func text(filled: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(row.title)
-                .strikethrough(row.isDone)
+                .strikethrough(filled)
                 .css(.sans(compact ? 11.5 : 12, .medium), line: 1.3)
-                .foregroundStyle(row.isDone ? palette.sub : palette.ink)
+                .foregroundStyle(filled ? palette.sub : palette.ink)
                 .lineLimit(compact ? 2 : 1)
                 .truncationMode(.tail)
             if showsMeta {
-                Text(compact ? (row.dueText.isEmpty ? label : row.dueText) : label)
+                meta
                     .css(.sans(10, .medium), line: 1.2)
                     .foregroundStyle(compact && row.isLate ? palette.red : palette.solid)
                     .opacity(compact && row.isLate ? 1 : palette.faintOpacity)
@@ -303,6 +304,25 @@ struct TaskRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The list, or in small Today the due text when there is one.
+    private var meta: Text {
+        if compact && !row.dueText.isEmpty { return Text(row.dueText) }
+        return Text(listIcon: palette.isDimmed ? "" : row.listIcon, name: row.listName, size: 10)
+    }
+}
+
+extension Text {
+    /// "🗻 Weekend in Kyoto" on a line set at `size`: the emoji as large as the
+    /// design draws it there, not Core Text's larger one (`EmojiSize`).
+    init(listIcon icon: String, name: String, size: CGFloat) {
+        guard !icon.isEmpty else {
+            self.init(verbatim: name)
+            return
+        }
+        let glyph = Text(verbatim: icon).font(.system(size: EmojiSize.points(forDesign: size)))
+        self.init("\(glyph) \(name)")
     }
 }
 

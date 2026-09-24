@@ -143,11 +143,14 @@ struct RootView: View {
         switch route {
         case let .capture(listID, forToday):
             // The Quick Add panel floats over the app in front without activating Openlist.
-            QuickCapturePanel.shared.show(QuickCaptureRequest(listID: listID, plansForToday: forToday,
-                                                              appendsToList: listID != nil))
+            QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, plansForToday: forToday,
+                                                                        appendsToList: listID != nil))
             return
-        // The Inbox screen is where triage happens.
-        case .inbox, .triage: env.workbench.go(.inbox)
+        case .inbox: env.workbench.go(.inbox)
+        // Triage even where this Mac shows the Inbox as a document, for this visit.
+        case .triage:
+            env.workbench.go(.inbox)
+            env.navigator.showInboxTriage()
         case .today: env.workbench.go(.today)
         case .calendar: env.workbench.go(.calendar)
         case .activity: env.workbench.go(.activity)

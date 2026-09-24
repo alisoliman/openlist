@@ -64,7 +64,7 @@ struct UpNextWidgetView: View {
                 .foregroundStyle(palette.ink)
                 .lineLimit(3)
                 .padding(.top, 10)
-            Text(listLine)
+            listLine
                 .css(.sans(10.5, .medium), line: 1.2)
                 .foregroundStyle(palette.solid)
                 .opacity(palette.subOpacity)
@@ -84,8 +84,8 @@ struct UpNextWidgetView: View {
         }
     }
 
-    private var listLine: String {
-        (palette.isDimmed || model.listIcon.isEmpty ? "" : model.listIcon + " ") + model.listName
+    private var listLine: Text {
+        Text(listIcon: palette.isDimmed ? "" : model.listIcon, name: model.listName, size: 10.5)
     }
 
     @ViewBuilder private var elapsed: some View {

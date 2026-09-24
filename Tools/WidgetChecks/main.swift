@@ -178,7 +178,20 @@ let early = UpNextModel(design, clock: clockAt(WidgetSampleData.referenceDate.ad
 check(early.state == .next && early.note == "in 20 min" && early.progress == 0, "Before a block: Next, in 20 min")
 let evening = UpNextModel(design, clock: clockAt(WidgetSampleData.referenceDate.addingTimeInterval(9 * 3_600)))
 check(evening.state == .clear && evening.title == "Nothing else planned" && evening.listName == "Your day is clear", "After the last block: clear")
-check(UpNextModel.minutes(80 * 60) == "1 h 20 min" && UpNextModel.minutes(120 * 60) == "2 h", "Long waits in hours")
+// The design counts minutes past an hour too: finish q1 and p1 in its gallery and Up Next reads "in 140 min".
+var morningDone = design
+morningDone.agenda = morningDone.agenda.map { day in
+    var day = day
+    day.items = day.items.map { item in
+        var item = item
+        if item.id == "p-q1" || item.id == "p-p1" { item.isCompleted = true }
+        return item
+    }
+    return day
+}
+let afternoon = UpNextModel(morningDone, clock: clock)
+check(afternoon.state == .next && afternoon.time == "13:00–13:30" && afternoon.note == "in 140 min", "Long waits count minutes, as the design")
+check(UpNextModel.minutes(80 * 60) == "80 min" && UpNextModel.minutes(-30) == "0 min", "80 min left, never below 0 min")
 
 let paused = UpNextModel(session, clock: clock)
 check(paused.state == .paused && paused.label == "Paused" && paused.timer == .paused(seconds: 18), "The session: paused at 00:18")
@@ -228,5 +241,12 @@ check(AgendaModel(session, clock: clock).week[1].items.first { $0.title == "Clos
       "A done slot shows done")
 let across = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(6 * 86_400))
 check(AgendaModel(design, clock: across).range == "28 September – 4 October", "A week across months names both")
+
+// MARK: Emoji
+
+// The List tile's 15 px emoji, a row's 10 px meta line and Up Next's 10.5 px list line, as the app sizes them.
+check(abs(EmojiSize.points(forDesign: 15) - 38.0 / 3) < 0.001 && abs(EmojiSize.points(forDesign: 10) - 8.3) < 0.001
+      && abs(EmojiSize.points(forDesign: 10.5) - 8.8) < 0.001, "Small emoji draw at the design's size, not Core Text's larger one")
+check(EmojiSize.points(forDesign: 24) == 24 && EmojiSize.points(forDesign: 30) == 30, "From 24 px the two agree")
 
 print("Passed \(checks) widget snapshot, route, overlay and design checks")

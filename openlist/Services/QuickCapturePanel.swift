@@ -66,6 +66,8 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
     private var lastOtherApp: NSRunningApplication?
     private var cameFrom: NSRunningApplication?
     private var activatedAt: Date?
+    /// When Openlist last came out of hiding, for `showFromWidget`.
+    private var unhiddenAt: Date?
     private weak var lastKeyWindow: NSWindow?
     private var lastKeyAt: Date?
     private var observers: [NSObjectProtocol] = []
@@ -84,6 +86,10 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
                                                queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.activated(app) }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didUnhideNotification, object: nil,
+                                                                queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.unhiddenAt = .now }
         })
         observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil,
                                                                 queue: .main) { [weak self] note in
@@ -207,6 +213,20 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         }
         // In case the popover never reports letting go.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.showAfterMenu() }
+    }
+
+    /// From a widget's Quick Add. Opening the widget's link can make Openlist
+    /// the active app, and show it if it was hidden, before the card opens. The
+    /// card then gives focus back to the app you were in when it closes, and
+    /// hides Openlist again, as if Openlist had stayed where it was.
+    func showFromWidget(_ request: QuickCaptureRequest) {
+        let justNow = { (date: Date?) in date.map { $0.timeIntervalSinceNow > -1 } ?? false }
+        let previous = NSApp.isActive && justNow(activatedAt) ? cameFrom : nil
+        let wasHidden = justNow(unhiddenAt)
+        show(request)
+        // Not the widget's own host, which has no window to come back to.
+        if let previous, previous.activationPolicy == .regular { returnTo = returnTo ?? previous }
+        if wasHidden { hidesOnClose = true }
     }
 
     private func showAfterMenu() {
