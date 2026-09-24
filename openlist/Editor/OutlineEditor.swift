@@ -1793,10 +1793,15 @@ final class OutlineEditor {
 
     /// Move Up and Move Down: the line, with what's under it, goes past the
     /// nearest line beside it that shows, itself or a line under it, as the
-    /// rows draw them, and past the lines between that don't: a done
-    /// top-level task in Completed or, showing only tasks, a heading or text
-    /// line. So each step moves it on screen. A line that doesn't show, or
-    /// has no such line on that side, stays, and nothing is recorded.
+    /// rows draw them, and past the lines between with nothing drawn: a done
+    /// top-level task in Completed, the lines a folded heading holds or,
+    /// showing only tasks, a heading, list item or text line with no task
+    /// under it. Going down past a folded heading, a heading at the folded
+    /// one's level or above lands after its section, which stays folded; any
+    /// other folded heading whose section the move puts lines in opens. So
+    /// each step moves it on screen, and no line goes into a fold unseen. A
+    /// line that doesn't show, or has no such line on that side, stays, and
+    /// nothing is recorded.
     private func moveLine(_ block: Block, up: Bool) {
         let shown = Set(rows.map(\.id))
         let siblings = env.store.orderedSiblings(of: block)
@@ -1805,15 +1810,39 @@ final class OutlineEditor {
         func shows(_ sibling: Block) -> Bool {
             shown.contains(sibling.id) || BlockTree.descendants(of: sibling.id, using: index).contains { shown.contains($0.id) }
         }
+        let folded = foldedSections()
         if up {
             guard let past = siblings[..<position].last(where: shows) else { return }
             env.store.move(block, toParent: block.parentID, above: past, in: document.listID)
         } else {
             guard let past = siblings[(position + 1)...].firstIndex(where: shows) else { return }
-            env.store.move(block, toParent: block.parentID, above: siblings.indices.contains(past + 1) ? siblings[past + 1] : nil,
+            var end = past + 1
+            // A top-level heading ends the section of one at its level or
+            // below, so past a folded one it lands after that section rather
+            // than taking in the lines folded there.
+            if !tasksOnly, block.parentID == nil, let level = BlockTree.sectionLevel(of: block.kind),
+               let passed = BlockTree.sectionLevel(of: siblings[past].kind), level <= passed {
+                let bound = siblings[end...].firstIndex { (BlockTree.sectionLevel(of: $0.kind) ?? .max) <= passed }
+                    ?? siblings.endIndex
+                if !siblings[end..<bound].contains(where: shows) { end = bound }
+            }
+            env.store.move(block, toParent: block.parentID, above: siblings.indices.contains(end) ? siblings[end] : nil,
                            in: document.listID)
         }
-        env.store.save()
+        let opening = foldedSections().filter { heading, lines in !lines.isSubset(of: folded[heading] ?? []) }.keys
+        env.store.batch {
+            for id in opening { if let heading = env.store.block(id: id) { env.store.setCollapsed(false, for: heading) } }
+        }
+    }
+
+    /// The lines each folded top-level heading's section holds, when the
+    /// document draws those sections folded: showing only tasks, a heading
+    /// folds nothing.
+    private func foldedSections() -> [UUID: Set<UUID>] {
+        guard !tasksOnly else { return [:] }
+        let all = BlockTree.flatten(blocks, respectCollapse: false)
+        let folding = Set(all.lazy.filter { $0.depth == 0 && $0.block.isCollapsed }.map(\.id))
+        return BlockTree.sections(in: all).filter { folding.contains($0.key) }.mapValues { Set($0.map(\.id)) }
     }
 
     // MARK: - Resuming after Escape

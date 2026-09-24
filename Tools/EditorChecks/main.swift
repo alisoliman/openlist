@@ -2566,6 +2566,87 @@ check(moveDrawn() == ["Book flights", "Buy yen", "Temple", "Onsen"] && moveStore
     "Move Down passes the list item whose task shows, as one step on screen")
 moveEditor.tasksOnly = false
 
+// Next to a folded heading, a moved line doesn't go into the fold unseen:
+// the heading whose section it, or a moved heading's lines, land in opens,
+// and a heading at the folded one's level passes that section with it.
+var foldTargets: [UUID] = []
+func foldCase(_ title: String, _ lines: [(BlockKind, String)], folding: String) -> (OutlineEditor, UndoManager, [String: Block]) {
+    let document = DocumentContext(listID: store.createList(title: title).id)
+    let editor = OutlineEditor(env: outlineEnv, document: document)
+    let undo = UndoManager()
+    undo.groupsByEvent = false
+    editor.windowUndoManager = { undo }
+    editor.hooks.commandTargets = { foldTargets }
+    var byText: [String: Block] = [:]
+    for (kind, text) in lines { byText[text] = store.appendBlock(kind: kind, text: text, to: document) }
+    store.setCollapsed(true, for: byText[folding]!)
+    store.save()
+    return (editor, undo, byText)
+}
+func foldCommand(_ command: EditorCommand, _ block: Block, in editor: OutlineEditor, undo: UndoManager) {
+    outlineEnv.navigator.clearSelection()
+    foldTargets = [block.id]
+    outlineEnv.activeDocument = editor.document
+    outlineEnv.pendingCommand = command
+    undo.beginUndoGrouping()
+    editor.receiveCommand()
+    undo.endUndoGrouping()
+}
+func foldDrawn(_ editor: OutlineEditor) -> [String] {
+    editor.visibleRows(in: store.blocks(inList: editor.document.listID)).map(\.block.text)
+}
+func foldStored(_ editor: OutlineEditor) -> [String] {
+    BlockTree.children(of: nil, in: store.blocks(inList: editor.document.listID)).map(\.text)
+}
+let foldLines: [(BlockKind, String)] = [(.task, "A"), (.heading1, "H"), (.task, "S1"), (.paragraph, "S2"),
+                                        (.heading1, "H2"), (.task, "Y")]
+do {
+    let (editor, undo, line) = foldCase("Fold down", foldLines, folding: "H")
+    check(foldDrawn(editor) == ["A", "H", "H2", "Y"], "A folded heading draws without its section")
+    foldCommand(.moveDown, line["A"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "A", "S1", "S2", "H2", "Y"] && line["H"]?.isCollapsed == false,
+        "Move Down past a folded heading lands the line under it, and the heading opens so it shows")
+    undo.undo()
+    check(foldDrawn(editor) == ["A", "H", "H2", "Y"] && line["H"]?.isCollapsed == true,
+        "Undo takes the move and the opening back as one step")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold up", foldLines, folding: "H")
+    foldCommand(.moveUp, line["Y"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["A", "H", "S1", "S2", "Y", "H2"] && line["H"]?.isCollapsed == false,
+        "Move Up into the end of a folded heading's section opens it too")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold heading up", foldLines, folding: "H")
+    foldCommand(.moveUp, line["H2"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["A", "H2", "H", "S1", "S2", "Y"] && foldStored(editor) == ["A", "H2", "H", "S1", "S2", "Y"],
+        "A heading moved up past a folded one opens it, as its section's lines join that heading's")
+    foldCommand(.moveUp, line["H2"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H2", "A", "H", "S1", "S2", "Y"], "The heading still shows, so the next press moves it again")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold heading down", [(.heading1, "G"), (.heading1, "H"), (.task, "S1"),
+                                                              (.heading1, "H2"), (.task, "Y")], folding: "H")
+    foldCommand(.moveDown, line["G"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "G", "H2", "Y"] && foldStored(editor) == ["H", "S1", "G", "H2", "Y"]
+            && line["H"]?.isCollapsed == true,
+        "A heading at the folded one's level moves down past its section, which stays folded under it")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold lower heading down", [(.heading2, "G"), (.heading1, "H"), (.task, "S1"),
+                                                                    (.heading1, "H2")], folding: "H")
+    foldCommand(.moveDown, line["G"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "G", "S1", "H2"] && line["H"]?.isCollapsed == false,
+        "A lower heading goes into the section, which opens")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold left behind", [(.heading2, "H"), (.task, "S1"), (.heading2, "G"),
+                                                             (.task, "P")], folding: "H")
+    foldCommand(.moveDown, line["G"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "S1", "P", "G"] && line["H"]?.isCollapsed == false,
+        "A heading moved down leaves the line it passed in the folded section above, which opens")
+}
+
 // An image line's caption is written in a step of its own, named and logged.
 let captionImage = store.appendBlock(kind: .image, to: moveDocument)
 store.save()

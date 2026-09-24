@@ -142,10 +142,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   one drawn, and ⇧⇥ steps a task out past the headings, list items and text lines holding
   it, to beside the task it's drawn under, so the step always shows. Format ▸ Move Up and
   Move Down (native extras) take a line past the nearest line beside it that shows,
-  passing those between that don't (a done task in Completed or, showing only tasks, a
-  heading, list item or text line), so each press moves it on screen and one with nothing
-  there records nothing. `Navigator.documentListID` (any list, and the
-  Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
+  passing those between with nothing drawn (a done task in Completed, the lines a folded
+  heading holds or, showing only tasks, a heading, list item or text line with no task
+  under it). A folded heading whose section the move puts lines in opens, while a heading
+  at a folded one's level or above, moving down, goes past it and its section, which stays
+  folded, so each press moves it on screen and one with nothing there records nothing.
+  `Navigator.documentListID` (any list, and the Inbox shown as a document) and
+  `documentOwnsEditorCommands` replace `hasDocumentEditor`.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
   writes the new line in the list document (`Workbench.addSubtask`,
   `OutlineEditor.appendSubtask`), after the task's last line and at its depth, as the
@@ -412,7 +415,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Image) are a native extra: their lines draw and edit in the document (an image's
   caption, 12pt under it, is written in place: a click on it, or on the "Add a caption…"
   a hover offers, edits it, and Return or a click away commits it as a step of its own,
-  "Edited caption on “Image”", logged as a line's edit is), the Turn into
+  "Edited caption on “Image”", logged as a line's edit is; by pointer or VoiceOver only,
+  as in the old editor, since the keys pass over an image line), the Turn into
   card brings them up for their names after "/" (with no query it shows the design's
   five under its one header, and a single letter filters the five by label as the
   design's does), and a line's Turn Into menu lists them all. From the second letter
