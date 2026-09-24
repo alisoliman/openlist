@@ -137,37 +137,27 @@ struct RootView: View {
     private var statusNotices: some View {
         VStack(spacing: 6) {
             if let notice = env.store.editorNotice {
-                noticeCard(text: notice, icon: "info.circle", tint: ListAccent.blue.softBackground, action: ("Dismiss", { env.store.editorNotice = nil }))
+                NXNoticeCard(icon: "info.circle", message: notice) {
+                    Button("Dismiss") { env.store.editorNotice = nil }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
             }
             if let error = env.store.persistenceError {
-                noticeCard(text: "Changes are not saved. \(error)", icon: "exclamationmark.triangle.fill",
-                       tint: ListAccent.red.softBackground, action: ("Retry saving", { env.store.save() }))
+                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
+                    Button("Retry saving") { env.store.save() }
+                        .buttonStyle(NXPanelButtonStyle(kind: .link))
+                }
             }
             if let warning = syncWarning {
-                noticeCard(text: warning, icon: "icloud.slash", tint: ListAccent.orange.softBackground, action: nil)
+                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
             }
         }
+        // They float over the screen, so they lift off it like the design's menus.
+        .shadow(color: NX.shadowWarm.opacity(0.18), radius: 20, y: 16)
         .frame(maxWidth: 560)
         .padding(.horizontal, 20)
-    }
-
-    private func noticeCard(text: String, icon: String, tint: Color, action: (String, () -> Void)?) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Label(text, systemImage: icon)
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            if let action {
-                Button(action.0, action: action.1)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.accent)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .background(NX.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        // Drawn over the shell, outside its style.
+        .environment(\.nextStyle, env.workbench.style)
     }
 
     // MARK: - Commands outside a document

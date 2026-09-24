@@ -170,6 +170,21 @@ struct NXHoverButtonStyle: ButtonStyle {
     }
 }
 
+/// The grey minus or plus of the inspector's estimate stepper.
+struct NXStepButton: View {
+    let icon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 11, weight: .medium)).frame(width: 15, height: 15)
+        }
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
+                                        padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
+                                        foreground: NX.ink(0.6)))
+    }
+}
+
 extension View {
     /// The design's warm card shadow: hairline plus a soft drop.
     func nxCardShadow(radius: CGFloat = 12, hairline: Double = 0.12, drop: Double = 0.09, y: CGFloat = 14, blur: CGFloat = 40) -> some View {

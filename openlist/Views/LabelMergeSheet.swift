@@ -17,78 +17,95 @@ struct LabelMergeSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Merge labels?")
-                .font(NX.serif(26))
-                .padding(.vertical, NX.serifLeading(26, lineHeight: 1.1))
-                .foregroundStyle(NX.ink)
+        let style = env.workbench.style
+        VStack(alignment: .leading, spacing: 16) {
+            NXPanelTitle("Merge labels?")
             if destinations.count > 1 {
-                let kept = destinations.first { $0.id == destinationID }
-                HStack(spacing: 8) {
-                    Text("Keep this label").font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
-                        .fixedSize()
-                    // The menu tells matching labels apart by when they were made;
-                    // the pill names the choice and truncates a long name.
-                    NXPopUpPill(value: kept.map { "\($0.name) · \($0.accent.title)" } ?? "Choose",
-                                label: "Keep this label", swatch: kept?.nxColor, truncates: true,
-                                entries: destinations.map { label in
-                                    .choice(title(label), isSelected: label.id == destinationID, swatch: label.nxColor) {
-                                        destinationID = label.id
-                                    }
-                                })
+                VStack(alignment: .leading, spacing: 8) {
+                    NXCapsTitle(text: "Keep this label")
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(destinations) { label in
+                            let isOn = destinationID == label.id
+                            Button { destinationID = label.id } label: {
+                                HStack(spacing: 9) {
+                                    Circle().fill(label.accent.color).frame(width: 8, height: 8).frame(width: 16)
+                                    Text(label.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .lineLimit(1)
+                                    Text("\(label.accent.title) · created \(label.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(NX.ink(0.45))
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(NXPanelRowStyle(isOn: isOn))
+                            .accessibilityAddTraits(isOn ? .isSelected : [])
+                        }
+                    }
+                    .padding(5)
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Keep this label")
             }
             if let plan {
-                Text("Replace “\(plan.source.name)” with the existing label below.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(NX.ink(0.7))
-                HStack(spacing: 5) {
-                    Image(systemName: "tag.fill").font(.system(size: 11, weight: .semibold))
-                    Text("\(plan.destination.name) · \(plan.destination.accent.title)")
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Replace “\(plan.source.name)” with the existing label below.")
+                        .foregroundStyle(NX.ink(0.7))
+                    // The inspector's chosen label pill.
+                    HStack(spacing: 8) {
+                        Text("#\(plan.destination.name)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.vertical, 5)
+                            .padding(.horizontal, 8)
+                            .background(plan.destination.accent.color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Text(plan.destination.accent.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(NX.ink(0.5))
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Surviving label: \(plan.destination.name), color: \(plan.destination.accent.title)")
+                    Text("This updates \(plan.affectedTaskCount) \(plan.affectedTaskCount == 1 ? "task" : "tasks"), including completed, nested, and archived tasks. The surviving label will be used by \(plan.resultingTaskCount) \(plan.resultingTaskCount == 1 ? "task" : "tasks") in total.")
+                        .foregroundStyle(NX.ink(0.7))
+                    Text("The existing label keeps its color. Tasks using both labels keep one copy. You can undo this merge from the notice at the top of the window.")
+                        .foregroundStyle(NX.ink(0.5))
                 }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(plan.destination.accent.color)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 10)
-                .background(plan.destination.accent.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Surviving label: \(plan.destination.name), color: \(plan.destination.accent.title)")
-                Text("This updates \(plan.affectedTaskCount) \(plan.affectedTaskCount == 1 ? "task" : "tasks"), including completed, nested, and archived tasks. The surviving label will be used by \(plan.resultingTaskCount) \(plan.resultingTaskCount == 1 ? "task" : "tasks") in total.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(NX.ink(0.7))
-                Text("The existing label keeps its color. Tasks using both labels keep one copy. You can undo this merge from the notice at the top of the window.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(NX.ink(0.48))
+                .font(.system(size: 12.5))
+                .fixedSize(horizontal: false, vertical: true)
             }
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(NX.redText)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle").font(.system(size: 12, weight: .medium))
+                    Text(error).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 12.5))
+                .foregroundStyle(NX.redText)
+                .accessibilityElement(children: .combine)
             }
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(NXDialogButtonStyle(kind: .secondary))
                     .keyboardShortcut(.cancelAction)
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 Button("Merge labels", action: merge)
-                    .buttonStyle(NXDialogButtonStyle(kind: .primary))
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(NXPanelButtonStyle(kind: .primary))
                     .disabled(plan == nil)
             }
         }
         .padding(24)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
-        .background(NX.card)
+        .presentationBackground(NX.card)
+        .tint(style.accent)
+        // Presented from the Settings window, outside the Next shell's style.
+        .environment(\.nextStyle, style)
         .onAppear {
             destinationID = destinations.first?.id
             refreshPlan()
         }
         .onChange(of: destinationID) { refreshPlan() }
-    }
-
-    private func title(_ label: TaskLabel) -> String {
-        "\(label.name) · \(label.accent.title) · created \(label.createdAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
     private func refreshPlan() {

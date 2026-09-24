@@ -7,6 +7,7 @@ struct TaskSchedulePicker: View {
     let block: Block
     @State private var section: DetailPicker
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     @Environment(\.dismiss) private var dismiss
 
     init(block: Block, initialSection: DetailPicker = .due) {
@@ -21,27 +22,33 @@ struct TaskSchedulePicker: View {
     }
 
     private var liveContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Schedule").font(.headline)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Schedule")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(NX.ink)
+                        .accessibilityAddTraits(.isHeader)
                     Text(block.displayTitle)
-                        .font(Theme.Font.metadata)
-                        .foregroundStyle(Theme.secondaryText)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(NX.ink(0.5))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Button("Done") { dismiss() }
-                    .controlSize(.small)
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
             }
 
-            Picker("Schedule section", selection: $section) {
-                Text("Date & time").tag(DetailPicker.due)
-                Text("Reminder").tag(DetailPicker.reminder)
-                Text("Repeat").tag(DetailPicker.repeatRule)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            NXSegmented(options: [(DetailPicker.due, "Date & time"), (.reminder, "Reminder"), (.repeatRule, "Repeat")],
+                        selection: section) { section = $0 }
+                .accessibilityRepresentation {
+                    Picker("Schedule section", selection: $section) {
+                        Text("Date & time").tag(DetailPicker.due)
+                        Text("Reminder").tag(DetailPicker.reminder)
+                        Text("Repeat").tag(DetailPicker.repeatRule)
+                    }
+                    .pickerStyle(.segmented)
+                }
 
             ScrollView {
                 Group {
@@ -59,7 +66,8 @@ struct TaskSchedulePicker: View {
         }
         .padding(16)
         .frame(width: 350)
-        .background(Theme.chrome)
+        .presentationBackground(NX.card)
+        .tint(style.accent)
         .environment(\.calendar, env.settings.calendar)
     }
 }

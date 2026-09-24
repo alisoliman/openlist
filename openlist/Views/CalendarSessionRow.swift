@@ -3,45 +3,63 @@ import SwiftUI
 struct CalendarSessionRow: View {
     let session: WorkSession
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     @State private var isEditing = false
     @State private var minutes = 0.0
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(session.title).font(.body.weight(.medium))
-                Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption).foregroundStyle(Theme.secondaryText)
-                Text(session.endedAt == nil ? (env.calendar.activeSession?.id == session.id ? "Active on this Mac" : "Last recorded on another session") : (session.pauseReason ?? "Paused"))
-                    .font(.caption).foregroundStyle(Theme.secondaryText)
+                Text(session.title).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
+                Group {
+                    Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
+                    Text(session.endedAt == nil ? (env.calendar.activeSession?.id == session.id ? "Active on this Mac" : "Last recorded on another session") : (session.pauseReason ?? "Paused"))
+                }
+                .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
             }
             Spacer(minLength: 12)
             VStack(alignment: .trailing, spacing: 5) {
-                Text("\(env.calendar.recordedMinutes(for: session).formatted(.number.precision(.fractionLength(0)))) min").monospacedDigit()
-                if session.correctedMinutes != nil { Text("Corrected").font(.caption).foregroundStyle(Theme.accent) }
+                Text("\(env.calendar.recordedMinutes(for: session).formatted(.number.precision(.fractionLength(0)))) min")
+                    .font(.system(size: 12, weight: .semibold)).monospacedDigit().foregroundStyle(NX.ink)
+                if session.correctedMinutes != nil {
+                    Text("Corrected").font(.system(size: 11, weight: .semibold)).foregroundStyle(style.accent)
+                }
                 if session.endedAt != nil {
                     Button("Correct time…") { minutes = env.calendar.recordedMinutes(for: session); isEditing = true }
-                        .buttonStyle(.link).font(.caption)
+                        .buttonStyle(NXPanelButtonStyle(kind: .link, size: .small))
+                        .padding(.trailing, -5)
                 }
             }
         }
         .popover(isPresented: $isEditing) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Correct recorded time").font(.headline)
-                TextField("Minutes", value: $minutes, format: .number).frame(width: 140)
-                    .accessibilityLabel("Corrected minutes")
+                Text("Correct recorded time")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                NXPanelField {
+                    TextField("Minutes", value: $minutes, format: .number)
+                        .accessibilityLabel("Corrected minutes")
+                }
+                .frame(width: 140)
                 if session.correctedMinutes != nil {
                     Button("Restore original duration") {
                         env.store.correctSession(session, minutes: nil); env.calendar.storeDidChange(); isEditing = false
                     }
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                 }
-                HStack {
+                HStack(spacing: 8) {
                     Button("Cancel") { isEditing = false }
+                        .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                     Spacer()
                     Button("Save") {
                         env.store.correctSession(session, minutes: max(0, minutes)); env.calendar.storeDidChange(); isEditing = false
-                    }.keyboardShortcut(.defaultAction)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
                 }
-            }.padding(16).frame(width: 290)
+            }
+            .padding(16)
+            .frame(width: 290)
+            .presentationBackground(NX.card)
         }
     }
 }

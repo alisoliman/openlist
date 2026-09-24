@@ -6,6 +6,7 @@ struct LabelPicker: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     @State private var query = ""
 
     var body: some View {
@@ -15,11 +16,12 @@ struct LabelPicker: View {
     }
 
     private var liveContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Find or create a label", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .font(Theme.Font.body)
-                .onSubmit(createFromQuery)
+        VStack(alignment: .leading, spacing: 6) {
+            NXPanelField(icon: "number") {
+                TextField("Find or create a label", text: $query)
+                    .onSubmit(createFromQuery)
+            }
+            .padding(.bottom, 2)
 
             let matches = filteredLabels
             if !matches.isEmpty {
@@ -27,59 +29,56 @@ struct LabelPicker: View {
                     VStack(spacing: 1) {
                         ForEach(matches) { label in
                             let labelID = label.id
+                            let isOn = block.labelIDs.contains(label.id)
                             Button {
                                 env.store.toggleLabel(id: labelID, on: block)
                             } label: {
-                                HStack(spacing: 7) {
+                                HStack(spacing: 9) {
                                     Circle()
                                         .fill(label.accent.color)
                                         .frame(width: 8, height: 8)
+                                        .frame(width: 16)
                                     Text(label.name)
-                                        .font(Theme.Font.body)
-                                    Spacer()
-                                    if block.labelIDs.contains(label.id) {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 10, weight: .bold))
-                                            .foregroundStyle(Theme.accent)
-                                    }
+                                        .font(.system(size: 13, weight: .medium))
+                                        .lineLimit(1)
                                 }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 4)
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(NXPanelRowStyle(isOn: isOn))
+                            .accessibilityAddTraits(isOn ? .isSelected : [])
                         }
                     }
                 }
-                .frame(maxHeight: 180)
+                .frame(maxHeight: 220)
             }
 
             if canCreate {
                 Button {
                     createFromQuery()
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: 11))
+                    HStack(spacing: 9) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .frame(width: 16)
                         Text("Create “\(TaskLabel.normalize(query))”")
-                            .font(Theme.Font.body)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
                     }
-                    .foregroundStyle(Theme.accent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(style.accent)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NXPanelRowStyle(isOn: false))
             }
 
             if filteredLabels.isEmpty, !canCreate {
                 Text("No labels yet. Type a name to create one.")
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.tertiaryText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(NX.ink(0.45))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
             }
         }
-        .padding(12)
-        .frame(width: 240)
+        .padding(6)
+        .frame(width: 250)
+        .presentationBackground(NX.card)
     }
 
     private var filteredLabels: [TaskLabel] {

@@ -7,6 +7,7 @@ struct CalendarMonthPicker: View {
     let calendar: Calendar
     let onSelect: (Date) -> Void
 
+    @Environment(\.nextStyle) private var style
     @State private var displayedMonth: Date
     @State private var hoveredDay: Date?
     @FocusState private var focusedDay: Date?
@@ -19,32 +20,32 @@ struct CalendarMonthPicker: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(spacing: 6) {
+            HStack(spacing: 2) {
                 Text(displayedMonth.formatted(.dateTime.month(.wide).year()))
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(NX.ink)
                 Spacer(minLength: 0)
-                Button("Previous month", systemImage: "chevron.left") { shiftMonth(-1) }
-                    .labelStyle(.iconOnly)
-                    .frame(width: 28, height: 28)
-                Button("Next month", systemImage: "chevron.right") { shiftMonth(1) }
-                    .labelStyle(.iconOnly)
-                    .frame(width: 28, height: 28)
+                monthButton("Previous month", symbol: "chevron.left", by: -1)
+                monthButton("Next month", symbol: "chevron.right", by: 1)
             }
-            .buttonStyle(.borderless)
+            .padding(.bottom, 2)
 
-            HStack(spacing: 3) {
+            HStack(spacing: 2) {
                 ForEach(0..<7) { index in
                     let weekday = (calendar.firstWeekday - 1 + index) % 7
+                    // The design's calendar weekday: 600 10px, 0.04em, uppercase.
                     Text(calendar.shortStandaloneWeekdaySymbols[weekday])
-                        .font(Theme.Font.metadata)
-                        .foregroundStyle(Theme.secondaryText)
+                        .font(.system(size: 10, weight: .semibold))
+                        .kerning(0.4)
+                        .textCase(.uppercase)
+                        .foregroundStyle(NX.ink(0.45))
                         .frame(maxWidth: .infinity)
                         .accessibilityHidden(true)
                 }
             }
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 3) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
                 ForEach(CalendarMonthGrid.days(in: displayedMonth, calendar: calendar), id: \.self) { day in
                     dayButton(day)
                 }
@@ -56,26 +57,35 @@ struct CalendarMonthPicker: View {
         .environment(\.calendar, calendar)
     }
 
+    private func monthButton(_ title: String, symbol: String, by amount: Int) -> some View {
+        Button { shiftMonth(amount) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 16, height: 16)
+        }
+        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
+        .accessibilityLabel(title)
+        .help(title)
+    }
+
     private func dayButton(_ day: Date) -> some View {
         let isSelected = selection.map { calendar.isDate(day, inSameDayAs: $0) } ?? false
         let isToday = calendar.isDateInToday(day)
         let isInMonth = calendar.isDate(day, equalTo: displayedMonth, toGranularity: .month)
+        let isHovered = hoveredDay == day
         return Button { onSelect(day) } label: {
+            // The design's calendar day number: 500 weight, tabular, the accent for today.
             Text("\(calendar.component(.day, from: day))")
-                .font(.system(size: 14, weight: isSelected || isToday ? .semibold : .regular))
+                .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
                 .monospacedDigit()
-                .foregroundStyle(isSelected ? Color.white : (isInMonth ? Color.primary : Theme.secondaryText))
+                .foregroundStyle(isSelected ? Color.white : isToday ? style.accent : isInMonth ? NX.ink : NX.ink(0.3))
                 .frame(maxWidth: .infinity)
-                .frame(height: 34)
+                .frame(height: 32)
                 .background {
-                    Circle().fill(isSelected ? Theme.accent : (hoveredDay == day ? Theme.rowHover : Color.clear))
-                        .frame(width: 32, height: 32)
-                }
-                .overlay {
-                    if isToday && !isSelected {
-                        Circle().stroke(Theme.accent, lineWidth: 1)
-                            .frame(width: 30, height: 30)
-                    }
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? style.accent
+                              : isToday ? style.accent.opacity(isHovered ? 0.16 : 0.1)
+                              : isHovered ? NX.ink(0.06) : Color.clear)
                 }
                 .contentShape(Rectangle())
         }
