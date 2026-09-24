@@ -818,7 +818,7 @@ final class CalendarCoordinator {
         var next = next
         let missed = Set(store.placements().filter { missedPlacementIDs.contains($0.id) }.map(\.occurrenceID))
         for index in next.assessments.indices where missed.contains(next.assessments[index].occurrenceID) {
-            let conflict = "Pinned time was missed; remaining work has been replanned."
+            let conflict = AdaptiveScheduler.missedPlacementConflict
             if !next.assessments[index].conflicts.contains(conflict) { next.assessments[index].conflicts.append(conflict) }
         }
         plan = next
@@ -986,8 +986,8 @@ final class CalendarCoordinator {
             placements: placements, now: now, calendar: calendar)
         if store.placements(taskID: task.id).contains(where: { $0.occurrenceID == task.occurrenceID && $0.isPinned && $0.start <= now }) {
             for index in replacement.assessments.indices {
-                replacement.assessments[index].conflicts.append("Pinned time was missed; remaining work has been replanned.")
-                replacement.assessments[index].reason += " Pinned time was missed; review the new placement."
+                replacement.assessments[index].conflicts.append(AdaptiveScheduler.missedPlacementConflict)
+                replacement.assessments[index].reason += AdaptiveScheduler.missedPlacementReason
             }
         }
         let blocks = (anchors + replacement.blocks).sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }

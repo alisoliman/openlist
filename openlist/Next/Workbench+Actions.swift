@@ -264,8 +264,9 @@ extension Workbench {
         selection = []
     }
 
-    // The plan card's Defer… and Clear are native extras that change what
-    // plan does, so they snap as it does, each with its tray and Undo.
+    // The plan card's Clear, like its Defer work (`deferWork`, with the
+    // calendar's slots below), is a native extra that changes what plan
+    // does, so it snaps as plan does, with its tray, Undo and chip flash.
 
     /// "Deferred until …"'s Clear: the task stops waiting for that day; see
     /// `Store.clearDeferral`.
@@ -370,10 +371,20 @@ extension Workbench {
         recordEdit(label, of: task) { store.setText(text, for: task) }
     }
 
+    /// The design's note commit, for the list document's note and the
+    /// inspector's alike: trailing space goes, an emptied note closes under
+    /// its task, and a change is one step, logged.
     func setNote(_ note: String, of task: Block) {
+        let note = Self.committedNote(note)
+        if note.isEmpty { openNotes.remove(task.id) }
         guard task.note != note else { return }
         let label = "Edited note on \(describe([task]))"
         recordEdit(label, of: task) { store.setNote(note, for: task) }
+    }
+
+    /// A note as it's saved: without the space and line breaks it ends in.
+    static func committedNote(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
     }
 
     private func recordEdit(_ label: String, of task: Block, _ change: () -> Void) {
@@ -1059,6 +1070,8 @@ extension Workbench {
     /// Work on it, running or paused, stops and leaves the notch; Undo puts
     /// the slots and the task's day back, and the work, paused, to resume.
     func deferWork(_ id: UUID, to day: Date) {
+        // After the list document's line being written, as its own step.
+        document?.commitLine()
         guard let task = store.block(id: id), task.isTask, !task.isCompleted else { return }
         let occurrenceID = task.occurrenceID
         let fields = [TaskFields(task)]
@@ -1079,6 +1092,8 @@ extension Workbench {
             workbench.calendar.deferTask(task: task, to: day)
         })
         snap(label, icon: "arrow.uturn.forward", tone: .accent, ids: [id])
+        // As plan's, the row's chips flash.
+        flash(\.freshChip, [id], for: 700)
     }
 
     /// Replaces the occurrence's placements with `spans`, in one save.

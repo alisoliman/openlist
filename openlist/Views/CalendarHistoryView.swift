@@ -95,26 +95,15 @@ struct CalendarHistoryView: View {
     }
 }
 
-/// Where a completed occurrence was planned, folded under a quiet chevron
-/// as the inspector's disclosures are.
+/// Where a completed occurrence was planned, folded under the quiet chevron
+/// the inspector's disclosures use.
 private struct PlannedIntervalsDisclosure: View {
-    @Environment(\.nextStyle) private var style
     let intervals: [CompletionCalendarInterval]
     @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { withAnimation(style.ease(220)) { isExpanded.toggle() } } label: {
-                HStack(spacing: 5) {
-                    Text("Originally planned")
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                }
-            }
-            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
-            .padding(.leading, -5)
-            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            NXDisclosureButton("Originally planned", isExpanded: $isExpanded)
             if isExpanded {
                 ForEach(Array(intervals.enumerated()), id: \.offset) { _, interval in
                     Text("\(interval.start.formatted(date: .abbreviated, time: .shortened)) – \(interval.end.formatted(date: .omitted, time: .shortened))")

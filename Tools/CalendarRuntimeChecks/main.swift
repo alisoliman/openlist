@@ -810,13 +810,13 @@ func checkSchedulingNudges() throws {
         check(planner.plan.blocks.contains { $0.placementID == placement.id } && planner.startNudge?.taskID == pinned.id, "an unstarted pinned block keeps its slot and its Start nudge while the slot runs")
         check(planner.startNudge?.scheduledStart == date() && planner.startNudge?.graceEndsAt == date(14, 9, 5), "the nudge names the slot's start and has a five-minute grace period")
         planner.tick(now: date(14, 9, 31), checkClockGap: false)
-        check(planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0.contains("Pinned time was missed") } == true, "ignoring a pinned slot preserves an explicit missed-pin conflict")
+        check(planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0 == AdaptiveScheduler.missedPlacementConflict } == true, "ignoring a pinned slot preserves an explicit missed-pin conflict")
         check(planner.plan.blocks.first { $0.taskID == other.id }?.start == neighbor.start && fixtureStore.workSessions().isEmpty, "missed pins move their remaining work without moving neighbors or inventing activity")
         planner.replan(now: date(14, 9, 32))
         let missed = planner.visibleBlocks.filter { $0.taskID == pinned.id }
         check(missed.count == 1 && missed[0].start == date() && missed[0].end == date(14, 9, 30) && !missed[0].isActive, "a missed placement stays drawn at its planned time, to read as carried forward")
         check(planner.plan.blocks.filter { $0.taskID == pinned.id }.allSatisfy { !$0.isPinned }, "a later material replan never resurrects a known missed pin")
-        check(planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0.contains("Pinned time was missed") } == true, "missed-pin feedback survives subsequent material changes")
+        check(planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0 == AdaptiveScheduler.missedPlacementConflict } == true, "missed-pin feedback survives subsequent material changes")
     }
     do {
         let (fixtureStore, planner, lifetime) = try fixture()
@@ -897,7 +897,7 @@ func checkSchedulingNudges() throws {
         let placement = fixtureStore.setPlacement(for: pinned, start: date(), end: date(14, 10), isPinned: true)!
         planner.bootstrap(now: date(), monitorsEnabled: false)
         func missed() -> Bool {
-            planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0.contains("Pinned time was missed") } == true
+            planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0 == AdaptiveScheduler.missedPlacementConflict } == true
         }
         planner.tick(now: date(14, 9, 31), checkClockGap: false)
         check(!missed() && planner.plan.blocks.contains { $0.placementID == placement.id } && planner.startNudge?.taskID == pinned.id,

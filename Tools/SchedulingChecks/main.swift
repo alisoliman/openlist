@@ -121,10 +121,10 @@ let outsidePin = PlacementInput(id: UUID(), taskID: task(1).taskID, occurrenceID
     start: date("2026-10-13T09:00:00+02:00"), end: date("2026-10-13T09:30:00+02:00"), isPinned: true)
 let outsidePinnedPlan = plan([task(1, today: false)], placements: [outsidePin])
 check(outsidePinnedPlan.blocks.isEmpty, "A pin beyond the horizon cannot silently move into today's plan")
-check(outsidePinnedPlan.assessments[0].status == .outsidePlanningHorizon && outsidePinnedPlan.assessments[0].reason.contains("pinned"), "Outside-horizon pin has an explicit assessment")
+check(outsidePinnedPlan.assessments[0].status == .outsidePlanningHorizon && outsidePinnedPlan.assessments[0].reason.contains("planned beyond"), "Outside-horizon pin has an explicit assessment")
 let deadlineOutsidePin = plan([task(1, due: tomorrow)], placements: [outsidePin])
 check(deadlineOutsidePin.blocks.isEmpty && deadlineOutsidePin.assessments[0].status == .cannotFitBeforeDeadline, "Outside-horizon pin cannot falsely satisfy a nearer deadline")
-check(deadlineOutsidePin.assessments[0].conflicts.contains { $0.contains("deadline") }, "Outside-horizon pin after cutoff is a visible fixed-time conflict")
+check(deadlineOutsidePin.assessments[0].conflicts.contains { $0.contains("due date") }, "Outside-horizon pin after cutoff is a visible fixed-time conflict")
 let crossingPin = PlacementInput(id: UUID(), taskID: task(1).taskID, occurrenceID: task(1).occurrenceID,
     start: date("2026-10-11T23:00:00+02:00"), end: date("2026-10-12T01:00:00+02:00"), isPinned: true)
 let crossingPinnedPlan = plan([task(1, minutes: 120)], preferences: preferences(windows: [.init(startMinute: 0, endMinute: 1440)]), placements: [crossingPin])
@@ -303,6 +303,35 @@ let placedNow = CalendarWeek.placedTaskIDs([
 check(!placedNow.contains(task(1).taskID), "A slot missed before the Week view's week no longer keeps its task out of Not planned yet")
 check(placedNow.contains(task(2).taskID) && placedNow.contains(task(3).taskID), "Yesterday's carried-forward slot and a later one still count as placed")
 check(!placedNow.contains(task(4).taskID) && placedNow.contains(task(5).taskID), "A done block doesn't count, running work does")
+
+// The inspector's "In the calendar …" names a block the grid draws, as the
+// design reads any placement, past or done: the running or next one, else the
+// latest still placed, else where the task was done.
+@MainActor
+func shownSlot(_ number: Int, _ blocks: [PlannedBlock], occurrence: UUID? = nil) -> String? {
+    CalendarWeek.shownSlot(of: task(number).taskID, occurrenceID: occurrence ?? task(number).occurrenceID, in: blocks,
+                           now: wednesday, calendar: mondayWeek)?.id
+}
+let missedYesterday = shownBlock(6, "2026-09-22T14:00:00+02:00", "2026-09-22T14:30:00+02:00")
+check(shownSlot(6, [missedYesterday]) == "6", "A slot missed yesterday, carried forward, still reads as in the calendar")
+var tomorrowSlot = shownBlock(6, "2026-09-24T09:00:00+02:00", "2026-09-24T09:30:00+02:00")
+tomorrowSlot.id = "6-next"
+check(shownSlot(6, [tomorrowSlot, missedYesterday]) == "6-next", "An upcoming slot wins over a missed one")
+var nowSlot = shownBlock(6, "2026-09-23T10:30:00+02:00", "2026-09-23T11:00:00+02:00")
+nowSlot.id = "6-now"
+check(shownSlot(6, [tomorrowSlot, nowSlot, missedYesterday]) == "6-now", "The slot under way comes before later ones")
+var running = shownBlock(6, "2026-09-23T10:00:00+02:00", "2026-09-23T10:40:00+02:00", active: true)
+running.id = "6-active"
+check(shownSlot(6, [tomorrowSlot, running]) == "6-active", "Running work reads as its block, even at its end")
+var earlierMissed = shownBlock(6, "2026-09-21T09:00:00+02:00", "2026-09-21T09:30:00+02:00")
+earlierMissed.id = "6-monday"
+check(shownSlot(6, [earlierMissed, missedYesterday]) == "6", "Of missed slots, the latest reads")
+check(shownSlot(7, [shownBlock(7, "2026-09-14T10:00:00+02:00", "2026-09-14T10:30:00+02:00")]) == nil,
+      "A slot missed before the week reads as not in the calendar, as Not planned yet has it")
+check(shownSlot(8, [shownBlock(8, "2026-09-23T10:15:00+02:00", "2026-09-23T10:30:00+02:00", done: true)]) == "8",
+      "A done task reads where it was done")
+check(shownSlot(6, [tomorrowSlot], occurrence: UUID()) == nil, "Another occurrence's slot isn't this one's")
+check(shownSlot(9, [tomorrowSlot]) == nil, "Another task's slot isn't this one's")
 
 // Plan keeps to the week around today while it has hours long enough for the task, then goes on into the next.
 @MainActor

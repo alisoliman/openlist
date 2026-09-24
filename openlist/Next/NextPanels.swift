@@ -92,21 +92,62 @@ struct NXPanelButtonStyle: ButtonStyle {
     }
 }
 
+/// A quiet chevron that shows or hides the part below it, as the design's
+/// carets do: right while closed, down once open. The inspector's More
+/// options and Full history, Work history's Originally planned and a
+/// matched note's Full note share it. Its text lines up with the column.
+struct NXDisclosureButton: View {
+    @Environment(\.nextStyle) private var style
+    let title: String
+    @Binding var isExpanded: Bool
+
+    init(_ title: String, isExpanded: Binding<Bool>) {
+        self.title = title
+        _isExpanded = isExpanded
+    }
+
+    var body: some View {
+        Button { withAnimation(style.ease(220)) { isExpanded.toggle() } } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+        .padding(.leading, -5)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+    }
+}
+
 /// A row in the design's small menus, like the Tasks sentence menus and the
 /// label picker: 8/9 padding on a 7pt radius, the accent's faint fill and a
 /// check when chosen, grey on hover. It is a real button, so the keyboard and
 /// VoiceOver can choose it.
 struct NXPanelRowStyle: ButtonStyle {
     var isOn: Bool
+    /// Whether it's the row Return picks, in a menu that keeps one. Given, it
+    /// alone draws the grey, as in the design's palette: the pointer moves
+    /// that one highlight rather than greying a second row.
+    var isHighlighted: Bool?
 
     func makeBody(configuration: Configuration) -> some View {
-        PanelRow(configuration: configuration, isOn: isOn)
+        PanelRow(configuration: configuration, isOn: isOn, isHighlighted: isHighlighted)
+    }
+
+    /// Whether a row takes the grey: its highlight when the menu keeps one,
+    /// else the pointer, and while pressed.
+    static func greys(highlighted: Bool?, hovering: Bool, pressed: Bool) -> Bool {
+        (highlighted ?? hovering) || pressed
     }
 
     private struct PanelRow: View {
         @Environment(\.nextStyle) private var style
         let configuration: Configuration
         let isOn: Bool
+        let isHighlighted: Bool?
         @State private var hovering = false
 
         var body: some View {
@@ -122,7 +163,8 @@ struct NXPanelRowStyle: ButtonStyle {
             .foregroundStyle(NX.ink)
             .padding(.vertical, 8)
             .padding(.horizontal, 9)
-            .background(hovering || configuration.isPressed ? NX.ink(0.05) : isOn ? style.accent.opacity(0.06) : .clear,
+            .background(NXPanelRowStyle.greys(highlighted: isHighlighted, hovering: hovering, pressed: configuration.isPressed)
+                            ? NX.ink(0.05) : isOn ? style.accent.opacity(0.06) : .clear,
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
