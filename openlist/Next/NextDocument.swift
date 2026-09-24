@@ -583,12 +583,12 @@ private struct NXNoteHint: View {
     }
 
     /// The pitch of a title's lines.
-    static let linePitch = (Theme.Editor.lineHeight(for: .task) * 2).rounded() / 2
+    static let linePitch = (NXEditor.lineHeight(for: .task) * 2).rounded() / 2
 
     static func placement(after content: NSAttributedString, width: CGFloat) -> Placement {
         let end = NXTextMeasure.end(of: content, width: width)
         // 7pt after the text, its 13pt box 2pt under the baseline.
-        let y = Theme.Editor.lineBoxInset(for: .task) + end.baseline - 11
+        let y = NXEditor.lineBoxInset(for: .task) + end.baseline - 11
         guard width > 1, end.x + 7 + 13 > width else { return Placement(x: end.x + 7, y: y, wraps: false) }
         return Placement(x: 0, y: y + linePitch, wraps: true)
     }
@@ -791,7 +791,7 @@ final class NXNoteTextView: NSTextView {
     static let attributes: [NSAttributedString.Key: Any] = {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = inset * 2
-        return [.font: font, .foregroundColor: Theme.Editor.secondaryInk, .paragraphStyle: paragraph]
+        return [.font: font, .foregroundColor: NXEditor.secondaryInk, .paragraphStyle: paragraph]
     }()
 
     override func keyDown(with event: NSEvent) {
@@ -816,7 +816,7 @@ final class NXNoteTextView: NSTextView {
         super.draw(dirtyRect)
         guard string.isEmpty else { return }
         var attributes = Self.attributes
-        attributes[.foregroundColor] = Theme.Editor.placeholderInk
+        attributes[.foregroundColor] = NXEditor.placeholderInk
         NSAttributedString(string: "Add a note…", attributes: attributes)
             .draw(in: NSRect(origin: textContainerOrigin, size: bounds.size))
     }
@@ -892,7 +892,7 @@ private struct NXDocumentBlock: View {
         case .numbered:
             // The ordinal's baseline on the text's first baseline.
             let font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-            let baseline = Theme.Editor.lineBoxInset(for: .numbered) + Theme.Editor.baselineOffset(for: .numbered)
+            let baseline = NXEditor.lineBoxInset(for: .numbered) + NXEditor.baselineOffset(for: .numbered)
             Text("\(row.ordinal).")
                 .font(.system(size: 12.5, design: .monospaced))
                 .foregroundStyle(NX.ink(0.45))
@@ -1016,7 +1016,7 @@ private struct NXLineText: View {
             struck: closing,
             strikeColor: closing != nil ? env.settings.accent.editorColor : nil,
             dimsStruck: closing == nil,
-            verticalInset: Theme.Editor.lineBoxInset(for: block.kind),
+            verticalInset: NXEditor.lineBoxInset(for: block.kind),
             attributedText: context.contents.content(of: block, store: env.store),
             placeholder: editing ? Self.placeholder(for: block.kind) : "",
             isFocused: editor.isFocused(id),

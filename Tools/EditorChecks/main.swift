@@ -192,7 +192,7 @@ coordinator.apply(closing, to: native, kind: .task, isCompleted: false, struck: 
 let struckAttributes = native.textStorage!.attributes(at: 0, effectiveRange: nil)
 check(struckAttributes[.strikethroughStyle] as? Int == NSUnderlineStyle.single.rawValue
     && struckAttributes[.strikethroughColor] as? NSColor === closingAccent
-    && struckAttributes[.foregroundColor] as? NSColor === Theme.Editor.completedInk, "A closing task is struck in the accent before it is stored as done")
+    && struckAttributes[.foregroundColor] as? NSColor === NXEditor.completedInk, "A closing task is struck in the accent before it is stored as done")
 check(coordinator.signature == BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent),
     "A struck presentation keeps the model's content in its signature")
 check(coordinator.signature != BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false),
@@ -447,11 +447,11 @@ coordinator.parent.callbacks.onEscape = {}
 
 // The title's visible cap-height center must agree with its row center. A
 // paragraph line-height multiplier previously shifted that baseline downward.
-input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
 for kind: BlockKind in [.task, .paragraph, .heading1, .heading2, .heading3, .code] {
+    input.textContainerInset = NSSize(width: 0, height: NXEditor.lineBoxInset(for: kind))
     coordinator.apply(RichTextCodec.decode(nil, plainText: "Task", kind: kind), to: input, kind: kind, isCompleted: false)
     let singleHeight = input.height(fittingWidth: 180)
-    let font = Theme.Editor.nsFont(for: kind)
+    let font = NXEditor.nsFont(for: kind)
     let baseline = input.layoutManager!.location(forGlyphAt: 0).y + input.textContainerOrigin.y
     let opticalCenter = baseline - font.capHeight / 2
     check(abs(opticalCenter - singleHeight / 2) < 1.5, "\(kind) text is optically centered in its measured editor height")
@@ -465,17 +465,17 @@ check(input.caretRectLocal(at: 5).maxY <= trailingLineHeight, "Balanced insets s
 // One editor typography, the Next list document's. A task title in the
 // document's line box measures and sits like a Next row's title, which
 // SwiftUI sets the way `NXStrikeText` does.
-check(Theme.Editor.nsFont(for: .heading1) == NSFont.systemFont(ofSize: 20, weight: .bold)
-    && Theme.Editor.nsFont(for: .heading2) == NSFont.systemFont(ofSize: 15.5, weight: .semibold)
-    && Theme.Editor.nsFont(for: .heading3) == NSFont.systemFont(ofSize: 13.8, weight: .semibold)
-    && Theme.Editor.nsFont(for: .task) == NSFont.systemFont(ofSize: 13.8)
-    && Theme.Editor.nsFont(for: .bullet) == NSFont.systemFont(ofSize: 13.8)
-    && Theme.Editor.nsFont(for: .paragraph) == NSFont.systemFont(ofSize: 13.5)
-    && Theme.Editor.nsFont(for: .quote) == NSFont.systemFont(ofSize: 13.5)
-    && Theme.Editor.nsFont(for: .code) == NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
+check(NXEditor.nsFont(for: .heading1) == NSFont.systemFont(ofSize: 20, weight: .bold)
+    && NXEditor.nsFont(for: .heading2) == NSFont.systemFont(ofSize: 15.5, weight: .semibold)
+    && NXEditor.nsFont(for: .heading3) == NSFont.systemFont(ofSize: 13.8, weight: .semibold)
+    && NXEditor.nsFont(for: .task) == NSFont.systemFont(ofSize: 13.8)
+    && NXEditor.nsFont(for: .bullet) == NSFont.systemFont(ofSize: 13.8)
+    && NXEditor.nsFont(for: .paragraph) == NSFont.systemFont(ofSize: 13.5)
+    && NXEditor.nsFont(for: .quote) == NSFont.systemFont(ofSize: 13.5)
+    && NXEditor.nsFont(for: .code) == NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
     "Each kind uses the design's document font")
-check(Theme.Editor.lineHeight(for: .task) == 13.8 * 1.45 && Theme.Editor.lineHeight(for: .paragraph) == 13.5 * 1.55
-    && Theme.Editor.lineHeight(for: .heading1) == 20 * 1.3 && Theme.Editor.lineHeight(for: .heading2) == 15.5 * 1.35,
+check(NXEditor.lineHeight(for: .task) == 13.8 * 1.45 && NXEditor.lineHeight(for: .paragraph) == 13.5 * 1.55
+    && NXEditor.lineHeight(for: .heading1) == 20 * 1.3 && NXEditor.lineHeight(for: .heading2) == 15.5 * 1.35,
     "Each kind has the design's line height")
 check(RichTextCodec.baseAttributes(for: .heading1)[.kern] as? CGFloat == -0.2 && RichTextCodec.baseAttributes(for: .task)[.kern] == nil,
     "Heading 1 keeps the design's −0.01em letter-spacing")
@@ -485,7 +485,7 @@ let spacedArchive = RichTextCodec.encode(spacedHeading, kind: .heading1)!
 let storedHeading = try! NSAttributedString(data: spacedArchive, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil)
 check(storedHeading.attribute(.kern, at: 0, effectiveRange: nil) == nil, "Letter-spacing is presentation and never stored")
 func nextTitleMetrics(_ text: String) -> (height: CGFloat, baseline: CGFloat) {
-    let size = Theme.Editor.bodyPointSize
+    let size = NXEditor.bodyPointSize
     let font = NSFont.systemFont(ofSize: size)
     let leading = max(0, size * 1.45 - (font.ascender - font.descender + font.leading))
     let host = NSHostingView(rootView: Text(text).font(.system(size: size)).lineSpacing(leading)
@@ -496,7 +496,7 @@ func nextTitleMetrics(_ text: String) -> (height: CGFloat, baseline: CGFloat) {
     host.layoutSubtreeIfNeeded()
     return (host.frame.height, host.firstBaselineOffsetFromTop)
 }
-input.textContainerInset = NSSize(width: 0, height: Theme.Editor.lineBoxInset(for: .task))
+input.textContainerInset = NSSize(width: 0, height: NXEditor.lineBoxInset(for: .task))
 for (title, next) in [("Task", "Task"), ("Task one\u{2028}Task two", "Task one\nTask two")] {
     coordinator.apply(RichTextCodec.decode(nil, plainText: title, kind: .task), to: input, kind: .task, isCompleted: false)
     input.invalidateIntrinsicContentSize()
@@ -509,36 +509,32 @@ for (title, next) in [("Task", "Task"), ("Task one\u{2028}Task two", "Task one\n
         "A task in its line box shares a Next row title's first baseline (\(baseline) vs \(reference.baseline))")
 }
 for kind: BlockKind in [.task, .bullet, .paragraph, .heading1, .heading2, .heading3] {
-    input.textContainerInset = NSSize(width: 0, height: Theme.Editor.lineBoxInset(for: kind))
+    input.textContainerInset = NSSize(width: 0, height: NXEditor.lineBoxInset(for: kind))
     coordinator.apply(RichTextCodec.decode(nil, plainText: "Line", kind: kind), to: input, kind: kind, isCompleted: false)
     input.invalidateIntrinsicContentSize()
-    check(abs(input.height(fittingWidth: 180) - Theme.Editor.lineHeight(for: kind)) < 0.05,
-        "\(kind) fills the design's line box of \(Theme.Editor.lineHeight(for: kind))pt")
+    check(abs(input.height(fittingWidth: 180) - NXEditor.lineHeight(for: kind)) < 0.05,
+        "\(kind) fills the design's line box of \(NXEditor.lineHeight(for: kind))pt")
     coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}Line", kind: kind), to: input, kind: kind, isCompleted: false)
     input.invalidateIntrinsicContentSize()
-    check(abs(input.height(fittingWidth: 180) - 2 * Theme.Editor.lineHeight(for: kind)) < 0.6,
+    check(abs(input.height(fittingWidth: 180) - 2 * NXEditor.lineHeight(for: kind)) < 0.6,
         "\(kind) wraps onto the design's line pitch")
 }
-input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
-coordinator.apply(RichTextCodec.decode(nil, plainText: "Task", kind: .task), to: input, kind: .task, isCompleted: false)
-input.invalidateIntrinsicContentSize()
-check(input.height(fittingWidth: 180) == 20, "The legacy document's default inset still pads a single line to its gutter's 20pt")
 let taskAttributes = RichTextCodec.baseAttributes(for: .task)
-check(taskAttributes[.foregroundColor] as? NSColor === Theme.Editor.ink
+check(taskAttributes[.foregroundColor] as? NSColor === NXEditor.ink
     && RichTextCodec.baseAttributes(for: .task)[.foregroundColor] as? NSColor === taskAttributes[.foregroundColor] as? NSColor
-    && RichTextCodec.baseAttributes(for: .quote)[.foregroundColor] as? NSColor === Theme.Editor.secondaryInk
-    && RichTextCodec.baseAttributes(for: .paragraph)[.foregroundColor] as? NSColor === Theme.Editor.secondaryInk
-    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === Theme.Editor.strikeInk
-    && Theme.Editor.link === Theme.Editor.accentViolet,
+    && RichTextCodec.baseAttributes(for: .quote)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
+    && RichTextCodec.baseAttributes(for: .paragraph)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
+    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === NXEditor.strikeInk
+    && NXEditor.link === NXEditor.accentViolet,
     "Editor colours are shared ink and accent tokens, so content signatures stay equal")
 let closingTitle = RichTextCodec.restylingCompletion(of: RichTextCodec.decode(nil, plainText: "Closing", kind: .task), kind: .task,
-                                                     struck: true, strikeColor: Theme.Editor.accentBlue, dimsCompleted: false)
-check(closingTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === Theme.Editor.ink
-    && closingTitle.attribute(.strikethroughColor, at: 0, effectiveRange: nil) as? NSColor === Theme.Editor.accentBlue
+                                                     struck: true, strikeColor: NXEditor.accentBlue, dimsCompleted: false)
+check(closingTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink
+    && closingTitle.attribute(.strikethroughColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.accentBlue
     && closingTitle.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) != nil,
     "A task struck during its dwell keeps its ink under the accent strike")
 check(BlockTextView.ContentSignature(attributedText: closingTitle, kind: .task, isCompleted: false, struck: true,
-                                     strikeColor: Theme.Editor.accentBlue, dimsStruck: false).overridesCompletion
+                                     strikeColor: NXEditor.accentBlue, dimsStruck: false).overridesCompletion
     && !BlockTextView.ContentSignature(attributedText: closingTitle, kind: .task, isCompleted: false, dimsStruck: false).overridesCompletion,
     "Keeping the ink only matters while the strike shows")
 let styledHeading = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Title", kind: .heading1))
@@ -561,7 +557,7 @@ legacyHeading.addAttribute(.font, value: NSFontManager.shared.convert(legacyBold
 let legacyArchive = legacyHeading.rtf(from: NSRange(location: 0, length: legacyHeading.length),
     documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
 let legacyDecoded = RichTextCodec.decode(legacyArchive, plainText: "Old title", kind: .heading1)
-check(legacyDecoded.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == Theme.Editor.nsFont(for: .heading1),
+check(legacyDecoded.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == NXEditor.nsFont(for: .heading1),
     "An older heading's own bold reads as the heading")
 check(fontTraits(legacyDecoded, at: 4).contains(.italicFontMask), "Italic in an older heading keeps its italic")
 check(RichTextCodec.decode(RichTextCodec.encode(legacyDecoded, kind: .heading1), plainText: "Old title", kind: .heading1).isEqual(to: legacyDecoded),

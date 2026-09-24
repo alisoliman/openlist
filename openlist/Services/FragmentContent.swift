@@ -158,8 +158,8 @@ enum FragmentContent {
         let text = NSMutableAttributedString(string: block.text, attributes: RichTextCodec.baseAttributes(for: .paragraph))
         for style in block.styles {
             let range = NSRange(location: style.location, length: style.length)
-            var font = style.code ? NSFont.monospacedSystemFont(ofSize: Theme.Editor.codePointSize, weight: .regular)
-                : Theme.Editor.nsFont(for: .paragraph)
+            var font = style.code ? NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: .regular)
+                : NXEditor.nsFont(for: .paragraph)
             if style.bold { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
             if style.italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
             text.addAttribute(.font, value: font, range: range)

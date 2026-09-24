@@ -143,10 +143,10 @@ extension NextAccent {
     /// where `NSColor(style.accent)` would restyle the text on every update.
     var editorColor: NSColor {
         switch self {
-        case .violet: Theme.Editor.accentViolet
-        case .blue: Theme.Editor.accentBlue
-        case .green: Theme.Editor.accentGreen
-        case .orange: Theme.Editor.accentOrange
+        case .violet: NXEditor.accentViolet
+        case .blue: NXEditor.accentBlue
+        case .green: NXEditor.accentGreen
+        case .orange: NXEditor.accentOrange
         }
     }
 }

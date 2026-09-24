@@ -27,7 +27,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/restore-link
     openlist/Services/BackupSnapshotReader.swift openlist/Services/LibraryRestoreStorage.swift \
     openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift \
     openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudError.swift \
-    openlist/Services/RichTextCodec.swift openlist/Design/Theme.swift Tools/LocalLinkChecks/Restore/main.swift
+    openlist/Services/RichTextCodec.swift openlist/Next/NextEditorTypography.swift Tools/LocalLinkChecks/Restore/main.swift
 for phase in prepare restore return different; do
     "$OUT/restore-link-checks" "$OUT/SelectedLibrary" "$phase"
 done

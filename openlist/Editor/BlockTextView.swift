@@ -84,9 +84,9 @@ struct BlockTextView: NSViewRepresentable {
     /// Whether the strike also fades the text to the completed ink. A task
     /// struck during its completion dwell keeps its ink, as the design's does.
     var dimsStruck = true
-    /// Space above and below the text. The legacy document pads a line to
-    /// its gutter; a renderer matching Next's row titles passes 0.
-    var verticalInset: CGFloat = Theme.Editor.textVerticalInset
+    /// Space above and below the text: the list document passes its kind's
+    /// line-box inset, `NXEditor.lineBoxInset(for:)`.
+    var verticalInset: CGFloat = 0
     let attributedText: NSAttributedString
     var placeholder: String = ""
     var isFocused: Bool
@@ -144,7 +144,7 @@ struct BlockTextView: NSViewRepresentable {
         view.isContinuousSpellCheckingEnabled = false
         view.usesFindBar = false
         let linkAttributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: Theme.Editor.link,
+            .foregroundColor: NXEditor.link,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
             .cursor: NSCursor.pointingHand,
         ]
@@ -663,7 +663,7 @@ final class BlockNSTextView: NSTextView {
 
         // Size from the same TextKit metrics that place the glyphs. The font's
         // bounding box includes unrelated glyph extents and is not a line box.
-        let minimum = layout.defaultLineHeight(for: Theme.Editor.nsFont(for: blockKind))
+        let minimum = layout.defaultLineHeight(for: NXEditor.nsFont(for: blockKind))
         let textHeight = max(used.maxY, layout.extraLineFragmentRect.maxY, minimum)
         let height = ceil(textHeight) + textContainerInset.height * 2
         cachedHeight = (width, height)
@@ -688,7 +688,7 @@ final class BlockNSTextView: NSTextView {
         guard (textStorage?.length ?? 0) == 0, !placeholderString.isEmpty else { return }
 
         var merged = RichTextCodec.baseAttributes(for: blockKind)
-        merged[.foregroundColor] = Theme.Editor.placeholderInk
+        merged[.foregroundColor] = NXEditor.placeholderInk
 
         NSAttributedString(string: placeholderString, attributes: merged)
             .draw(in: NSRect(origin: textContainerOrigin, size: NSSize(
@@ -719,7 +719,7 @@ final class BlockNSTextView: NSTextView {
             }
             rect.size.width = 1
         } else {
-            rect = CGRect(x: 0, y: 0, width: 1, height: Theme.Editor.nsFont(for: blockKind).boundingRectForFont.height)
+            rect = CGRect(x: 0, y: 0, width: 1, height: NXEditor.nsFont(for: blockKind).boundingRectForFont.height)
         }
         rect.origin.x += textContainerOrigin.x
         rect.origin.y += textContainerOrigin.y

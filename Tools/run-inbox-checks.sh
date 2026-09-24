@@ -13,7 +13,7 @@ done
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library -o "$OUT/legacy-inbox" \
   "${LEGACY_MODELS[@]}" Tools/InboxChecks/LegacyBlock.swift Tools/InboxChecks/LegacyTaskList.swift Tools/InboxChecks/LegacyHierarchyCompatibility.swift Tools/InboxChecks/LegacyLibraryBackup.swift Tools/InboxChecks/LegacyLibraryBackupRecords.swift Shared/ListAccent.swift Tools/InboxChecks/ReviewSession.swift openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift Tools/InboxChecks/LegacyFixture.swift
 xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inbox-checks" \
-  openlist/Model/*.swift Tools/InboxChecks/LegacyInboxMembership.swift Shared/ListAccent.swift Tools/InboxChecks/ReviewSession.swift Shared/WidgetSnapshot.swift Shared/AppGroup.swift openlist/Design/Theme.swift \
+  openlist/Model/*.swift Tools/InboxChecks/LegacyInboxMembership.swift Shared/ListAccent.swift Tools/InboxChecks/ReviewSession.swift Shared/WidgetSnapshot.swift Shared/AppGroup.swift openlist/Next/NextEditorTypography.swift \
   openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \
   openlist/Services/Store+BulkActions.swift openlist/Services/Store+Tasks.swift openlist/Services/Store+LabelMerge.swift openlist/Services/Store+Calendar.swift \
   openlist/Services/Store+CompletionUndo.swift openlist/Services/Store+Capture.swift \
@@ -27,7 +27,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inbox-checks
 "$OUT/inbox-checks" "$OUT/Legacy.store" failure
 "$OUT/inbox-checks" "$OUT/Legacy.store" verify-failure
 xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inbox-restore-checks" \
-  openlist/Model/*.swift Tools/InboxChecks/LegacyInboxMembership.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift openlist/Design/Theme.swift \
+  openlist/Model/*.swift Tools/InboxChecks/LegacyInboxMembership.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift openlist/Next/NextEditorTypography.swift \
   openlist/Services/LibraryBackupPackage.swift openlist/Services/BackupStagedStore.swift openlist/Services/BackupSnapshotReader.swift openlist/Services/LibraryRestoreStorage.swift \
   openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudError.swift \
   Tools/InboxChecks/RestoreChecks.swift

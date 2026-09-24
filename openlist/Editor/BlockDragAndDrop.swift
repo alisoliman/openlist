@@ -22,14 +22,14 @@ struct BlockDragAndDrop: ViewModifier {
     /// Reordering is only offered while the stored order is what's on screen —
     /// a sorted view would put the block somewhere other than where it landed.
     var isEnabled: Bool = true
-    /// Whether the middle of the row nests a drop inside it. `nil` offers it
-    /// on every row that can hold children.
-    var holdsDrops: Bool?
-    /// The indicators' colour, indent step, inset past the indent and corner.
-    var accent: Color = Theme.accent
-    var indentStep: CGFloat = Theme.Spacing.indentStep
-    var indicatorInset: CGFloat = 20
-    var radius: CGFloat = Theme.Radius.row
+    /// Whether the middle of the row nests a drop inside it.
+    let holdsDrops: Bool
+    /// The indicators' colour, the document's indent step, their inset past
+    /// the indent, and their corner.
+    let accent: Color
+    var indentStep: CGFloat = 26
+    let indicatorInset: CGFloat
+    let radius: CGFloat
     let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
 
@@ -53,7 +53,7 @@ struct BlockDragAndDrop: ViewModifier {
                     of: [UTType(exportedAs: DragPayload.blockTypeIdentifier), .text, .plainText, .utf8PlainText],
                     delegate: RowDropDelegate(
                         row: row,
-                        holdsDrops: holdsDrops ?? row.block.kind.acceptsChildren,
+                        holdsDrops: holdsDrops,
                         rowHeight: rowHeight,
                         indicator: $indicator,
                         sessionID: env.navigator.blockDragSessionID,
