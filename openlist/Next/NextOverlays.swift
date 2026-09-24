@@ -556,7 +556,7 @@ private struct NXSearchRow: View {
     var body: some View {
         HStack(spacing: 11) {
             Group {
-                if let emoji = hit.emoji { Text(emoji) }
+                if let emoji = hit.emoji { Text(emoji).font(.system(size: NXListGlyph.emojiPointSize(14))) }
                 else { Image(systemName: hit.symbol ?? "square.stack") }
             }
             .font(.system(size: 14))

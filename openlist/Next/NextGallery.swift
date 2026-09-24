@@ -326,7 +326,9 @@ private struct NXTrashRow: View {
         if NXListGlyph.isSymbolName(icon) {
             return Text("From \(Image(systemName: icon)) \(metadata.formerLocation) · \(deleted)")
         }
-        return Text(verbatim: "From \(icon) \(metadata.formerLocation) · \(deleted)")
+        // The emoji at the size the design's 11px line draws it, not Core Text's larger one.
+        let glyph = Text(verbatim: icon).font(.system(size: NXListGlyph.emojiPointSize(11)))
+        return Text("From \(glyph) \(metadata.formerLocation) · \(deleted)")
     }
 }
 

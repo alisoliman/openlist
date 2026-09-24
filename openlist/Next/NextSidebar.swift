@@ -122,8 +122,9 @@ struct NextSidebar: View {
         let count = count(for: item.route)
         return NXSidebarRow(on: on, pulsing: pulsing, height: 29, title: item.label,
                             value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
+            // Sized to the design's 16px Material glyphs, which draw about 12pt wide.
             Image(systemName: on ? item.filledIcon : item.icon)
-                .font(.system(size: 13.5, weight: .medium))
+                .font(.system(size: 12, weight: on ? .medium : .regular))
                 .foregroundStyle(on ? (item.color ?? style.accent) : NX.ink(0.55))
                 .frame(width: 16)
             Text(item.label)
