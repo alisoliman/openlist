@@ -169,6 +169,8 @@ private struct NXOverrideEditor: View {
                     }
                     .frame(width: 260)
                     .padding(12)
+                    .presentationBackground(NX.card)
+                    .tint(env.workbench.style.accent)
                 }
             }
             NXWindowsEditor(title: "Available", windows: $draft.windows)

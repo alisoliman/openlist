@@ -250,7 +250,7 @@ struct RecurrencePicker: View {
             rule.endDate = nil
             rule.occurrenceLimit = nil
         case .onDate:
-            rule.endDate = Calendar.current.startOfDay(for: endDate).addingTimeInterval(86_399)
+            rule.endDate = Recurrence.endDate(onDay: endDate, calendar: env.settings.calendar)
             rule.occurrenceLimit = nil
         case .afterCount:
             rule.endDate = nil

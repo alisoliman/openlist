@@ -224,6 +224,28 @@ do {
 }
 
 do {
+    // Ends › On date keeps the chosen day's occurrences and none after, on a
+    // daylight-saving day's 23 or 25 hours too.
+    var amsterdam = Calendar(identifier: .gregorian)
+    amsterdam.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+    func local(_ m: Int, _ d: Int, _ h: Int = 0, _ minute: Int = 0) -> Date {
+        amsterdam.date(from: DateComponents(year: 2026, month: m, day: d, hour: h, minute: minute))!
+    }
+    for (m, d) in [(3, 29), (10, 25)] {
+        let end = Recurrence.endDate(onDay: local(m, d, 12), calendar: amsterdam)
+        check(end == local(m, d + 1).addingTimeInterval(-1), "end date is the last second of \(m)/\(d)", "\(end)")
+        var rule = Recurrence(frequency: .daily, interval: 1)
+        rule.endDate = end
+        let onEndDay = RecurrenceEngine.nextDate(rule: rule, dueDate: local(m, d - 1), completedAt: local(m, d - 1, 1), calendar: amsterdam)
+        check(onEndDay == local(m, d), "the occurrence on \(m)/\(d), the end day, is kept", "\(String(describing: onEndDay))")
+        let lateOnEndDay = RecurrenceEngine.nextDate(rule: rule, dueDate: local(m, d - 1, 23, 30), completedAt: local(m, d - 1, 23, 40), calendar: amsterdam)
+        check(lateOnEndDay == local(m, d, 23, 30), "a 23:30 occurrence on \(m)/\(d), the end day, is kept", "\(String(describing: lateOnEndDay))")
+        let afterEndDay = RecurrenceEngine.nextDate(rule: rule, dueDate: local(m, d), completedAt: local(m, d, 1), calendar: amsterdam)
+        check(afterEndDay == nil, "no occurrence the day after \(m)/\(d), the end day", "\(String(describing: afterEndDay))")
+    }
+}
+
+do {
     var rule = Recurrence(frequency: .daily, interval: 1)
     rule.occurrenceLimit = 3
     rule.completedOccurrences = 3

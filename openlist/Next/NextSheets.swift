@@ -34,9 +34,11 @@ struct NXLinkSheet: View {
                 TextField("Link URL", text: $draft, prompt: Text(verbatim: "https://example.com"))
             }
             HStack(spacing: 8) {
+                // Grey, as Remove reminder: it takes the link off the text,
+                // which ⌘Z puts back, and red is for deleting things.
                 if !prompt.currentURL.isEmpty {
-                    Button("Remove link", role: .destructive) { answer(.remove) }
-                        .buttonStyle(NXPanelButtonStyle(kind: .destructive))
+                    Button("Remove link") { answer(.remove) }
+                        .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }

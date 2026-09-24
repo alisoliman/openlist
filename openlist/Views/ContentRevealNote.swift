@@ -26,11 +26,7 @@ struct ContentRevealNote: View {
         // A short note shows whole, line breaks and all.
         let isWhole = snippet == text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         VStack(alignment: .leading, spacing: 6) {
-            Text("Matched note")
-                .font(.system(size: 10.5, weight: .semibold))
-                .kerning(0.735)
-                .textCase(.uppercase)
-                .foregroundStyle(NX.ink(0.36))
+            NXCapsTitle(text: "Matched note")
                 .accessibilityAddTraits(.isHeader)
             note(highlighted(isWhole ? text : snippet))
             if !isWhole {

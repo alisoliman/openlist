@@ -214,7 +214,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   whether and when the task reminds you ("Reminds you at the due time, today 18:00",
   "Off while the task is done"). A timed task with no reminder of its own, which reminds
   you at its due time, says so: the pill reads "At the due time", the header adds the
-  time beside a grey bell, and the tab's At the due time is lit. Done first sets a due
+  time beside a grey bell, and the tab's At the due time is lit, so choosing it saves
+  nothing. Done first sets a due
   time still being typed as Custom…, and Set reminder a reminder time. "Remind me at" is a draft only Set reminder
   sets: Done keeps the reminder there was, over a day or time picked there, or still being
   typed. The label picker (⇧⌘L) lists the name typed first, then labels starting with it,
@@ -400,7 +401,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Undo. Clear all activity history empties Changes but keeps the undo stack; its tray says
   "Cleared all activity history", with no Undo. Their buttons, and the inline hours
   editor's, are `NXPanelButtonStyle`. Format ▸ Add Link… (⌘L) asks for its URL in a Next
-  sheet too (`NXLinkSheet`; Return applies, Esc cancels), and Trash's hold-to-erase asks
+  sheet too (`NXLinkSheet`; Return applies, Esc cancels, and Remove link is grey, as Remove
+  reminder is), and Trash's hold-to-erase asks
   VoiceOver, which can't hold, in the confirmation sheet. Deviation: the only system alerts
   left are the window's shown when the library can't open, which has no shell, tray or
   notices; their buttons keep the system's Title Case, where that window's own buttons are

@@ -246,4 +246,28 @@ check(plainTitles.allSatisfy { status in
 check(ReminderStatus.failed("x").title == "The reminder couldn’t be scheduled"
       && ReminderStatus.permissionNeeded.title == "Notifications aren’t allowed yet",
       "A status that needs the user reads whole beside a task's title in Settings")
+// "1 day before" is a calendar day, at the due time's clock across a
+// daylight-saving change, and minutes are elapsed; moving the due date
+// carries a reminder at the same distance.
+do {
+    var amsterdam = Calendar(identifier: .gregorian)
+    amsterdam.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+    func local(_ m: Int, _ d: Int, _ h: Int, _ minute: Int = 0) -> Date {
+        amsterdam.date(from: DateComponents(year: 2026, month: m, day: d, hour: h, minute: minute))!
+    }
+    let springDue = local(3, 29, 9), fallDue = local(10, 25, 9)
+    check(ReminderOffset(days: -1).date(from: springDue, calendar: amsterdam) == local(3, 28, 9)
+          && ReminderOffset(days: -1).date(from: fallDue, calendar: amsterdam) == local(10, 24, 9),
+          "A day before a daylight-saving day's due time keeps its clock time")
+    check(ReminderOffset(minutes: -60).date(from: local(3, 29, 3, 30), calendar: amsterdam) == local(3, 29, 1, 30)
+          && ReminderOffset(minutes: -10).date(from: springDue, calendar: amsterdam) == local(3, 29, 8, 50),
+          "Minutes before are elapsed time, across the skipped hour too")
+    let dayBefore = ReminderOffset(from: springDue, to: local(3, 28, 9), calendar: amsterdam)
+    check(dayBefore == ReminderOffset(days: -1) && dayBefore.date(from: local(4, 5, 9), calendar: amsterdam) == local(4, 4, 9),
+          "A reminder a day before stays a day before when the due date moves off a daylight-saving day")
+    let early = ReminderOffset(from: local(3, 20, 9), to: local(3, 19, 8, 45), calendar: amsterdam)
+    check(early.date(from: fallDue, calendar: amsterdam) == local(10, 24, 8, 45)
+          && early.date(from: local(3, 20, 9), calendar: amsterdam) == local(3, 19, 8, 45),
+          "A day and 15 minutes before moves as it reads, and back")
+}
 print("\(checks) reminder recovery checks passed")

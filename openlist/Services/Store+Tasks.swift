@@ -169,7 +169,9 @@ extension Store {
         save()
     }
 
-    /// Moves a reminder by the same amount the due date moved.
+    /// Moves a reminder with the due date, keeping it as far from it: the
+    /// same calendar days and time, so "1 day before" keeps its clock time
+    /// across a daylight-saving change.
     ///
     /// A reminder is meaningful relative to its occurrence ("15 minutes
     /// before"), so rescheduling the task has to carry it along.
@@ -179,7 +181,8 @@ extension Store {
             let previousDue,
             let newDue = block.dueDate
         else { return }
-        block.reminderAt = newDue.addingTimeInterval(reminder.timeIntervalSince(previousDue))
+        let calendar = Calendar.current
+        block.reminderAt = ReminderOffset(from: previousDue, to: reminder, calendar: calendar).date(from: newDue, calendar: calendar)
     }
 
     /// Kept as a mutation callsite marker. OS state only follows committed

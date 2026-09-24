@@ -13,6 +13,34 @@ nonisolated struct ReminderIntent: Codable, Equatable, Sendable, Identifiable {
     func isEligible(at now: Date) -> Bool { inactiveReason == nil && date > now }
 }
 
+/// How far a reminder is from its task's due time: whole days on the
+/// calendar, so "1 day before" keeps the clock time across a daylight-saving
+/// change, then elapsed seconds, as "10 minutes before" counts them.
+nonisolated struct ReminderOffset: Equatable, Sendable {
+    var days = 0
+    var seconds: TimeInterval = 0
+
+    init(days: Int = 0, minutes: Int = 0) {
+        self.days = days
+        seconds = TimeInterval(minutes * 60)
+    }
+
+    /// The offset of `reminder` from `due`.
+    init(from due: Date, to reminder: Date, calendar: Calendar) {
+        days = calendar.dateComponents([.day], from: due, to: reminder).day ?? 0
+        seconds = reminder.timeIntervalSince(Self.moving(due, days: days, calendar: calendar))
+    }
+
+    /// The reminder this far from `due`.
+    func date(from due: Date, calendar: Calendar) -> Date {
+        Self.moving(due, days: days, calendar: calendar).addingTimeInterval(seconds)
+    }
+
+    private static func moving(_ date: Date, days: Int, calendar: Calendar) -> Date {
+        days == 0 ? date : calendar.date(byAdding: .day, value: days, to: date) ?? date.addingTimeInterval(TimeInterval(days) * 86_400)
+    }
+}
+
 nonisolated enum ReminderAuthorization: Equatable, Sendable {
     case unknown, notDetermined, denied, authorized, unavailable
 

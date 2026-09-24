@@ -1257,7 +1257,7 @@ private struct NXSlashCard: View {
 
     /// The card's height for `rows` rows before it has been laid out.
     private static func estimatedHeight(rows: Int) -> CGFloat {
-        10 + 25 + CGFloat(rows) * 33
+        10 + 23 + CGFloat(rows) * 33
     }
 
     private func card(options: [OutlineSlashOption], selected: Int, above: Bool) -> some View {
@@ -1281,6 +1281,8 @@ private struct NXSlashCard: View {
             .kerning(0.8)
             .textCase(.uppercase)
             .foregroundStyle(NX.ink(0.36))
+            // The design's line-height 1, inside 7/9/6 padding: 23pt.
+            .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
             .padding(.top, 7)
             .padding(.horizontal, 9)
             .padding(.bottom, 6)

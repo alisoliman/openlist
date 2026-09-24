@@ -173,11 +173,12 @@ struct ShortcutsSheet: View {
                                         .font(.system(size: 12.5))
                                         .foregroundStyle(NX.ink(0.66))
                                     Spacer(minLength: 8)
-                                    // The design's key hints: monospaced, on a faint key cap.
+                                    // The design's key hints: monospaced, on a faint key cap,
+                                    // line-height 1 inside 2/5 padding.
                                     NXKey(shortcut.keys)
                                         .foregroundStyle(NX.ink)
                                         .padding(.horizontal, 5)
-                                        .padding(.vertical, 2)
+                                        .padding(.vertical, 2 + (10 - NX.lineHeight(10)) / 2)
                                         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                                 }
                                 .padding(.vertical, 2)

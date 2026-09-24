@@ -20,7 +20,7 @@ struct NXNotificationSettings: View {
                         footer: "Saved reminder times are kept even when scheduling fails. Expired reminders are never replayed. macOS acceptance does not guarantee visible presentation through Focus or system notification settings.") {
             NXSettingRow(label: "Notifications", hint: recovery.isSimulated ? "Simulated authorization" : recovery.authorization.title) {
                 if recovery.authorization == .denied {
-                    Button("Open Notification Settings…", action: openNotificationSettings)
+                    Button("Open notification settings…", action: openNotificationSettings)
                 } else if recovery.authorization == .notDetermined {
                     Button("Allow notifications") { Task { _ = await recovery.requestPermission() } }
                         .disabled(recovery.isRequestingAuthorization)

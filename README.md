@@ -633,7 +633,7 @@ status is rebuilt from the saved library and OS inventory after launch; it is no
 synced as a task fact.
 
 Task details and Settings → Notifications show permission problems and scheduling errors.
-Use **Allow notifications** or **Open Notification Settings** for permission, and
+Use **Allow notifications** or **Open notification settings** for permission, and
 **Retry reminder** / **Retry future reminders** for eligible future times. Recovery
 never requests permission automatically and never replays expired reminders.
 Expired intent remains visible. A previously delivered expired alert can remain in
