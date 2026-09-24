@@ -198,7 +198,7 @@ final class WidgetSnapshotPublisher {
         let sidebar = hierarchy.sidebarOrder(lists, sections: store.allSections())
         snapshot.lists = sidebar.filter { !$0.isSystemInbox }.map { list in
             let owned = tasksByList[list.id] ?? []
-            let open = openTasks(in: list, tasks: owned, above: above, limit: 7, orders: &orders)
+            let open = openTasks(in: list, tasks: owned, above: above, limit: WidgetSnapshot.ListSummary.openRows, orders: &orders)
             let done = owned.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
             return WidgetSnapshot.ListSummary(
                 id: list.id,

@@ -522,6 +522,11 @@ struct AgendaModel: Equatable {
         var isMeeting: Bool
         var isDone: Bool
         var accent: String?
+
+        /// Planned blocks draw over the meetings they overlap, as the design
+        /// draws a day's meetings first; the now line (3) over both. A day's
+        /// items stay in start order, the order they're read in.
+        var layer: Double { isMeeting ? 0 : 1 }
     }
 
     struct Day: Equatable, Identifiable {

@@ -36,7 +36,7 @@ let publisher = WidgetSnapshotPublisher(store: store)
 func rows() -> [String] { publisher.buildSnapshot().lists.first { $0.id == list.id }?.openItems.map(\.title) ?? [] }
 func listOrder() -> [String] {
     ListTasksProjection(blocks: store.blocks(inList: list.id), listID: list.id, sorting: list.sorting, showsCompleted: false)
-        .tasks.prefix(7).map(\.displayTitle)
+        .tasks.prefix(WidgetSnapshot.ListSummary.openRows).map(\.displayTitle)
 }
 func after(_ message: String, _ expected: [String], _ change: () -> Void) {
     change()
@@ -152,5 +152,11 @@ check(titles { $0 == tomorrow } == ["Next E", "Next D"] + tieOrder,
       "and tomorrow's, for entries after midnight, in capture order and then one fixed order")
 check((0..<5).allSatisfy { _ in publisher.buildSnapshot().todayItems == crowdedToday }, "Each rebuild gives the same rows")
 check(crowdedToday.map(\.title) == lateTitles + titles { $0 == today } + titles { $0 == tomorrow }, "Overdue, then today, then tomorrow")
+// A long list carries spare open rows past the 6 large List draws, for ticks
+// queued in the widget while the app is quit.
+let behindRows = publisher.buildSnapshot().lists.first { $0.id == behind.id }
+check(behindRows?.openCount == 52
+      && behindRows?.openItems.map(\.title) == (0..<WidgetSnapshot.ListSummary.openRows).map { "Late \($0)" },
+      "A long list carries its first \(WidgetSnapshot.ListSummary.openRows) open rows")
 
 print("Passed \(checks) widget publisher checks")

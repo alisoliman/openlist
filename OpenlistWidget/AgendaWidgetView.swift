@@ -134,5 +134,6 @@ struct AgendaWidgetView: View {
         .clipShape(shape)
         .padding(.horizontal, isWeek ? 2 : 5)
         .offset(y: CGFloat(frame.top))
+        .zIndex(item.layer)
     }
 }
