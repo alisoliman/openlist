@@ -1156,7 +1156,7 @@ final class Workbench {
     /// Writes a restore whose row has flown out. Written first, as a trash
     /// lands: the row leaves Trash as it stops flying, and one that stays
     /// comes back. One the Store couldn't write leaves the log and the undo
-    /// stack, and the tray says why.
+    /// stack, and the shell's Trash notice says why, as for a trash.
     private func land(_ restore: RestoreBatch) {
         restore.task?.cancel()
         restore.task = nil
@@ -1167,7 +1167,13 @@ final class Workbench {
             log.removeAll { $0.batch == restore.mark.batch }
             undoManager?.removeAllActions(withTarget: restore.mark)
             trashUndos.remove(restore.mark)
-            showTray(store.trashError ?? "This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
+            // The notice says why; the tray does only when the Store gave no
+            // reason, and one still saying it's restored goes, as for a trash.
+            if store.trashError == nil {
+                showTray("This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
+            } else if tray?.text == restore.mark.label {
+                dismissTray()
+            }
             undoRevision += 1
             return
         }

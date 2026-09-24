@@ -142,6 +142,7 @@ try store.persistChanges()
 check(try snapshot().total == 1, "actual ordinary complete/reopen/complete is deduplicated")
 let savedFirst = try snapshot().days.flatMap(\.completions).first!
 check(savedFirst.title == "Original title" && savedFirst.listTitle == "Completion-time list", "day details preserve original task and list snapshots")
+check(savedFirst.listID == list.id && savedFirst.listIcon == list.icon, "day details keep the completion's list and its icon for a task since trashed or erased")
 
 let parent = store.appendBlock(kind: .task, text: "Recurring parent", to: .init(listID: list.id))
 store.setDueDate(first, for: parent)

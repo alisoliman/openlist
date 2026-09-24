@@ -109,11 +109,10 @@ final class LibraryMaintenance {
         }
     }
 
-    func showSnapshots() {
-        do {
-            try FileManager.default.createDirectory(at: snapshots.directory, withIntermediateDirectories: true)
-            NSWorkspace.shared.open(snapshots.directory)
-        } catch { self.error = error.localizedDescription }
+    /// Throws when the folder can't be made, for the row that asked to say.
+    func showSnapshots() throws {
+        try FileManager.default.createDirectory(at: snapshots.directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(snapshots.directory)
     }
 
     func chooseBackup() async {

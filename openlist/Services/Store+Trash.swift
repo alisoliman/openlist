@@ -118,6 +118,18 @@ extension Store {
         }
     }
 
+    /// What a Recovered items list says of itself.
+    static let recoveredItemsSummary = "Content restored from Trash after its list, or the task it was under, was gone."
+
+    /// A Recovered items list made before that wording still says each item
+    /// "keeps its former location", which nothing there shows. Only that exact
+    /// text takes the new one; a description edited since is left alone.
+    func rewordRecoveredItemsSummaries() {
+        let former = "Content restored from an unavailable location. Each recovered item keeps its former location."
+        let lists = (try? context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.summary == former }))) ?? []
+        for list in lists { list.summary = Self.recoveredItemsSummary }
+    }
+
     /// A sync batch may deliver a child or its blocks after the owning parent
     /// reached Trash. Persist their bytes and group membership before recovery
     /// or erasure; a failed read/save leaves all source records intact.
@@ -251,7 +263,7 @@ extension Store {
                     let parent = block(id: root.parentID)
                     if owner == nil || (root.parentID != nil && parent?.listID != owner?.id) {
                         let recovery = TaskList(title: "Recovered items", icon: "🛟", accent: .orange)
-                        recovery.summary = "Content restored from an unavailable location. Each recovered item keeps its former location."
+                        recovery.summary = Self.recoveredItemsSummary
                         recovery.isPinned = true
                         recovery.sectionID = defaultSection()?.id
                         recovery.sortIndex = (allLists.map(\.sortIndex).max() ?? 0) + BlockTree.indexStep

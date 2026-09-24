@@ -304,10 +304,12 @@ extension Workbench {
     // through here like the design's pills, each with its tray and Undo.
 
     /// A day picked in the month, a time, or a typed phrase, which may also
-    /// set the repeat. Named for where the task lands, as `schedule` is.
+    /// set the repeat. Named for where the task lands, as `schedule` is, and
+    /// by the rule Changes names the saved change with after a relaunch.
     func setDue(_ id: UUID, date: Date, includesTime: Bool, recurrence: Recurrence? = nil) {
         guard let task = store.block(id: id), task.isTask else { return }
-        var label = "\(describe([task])) → \(NXFormat.dueLabel(date))" + (includesTime ? " \(NXFormat.clock(date))" : "")
+        var label = "\(describe([task])) → "
+            + NXFormat.dueChange(date, includesTime: includesTime, from: task.dueDate, oldIncludesTime: task.includesTime)
         if let recurrence { label += " · \(recurrence.displayText)" }
         edit([task], label: label, icon: "calendar", tone: .accent) { task in
             store.setDueDate(date, includesTime: includesTime, for: task)
@@ -580,7 +582,9 @@ extension Workbench {
         let owner = store.list(id: root.listID)
         let parent = store.block(id: root.parentID)
         guard let owner, root.parentID == nil || parent?.listID == owner.id else {
-            return ("Restored \(title) to Recovered items", nil)
+            // Where it was, which Recovered items itself doesn't show.
+            let from = entry.metadata.map { " — from \($0.formerLocation)" } ?? ""
+            return ("Restored \(title) to Recovered items\(from)", nil)
         }
         let place = owner.isEffectivelyArchived ? "archived list \(owner.displayTitle)" : owner.displayTitle
         return ("Restored \(title) to \(place)", TrayDestination(label: "Open \(owner.displayTitle)", route: route(for: owner)))
@@ -589,7 +593,10 @@ extension Workbench {
     func erase(_ ids: [UUID]) {
         guard !ids.isEmpty else { return }
         guard store.permanentlyEraseTrash(ids: ids) else {
-            showTray(store.trashError ?? "These items could not be erased.", icon: "exclamationmark.triangle", tone: .red)
+            // The shell's Trash notice says why; the tray only when the Store gave no reason.
+            if store.trashError == nil {
+                showTray("These items could not be erased.", icon: "exclamationmark.triangle", tone: .red)
+            }
             return
         }
         forgetErasedTrashes()

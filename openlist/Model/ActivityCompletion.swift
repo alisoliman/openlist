@@ -11,6 +11,10 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
     var date: Date
     var title: String
     var listTitle: String
+    /// The list it was done in, and that list's icon then (empty in older
+    /// history), which still show once the task is trashed or erased.
+    var listID: UUID?
+    var listIcon = ""
     var hasConflictingDetails = false
 
     @MainActor init(event: ActivityEvent, matchingRecord: CompletionRecord?) {
@@ -32,6 +36,8 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
         date = change?.completedAt ?? record?.completedAt ?? event.timestamp
         title = event.title
         listTitle = event.listTitle
+        listID = event.listID
+        listIcon = event.listIcon
     }
 
     init(id: UUID = UUID(), taskID: UUID?, completionID: UUID? = nil,

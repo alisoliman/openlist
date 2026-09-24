@@ -13,8 +13,10 @@ merge import.
 
 **Back up library** under Settings › Library also takes a snapshot package each
 day by default, keeping the newest 14 in Openlist's Application Support
-`Backups` folder, and offers **Back up now…** and **Show Snapshots in Finder**.
-Only packages named like a snapshot are listed or pruned.
+`Backups` folder, and offers **Show Snapshots in Finder**. Its hint is about
+the snapshots only (how many it keeps, or why the last one failed); a backup
+made by hand, a restore and what they report stay under Settings › Data. Only
+packages named like a snapshot are listed or pruned.
 
 ## Snapshot boundary
 

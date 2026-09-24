@@ -255,6 +255,7 @@ final class Store {
             }
             try reconcileSystemRecords()
             guard reconcileRetainedListDescendants() else { throw TrashError.invalidRetention }
+            rewordRecoveredItemsSummaries()
             save()
         } catch {
             persistenceError = "The Inbox could not be opened. \(error.localizedDescription)"

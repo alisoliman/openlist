@@ -650,8 +650,9 @@ reminders. Only eligible future reminders resume after restoration.
 An independently deleted child stays a separate Trash item when its parent or
 list is later deleted. Restoring the parent restores only the content deleted
 with it. If the original parent or list is unavailable, Restore explicitly
-creates a pinned **Recovered items** list and keeps a separate provenance note;
-it does not rewrite the original notes. Archived lists keep their archive state.
+creates a pinned **Recovered items** list and says where the item came from as
+it restores it; that provenance is stored separately and never rewrites the
+original notes. Archived lists keep their archive state.
 
 **Hold to erase** and **Hold to empty Trash** require confirmation and remove only
 files with no remaining live or retained references. These actions cannot be
