@@ -31,7 +31,8 @@ struct BlockDragAndDrop: ViewModifier {
     let indicatorInset: CGFloat
     let radius: CGFloat
     let onMove: ([UUID], DropPosition) -> Void
-    let onDropText: (String) -> Void
+    /// Text dragged in from another app, with where its indicator showed it.
+    let onDropText: (String, DropPosition) -> Void
 
     @Environment(AppEnvironment.self) private var env
 
@@ -97,7 +98,7 @@ private struct RowDropDelegate: DropDelegate {
     @Binding var indicator: DropPosition?
     let sessionID: UUID
     let onMove: ([UUID], DropPosition) -> Void
-    let onDropText: (String) -> Void
+    let onDropText: (String, DropPosition) -> Void
     let onInvalid: () -> Void
     let onUnavailable: () -> Void
 
@@ -151,7 +152,7 @@ private struct RowDropDelegate: DropDelegate {
                 guard targetIsAvailable else { onUnavailable(); return }
                 switch DragPayload.blockDrop(string, session: sessionID) {
                 case .blocks(let ids): onMove(ids, target)
-                case .text(let text): onDropText(text)
+                case .text(let text): onDropText(text, target)
                 case .invalid: onInvalid()
                 }
             }

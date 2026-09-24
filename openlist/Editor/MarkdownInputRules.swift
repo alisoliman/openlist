@@ -169,6 +169,9 @@ enum MarkdownInputRules {
         var text: String
         var depth: Int
         var isCompleted: Bool
+        /// The line's note, as Openlist content carries one. Markdown writes
+        /// a task's note as `> ` lines under it instead.
+        var note = ""
     }
 
     /// Pasted text as a list document's lines, which hold one line each, as
@@ -212,6 +215,29 @@ enum MarkdownInputRules {
         // A fence left open runs to the end, as Markdown's does.
         if fence != nil { closeFence() }
         return result
+    }
+
+    /// Openlist content as a list document's lines, for Paste and Match
+    /// Style: each line's kind, place, text without its styling, completion
+    /// and note, read from the content itself. Its Markdown is written for
+    /// other apps, escaped, with a task's star, labels and files as text. A
+    /// quote comes in as text, as `> ` makes it, and an image, which has no
+    /// text, stays out. A code line keeps its breaks; the others' text comes
+    /// in on one line, as the design's lines hold it.
+    static func pasteLines(of fragment: DocumentFragment) -> [ParsedLine] {
+        let byID = Dictionary(fragment.blocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let children = Dictionary(grouping: fragment.blocks, by: \.parentID)
+        var stack = fragment.roots.reversed().map { ($0, 0) }
+        var lines: [ParsedLine] = []
+        while let (id, depth) = stack.popLast(), let block = byID[id] {
+            stack += (children[id] ?? []).reversed().map { ($0.id, depth + 1) }
+            guard let kind = BlockKind(rawValue: block.kind), kind != .image else { continue }
+            let text = kind == .code ? block.text : block.text.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+            lines.append(ParsedLine(kind: kind == .quote ? .paragraph : kind, text: text, depth: depth,
+                                    isCompleted: kind == .task && block.isCompleted, note: block.note))
+        }
+        return lines
     }
 
     /// `source` as Markdown lines, or nil when it doesn't read as them.

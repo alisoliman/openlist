@@ -207,16 +207,15 @@ final class Workbench {
     }
 
     /// Space, or a task's note button: shows or hides its note under it. A
-    /// task with no note starts one instead.
+    /// task with no note starts one instead. As the design's, only the note
+    /// fades in as it shows; the lines below move at once.
     func toggleNote(_ id: UUID) {
         guard let task = store.block(id: id), task.isTask else { return }
         if !openNotes.contains(id), task.note.isEmpty {
             editNote(id)
             return
         }
-        withAnimation(style.ease(180)) {
-            if openNotes.contains(id) { openNotes.remove(id) } else { openNotes.insert(id) }
-        }
+        if openNotes.contains(id) { openNotes.remove(id) } else { openNotes.insert(id) }
     }
 
     /// Opens a task's note for writing in place, as ⇧↩ does from its title.

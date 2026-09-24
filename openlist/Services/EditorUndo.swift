@@ -384,14 +384,15 @@ extension Store {
     /// Registers one inverse for a structural edit with the same window undo
     /// manager used by NSTextView. Native typing undo remains native.
     /// `didRegister` runs once the inverse is on the stack, in the same step.
-    func undoableEditorEdit<T>(in listID: UUID, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false,
-                               didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
-        undoableEditorEdit(in: Set([listID]), name: name, undoManager: undoManager, includingNewLabels: includingNewLabels,
+    /// `name` is read once the edit has run, so it can name what it made.
+    func undoableEditorEdit<T>(in listID: UUID, name: @autoclosure () -> String, undoManager: UndoManager?,
+                               includingNewLabels: Bool = false, didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
+        undoableEditorEdit(in: Set([listID]), name: name(), undoManager: undoManager, includingNewLabels: includingNewLabels,
                            didRegister: didRegister, body)
     }
 
-    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false,
-                               didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
+    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: @autoclosure () -> String, undoManager: UndoManager?,
+                               includingNewLabels: Bool = false, didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
         guard let undoManager, !isRecordingEditorEdit else { return body() }
         let before = EditorSnapshot(store: self, listIDs: listIDs, includingNewLabels: includingNewLabels)
         isRecordingEditorEdit = true
@@ -403,12 +404,13 @@ extension Store {
         editorMediaBackups = [:]
         let changed = before.changedIDs(comparedTo: after)
         guard !changed.blocks.isEmpty || !changed.attachments.isEmpty else { return result }
+        let label = name()
         (NSApp?.keyWindow?.firstResponder as? NSTextView)?.breakUndoCoalescing()
         undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
             guard let undoManager else { return }
-            store.restoreEditorEdit(from: after, to: before, media: media, name: name, undoManager: undoManager)
+            store.restoreEditorEdit(from: after, to: before, media: media, name: label, undoManager: undoManager)
         }
-        undoManager.setActionName(name)
+        undoManager.setActionName(label)
         didRegister?()
         return result
     }

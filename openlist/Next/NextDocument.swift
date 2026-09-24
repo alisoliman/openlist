@@ -89,16 +89,18 @@ private struct NXDocumentLines: View {
                             indicatorInset: 10,
                             radius: 9,
                             onMove: { ids, position in editor.move(ids, relativeTo: row, position: position) },
-                            onDropText: { text in editor.dropText(text, after: row.block) }))
+                            onDropText: { text, position in editor.dropText(text, on: row.block, position: position) }))
                         .id(row.id)
                 }
             }
-            NXDocumentAddRow(text: rows.isEmpty
+            // Showing only tasks, no prefix or "/" turns a line into another
+            // kind, which it wouldn't draw: the add row and hints offer none.
+            NXDocumentAddRow(text: rows.isEmpty && !tasksOnly
                              ? "Start typing — # for a heading, / to turn a line into anything"
                              : "Add to \(list.displayTitle)") {
                 editor.appendTask()
             }
-            NXDocumentHints()
+            NXDocumentHints(tasksOnly: tasksOnly)
         }
         .padding(.top, 12)
         .overlayPreferenceValue(EditorTextBoundsKey.self) { anchors in
@@ -188,13 +190,14 @@ private struct NXDocumentLines: View {
         case let .outdented(ids): return "Outdented \(described(ids))"
         case let .moved(id, up): return "Moved \(quoted(id)) \(up ? "up" : "down")"
         case let .dragged(ids): return "Moved \(described(ids))"
+        case let .pasted(ids): return "Added \(described(ids))"
         }
     }
 
     private static func ids(of edit: OutlineEdit) -> [UUID] {
         switch edit {
         case let .added(id), let .edited(id), let .removedEmptyLine(id), let .deleted(id), let .moved(id, _): [id]
-        case let .indented(ids), let .outdented(ids), let .dragged(ids): ids
+        case let .indented(ids), let .outdented(ids), let .dragged(ids), let .pasted(ids): ids
         }
     }
 
@@ -331,8 +334,9 @@ private struct NXDocumentRow: View {
             if hasCaret {
                 NXDocumentCaret(open: !block.isCollapsed, title: block.displayTitle) {
                     // The line being written is left first, as the design's input blurs.
+                    // The lines show or hide at once; only the chevron turns.
                     NXDocumentEditing.end()
-                    withAnimation(style.ease(180)) { context.editor.actions(for: row).onToggleCollapse() }
+                    context.editor.actions(for: row).onToggleCollapse()
                 }
                 .offset(x: CGFloat(row.depth) * 26 - 10, y: caretTop)
             }
@@ -350,14 +354,15 @@ private struct NXDocumentRow: View {
                 if !Task.isCancelled { hovering = false }
             }
         }
-        // morphIn, when a line turns into another kind.
+        // morphIn, when a line turns into another kind. Both entrances play
+        // at the design's fixed lengths; with Reduce Motion they only fade.
         .opacity(morphing ? 0.3 : 1)
-        .offset(x: morphing ? -6 : 0)
+        .offset(x: morphing && style.slides ? -6 : 0)
         // rowIn, for a new line of any kind. Only here, so a line that turns
         // into another kind while it's still fresh plays only morphIn.
         .opacity(fresh && !entered ? 0 : 1)
-        .offset(y: fresh && !entered ? -8 : 0)
-        .scaleEffect(fresh && !entered ? 0.99 : 1)
+        .offset(y: fresh && !entered && style.slides ? -8 : 0)
+        .scaleEffect(fresh && !entered && style.slides ? 0.99 : 1)
         .onAppear { if fresh { enter() } else { entered = true } }
         .onChange(of: block.kind) { _, _ in morph() }
     }
@@ -378,10 +383,7 @@ private struct NXDocumentRow: View {
         }
     }
 
-    private var animates: Bool { style.motion > 0.4 }
-
     private func morph() {
-        guard animates else { return }
         withTransaction(\.disablesAnimations, true) { morphing = true }
         // Released on the next update, so the two changes don't merge into none.
         Task { @MainActor in
@@ -390,7 +392,6 @@ private struct NXDocumentRow: View {
     }
 
     private func enter() {
-        guard animates else { entered = true; return }
         withAnimation(.timingCurve(0.2, 0.9, 0.2, 1, duration: 0.3)) { entered = true }
     }
 }
@@ -571,7 +572,9 @@ private struct NXDocumentTask: View {
                         NXDocumentNote(task: task, editing: noteEditing)
                             .padding(.top, 3)
                             .padding(.bottom, 4)
-                            .transition(.opacity.animation(.easeOut(duration: 0.18)))
+                            // The design's fadeIn, 180ms ease, as it shows. The
+                            // lines below make room at once, and it goes at once.
+                            .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(180)), removal: .identity))
                     }
                 }
             } buttons: {
@@ -1097,10 +1100,11 @@ private struct NXLineText: View {
             drawsStrike: !block.isTask,
             verticalInset: NXEditor.lineBoxInset(for: block.kind),
             attributedText: context.contents.content(of: block, store: env.store),
-            placeholder: editing ? Self.placeholder(for: block.kind) : "",
+            placeholder: editing ? Self.placeholder(for: block.kind, tasksOnly: context.tasksOnly) : "",
             isFocused: editor.isFocused(id),
             pendingCaret: editor.pendingCaret(for: id),
             focusToken: context.focus.token,
+            convertsPrefixes: !context.tasksOnly,
             isSlashMenuOpen: context.slashBlockID == id,
             caretColor: env.settings.accent.editorColor,
             onSlashCommand: { editor.handleSlashCommand($0) },
@@ -1110,9 +1114,10 @@ private struct NXLineText: View {
     }
 
     /// The design's placeholders, and the editor's for its other kinds.
-    static func placeholder(for kind: BlockKind) -> String {
+    /// Showing only tasks, "/" turns a task into nothing else.
+    static func placeholder(for kind: BlockKind, tasksOnly: Bool = false) -> String {
         switch kind {
-        case .task: "Task — “/” turns it into anything, ⇥ makes it a subtask"
+        case .task: tasksOnly ? "Task — ⇥ makes it a subtask" : "Task — “/” turns it into anything, ⇥ makes it a subtask"
         case .bullet, .numbered: "List item"
         case .heading1: "Heading"
         case .heading2: "Subheading"
@@ -1312,16 +1317,20 @@ private struct NXDocumentAddRow: View {
     }
 }
 
-/// The shortcut strip under the document.
+/// The shortcut strip under the document. Showing only tasks, just the
+/// keys that work there.
 private struct NXDocumentHints: View {
+    var tasksOnly = false
+
     private static let hints: [(key: String, label: String)] = [
         ("#", "Heading"), ("##", "Subheading"), ("-", "Bullet"), ("[ ]", "Task"),
         ("/", "Turn into"), ("⇥", "Subtask"), ("⇧↩", "Note"), ("Space", "Show note"),
     ]
+    private static let taskHints = hints.suffix(3)
 
     var body: some View {
         MetadataFlowLayout(spacing: 14) {
-            ForEach(Self.hints, id: \.key) { hint in
+            ForEach(tasksOnly ? Array(Self.taskHints) : Self.hints, id: \.key) { hint in
                 HStack(spacing: 5) {
                     Text(hint.key)
                         .font(NX.mono(10))

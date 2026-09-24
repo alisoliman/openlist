@@ -335,6 +335,16 @@ for typed in ["1. ", "## "] {
     coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
 }
 check(prefixedKinds == [.heading2] && native.string.isEmpty, "A line typed “1. ” keeps it; “## ” makes a subheading")
+// Showing only tasks, no prefix turns a line into a kind that isn't drawn:
+// "# " stays as typed.
+let convertingParent = coordinator.parent
+coordinator.parent.convertsPrefixes = false
+coordinator.apply(NSAttributedString(), to: native, kind: .task, isCompleted: false)
+native.textStorage?.append(NSAttributedString(string: "# ", attributes: RichTextCodec.baseAttributes(for: .task)))
+native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
+coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
+check(prefixedKinds == [.heading2] && native.string == "# ", "Showing only tasks, “# ” typed in a line stays as typed")
+coordinator.parent = convertingParent
 coordinator.parent.callbacks.onMarkdownPrefix = { _ in }
 
 let inlineRange = NSRange(location: 0, length: 6)
@@ -455,16 +465,18 @@ let fragmentData = try DocumentFragment(roots: [fragmentParent.id], blocks: [fra
                                         labels: []).encoded()
 var pastedLines: [String] = []
 var pastedFragments = 0
+var pastedContent: [[MarkdownInputRules.ParsedLine]] = []
 var pastedPrefixes: [BlockKind] = []
 let pastingCallbacks = coordinator.parent.callbacks
 func paste(_ text: String, into line: String, selecting selection: NSRange, kind: BlockKind = .task,
-           fragment: Data? = nil, matchingStyle: Bool = false, rich: NSAttributedString? = nil) {
+           fragment: Data? = nil, matchingStyle: Bool = false, rich: NSAttributedString? = nil, convertsPrefixes: Bool = true) {
     var callbacks = pastingCallbacks
     callbacks.onPasteMultiline = { pastedLines.append($0); return true }
     callbacks.onPasteFragment = { pastedFragments += 1; return true }
+    callbacks.onPasteLines = { pastedContent.append($0); return true }
     callbacks.onMarkdownPrefix = { pastedPrefixes.append($0) }
     coordinator.parent = BlockTextView(blockID: UUID(), kind: kind, isCompleted: false, attributedText: NSAttributedString(),
-                                       isFocused: false, focusToken: 0, callbacks: callbacks)
+                                       isFocused: false, focusToken: 0, convertsPrefixes: convertsPrefixes, callbacks: callbacks)
     coordinator.apply(RichTextCodec.decode(nil, plainText: line, kind: kind), to: input, kind: kind, isCompleted: false)
     input.setSelectedRange(selection)
     pasteBoard.clearContents()
@@ -491,9 +503,12 @@ check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2"
 paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: fragmentData, matchingStyle: true)
 check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2", "So does Paste and Match Style over a selection")
 paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: fragmentData, matchingStyle: true)
-check(pastedFragments == 2 && pastedLines.last == fragmentMarkdown, "Paste and Match Style reads Openlist content as its lines of text")
+check(pastedFragments == 2 && pastedLines.count == 1 && pastedContent.count == 1
+        && pastedContent[0].map { "\($0.depth) \($0.kind.rawValue) \($0.text)" } == ["0 task Parent", "1 task Child", "1 code let a = 1\n  let b = 2"]
+        && pastedContent[0][1].note == "note",
+    "Paste and Match Style reads Openlist content as its lines, from the content rather than its Markdown")
 paste("\nlet b = 2", into: "let a = 1", selecting: NSRange(location: 9, length: 0), kind: .code)
-check(pastedLines.count == 2 && input.string == "let a = 1\nlet b = 2", "A code line keeps a paste's breaks")
+check(pastedLines.count == 1 && input.string == "let a = 1\nlet b = 2", "A code line keeps a paste's breaks")
 let richLines = NSAttributedString(string: "Bold\nline", attributes: [.font: NSFont.boldSystemFont(ofSize: 13)])
 paste(richLines.string, into: "Plain", selecting: NSRange(location: 0, length: 5), rich: richLines)
 check(input.string == "Bold line" && isBold(input.attributedString(), at: 0), "Styled text pasted in a line keeps its style, its breaks spaces")
@@ -514,20 +529,23 @@ paste("# Packing", into: "Buy ", selecting: NSRange(location: 4, length: 0))
 check(pastedPrefixes.count == 4 && input.string == "Buy # Packing", "A prefix pasted further along the line stays as pasted")
 paste("# x", into: "", selecting: NSRange(location: 0, length: 0), kind: .code)
 check(pastedPrefixes.count == 4 && input.string == "# x", "A code line keeps a pasted prefix")
-// Openlist content's Markdown goes in as lines of their own under Paste and
-// Match Style even as one line, so a copied task stays a task rather than a
-// list item holding "[ ]".
+paste("# Packing", into: "", selecting: NSRange(location: 0, length: 0), convertsPrefixes: false)
+check(pastedPrefixes.count == 4 && input.string == "# Packing", "Showing only tasks, a pasted prefix stays as pasted")
+// Openlist content goes in as lines of their own under Paste and Match
+// Style even as one line, so a copied task stays a task rather than a list
+// item holding "[ ]".
 let taskContent = DocumentFragment(roots: [fragmentParent.id], blocks: [fragmentParent], labels: [])
 let taskMarkdown = FragmentMarkdown.render(taskContent)
 let linesBeforeTask = pastedLines.count
 paste(taskMarkdown, into: "", selecting: NSRange(location: 0, length: 0), fragment: try taskContent.encoded(), matchingStyle: true)
-check(pastedLines.count == linesBeforeTask + 1 && pastedLines.last == taskMarkdown && pastedPrefixes.count == 4 && input.string.isEmpty
-        && MarkdownInputRules.pasteLines(taskMarkdown).map(\.kind) == [.task],
+check(pastedLines.count == linesBeforeTask && pastedContent.count == 2 && pastedContent[1].map(\.kind) == [.task]
+        && pastedContent[1][0].text == "Parent" && pastedPrefixes.count == 4 && input.string.isEmpty,
     "A copied task pasted with Paste and Match Style into an empty line goes in as its line, a task")
 paste(taskMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: try taskContent.encoded(), matchingStyle: true)
-check(pastedLines.count == linesBeforeTask + 2 && input.string == "Groceries", "So does one pasted in a line with text, after it")
+check(pastedLines.count == linesBeforeTask && pastedContent.count == 3 && input.string == "Groceries",
+    "So does one pasted in a line with text, after it")
 paste("# x", into: "", selecting: NSRange(location: 0, length: 0), kind: .code, fragment: try taskContent.encoded(), matchingStyle: true)
-check(pastedLines.count == linesBeforeTask + 2 && input.string == "# x", "A code line takes it as it is")
+check(pastedLines.count == linesBeforeTask && pastedContent.count == 3 && input.string == "# x", "A code line takes it as it is")
 // A text dropped into a line reads as a paste does: its breaks become spaces,
 // and one at the start that leaves the line starting with a prefix converts
 // it. Text dragged within the line itself stays as dropped.
@@ -1094,7 +1112,9 @@ func pastedLines(_ markdown: String, after target: (DocumentContext) -> Block) -
     let document = DocumentContext(listID: list.id)
     let anchor = target(document)
     store.save()
-    OutlineEditor(env: outlineEnv, document: document).dropText(markdown, after: anchor)
+    let editor = OutlineEditor(env: outlineEnv, document: document)
+    _ = editor.actions(for: editor.visibleRows(in: store.blocks(inList: list.id)).first { $0.id == anchor.id }!)
+        .onPasteMultiline(markdown)
     return BlockTree.flatten(store.blocks(inList: list.id), respectCollapse: false).map { "\($0.depth) \($0.block.text)" }
 }
 func packing(_ document: DocumentContext) -> (pack: Block, socks: Block) {
@@ -2145,5 +2165,157 @@ check(nestedActions(nestedChild).onPasteMultiline("# Section\n- [ ] Item")
     && nestedLater.parentID == nestedRows()[1].id,
     "A heading pasted after a nested line goes to the top after that line's task, which keeps its lines, and nothing goes under it")
 nestedEditor.commitLine()
+
+// Paste and Match Style of Openlist content builds its lines from the
+// content, not from its Markdown, which is written for other apps: a title
+// keeps its punctuation unescaped, and a task's star, labels, files and
+// styling, and an image line, stay behind. Its note and completion come in.
+let plainList = store.createList(title: "Plain content")
+let plainDocument = DocumentContext(listID: plainList.id)
+let plainEditor = OutlineEditor(env: outlineEnv, document: plainDocument)
+func plainRows() -> [BlockRow] { plainEditor.visibleRows(in: store.blocks(inList: plainList.id)) }
+func plainShape() -> [String] { plainRows().map { "\($0.depth) \($0.block.kind.rawValue) \($0.block.text)" } }
+let plainTarget = store.appendBlock(kind: .task, text: "Errands", to: plainDocument)
+store.save()
+let travel = FragmentLabel(id: UUID(), name: "travel", accent: "violet")
+var cleaning = FragmentBlock(id: UUID(), parentID: nil, kind: "task", text: "Pick up dry-cleaning (Tue).")
+cleaning.isStarred = true
+cleaning.labelIDs = [travel.id]
+cleaning.note = "Ask for\n\nthe receipt"
+cleaning.styles = [FragmentTextStyle(location: 0, length: 7, bold: true)]
+cleaning.attachments = [FragmentAttachment(displayName: "ticket.pdf", contentType: "application/pdf",
+                                           media: FragmentMedia(fileExtension: "pdf", data: Data("ticket".utf8)))]
+var receipt = FragmentBlock(id: UUID(), parentID: cleaning.id, kind: "task", text: "Keep the #2 receipt")
+receipt.isCompleted = true
+let photo = FragmentBlock(id: UUID(), parentID: cleaning.id, kind: "image", text: "")
+let aside = FragmentBlock(id: UUID(), parentID: nil, kind: "quote", text: "Closed on\nSundays")
+let plainContent = DocumentFragment(roots: [cleaning.id, aside.id], blocks: [cleaning, receipt, photo, aside], labels: [travel])
+check(FragmentMarkdown.render(plainContent).contains("dry\\-cleaning \\(Tue\\)\\. ⭐ #travel")
+        && MarkdownInputRules.pasteLines(FragmentMarkdown.render(plainContent)).allSatisfy { $0.kind == .paragraph },
+    "Its Markdown escapes the title, writes the star and label as text, and doesn't read back as lines")
+let plainLines = MarkdownInputRules.pasteLines(of: plainContent)
+check(plainLines.map { "\($0.depth) \($0.kind.rawValue) \($0.text)" }
+        == ["0 task Pick up dry-cleaning (Tue).", "1 task Keep the #2 receipt", "0 paragraph Closed on Sundays"]
+        && plainLines.map(\.isCompleted) == [false, true, false] && plainLines[0].note == "Ask for\n\nthe receipt",
+    "Openlist content reads as its lines: kinds, places, plain text, completion and notes")
+check(plainEditor.actions(for: plainRows()[0]).onPasteLines(plainLines)
+        && plainShape() == ["0 task Errands", "0 task Pick up dry-cleaning (Tue).", "1 task Keep the #2 receipt", "0 paragraph Closed on Sundays"],
+    "Pasted with Paste and Match Style, they go in after the line under the document's rules")
+plainEditor.commitLine()
+let plainTask = plainRows()[1].block
+check(plainTask.note == "Ask for\n\nthe receipt" && !plainTask.isStarred && plainTask.labelIDs.isEmpty && plainTask.richData == nil
+        && store.attachments(for: plainTask.id).isEmpty && plainRows()[2].block.isCompleted && plainTarget.text == "Errands",
+    "The copy keeps its note and completion, with no star, label, file or styling")
+
+// Text dropped on a line's row lands where the drop's indicator showed it,
+// as a step of its own named for the lines it put in, and logged.
+let dropList = store.createList(title: "Dropped text")
+let dropDocument = DocumentContext(listID: dropList.id)
+let dropEditor = OutlineEditor(env: outlineEnv, document: dropDocument)
+let dropUndo = UndoManager()
+dropUndo.groupsByEvent = false
+dropEditor.windowUndoManager = { dropUndo }
+var dropRecorded: [(edit: OutlineEdit, name: String)] = []
+dropEditor.hooks.nameEdit = { edit in
+    switch edit {
+    case let .pasted(ids): ids.count == 1 ? "Added \(store.block(id: ids[0])?.text ?? "")" : "Added \(ids.count) lines"
+    case let .edited(id): "Edited \(store.block(id: id)?.text ?? "")"
+    default: nil
+    }
+}
+dropEditor.hooks.didRecordEdit = { dropRecorded.append(($0, $1)) }
+func dropRows() -> [BlockRow] { dropEditor.visibleRows(in: store.blocks(inList: dropList.id)) }
+func dropShape() -> [String] { BlockTree.flatten(store.blocks(inList: dropList.id), respectCollapse: false).map { "\($0.depth) \($0.block.text)" } }
+func dropID(_ text: String) -> UUID? { store.blocks(inList: dropList.id).first { $0.text == text }?.id }
+func dropped(_ text: String, on block: Block, _ position: DropPosition) {
+    dropUndo.beginUndoGrouping()
+    dropEditor.dropText(text, on: block, position: position)
+    dropUndo.endUndoGrouping()
+}
+let dropPack = store.appendBlock(kind: .task, text: "Pack", to: dropDocument)
+let dropSocks = store.insertChild(kind: .task, text: "Socks", of: dropPack, at: .last)
+let dropLater = store.appendBlock(kind: .heading1, text: "Later", to: dropDocument)
+store.save()
+dropped("- [ ] Passport", on: dropSocks, .before)
+check(dropShape() == ["0 Pack", "1 Passport", "1 Socks", "0 Later"], "A text dropped above a line lands above it, at its depth")
+check(dropRecorded.count == 1 && dropRecorded[0].edit == .pasted([dropID("Passport")!]) && dropRecorded[0].name == "Added Passport"
+        && dropUndo.undoActionName == "Added Passport",
+    "It's a step of its own, named for the line it put in and logged")
+dropped("- [ ] Charger\n  - [ ] Cable", on: dropPack, .inside)
+check(dropShape() == ["0 Pack", "1 Charger", "2 Cable", "1 Passport", "1 Socks", "0 Later"] && dropRecorded.last?.name == "Added Charger",
+    "One dropped inside a line goes under it as its first lines")
+store.setCollapsed(true, for: dropPack)
+dropped("Notes\n- [ ] Call", on: dropPack, .inside)
+check(dropShape() == ["0 Pack", "1 Charger", "2 Cable", "1 Passport", "1 Socks", "0 Notes", "0 Call", "0 Later"]
+        && dropPack.isCollapsed && dropRecorded.last?.name == "Added 2 lines",
+    "Lines that can't nest there land after the line and what's under it, as a line dragged there does")
+dropped("- [ ] Umbrella", on: dropPack, .inside)
+check(dropShape().prefix(2) == ["0 Pack", "1 Umbrella"] && !dropPack.isCollapsed,
+    "A folded task a drop goes inside opens")
+dropped("- [ ] First", on: dropPack, .before)
+check(dropShape().first == "0 First" && dropShape()[1] == "0 Pack", "One dropped above the first line goes at the top")
+dropped("Pack light", on: dropLater, .after)
+check(dropShape().suffix(2) == ["0 Later", "0 Pack light"], "One dropped below a line lands below it")
+dropUndo.undo()
+check(dropID("Pack light") == nil && dropShape().suffix(1) == ["0 Later"] && dropID("First") != nil,
+    "Undo takes back only that drop")
+// A drop while a line is being written comes after that line's edit, a step
+// of its own; the caret then ends the last line dropped.
+dropRecorded.removeAll()
+dropEditor.actions(for: dropRows().first { $0.id == dropSocks.id }!).onFocus()
+dropEditor.actions(for: dropRows().first { $0.id == dropSocks.id }!).onChange(NSAttributedString(string: "Wool socks"))
+dropped("- [ ] Hat", on: dropLater, .after)
+check(dropRecorded.map(\.name) == ["Edited Wool socks", "Added Hat"] && dropEditor.focus.blockID == dropID("Hat"),
+    "A drop while a line is written comes after that line's edit, and the caret ends it")
+dropUndo.undo()
+check(dropID("Hat") == nil && dropSocks.text == "Wool socks", "Undo takes back the drop, not the line written before it")
+// Dropped on the line being written while it's still empty, it fills it.
+dropEditor.appendTask()
+let dropBlank = dropEditor.focus.blockID!
+dropRecorded.removeAll()
+dropped("- [ ] Scarf\n- [ ] Gloves", on: store.block(id: dropBlank)!, .before)
+check(store.block(id: dropBlank)?.text == "Scarf" && dropShape().suffix(2) == ["0 Scarf", "0 Gloves"] && dropRecorded.isEmpty,
+    "Dropped on the empty line being written, the text fills it, in that line's edit")
+dropUndo.beginUndoGrouping()
+dropEditor.commitLine()
+dropUndo.endUndoGrouping()
+check(dropRecorded.map(\.edit) == [.added(dropBlank)], "That line's edit then commits as the line added")
+
+// Showing only tasks, no line turns into another kind it wouldn't draw, and
+// Return opens a first subtask only under a task whose tasks show.
+let onlyList = store.createList(title: "Tasks presentation")
+let onlyDocument = DocumentContext(listID: onlyList.id)
+let onlyEditor = OutlineEditor(env: outlineEnv, document: onlyDocument)
+onlyEditor.tasksOnly = true
+func onlyRows() -> [BlockRow] { onlyEditor.visibleRows(in: store.blocks(inList: onlyList.id)) }
+func onlyActions(_ id: UUID) -> BlockRowActions { onlyEditor.actions(for: onlyRows().first { $0.id == id }!) }
+let onlyTrip = store.appendBlock(kind: .task, text: "Trip", to: onlyDocument)
+let onlyNotes = store.insertChild(kind: .bullet, text: "Notes", of: onlyTrip, at: .last)
+let onlyShop = store.appendBlock(kind: .task, text: "Shop", to: onlyDocument)
+let onlyShops = store.insertChild(kind: .bullet, text: "Shops", of: onlyShop, at: .last)
+let onlyTenugui = store.insertChild(kind: .task, text: "Tenugui", of: onlyShops, at: .last)
+store.save()
+onlyEditor.appendTask()
+let onlyNew = onlyEditor.focus.blockID!
+onlyActions(onlyNew).onSlashQuery("", NSRange(location: 0, length: 1), .zero, .zero)
+check(onlyEditor.slash == nil, "Showing only tasks, “/” opens no Turn into card")
+check(onlyActions(onlyNew).onPasteMultiline("# Packing\n- [ ] Socks")
+        && store.block(id: onlyNew)?.kind == .task && onlyRows().map(\.block.text).suffix(2) == ["", "Socks"]
+        && onlyEditor.focus.blockID == onlyRows().last?.id,
+    "A heading pasted into an empty task leaves it a task, and the caret ends the last pasted line that shows")
+onlyEditor.commitLine(leaving: true)
+check(store.block(id: onlyNew) == nil && store.blocks(inList: onlyList.id).contains { $0.kind == .heading1 && $0.text == "Packing" },
+    "The pasted heading stays in the list, for its document")
+_ = onlyActions(onlyTrip.id).onReturn(4, store.attributedContent(of: onlyTrip))
+let afterTrip = store.block(id: onlyEditor.focus.blockID!)!
+check(afterTrip.parentID == nil && afterTrip.id != onlyNotes.id && onlyRows().firstIndex { $0.id == afterTrip.id } == 1,
+    "Return on a task with only a list item under it adds a task beside it, as none shows under it")
+onlyEditor.commitLine(leaving: true)
+_ = onlyActions(onlyShop.id).onReturn(4, store.attributedContent(of: onlyShop))
+let underShop = store.block(id: onlyEditor.focus.blockID!)!
+check(underShop.parentID == onlyShop.id && onlyRows().firstIndex { $0.id == underShop.id }
+        == onlyRows().firstIndex { $0.id == onlyShop.id }.map { $0 + 1 } && onlyTenugui.parentID == onlyShops.id,
+    "Return on one whose tasks show opens a first subtask")
+onlyEditor.commitLine(leaving: true)
 
 print("✅ \(checks) editor/store checks passed")
