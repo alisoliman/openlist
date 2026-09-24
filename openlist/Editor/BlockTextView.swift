@@ -96,15 +96,8 @@ struct BlockTextView: NSViewRepresentable {
     /// never yanks the caret back.
     var focusToken: Int
     /// While the `/` menu is showing it takes over Return, Tab and the arrows.
+    /// Only a `/` that starts the block opens it.
     var isSlashMenuOpen: Bool = false
-    /// Only a `/` that starts the block opens the menu, rather than one
-    /// after any space.
-    var slashOpensAtStartOnly = false
-    /// The typed prefixes that turn the block into another kind.
-    var markdownPrefixes: MarkdownInputRules.BlockPrefixes = .all
-    /// Return leaves a selection as it is, for an outline whose Return
-    /// finishes the whole line rather than splitting it at the caret.
-    var returnKeepsSelection = false
     /// The insertion point's colour. `nil` keeps AppKit's.
     var caretColor: NSColor? = nil
     var onSlashCommand: (SlashMenuCommand) -> Void = { _ in }
@@ -365,8 +358,7 @@ struct BlockTextView: NSViewRepresentable {
                 in: storage,
                 caret: view.selectedRange().location,
                 wasInsertion: wasInsertion,
-                kind: parent.kind,
-                prefixes: parent.markdownPrefixes
+                kind: parent.kind
             ) {
                 storage.deleteCharacters(in: rule.range)
                 view.setSelectedRange(NSRange(location: 0, length: 0))
@@ -443,13 +435,8 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.confirm)
                     return true
                 }
-                // Return replaces a selection first, just as native text
-                // editing does, unless the outline finishes the whole line.
-                // Persist the deletion before outline logic.
-                if selection.length > 0, !parent.returnKeepsSelection {
-                    view.insertText("", replacementRange: selection)
-                }
-                return parent.callbacks.onReturn(view.selectedRange().location, NSAttributedString(attributedString: storage))
+                // Return finishes the whole line, so a selection stays as it is.
+                return parent.callbacks.onReturn(selection.location, content)
 
             case #selector(NSResponder.insertLineBreak(_:)):
                 if parent.callbacks.onLineBreak() { return true }
@@ -532,7 +519,7 @@ struct BlockTextView: NSViewRepresentable {
             let caret = min(selection.location, text.length)
             guard !view.hasMarkedText(), parent.kind != .code,
                   let slashIndex = MarkdownInputRules.slashTriggerIndex(in: text, caret: caret),
-                  slashIndex == 0 || !parent.slashOpensAtStartOnly else {
+                  slashIndex == 0 else {
                 dismissedSlashIndex = nil
                 if view.isSlashMenuOpen {
                     parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)

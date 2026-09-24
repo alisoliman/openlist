@@ -1023,9 +1023,6 @@ private struct NXLineText: View {
             pendingCaret: editor.pendingCaret(for: id),
             focusToken: context.focus.token,
             isSlashMenuOpen: context.slashBlockID == id,
-            slashOpensAtStartOnly: true,
-            markdownPrefixes: .design,
-            returnKeepsSelection: true,
             caretColor: env.settings.accent.editorColor,
             onSlashCommand: { editor.handleSlashCommand($0) },
             callbacks: callbacks

@@ -218,18 +218,17 @@ check(RichTextCodec.restylingCompletion(of: RichTextCodec.restylingCompletion(of
     "Unstriking a task keeps the user's own strikethrough")
 
 // The list document converts a line only on the design's prefixes.
-func typedPrefix(_ text: String, _ prefixes: MarkdownInputRules.BlockPrefixes) -> BlockKind? {
+func typedPrefix(_ text: String) -> BlockKind? {
     MarkdownInputRules.matchBlockPrefix(in: NSTextStorage(string: text), caret: (text as NSString).length,
-                                        wasInsertion: true, kind: .task, prefixes: prefixes)?.kind
+                                        wasInsertion: true, kind: .task)?.kind
 }
-check(typedPrefix("## ", .design) == .heading2 && typedPrefix("# ", .design) == .heading1 && typedPrefix("- ", .design) == .bullet
-    && typedPrefix("* ", .design) == .bullet && typedPrefix("[ ] ", .design) == .task && typedPrefix("[] ", .design) == .task
-    && typedPrefix("> ", .design) == .quote, "The design's prefixes convert a line")
-check(["### ", "1. ", "1) ", "+ ", "``` ", "--- "].allSatisfy { typedPrefix($0, .design) == nil && typedPrefix($0, .all) != nil },
-    "The editor's other prefixes stay as typed in the list document, and still convert elsewhere")
+check(typedPrefix("## ") == .heading2 && typedPrefix("# ") == .heading1 && typedPrefix("- ") == .bullet
+    && typedPrefix("* ") == .bullet && typedPrefix("[ ] ") == .task && typedPrefix("[] ") == .task
+    && typedPrefix("> ") == .quote, "The design's prefixes convert a line")
+check(["### ", "1. ", "1) ", "+ ", "``` ", "--- "].allSatisfy { typedPrefix($0) == nil },
+    "Other Markdown prefixes stay as typed")
 var prefixedKinds: [BlockKind] = []
 coordinator.parent.callbacks.onMarkdownPrefix = { prefixedKinds.append($0) }
-coordinator.parent.markdownPrefixes = .design
 for typed in ["1. ", "## "] {
     coordinator.apply(NSAttributedString(), to: native, kind: .task, isCompleted: false)
     native.textStorage?.append(NSAttributedString(string: typed, attributes: RichTextCodec.baseAttributes(for: .task)))
@@ -237,7 +236,6 @@ for typed in ["1. ", "## "] {
     coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
 }
 check(prefixedKinds == [.heading2] && native.string.isEmpty, "A line typed “1. ” keeps it; “## ” makes a subheading")
-coordinator.parent.markdownPrefixes = .all
 coordinator.parent.callbacks.onMarkdownPrefix = { _ in }
 
 let inlineRange = NSRange(location: 0, length: 6)
@@ -289,7 +287,12 @@ var queryRange = NSRange()
 coordinator.parent.callbacks.onSlashQuery = { query, range, _, _ in lastQuery = query; queryRange = range }
 input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
 coordinator.updateSlashQuery(in: input)
-check(lastQuery == "h2" && queryRange == NSRange(location: trigger, length: 3), "Slash query removes only its trigger and filter before a suffix")
+check(lastQuery == nil, "A slash after a space mid-line stays as typed; only one that starts the line opens Turn into")
+let slashLine = RichTextCodec.decode(nil, plainText: "/h2 then a suffix", kind: .task)
+coordinator.apply(slashLine, to: input, kind: .task, isCompleted: false)
+input.setSelectedRange(NSRange(location: 3, length: 0))
+coordinator.updateSlashQuery(in: input)
+check(lastQuery == "h2" && queryRange == NSRange(location: 0, length: 3), "Slash query removes only its trigger and filter before a suffix")
 input.isSlashMenuOpen = true
 coordinator.dismissSlash(in: input)
 lastQuery = nil
@@ -298,10 +301,10 @@ check(lastQuery == nil, "Escape suppresses the same slash trigger during subsequ
 input.isSlashMenuOpen = false
 input.setSelectedRange(NSRange(location: 0, length: 0))
 coordinator.updateSlashQuery(in: input)
-input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
+input.setSelectedRange(NSRange(location: 3, length: 0))
 coordinator.updateSlashQuery(in: input)
 check(lastQuery == "h2", "Moving away from a dismissed trigger allows a later command session")
-coordinator.parent = BlockTextView(blockID: UUID(), kind: .code, isCompleted: false, attributedText: wrapped, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .code, isCompleted: false, attributedText: slashLine, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
 lastQuery = nil
 coordinator.updateSlashQuery(in: input)
 check(lastQuery == nil, "Code blocks keep slash characters literal")
@@ -313,21 +316,15 @@ input.setSelectedRange(NSRange(location: 7, length: 7))
 var returnedText = ""
 var returnedCaret = -1
 coordinator.parent.callbacks.onReturn = { caret, content in returnedCaret = caret; returnedText = content.string; return true }
+// The list document's Return finishes the whole line, a selection and all.
 check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertNewline(_:))), "Return is routed to the outline")
-check(returnedText == "Before After" && returnedCaret == 7, "Return replaces selected text before the outline hears it, preserving the suffix")
+check(returnedText == "Before DELETE After" && returnedCaret == 7 && input.string == "Before DELETE After",
+    "Return that finishes the line leaves its selected text in it")
 var tabCaret = -1
 coordinator.parent.callbacks.onTab = { _, caret in tabCaret = caret; return true }
 check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertTab(_:))) && tabCaret == 7, "Indentation receives the original mid-text caret")
 input.setSelectedRange(NSRange(location: 0, length: 2))
 check(!coordinator.textView(input, doCommandBy: #selector(NSResponder.moveUp(_:))), "Up with selected text retains native selection behavior")
-// The list document's Return finishes the whole line, a selection and all.
-coordinator.parent.returnKeepsSelection = true
-coordinator.apply(selectedText, to: input, kind: .task, isCompleted: false)
-input.setSelectedRange(NSRange(location: 7, length: 7))
-check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertNewline(_:)))
-    && returnedText == "Before DELETE After" && input.string == "Before DELETE After",
-    "Return that finishes the line leaves its selected text in it")
-coordinator.parent.returnKeepsSelection = false
 // ← and → off a line's ends stay in it, as the design's lines are single inputs.
 var arrowsOut: [EditorArrow] = []
 coordinator.parent.callbacks.onArrowOut = { direction, _ in arrowsOut.append(direction); return true }

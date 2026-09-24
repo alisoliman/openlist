@@ -36,7 +36,7 @@ struct SlashState: Equatable {
     var blockID: UUID
     var query: String
     /// The span the trigger occupies, so choosing a block removes exactly the
-    /// "/query" the user typed — even mid-line.
+    /// "/query" the user typed, and keeps what follows it.
     var range: NSRange
     var caretRect: CGRect
     var viewport: CGRect
