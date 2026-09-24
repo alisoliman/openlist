@@ -55,8 +55,8 @@ while its expected collapse state remains unchanged; later explicit collapse
 choices are preserved.
 
 Versioned drag payloads carry a per-Navigator session nonce. A document line
-takes only those: an older single-row UUID payload and malformed internal
-payloads are rejected, never inserted as text. Drop handlers recheck the target model before
+and a sidebar list take only those: an older single-row UUID payload and
+malformed internal payloads are rejected, never inserted as text or moved. Drop handlers recheck the target model before
 dispatching a mutation, so a target deleted during payload loading produces an
 unavailable-target notice and no partial drop. Both app manifests export
 `app.openlist.block-drag` as `public.data`; `Tools/verify-drag-types.py` checks

@@ -12,15 +12,10 @@ import Foundation
 /// treated as ordinary text by the receiving view.
 nonisolated enum DragPayload {
     static let blockTypeIdentifier = "app.openlist.block-drag"
-    case block
+    /// A sidebar list, dragged to reorder the sidebar.
     case list
 
-    private var prefix: String {
-        switch self {
-        case .block: "openlist-block:"
-        case .list: "openlist-list:"
-        }
-    }
+    private var prefix: String { "openlist-list:" }
 
     func encode(_ id: UUID) -> String { prefix + id.uuidString }
 
