@@ -171,7 +171,11 @@ final class WidgetSnapshotPublisher {
             let aDay = calendar.startOfDay(for: a.dueDate!), bDay = calendar.startOfDay(for: b.dueDate!)
             if aDay != bDay { return aDay < bDay }
             if a.includesTime != b.includesTime { return a.includesTime }
-            return Block.byDueDate(a, b)
+            if a.dueDate != b.dueDate || a.priorityRaw != b.priorityRaw { return Block.byDueDate(a, b) }
+            // Then capture order, as the app's Today, and one fixed order for
+            // exact ties, so the rows and the snapshot compared on each
+            // rebuild stay put however the fetch returns them.
+            return a.createdAt == b.createdAt ? a.id.uuidString < b.id.uuidString : a.createdAt < b.createdAt
         }
         // By day, so however much is overdue, today's and tomorrow's rows still come.
         let overdue = sorted.prefix { $0.dueDate! < todayStart }

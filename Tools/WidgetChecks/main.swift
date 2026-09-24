@@ -289,26 +289,56 @@ for (month, day, change) in [(3, 29, "go forward"), (10, 25, "go back")] {
     check(block.start == 10 && block.end == 11.5 && block.timeText == "10:00–11:30", "and 10:00–11:30 sits at 10 to 11.5")
 }
 
-// The gallery's sample week is the week today falls in, today with the design's
-// Wednesday and the other days the design's others, in order.
+// The gallery's sample week is the week today falls in: today with the design's
+// Wednesday, the other days their own weekday's meetings, and planned slots on
+// their tasks' due days.
 func sampleAgenda(_ day: Int) -> (clock: WidgetClock, agenda: AgendaModel) {
     let at = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(Double(day - 23) * 86_400))
     return (at, AgendaModel(WidgetSampleData.snapshot(now: at.now), clock: at))
 }
 func meetings(_ agenda: AgendaModel) -> [[String]] { agenda.week.map { $0.items.filter(\.isMeeting).map(\.title) } }
+func slots(_ agenda: AgendaModel, _ column: Int) -> [String] {
+    agenda.week[column].items.filter { !$0.isMeeting }.map { "\($0.title) \($0.timeText)" }
+}
 let designWeek = meetings(agenda)
 check(designWeek[5] == ["Pottery class"] && designWeek[6].isEmpty && designWeek.prefix(5).allSatisfy { $0.first == "Standup" },
       "The design's week: a standup every weekday, pottery on Saturday")
+check(slots(agenda, 1) == ["Close out Q2 retro actions 14:00–14:30"] && slots(agenda, 3) == ["Review hiring budget with Sam 13:00–13:45"]
+      && slots(agenda, 4) == ["Prep board update slides 10:00–11:00"], "The design's slots around its Wednesday, where it has them")
 let thursday = sampleAgenda(24)
 check(meetings(thursday.agenda) == [designWeek[0], designWeek[1], designWeek[3], designWeek[2], designWeek[4], designWeek[5], designWeek[6]]
       && thursday.agenda.week[3].isToday, "On a Thursday the design's Wednesday is today, and Monday still starts the week")
 check(thursday.agenda.daySubtitle == "Thu 24 · 4 meetings · 5 planned", "Today has the design's plan")
+check(slots(thursday.agenda, 2) == ["Close out Q2 retro actions 14:00–14:30"]
+      && slots(thursday.agenda, 4) == ["Review hiring budget with Sam 13:00–13:45"]
+      && slots(thursday.agenda, 5) == ["Prep board update slides 11:30–12:30"],
+      "Slots keep their days from today, one moved past Saturday's pottery")
+let tuesday = sampleAgenda(22)
+check(meetings(tuesday.agenda) == [designWeek[0], designWeek[2], designWeek[1], designWeek[3], designWeek[4], designWeek[5], designWeek[6]]
+      && slots(tuesday.agenda, 3) == ["Prep board update slides 12:00–13:00"], "On a Tuesday a slot starts as Thursday's offsite ends")
+let saturday = sampleAgenda(26)
+check(meetings(saturday.agenda) == [designWeek[0], designWeek[1], designWeek[2], designWeek[3], designWeek[4], designWeek[2], designWeek[6]],
+      "On a Saturday the weekdays keep their own meetings")
 let sunday = sampleAgenda(27)
-check(meetings(sunday.agenda) == [designWeek[0], designWeek[1], designWeek[3], designWeek[4], designWeek[5], designWeek[6], designWeek[2]],
-      "On a Sunday no weekday is empty")
+check(meetings(sunday.agenda) == [designWeek[0], designWeek[1], designWeek[2], designWeek[3], designWeek[4], designWeek[5], designWeek[2]]
+      && slots(sunday.agenda, 5) == ["Close out Q2 retro actions 14:00–14:30"] && slots(sunday.agenda, 6).count == 5,
+      "On a Sunday too, pottery still on Saturday")
 let monday = sampleAgenda(21)
-check(meetings(monday.agenda) == [designWeek[2], designWeek[0], designWeek[1], designWeek[3], designWeek[4], designWeek[5], designWeek[6]],
-      "On a Monday the week runs on from today")
+check(meetings(monday.agenda) == [designWeek[2], designWeek[1], designWeek[0], designWeek[3], designWeek[4], designWeek[5], designWeek[6]],
+      "On a Monday, Monday's own meetings move to Wednesday")
+for date in 21...27 {
+    let (at, week) = sampleAgenda(date)
+    let due = Dictionary(WidgetSampleData.snapshot(now: at.now).lists.flatMap(\.openItems).compactMap { item in
+        item.dueDate.map { (item.title, at.calendar.startOfDay(for: $0)) }
+    }, uniquingKeysWith: { first, _ in first })
+    check(meetings(week).prefix(5).allSatisfy { $0.first == "Standup" }, "A standup every weekday, on the \(date)th too")
+    for day in week.week {
+        for slot in day.items where !slot.isMeeting {
+            check(due[slot.title].map { $0 < at.today || $0 == day.day } ?? true, "\(slot.title) sits on its due day, on the \(date)th")
+            check(!day.items.contains { $0.isMeeting && $0.start < slot.end && slot.start < $0.end }, "\(slot.title) clears the meetings")
+        }
+    }
+}
 let thursdaySample = WidgetSampleData.snapshot(now: thursday.clock.now)
 let thursdayActivity = ActivityModel(thursdaySample, clock: thursday.clock, weeks: 21)
 check(thursdayActivity.todayIndex == 3 && thursdayActivity.weeks[20][3] == 2 && thursdayActivity.weeks[20][4] == nil

@@ -153,8 +153,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   shows the first list, as an unconfigured one does; with no list besides Inbox it reads
   "No lists" and opens Lists, where the design always has a list. Quick Add counts an Inbox
   task's first hour in minutes ("12m"), a native extra: the design's ages start at "2h". The
-  gallery's sample week is the one today falls in: today has the design's Wednesday, the
-  other days the design's others in order, so it is the design's own week on a Wednesday.
+  gallery's sample week is the one today falls in: today has the design's Wednesday and
+  every other day its own weekday's meetings (on a weekday today's own move to Wednesday; a
+  weekend's give way), and planned slots stay on their tasks' due days, after any meeting
+  there; on a Wednesday it is the design's own week.
 - Calendar: running work past its slot follows the design's overrun (the slot grows to the
   next quarter plus 15 min, later placements that day move out of its way, saved and
   undoable, stopping only at meetings and breaks; Undo still moves them back after Pause,

@@ -80,7 +80,8 @@ enum WidgetSampleData {
         [],
     ]
 
-    /// Planned task slots: task, day of the week, start hour, minutes.
+    /// Planned task slots: task, day of the design's week (today is its
+    /// Wednesday, 2), start hour, minutes.
     private static let plan: [(String, Int, Double, Double)] = [
         ("q4", 1, 14, 30), ("q1", 2, 10, 90), ("p1", 2, 11.5, 20), ("p3", 2, 13, 30),
         ("h2", 2, 16.5, 10), ("k2", 2, 18, 15), ("q2", 3, 13, 45), ("q5", 4, 10, 60),
@@ -105,8 +106,9 @@ enum WidgetSampleData {
 
     /// The design's data around `now`, in the week `now` falls in. Today has
     /// the design's day, its Wednesday; the week's other days have the
-    /// design's others, in order around it, so on a Wednesday it is the
-    /// design's own week.
+    /// design's meetings for their weekday, and its planned slots as many
+    /// days from today as the design's are from its Wednesday, so on a
+    /// Wednesday it is the design's own week.
     static func snapshot(now: Date = referenceDate, fixture: Fixture = .default, calendar base: Calendar = .current) -> WidgetSnapshot {
         let clock = WidgetClock(now: now, firstWeekday: firstWeekday, calendar: base)
         let calendar = clock.calendar
@@ -155,20 +157,27 @@ enum WidgetSampleData {
                                               doneItems: done.prefix(6).map(item))
         }
 
-        // The week the Agenda and Summary draw, from its first day.
+        // The week the Agenda and Summary draw, from its first day. Each day
+        // has the design's meetings for its weekday, and today its Wednesday's;
+        // on a weekday today's own move to Wednesday so none is lost, and on a
+        // weekend every weekday still has its standup.
         let weekStart = clock.weekStart()
         let todayIndex = -clock.dayOffset(weekStart)
-        let others = events.indices.filter { $0 != 2 }
         snapshot.agenda = (0..<7).map { column in
             let day = clock.day(offset: column, from: weekStart)
-            let index = column == todayIndex ? 2 : others[column < todayIndex ? column : column - 1]
+            let index = column == todayIndex ? 2 : column == 2 && todayIndex < 5 ? todayIndex : column
             let meetings = events[index].enumerated().map { number, event in
-                WidgetSnapshot.AgendaItem(id: "m\(index)-\(number)", kind: .meeting, title: event.2, start: at(day, hour: event.0),
+                WidgetSnapshot.AgendaItem(id: "m\(column)-\(number)", kind: .meeting, title: event.2, start: at(day, hour: event.0),
                                           end: at(day, hour: event.1), isCompleted: false, isActive: false, isFlexible: false)
             }
-            let slots = plan.filter { $0.1 == index }.map { key, _, start, minutes -> WidgetSnapshot.AgendaItem in
+            // Slots on their tasks' due days, as the design's; one that meets
+            // the day's meetings starts as they end, as the app plans around
+            // them. The design's own week needs no moving.
+            let slots = plan.filter { $0.1 - 2 == column - todayIndex }.map { key, _, planned, minutes -> WidgetSnapshot.AgendaItem in
                 let task = tasks.first { $0.key == key }!
                 let owner = list(task.list)
+                var start = planned
+                for event in events[index] where event.0 < start + minutes / 60 && start < event.1 { start = event.1 }
                 return WidgetSnapshot.AgendaItem(id: "p-\(key)", kind: .task, title: task.title, start: at(day, hour: start),
                                                  end: at(day, hour: start + minutes / 60), taskID: id(key), occurrenceID: id(key),
                                                  listIcon: owner.icon, listName: owner.title, accent: owner.accent,
