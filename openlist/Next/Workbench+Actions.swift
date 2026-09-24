@@ -418,24 +418,12 @@ extension Workbench {
         for url in urls {
             do { kept.append(try MediaStore.shared.importFile(at: url)) } catch { failures.append((url.lastPathComponent, error)) }
         }
-        if let notice = Self.attachNotice(for: failures) { store.actionError = notice }
+        if let notice = NXFormat.attachFailures(failures) { store.actionError = notice }
         guard !kept.isEmpty else { return }
-        let files = kept.count == 1 ? NXFormat.quoted(kept[0].displayName) : "\(kept.count) files"
-        let label = "Attached \(files) to \(describe([task]))"
+        let label = NXFormat.attached(kept.map(\.displayName), to: describe([task]))
         store.addAttachments(kept, to: task, name: label, undoManager: undoManager) {
             self.snap(label, icon: "paperclip", tone: .accent, ids: [taskID])
         }
-    }
-
-    /// "“a.pdf” and “b.pdf” could not be attached.", with the first one's
-    /// reason: up to three names, or two and "N other files" past that.
-    private static func attachNotice(for failures: [(name: String, error: Error)]) -> String? {
-        guard let first = failures.first else { return nil }
-        let named = failures.count > 3 ? 2 : failures.count
-        var names = failures.prefix(named).map { NXFormat.quoted($0.name) }
-        if failures.count > named { names.append("\(failures.count - named) other files") }
-        let who = ListFormatter.localizedString(byJoining: names)
-        return "\(who) could not be attached. \(first.error.localizedDescription)"
     }
 
     /// A file taken off its task in the inspector's Files, a native extra, as

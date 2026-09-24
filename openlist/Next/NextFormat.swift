@@ -54,9 +54,22 @@ enum NXFormat {
         return date.formatted(.dateTime.day().month(.abbreviated).year())
     }
 
-    /// A day and time as the inspector's Reminder pill reads: "Fri 25 09:00".
+    /// A day and time in the Due row's words, as the inspector's Reminder
+    /// pill reads: "Fri 25 09:00".
+    static func dueAndClock(_ date: Date, now: Date = .now) -> String {
+        "\(dueLabel(date, now: now)) \(clock(date))"
+    }
+
+    /// A day and time with `dayLabel`'s year, as saved history writes when
+    /// something happened: "Today 14:05", "25 Sep 2025 09:00".
     static func dayAndClock(_ date: Date, now: Date = .now) -> String {
         "\(dayLabel(date, now: now)) \(clock(date))"
+    }
+
+    /// A day, and its time when it has one, as saved history writes a due
+    /// date: "Fri 25 09:00", "3 Oct".
+    static func dayText(_ date: Date, includesTime: Bool, now: Date = .now) -> String {
+        includesTime ? dayAndClock(date, now: now) : dayLabel(date, now: now)
     }
 
     /// A new due date as the tray and Changes name it: its day, and its time
@@ -107,6 +120,23 @@ enum NXFormat {
     }
 
     static func quoted(_ text: String) -> String { "“\(short(text))”" }
+
+    /// Files kept with a task as the tray names them: "Attached “a.pdf” to
+    /// “Task”", or "Attached 3 files to “Task”", counting only those kept.
+    static func attached(_ names: [String], to task: String) -> String {
+        "Attached \(names.count == 1 ? quoted(names[0]) : "\(names.count) files") to \(task)"
+    }
+
+    /// "“a.pdf” and “b.pdf” could not be attached.", with the first one's
+    /// reason: up to three names, or two and "N other files" past that.
+    static func attachFailures(_ failures: [(name: String, error: Error)]) -> String? {
+        guard let first = failures.first else { return nil }
+        let named = failures.count > 3 ? 2 : failures.count
+        var names = failures.prefix(named).map { quoted($0.name) }
+        if failures.count > named { names.append("\(failures.count - named) other files") }
+        let who = ListFormatter.localizedString(byJoining: names)
+        return "\(who) could not be attached. \(first.error.localizedDescription)"
+    }
 
     /// Elapsed time as the notch and the Stopped tray show it: "07:42", and "1:05:12" past an hour.
     static func mmss(_ seconds: Double) -> String {

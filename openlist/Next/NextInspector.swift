@@ -378,7 +378,7 @@ struct NextInspector: View {
                 NXInspectorPill(isOn: task.reminderAt != nil) { openPicker(.reminder) } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "bell").font(.system(size: 10.5, weight: .medium))
-                        Text(task.reminderAt.map { NXFormat.dayAndClock($0) } ?? "None")
+                        Text(task.reminderAt.map { NXFormat.dueAndClock($0) } ?? "None")
                     }
                 }
                 .popover(isPresented: pickerBinding(.reminder), arrowEdge: .bottom) { schedulePopover(.reminder) }

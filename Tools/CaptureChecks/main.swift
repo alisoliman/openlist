@@ -231,10 +231,11 @@ check(NXFormat.dueChange(tomorrowEvening, includesTime: true, from: evening, old
       "A date change is named as of when it was made")
 
 // The Schedule popover writes days and times as the app does: its Reminder
-// header as the pill that opens it, a typed phrase as capture's chips, and a
-// far day with its year, so a yearly repeat's next days tell apart.
+// header as the pill that opens it, in the Due row's words, a typed phrase as
+// capture's chips, and a far day with its year, so a yearly repeat's next
+// days tell apart.
 let morning = Calendar.current.date(bySettingHour: 9, minute: 5, second: 0, of: NXFormat.day(offset: 2, now: setAt))!
-check(NXFormat.dayAndClock(morning, now: setAt) == "\(NXFormat.dueLabel(morning, now: setAt)) 09:05",
+check(NXFormat.dueAndClock(morning, now: setAt) == "\(NXFormat.dueLabel(morning, now: setAt)) 09:05",
       "A reminder reads as the inspector's pill, its day and a 24-hour time")
 check(NXFormat.typedSchedule(morning, includesTime: true, repeat: "Every week", now: setAt)
       == "\(NXFormat.typedDay(morning, now: setAt)) · 09:05 · Every week"
@@ -246,10 +247,69 @@ let nextYear = Calendar.current.date(byAdding: .year, value: 1, to: morning)!
 check(NXFormat.dayLabel(nextYear, now: setAt) == nextYear.formatted(.dateTime.day().month(.abbreviated).year())
       && NXFormat.dayLabel(nextYear, now: setAt) != NXFormat.dueLabel(nextYear, now: setAt),
       "A day in another year past the week names its year")
+check(NXFormat.dueAndClock(nextYear, now: setAt) == "\(NXFormat.dueLabel(nextYear, now: setAt)) 09:05"
+      && NXFormat.dayAndClock(nextYear, now: setAt) == "\(NXFormat.dayLabel(nextYear, now: setAt)) 09:05",
+      "The Reminder pill reads a far reminder as the Due row does, with no year; history names it")
 check(NXFormat.dayLabel(morning, now: setAt) == NXFormat.dueLabel(morning, now: setAt)
       && NXFormat.dayLabel(NXFormat.day(offset: 1, now: setAt), now: setAt) == "Tomorrow",
       "A day this year, or within the week, reads as its due chip")
-let newYearsEve = Calendar.current.date(from: DateComponents(year: 2026, month: 12, day: 31, hour: 12))!
-let newYearsDay = Calendar.current.date(from: DateComponents(year: 2027, month: 1, day: 1, hour: 12))!
-check(NXFormat.dayLabel(newYearsDay, now: newYearsEve) == "Tomorrow", "Tomorrow in the next year is still Tomorrow")
+// Mid-year, so no day checked falls in another year whenever this runs.
+func noon(_ year: Int, _ month: Int, _ day: Int) -> Date {
+    Calendar.current.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
+}
+let midYear = noon(2026, 6, 15)
+for (date, offset) in [(noon(2026, 6, 22), 7), (noon(2026, 6, 30), 15), (noon(2026, 12, 20), 188), (noon(2026, 1, 10), -156)] {
+    check(NXFormat.dayOffset(date, now: midYear) == offset
+          && NXFormat.dayLabel(date, now: midYear) == date.formatted(.dateTime.day().month(.abbreviated))
+          && NXFormat.dayLabel(date, now: midYear) == NXFormat.dueLabel(date, now: midYear),
+          "A day this year past the week, ahead or gone, reads as its due chip, with no year")
+}
+for date in [noon(2027, 6, 30), noon(2025, 12, 20)] {
+    check(NXFormat.dayLabel(date, now: midYear) == date.formatted(.dateTime.day().month(.abbreviated).year()),
+          "A day in the next year or the last names its year")
+}
+let newYearsEve = noon(2026, 12, 31)
+check(NXFormat.dayLabel(noon(2027, 1, 1), now: newYearsEve) == "Tomorrow", "Tomorrow in the next year is still Tomorrow")
+check(NXFormat.dayLabel(noon(2027, 1, 3), now: newYearsEve) == NXFormat.dueLabel(noon(2027, 1, 3), now: newYearsEve)
+      && NXFormat.dayLabel(noon(2026, 12, 31), now: noon(2027, 1, 1)) == "Yesterday",
+      "A day within the week across the new year reads as its due chip")
+
+// Saved history writes its due dates in the words it gives when it happened:
+// the inspector's Full history and Changes pass the app's, the system's otherwise.
+func state(_ due: Date?, timed: Bool) -> TaskActivityState {
+    TaskActivityState(title: "Pay rent", dueDate: due, includesTime: timed, isCompleted: false, listID: nil,
+                      listTitle: "Home", listIcon: "", occurrenceID: UUID())
+}
+let appWords: (Date, Bool) -> String = { NXFormat.dayText($0, includesTime: $1, now: midYear) }
+let rescheduled = TaskActivityChange(before: state(noon(2026, 6, 16), timed: false),
+                                     after: state(Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: noon(2026, 6, 30))!, timed: true))
+check(ActivityEvent.recordedDetail(.scheduled, detail: "", change: rescheduled, dateText: appWords)
+      == "Tomorrow → \(NXFormat.dueLabel(noon(2026, 6, 30), now: midYear)) 09:00",
+      "A rescheduled day reads as the row's due chips, its time 24-hour")
+check(ActivityEvent.recordedDetail(.scheduled, detail: "", change: rescheduled)
+      == "\(ActivityEvent.systemDateText(noon(2026, 6, 16), includesTime: false)) → \(ActivityEvent.systemDateText(rescheduled.after!.dueDate!, includesTime: true))",
+      "Without the app's words, history keeps the system's")
+var completion = TaskActivityChange(before: state(noon(2025, 12, 20), timed: false), after: state(noon(2027, 6, 30), timed: false))
+completion.completionID = UUID()
+completion.completedDueDate = noon(2025, 12, 20)
+completion.advancesOccurrence = true
+check(ActivityEvent.recordedDetail(.completed, detail: "", change: completion, dateText: appWords)
+      == "Completed occurrence: \(NXFormat.dayLabel(noon(2025, 12, 20), now: midYear)). Next occurrence: \(NXFormat.dayLabel(noon(2027, 6, 30), now: midYear)).",
+      "A completed occurrence and the next one name their year in another year")
+
+// Files attached in the inspector are named as the tray names them, counting
+// only those kept, and those that can't be read in one notice.
+check(NXFormat.attached(["Lease.pdf"], to: "“Sign the lease”") == "Attached “Lease.pdf” to “Sign the lease”"
+      && NXFormat.attached(["Lease.pdf", "Deposit.pdf"], to: "“Sign the lease”") == "Attached 2 files to “Sign the lease”",
+      "An attach names its one file, or how many were kept")
+let unreadable = NSError(domain: "Capture", code: 1, userInfo: [NSLocalizedDescriptionKey: "The file couldn’t be opened."])
+check(NXFormat.attachFailures([]) == nil, "No failures, no notice")
+check(NXFormat.attachFailures([("a.pdf", unreadable)]) == "“a.pdf” could not be attached. The file couldn’t be opened.",
+      "One file that can't be read is named with its reason")
+check(NXFormat.attachFailures(["a", "b", "c"].map { ($0, unreadable) })
+      == "\(ListFormatter.localizedString(byJoining: ["“a”", "“b”", "“c”"])) could not be attached. The file couldn’t be opened.",
+      "Up to three files are named")
+check(NXFormat.attachFailures(["a", "b", "c", "d"].map { ($0, unreadable) })
+      == "\(ListFormatter.localizedString(byJoining: ["“a”", "“b”", "2 other files"])) could not be attached. The file couldn’t be opened.",
+      "Past three, two are named and the rest counted")
 print("Passed \(checks) capture and triage checks")

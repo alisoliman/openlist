@@ -528,6 +528,9 @@ private struct NXInspectorHistoryPage: View {
     private func row(_ event: ActivityEvent) -> some View {
         let place = [event.listIcon, event.listTitle].filter { !$0.isEmpty }.joined(separator: " ")
         let when = NXFormat.dayAndClock(event.timestamp)
+        // Its due dates in the words of the time under them.
+        let detail = ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: event.change,
+                                                  dateText: { NXFormat.dayText($0, includesTime: $1) })
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: event.kind.symbol).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
@@ -536,8 +539,8 @@ private struct NXInspectorHistoryPage: View {
                     .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.66))
                     .padding(.vertical, leading / 2)
-                if !event.recordedDetail.isEmpty {
-                    Text(event.recordedDetail)
+                if !detail.isEmpty {
+                    Text(detail)
                         .font(.system(size: 11))
                         .foregroundStyle(NX.ink(0.5))
                 }

@@ -521,7 +521,9 @@ private struct NXSavedTasks {
         let icon = change?.copy == nil ? NXChangesSection.icon(kind) : "plus.square.on.square"
         var item = NXSavedItem(id: "e\(event.id)", icon: icon, tone: NXChangesSection.tone(kind),
                                label: addedLine ? "Added \(Self.title(event))" : label(event),
-                               detail: ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: change),
+                               // Its days named as of the change, as its label names them.
+                               detail: ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: change,
+                                                                    dateText: { NXFormat.dayText($0, includesTime: $1, now: event.at) }),
                                listID: event.listID, listTitle: event.listTitle, at: event.at)
         // "archived list" as the tray says it, of the list as it is now.
         if event.kind == .restored, event.blockID != nil, !event.restoredList.isEmpty, recovered(event) == nil,

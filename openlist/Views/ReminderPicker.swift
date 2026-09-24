@@ -32,7 +32,7 @@ struct ReminderPicker: View {
                     .foregroundStyle(block.reminderAt == nil ? NX.ink(0.4) : style.accent)
                     .accessibilityHidden(true)
                 // As the Reminder pill that opens it reads.
-                Text(block.reminderAt.map { NXFormat.dayAndClock($0) } ?? "No reminder")
+                Text(block.reminderAt.map { NXFormat.dueAndClock($0) } ?? "No reminder")
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
                 Spacer(minLength: 6)

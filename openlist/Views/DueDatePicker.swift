@@ -33,7 +33,7 @@ struct DueDatePicker: View {
             typeToSchedule
 
             VStack(alignment: .leading, spacing: 8) {
-                NXCapsTitle(text: "Due")
+                NXCapsTitle(text: "Quick picks")
                 presets
             }
 
