@@ -1,24 +1,18 @@
 # Adaptive calendar
 
 Openlist plans task sessions around available hours and the busy time in connected
-macOS calendars. Open **Calendar** in the sidebar or press **⌘3**. The **1 day**,
-**3 days**, **1 week**, and **1 month** controls show the same schedule at different
-scales. Browsing another date does not change the rolling plan.
-
-Choose **Now** (⌘0) to return to the current day and scroll to the current time.
-The date heading opens a month picker with direct date entry. Use the previous
-and next arrows (⌥⌘← / ⌥⌘→) to browse periods, or select a day heading or month cell
-to open that day. The zoom menu offers compact, comfortable, and large time
-scales while preserving the visible hour. Scrolling keeps the date headers and
-time ruler in view; the current time has a labeled marker. Navigation and task
-movement use native SwiftUI animation and respect Reduce Motion.
+macOS calendars. Open **Calendar** in the sidebar or press **⌘3**. The **Day**,
+**3 days** and **Week** control shows the same schedule at different scales, and
+the arrows beside it step back or on by that range; **Today** returns to the range
+around today. Browsing another range does not change the rolling plan. The
+current time has a marker, and movement respects Reduce Motion.
 
 ## Put work into the plan
 
-Open a task’s inspector and turn on **Plan for today**, or choose that action from
-a task row’s context menu. Tasks with a deadline inside the next four weeks also
-enter the plan automatically. Undated backlog stays unscheduled until selected,
-deferred to a day, or given an explicit placement. A selection that overruns its
+Open a task’s inspector and turn on **Plan for today**, choose **Task → Plan for
+Today**, or press **P** on a selected row. Tasks with a deadline inside the next
+four weeks also enter the plan automatically. Undated backlog stays unscheduled
+until selected, deferred to a day, or given an explicit placement. A selection that overruns its
 day carries forward until the task is completed or deselected.
 
 Planning intent is separate from **Due**, **Star**, and reminders. Selecting a task
@@ -42,7 +36,7 @@ remaining work.
 
 ## Available hours and meetings
 
-Each list chooses **Work** or **Personal** under its header’s options menu.
+Each list chooses **Work** or **Personal** from the hours menu in its header.
 Tasks inherit that choice. Calendar settings define separate weekly hours,
 breaks, and date-specific overrides for both categories:
 
@@ -72,16 +66,17 @@ are shown rather than represented as a successfully connected calendar.
 
 ## Work must be explicitly started
 
-A calendar block is a plan, not a running timer. Click **Start** in task details
-or **Start working** in a block’s context menu. Starting always records, even
-outside the list’s available hours or during a meeting: hours and busy time shape
-the plan and its warnings, not whether work may start. Starting another task
-switches straight away, and the tray offers Undo. A global banner keeps
-**Pause** and **Done** available while navigating the app.
+A calendar block is a plan, not a running timer. Click **Start** in task details,
+choose **Task → Start Working**, or use **Start** on Calendar’s **Planned now**
+banner. Starting always records, even outside the list’s available hours or
+during a meeting: hours and busy time shape the plan and its warnings, not
+whether work may start. Starting another task switches straight away, and the
+tray offers Undo. While work records, the toolbar’s work notch keeps **Done** and
+**Stop** available on every page; see [the work companion](WORK_COMPANION.md).
 
-At a planned start, **Up next** offers one-click **Start**. If it is ignored for
-five minutes, only the missed task moves into the next free gap; the rest of the
-day stays steady. Missed time is never logged as work. Any resulting deadline
+At a planned start, the **Planned now** banner offers one-click **Start**. If it
+is ignored for five minutes, only the missed task moves into the next free gap;
+the rest of the day stays steady. Missed time is never logged as work. Any resulting deadline
 risk remains visible in coverage.
 
 Recording continues past the estimate. A minute before the working block ends,
@@ -94,13 +89,13 @@ still running. An optional
 background notification offers **Complete task** near the estimated finish.
 Reaching an estimate never marks a task complete.
 
-Routine moves animate quietly and produce an expandable rescheduling message.
-Deadline and pin conflicts remain visible until resolved. Background calendar
-nudges use silent macOS notifications when notification permission is available;
-the in-app work bar remains available without that permission.
+Routine moves animate quietly. Deadline and pin conflicts remain visible in task
+details until resolved. Background calendar nudges use silent macOS notifications
+when notification permission is available; the in-app work notch remains
+available without that permission.
 
 When a meeting, a break, or another task’s pinned time leaves the working block
-no more room, work keeps recording and the toolbar and tray turn red, naming what
+no more room, work keeps recording and the work notch names what
 it is running into. The end of available hours only stops the block growing, as
 the planner never places work past it. Blocks the running work runs over stay
 where they were rather than being moved as missed; pausing replans them and the
@@ -119,14 +114,16 @@ an interrupted process or restart, an unfinished local session is closed at its
 last saved heartbeat and a resume prompt is offered; elapsed time while the app
 was absent is not silently recorded as work.
 
-## Move a preference or pin a time
+## Place a task or move its planned time
 
-Drag a flexible calendar block to a day and time, or use **Move time…**. That
-creates a preferred placement which can yield to busy time, deadlines, and
-changes in remaining work. It does not change the task’s due date.
+**Not planned yet**, beside the calendar, lists open tasks due soon or picked for
+today that have no block. Its **Plan** button, and **Task → Find a Slot**, place
+the task in the next free slot around meetings and your hours, as one change with
+Undo in the tray. That placement is pinned. In the Work panel, **Later… → Move
+planned time…** saves a preferred placement instead, which can yield to busy time,
+deadlines and changes in remaining work. Neither changes the task’s due date.
 
-Choose **Pin time** to fix a placement, or **Unpin time** to make it flexible.
-Pinned conflicts are shown on blocks and in deadline coverage. Pins can conflict
+Pinned conflicts are shown in deadline coverage. Pins can conflict
 with meetings, other pins, active work, availability, breaks, deadlines, or the
 **Keep task together** choice. A conflicting pin does not count as safe deadline
 coverage. A missed pin is reported and unfinished work is replanned; it is never
@@ -139,9 +136,8 @@ coverage; its remaining fixed time is not silently moved into today.
 
 ## Understand deadline coverage
 
-The plan covers today and the following 27 local dates. The status control above
-the calendar opens each task’s required, safely scheduled, and before-deadline
-minutes:
+The plan covers today and the following 27 local dates. A task’s details show its
+coverage status with its required and before-deadline minutes:
 
 | Status | Meaning |
 | --- | --- |
@@ -150,8 +146,8 @@ minutes:
 | Outside planning horizon | The deadline is beyond the rolling plan, or some remaining work cannot be safely placed within its available capacity. The explanation distinguishes these cases. |
 
 A task with a distant deadline can be selected for today to schedule it earlier.
-The month view labels dates outside the current plan. Changing the visible month
-does not promise that tasks beyond the horizon have already been planned.
+Stepping to a later range does not promise that tasks beyond the horizon have
+already been planned.
 
 Only a recurring task’s **current occurrence** is scheduled. Completing it records
 that occurrence and advances the existing recurrence rule, after which the next
@@ -161,7 +157,7 @@ future occurrences to forecast every repetition across four weeks.
 
 ## Completed work stays on the calendar
 
-All four views retain completed occurrences with a checkmark, muted color, and
+Every range retains completed occurrences with a checkmark, muted color, and
 strikethrough. Tracked work occupies its actual recorded intervals, including
 approved time corrections. Work completed without Start keeps its original
 planned slots and says **Time not tracked**. Older records without saved slots
@@ -169,18 +165,18 @@ use a completion marker rather than inventing a duration.
 
 Completed blocks do not reserve capacity. Finishing early immediately frees
 remaining time, and reused time appears side by side with completion history.
-Open a completed block to see its occurrence history and original planned slots;
-its actions cannot accidentally change the next recurring occurrence.
+A done block's check reopens its task in the slots the block took, as one Undo
+step; a repeat that has moved on stays done.
 
-Completion gives a brief checkmark animation and a **10-second Undo** message.
+Completion reports in the tray with **Undo**, for the undo window set in Settings.
 **⌘Z** also uses the native window Undo history. Undo restores the unfinished
 occurrence and planning choices, retains recorded work, and leaves the timer
 paused. Reduce Motion uses a simple fade.
 
 ## Work history and duration suggestions
 
-The calendar’s history button, or **History** in task details, opens recorded
-sessions and completion history. Session records retain the task title, occurrence,
+**History**, under **More options** in task details, opens recorded sessions and
+completion history. Session records retain the task title, occurrence,
 start, end, and pause reason. Completion records preserve each occurrence,
 including recurring tasks and completed descendants. History remains available
 when an ordinary task or list is deleted; **Delete all data** explicitly clears it.
@@ -192,8 +188,8 @@ Corrections affect remaining work and future suggestions.
 Suggestions use recorded active work from similar **completed** tasks: earlier
 occurrences of the same task or titles sharing substantial words. Up to 20 matching
 completed occurrences contribute to a median rounded to five minutes. Planned
-estimates and unfinished work are not training examples. The inspector explains
-its sample count and offers **Apply suggested … minutes**. Suggestions never
+estimates and unfinished work are not training examples. **More options** in task
+details explains its sample count and offers **Use … min**. Suggestions never
 change estimates without that approval.
 
 ## Local storage and iCloud
@@ -240,7 +236,8 @@ normal reconciliation and, if necessary, a recorded-time correction.
 
 Production paths: `openlist/Services/AdaptiveScheduler.swift`,
 `CalendarCoordinator.swift`, `ExternalCalendarSource.swift`, `MacWorkMonitor.swift`,
-`Store+Calendar.swift`; model additions are under `openlist/Model`; calendar views
+`Store+Calendar.swift`; model additions are under `openlist/Model`. The Calendar
+screen is `openlist/Next/NextCalendar.swift`; the Work panel, history and pickers
 are under `openlist/Views`.
 
 ## Validation
@@ -270,23 +267,8 @@ disk reopen. The full project check also passed. The final horizon-pin regressio
 was followed by another focused scheduling run. Debug and unsigned Release builds
 passed, including release bundle validation.
 
-Native interaction review used an isolated, ad-hoc-signed app with synthetic tasks
-and separate local storage. Observed journeys included all four calendar views,
-task creation and selection, editable estimates, explicit start, a real timer
-overrun and subsequent reflow, pause, completion/reopen, time correction,
-approval-only suggestions, deferral without changing the due date, clear deferral,
-preferred placement by move and drag, pinning, break conflicts and reduced deadline
-coverage, settings, and persistence through relaunch. The review exposed and fixed
-a native layout crash during view switching, overlapping short-session labels,
-and inspector scroll-position resets.
-
-The subsequent [calendar UI and Dev review](CALENDAR_UI_REVIEW.md) covers completion
-history, seamless nudges, 984 scheduling / 89 persistence / 151 runtime / 1,003
-layout checks, the
-distinct development identity, refreshed navigation, and additional native
-interaction checks. Feasible future preferred placements now take precedence
-over the automatic today fallback. Infeasible moves explain the conflict, and
-the move picker can explicitly pin the requested time.
+Feasible future preferred placements take precedence over the automatic today
+fallback, and infeasible moves explain the conflict.
 
 Runtime handler tests do not prove physical Mac lock/sleep notifications; fixture
 busy time does not prove live EventKit account permission/import behavior; schema

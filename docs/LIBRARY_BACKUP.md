@@ -1,6 +1,6 @@
 # Manual library backup and restore
 
-Settings > Data provides **Back up library** and **Restore backup**. Markdown
+Settings › Data provides **Back up library…** and **Restore backup…**. Markdown
 export remains a readable document export; an `.openlistbackup` directory
 package is the versioned reconstruction format. Current exports use format 5, including retained legacy Inbox metadata, Trash, covers, and list ownership. Formats 1–4 upgrade explicitly; Inbox visibility follows ownership, never the legacy metadata. An older already-queued restore must be cancelled and its backup selected again so that the staged schema and fingerprint can be revalidated.
 
@@ -8,8 +8,13 @@ Backups are **unencrypted**. They contain private task and note text, files,
 labels, calendar history, and activity for subjects that may since have been
 deleted. Store packages somewhere private. Clearing history or deleting data
 in Openlist does not erase previously exported backups or retained recovery
-files. There is no automatic backup schedule, retention cleanup, encryption,
-cloud backup destination, third-party import, or merge import in this slice.
+files. There is no encryption, cloud backup destination, third-party import, or
+merge import.
+
+**Back up library** under Settings › Library also takes a snapshot package each
+day by default, keeping the newest 14 in Openlist's Application Support
+`Backups` folder, and offers **Back up now…** and **Show Snapshots in Finder**.
+Only packages named like a snapshot are listed or pruned.
 
 ## Snapshot boundary
 
@@ -70,8 +75,9 @@ recoverable through the bounded hierarchy display. Retained document groups
 must connect to their own Trash root without crossing document boundaries.
 
 Portable settings include completed-task visibility, date parsing, default task
-destination, list-deletion confirmation, first weekday, Today/Lists sorting, and
-calendar estimates, availability, breaks and date overrides. Excluded current-Mac
+destination, list-deletion confirmation, first weekday, the previous design's
+Today and Lists sort choices (carried and validated, though nothing reads them
+now), and calendar estimates, availability, breaks and date overrides. Excluded current-Mac
 state includes appearance, window layout, menu-bar/hotkey controls, device ID,
 permissions, external-calendar connection/selection, MCP credentials/configuration,
 notification delivery state and synchronization configuration. Device IDs inside

@@ -1,45 +1,62 @@
-# BRI-25 row selection implementation plan
+# Row selection and bulk actions
 
-Scope: select displayed rows with Command-click, Shift-click, and arrows or Shift-arrows while a selection gutter has keyboard focus. Task titles, selected characters, links and native clipboard actions keep their existing editing behavior. Selection belongs to one pane at a time. Expanded group order supplies smart-view ranges; document rows supply outline ranges. Hidden rows leave the active selection.
+On Next screens (Today, Tasks, labels, a list's Completed group and the Inbox's
+groups), ⌘-click or ⇧-click adds a row to the selection or takes it out, **X**
+toggles the focused row, and ⌘A selects every visible row. Plain click focuses a
+row and clears the selection; Escape clears it too. A task's round checkbox
+still means completion.
 
-The native selection handle is quiet at rest, revealing on hover, selection,
-keyboard focus, or VoiceOver. Its 22-by-26-point hit target and accessibility
-button remain mounted when the glyph is hidden, so selection and drag gestures
-do not move the task title or compete visually with its completion checkbox.
+While rows are selected, the selection bar at the bottom of the window offers
+**Done** (E), **Today** (T), **Tomorrow** (M), **Plan** (P), **Star** (F) and
+**Trash** (D). Each acts on the whole selection as one change, reported in the
+tray with Undo. A row drags onto a list in the sidebar, or onto a line of a list
+document, to move there.
 
-Files: `Services/Navigator.swift` connects `Model/BlockSelection.swift`; `Views/RowSelectionContext.swift`, `Views/RowSelectionGutter.swift`, `Views/RowSelectionControl.swift`, `Views/TaskSelectionScope.swift`, and `Views/SelectionActionsBar.swift` add scoped controls and explicit Complete, Reopen, Move and Delete actions. `Editor/OutlineEditor.swift` (drawn by `Editor/DocumentView.swift`), `Views/SmartTaskRow.swift` and `Views/TasksScreen.swift` integrate their displayed row order. `Views/AppCommands.swift`, `Views/RootView.swift`, and `Views/ShortcutsSheet.swift` guard ambiguous commands and explain interaction. `Services/DragPayload.swift` and `Editor/BlockDragAndDrop.swift` carry and validate multi-root drags. Dedicated payload checks cover malformed and cross-session input.
+The list document keeps its own outline selection, scoped to that document, for
+its structural commands and drags.
 
-Store completion and move transactions are developed separately in `Store+BulkActions.swift` and `Store+CompletionUndo.swift`. The toolbar flushes pending native title drafts before calling these throwing APIs and shows failures through the existing editor notice. Complete and Reopen are explicit operations, with one existing completion undo. Move preserves selected display order and descendants, and registers one move undo. Delete resolves the entire ordered selection and canonical roots, then uses durable Trash with one Undo; selection clears only after success and failure remains visible. Bulk metadata remains deferred. Keyboard/menu Delete stays guarded for multiple rows; the explicit selection-bar Delete is the bulk path. Old menu paths must never silently target one row or toggle a mixed selection.
+## Files
 
-Dragging starts from the selection gutter. Position drops are available only in manual document order; dragging to another document and the Move menu remain available from sorted views. Versioned payloads carry a per-Navigator session nonce. Legacy single UUID payloads are accepted only when the same running Navigator has an active matching single-row drag; arbitrary legacy strings and malformed internal payloads are rejected, never inserted as text.
+`Next/Workbench.swift` owns the screens' selection, focus and visible row order;
+`Next/NextBars.swift` draws the selection bar and `Next/NextRow.swift` the rows,
+their clicks and drags. `Model/BlockSelection.swift`, through
+`Services/Navigator.swift`, holds the document's outline selection.
+`Services/DragPayload.swift` carries and validates multi-root drags, and
+`Next/NextSidebar.swift` accepts them.
 
-Validation: run existing selection model checks, focused payload checks and a coordinated Dev build. Native modifier-key, character selection/copy, cross-pane filtering, collapsed groups, lazy/offscreen ranges, mixed completion/reopen, move/undo and drag QA is performed by the delivery owner before merging.
+## Store invariants
 
-Implementation snapshot: gutter-only native NSControl selection and private-type drag transport are connected. Expanded TaskGroupSection containers emit group identities and all task IDs in structural order; repeated task appearances share selection but only the first visible appearance owns keyboard scrolling. Explicit arrow requests can restore gutter focus after lazy scrolling removes the previous control. The single action bar sits below the main content, avoiding selection-driven document layout shifts. Task titles and inspector parent editing return intentionally to a single editing selection.
+Complete and Reopen are explicit operations; the reopen path uses
+`Store.setBulkCompletion`, whose one Undo restores each task's completion
+exactly. Move uses `Store.moveSelection`: it preserves the selected display
+order and descendants, and registers one move Undo. Trash takes the selected
+tasks with everything nested under them to durable Trash, with one Undo.
 
-Pre-integration evidence: 14 block-selection checks and 14 drag-payload checks pass. RowSelectionControl with its pure model/payload dependencies and RowSelectionContext pass isolated Swift 6 typechecking. `git diff --check` passes. The first full Dev build was deliberately interrupted for concurrent Store rollback corrections; no app was launched and no native UI journey is claimed. The delivery owner subsequently integrated BRI-24 Inbox changes; the integration evidence below supersedes that interrupted build.
+Bulk snapshots exclude retained and permanently erased blocks, retained lists,
+and merged list aliases before selection, hierarchy, completion or move
+validation. A raw alias is never accepted as an available document owner. Move
+Undo requires its affected content and original parent/list destinations to
+remain available; older Undo cannot revive Trash content. Failed atomic bulk
+actions roll back their pending changes.
 
+`moveSelection(... expandsParent: true)` expands a collapsed destination in the
+same save as a positional move. One move Undo/Redo includes that expansion only
+while its expected collapse state remains unchanged; later explicit collapse
+choices are preserved.
 
-Inbox uses the rich document's complete visible row order and selection scope.
-Filing uses the shared transactional Move operation. The system destination is
-named Inbox; its command ownership always follows the document editor. Legacy
-independent Inbox ordering and membership commands have been removed.
+Versioned drag payloads carry a per-Navigator session nonce. Legacy single UUID
+payloads are accepted only when the same running Navigator has an active
+matching single-row drag; arbitrary strings and malformed internal payloads are
+rejected, never inserted as text. Drop handlers recheck the target model before
+dispatching a mutation, so a target deleted during payload loading produces an
+unavailable-target notice and no partial drop. Both app manifests export
+`app.openlist.block-drag` and `app.openlist.inbox-order` as `public.data`;
+`Tools/verify-drag-types.py` checks both manifests, and the Dev and Release
+verifiers run it on the built Info.plist.
 
+## Checks
 
-Async drop liveness: both private-content and plain-text provider callbacks recheck the target model before dispatching a mutation. Enter/update/drop position handling also rejects unavailable models, and OutlineEditor checks again before reading destination parentage. A target deleted during payload loading produces an unavailable-target notice and no partial drop. Full suite and Release were interrupted deliberately to include this guard in the frozen validation checkpoint.
-
-Inside-drop expansion: `moveSelection(... expandsParent: true)` expands a collapsed destination in the same save as the positional move. The toolbar keeps the default `false`. One move Undo/Redo includes that expansion only while its expected collapse state remains unchanged; later explicit collapse choices are preserved. Move and Undo failures restore the previous collapse and timestamp alongside positions. Final focused coverage passes 66 bulk checks and 6 separate-process reopen checks, including expansion-only Undo, injected move/Undo failures, actual read-only failure and independent Inbox curation.
-
-BRI-26 integration: rebased onto merged `6004080` with both issues' suites retained. List Tasks emits the entire sorted task projection from its outer container and owns a distinct selection scope. Switching either direction between Document and Tasks clears selected rows, range anchor, and pending gutter focus together. Exact-content reveal still returns to Document, and native title/capture/command routing retains the actual list mode. Focused checks pass: 31 Inbox/navigation, 32 list Tasks, 14 selection, 14 payload, 66 bulk actions and 6 separate-process reopen.
-
-The prior frozen `2786dfe` passed all 35 suites, Dev packaging/isolation and Release packaging. Delivery-owner native QA passed modifier/keyboard selection, native character editing, explicit bulk completion/reopen with separate physical-click Undo, and canonical subtree Move with Undo. Native positional dragging is still under investigation using an isolated review-only probe; the implementation agent does not claim that journey passed. Full validation after BRI-26 integration and any resulting drag fix remains required.
-
-Drag-event API correction: AppKit now receives the retained original mouse-down event when the gutter crosses the drag threshold. The review-only baseline trace captured the automated mouse-up arriving before AppKit's session-start callback, so this correction alone does not establish a successful native positional drop. List title/description editing also clears bulk mode, guarded by the live active list, current focus state and a real native text first responder. The first post-BRI-26 full run was deliberately interrupted before these source edits; its partial output is not final validation.
-
-Private transport registration: both app manifests now export `app.openlist.block-drag` and `app.openlist.inbox-order` as `public.data`, preserving the existing library-backup package export. The Dev and Release verifiers inspect the built Info.plist, and payload checks inspect both source manifests. The new verifier rejects the actual previous Dev and Release artifacts with missing declarations. All 42 helper/packaging checks pass, including missing, text-only and duplicate private-type declarations. The review probe confirms declared/data-conforming types at runtime; successful physical drag-and-drop remains a separate delivery-owner native gate.
-
-BRI-28 integration boundary: this branch starts from frozen reviewed Trash commit `7681e56dc3a0405d18cb1f058f34cfcce9b1ec47`, based on main `6004080`, and cherry-picks the nine BRI-25 commits through `b2cac81` in order. This is a pending-CI review base, not a claim that Trash has merged. Final BRI-25 integration commits remain above that boundary so they can be replayed after the actual Trash squash merge. Existing `/tmp/openlist-bri25` and `/tmp/openlist-bri28` worktrees are unchanged.
-
-Bulk snapshots exclude retained and permanently erased blocks, retained lists, and merged list aliases before selection, hierarchy, completion or move validation. Late block references through an alias must be reconciled before bulk actions; a raw alias is never accepted as an available document owner. Move Undo requires its affected content and original parent/list destinations to remain available; older Undo cannot revive Trash content. Delayed drop callbacks reject retained targets, and OutlineEditor re-resolves the target and its current list before deriving positional anchors. The focused bulk runner compiles both bulk and Trash sources and exercises multi-list parent/child deletion, exact-field recovery, save failures, stale selections/destinations, and old Move/Completion Undo after retention or permanent erase. The Trash runner also compiles the integrated bulk source.
-
-The integration agent runs focused regression suites and Dev packaging only. Full checks, Release packaging, native bulk Delete/Undo and successful physical drag remain delivery-owner gates after source review/freeze. No native app, custom URL, CloudKit, production store, remote push, PR or merge is performed by this agent.
+`Tools/run-block-selection-checks.sh` covers the outline selection model,
+`Tools/run-drag-payload-checks.sh` malformed, cross-session and manifest cases,
+and `Tools/run-bulk-action-checks.sh` bulk completion, moves, Trash, stale
+selections and destinations, save failures and separate-process reopening.
