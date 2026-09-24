@@ -324,11 +324,9 @@ struct UpNextModel: Equatable {
             }
     }
 
-    /// "50 min", and "1 h 20 min" past an hour.
+    /// "50 min", and "140 min" past an hour: the design counts minutes only.
     static func minutes(_ seconds: TimeInterval) -> String {
-        let total = Int((seconds / 60).rounded())
-        guard total >= 60 else { return "\(max(0, total)) min" }
-        return total % 60 == 0 ? "\(total / 60) h" : "\(total / 60) h \(total % 60) min"
+        "\(max(0, Int((seconds / 60).rounded()))) min"
     }
 }
 

@@ -95,13 +95,15 @@ struct openlistApp: App {
                     })
                     .task { env.bootstrap() }
                     .onOpenURL { url in
-                        // Widget taps have routes of their own; the rest are item links.
+                        // Widget taps have routes of their own, which activate
+                        // Openlist as they need: Quick Add floats over the app
+                        // in front. The rest are item links.
                         if let route = WidgetRoute(url: url) {
                             env.pendingWidgetRoute = route
                         } else {
                             env.localLinks.receive(url)
+                            NSApplication.shared.activate(ignoringOtherApps: true)
                         }
-                        NSApplication.shared.activate(ignoringOtherApps: true)
                     }
                     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
             } else {

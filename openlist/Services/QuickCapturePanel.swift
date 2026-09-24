@@ -66,6 +66,12 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
     private var lastOtherApp: NSRunningApplication?
     private var cameFrom: NSRunningApplication?
     private var activatedAt: Date?
+    // What `showFromWidget` needs to tell which app you were in: the last one
+    // with windows of its own, Openlist included, and not a widget's host.
+    private var lastRegularApp: NSRunningApplication?
+    private var cameFromRegular: NSRunningApplication?
+    /// When Openlist last came out of hiding, for `showFromWidget`.
+    private var unhiddenAt: Date?
     private weak var lastKeyWindow: NSWindow?
     private var lastKeyAt: Date?
     private var observers: [NSObjectProtocol] = []
@@ -84,6 +90,10 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
                                                queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.activated(app) }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didUnhideNotification, object: nil,
+                                                                queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.unhiddenAt = .now }
         })
         observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil,
                                                                 queue: .main) { [weak self] note in
@@ -209,6 +219,30 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.showAfterMenu() }
     }
 
+    /// From a widget's Quick Add. Opening the widget's link can make Openlist
+    /// the active app, and show it if it was hidden, before or after the card
+    /// opens. The card then gives focus back to the app you were in when it
+    /// closes, and hides Openlist again, as if Openlist had stayed where it was.
+    func showFromWidget(_ request: QuickCaptureRequest) {
+        let justNow = { (date: Date?) in date.map { $0.timeIntervalSinceNow > -1 } ?? false }
+        let previous: NSRunningApplication?
+        if NSApp.isActive {
+            // Openlist became active as the link opened, not before.
+            previous = justNow(activatedAt) ? cameFromRegular : nil
+        } else {
+            // The link's activation may still be on its way. Should it never
+            // come, close leaves focus where it is.
+            let front = NSWorkspace.shared.frontmostApplication
+            previous = Self.canReturn(to: front) ? front : lastRegularApp
+        }
+        let wasHidden = justNow(unhiddenAt)
+        show(request)
+        guard panel?.isVisible == true else { return }
+        // In place of none, or of VoiceOver's pick when that was the widget's host.
+        if Self.canReturn(to: previous), !Self.canReturn(to: returnTo) { returnTo = previous }
+        if wasHidden { hidesOnClose = true }
+    }
+
     private func showAfterMenu() {
         guard let menuObserver else { return }
         NotificationCenter.default.removeObserver(menuObserver)
@@ -250,12 +284,25 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
     }
 
     private func activated(_ app: NSRunningApplication?) {
-        if app?.processIdentifier == NSRunningApplication.current.processIdentifier {
+        if Self.isOpenlist(app) {
             cameFrom = lastOtherApp
+            cameFromRegular = lastRegularApp
             activatedAt = .now
         } else {
             lastOtherApp = app
         }
+        if Self.isOpenlist(app) || app?.activationPolicy == .regular { lastRegularApp = app }
+    }
+
+    private static func isOpenlist(_ app: NSRunningApplication?) -> Bool {
+        app?.processIdentifier == NSRunningApplication.current.processIdentifier
+    }
+
+    /// Another app with windows of its own: not Openlist, which you stay in,
+    /// or a widget's host, which has no window to come back to.
+    private static func canReturn(to app: NSRunningApplication?) -> Bool {
+        guard let app else { return false }
+        return app.activationPolicy == .regular && !isOpenlist(app)
     }
 
     /// Centred on the screen with the pointer, a fifth of the way down, as

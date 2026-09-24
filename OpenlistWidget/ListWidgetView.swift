@@ -35,7 +35,7 @@ struct ListWidgetView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             Text(model.emoji)
-                .font(.system(size: 15))
+                .font(.system(size: EmojiSize.points(forDesign: 15)))
                 .grayscale(palette.isDimmed ? 1 : 0)
                 .brightness(palette.isDimmed ? 0.25 : 0)
                 .frame(width: 28, height: 28)

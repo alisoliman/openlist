@@ -54,6 +54,57 @@ check(navigator.route == .inbox && navigator.documentListID == inboxID, "Forward
 navigator.go(to: .tasks)
 check(!navigator.documentOwnsEditorCommands && navigator.documentListID == nil, "Tasks does not inherit Inbox document ownership")
 
+// The widget's Triage link shows the Inbox as triage for that visit, whatever this Mac shows it as.
+let triageSuite = "openlist-triage-visit-checks-\(UUID().uuidString)"
+let triageDefaults = UserDefaults(suiteName: triageSuite)!
+defer { triageDefaults.removePersistentDomain(forName: triageSuite) }
+let triaging = Navigator(defaults: triageDefaults)
+let triageInbox = UUID()
+triaging.inboxListID = triageInbox
+triaging.go(to: .inbox)
+triaging.setListViewMode(.document, for: triageInbox)
+triaging.selection = [UUID()]
+let triageInspected = UUID()
+triaging.openTask(triageInspected)
+triaging.showInboxTriage()
+check(triaging.listViewMode(for: triageInbox) == .tasks && !triaging.documentOwnsEditorCommands && triaging.documentListID == nil
+      && triaging.selection.isEmpty && triaging.openTaskID == triageInspected,
+      "Triage turns the Inbox's document to triage for this visit, dropping its selection and keeping the inspector")
+let relaunched = Navigator(defaults: triageDefaults)
+relaunched.inboxListID = triageInbox
+relaunched.go(to: .inbox)
+check(relaunched.documentListID == triageInbox, "The triage visit is never saved")
+triaging.go(to: .today)
+triaging.go(to: .inbox)
+check(triaging.documentListID == triageInbox, "Coming back to the Inbox follows this Mac's choice again")
+triaging.showInboxTriage()
+triaging.goBack()
+triaging.goForward()
+check(triaging.documentListID == triageInbox, "Back and Forward end the triage visit")
+triaging.showInboxTriage()
+triaging.setListViewMode(.document, for: triageInbox)
+check(triaging.documentListID == triageInbox && triaging.documentOwnsEditorCommands, "Show as Document ends the triage visit")
+triaging.showInboxTriage()
+triaging.replace(with: .inbox)
+check(triaging.documentListID == triageInbox, "Replacing the route ends the triage visit")
+triaging.showInboxTriage()
+// The widget's Inbox link, as RootView takes it, while the triage visit is on show.
+triaging.selection = [UUID()]
+triaging.openTask(triageInspected)
+triaging.go(to: .inbox)
+triaging.followInboxPresentation()
+check(triaging.route == .inbox && triaging.documentListID == triageInbox && triaging.documentOwnsEditorCommands
+      && triaging.selection.isEmpty && triaging.openTaskID == triageInspected,
+      "The Inbox link after Triage follows this Mac's choice again, dropping triage's selection")
+let documentSelection: Set<UUID> = [UUID()]
+triaging.selection = documentSelection
+triaging.followInboxPresentation()
+check(triaging.documentListID == triageInbox && triaging.selection == documentSelection,
+      "The Inbox link leaves the Inbox's document as it is")
+triaging.setListViewMode(.tasks, for: triageInbox)
+triaging.showInboxTriage()
+check(triaging.listViewMode(for: triageInbox) == .tasks && triaging.documentListID == nil, "Where the Inbox is triage already, it stays triage")
+
 let suite = "openlist-list-mode-checks-\(UUID().uuidString)"
 let defaults = UserDefaults(suiteName: suite)!
 defer { defaults.removePersistentDomain(forName: suite) }

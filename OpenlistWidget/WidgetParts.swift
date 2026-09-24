@@ -195,7 +195,9 @@ struct Hairline: View {
 // MARK: - Checkbox
 
 /// The row's circle. The checkbox is a toggle so a tick runs its intent and
-/// fills at once; the row itself leaves on the reload that follows.
+/// fills at once; the row itself leaves on the reload that follows. Only the
+/// circle is the toggle, so a tap anywhere else in the row can't tick the
+/// task: the widget has no undo.
 struct CheckToggleStyle: ToggleStyle {
     let ring: Color
     /// Already completed in the snapshot: green. Ticked just now: the design's
@@ -258,31 +260,34 @@ struct TaskRowView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             TaskCheckbox(row: row).padding(.top, 1)
-            if let link {
-                WidgetLink(destination: link) { text }
-            } else {
-                text
+            Group {
+                if let link {
+                    WidgetLink(destination: link) { text }
+                } else {
+                    text
+                }
+                if !compact && row.isStarred {
+                    WidgetSymbol(name: "star.fill", size: 8, weight: .regular, color: palette.amber)
+                        .frame(width: 11, height: 11)
+                        .padding(.top, 2)
+                }
+                if !compact && !row.dueText.isEmpty {
+                    Text(row.dueText)
+                        .monospacedDigit()
+                        .css(.sans(10, .medium), line: 1.3)
+                        .foregroundStyle(row.isLate ? palette.red : palette.sub)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.top, 1)
+                }
             }
-            if !compact && row.isStarred {
-                WidgetSymbol(name: "star.fill", size: 8, weight: .regular, color: palette.amber)
-                    .frame(width: 11, height: 11)
-                    .padding(.top, 2)
-            }
-            if !compact && !row.dueText.isEmpty {
-                Text(row.dueText)
-                    .monospacedDigit()
-                    .css(.sans(10, .medium), line: 1.3)
-                    .foregroundStyle(row.isLate ? palette.red : palette.sub)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.top, 1)
-            }
+            // While a tick's intent runs, the system dims the rows beside
+            // their circles until the reload takes the ticked one away. The
+            // design fades only that row and strikes its title, which would
+            // put the row inside the circle's toggle.
+            .invalidatableContent()
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private var label: String {
-        (palette.isDimmed || row.listIcon.isEmpty ? "" : row.listIcon + " ") + row.listName
     }
 
     private var text: some View {
@@ -294,7 +299,7 @@ struct TaskRowView: View {
                 .lineLimit(compact ? 2 : 1)
                 .truncationMode(.tail)
             if showsMeta {
-                Text(compact ? (row.dueText.isEmpty ? label : row.dueText) : label)
+                meta
                     .css(.sans(10, .medium), line: 1.2)
                     .foregroundStyle(compact && row.isLate ? palette.red : palette.solid)
                     .opacity(compact && row.isLate ? 1 : palette.faintOpacity)
@@ -303,6 +308,25 @@ struct TaskRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The list, or in small Today the due text when there is one.
+    private var meta: Text {
+        if compact && !row.dueText.isEmpty { return Text(row.dueText) }
+        return Text(listIcon: palette.isDimmed ? "" : row.listIcon, name: row.listName, size: 10)
+    }
+}
+
+extension Text {
+    /// "🗻 Weekend in Kyoto" on a line set at `size`: the emoji as large as the
+    /// design draws it there, not Core Text's larger one (`EmojiSize`).
+    init(listIcon icon: String, name: String, size: CGFloat) {
+        guard !icon.isEmpty else {
+            self.init(verbatim: name)
+            return
+        }
+        let glyph = Text(verbatim: icon).font(.system(size: EmojiSize.points(forDesign: size)))
+        self.init("\(glyph) \(name)")
     }
 }
 
