@@ -5,32 +5,81 @@ extension Store {
     /// An insertion-only sibling transaction. Live drafts, existing task/list
     /// instances and their pending edits are never rolled back or flushed.
     /// A paste is new work: the schedules the fragment carries stay behind.
+    ///
+    /// The lines go in under the list document's rules (`OutlinePolicy`), as
+    /// pasted Markdown's do: beside the anchor line when they can go there,
+    /// otherwise beside the line it's under, after the lines already under
+    /// that one, stepping out as far as they must. They go under a line only
+    /// when it and they are tasks or list items, with what they hold two
+    /// levels deep at most. A line the copied hierarchy holds deeper, as an
+    /// older outline can, goes beside the one above it at the second level,
+    /// in order. Returns the lines at the paste's top level.
     func pasteFragment(_ fragment: DocumentFragment, in document: DocumentContext,
                        after anchorID: UUID?) throws -> [UUID] {
         try fragment.validate()
         guard let listID = resolvedListID(document.listID), let owningList = list(id: listID),
               !owningList.isDeleted else { throw FragmentError.destination }
+        let outline = fragment.outline()
+        // How many levels each line holds under it.
+        var height: [UUID: Int] = [:]
+        for (source, _) in outline.reversed() {
+            if let parent = source.parentID { height[parent] = max(height[parent] ?? 0, (height[source.id] ?? 0) + 1) }
+        }
+        let rootBlocks = outline.filter { $0.block.parentID == nil }.map(\.block)
+        func fits(under line: Block, at depth: Int) -> Bool {
+            OutlinePolicy.nests(line.kind) && rootBlocks.allSatisfy { root in
+                BlockKind(rawValue: root.kind).map(OutlinePolicy.nests) == true
+                    && depth + (height[root.id] ?? 0) <= OutlinePolicy.maximumDepth
+            }
+        }
         let parentID: UUID?
         let afterIndex: Double
+        // The line the paste goes in after, and how deep its top level is.
+        let siblingID: UUID?
+        let depth: Int
         if let anchorID {
             guard let anchor = block(id: anchorID), anchor.listID == listID,
                   document.rootBlockID == nil || anchor.parentID == document.rootBlockID
                     || BlockTree.descendants(of: document.rootBlockID!, in: blocks(inList: listID)).contains(where: { $0.id == anchor.id }) else {
                 throw FragmentError.destination
             }
-            parentID = anchor.parentID
-            afterIndex = anchor.sortIndex
+            // The anchor and the lines it's under, nearest first, to step out
+            // along, never past the document's own root.
+            let path = [anchor] + BlockTree.ancestors(of: anchor, in: blocks(inList: listID))
+            var step = 0
+            while path[step].parentID != document.rootBlockID, step + 1 < path.count,
+                  !fits(under: path[step + 1], at: path.count - 1 - step) {
+                step += 1
+            }
+            parentID = path[step].parentID
+            afterIndex = path[step].sortIndex
+            siblingID = path[step].id
+            depth = path.count - 1 - step
         } else {
             parentID = document.rootBlockID
+            var parentDepth = -1
             if let parentID {
                 guard let parent = block(id: parentID), parent.listID == listID else { throw FragmentError.destination }
+                parentDepth = BlockTree.ancestors(of: parent, in: blocks(inList: listID)).count
             }
             afterIndex = children(of: parentID, listID: listID).map(\.sortIndex).max() ?? 0
+            siblingID = nil
+            depth = parentDepth + 1
         }
+        // Where each line goes under the paste's top level: under the line it
+        // was copied under while that keeps it two levels deep, or else beside
+        // the line above it at the deepest level that does.
+        let kept = max(OutlinePolicy.maximumDepth, depth) - depth
+        var placedParent: [UUID: UUID] = [:]
+        for (source, level) in outline {
+            guard let parent = source.parentID else { continue }
+            placedParent[source.id] = level <= kept ? parent : placedParent[parent]
+        }
+        let placedRoots = outline.map(\.block.id).filter { placedParent[$0] == nil }
         let next = children(of: parentID, listID: listID).map(\.sortIndex).filter { $0 > afterIndex }.min()
         var index = afterIndex
         var positions: [UUID: Double] = [:]
-        for root in fragment.roots {
+        for root in placedRoots {
             let value = BlockTree.index(after: index, before: next)
             guard value.isFinite, value > index, next.map({ value < $0 }) ?? true else { throw CopyError.ordering }
             positions[root] = value
@@ -44,8 +93,8 @@ extension Store {
         }
         let savedBlocks = try staged.writer.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.listID == listID }))
         let savedByID = Dictionary(savedBlocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let anchorID {
-            guard let saved = savedByID[anchorID], saved.parentID == parentID, saved.sortIndex == afterIndex else {
+        if let siblingID {
+            guard let saved = savedByID[siblingID], saved.parentID == parentID, saved.sortIndex == afterIndex else {
                 throw FragmentError.destination
             }
         }
@@ -79,12 +128,12 @@ extension Store {
         }
         let ids = Dictionary(uniqueKeysWithValues: fragment.blocks.map { ($0.id, UUID()) })
         var childIndices: [UUID: Double] = [:]
-        for source in fragment.blocks {
+        for (source, _) in outline {
             let clone = Block(kind: BlockKind(rawValue: source.kind)!, text: source.text, listID: listID)
             clone.id = ids[source.id]!
-            clone.parentID = source.parentID.flatMap { ids[$0] } ?? parentID
+            clone.parentID = placedParent[source.id].flatMap { ids[$0] } ?? parentID
             if let position = positions[source.id] { clone.sortIndex = position }
-            else if let parent = source.parentID {
+            else if let parent = placedParent[source.id] {
                 let value = (childIndices[parent] ?? 0) + BlockTree.indexStep
                 childIndices[parent] = value
                 clone.sortIndex = value
@@ -122,6 +171,22 @@ extension Store {
         try staged.commit(owningList: owningList)
         refreshAllReminders()
         onDidSave?()
-        return fragment.roots.map { ids[$0]! }
+        return placedRoots.map { ids[$0]! }
+    }
+}
+
+private extension DocumentFragment {
+    /// The lines in document order, each with how many levels under its root
+    /// it is: a root, then what's under it, as a document lists them.
+    func outline() -> [(block: FragmentBlock, level: Int)] {
+        let byID = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0) })
+        let children = Dictionary(grouping: blocks.filter { $0.parentID != nil }, by: { $0.parentID! })
+        var result: [(block: FragmentBlock, level: Int)] = []
+        var stack = roots.reversed().compactMap { byID[$0] }.map { (block: $0, level: 0) }
+        while let line = stack.popLast() {
+            result.append(line)
+            stack += (children[line.block.id] ?? []).reversed().map { (block: $0, level: line.level + 1) }
+        }
+        return result
     }
 }

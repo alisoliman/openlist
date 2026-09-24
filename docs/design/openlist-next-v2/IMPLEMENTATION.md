@@ -71,9 +71,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
-  bars and the overlay cards in rather than sliding them, as its hint says, where the design
-  shortens the inspector's slide and plays the others' unchanged. Each fade takes as long as
-  that slide.
+  bars, the overlay cards and the Turn into card in rather than sliding them, as its hint
+  says, where the design shortens the inspector's slide and plays the others' unchanged.
+  Each fade takes as long as that slide.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
@@ -107,8 +107,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   design's does, but never past two levels and only under a task or list item, which
   older outlines can break. MCP's create, move and append tools place lines by the same
   rules (`OutlinePolicy`), refusing a heading or text under a line, or a third level.
-  Markdown pasted or dropped as several lines (a native extra) keeps to them too: a line
-  its indent can't put under the one above goes beside it, as far out as it must.
+  Markdown pasted or dropped as several lines, and Openlist content pasted after a line
+  (native extras), keep to them too: a line its indent can't put under the one above goes
+  beside it, as far out as it must, and copied content steps out beside the lines it was
+  pasted under until what it holds fits, anything an older outline holds deeper coming up
+  to the second level.
   The Inbox's document mode is the same list document under
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
@@ -303,16 +306,21 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   design's does), and a line's Turn Into menu lists them all. From the second letter
   the editor's search words bring kinds up too, so `/h1`, `/todo` or `/hr` find Heading,
   Task or Divider, and a query can list a kind whose label doesn't hold it. Only the
-  design's prefixes (`# `, `## `, `- `, `* `, `[ ] `, `[] `, `> `) convert a line as it's
-  typed, and only the design's five show one in the card; the editor's inline `**bold**`,
-  `_italic_`, `~~strike~~` and `` `code` `` rules still style it, as the Format menu does.
+  design's prefixes (`# `, `## `, `- `, `* `, `[ ] `, `[] `, `> `) convert a line, as it's
+  typed or as a paste at its start leaves it starting with one (so a pasted `- [ ] Buy yen`
+  makes a list item, as the design's `-` comes first), and only the design's five show one
+  in the card; the editor's inline `**bold**`, `_italic_`, `~~strike~~` and `` `code` ``
+  rules still style it, as the Format menu does. A right-click in the line being written
+  offers the Format menu's styles in place of AppKit's Font and Layout Orientation menus,
+  whose fonts, underline, colours and sizes the document doesn't keep.
   ⇧↩ types a soft break only in a code line, and a code line keeps its indent where the
   others are stored trimmed, as the design's commit does, once the caret leaves them.
   A paste keeps a line to one line, as the design's input does: over a selection, or as a
   drop into the line, each break it brings becomes a space, and Openlist content goes in
   as the text of its lines, a space between them. Native extras, with nothing selected:
-  Openlist content goes in whole after the line, and several lines of text become lines of
-  their own after it (filling it while it's empty), under the document's rules: `> ` makes
+  Openlist content goes in whole after the line (or as far out as its levels need), and
+  several lines of text become lines of their own after it (filling it while it's empty),
+  read as Markdown, so `- [ ] ` there makes a task, under the document's rules: `> ` makes
   text, or right under a pasted task that task's note; a line nests under the line it was
   pasted under only when both are tasks or list items, two levels deep at most, and
   otherwise goes beside it, stepping out after the lines already under it, so a heading or

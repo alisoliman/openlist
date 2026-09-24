@@ -62,8 +62,9 @@ written in the list's document. Indenting, dragging, Add subtask and pasted
 Markdown nest only tasks and list items, only under a task or list item and two
 levels deep at most, as the design's indent allows, and a line turned into a
 heading or text goes to the top. Pasted Openlist content keeps the hierarchy it
-was copied with, and an older outline keeps its own. The inspector lists a
-task's subtasks with their progress, and a subtask shows the task it belongs to.
+was copied with, within those two levels, and an older outline keeps its own.
+The inspector lists a task's subtasks with their progress, and a subtask shows
+the task it belongs to.
 
 Lists can also own separately titled **child list documents**. Create one with
 **New Child List** in a list's **…** menu; a parent shows its children above its

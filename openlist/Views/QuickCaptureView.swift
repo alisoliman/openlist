@@ -74,17 +74,18 @@ struct QuickCaptureView: View {
             }
             return
         }
-        let block: Block
+        let saved: (block: Block, opened: [UUID])
         do {
-            block = try draft.saveCapture(parse)
+            saved = try draft.saveCapture(parse)
         } catch {
             show(NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
                                  failed: true))
             return
         }
+        let block = saved.block
         // The main window takes the task in as it does its own captures,
-        // Undo and Changes included.
-        env.workbench.didQuickAdd(block)
+        // Undo and Changes included, folding again what the capture opened.
+        env.workbench.didQuickAdd(block, opened: saved.opened)
         let added = "Added to \(env.store.list(id: block.listID)?.displayTitle ?? "Inbox")"
         if !keepOpen {
             AccessibilityNotification.Announcement(added).post()

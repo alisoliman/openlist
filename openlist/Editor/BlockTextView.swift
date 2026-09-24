@@ -352,18 +352,7 @@ struct BlockTextView: NSViewRepresentable {
                 wasInsertion: wasInsertion,
                 kind: parent.kind
             ) {
-                storage.deleteCharacters(in: rule.range)
-                view.setSelectedRange(NSRange(location: 0, length: 0))
-                view.invalidateIntrinsicContentSize()
-
-                // Persist the stripped text before changing kind, otherwise the
-                // model keeps the "## " the user just consumed.
-                reportEdit(NSAttributedString(attributedString: storage))
-                recordLocalEdit(storage, kind: parent.kind)
-                // The kind is about to change out from under us, and the new
-                // fonts have to be applied even though the text did not move.
-                needsRestyle = true
-                parent.callbacks.onMarkdownPrefix(rule.kind)
+                convert(by: rule, in: view, storage: storage)
                 return
             }
 
@@ -378,6 +367,30 @@ struct BlockTextView: NSViewRepresentable {
             // the card up, the one Escape put away too.
             updateSlashQuery(in: view, textChanged: true)
             view.invalidateIntrinsicContentSize()
+        }
+
+        /// A paste that went in at the start of the line and left it starting
+        /// with one of the design's prefixes converts it, as typing it does.
+        func convertPastedPrefix(in view: BlockNSTextView) {
+            guard let storage = view.textStorage,
+                  let rule = MarkdownInputRules.matchPastedPrefix(in: storage, kind: parent.kind) else { return }
+            convert(by: rule, in: view, storage: storage)
+        }
+
+        /// Takes `rule`'s prefix off the line and turns it into its kind.
+        private func convert(by rule: MarkdownInputRules.BlockPrefixMatch, in view: BlockNSTextView, storage: NSTextStorage) {
+            storage.deleteCharacters(in: rule.range)
+            view.setSelectedRange(NSRange(location: 0, length: 0))
+            view.invalidateIntrinsicContentSize()
+
+            // Persist the stripped text before changing kind, otherwise the
+            // model keeps the "## " the user just consumed.
+            reportEdit(NSAttributedString(attributedString: storage))
+            recordLocalEdit(storage, kind: parent.kind)
+            // The kind is about to change out from under us, and the new
+            // fonts have to be applied even though the text did not move.
+            needsRestyle = true
+            parent.callbacks.onMarkdownPrefix(rule.kind)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -748,8 +761,10 @@ final class BlockNSTextView: NSTextView {
     /// or filling it while it's empty. Over a selection, Openlist content
     /// goes in as the text of its lines, a space between them. Anything else
     /// is AppKit's paste, styled text included, with each line break it
-    /// brings made a space, as the design's single-line inputs take a paste.
-    /// A code line, one of the editor's own kinds, keeps the breaks.
+    /// brings made a space, as the design's single-line inputs take a paste,
+    /// and one at the start of the line that leaves it starting with one of
+    /// the design's prefixes converts it, as the design's change does. A
+    /// code line, one of the editor's own kinds, keeps the breaks and prefixes.
     private(set) var isPasting = false
 
     override func paste(_ sender: Any?) {
@@ -779,7 +794,9 @@ final class BlockNSTextView: NSTextView {
             insertText(Self.lineTexts(of: content), replacementRange: selectedRange())
             return
         }
+        let atStart = selectedRange().location == 0, before = string
         native()
+        if atStart, string != before { coordinator?.convertPastedPrefix(in: self) }
     }
 
     /// The text of Openlist content's lines, in order, a space between them.
@@ -949,7 +966,50 @@ final class BlockNSTextView: NSTextView {
     // MARK: Clicks
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        coordinator?.parent.callbacks.contextMenu?() ?? super.menu(for: event)
+        if let menu = coordinator?.parent.callbacks.contextMenu?() { return menu }
+        return super.menu(for: event).map(writingMenu)
+    }
+
+    /// The text's own menu, for a line being written, with the Format menu's
+    /// styles after Paste in place of AppKit's Font and Layout Orientation
+    /// menus, whose fonts, underline, colours and sizes the document doesn't
+    /// keep. Look Up, Spelling and Grammar, Substitutions, Speech and the
+    /// rest stay.
+    func writingMenu(_ menu: NSMenu) -> NSMenu {
+        let styling: Set<Selector> = [#selector(NSFontManager.orderFrontFontPanel(_:)),
+                                      #selector(NSTextView.changeLayoutOrientation(_:))]
+        func styles(_ item: NSMenuItem) -> Bool {
+            item.action.map(styling.contains) == true || item.submenu?.items.contains(where: styles) == true
+        }
+        for item in menu.items.reversed() where styles(item) { menu.removeItem(item) }
+        // Two separators the removal left side by side, or one at either end, go too.
+        for (index, item) in menu.items.enumerated().reversed() where item.isSeparatorItem
+            && (index == 0 || index == menu.items.count - 1 || menu.items[index + 1].isSeparatorItem) {
+            menu.removeItem(at: index)
+        }
+        let formats: [(String, Selector, String, NSEvent.ModifierFlags)] = [
+            ("Bold", #selector(toggleBold(_:)), "b", .command),
+            ("Italic", #selector(toggleItalic(_:)), "i", .command),
+            ("Strikethrough", #selector(toggleStrikethrough(_:)), "x", [.command, .shift]),
+            ("Inline Code", #selector(toggleInlineCode(_:)), "e", .command),
+            ("Add Link…", #selector(promptForLink(_:)), "l", .command),
+        ]
+        let editing: Set<Selector> = [#selector(NSText.cut(_:)), #selector(NSText.copy(_:)), #selector(NSText.paste(_:)),
+                                      #selector(NSTextView.pasteAsPlainText(_:))]
+        var index = (menu.items.lastIndex { $0.action.map(editing.contains) == true }).map { $0 + 1 } ?? 0
+        if index > 0 {
+            menu.insertItem(.separator(), at: index)
+            index += 1
+        }
+        for (title, action, key, modifiers) in formats {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.target = self
+            menu.insertItem(item, at: index)
+            index += 1
+        }
+        if index < menu.items.count, !menu.items[index].isSeparatorItem { menu.insertItem(.separator(), at: index) }
+        return menu
     }
 
     override func mouseDown(with event: NSEvent) {

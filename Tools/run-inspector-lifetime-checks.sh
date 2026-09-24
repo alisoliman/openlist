@@ -14,7 +14,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-ch
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   openlist/Views/LabelPicker.swift openlist/Views/AttachmentRow.swift \
-  openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
+  openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift openlist/Editor/OutlinePolicy.swift \
   openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift \
   openlist/Services/FragmentMarkdown.swift openlist/Services/InlineMarkdown.swift openlist/Services/Store+Fragments.swift \
   openlist/Services/Navigator.swift \
