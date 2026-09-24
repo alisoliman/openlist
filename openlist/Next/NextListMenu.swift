@@ -43,13 +43,15 @@ struct NXListMenu<Options: View>: View {
         Menu("Hours") { hoursItems }
             .accessibilityLabel("Hours: \(workbench.hours(for: list).title)")
         options
+        // Over an open capture, beside the sidebar, what would put a name
+        // field, sheet, confirmation or save panel over the card stands down,
+        // as File ▸'s items do, so the card keeps the keys and its draft.
+        let keepsCapture = workbench.captureOpen
         if !list.isSystemInbox {
             Divider()
-            // Over an open capture, beside the sidebar, the name field and
-            // the save panel stand down, as File ▸'s do, so the card keeps
-            // the keys and its draft.
-            if let rename { Button("Rename List…", action: rename).disabled(workbench.captureOpen) }
+            if let rename { Button("Rename List…", action: rename).disabled(keepsCapture) }
             Button("Move List…") { env.listPendingMove = list }
+                .disabled(keepsCapture)
             Button("New Child List") { workbench.createChildList(in: list) }
                 .disabled(archived)
         }
@@ -58,11 +60,12 @@ struct NXListMenu<Options: View>: View {
         // Native extras: the design has neither copy nor export.
         Button("Copy as Markdown", action: copyMarkdown)
         Button("Export as Markdown…") { workbench.exportMarkdown(list) }
-            .disabled(workbench.captureOpen)
+            .disabled(keepsCapture)
         if !list.isSystemInbox {
             Divider()
             Button("Duplicate") { workbench.duplicateList(list) }
             Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
+                .disabled(keepsCapture)
             Divider()
             // Nested lists show under their parent, so only top-level ones can be pinned.
             if !archived && library.hierarchy.parent(of: list.id) == nil {
@@ -74,6 +77,7 @@ struct NXListMenu<Options: View>: View {
             }
             Divider()
             Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
+                .disabled(keepsCapture && env.settings.confirmsBeforeDeletingLists)
         }
     }
 

@@ -41,11 +41,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Sidebar, Expand and Collapse All, the Work menu's, Keyboard Shortcuts); only ⌘K's palette
   replaces it. Beside it the sidebar's New list, New List in Section and New Child List
   still make and open a list, as the design's New list does, but without its name field,
-  and its Rename and Export as Markdown… are off, so the card keeps the keys; a name being
-  written there keeps its own Return, Tab and Esc. Capture aims at the list on show only
-  while it takes tasks: on an archived list's page, a native one, it aims at Inbox, as
-  Quick Add does. A save that fails says so on the card, as Quick Add's does, not in the
-  tray under the backdrop.
+  and what would put a name field, sheet, confirmation or save panel over the card is off
+  (Rename, Move List…, Use as Template…, Export as Markdown…, a Delete List that asks
+  first), so the card keeps the keys; a name being written there keeps its own Return, Tab
+  and Esc. Capture aims at the list on show only while it takes tasks: on an archived
+  list's page, a native one, it aims at Inbox, as Quick Add does. A save that fails says so
+  on the card, as Quick Add's does, not in the tray under the backdrop.
 - The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
   and runs the Workbench's actions on the tasks its commands reach (in a list document the
   line being written, else the workbench targets in that list); its titles read every
@@ -367,10 +368,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo), as it hears the row J/K or the arrows
-  focus, and what X, ⇧J/⇧K, ⌘A and Esc select ("Selected, 3 selected"), a native extra: the
-  design's focus card and selection tint are only seen. Redo, a native extra, says "Redid — …"
-  with Undo, as Undo says "Undid — …"; one of a task's Trash that moves nothing, either way,
-  says "Could not …", keeps the log as it was and leaves the stack. Completions made outside Next's rows
+  focus (with whether it's selected, as ⇧J/⇧K select them), and the selection X, ⌘A and Esc
+  change ("Selected, 3 selected", "Selection cleared"), a native extra: the design's focus
+  card and selection tint are only seen. Redo, a native extra, says "Redid — …" with Undo,
+  as Undo says "Undid — …"; one of a task's Trash that moves nothing, either way, says
+  "Could not …", keeps the log as it was and leaves the stack. Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
   completion entry, and so does Settings' Export… ("Exported N lists as Markdown"). One-off
   refusals (`Store.refuse`: a drop the document's rules don't allow, rearranging a sorted
@@ -388,9 +390,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), New List (the design's tray
   has no Undo; here it takes the list back, or to Trash once it holds anything, and a window
   on it to Today, as Delete List does), a list's Duplicate, Use as Template… (the copy
-  opens; Undo takes it to Trash, and a window on it to Today) and Move List…, a list dragged
-  in the sidebar, New and Delete Section (New Section also opens its name field; a rename is
-  logged as an edit), the "…" menu's Sort, Completed Tasks and Cover, Delete Label (sidebar and
+  opens; Undo takes it back, or to Trash once it holds anything, and a window on it to
+  Today) and Move List…, a list dragged in the sidebar, New and Delete Section (New Section
+  also opens its name field; a rename is logged as an edit), the "…" menu's Sort, Completed
+  Tasks and Cover, Delete Label (sidebar and
   Settings; Undo puts it back where it sat on each task), Settings' Add, rename and colour
   of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
