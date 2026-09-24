@@ -691,9 +691,9 @@ extension Workbench {
         }
     }
 
-    func finishWork(settleNow: Bool = false) {
+    func finishWork() {
         guard let task = workTask else { return }
-        complete([task.id], settleNow: settleNow)
+        complete([task.id])
     }
 
     func stopWork() {

@@ -59,7 +59,7 @@ final class WidgetCalendarFeed {
 
     /// The running block's end grows with the work; rounding it up to the
     /// quarter hour keeps each minute's growth from reloading the widget.
-    private static func quarter(after date: Date) -> Date {
+    static func quarter(after date: Date) -> Date {
         let quarter: TimeInterval = 15 * 60
         return Date(timeIntervalSinceReferenceDate: (date.timeIntervalSinceReferenceDate / quarter).rounded(.up) * quarter)
     }
@@ -90,19 +90,22 @@ final class WidgetCalendarFeed {
                                           title: meeting.title, start: meeting.start, end: meeting.end,
                                           isCompleted: false, isActive: false, isFlexible: false)
             }
-            items += self.calendar.visibleBlocks.filter { overlaps($0.start, $0.end) }.compactMap { block(for: $0, isFlexible: false) }
+            items += self.calendar.visibleBlocks.filter { overlaps($0.start, $0.end) }.compactMap { block(for: $0, isFlexible: false, now: now) }
             if day == today {
-                items += flexible.filter { overlaps($0.start, $0.end) }.compactMap { block(for: $0, isFlexible: true) }
+                items += flexible.filter { overlaps($0.start, $0.end) }.compactMap { block(for: $0, isFlexible: true, now: now) }
             }
             return WidgetSnapshot.AgendaDay(day: day, items: items.sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start })
         }
     }
 
-    private func block(for block: PlannedBlock, isFlexible: Bool) -> WidgetSnapshot.AgendaItem? {
+    private func block(for block: PlannedBlock, isFlexible: Bool, now: Date) -> WidgetSnapshot.AgendaItem? {
         let task = store.block(id: block.taskID)
         guard let title = block.isCompleted ? block.titleSnapshot ?? task?.displayTitle : task?.displayTitle else { return nil }
         let list = store.list(id: task?.listID)
-        return WidgetSnapshot.AgendaItem(id: block.id, kind: .task, title: title, start: block.start, end: block.end,
+        // Work running past what the plan allows ends now, and now moves on
+        // with every heartbeat: rounded, as the timer's slot is.
+        let end = block.isActive ? Self.quarter(after: max(block.end, now)) : block.end
+        return WidgetSnapshot.AgendaItem(id: block.id, kind: .task, title: title, start: block.start, end: end,
                                          taskID: block.taskID, occurrenceID: block.occurrenceID, listIcon: list?.icon,
                                          listName: list?.displayTitle, accent: (list?.accent ?? .graphite).rawValue,
                                          isCompleted: block.isCompleted, isActive: block.isActive, isFlexible: isFlexible)

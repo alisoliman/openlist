@@ -160,9 +160,9 @@ struct DueCounts: Equatable {
     var done = 0
 
     init(_ snapshot: WidgetSnapshot, clock: WidgetClock) {
-        for stamp in snapshot.dueStamps {
-            let offset = clock.dayOffset(stamp.due)
-            if offset < 0 { overdue += 1 } else if offset == 0 { dueToday += 1 }
+        for due in snapshot.dueDays {
+            let offset = clock.dayOffset(due.day)
+            if offset < 0 { overdue += due.count } else if offset == 0 { dueToday += due.count }
         }
         done = snapshot.completedToday(on: clock)
     }

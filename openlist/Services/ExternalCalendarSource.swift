@@ -26,8 +26,9 @@ final class ExternalCalendarSource {
     private(set) var error: String?
     var onChange: (() -> Void)?
     /// Bumped on every reload, so readers of `busyTimes(in:)` can keep what
-    /// they read until the calendars change.
-    @ObservationIgnored private(set) var revision = 0
+    /// they read until the calendars change, and observers of it see changes
+    /// `busyTimes` doesn't show, like a meeting renamed or one earlier in the week.
+    private(set) var revision = 0
 
     init(defaults: UserDefaults = ReviewSession.defaults, fixtureBusyTimes: [FixedBusyTime]? = nil) {
         self.fixtureBusyTimes = fixtureBusyTimes

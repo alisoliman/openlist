@@ -43,6 +43,9 @@ struct SetTaskCompletionIntent: SetValueIntent {
 // Work is only ever recorded by the running app, and these share state with the
 // timer in its toolbar, so they ask to run in the app's process: in the
 // background, as a ForegroundContinuableIntent did, without bringing it forward.
+// From macOS 27 `allowedExecutionTargets` pins them there. Before it the system
+// may still pick the extension, which queues them like a tick; one the app
+// only finds after the timer has moved on is dropped, with a notice in the tray.
 
 /// Up Next's Start.
 struct StartWorkIntent: AppIntent {
@@ -69,8 +72,9 @@ struct StartWorkIntent: AppIntent {
     }
 }
 
-/// Up Next's Pause, and its Resume once paused.
-struct ToggleWorkPauseIntent: AppIntent {
+/// Up Next's Pause, and its Resume once paused. Which one the widget showed
+/// travels with it: a widget behind the timer can't flip it the wrong way.
+struct PauseWorkIntent: AppIntent {
     static let title: LocalizedStringResource = "Pause or Resume Working"
     static let description = IntentDescription("Pauses the timer, or resumes paused work.")
     static let isDiscoverable = false
@@ -80,16 +84,19 @@ struct ToggleWorkPauseIntent: AppIntent {
 
     @Parameter(title: "Task") var taskID: String
     @Parameter(title: "Occurrence") var occurrenceID: String
+    /// Pause, or when false, Resume.
+    @Parameter(title: "Pause") var pauses: Bool
 
     init() {}
 
-    init(taskID: UUID, occurrenceID: UUID?) {
+    init(taskID: UUID, occurrenceID: UUID?, pauses: Bool) {
         self.taskID = taskID.uuidString
         self.occurrenceID = occurrenceID?.uuidString ?? ""
+        self.pauses = pauses
     }
 
     func perform() async throws -> some IntentResult {
-        await dispatchWork(.togglePause, taskID: taskID, occurrenceID: occurrenceID)
+        await dispatchWork(pauses ? .pauseWork : .resumeWork, taskID: taskID, occurrenceID: occurrenceID)
         return .result()
     }
 }

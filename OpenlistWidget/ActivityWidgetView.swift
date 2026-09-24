@@ -18,11 +18,14 @@ struct ActivityWidgetView: View {
                 WidgetSymbol(name: "square.grid.2x2.fill", size: 11, weight: .regular, color: palette.acc)
                     .frame(width: 13, height: 13)
                 // One gap fewer than the design's spacer leaves: the system
-                // face is wider than the browser's at this size.
+                // face is wider than the browser's at this size. Neither text
+                // is ever shortened; as in the design, a long streak runs
+                // into the padding instead.
                 Text("Activity")
                     .css(.sans(12, .bold), line: 1)
                     .foregroundStyle(palette.ink)
                     .lineLimit(1)
+                    .fixedSize()
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("\(model.streak)-day streak")
                     .css(.sans(11, .semibold), line: 1)
@@ -30,6 +33,7 @@ struct ActivityWidgetView: View {
                     .lineLimit(1)
                     .fixedSize()
             }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             heatmap.frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 if size == .small {

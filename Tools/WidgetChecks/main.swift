@@ -31,6 +31,32 @@ check(old?.todayItems.first?.title == "Pay the electricity bill" && old?.todayIt
 check(old?.totalOpenCount == 9 && old?.inboxCount == 2 && old?.completedTodayCount == 3, "Version 1 counts keep their meaning")
 check(old?.lists.first?.openCount == 4 && old?.lists.first?.openItems.isEmpty == true, "Version 1 lists decode without rows")
 check(old?.work == nil && old?.agenda.isEmpty == true && old?.activity == nil, "Version 1 has no work, agenda or activity")
+let builtAt = clockAt(ISO8601DateFormatter().date(from: "2026-09-20T08:00:00Z")!)
+let builtCounts = old.map { DueCounts($0, clock: builtAt) }
+check(builtCounts?.overdue == 1 && builtCounts?.dueToday == 2, "Version 1's counts read as they did on the day it was built")
+check(old.map { DueCounts($0, clock: clock).overdue } == 3, "and what was due that day is late by now")
+
+// A version 1 widget, sharing the App Group with a newer app, still reads the file.
+struct Version1: Decodable {
+    struct Item: Decodable {
+        var id: UUID, title: String, listName: String, listIcon: String, accent: String, dueDate: Date?
+        var includesTime: Bool, isCompleted: Bool, isStarred: Bool, hasRepeat: Bool
+    }
+    struct ListSummary: Decodable {
+        var id: UUID, title: String, icon: String, accent: String, openCount: Int, doneCount: Int
+    }
+    var generatedAt: Date, todayItems: [Item], overdueCount: Int, dueTodayCount: Int, completedTodayCount: Int
+    var inboxCount: Int, totalOpenCount: Int, lists: [ListSummary]
+}
+var published = design
+published.overdueCount = 3
+published.dueTodayCount = 4
+let reader = JSONDecoder()
+reader.dateDecodingStrategy = .iso8601
+let legacy = try? reader.decode(Version1.self, from: WidgetSnapshotStore.encode(published)!)
+check(legacy?.overdueCount == 3 && legacy?.dueTodayCount == 4 && legacy?.todayItems.count == design.todayItems.count
+      && legacy?.lists.count == design.lists.count, "A version 1 widget reads a version 2 file")
+check(published == design, "Version 1's counts don't decide a reload")
 
 let encoded = WidgetSnapshotStore.encode(design)!
 check(WidgetSnapshotStore.decode(encoded) == design, "Version 2 round-trips")
@@ -44,6 +70,19 @@ later.heartbeatAt = .now
 check(later == design, "Equality ignores when the snapshot was built and its heartbeat")
 later.inboxCount += 1
 check(later != design, "Equality sees what the widget shows")
+
+// Open tasks are counted by the day they fall due, however many share one.
+let noon = WidgetSampleData.referenceDate
+let days = WidgetSnapshot.dueDays([noon, noon.addingTimeInterval(3_600), noon.addingTimeInterval(-86_400), noon], calendar: clock.calendar)
+check(days.map(\.count) == [1, 3] && days[1].day == clock.today, "Due dates count by day, soonest first")
+check(design.dueDays.count == Set(design.dueDays.map(\.day)).count && design.dueDays.reduce(0) { $0 + $1.count } == 13,
+      "The design's thirteen dated tasks, one entry a day")
+var counted = design
+counted.countDue(on: noon, by: -4, calendar: clock.calendar)
+check(!counted.dueDays.contains { $0.day == clock.today }, "A day with nothing left due drops out")
+counted.countDue(on: noon, by: 2, calendar: clock.calendar)
+check(counted.dueDays.first { $0.day == clock.today }?.count == 2 && counted.dueDays == counted.dueDays.sorted { $0.day < $1.day },
+      "and comes back in its place")
 
 // MARK: Routes
 
@@ -109,6 +148,12 @@ check(reopened.openCount == 6 && reopened.doneCount == 0 && reopened.openItems.l
 let planned = SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: id("p1"), occurrenceID: id("p1"))], to: design)
 check(planned.agenda.flatMap(\.items).first { $0.taskID == id("p1") }?.isCompleted == true, "The Agenda shows a queued tick done")
 check(SnapshotOverlay.apply([WidgetAction(kind: .startWork, taskID: id("q1"))], to: design) == design, "Work waits for the app")
+check(DueCounts(SnapshotOverlay.apply([reopen], to: ticked), clock: clock) == DueCounts(ticked, clock: clock),
+      "A queued reopen of an undated task counts nothing due")
+let kyotoDue = WidgetAction(kind: .complete, taskID: id("k5"), occurrenceID: id("k5"))
+check(SnapshotOverlay.apply([kyotoDue], to: design).dueDays.reduce(0) { $0 + $1.count } == 12, "A list row's tick counts one fewer due")
+check([WidgetAction.Kind.startWork, .pauseWork, .resumeWork, .finishWork].allSatisfy(\.isWork)
+      && ![WidgetAction.Kind.complete, .reopen].contains(where: \.isWork), "Only the timer's buttons are work")
 
 // MARK: List
 

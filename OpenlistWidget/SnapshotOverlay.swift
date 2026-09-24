@@ -20,7 +20,7 @@ enum SnapshotOverlay {
             case .reopen: reopen(action, in: &snapshot, calendar: calendar)
             // Work only changes in the running app; its buttons invalidate
             // their content until the app publishes.
-            case .startWork, .togglePause, .finishWork: break
+            case .startWork, .pauseWork, .resumeWork, .finishWork: break
             }
         }
         return snapshot
@@ -37,8 +37,10 @@ enum SnapshotOverlay {
         let shown = snapshot.todayItems.contains { matches($0.id, $0.occurrenceID, action) && !$0.isCompleted }
             || snapshot.lists.contains { $0.openItems.contains { matches($0.id, $0.occurrenceID, action) } }
         guard shown else { return }
+        let row = snapshot.todayItems.first { matches($0.id, $0.occurrenceID, action) }
+            ?? snapshot.lists.lazy.compactMap { $0.openItems.first { matches($0.id, $0.occurrenceID, action) } }.first
+        if let due = row?.dueDate { snapshot.countDue(on: due, by: -1, calendar: calendar) }
         snapshot.todayItems.removeAll { matches($0.id, $0.occurrenceID, action) }
-        snapshot.dueStamps.removeAll { $0.id == action.taskID }
         for index in snapshot.lists.indices {
             guard let row = snapshot.lists[index].openItems.firstIndex(where: { matches($0.id, $0.occurrenceID, action) }) else { continue }
             var item = snapshot.lists[index].openItems.remove(at: row)
@@ -91,7 +93,7 @@ enum SnapshotOverlay {
         guard let item = reopened else { return }
         snapshot.totalOpenCount += 1
         if let due = item.dueDate {
-            snapshot.dueStamps.append(WidgetSnapshot.DueStamp(id: item.id, due: due, includesTime: item.includesTime))
+            snapshot.countDue(on: due, by: 1, calendar: calendar)
             let tomorrowEnd = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: action.createdAt)) ?? due
             if due < tomorrowEnd { snapshot.todayItems.append(item) }
         }

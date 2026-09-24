@@ -166,10 +166,16 @@ final class AppEnvironment {
     /// Starts at bootstrap, then follows each change it sees.
     private func watchCalendarForWidgets() {
         let signature = withObservationTracking {
-            calendar.visibleBlocks.map { "\($0.id)|\($0.start.timeIntervalSinceReferenceDate)|\($0.end.timeIntervalSinceReferenceDate)|\($0.isCompleted)" }
+            calendar.visibleBlocks.map { block in
+                // The running block's end moves with each heartbeat; the widget
+                // only sees it by the quarter hour.
+                let end = block.isActive ? WidgetCalendarFeed.quarter(after: block.end) : block.end
+                return "\(block.id)|\(block.start.timeIntervalSinceReferenceDate)|\(end.timeIntervalSinceReferenceDate)|\(block.isCompleted)"
+            }
                 + calendar.plan.blocks.map { "p\($0.id)|\($0.start.timeIntervalSinceReferenceDate)" }
                 + ["\(calendar.activeSession?.id.uuidString ?? "-")", "\(calendar.resumeTaskID?.uuidString ?? "-")",
-                   "\(calendar.externalCalendars.busyTimes.count)", "\(settings.firstWeekday)"]
+                   // Bumped by every calendar change, a meeting moved or renamed included.
+                   "\(calendar.externalCalendars.revision)", "\(settings.firstWeekday)"]
         } onChange: { [weak self] in
             Task { @MainActor in self?.watchCalendarForWidgets() }
         }

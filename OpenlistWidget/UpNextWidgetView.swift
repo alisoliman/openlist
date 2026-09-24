@@ -41,18 +41,24 @@ struct UpNextWidgetView: View {
                     .fill(model.state == .paused ? palette.amber : palette.acc)
                     .widgetAccentable()
                     .frame(width: 7, height: 7)
+                // Never shortened, as the design's nowrap: "WORKING" and a
+                // slot's times take one of the gaps around the spacer instead.
                 Text(model.label.uppercased())
                     .tracking(10 * 0.08)
                     .css(.sans(10, .bold), line: 1)
                     .foregroundStyle(palette.acc)
                     .lineLimit(1)
-                Spacer(minLength: 0)
+                    .fixedSize()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Text(model.time)
                     .css(.mono(10, .medium), line: 1)
                     .foregroundStyle(palette.sub)
                     .lineLimit(1)
                     .fixedSize()
             }
+            // Past the column, the row runs on into the padding, and the
+            // column keeps its width.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             Text(model.title)
                 .css(.sans(15, .semibold), line: 1.25)
                 .foregroundStyle(palette.ink)
@@ -113,15 +119,16 @@ struct UpNextWidgetView: View {
         if let taskID = model.taskID {
             if isWorking {
                 HStack(spacing: 5) {
-                    Button(intent: ToggleWorkPauseIntent(taskID: taskID, occurrenceID: model.occurrenceID)) {
+                    Button(intent: PauseWorkIntent(taskID: taskID, occurrenceID: model.occurrenceID, pauses: model.state == .working)) {
                         disc(palette.chip) {
-                            WidgetSymbol(name: model.state == .paused ? "play.fill" : "pause.fill", size: 12, color: palette.ink)
+                            MaterialGlyph(glyph: model.state == .paused ? AnyShape(MaterialPlay()) : AnyShape(MaterialPause()),
+                                          size: 17, color: palette.ink)
                         }
                     }
                     .accessibilityLabel(model.state == .paused ? "Resume" : "Pause")
                     Button(intent: FinishWorkIntent(taskID: taskID, occurrenceID: model.occurrenceID)) {
                         disc(palette.green, accentable: true) {
-                            WidgetSymbol(name: "checkmark", size: 13.5, weight: .bold, color: palette.onacc)
+                            MaterialGlyph(glyph: MaterialCheck(), size: 18, color: palette.onacc)
                         }
                     }
                     .accessibilityLabel("Done")
@@ -130,7 +137,7 @@ struct UpNextWidgetView: View {
             } else if model.state != .clear {
                 Button(intent: StartWorkIntent(taskID: taskID, occurrenceID: model.occurrenceID)) {
                     disc(palette.acc, accentable: true) {
-                        WidgetSymbol(name: "play.fill", size: 13.5, color: palette.onacc)
+                        MaterialGlyph(glyph: MaterialPlay(), size: 19, color: palette.onacc)
                     }
                     .shadow(color: palette.accshadow, radius: 6, y: 5)
                 }

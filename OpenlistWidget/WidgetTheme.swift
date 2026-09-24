@@ -169,7 +169,7 @@ struct WidgetFace {
         switch family {
         case .sans:
             let measured: [CGFloat: (CGFloat, CGFloat)] = [9: (8, 2), 9.5: (8, 2), 10: (10, 3), 10.5: (10, 3), 11: (10, 3),
-                                                           11.5: (11, 3), 12: (11, 3), 13: (12, 3), 14: (13, 4), 15: (13, 4)]
+                                                           11.5: (11, 3), 12: (11, 3), 13: (12, 3), 14: (14, 4), 15: (14, 4)]
             return measured[size] ?? ((size * 0.9).rounded(), (size * 0.25).rounded())
         case .mono:
             let measured: [CGFloat: (CGFloat, CGFloat)] = [9: (8, 2), 9.5: (9, 2), 10: (9, 2), 19: (18, 4)]

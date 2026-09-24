@@ -43,7 +43,12 @@ final class WidgetActionApplier {
         publisher.refreshNow(forcingReload: true)
     }
 
-    /// Applies every queued action, oldest first, and removes its file.
+    /// Applies every queued action, oldest first, then removes their files.
+    ///
+    /// The files go only once the snapshot shows what they did: until then the
+    /// widget lays them over the old snapshot, so a reload in between doesn't
+    /// show a ticked row open again, and a crash part way loses nothing. The
+    /// overlay ignores a file whose row the snapshot already shows done.
     func drainQueue() {
         guard !isDraining else { return }
         isDraining = true
@@ -52,14 +57,32 @@ final class WidgetActionApplier {
         WidgetActionQueue.removeUnreadable(keeping: Set(pending.map(\.url)))
         guard !pending.isEmpty else { return }
         bootstrap()
-        for (url, action) in pending {
-            WidgetActionQueue.remove(url)
-            let isWork = action.kind == .startWork || action.kind == .togglePause || action.kind == .finishWork
-            if isWork, Date.now.timeIntervalSince(action.createdAt) > Self.workActionLifetime { continue }
+        var late: WidgetAction?
+        for (_, action) in pending {
+            if action.kind.isWork, Date.now.timeIntervalSince(action.createdAt) > Self.workActionLifetime {
+                late = action
+                continue
+            }
             perform(action)
         }
         // The widget hid these rows until now; it reloads even if nothing changed.
         publisher.refreshNow(forcingReload: true)
+        for (url, _) in pending { WidgetActionQueue.remove(url) }
+        if let late { reportLate(late) }
+    }
+
+    /// A Start, Pause or Done that waited for Openlist longer than the timer
+    /// it answered is dropped, and says so rather than vanish.
+    private func reportLate(_ action: WidgetAction) {
+        let button = switch action.kind {
+        case .startWork: "Start"
+        case .pauseWork: "Pause"
+        case .resumeWork: "Resume"
+        default: "Done"
+        }
+        let title = store.block(id: action.taskID).map { " for \(NXFormat.quoted($0.displayTitle))" } ?? ""
+        workbench.showTray("A widget’s \(button)\(title) reached Openlist too late to apply",
+                           icon: "calendar.badge.exclamationmark", tone: .neutral)
     }
 
     /// Drains the queue whenever the extension adds a file to it.
@@ -101,18 +124,19 @@ final class WidgetActionApplier {
             guard task.isCompleted else { return }
             workbench.reopen([task.id])
         case .startWork:
-            guard calendar.validWorkTask(WorkTaskReference(task)) != nil else { return }
+            guard calendar.activeSession?.taskID != task.id,
+                  calendar.validWorkTask(WorkTaskReference(task)) != nil else { return }
             workbench.startWork(task.id)
-        case .togglePause:
-            guard workbench.workTask?.id == task.id else { return }
+        case .pauseWork, .resumeWork:
+            // Only from the state the widget showed: a Pause from a widget
+            // still showing work the app has since paused mustn't resume it.
+            guard workbench.workTask?.id == task.id,
+                  workbench.isWorkPaused == (action.kind == .resumeWork) else { return }
             workbench.toggleWorkPause()
         case .finishWork:
+            // Completing the work task stops its timer too, as Done does.
             guard !task.isCompleted else { return }
-            if workbench.workTask?.id == task.id {
-                workbench.finishWork(settleNow: true)
-            } else {
-                workbench.complete([task.id], settleNow: true, at: action.createdAt, clearsSelection: false)
-            }
+            workbench.complete([task.id], settleNow: true, at: action.createdAt, clearsSelection: false)
         }
     }
 }

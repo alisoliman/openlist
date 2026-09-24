@@ -8,7 +8,12 @@ import Foundation
 /// Something a widget button or checkbox asked Openlist to do.
 nonisolated struct WidgetAction: Codable, Equatable, Identifiable, Sendable {
     enum Kind: String, Codable, Sendable {
-        case complete, reopen, startWork, togglePause, finishWork
+        /// Pause and Resume say which they were, so one the timer has since
+        /// moved past does nothing, rather than the opposite.
+        case complete, reopen, startWork, pauseWork, resumeWork, finishWork
+
+        /// Answers the timer as the widget showed it.
+        var isWork: Bool { self == .startWork || self == .pauseWork || self == .resumeWork || self == .finishWork }
     }
 
     var id = UUID()

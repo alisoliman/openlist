@@ -2,8 +2,8 @@
 //  WidgetParts.swift
 //  OpenlistWidget
 //
-//  The pieces the widgets share: rows and their checkboxes, rings, bars,
-//  section heads, the empty state and the footer.
+//  The pieces the widgets share: the design's Material glyphs, rows and their
+//  checkboxes, rings, bars, section heads, the empty state and the footer.
 //
 
 import AppIntents
@@ -21,6 +21,90 @@ struct WidgetSymbol: View {
         Image(systemName: name)
             .font(.system(size: size, weight: weight))
             .foregroundStyle(color)
+    }
+}
+
+// MARK: - Material glyphs
+
+// The design's Material Symbols Rounded glyphs whose SF Symbols have other
+// proportions: SF's checkmark is nearly square and its pause bars sit close,
+// where the design's are short and wide, and far apart. Each is drawn on the
+// font's 24-unit em square, the size a CSS font size gives it.
+
+/// Maps the font's 24-unit em square onto `rect`, centred.
+private nonisolated struct MaterialGrid {
+    let rect: CGRect
+    var unit: CGFloat { min(rect.width, rect.height) / 24 }
+
+    func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+        CGPoint(x: rect.midX + (x - 12) * unit, y: rect.midY + (y - 12) * unit)
+    }
+}
+
+/// `check`, which the design sets at weight 700, past the 600 the design
+/// loads: the glyph's centre line and stroke as the design renders them,
+/// with its round ends.
+nonisolated struct MaterialCheck: Shape {
+    func path(in rect: CGRect) -> Path {
+        let grid = MaterialGrid(rect: rect)
+        var line = Path()
+        line.move(to: grid.point(6.1, 12.6))
+        line.addLine(to: grid.point(9.35, 16.2))
+        line.addLine(to: grid.point(17.9, 7.7))
+        return line.strokedPath(StrokeStyle(lineWidth: 2.85 * grid.unit, lineCap: .round, lineJoin: .round))
+    }
+}
+
+/// `play_arrow`, filled: a triangle with rounded corners, a little right of centre.
+nonisolated struct MaterialPlay: Shape {
+    func path(in rect: CGRect) -> Path {
+        let grid = MaterialGrid(rect: rect)
+        // The font's own outline, in its 960-unit em square.
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { grid.point(x / 40, y / 40) }
+        var path = Path()
+        path.move(to: p(320, 687))
+        path.addLine(to: p(320, 273))
+        path.addQuadCurve(to: p(332, 244.5), control: p(320, 256))
+        path.addQuadCurve(to: p(360, 233), control: p(344, 233))
+        path.addQuadCurve(to: p(370.5, 234.5), control: p(365, 233))
+        path.addQuadCurve(to: p(381, 239), control: p(376, 236))
+        path.addLine(to: p(707, 446))
+        path.addQuadCurve(to: p(720.5, 461), control: p(716, 452))
+        path.addQuadCurve(to: p(725, 480), control: p(725, 470))
+        path.addQuadCurve(to: p(720.5, 499), control: p(725, 490))
+        path.addQuadCurve(to: p(707, 514), control: p(716, 508))
+        path.addLine(to: p(381, 721))
+        path.addQuadCurve(to: p(370.5, 725.5), control: p(376, 724))
+        path.addQuadCurve(to: p(360, 727), control: p(365, 727))
+        path.addQuadCurve(to: p(332, 715.5), control: p(344, 727))
+        path.addQuadCurve(to: p(320, 687), control: p(320, 704))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// `pause`, filled, at the design's weight 500: two nearly round-ended bars.
+nonisolated struct MaterialPause: Shape {
+    func path(in rect: CGRect) -> Path {
+        let grid = MaterialGrid(rect: rect)
+        var path = Path()
+        for left in [5.25, 14.0] as [CGFloat] {
+            let origin = grid.point(left, 5.35)
+            path.addRoundedRect(in: CGRect(x: origin.x, y: origin.y, width: 4.75 * grid.unit, height: 13.3 * grid.unit),
+                                cornerSize: CGSize(width: 2.2 * grid.unit, height: 2.2 * grid.unit))
+        }
+        return path
+    }
+}
+
+/// A Material glyph at a CSS font size, centred as the design's flex boxes centre it.
+struct MaterialGlyph<Glyph: Shape>: View {
+    let glyph: Glyph
+    let size: CGFloat
+    let color: Color
+
+    var body: some View {
+        glyph.fill(color).frame(width: size, height: size)
     }
 }
 
@@ -131,9 +215,7 @@ struct CheckToggleStyle: ToggleStyle {
                 }
             }
             .widgetAccentable()
-            Image(systemName: "checkmark")
-                .font(.system(size: 7.5, weight: .bold))
-                .foregroundStyle(palette.onacc)
+            MaterialGlyph(glyph: MaterialCheck(), size: 10, color: palette.onacc)
                 .opacity(filled ? 1 : 0)
         }
         .frame(width: 15, height: 15)
@@ -249,9 +331,7 @@ struct AllClearView: View {
             Circle().fill(palette.green)
                 .widgetAccentable()
                 .frame(width: 30, height: 30)
-                .overlay {
-                    WidgetSymbol(name: "checkmark", size: 13.5, weight: .bold, color: palette.onacc)
-                }
+                .overlay { MaterialGlyph(glyph: MaterialCheck(), size: 18, color: palette.onacc) }
             Text("All clear")
                 .css(.serif(21), line: 1)
                 .foregroundStyle(palette.ink)

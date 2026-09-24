@@ -135,10 +135,7 @@ enum WidgetSampleData {
         snapshot.firstWeekday = firstWeekday
         let open = tasks.filter { !isDone($0) }
         snapshot.todayItems = open.filter { ($0.due ?? 2) <= 1 }.map(item)
-        snapshot.dueStamps = open.compactMap { task in
-            let item = item(task)
-            return item.dueDate.map { WidgetSnapshot.DueStamp(id: item.id, due: $0, includesTime: item.includesTime) }
-        }
+        snapshot.dueDays = WidgetSnapshot.dueDays(open.compactMap { item($0).dueDate }, calendar: calendar)
         snapshot.completedTodayCount = 2 + completed.count
         snapshot.completedTodayDay = today
         snapshot.inboxCount = inbox.count

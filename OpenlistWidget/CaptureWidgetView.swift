@@ -43,7 +43,11 @@ struct CaptureWidgetView: View {
             Text("New task")
                 .css(.sans(14, .semibold), line: 1.2)
                 .foregroundStyle(palette.ink)
+            // A hair tighter at medium size: the system face sets the first
+            // line a point wider than the design's 118 pt column, which would
+            // wrap the line onto a third and lift "New task" with it.
             Text(size == .small ? "\(model.count) waiting in Inbox" : "Type it, Openlist sorts dates and labels")
+                .tracking(size == .small ? 0 : -0.1)
                 .css(.sans(11, .medium), line: 1.35)
                 .foregroundStyle(palette.sub)
                 .fixedSize(horizontal: false, vertical: true)

@@ -22,6 +22,9 @@ final class WidgetSnapshotPublisher {
     private var pendingRefresh: Task<Void, Never>?
     private var lastWritten: WidgetSnapshot?
     private var heatmapCache: (key: [Int], activity: WidgetSnapshot.Activity?)?
+    /// Each list's first open tasks in its own order, by list, with what the
+    /// order was worked out from.
+    private var listOrderCache: [UUID: (key: Int, ids: [UUID])] = [:]
     /// The settings calendar, whose week the Agenda and heatmap follow.
     var settingsCalendar: () -> Calendar = { .current }
     var calendarFeed: CalendarFeed?
@@ -92,9 +95,13 @@ final class WidgetSnapshotPublisher {
         let lists = store.allLists()
         var listsByID: [UUID: TaskList] = [:]
         for list in lists { listsByID[list.id] = list }
-        let blocks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil }))) ?? [])
-            .filter { !$0.isDeleted }
-        let tasks = ActiveTaskPolicy(lists: lists).tasks(in: blocks.filter(\.isTask))
+        // Tasks only: prose never shows in a widget, and a library's
+        // documents can hold many times more of it than tasks. This runs
+        // after every save, the editor's autosave included.
+        let allTasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
+            $0.trashID == nil && $0.kindRaw == "task"
+        }))) ?? []).filter { !$0.isDeleted }
+        let tasks = ActiveTaskPolicy(lists: lists).tasks(in: allTasks)
         let inbox = InboxPolicy(lists: lists)
 
         let todayStart = calendar.startOfDay(for: now)
@@ -129,6 +136,7 @@ final class WidgetSnapshotPublisher {
 
         var soon: [Block] = []
         var inboxOpen: [Block] = []
+        var dueDates: [Date] = []
         var listCounts: [UUID: (open: Int, done: Int)] = [:]
         for task in tasks {
             let listID = task.listID
@@ -143,11 +151,15 @@ final class WidgetSnapshotPublisher {
             if let listID { listCounts[listID, default: (0, 0)].open += 1 }
             if inbox.includes(task) { inboxOpen.append(task) }
             guard let due = task.dueDate else { continue }
-            snapshot.dueStamps.append(WidgetSnapshot.DueStamp(id: task.id, due: due, includesTime: task.includesTime))
+            dueDates.append(due)
+            // Version 1's rule, for its widget: timed work is late once its time passes.
+            if task.includesTime ? due < now : due < todayStart { snapshot.overdueCount += 1 }
+            else if due < tomorrowStart { snapshot.dueTodayCount += 1 }
             // Overdue by day, as the app's Today: today's and tomorrow's too,
             // so entries after midnight still have the new day's rows.
             if due < soonEnd { soon.append(task) }
         }
+        snapshot.dueDays = WidgetSnapshot.dueDays(dueDates, calendar: calendar)
 
         snapshot.todayItems = soon.sorted { a, b in
             let aDay = calendar.startOfDay(for: a.dueDate!), bDay = calendar.startOfDay(for: b.dueDate!)
@@ -161,11 +173,13 @@ final class WidgetSnapshotPublisher {
             WidgetSnapshot.InboxItem(id: $0.id, title: $0.displayTitle, createdAt: $0.createdAt)
         }
 
-        let blocksByList = Dictionary(grouping: blocks.filter { $0.listID != nil }, by: { $0.listID! })
+        let tasksByList = Dictionary(grouping: allTasks.filter { $0.listID != nil }, by: { $0.listID! })
+        let above = blocksAbove(allTasks)
+        var orders: [UUID: (key: Int, ids: [UUID])] = [:]
         snapshot.lists = lists.filter { !$0.isSystemInbox }.prefix(60).map { list in
-            let owned = blocksByList[list.id] ?? []
-            let open = ListTasksProjection(blocks: owned, listID: list.id, sorting: list.sorting, showsCompleted: false).tasks
-            let done = owned.filter { $0.isTask && $0.isCompleted }.sorted(by: Block.byCompletionDate)
+            let owned = tasksByList[list.id] ?? []
+            let open = openTasks(in: list, tasks: owned, above: above, limit: 7, orders: &orders)
+            let done = owned.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
             return WidgetSnapshot.ListSummary(
                 id: list.id,
                 title: list.displayTitle,
@@ -173,10 +187,11 @@ final class WidgetSnapshotPublisher {
                 accent: list.accent.rawValue,
                 openCount: listCounts[list.id]?.open ?? 0,
                 doneCount: listCounts[list.id]?.done ?? 0,
-                openItems: open.prefix(7).map(item),
+                openItems: open.map(item),
                 doneItems: done.prefix(6).map(item)
             )
         }
+        listOrderCache = orders
 
         if let calendarFeed {
             let feed = calendarFeed(now)
@@ -185,6 +200,68 @@ final class WidgetSnapshotPublisher {
         }
         snapshot.activity = activity(now: now, calendar: calendar)
         return snapshot
+    }
+
+    /// The first `limit` open tasks of `list` in the list's own order.
+    ///
+    /// That order runs through the prose and headings above the tasks, so
+    /// working it out reads every block in the list. Kept until the list's
+    /// tasks, or a block above one, move or change what the list sorts by;
+    /// typing in the list's prose leaves it be.
+    private func openTasks(in list: TaskList, tasks: [Block], above: [UUID: Block], limit: Int,
+                           orders: inout [UUID: (key: Int, ids: [UUID])]) -> [Block] {
+        let sorting = list.sorting
+        func hash(_ body: (inout Hasher) -> Void) -> Int {
+            var hasher = Hasher()
+            body(&hasher)
+            return hasher.finalize()
+        }
+        // Summed, so the order the fetch returned the tasks in doesn't matter.
+        var key = hash { $0.combine(sorting) }
+        var seen: Set<UUID> = []
+        for task in tasks {
+            key &+= hash {
+                $0.combine(task.id); $0.combine(task.parentID); $0.combine(task.sortIndex); $0.combine(task.createdAt)
+                $0.combine(task.isCompleted); $0.combine(task.dueDate); $0.combine(task.priorityRaw)
+                if sorting == .alphabetical { $0.combine(task.displayTitle) }
+            }
+            var parent = task.parentID
+            while let id = parent, let block = above[id], seen.insert(id).inserted {
+                key &+= hash { $0.combine(id); $0.combine(block.parentID); $0.combine(block.sortIndex); $0.combine(block.createdAt); $0.combine(block.listID) }
+                parent = block.parentID
+            }
+        }
+        let byID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if let cached = listOrderCache[list.id], cached.key == key {
+            orders[list.id] = cached
+            return cached.ids.compactMap { byID[$0] }
+        }
+        let listID = list.id
+        let blocks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
+            $0.trashID == nil && $0.listID == listID
+        }))) ?? []).filter { !$0.isDeleted }
+        let open = Array(ListTasksProjection(blocks: blocks, listID: listID, sorting: sorting, showsCompleted: false).tasks.prefix(limit))
+        orders[list.id] = (key, open.map(\.id))
+        return open
+    }
+
+    /// The blocks other than tasks that hold tasks, at any depth, by id: the
+    /// ones whose place decides where the tasks beneath them fall in a list.
+    private func blocksAbove(_ tasks: [Block]) -> [UUID: Block] {
+        let taskIDs = Set(tasks.map(\.id))
+        var found: [UUID: Block] = [:]
+        var wanted = Set(tasks.compactMap(\.parentID)).subtracting(taskIDs)
+        var depth = 0
+        while !wanted.isEmpty, depth < 64 {
+            depth += 1
+            let ids = Array(wanted)
+            let parents = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
+                $0.trashID == nil && ids.contains($0.id)
+            }))) ?? []).filter { !$0.isDeleted }
+            for parent in parents { found[parent.id] = parent }
+            wanted = Set(parents.compactMap(\.parentID)).subtracting(taskIDs).subtracting(found.keys)
+        }
+        return found
     }
 
     /// The heatmap's counts, read again only when the day, the week's first day

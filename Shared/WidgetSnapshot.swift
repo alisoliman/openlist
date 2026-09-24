@@ -17,7 +17,8 @@ import Foundation
 /// own date, so entries after midnight or a quarter of an hour later stay right
 /// while the app isn't running.
 ///
-/// Version 2 is a superset of version 1: keys keep their meaning, and every key
+/// Version 2 is a superset of version 1: keys keep their meaning and version 1's
+/// are all still written, so a version 1 widget reads a new file, and every key
 /// decodes when present, so a file written by an older app still renders.
 nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     static let currentVersion = 2
@@ -43,12 +44,13 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         var priority: Int = 0
     }
 
-    /// The due date of an open task, enough to count overdue and due-today work
-    /// at any entry date.
-    struct DueStamp: Codable, Equatable, Sendable {
-        var id: UUID
-        var due: Date
-        var includesTime: Bool
+    /// How many open tasks fall due on one day: enough to count overdue and
+    /// due-today work at any entry date, in as many entries as there are days
+    /// with something due, however many tasks share them.
+    struct DueDay: Codable, Equatable, Sendable {
+        /// The day's start.
+        var day: Date
+        var count: Int
     }
 
     struct InboxItem: Codable, Equatable, Identifiable, Sendable {
@@ -136,8 +138,13 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     var firstWeekday = 1
     /// Open tasks due before the end of tomorrow, overdue ones included.
     var todayItems: [Item] = []
-    /// Every open, dated task.
-    var dueStamps: [DueStamp] = []
+    /// Every open, dated task, by the day it's due, soonest first.
+    var dueDays: [DueDay] = []
+    /// Version 1's counts, worked out as it did when the snapshot was built,
+    /// for a version 1 widget still reading the file. This one counts from
+    /// `dueDays` at each entry's date, so `==` leaves these out.
+    var overdueCount = 0
+    var dueTodayCount = 0
     var completedTodayCount = 0
     /// The day `completedTodayCount` belongs to.
     var completedTodayDay: Date?
@@ -159,7 +166,7 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
             && lhs.libraryID == rhs.libraryID
             && lhs.firstWeekday == rhs.firstWeekday
             && lhs.todayItems == rhs.todayItems
-            && lhs.dueStamps == rhs.dueStamps
+            && lhs.dueDays == rhs.dueDays
             && lhs.completedTodayCount == rhs.completedTodayCount
             && lhs.completedTodayDay == rhs.completedTodayDay
             && lhs.inboxCount == rhs.inboxCount
@@ -169,6 +176,32 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
             && lhs.work == rhs.work
             && lhs.agenda == rhs.agenda
             && lhs.activity == rhs.activity
+    }
+
+    /// Open tasks' due dates, counted by day, soonest first.
+    static func dueDays(_ dates: some Sequence<Date>, calendar: Calendar) -> [DueDay] {
+        var counts: [Date: Int] = [:]
+        for date in dates { counts[calendar.startOfDay(for: date), default: 0] += 1 }
+        return counts.map { DueDay(day: $0.key, count: $0.value) }.sorted { $0.day < $1.day }
+    }
+
+    /// Counts `change` more open tasks due on `date`'s day, or fewer.
+    mutating func countDue(on date: Date, by change: Int, calendar: Calendar) {
+        let day = calendar.startOfDay(for: date)
+        if let index = dueDays.firstIndex(where: { calendar.isDate($0.day, inSameDayAs: day) }) {
+            dueDays[index].count += change
+            if dueDays[index].count <= 0 { dueDays.remove(at: index) }
+        } else if change > 0 {
+            dueDays.append(DueDay(day: day, count: change))
+            dueDays.sort { $0.day < $1.day }
+        }
+    }
+
+    private static func legacyDueDays(overdue: Int, dueToday: Int, builtAt date: Date) -> [DueDay] {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        let before = calendar.date(byAdding: .day, value: -1, to: day) ?? day
+        return [DueDay(day: before, count: overdue), DueDay(day: day, count: dueToday)].filter { $0.count > 0 }
     }
 }
 
@@ -194,7 +227,13 @@ nonisolated extension WidgetSnapshot {
         libraryID = c.value(.libraryID, or: nil)
         firstWeekday = c.value(.firstWeekday, or: 1)
         todayItems = c.value(.todayItems, or: [])
-        dueStamps = c.value(.dueStamps, or: [])
+        overdueCount = c.value(.overdueCount, or: 0)
+        dueTodayCount = c.value(.dueTodayCount, or: 0)
+        // Version 1 wrote its counts instead: late the day before it was
+        // built, due that day, so they read as they did until the app
+        // publishes again.
+        dueDays = c.contains(.dueDays) ? c.value(.dueDays, or: [])
+            : Self.legacyDueDays(overdue: overdueCount, dueToday: dueTodayCount, builtAt: generatedAt)
         completedTodayCount = c.value(.completedTodayCount, or: 0)
         completedTodayDay = c.value(.completedTodayDay, or: nil)
         inboxCount = c.value(.inboxCount, or: 0)

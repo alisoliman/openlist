@@ -3,6 +3,9 @@ import SwiftUI
 /// A task remains a local value until the user confirms this preview.
 struct TaskCaptureView: View {
     let request: TaskCaptureRequest
+    /// Whether there's typing not yet added, for a window deciding whether a
+    /// new request may replace this draft.
+    var holdsDraft: Binding<Bool>?
     var closeWindow: (() -> Void)?
 
     @Environment(AppEnvironment.self) private var env
@@ -145,6 +148,9 @@ struct TaskCaptureView: View {
         .frame(minHeight: 240)
         .background(Theme.canvas)
         .onAppear { reset(text: request.text) }
+        .onChange(of: savedTaskID == nil && !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, initial: true) { _, holds in
+            holdsDraft?.wrappedValue = holds
+        }
         .onExitCommand(perform: close)
         .onChange(of: draft.parsesNaturalLanguage) { _, _ in
             preserveTitleSelection()
