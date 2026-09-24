@@ -6,6 +6,7 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftData
 import SwiftUI
 
 /// A calendar placement, kept by value so Undo and Redo can rebuild a task's set.
@@ -255,6 +256,46 @@ extension Workbench {
         selection = []
     }
 
+    // The plan card's Defer… and Clear are native extras that change what
+    // plan does, so they snap as it does, each with its tray and Undo.
+
+    /// Moves the task's remaining work to `day`: it's selected for that day,
+    /// waits for it, and leaves its slots on the calendar, pausing work on
+    /// it. Undo puts back the day, the slots and paused work on the notch.
+    func deferTask(_ id: UUID, to day: Date) {
+        document?.commitLine()
+        guard let task = store.block(id: id), task.isTask, !task.isCompleted else { return }
+        let occurrenceID = task.occurrenceID
+        let fields = [TaskFields(task)]
+        let previous = store.placements(taskID: id).filter { $0.occurrenceID == occurrenceID }
+            .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+        // Work on it leaves the notch as it defers; Undo offers it again.
+        let resume = (calendar.activeSession?.taskID == id || calendar.resumableTask?.id == id) ? WorkTaskReference(task) : nil
+        calendar.deferTask(task: task, to: day)
+        let deferred = store.block(id: id).map { [TaskFields($0)] } ?? fields
+        let label = "Deferred \(describe([task])) to \(NXFormat.dueLabel(day))"
+        registerUndo(label, undo: { workbench in
+            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: previous)
+            workbench.restore(fields, over: deferred)
+            workbench.calendar.replan()
+            if let resume { workbench.calendar.restoreResume(resume) }
+        }, redo: { workbench in
+            guard let task = workbench.store.block(id: id), task.occurrenceID == occurrenceID else { return }
+            workbench.calendar.deferTask(task: task, to: day)
+        })
+        snap(label, icon: "arrow.uturn.forward", tone: .accent, ids: [id])
+        flash(\.freshChip, [id], for: 700)
+    }
+
+    /// "Deferred until …"'s Clear: the task stops waiting for that day; see
+    /// `Store.clearDeferral`.
+    func clearDeferral(_ id: UUID) {
+        guard let task = store.block(id: id), task.isTask, task.deferredUntil != nil else { return }
+        edit([task], label: "Cleared deferral on \(describe([task]))", icon: "arrow.uturn.forward", tone: .accent) { task in
+            store.clearDeferral(task)
+        }
+    }
+
     func setPriority(_ id: UUID, _ priority: TaskPriority) {
         guard let task = store.block(id: id) else { return }
         let word = switch priority {
@@ -366,6 +407,22 @@ extension Workbench {
         guard let task = store.block(id: id) else { return }
         let current = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
         store.setTaskEstimate(min(240, max(5, current + delta)), for: task)
+    }
+
+    // MARK: Files
+
+    /// A file taken off its task in the inspector's Files, a native extra, as
+    /// one change the tray can undo, so nothing is lost there for good: Undo
+    /// puts the file back, its bytes and all.
+    func removeAttachment(_ attachment: Attachment) {
+        guard attachment.modelContext != nil, !attachment.isDeleted else { return }
+        document?.commitLine()
+        let taskID = attachment.blockID
+        let label = "Removed \(NXFormat.quoted(attachment.displayName))"
+            + (store.block(id: taskID).map { " from \(describe([$0]))" } ?? "")
+        store.removeAttachment(attachment, name: label, undoManager: undoManager) {
+            self.snap(label, icon: "paperclip", tone: .red, ids: taskID.map { [$0] } ?? [])
+        }
     }
 
     // MARK: Moving

@@ -260,4 +260,129 @@ do {
     check(plant.schedulingEstimateMinutes == 60, "Undoing the plan leaves an estimate stepped since")
     store.save()
 }
+
+// A file taken off a task in the inspector's Files is one Undo step: Undo
+// puts the file back, its bytes and its cached copy too, and Redo takes it
+// off again. Nothing goes for good in one click.
+do {
+    let undo = UndoManager()
+    undo.groupsByEvent = false
+    let task = store.appendBlock(kind: .task, text: "File the receipts", to: .init(listID: list.id))
+    let original = fixtureDirectory.appendingPathComponent("Receipt.txt")
+    try Data("receipt".utf8).write(to: original)
+    let media = try MediaStore.shared.importFile(at: original)
+    let file = Attachment(blockID: task.id, filename: media.filename, displayName: media.displayName,
+        contentType: media.contentType, byteCount: media.byteCount, contentData: media.data)
+    store.context.insert(file)
+    store.save()
+    let fileID = file.id
+    var reported = 0
+    undo.beginUndoGrouping()
+    store.removeAttachment(file, name: "Removed “Receipt.txt” from “File the receipts”", undoManager: undo) { reported += 1 }
+    undo.endUndoGrouping()
+    check(reported == 1 && undo.canUndo, "Removing a file registers one Undo step and reports it")
+    check(store.attachments(for: task.id).isEmpty, "Removing a file takes it off the task")
+    check(MediaStore.shared.fileContents(filename: media.filename) == nil, "Removing a file lets its cached copy go")
+    undo.undo()
+    let restored = store.attachments(for: task.id)
+    check(restored.map(\.id) == [fileID] && restored.first?.contentData == media.data, "Undo puts the same file back with its bytes")
+    check(MediaStore.shared.fileContents(filename: media.filename) == media.data, "Undo puts the file's cached copy back")
+    undo.redo()
+    check(store.attachments(for: task.id).isEmpty, "Redo takes the file off again")
+    undo.undo()
+    check(store.attachments(for: task.id).first?.id == fileID, "Undo after Redo brings the file back again")
+    // One on no live task just goes, with no step to take it back.
+    let orphan = Attachment(blockID: UUID(), filename: "orphan.txt", displayName: "Orphan.txt",
+        contentType: "text/plain", byteCount: 1, contentData: Data("o".utf8))
+    store.context.insert(orphan)
+    store.save()
+    store.removeAttachment(orphan, name: "Removed “Orphan.txt”", undoManager: undo) { reported += 1 }
+    check(reported == 1 && (orphan.modelContext == nil || orphan.isDeleted), "A file on no live task goes without a step")
+}
+
+// Defer… and its Clear, as the plan card's Workbench steps write them: the
+// deferral takes the day and the slots, and its Undo, putting back only the
+// fields it changed, restores the day it replaced. Clear lets a day still
+// ahead go with the deferral; one that has come stays, as the task is
+// planned for today by then.
+do {
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: .now)
+    let later = calendar.date(byAdding: .day, value: 3, to: today)!
+    let task = store.appendBlock(kind: .task, text: "Draft the report", to: .init(listID: list.id))
+    store.selectForToday(task)
+    let start = calendar.date(byAdding: .hour, value: 10, to: later)!
+    store.setPlacement(for: task, start: start, end: start.addingTimeInterval(1800), isPinned: true)
+    let planned = TaskFields(task)
+    store.deferTask(task, to: later)
+    let deferred = TaskFields(task)
+    check(task.selectedForDay == later && task.deferredUntil == later, "Deferring selects the later day and waits for it")
+    check(store.placements(taskID: task.id).isEmpty, "Deferring takes the task's slots on the calendar")
+    planned.apply(to: task, replacing: deferred)
+    check(task.selectedForDay == today && task.deferredUntil == nil, "Undoing a deferral puts back the day it replaced")
+    deferred.apply(to: task, replacing: planned)
+    let cleared = TaskFields(task)
+    store.clearDeferral(task)
+    check(task.deferredUntil == nil && task.selectedForDay == nil, "Clearing a deferral still ahead lets its day go with it")
+    cleared.apply(to: task, replacing: TaskFields(task))
+    check(task.deferredUntil == later && task.selectedForDay == later, "Undoing Clear defers the task again")
+    store.clearDeferral(task, now: calendar.date(byAdding: .day, value: 1, to: later)!)
+    check(task.deferredUntil == nil && task.selectedForDay == later, "Clearing a deferral whose day has come keeps the task planned")
+    store.clearDeferral(task)
+    check(task.selectedForDay == later, "Clear on a task with no deferral changes nothing")
+}
+
+// Defer…'s Undo and Redo, in the order Workbench.deferTask registers them:
+// Undo rebuilds the occurrence's slots as `Workbench.setPlacements` does,
+// then puts back the fields; Redo defers again. Any number of steps leaves
+// one set, as it was, and another task's slot alone.
+do {
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: .now)
+    let later = calendar.date(byAdding: .day, value: 2, to: today)!
+    let task = store.appendBlock(kind: .task, text: "Book the venue", to: .init(listID: list.id))
+    let other = store.appendBlock(kind: .task, text: "Send the invites", to: .init(listID: list.id))
+    store.selectForToday(task)
+    let pinnedStart = calendar.date(byAdding: .hour, value: 14, to: today)!
+    let autoStart = calendar.date(byAdding: .hour, value: 16, to: today)!
+    store.setPlacement(for: task, start: pinnedStart, end: pinnedStart.addingTimeInterval(2700), isPinned: true)
+    store.setPlacement(for: task, start: autoStart, end: autoStart.addingTimeInterval(1800))
+    store.setPlacement(for: other, start: pinnedStart, end: pinnedStart.addingTimeInterval(900), isPinned: true)
+    let id = task.id
+    let occurrenceID = task.occurrenceID
+    typealias Span = (start: Date, end: Date, isPinned: Bool)
+    func spans() -> [Span] {
+        store.placements(taskID: id).filter { $0.occurrenceID == occurrenceID }.map { ($0.start, $0.end, $0.isPinned) }
+    }
+    func same(_ lhs: [Span], _ rhs: [Span]) -> Bool {
+        lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0.start == $1.start && $0.end == $1.end && $0.isPinned == $1.isPinned }
+    }
+    // Workbench.setPlacements: the occurrence's whole set, replaced in one save.
+    func rebuild(_ spans: [Span]) {
+        guard let task = store.block(id: id), task.occurrenceID == occurrenceID else { return }
+        store.batch {
+            for placement in store.placements(taskID: id) where placement.occurrenceID == occurrenceID {
+                store.removePlacement(placement)
+            }
+            for span in spans { store.setPlacement(for: task, start: span.start, end: span.end, isPinned: span.isPinned) }
+        }
+    }
+    let fields = TaskFields(task)
+    let previous = spans()
+    check(previous.count == 2, "The task to defer has a pinned and a planned slot")
+    store.deferTask(task, to: later)
+    let deferred = TaskFields(task)
+    check(spans().isEmpty, "Deferring takes both of the task's slots")
+    for step in 1...2 {
+        rebuild(previous)
+        fields.apply(to: task, replacing: deferred)
+        store.save()
+        check(same(spans(), previous), "Undoing a deferral puts back its slots as they were, pinned or not (step \(step))")
+        check(task.selectedForDay == today && task.deferredUntil == nil, "Undoing a deferral puts back today over the rebuilt slots (step \(step))")
+        store.deferTask(task, to: later)
+        check(spans().isEmpty && task.selectedForDay == later && task.deferredUntil == later,
+              "Redoing a deferral takes the slots and the day again (step \(step))")
+    }
+    check(store.placements(taskID: other.id).count == 1, "A deferral's Undo and Redo leave another task's slot alone")
+}
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

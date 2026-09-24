@@ -20,7 +20,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   undo registered on the window UndoManager (snapshot-based where Store has none, putting
   back only the fields the step changed), change-log entry, tray. So do the native extras
   that edit the same things: the inspector's Schedule, Repeat, Reminder and label popovers
-  (with tray), its title and note, and a list's title and description (edits: logged, no tray).
+  and its plan card's Defer… and Clear (with tray; a deferral's Undo puts back the calendar
+  slots it took), its title and note, and a list's title and description (edits: logged, no tray).
 - Completion dwell defers the real `store.toggleCompletion` until dwell+300ms; Undo during
   dwell cancels. Pending closings flush on termination.
 - `NextKeyMonitor` — NSEvent local monitor implementing the global key model when not typing.
@@ -75,8 +76,17 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the Inbox as its document. Native inspector extras: the title and note are edited in place
   and files kept with the task. As the design, the note shows only when there is one; until
   then a quiet "Add a note" row stands in, with "Attach a file" beside it until the task has
-  files, when Files shows. Files dropped anywhere on the panel are attached. The Schedule
-  popover fits its section, up to 510pt, and its date and time controls are Next pills.
+  files, when Files shows. Files dropped anywhere on the panel are attached; removing one
+  snaps with Undo, which brings the file back. The plan card ends with a quiet "More
+  options" disclosure (estimate hints, how sessions run, the list's hours, Defer…, time
+  recorded and Work history), and Activity with "Full history", the task's saved activity;
+  both start closed. The footer is the design's Trash and Start working; Copy Link is in
+  the task's row menu and in Task ▸, which reaches the inspected task from the keyboard
+  too, each saying "Link copied" in the tray. The Schedule popover fits its section, up to
+  510pt, and its date and time controls are Next pills; Done first sets a due time still
+  being typed as Custom…, and Set reminder a reminder time. "Remind me at" is a draft only
+  Set reminder sets: Done keeps the reminder there was, over a day or time picked there, or
+  still being typed.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists, which drag

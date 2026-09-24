@@ -161,16 +161,6 @@ struct NextInspector: View {
                 .buttonStyle(NXHoverButtonStyle(hover: NX.red.opacity(0.1), radius: 8,
                                                 padding: EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9),
                                                 foreground: NX.ink(0.6), hoverForeground: NX.redText))
-                Button(action: copyLink) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "link").font(.system(size: 12, weight: .medium))
-                        Text("Copy Link").font(.system(size: 12, weight: .medium))
-                    }
-                }
-                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 8,
-                                                padding: EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9),
-                                                foreground: NX.ink(0.6), hoverForeground: NX.ink))
-                .help("Copy a link to this item in this Mac’s Openlist library")
                 Spacer(minLength: 8)
                 startButton
             }
@@ -288,13 +278,6 @@ struct NextInspector: View {
         guard let requested = env.requestedPicker else { return }
         env.requestedPicker = nil
         openPicker(requested)
-    }
-
-    private func copyLink() {
-        // An earlier link's error would otherwise hide this copy's result.
-        env.localLinks.error = nil
-        env.copyLink(to: .task(task.id))
-        if env.localLinks.error == nil { workbench.showTray("Link copied", icon: "link") }
     }
 
     // MARK: Title

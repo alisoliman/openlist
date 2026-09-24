@@ -68,14 +68,7 @@ struct CalendarHistoryView: View {
                                     }
                                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                                     if !record.plannedIntervals.isEmpty {
-                                        DisclosureGroup("Originally planned") {
-                                            ForEach(Array(record.plannedIntervals.enumerated()), id: \.offset) { _, interval in
-                                                Text("\(interval.start.formatted(date: .abbreviated, time: .shortened)) – \(interval.end.formatted(date: .omitted, time: .shortened))")
-                                                    .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
-                                            }
-                                        }
-                                        .font(.system(size: 11.5, weight: .medium))
-                                        .foregroundStyle(NX.ink(0.6))
+                                        PlannedIntervalsDisclosure(intervals: record.plannedIntervals)
                                     }
                                 }
                                 Spacer(minLength: 0)
@@ -99,5 +92,36 @@ struct CalendarHistoryView: View {
 
     private var hairline: some View {
         Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
+    }
+}
+
+/// Where a completed occurrence was planned, folded under a quiet chevron
+/// as the inspector's disclosures are.
+private struct PlannedIntervalsDisclosure: View {
+    @Environment(\.nextStyle) private var style
+    let intervals: [CompletionCalendarInterval]
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button { withAnimation(style.ease(220)) { isExpanded.toggle() } } label: {
+                HStack(spacing: 5) {
+                    Text("Originally planned")
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                }
+            }
+            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+            .padding(.leading, -5)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            if isExpanded {
+                ForEach(Array(intervals.enumerated()), id: \.offset) { _, interval in
+                    Text("\(interval.start.formatted(date: .abbreviated, time: .shortened)) – \(interval.end.formatted(date: .omitted, time: .shortened))")
+                        .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
+                }
+                .transition(.opacity)
+            }
+        }
     }
 }

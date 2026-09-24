@@ -290,12 +290,17 @@ final class AppEnvironment {
 // MARK: - Convenience
 
 extension AppEnvironment {
+    /// Every Copy Link, from a menu or Task ▸: the link on the clipboard and
+    /// "Link copied" in the tray, or the link notice saying why there is none.
     func copyLink(to target: LocalLink.Target) {
+        // An earlier link's error would otherwise hide this copy's result.
+        localLinks.error = nil
         do {
             let url = try localLinks.link(to: target)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.writeObjects([url as NSURL])
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            workbench.showTray("Link copied", icon: "link")
         } catch {
             localLinks.error = error as? LocalLinkError ?? .targetUnavailable
         }

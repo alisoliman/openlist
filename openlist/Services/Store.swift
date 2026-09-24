@@ -218,6 +218,23 @@ final class Store {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// Takes a file off its task as one Undo step on `undoManager`, named
+    /// `name`: Undo puts the file back, its bytes and all, and Redo takes it
+    /// off again. `didRegister` runs once the step is on the stack. With no
+    /// undo manager, or no live task to hold it, the file just goes.
+    func removeAttachment(_ attachment: Attachment, name: String, undoManager: UndoManager?,
+                          didRegister: (() -> Void)? = nil) {
+        guard attachment.modelContext != nil, !attachment.isDeleted else { return }
+        let remove = {
+            // Inside the edit, the file's bytes are kept for Undo before the cache lets it go.
+            self.removeEditorMedia(filename: attachment.filename)
+            self.context.delete(attachment)
+            self.save()
+        }
+        guard let owner = block(id: attachment.blockID), let listID = owner.listID else { return remove() }
+        undoableEditorEdit(in: listID, name: name, undoManager: undoManager, didRegister: didRegister, remove)
+    }
+
     // MARK: - Bootstrap
 
     /// Creates the Inbox and the default sidebar section on first launch.

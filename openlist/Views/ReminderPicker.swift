@@ -13,6 +13,8 @@ struct ReminderPicker: View {
 
     @State private var customDate: Date = .now
     @State private var picksDay = false
+    /// A time still being typed as Custom…, which Set reminder sets first.
+    @State private var typedTime: NXPendingCustomValue?
 
     private var calendar: Calendar { env.settings.calendar }
 
@@ -68,6 +70,12 @@ struct ReminderPicker: View {
                     }
                     Spacer(minLength: 6)
                     Button("Set reminder") {
+                        // A click here while typing sets the time typed, not
+                        // the one the pill showed before it.
+                        if let typedTime {
+                            guard typedTime.commit() else { NSSound.beep(); return }
+                            self.typedTime = nil
+                        }
                         env.workbench.setReminder(block.id, at: customDate)
                     }
                     .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
@@ -90,6 +98,10 @@ struct ReminderPicker: View {
         .onAppear {
             customDate = block.reminderAt ?? offsetDate(minutes: 0) ?? .now
         }
+        .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
+        // "Remind me at" is a draft only Set reminder sets, so the Schedule
+        // popover's Done closes over a time typed here as over a day picked.
+        .transformPreference(NXPendingCustomValueKey.self) { $0 = nil }
     }
 
     /// The reminder an offset from the due date would set, at 9:00 on a date without a time.
