@@ -34,6 +34,3 @@ final class FixtureWorkbench {
         if let block = store.block(id: id), let label = store.findOrCreateLabel(named: name) { store.addLabel(label, to: block) }
     }
 }
-enum MarkdownExporter {
-    static func presentError(_ error: Error, operation: String) { preconditionFailure("Unexpected attachment open: \(operation)") }
-}

@@ -322,7 +322,7 @@ struct NextSidebar: View {
         Divider()
         Button("Duplicate") { workbench.duplicateList(list) }
         Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
-        Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
+        Button("Export as Markdown…") { workbench.exportMarkdown(list) }
         // A nested list shows under its parent whether pinned or not.
         if !nested {
             Button("Remove from Sidebar") { workbench.setPinned(false, for: list) }

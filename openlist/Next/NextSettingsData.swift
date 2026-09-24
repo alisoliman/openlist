@@ -150,13 +150,13 @@ struct NXDataSettings: View {
                 try MarkdownExporter.write(list: list, store: env.store, to: destination)
                 exported += 1
             }
+            // Said in the tray, as a list's own export is.
+            env.workbench.showTray("Exported \(Self.count(exported, "list")) as Markdown", icon: "square.and.arrow.up")
         } catch {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Export stopped"
-            alert.informativeText = "\(exported) list(s) were exported. The remaining lists were not exported.\n\n\(error.localizedDescription)"
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            // What needs dealing with stays in the window's notice.
+            let done = exported == 0 ? "No lists were exported."
+                : "\(Self.count(exported, "list")) \(exported == 1 ? "was" : "were") exported; the remaining lists were not."
+            env.store.editorNotice = "Export stopped. \(done) \(error.localizedDescription)"
         }
     }
 

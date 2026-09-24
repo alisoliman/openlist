@@ -176,7 +176,7 @@ private struct NXListCard: View {
         }
         Button("Duplicate") { workbench.duplicateList(list) }
         Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
-        Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
+        Button("Export as Markdown…") { workbench.exportMarkdown(list) }
         Button("Move List…") { env.listPendingMove = list }
         Button("New Child List") { workbench.createChildList(in: list) }
             .disabled(isArchived)
@@ -351,7 +351,7 @@ private struct NXTrashRow: View {
 
 /// Press and hold for 900 ms; releasing or leaving early cancels. The fill
 /// grows left to right while held. VoiceOver can't hold, so its action asks
-/// `confirmation` first.
+/// `confirmation` first, in a Next sheet like Settings' confirmations.
 struct NXHoldButton: View {
     let title: String
     /// Replaces the title while held; nil keeps it.
@@ -405,11 +405,8 @@ struct NXHoldButton: View {
         .accessibilityLabel(title)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { confirming = true }
-        .confirmationDialog(confirmation, isPresented: $confirming) {
-            Button(confirmLabel, role: .destructive, action: action)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This can’t be undone.")
+        .sheet(isPresented: $confirming) {
+            NXConfirmationSheet(title: confirmation, message: "This can’t be undone.", confirm: confirmLabel, action: action)
         }
     }
 

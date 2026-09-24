@@ -181,6 +181,40 @@ coordinator.textDidChange(Notification(name: NSText.didChangeNotification, objec
 let typingEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
 check(coordinator.signature == BlockTextView.ContentSignature(attributedText: typingEcho, kind: .task, isCompleted: false), "Ordinary typing still produces a matching model echo without resetting native editing")
 
+// Format ▸ Add Link… asks in the window's Next sheet, which answers once the
+// menu action has returned, for the text it asked about.
+check(BlockNSTextView.linkURL(from: " example.com\n") == URL(string: "https://example.com")
+    && BlockNSTextView.linkURL(from: "http://example.com") == URL(string: "http://example.com")
+    && BlockNSTextView.linkURL(from: "  ") == nil, "A typed link is trimmed, with https:// when it names no scheme")
+var linkPrompt: LinkPrompt?
+native.setSelectedRange(NSRange(location: 0, length: 6))
+BlockNSTextView.linkPrompter = { linkPrompt = $0 }
+native.promptForLink(nil)
+check(linkPrompt?.text == "Remote" && linkPrompt?.currentURL == "", "⌘L asks about the selected text, with no link yet")
+native.setSelectedRange(NSRange(location: 3, length: 0))
+linkPrompt?.answer(.apply("example.com"))
+let linkedEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
+check(native.textStorage?.attribute(.link, at: 0, effectiveRange: nil) as? URL == URL(string: "https://example.com")
+    && native.textStorage?.attribute(.link, at: 6, effectiveRange: nil) == nil
+    && linkedEcho.attribute(.link, at: 5, effectiveRange: nil) != nil, "Apply links just the text asked about, and reports the edit")
+linkPrompt = nil
+native.setSelectedRange(NSRange(location: 0, length: 6))
+native.promptForLink(nil)
+check(linkPrompt?.currentURL == "https://example.com", "⌘L on a link asks with the link it has, which Remove Link takes away")
+linkPrompt?.answer(.remove)
+check(native.textStorage?.attribute(.link, at: 0, effectiveRange: nil) == nil
+    && RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task).attribute(.link, at: 0, effectiveRange: nil) == nil,
+    "Remove Link unlinks the text, and reports the edit")
+native.setSelectedRange(NSRange(location: 0, length: 6))
+native.promptForLink(nil)
+let changedMeanwhile = RichTextCodec.decode(nil, plainText: "Edited elsewhere", kind: .task)
+coordinator.apply(changedMeanwhile, to: native, kind: .task, isCompleted: false)
+linkPrompt?.answer(.apply("example.org"))
+check(native.textStorage?.attribute(.link, at: 0, effectiveRange: nil) == nil,
+    "An answer for text that changed while the sheet was up links nothing")
+BlockNSTextView.linkPrompter = nil
+coordinator.apply(plain, to: native, kind: .task, isCompleted: false)
+
 // A renderer strikes a task during its completion dwell, before the store
 // marks it done. The strike is presentation only.
 let unstruckParent = coordinator.parent

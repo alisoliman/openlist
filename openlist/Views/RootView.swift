@@ -36,6 +36,7 @@ struct RootView: View {
         }
         .sheet(item: $captureEnvironment.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
         .sheet(item: $captureEnvironment.listPendingDeletion) { list in DeleteListSheet(list: list).environment(env) }
+        .sheet(item: $captureEnvironment.linkPrompt) { prompt in NXLinkSheet(prompt: prompt).environment(env) }
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
@@ -73,6 +74,8 @@ struct RootView: View {
         .onAppear {
             updateDockBadge()
             env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
+            // ⌘L in a list document line asks in this window's link sheet.
+            BlockNSTextView.linkPrompter = { env.linkPrompt = $0 }
         }
         .onDisappear {
             env.isMainWindowKey = false

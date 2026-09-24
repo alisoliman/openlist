@@ -160,8 +160,11 @@ enum MarkdownExporter {
 
     // MARK: - Save panel
 
+    /// Asks where, then writes the list's export there. `true` once it's
+    /// written; a failure says why in the window's notice.
     @MainActor
-    static func presentSavePanel(for list: TaskList, store: Store) {
+    @discardableResult
+    static func presentSavePanel(for list: TaskList, store: Store) -> Bool {
         let documents = store.listHierarchy().subtree(of: list.id)
         let blocks = documents.flatMap { store.blocks(inList: $0.id) }
         let hasMedia = list.coverFilename != nil || blocks.contains { $0.mediaFilename != nil || !store.attachments(for: $0.id).isEmpty }
@@ -180,7 +183,7 @@ enum MarkdownExporter {
             panel.message = documents.count > 1
                 ? "Choose where to export a folder containing one Markdown file per document, with parent and child links and shared assets. Existing files are kept."
                 : "Choose a folder for \(filename) and its images and attachments. Keep the Markdown file and assets folder together when sharing. Existing files are kept."
-            guard panel.runModal() == .OK, let folder = panel.url else { return }
+            guard panel.runModal() == .OK, let folder = panel.url else { return false }
             url = MarkdownExportPackage.availableURL(in: folder, filename: documents.count > 1 ? MarkdownExportPackage.safeFilename(list.displayTitle) : filename)
         } else {
             let panel = NSSavePanel()
@@ -188,28 +191,21 @@ enum MarkdownExporter {
             panel.nameFieldStringValue = filename
             panel.canCreateDirectories = true
             panel.title = "Export \(list.displayTitle)"
-            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            guard panel.runModal() == .OK, let destination = panel.url else { return false }
             url = destination
         }
         do {
             try write(list: list, store: store, to: url)
+            return true
         } catch {
-            presentError(error, operation: "Export list")
+            store.editorNotice = "“\(list.displayTitle)” could not be exported. \(error.localizedDescription)"
+            return false
         }
     }
 
-    @MainActor
-    static func presentError(_ error: Error, operation: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "\(operation) failed"
-        alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-
     /// Puts the list's document on the clipboard as the Markdown Export
-    /// writes for it. `false`, after saying why, when it couldn't.
+    /// writes for it. `false`, after saying why in the window's notice, when
+    /// it couldn't.
     @MainActor
     @discardableResult
     static func copyToPasteboard(list: TaskList, store: Store) -> Bool {
@@ -220,7 +216,7 @@ enum MarkdownExporter {
             pasteboard.setString(content, forType: .string)
             return true
         } catch {
-            presentError(error, operation: "Copy list as Markdown")
+            store.editorNotice = "“\(list.displayTitle)” could not be copied as Markdown. \(error.localizedDescription)"
             return false
         }
     }
