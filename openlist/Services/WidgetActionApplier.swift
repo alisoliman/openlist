@@ -71,8 +71,8 @@ final class WidgetActionApplier {
             // place, its slot and its completion. Applied, a reopen would
             // take the slot away, or give the task a new occurrence the tick
             // after it no longer names.
-            if let undo = WidgetAction.takingBack(index, in: actions), let task = shownTask(action),
-               task.isCompleted == (action.kind == .reopen) {
+            if let task = shownTask(action),
+               let undo = WidgetAction.takingBack(index, in: actions, whileCompleted: task.isCompleted) {
                 takenBack.insert(undo)
                 continue
             }

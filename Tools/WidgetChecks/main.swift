@@ -183,17 +183,26 @@ check(WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.complete,
       && WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.startWork, "k2"), action(.reopen, "k2")]) == nil
       && WidgetAction.takingBack(0, in: [action(.startWork, "k2"), action(.startWork, "k2")]) == nil,
       "Only the next action on the task, the opposite tick on the same occurrence, takes one back")
+// The app skips the pair only while the task is as the first found it, which
+// is what the overlay reads off the snapshot: open for a tick, done for an untick.
+check(WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.reopen, "k2")], whileCompleted: false) == 1
+      && WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.reopen, "k2")], whileCompleted: true) == nil
+      && WidgetAction.takingBack(0, in: [action(.reopen, "k6"), action(.complete, "k6")], whileCompleted: true) == 1
+      && WidgetAction.takingBack(0, in: [action(.reopen, "k6"), action(.complete, "k6")], whileCompleted: false) == nil
+      && WidgetAction.takingBack(0, in: [action(.startWork, "k2"), action(.startWork, "k2")], whileCompleted: false) == nil,
+      "The app skips a tick and its untick only from the state the first found")
 // A tick the app already published, then an untick: the untick still reopens it.
 let publishedDone = SnapshotOverlay.apply([action(.complete, "k2")], to: design)
 let evenings = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(6 * 3_600 + 20 * 60))
 check(UpNextModel(publishedDone, clock: evenings).state == .clear, "At 17:00, with the deposit done, the day is clear")
 for queued in [[action(.reopen, "k2")], [action(.complete, "k2"), action(.reopen, "k2")]] {
+    // The app, finding the task done, skips no pair here either.
+    check(WidgetAction.takingBack(0, in: queued, whileCompleted: true) == nil, "The app applies the reopen, \(queued.count) queued")
     let open = SnapshotOverlay.apply(queued, to: publishedDone)
-    check(open.agenda == design.agenda, "A queued reopen tints the task's Agenda block again, \(queued.count) queued")
-    check(AgendaModel(open, clock: clock).today.items.first { $0.title == "Pay the ryokan deposit" }?.isDone == false,
-          "and draws it open")
-    let offered = UpNextModel(open, clock: evenings)
-    check(offered.state == .next && offered.title == "Pay the ryokan deposit" && offered.note == "in 60 min", "Up Next offers it again")
+    let blocks = open.agenda.flatMap(\.items)
+    check(!blocks.contains { $0.taskID == id("k2") } && blocks.count == design.agenda.flatMap(\.items).count - 1,
+          "A queued reopen takes the task's done block off the Agenda, as the app does, \(queued.count) queued")
+    check(UpNextModel(open, clock: evenings).state == .clear, "so Up Next offers no Start the app would drop")
     check(open.lists[kyotoIndex].openItems.map(\.id) == ["k3", "k4", "k1", "k5", "k2"].map(id)
           && open.lists[kyotoIndex].openCount == 5 && open.todayItems.contains { $0.id == id("k2") },
           "A row the app published done goes back after the list's open rows")

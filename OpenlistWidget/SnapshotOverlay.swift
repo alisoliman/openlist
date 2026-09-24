@@ -19,8 +19,8 @@ enum SnapshotOverlay {
             // A tick and its untick, either way round, which the app skips
             // together: the snapshot already shows the task as it was, in its
             // place and its slot, as the design's untick leaves it.
-            if let undo = WidgetAction.takingBack(index, in: actions),
-               action.kind == .complete ? showsOpen(action, in: snapshot) : showsDone(action, in: snapshot) {
+            if let isCompleted = shownCompleted(action, in: snapshot),
+               let undo = WidgetAction.takingBack(index, in: actions, whileCompleted: isCompleted) {
                 takenBack.insert(undo)
                 continue
             }
@@ -49,6 +49,12 @@ enum SnapshotOverlay {
     /// Whether the snapshot shows the task among a list's latest done.
     private static func showsDone(_ action: WidgetAction, in snapshot: WidgetSnapshot) -> Bool {
         snapshot.lists.contains { $0.doneItems.contains { matches($0.id, $0.occurrenceID, action) } }
+    }
+
+    /// Whether the snapshot shows the task done or open, where the app would
+    /// look at the task itself; nil when it carries no row of it.
+    private static func shownCompleted(_ action: WidgetAction, in snapshot: WidgetSnapshot) -> Bool? {
+        showsOpen(action, in: snapshot) ? false : showsDone(action, in: snapshot) ? true : nil
     }
 
     private static func complete(_ action: WidgetAction, in snapshot: inout WidgetSnapshot, calendar: Calendar) {
@@ -122,13 +128,11 @@ enum SnapshotOverlay {
         }
         guard let item = reopened else { return }
         snapshot.totalOpenCount += 1
-        // Open everywhere, as the design's: its Agenda block tinted again,
-        // and Up Next offering it.
+        // The app takes a reopened task's done block off the calendar, and
+        // gives it a new occurrence with no slot: the Agenda drops the block
+        // now, so Up Next offers no Start the app would then drop.
         for day in snapshot.agenda.indices {
-            for index in snapshot.agenda[day].items.indices
-            where snapshot.agenda[day].items[index].taskID.map({ matches($0, snapshot.agenda[day].items[index].occurrenceID, action) }) == true {
-                snapshot.agenda[day].items[index].isCompleted = false
-            }
+            snapshot.agenda[day].items.removeAll { block in block.taskID.map { matches($0, block.occurrenceID, action) } == true }
         }
         if let due = item.dueDate {
             snapshot.countDue(on: due, by: 1, calendar: calendar)

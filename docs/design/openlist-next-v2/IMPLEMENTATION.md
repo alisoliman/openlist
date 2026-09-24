@@ -247,12 +247,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (`invalidatableContent`) in place of the design's faded, struck-through row. A tick made
   while Openlist is quit shows done straight away, from the rows the app last published: a
   list's first 12 open tasks, Today's first 10 overdue and 15 a day, and Inbox's newest 8,
-  so past that many queued ticks the rows thin out, the counts still right, until the app
-  opens again, where the design always moves the next open tasks up. A tick and its untick
-  made while it's quit cancel out, so the task keeps its place, its slot and any paused
-  work (the design's tick ends the work); a task the app published done, reopened in the
-  widget, goes after the list's open rows until the app opens again, where the design's
-  goes back to its place. In medium and
+  spares past the rows a widget draws, so once queued ticks outnumber the spares the rows
+  thin out, the counts still right, until the app opens again, where the design always
+  moves the next open tasks up. A tick and its untick made while it's quit cancel out, so
+  the task keeps its place, its slot and any paused work (the design's tick ends the work);
+  a task the app published done, reopened in the widget, leaves the Agenda, as a reopened
+  task leaves the calendar, and goes after the list's open rows until the app opens again,
+  where the design's goes back to its place. In medium and
   large a row's title and list line open the task; a small widget takes only its own link,
   so small Today's titles open Today. Quick Add's Triage link shows the Inbox as triage for
   that visit even where this Mac shows it as a document; its Inbox link follows this Mac's
@@ -293,6 +294,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   The grid's hours, the design's fixed 8–21, stretch to fit anything scheduled outside
   them in the days shown; a new span re-lays the grid at once, as the design's range
   re-renders.
+  A task reopened from its row, or a widget's, leaves the calendar: its done block goes, and
+  its slot with it, where the design's reopen leaves the block in its slot, tinted again; a
+  done block's own check reopens it there.
   The Work panel's "N tasks rescheduled" and Start notifications come only from blocks the
   calendar draws, not from the planner's own sessions, and no Start comes while work is
   running or paused, as the design's "Planned now" hides then.
