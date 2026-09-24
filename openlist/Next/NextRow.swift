@@ -528,6 +528,9 @@ struct NXGroup: Identifiable {
     /// A Completed group, on Today, a list or a label. These fold as one, as
     /// the design's completedOpen, so the last fold shows on every screen.
     var completed = false
+    /// The list a Completed group sits under, whose own new choice there
+    /// shows over the last fold.
+    var listID: UUID?
     var emptyText = ""
     var actionLabel: String?
     var action: (() -> Void)?
@@ -541,8 +544,7 @@ extension NXGroup {
     func isOpen(in workbench: Workbench) -> Bool {
         guard collapsible else { return true }
         if completed {
-            return NXCompletedFold.isOpen(workbench.completedFold, default: defaultOpen,
-                                          showsCompleted: workbench.settings.showsCompletedTasks)
+            return NXCompletedFold.isOpen(workbench.completedFold, default: defaultOpen, list: listID)
         }
         return defaultOpen != workbench.collapsedGroups.contains(id)
     }
@@ -551,8 +553,7 @@ extension NXGroup {
     func toggle(in workbench: Workbench) {
         guard collapsible else { return }
         if completed {
-            workbench.completedFold = NXCompletedFold(open: !isOpen(in: workbench),
-                                                      showsCompleted: workbench.settings.showsCompletedTasks)
+            workbench.completedFold = NXCompletedFold(open: !isOpen(in: workbench))
         } else if workbench.collapsedGroups.contains(id) {
             workbench.collapsedGroups.remove(id)
         } else {

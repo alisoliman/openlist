@@ -86,7 +86,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   `completedOpen`: the last fold shows on every screen (`NXCompletedFold`). Until the user
   folds one, each opens as its setting says: a list's own Completed Tasks (a native extra),
   else Show completed tasks. Deviation: they fold with Show completed tasks on too, where the
-  design keeps them open; changing that setting or a list's Completed Tasks shows at once.
+  design keeps them open, and changing that setting drops the fold, so every group opens as
+  the setting now says (the design keeps an opened fold open when it goes off). A list's new
+  Completed Tasks shows on that list at once; Today, labels and other lists keep the fold
+  until the next one.
+- A repeat reads in macOS sentence case ("Every day", "Every weekday"; a day's name keeps
+  its capital, "Every Wednesday"), where the design title-cases a captured one ("Every
+  Day"). The same words show in the inspector, the tray, Markdown export and MCP.
 - Back and Forward, a native extra, return a page to where it was scrolled when it was left:
   each visit in the navigator's history keeps its own offset, which `NXPage` takes on
   appearing. Any other arrival (the sidebar, a link, a new visit from the history) opens the

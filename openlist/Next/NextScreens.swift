@@ -183,7 +183,7 @@ struct NextListScreen: View {
         let workbench = env.workbench
         let tasks = library.tasks(in: list.id)
         let open = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
-        let groups = Self.completedGroups(tasks, workbench: workbench,
+        let groups = Self.completedGroups(tasks, in: list.id, workbench: workbench,
                                           showsCompleted: list.showsCompleted(default: env.settings.showsCompletedTasks),
                                           inDocument: Set(documentRowIDs))
         let section = library.sectionTitle(for: list)
@@ -240,7 +240,7 @@ struct NextListScreen: View {
     /// stay struck in place. A done task the document still draws, with a
     /// task under it still open, isn't listed twice.
     @MainActor
-    static func completedGroups(_ tasks: [Block], workbench: Workbench, showsCompleted: Bool,
+    static func completedGroups(_ tasks: [Block], in listID: UUID, workbench: Workbench, showsCompleted: Bool,
                                 inDocument: Set<UUID> = []) -> [NXGroup] {
         let done = tasks.filter {
             $0.isCompleted && workbench.closing[$0.id] == nil && $0.parentID == nil && !inDocument.contains($0.id)
@@ -248,7 +248,7 @@ struct NextListScreen: View {
             .sorted(by: Block.byCompletionDate)
         guard !done.isEmpty else { return [] }
         return [NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green, rows: done,
-                        collapsible: true, defaultOpen: showsCompleted, completed: true)]
+                        collapsible: true, defaultOpen: showsCompleted, completed: true, listID: listID)]
     }
 
     static func groups(open: [Block], done: [Block], showsCompleted: Bool) -> [NXGroup] {
@@ -315,8 +315,8 @@ private struct NXListOptions: View {
                 ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             Picker("Completed Tasks", selection: Binding(get: { list.completedVisibility }, set: { visibility in
-                // The list's new choice shows at once, over the Completed groups' last fold.
-                env.workbench.completedFold = nil
+                // The list's new choice shows on it at once, over the Completed groups' last fold.
+                env.workbench.completedFold?.lapsed.insert(list.id)
                 env.store.setCompletedVisibility(visibility, for: list)
             })) {
                 ForEach(TaskList.CompletedVisibility.allCases) { Text($0.title).tag($0) }
