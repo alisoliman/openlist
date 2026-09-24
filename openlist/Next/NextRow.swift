@@ -14,7 +14,7 @@ struct NXRowOptions {
     var notes = false
     /// Tasks screen: text-only chips, the open icon hidden until focus.
     var quiet = false
-    /// The clock relative and late chips read. Screens on a timeline pass its
+    /// The clock the due and done-ago chips read. Screens on a timeline pass its
     /// date so rows refresh with it; nil reads the time when the row draws.
     var now: Date?
 }
@@ -486,10 +486,8 @@ enum NXRowChips {
             chips.append(NXChipModel(id: "repeat", label: recurrence.displayText, icon: "repeat"))
         }
         if task.includesTime, let due = task.dueDate, !done {
-            // A time already past today turns red here; the day chip stays Today until the day ends.
-            let late = due < now && NXFormat.dayOffset(due, now: now) == 0
-            chips.append(NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill",
-                                     tone: late ? .over : .neutral, fill: true))
+            // Neutral all day, as the design's: only an earlier day reads as late.
+            chips.append(NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill", fill: true))
         }
         if !done, workbench.isPlanned(task) {
             let minutes = task.schedulingEstimateMinutes
@@ -525,11 +523,43 @@ struct NXGroup: Identifiable {
     var rows: [Block]
     var showHead = true
     var collapsible = false
-    /// Whether the group starts open; collapsing flips it for the session.
+    /// Whether the group starts open, until the user folds it this session.
     var defaultOpen = true
+    /// A Completed group, on Today, a list or a label. These fold as one, as
+    /// the design's completedOpen, so the last fold shows on every screen.
+    var completed = false
+    /// The list a Completed group sits under, whose own new choice there
+    /// shows over the last fold.
+    var listID: UUID?
     var emptyText = ""
     var actionLabel: String?
     var action: (() -> Void)?
+}
+
+extension NXGroup {
+    /// Whether the group shows its rows. A Completed group follows the fold
+    /// they share (`NXCompletedFold`); another's own fold flips its default,
+    /// which is the same wherever it shows.
+    @MainActor
+    func isOpen(in workbench: Workbench) -> Bool {
+        guard collapsible else { return true }
+        if completed {
+            return NXCompletedFold.isOpen(workbench.completedFold, default: defaultOpen, list: listID)
+        }
+        return defaultOpen != workbench.collapsedGroups.contains(id)
+    }
+
+    @MainActor
+    func toggle(in workbench: Workbench) {
+        guard collapsible else { return }
+        if completed {
+            workbench.completedFold = NXCompletedFold(open: !isOpen(in: workbench))
+        } else if workbench.collapsedGroups.contains(id) {
+            workbench.collapsedGroups.remove(id)
+        } else {
+            workbench.collapsedGroups.insert(id)
+        }
+    }
 }
 
 struct NXGroupView: View {
@@ -539,7 +569,7 @@ struct NXGroupView: View {
     var options = NXRowOptions()
 
     var body: some View {
-        let open = isOpen
+        let open = group.isOpen(in: env.workbench)
         VStack(alignment: .leading, spacing: 0) {
             if group.showHead { head(open: open) }
             if open {
@@ -565,10 +595,6 @@ struct NXGroupView: View {
             }
         }
         .padding(.top, 16)
-    }
-
-    private var isOpen: Bool {
-        !group.collapsible || group.defaultOpen != env.workbench.collapsedGroups.contains(group.id)
     }
 
     private func head(open: Bool) -> some View {
@@ -621,11 +647,7 @@ struct NXGroupView: View {
     }
 
     private func toggle() {
-        guard group.collapsible else { return }
-        withAnimation(style.ease(180)) {
-            if env.workbench.collapsedGroups.contains(group.id) { env.workbench.collapsedGroups.remove(group.id) }
-            else { env.workbench.collapsedGroups.insert(group.id) }
-        }
+        withAnimation(style.ease(180)) { group.toggle(in: env.workbench) }
     }
 }
 
@@ -713,7 +735,9 @@ struct NXTaskMenu: View {
         Button("Due Tomorrow", systemImage: "sun.horizon") { workbench.schedule(ids, offset: 1) }
         Button("Plan for Today", systemImage: "calendar.badge.clock") { workbench.plan(ids) }
         Button("Find a Slot", systemImage: "sparkles") { ids.forEach(workbench.fit) }
-        Button("Star", systemImage: "star") { workbench.star(ids) }
+        // Star toggles, so it reads every target as Task ▸ does: all starred unstars them.
+        let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
+        Button(unstars ? "Unstar" : "Star", systemImage: unstars ? "star.slash" : "star") { workbench.star(ids) }
         Menu("Move to") {
             ForEach(library.lists, id: \.id) { list in
                 NXListMenuButton(list: list) { workbench.move(ids, to: list.id) }

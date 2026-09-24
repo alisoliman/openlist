@@ -57,6 +57,9 @@ struct NextShell: View {
             settleRevealedLists()
         }
         .onChange(of: revealedDocuments) { settleRevealedLists() }
+        // Every Completed group opens as the new setting says, and an old
+        // fold can't come back when the setting does.
+        .onChange(of: env.settings.showsCompletedTasks) { env.workbench.completedFold = nil }
     }
 
     /// The library the window draws, its lists left on the workbench for

@@ -308,11 +308,11 @@ struct NextSidebar: View {
                                            set: { workbench.setHours($0, for: list.id) })) {
             ForEach(AvailabilityCategory.allCases) { Text("\($0.title) Hours").tag($0) }
         }
-        let mode = env.navigator.listViewMode(for: list.id)
-        Button(mode == .document ? "Show as Tasks" : "Show as Document") {
-            env.navigator.setListViewMode(mode == .document ? .tasks : .document, for: list.id)
+        // As the list's own … menu names it; the list opens to show it.
+        Toggle("Show Tasks Only", isOn: Binding(get: { env.navigator.listViewMode(for: list.id) == .tasks }, set: {
+            env.navigator.setListViewMode($0 ? .tasks : .document, for: list.id)
             workbench.go(workbench.route(for: list))
-        }
+        }))
         Divider()
         Button("Duplicate") { workbench.go(.list(env.store.duplicateList(list).id)) }
         Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }

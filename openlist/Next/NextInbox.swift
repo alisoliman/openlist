@@ -86,7 +86,7 @@ struct NextInboxDocumentScreen: View {
 
     var body: some View {
         let workbench = env.workbench
-        let groups = NextListScreen.completedGroups(library.tasks(in: inbox.id), workbench: workbench,
+        let groups = NextListScreen.completedGroups(library.tasks(in: inbox.id), in: inbox.id, workbench: workbench,
                                                     showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks),
                                                     inDocument: Set(documentRowIDs))
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {

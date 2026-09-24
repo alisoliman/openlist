@@ -87,6 +87,9 @@ nonisolated struct Recurrence: Codable, Hashable, Sendable {
                     base = "Every weekday"
                 } else if weekdays == [1, 7] {
                     base = "Every weekend"
+                } else if weekdays.count == 1, let weekday = weekdays.first {
+                    // One day in full, as the design's "Every Wednesday".
+                    base = "Every \(Recurrence.weekdayName(weekday))"
                 } else {
                     let names = weekdays.sorted().map { Recurrence.shortWeekdayName($0) }
                     base = "Every \(names.formatted(.list(type: .and)))"
@@ -106,9 +109,15 @@ nonisolated struct Recurrence: Codable, Hashable, Sendable {
     }
 
     static func shortWeekdayName(_ weekday: Int) -> String {
-        let symbols = Calendar.current.shortWeekdaySymbols
-        let index = max(0, min(symbols.count - 1, weekday - 1))
-        return symbols[index]
+        symbol(weekday, in: Calendar.current.shortWeekdaySymbols)
+    }
+
+    static func weekdayName(_ weekday: Int) -> String {
+        symbol(weekday, in: Calendar.current.weekdaySymbols)
+    }
+
+    private static func symbol(_ weekday: Int, in symbols: [String]) -> String {
+        symbols[max(0, min(symbols.count - 1, weekday - 1))]
     }
 
     // MARK: - Codable payload

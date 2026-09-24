@@ -109,6 +109,8 @@ final class Workbench {
     // MARK: Screens
 
     var collapsedGroups: Set<String> = []
+    /// The Completed groups' shared fold; nil until the user folds one.
+    var completedFold: NXCompletedFold?
     var calendarDays = 7
     /// A day the Calendar shows its range from instead of today: stepped to,
     /// or where Plan put a task. Nil follows today.

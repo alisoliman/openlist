@@ -32,17 +32,18 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
   and runs the Workbench's actions on the tasks its commands reach (in a list document the
   line being written, else the workbench targets in that list); its titles read every
-  target, as the row menu's do. Its key equivalents all carry a modifier, since a bare letter
-  would fire while typing: ⌘D Mark as Done or Reopen (kept as the one key that completes a
-  task while its line is being written), ⌃T/⌃M due today/tomorrow, ⇧⌘S Star. Help ▸
-  Keyboard Shortcuts (⌘/) lists the design's single keys with the keys the list document
-  and menus handle. Work ▸ Start Selected Task, Stop and Complete run `workbench.startWork`,
-  `stopWork` and `finishWork`, as Task ▸ Start Working and the notch's ✕ and ✓ do. View ▸
-  Collapse All folds only what the design's carets fold (tasks with lines under them,
-  headings with a section); Expand All opens every fold, one an older list left on a list
-  item too. A line that becomes a heading, or stops being one, opens, so such a fold never
-  hides a new heading's section (the design keeps a block's flag, which folds a heading
-  turned into a block and back again).
+  target, as the row menu's do, so both say Reopen or Unstar when every target is done or
+  starred (the palette and bulk bar keep the design's Star). Its key equivalents all carry
+  a modifier, since a bare letter would fire while typing: ⌘D Mark as Done or Reopen (kept
+  as the one key that completes a task while its line is being written), ⌃T/⌃M due
+  today/tomorrow, ⇧⌘S Star. Help ▸ Keyboard Shortcuts (⌘/) lists the design's single keys
+  with the keys the list document and menus handle. Work ▸ Start Selected Task, Stop and
+  Complete run `workbench.startWork`, `stopWork` and `finishWork`, as Task ▸ Start Working
+  and the notch's ✕ and ✓ do. View ▸ Collapse All folds only what the design's carets fold
+  (tasks with lines under them, headings with a section); Expand All opens every fold, one
+  an older list left on a list item too. A line that becomes a heading, or stops being one,
+  opens, so such a fold never hides a new heading's section (the design keeps a block's
+  flag, which folds a heading turned into a block and back again).
 - Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
   then the Undo label, which at last leaves only its icon; Actions and New task keep their
   labels.
@@ -82,7 +83,21 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   on a private type of their own that no line takes), and search
   reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
   puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
-  says "Copied “List” as Markdown" in the tray. Open notes are remembered per task on this Mac.
+  says "Copied “List” as Markdown" in the tray. Its Hours picks the Work or Personal hours
+  Plan and Start working use for the list, which the design takes from its section; the
+  header's subtitle stays the design's "N open · Section". Open notes are remembered per
+  task on this Mac.
+- Today's, a list's and a label's Completed groups fold as one, as the design's
+  `completedOpen`: the last fold shows on every screen (`NXCompletedFold`). Until the user
+  folds one, each opens as its setting says: a list's own Completed Tasks (a native extra),
+  else Show completed tasks. Deviation: they fold with Show completed tasks on too, where the
+  design keeps them open, and changing that setting drops the fold, so every group opens as
+  the setting now says (the design keeps an opened fold open when it goes off). A list's new
+  Completed Tasks shows on that list at once; Today, labels and other lists keep the fold
+  until the next one.
+- A repeat reads in macOS sentence case ("Every day", "Every weekday"; a day's name keeps
+  its capital, "Every Wednesday"), where the design title-cases a captured one ("Every
+  Day"). The same words show in the inspector, the tray, Markdown export and MCP.
 - Back and Forward, a native extra, return a page to where it was scrolled when it was left:
   each visit in the navigator's history keeps its own offset, which `NXPage` takes on
   appearing. Any other arrival (the sidebar, a link, a new visit from the history) opens the

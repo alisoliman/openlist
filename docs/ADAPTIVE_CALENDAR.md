@@ -36,7 +36,8 @@ remaining work.
 
 ## Available hours and meetings
 
-Each list chooses **Work** or **Personal** from the hours menu in its header.
+Each list chooses **Work** or **Personal** under **Hours** in its header's "…" menu,
+or in its menu in the sidebar.
 Tasks inherit that choice. Calendar settings define separate weekly hours,
 breaks, and date-specific overrides for both categories:
 
