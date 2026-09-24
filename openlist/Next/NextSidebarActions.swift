@@ -29,7 +29,7 @@ extension Workbench {
         let id = list.id
         let label = "Created “\(list.displayTitle)” in \(place)"
         registerListCreationUndo(label, listID: id)
-        snap(label, icon: "plus.circle", tone: .accent, ids: [])
+        snap(label, icon: "plus.circle", tone: .accent, ids: [id])
         pulse(list: id)
         namingListID = id
         go(.list(id))
@@ -66,7 +66,7 @@ extension Workbench {
         apply(self, pinned)
         let label = pinned ? "Added “\(list.displayTitle)” to the sidebar" : "Removed “\(list.displayTitle)” from the sidebar"
         registerUndo(label, undo: { apply($0, !pinned) }, redo: { apply($0, pinned) })
-        snap(label, icon: pinned ? "pin" : "pin.slash", tone: .neutral, ids: [])
+        snap(label, icon: pinned ? "pin" : "pin.slash", tone: .neutral, ids: [id])
     }
 
     /// Archived lists keep their tasks but stop contributing work or reminders.
@@ -81,7 +81,7 @@ extension Workbench {
         apply(self, archived)
         let label = archived ? "Archived “\(list.displayTitle)”" : "Unarchived “\(list.displayTitle)”"
         registerUndo(label, undo: { apply($0, !archived) }, redo: { apply($0, archived) })
-        snap(label, icon: archived ? "archivebox" : "tray.and.arrow.up", tone: .neutral, ids: [])
+        snap(label, icon: archived ? "archivebox" : "tray.and.arrow.up", tone: .neutral, ids: [id])
     }
 
     /// Icon & Colour…: the emoji or colour a list shows, each pick one change.
@@ -100,7 +100,7 @@ extension Workbench {
             ?? "\(NXFormat.quoted(list.displayTitle)) colour → \(accent?.title ?? "")"
         registerUndo(label, undo: { apply($0, icon.map { _ in before.icon }, accent.map { _ in before.accent }) },
                      redo: { apply($0, icon, accent) })
-        snap(label, icon: icon == nil ? "paintpalette" : "face.smiling", tone: .accent, ids: [])
+        snap(label, icon: icon == nil ? "paintpalette" : "face.smiling", tone: .accent, ids: [id])
     }
 }
 
@@ -168,14 +168,16 @@ extension Workbench {
 
     /// A top-level list dragged in the sidebar, above another or to the end
     /// of a section, as one change the tray can undo. Undo puts back only
-    /// the lists it moved, and only those still where it left them.
+    /// the lists it moved, and only those still where it left them. Dropped
+    /// back where it was, it moved nothing, whatever indexes the Store wrote.
     func moveList(_ list: TaskList, toSection sectionID: UUID?, above target: TaskList?) {
         let before = store.sidebarPlacements()
+        let slot = store.sidebarSlot(of: list.id)
         let from = list.sectionID
         store.move(list: list, toSection: sectionID, above: target)
         let after = store.sidebarPlacements()
         let moved = after.filter { before[$0.key] != $0.value }
-        guard !moved.isEmpty else { return }
+        guard !moved.isEmpty, store.sidebarSlot(of: list.id) != slot else { return }
         let undone = before.filter { moved[$0.key] != nil }
         let section = store.allSections().first { $0.id == store.resolvedSectionID(sectionID) }
         let place = section?.displayTitle ?? "Other lists"
@@ -194,7 +196,7 @@ extension Workbench {
         let section = store.createSection()
         let id = section.id
         let taken = SectionRemoval()
-        snap("Created \(NXFormat.quoted(section.displayTitle))", icon: "folder.badge.plus", tone: .accent, ids: [], undo: { workbench in
+        snap("Created \(NXFormat.quoted(section.displayTitle))", icon: "folder.badge.plus", tone: .accent, ids: [id], undo: { workbench in
             // Deleted meanwhile, it's gone already.
             guard let section = workbench.store.allSections().first(where: { $0.id == id }) else { return true }
             guard let deleted = workbench.store.removeSection(section) else { return false }
@@ -217,7 +219,7 @@ extension Workbench {
         let taken = SectionRemoval(deleted)
         let label = deleted.lists.isEmpty ? "Deleted \(NXFormat.quoted(title))"
             : "Deleted \(NXFormat.quoted(title)) · its lists moved to Other lists"
-        snap(label, icon: "folder.badge.minus", tone: .red, ids: [], undo: { workbench in
+        snap(label, icon: "folder.badge.minus", tone: .red, ids: [deleted.id], undo: { workbench in
             guard let deleted = taken.deleted else { return true }
             return workbench.store.restoreSection(deleted)
         }, redo: { workbench in
@@ -242,7 +244,7 @@ extension Workbench {
         apply(self, title)
         let label = "Renamed section to \(NXFormat.quoted(title))"
         registerUndo(label, undo: { apply($0, previous) }, redo: { apply($0, title) })
-        logEdit(label, ids: [])
+        logEdit(label, ids: [id])
     }
 
     // MARK: List options

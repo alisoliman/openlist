@@ -378,26 +378,18 @@ do {
 print("── Change log writes ──")
 
 do {
-    // A list document line: Return makes the task at 0 s, typing saves its
-    // title at 4 s and 9 s, and the caret leaves at 12 s, when the log
-    // records "Added". Its saved history is the log's, and nothing else is.
+    // A list document line written from 0 s to 12 s saves its one entry as
+    // it ends, and the log records "Added" then. Its saved history is the
+    // log's; what else saved about it meanwhile, over MCP, still shows.
     let line = UUID(), other = UUID(), list = UUID()
     let start = reference
     var writes = NXLogWrites()
-    writes.note([line], from: start, to: start.addingTimeInterval(12))
-    for second in [0.0, 4, 9, 14] {
-        check(writes.wrote(at: start.addingTimeInterval(second), about: [line, list]),
-              "a line's history saved \(Int(second)) s in is the log's")
-    }
-    check(!writes.wrote(at: start.addingTimeInterval(4), about: [other, list]),
-          "another task's history saved meanwhile, as over MCP, still shows")
-    check(!writes.wrote(at: start.addingTimeInterval(16), about: [line, list]),
-          "the line's history saved well after it ended shows")
-    check(!writes.wrote(at: start.addingTimeInterval(-3), about: [line, list]),
-          "the line's history saved before it began shows")
-    // A new line left empty is logged by nobody: its span alone covers it.
-    writes.note([], from: start, to: start.addingTimeInterval(20))
-    check(!writes.wrote(at: start.addingTimeInterval(18), about: [other]), "a line that touched nothing covers nothing")
+    writes.note([line], at: start.addingTimeInterval(12))
+    check(writes.wrote(at: start.addingTimeInterval(12), about: [line, list]), "a line's entry saved as it ends is the log's")
+    check(!writes.wrote(at: start.addingTimeInterval(4), about: [line, list]),
+          "the line's task changed elsewhere while it was written still shows")
+    check(!writes.wrote(at: start.addingTimeInterval(12), about: [other, list]), "another task's history saved then still shows")
+    check(!writes.wrote(at: start.addingTimeInterval(16), about: [line, list]), "the line's history saved well after it ended shows")
 
     // A change the log recorded covers what it covered around its moment;
     // one that covered nothing, everything then.

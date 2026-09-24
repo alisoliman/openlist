@@ -142,6 +142,26 @@ if phase == "prepare" {
     store.applySidebarPlacements(unfiled, expecting: store.sidebarPlacements())
     check(store.sidebarPlacements() == unfiled, "The lists are back where the section checks left them")
 
+    // A drop back where a list was moves nothing the sidebar shows, even when
+    // the Store writes it a new index; one past a neighbour does.
+    let slotSection = store.createSection(title: "Slot section")
+    let slotLists = ["Slot A", "Slot B", "Slot C"].map { store.createList(title: $0) }
+    for slotList in slotLists { store.move(list: slotList, toSection: slotSection.id, above: nil) }
+    slotLists[1].sidebarIndex = slotLists[0].sidebarIndex + 10
+    store.save()
+    let slotB = store.sidebarSlot(of: slotLists[1].id), slotC = store.sidebarSlot(of: slotLists[2].id)
+    let indexB = slotLists[1].sidebarIndex
+    store.move(list: slotLists[1], toSection: slotSection.id, above: slotLists[2])
+    check(slotB?.nextID == slotLists[2].id && slotLists[1].sidebarIndex != indexB && store.sidebarSlot(of: slotLists[1].id) == slotB,
+          "A list dropped on the one below it keeps its slot, though its index changed")
+    store.move(list: slotLists[2], toSection: slotSection.id, above: nil)
+    check(slotC?.nextID == nil && store.sidebarSlot(of: slotLists[2].id) == slotC, "and one dropped at the end it's at keeps it too")
+    store.move(list: slotLists[0], toSection: slotSection.id, above: slotLists[2])
+    check(store.sidebarSlot(of: slotLists[0].id)?.nextID == slotLists[2].id, "One dropped past a neighbour takes a new slot")
+    for slotList in slotLists { store.context.delete(slotList) }
+    store.save()
+    store.deleteSection(slotSection)
+
     // More than the former UI fetch cap, so clearing cannot silently leave
     // older records behind. Also covers the history step in reset.
     store.clearActivity()

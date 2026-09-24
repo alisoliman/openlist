@@ -203,10 +203,11 @@ struct OutlineHooks {
     /// changes. Anything it registers on the window's undo manager now lands
     /// in the same step.
     var didRecordEdit: (OutlineEdit, _ name: String) -> Void = { _, _ in }
-    /// A line's edit ended, recorded or not, as a new line left empty isn't:
-    /// the blocks it touched and when it began. Its typing saves as it goes,
-    /// for a host that tells that history apart from changes made elsewhere.
-    var didEndLine: (_ ids: Set<UUID>, _ since: Date) -> Void = { _, _ in }
+    /// A line's edit ended, recorded or not, as a new line left empty isn't,
+    /// and its blocks' saved history has just taken the line's one entry, or
+    /// none: the blocks it touched, for a host that tells that history apart
+    /// from changes made elsewhere.
+    var didEndLine: (_ ids: Set<UUID>) -> Void = { _ in }
     /// A new line took the caret.
     var didAddLine: (UUID) -> Void = { _ in }
     /// Shift-Return on a task, for a host that edits notes in place. `nil`
@@ -977,21 +978,18 @@ final class OutlineEditor {
         /// task or a spacer in an older list is, so passing through leaves it.
         let arrivedEmpty: Bool
         let session: EditorEditSession
-        /// When the edit began: the caret's first change, or the new line's creation.
-        let startedAt: Date
         /// Where the line's typing Undo is registered, folded into this step.
         /// A line whose kind changes can be drawn by a new text view. Held
         /// until the step ends, by identity: the undo manager doesn't keep
         /// them, and a text view gone with its storage would leave its typing.
         let undoTargets = NSHashTable<NSTextStorage>(options: [.strongMemory, .objectPointerPersonality])
 
-        init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession, startedAt: Date = .now) {
+        init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession) {
             self.blockID = blockID
             self.isNew = isNew
             isStructural = isNew
             self.arrivedEmpty = arrivedEmpty
             self.session = session
-            self.startedAt = startedAt
         }
     }
 
@@ -1019,11 +1017,10 @@ final class OutlineEditor {
     /// away opens, so the caret has a line to land in.
     private func addLine(covering ids: Set<UUID>, _ create: () -> Block) {
         commitLine()
-        let start = Date.now
         let session = env.store.beginEditorSession(in: document.listID, covering: ids)
         let created = env.store.recordInEditorSession(session, create)
         env.store.save()
-        line = LineEdit(blockID: created.id, isNew: true, arrivedEmpty: true, session: session, startedAt: start)
+        line = LineEdit(blockID: created.id, isNew: true, arrivedEmpty: true, session: session)
         observeUndo()
         unfold(toShow: created.id)
         env.activeDocument = document
@@ -1064,7 +1061,7 @@ final class OutlineEditor {
         line = nil
         defer {
             drawnRows = nil
-            hooks.didEndLine(edit.session.touchedIDs, edit.startedAt)
+            endLine(edit)
         }
         for storage in [undoTarget, textStorage(editing: edit.blockID)].compactMap({ $0 }) { edit.undoTargets.add(storage) }
         let targets = edit.undoTargets.allObjects
@@ -1087,6 +1084,14 @@ final class OutlineEditor {
         if env.store.commitEditorSession(edit.session, name: name, undoManager: undoManager) {
             hooks.didRecordEdit(change, name)
         }
+    }
+
+    /// A line's edit is over, committed or not: what it saved to its tasks
+    /// as it was written reaches saved history as its one entry, and the
+    /// host hears which blocks it touched.
+    private func endLine(_ edit: LineEdit) {
+        env.store.endEditorSession(edit.session)
+        hooks.didEndLine(edit.session.touchedIDs)
     }
 
     /// Whether an empty line goes as its edit ends. A new one always does.
@@ -1543,6 +1548,7 @@ final class OutlineEditor {
         if let edit = line, !ids.contains(edit.blockID) {
             line = nil
             edit.undoTargets.allObjects.forEach(discardTyping)
+            endLine(edit)
         }
         if let focused = focus.blockID, !ids.contains(focused) {
             // The caret goes; the host keeps the focus.

@@ -373,9 +373,12 @@ private struct NXChangesSection: View {
     }
 
     private func item(_ event: ActivityEvent) -> NXChangeItem {
-        NXChangeItem(id: "e\(event.id)", icon: Self.icon(event.kind), tone: Self.tone(event.kind),
-                     label: Self.label(event), detail: event.recordedDetail,
-                     list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
+        // A line taken out as it was left empty is an edit, as the log draws it.
+        let removedLine = event.change?.removedEmptyLine == true
+        return NXChangeItem(id: "e\(event.id)", icon: removedLine ? "pencil" : Self.icon(event.kind),
+                            tone: removedLine ? .neutral : Self.tone(event.kind),
+                            label: Self.label(event), detail: event.recordedDetail,
+                            list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
     }
 
     private static func label(_ event: ActivityEvent) -> String {
@@ -391,6 +394,9 @@ private struct NXChangesSection: View {
             if let due = after?.dueDate { return "\(title) → \(NXFormat.dueLabel(due))" }
             return "Scheduled \(title)"
         case .unscheduled: return "Cleared date on \(title)"
+        // A task's title is its line's text, which the design edits.
+        case .renamed: return "Edited \(title)"
+        case .deleted where event.change?.removedEmptyLine == true: return "Removed an empty line"
         // A list's, like a task's, is in Trash, where it can be restored.
         case .deleted, .listDeleted: return "Moved \(title) to Trash"
         default: return "\(event.kind.verb) \(title)"

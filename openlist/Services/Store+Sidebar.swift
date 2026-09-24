@@ -8,6 +8,15 @@ struct SidebarPlacement: Equatable {
     var sidebarIndex: Double
 }
 
+/// Where the sidebar shows a list among the lists beside it: its section,
+/// whether it's pinned, and the list shown right below it there, whatever
+/// indexes put it there.
+struct SidebarSlot: Equatable {
+    var sectionID: UUID?
+    var isPinned: Bool
+    var nextID: UUID?
+}
+
 /// A sidebar section as it was deleted, with the lists it held, for the Undo
 /// that brings it back.
 struct DeletedSidebarSection: Equatable {
@@ -26,6 +35,19 @@ extension Store {
         Dictionary(allLists(includeArchived: true).map {
             ($0.id, SidebarPlacement(sectionID: $0.sectionID, isPinned: $0.isPinned, sidebarIndex: $0.sidebarIndex))
         }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Where the sidebar shows top-level list `id`. A drop that leaves it
+    /// where it was moved nothing anyone can see, even when the indexes
+    /// around it were spaced anew.
+    func sidebarSlot(of id: UUID) -> SidebarSlot? {
+        let lists = allLists()
+        guard let list = lists.first(where: { $0.id == id }) else { return nil }
+        let next = lists.filter {
+            $0.id != id && !$0.isSystemInbox && $0.parentListID == nil && $0.sectionID == list.sectionID
+                && $0.isPinned == list.isPinned && $0.sidebarIndex > list.sidebarIndex
+        }.min { $0.sidebarIndex < $1.sidebarIndex }
+        return SidebarSlot(sectionID: list.sectionID, isPinned: list.isPinned, nextID: next?.id)
     }
 
     /// Puts lists back where `placements` has them, in one save: only those

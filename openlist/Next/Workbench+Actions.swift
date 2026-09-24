@@ -563,7 +563,7 @@ extension Workbench {
         let id = list.id
         let label = "Created “Untitled list” in \(section?.displayTitle ?? "Lists")"
         registerListCreationUndo(label, listID: id)
-        snap(label, icon: "plus.circle", tone: .accent, ids: [])
+        snap(label, icon: "plus.circle", tone: .accent, ids: [id])
         pulse(list: id)
         namingListID = id
         go(.list(id))
@@ -652,7 +652,7 @@ extension Workbench {
         try store.mergeLabels(plan)
         let text = "Merged #\(plan.source.name) into #\(plan.destination.name)"
         let merged = LabelMerge(plan)
-        snap(text, icon: "arrow.triangle.merge", tone: .accent, ids: [], undo: { workbench in
+        snap(text, icon: "arrow.triangle.merge", tone: .accent, ids: [plan.destination.id], undo: { workbench in
             workbench.store.undoLabelMerge(merged.plan)
         }, redo: { workbench in
             let store = workbench.store
@@ -682,7 +682,7 @@ extension Workbench {
         guard let label = store.findOrCreateLabel(named: name) else { return false }
         store.save()
         let created = LabelCreation(label.id)
-        snap("Created #\(label.name)", icon: "tag", tone: .accent, ids: [], undo: { workbench in
+        snap("Created #\(label.name)", icon: "tag", tone: .accent, ids: [label.id], undo: { workbench in
             // Deleted meanwhile, it's gone already.
             guard let label = workbench.store.label(id: created.labelID) else { return true }
             if workbench.navigator.route == .label(label.id) { workbench.navigator.replace(with: .tasks) }
@@ -707,7 +707,7 @@ extension Workbench {
         let previous = label.name
         try store.renameLabel(id: id, to: rawName)
         guard let name = store.label(id: id)?.name, name != previous else { return }
-        snap("Renamed #\(previous) to #\(name)", icon: "tag", tone: .accent, ids: [], undo: { workbench in
+        snap("Renamed #\(previous) to #\(name)", icon: "tag", tone: .accent, ids: [id], undo: { workbench in
             workbench.renameLabel(id: id, to: previous)
         }, redo: { workbench in
             workbench.renameLabel(id: id, to: name)
@@ -738,7 +738,7 @@ extension Workbench {
         apply(self, accent)
         let text = "#\(label.name) colour → \(accent.title)"
         registerUndo(text, undo: { apply($0, previous) }, redo: { apply($0, accent) })
-        snap(text, icon: "paintpalette", tone: .accent, ids: [])
+        snap(text, icon: "paintpalette", tone: .accent, ids: [id])
     }
 
     /// The hours Plan and Start working use for a list's tasks.

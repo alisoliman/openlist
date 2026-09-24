@@ -44,6 +44,9 @@ final class Store {
     /// cache even after deletion. Never publish those attempt identities, and
     /// explicitly delete them again before any subsequent commit.
     private(set) var uncommittedActivityIDs: Set<UUID> = []
+    /// List document lines' own saves to their tasks, which reach saved
+    /// history as one entry each once the line ends.
+    @ObservationIgnored var lineHistory = EditorLineHistory()
 
     /// Set by ``batch(_:)`` so a run of mutations commits once.
     var isSavingSuspended = false
@@ -395,9 +398,11 @@ final class Store {
                 context.delete(event)
             }
         }
-        if context.hasChanges || !pendingActivity.isEmpty {
+        if context.hasChanges || !pendingActivity.isEmpty || lineHistory.hasEnded {
             context.processPendingChanges()
-            let events = try stagedTaskActivity() + stagedLegacyActivity()
+            let staged = try stagedTaskActivity() + stagedLegacyActivity()
+            // After staging, which holds what the lines saved last.
+            let events = staged + endedLineActivity()
             for event in events { context.insert(event) }
             do {
                 try commitContext(context)
@@ -420,6 +425,7 @@ final class Store {
             }
         }
         pendingActivity.removeAll()
+        lineHistory.didSave()
         activitySuppressedTaskIDs.removeAll()
         pendingRestoredTaskIDs.removeAll()
         pendingCompletionCycleIDs.removeAll()

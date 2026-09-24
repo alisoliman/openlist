@@ -220,6 +220,11 @@ final class EditorEditSession {
     /// date picked in the inspector, and the edit's Undo leaves it alone.
     fileprivate var expected: [UUID: EditorBlockRecord]
     fileprivate var expectedAttachments: [UUID: EditorAttachmentRecord]
+    /// What the edit's line has saved to its tasks, which saved history leaves
+    /// out as it's saved and records as one entry each once the line ends.
+    fileprivate var history: [UUID: EditorLineTaskHistory] = [:]
+    /// When the line ended, which its entries are dated, whenever they're saved.
+    fileprivate var endedAt: Date?
 
     fileprivate init(listIDs: Set<UUID>, baseline: EditorSnapshot, touchedIDs: Set<UUID>) {
         self.listIDs = listIDs
@@ -227,6 +232,15 @@ final class EditorEditSession {
         self.touchedIDs = touchedIDs
         expected = baseline.blocks
         expectedAttachments = baseline.attachments
+    }
+
+    /// Takes a `kind` of change the line saved to task `id`, from `before`
+    /// to `after`, into that task's one entry.
+    func hold(_ kind: ActivityKind, of id: UUID, from before: TaskActivityState?, to after: TaskActivityState?) {
+        var entry = history[id] ?? EditorLineTaskHistory(before: before)
+        entry.after = after
+        entry.kinds.insert(kind)
+        history[id] = entry
     }
 
     /// Folds into the baseline what changed in `current` since the edit last
@@ -262,6 +276,85 @@ final class EditorEditSession {
         for id in touchedIDs { expected[id] = current.blocks[id] }
         expectedAttachments = current.attachments.filter { $0.value.blockID.map(touchedIDs.contains) == true }
     }
+}
+
+/// One task's part in a list document line's edit, as the line's saves left it.
+private struct EditorLineTaskHistory {
+    /// Before the line first saved a change to it; `nil` when it wasn't there yet.
+    let before: TaskActivityState?
+    /// As the line's latest save left it; `nil` once the line took it out.
+    var after: TaskActivityState?
+    var kinds: Set<ActivityKind> = []
+
+    init(before: TaskActivityState?) {
+        self.before = before
+        after = before
+    }
+
+    /// The design's one entry for the line: the task added, its title edited,
+    /// the line taken out as an empty line or, the title as it was, its date.
+    /// None for a task added and taken out again, or left as it was.
+    /// `removed` when the line took it out after its last save as a task.
+    func event(for id: UUID, at date: Date, removed: Bool) -> ActivityEvent? {
+        let kind: ActivityKind
+        let after = removed ? nil : after
+        switch (before, after) {
+        case (nil, nil): return nil
+        case (nil, _?): kind = .created
+        // The only line a line's edit takes out is itself, left empty.
+        case (_?, nil): kind = .deleted
+        case let (before?, after?):
+            if kinds.contains(.renamed), before.title != after.title {
+                kind = .renamed
+            } else if !kinds.isDisjoint(with: [.scheduled, .unscheduled]),
+                      before.dueDate != after.dueDate || before.includesTime != after.includesTime {
+                kind = after.dueDate == nil ? .unscheduled : .scheduled
+            } else {
+                return nil
+            }
+        }
+        guard let subject = after ?? before else { return nil }
+        let event = ActivityEvent(kind: kind, title: subject.title.isEmpty ? "Untitled task" : subject.title,
+                                  blockID: id, listID: subject.listID, listTitle: subject.listTitle, listIcon: subject.listIcon)
+        event.timestamp = date
+        event.change = TaskActivityChange(before: before, after: after, removedEmptyLine: kind == .deleted ? true : nil)
+        return event
+    }
+}
+
+/// List document lines being written, and those ended since the last save.
+/// What a line saves to its own tasks as it's written, the new task at
+/// Return, its title as typed, the line itself when it goes, saved history
+/// takes as one entry per task once the line ends, as the design logs a line.
+struct EditorLineHistory {
+    private struct Open { weak var session: EditorEditSession? }
+    private var open: [Open] = []
+    fileprivate private(set) var ended: [EditorEditSession] = []
+
+    fileprivate var isEmpty: Bool { open.isEmpty && ended.isEmpty }
+    /// Ended ones first: a line ended and opened again on the same task
+    /// before a save made what the earlier one saved.
+    fileprivate var sessions: [EditorEditSession] { ended + open.compactMap(\.session) }
+    /// Whether a line ended since the last save has history to record.
+    var hasEnded: Bool { ended.contains { !$0.history.isEmpty } }
+
+    fileprivate mutating func begin(_ session: EditorEditSession) {
+        open.removeAll { $0.session == nil }
+        open.append(Open(session: session))
+    }
+
+    /// False for a session that isn't open.
+    fileprivate mutating func end(_ session: EditorEditSession) -> Bool {
+        let wasOpen = open.contains { $0.session === session }
+        open.removeAll { $0.session == nil || $0.session === session }
+        guard wasOpen else { return false }
+        session.endedAt = .now
+        ended.append(session)
+        return true
+    }
+
+    /// What the ended lines held is saved history now.
+    mutating func didSave() { ended.removeAll() }
 }
 
 private struct EditorLabelRecord: Equatable {
@@ -316,9 +409,56 @@ extension Store {
     /// undo as one step, from how `blockIDs` are now.
     func beginEditorSession(in listID: UUID, covering blockIDs: Set<UUID>) -> EditorEditSession {
         let listIDs = Set([listID])
-        return EditorEditSession(listIDs: listIDs,
-                                 baseline: EditorSnapshot(store: self, listIDs: listIDs, blockIDs: blockIDs),
-                                 touchedIDs: blockIDs)
+        let session = EditorEditSession(listIDs: listIDs,
+                                        baseline: EditorSnapshot(store: self, listIDs: listIDs, blockIDs: blockIDs),
+                                        touchedIDs: blockIDs)
+        lineHistory.begin(session)
+        return session
+    }
+
+    /// Ends `session`'s line, committed or not. What it saved to its tasks as
+    /// it was written, left out of saved history then, goes with the next
+    /// save, with what it hasn't saved yet, as one entry per task, dated now.
+    func endEditorSession(_ session: EditorEditSession) {
+        guard lineHistory.end(session) else { return }
+        if context.hasChanges || !session.history.isEmpty { scheduleSave() }
+    }
+
+    /// The line, being written or ended since the last save, that saved this
+    /// `kind` of change to `task`: its title as typed, a date typed into it,
+    /// the new task at Return or the empty line taken out. Whatever else
+    /// changes the task meanwhile, a completion or a date picked, isn't the
+    /// line's, and neither is a move to Trash.
+    func line(saving kind: ActivityKind, to task: Block) -> EditorEditSession? {
+        guard !lineHistory.isEmpty else { return nil }
+        let id = task.id
+        return lineHistory.sessions.first { session in
+            guard session.touchedIDs.contains(id) else { return false }
+            let expected = session.expected[id]
+            switch kind {
+            case .created: return expected != nil && !task.isDeleted && !task.isTrashed
+            case .deleted: return expected == nil && task.isDeleted
+            case .renamed: return expected?.text == task.text
+            case .scheduled, .unscheduled:
+                return expected.map { $0.dueDate == task.dueDate && $0.includesTime == task.includesTime } ?? false
+            default: return false
+            }
+        }
+    }
+
+    /// The entries the lines ended since the last save record, one for each
+    /// task each saved, unless it has been erased for good since.
+    func endedLineActivity() -> [ActivityEvent] {
+        lineHistory.ended.flatMap { session in
+            session.history.compactMap { id, entry -> ActivityEvent? in
+                guard !permanentlyErasedBlockIDs.contains(id) else { return nil }
+                // As the line left it: a line turned into a heading or text
+                // has no task history, as none is saved for one.
+                let last = session.expected[id]
+                if let last, BlockKind(rawValue: last.kindRaw) != .task { return nil }
+                return entry.event(for: id, at: session.endedAt ?? .now, removed: last == nil)
+            }
+        }
     }
 
     /// Runs a structural change as part of `session`, registering no Undo of

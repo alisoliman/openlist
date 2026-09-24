@@ -135,22 +135,25 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
   Copy Content and Subtasks (for Paste in an empty document line) only copy. An Undo or
-  Redo of a label or list change that fails says so in the tray, keeps the log as it was
-  and leaves the stack. Deviation: a merge undoes in turn on the window's stack, by ⌘Z or
-  the tray, where the old "Undo merge" card took back the latest merge out of order,
-  keeping later changes. Deviation: "Confirm before deleting a list" stays a preference
+  Redo of a label or list change, or of a Restore, that fails says so in the tray, keeps
+  the log as it was and leaves the stack. An edit logged while the tray still shows an
+  earlier change, like a new section's name, takes that tray's Undo away. Deviation: a
+  merge undoes in turn on the window's stack, by ⌘Z or the tray, where the old "Undo
+  merge" card took back the latest merge out of order, keeping later changes. Deviation: "Confirm before deleting a list" stays a preference
   (on by default), asked in a Next sheet; the design asks nothing, as Undo covers it.
   Settings' own confirmations, for what no Undo takes back (Clear all activity history,
   Delete everything, Return to original library, Reset access token), are Next sheets too,
-  where Return presses neither button. Delete everything also clears the session: the
-  window's undo stack, Changes' This session and the tray. Settings' inline hours editor
-  keeps the design's dark "Keep for later" fill for Save override; the sheets' buttons are
-  `NXPanelButtonStyle`.
+  where Return presses neither button. Delete everything also clears the window's undo stack
+  and Changes' This session; the tray then says "Deleted everything for good", with no
+  Undo. Their buttons, and the inline hours editor's, are `NXPanelButtonStyle`.
 - Activity › Changes › This session is the log, with the saved history it didn't write
-  merged in (MCP, another Mac). What a list document line saves while it's written (its new
-  task at Return, its title as typed, the line itself when it goes) counts as its one entry,
-  as the design logs it, or as none for a new line left empty. Earlier shows saved history
-  as it was recorded.
+  merged in (MCP, another Mac). What a list document line saves to its task while it's
+  written (the new task at Return, its title as typed, the line itself when it goes)
+  reaches saved history as one entry once the line ends, as the design logs it: "Added
+  “…”", "Edited “…”" or "Removed an empty line", or none for a new line left empty. So a
+  task's line reads the same in Earlier after a relaunch. Deviations: tasks pasted into a
+  line keep an "Added" each there, and a heading or text line, which has no saved history,
+  shows in This session only. History saved before this shows as it was recorded.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the

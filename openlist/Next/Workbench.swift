@@ -491,9 +491,12 @@ final class Workbench {
 
     /// Logs an edit the list document has just put on the undo stack, in the
     /// same step, so it shows in Changes and names the toolbar's Undo. As in
-    /// the design, an edit shows no tray.
+    /// the design, an edit shows no tray; one still showing an earlier change,
+    /// like the new section whose name this is, loses its Undo, which would
+    /// now take back the edit instead.
     func logEdit(_ label: String, ids: [UUID]) {
         attach(record(label, icon: "pencil", tone: .neutral, ids: ids), restores: false)
+        if tray?.undoable == true { withAnimation(style.ease(200)) { tray?.undoable = false } }
     }
 
     var latestBatch: Int? { log.first?.batch }
@@ -581,11 +584,13 @@ final class Workbench {
         logWrites.note(mark.covers)
     }
 
-    /// A list document line's edit ended: what its typing and structure saved
-    /// meanwhile is the log's, which records the line once, with the design's
-    /// name, or not at all when a new line left empty goes, as in the design.
-    func noteLineWrites(_ ids: Set<UUID>, since start: Date) {
-        logWrites.note(ids, from: start)
+    /// A list document line's edit ended, and the one entry saved history
+    /// takes for what it saved to `ids`, if any, is the log's, which records
+    /// the line once, with the design's name, or not at all when a new line
+    /// left empty goes, as in the design.
+    func noteLineWrites(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        logWrites.note(ids)
         // Changes reads the log's writes as it draws, so it draws again.
         undoRevision += 1
     }
@@ -1158,7 +1163,9 @@ final class Workbench {
     }
 
     /// The restore's one window entry. Undo stops a restore still in flight,
-    /// or moves what it restored back to Trash; Redo restores it again.
+    /// or moves what it restored back to Trash; Redo restores it again. One
+    /// the Store couldn't write changed nothing: as a label's does, the log
+    /// stays as it was, the tray says so and the entry leaves the stack.
     private func attach(restore: RestoreBatch, restores: Bool) {
         guard let undoManager else { return }
         // The manager holds its target weakly; the handler keeps the batch alive.
@@ -1167,7 +1174,11 @@ final class Workbench {
                 guard let self else { return }
                 let id = restore.id
                 if restores {
-                    self.store.restoreTrash(ids: [id])
+                    // Restored from Trash by hand meanwhile, it's back already.
+                    guard !self.store.isInTrash(id) || self.store.restoreTrash(ids: [id]) else {
+                        self.restoreStepFailed(restore, redo: true)
+                        return
+                    }
                     restore.mark.covers = self.covered([id])
                     self.relog(restore.mark)
                 } else {
@@ -1178,9 +1189,14 @@ final class Workbench {
                         withAnimation(self.style.ease(260)) { _ = self.flying.remove(id) }
                     } else if restore.isList {
                         // The handler keeps the id, never the model, which Trash may erase.
-                        if let list = self.store.list(id: id) { _ = self.moveToTrash(list) }
-                    } else if let block = self.store.block(id: id) {
-                        self.store.trashBlocks([block])
+                        // Out of the library, it's in Trash already or erased.
+                        if let list = self.store.list(id: id), !self.moveToTrash(list) {
+                            self.restoreStepFailed(restore, redo: false)
+                            return
+                        }
+                    } else if let block = self.store.block(id: id), !self.store.trashBlocks([block]) {
+                        self.restoreStepFailed(restore, redo: false)
+                        return
                     }
                     self.unlog(restore.mark)
                 }
@@ -1188,6 +1204,13 @@ final class Workbench {
             }
         }
         undoManager.setActionName(restore.mark.label)
+    }
+
+    /// An Undo or Redo of a restore the Store refused, whose notice says why.
+    private func restoreStepFailed(_ restore: RestoreBatch, redo: Bool) {
+        trashUndos.remove(restore.mark)
+        showTray("Could not \(redo ? "redo" : "undo") — \(restore.mark.label)", icon: "exclamationmark.triangle", tone: .red)
+        undoRevision += 1
     }
 
     /// Takes Undo off every trash or restore whose tasks have all been erased

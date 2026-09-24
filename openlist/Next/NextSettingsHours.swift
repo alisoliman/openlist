@@ -178,9 +178,9 @@ private struct NXOverrideEditor: View {
             HStack(spacing: 6) {
                 Spacer()
                 Button("Cancel", action: cancel)
-                    .buttonStyle(NXDialogButtonStyle(kind: .secondary))
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 Button("Save override", action: save)
-                    .buttonStyle(NXDialogButtonStyle(kind: .primary))
+                    .buttonStyle(NXPanelButtonStyle(kind: .primary))
             }
         }
         .padding(.vertical, 10)
