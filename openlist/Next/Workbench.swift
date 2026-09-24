@@ -483,6 +483,12 @@ final class Workbench {
         showOnCalendar(destination.day ?? .now)
     }
 
+    /// Whether the tray offers its jump: away from its route, and on the
+    /// Calendar while the range, stepped or moved away, doesn't show its day.
+    func offers(_ destination: TrayDestination) -> Bool {
+        destination.route != navigator.route || destination.route == .calendar && !calendarShows(destination.day ?? .now)
+    }
+
     // MARK: Change log
 
     /// Records a change in the log and announces it in the tray, unless

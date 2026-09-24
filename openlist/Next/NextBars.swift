@@ -120,7 +120,7 @@ struct NXTray: View {
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(2)
             }
-            if let destination = message.destination, destination.route != env.navigator.route {
+            if let destination = message.destination, workbench.offers(destination) {
                 Button(destination.label) {
                     workbench.follow(destination)
                     workbench.dismissTray()

@@ -436,14 +436,30 @@ check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: da
 check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday,
                                                                      now: date("2026-09-27T09:00:00+02:00"), calendar: mondayWeek), calendar: mondayWeek))
         == [21, 22, 23, 24, 25, 26, 27], "On Sunday it gives way to the week around today")
-// Day view moved to tomorrow by Plan: the running work's Show, revealing today, brings the range back to today's.
-let plannedTomorrow = CalendarWeek.anchor(showing: date("2026-09-24T09:00:00+02:00"), count: 1, now: wednesday, calendar: mondayWeek)
-let later = date("2026-09-23T11:45:00+02:00")
-let shownDay = { (anchor: Date?) in
-    dayNumbers(CalendarWeek.days(count: 1, from: CalendarWeek.start(anchor: anchor, setAt: wednesday, now: later, calendar: mondayWeek), calendar: mondayWeek))
+// What opens the Calendar on a day (a tray's Show, a Work panel link, a widget, a nudge) moves a range that doesn't show it and leaves one that does.
+@MainActor
+func revealed(_ day: String, anchor: String?, setAt: String = "2026-09-23T10:40:00+02:00", count: Int,
+              now: String = "2026-09-23T11:45:00+02:00") -> Date? {
+    CalendarWeek.anchor(revealing: date(day), anchor: anchor.map(date), setAt: date(setAt), count: count, now: date(now), calendar: mondayWeek)
 }
-check(shownDay(plannedTomorrow) == [24] && shownDay(CalendarWeek.anchor(showing: later, count: 1, now: later, calendar: mondayWeek)) == [23],
-      "Show for today's work brings a Day view moved to tomorrow back to today")
+check(revealed("2026-09-23T11:45:00+02:00", anchor: "2026-09-24T00:00:00+02:00", count: 1) == nil,
+      "Show for today's work brings a Day view Plan moved to tomorrow back to today")
+check(revealed("2026-09-23T11:45:00+02:00", anchor: "2026-09-14T00:00:00+02:00", count: 7) == nil,
+      "Show for today's work brings a Week view stepped a week back to the week around today")
+check(revealed("2026-10-01T09:00:00+02:00", anchor: "2026-09-28T00:00:00+02:00", count: 7) == date("2026-09-28T00:00:00+02:00")
+        && revealed("2026-09-27T09:00:00+02:00", anchor: "2026-09-26T00:00:00+02:00", count: 3) == date("2026-09-26T00:00:00+02:00")
+        && revealed("2026-09-25T09:00:00+02:00", anchor: nil, count: 3) == nil,
+      "A range that shows the day already keeps its anchor, or keeps following today")
+check(revealed("2026-09-25T09:00:00+02:00", anchor: "2026-09-24T00:00:00+02:00", count: 1) == date("2026-09-25T00:00:00+02:00"),
+      "A day the range doesn't show moves it there")
+check(revealed("2026-09-25T09:00:00+02:00", anchor: "2026-09-24T00:00:00+02:00", count: 1, now: "2026-09-25T09:00:00+02:00") == nil,
+      "An anchor that has lapsed isn't kept: today's range shows today")
+// The work trays keep Show on the Calendar while its range doesn't show today, where their work is.
+let dayMovedToTomorrow = CalendarWeek.start(anchor: date("2026-09-24T00:00:00+02:00"), setAt: wednesday, now: wednesday, calendar: mondayWeek)
+check(!CalendarWeek.shows(wednesday, count: 1, from: dayMovedToTomorrow, calendar: mondayWeek)
+        && CalendarWeek.shows(wednesday, count: 7, from: dayMovedToTomorrow, calendar: mondayWeek)
+        && CalendarWeek.shows(wednesday, count: 1, from: wednesday, calendar: mondayWeek),
+      "Tomorrow's Day view doesn't show today, the Week around it does")
 
 // "Not planned yet" takes tasks due from a week back to the end of the week around today (the settings week, as Plan searches it), or four days out when that's later.
 @MainActor

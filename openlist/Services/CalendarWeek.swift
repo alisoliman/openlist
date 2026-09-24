@@ -37,6 +37,24 @@ enum CalendarWeek {
         return current.contains { calendar.isDate($0, inSameDayAs: day) } ? nil : calendar.startOfDay(for: day)
     }
 
+    /// Whether the range of `count` days built from `start` has `day` in it.
+    static func shows(_ day: Date, count: Int, from start: Date, calendar: Calendar) -> Bool {
+        days(count: count, from: start, calendar: calendar).contains { calendar.isDate($0, inSameDayAs: day) }
+    }
+
+    /// The anchor that brings `day` into the Calendar's range: the one in
+    /// effect (`anchor`, on the day it was set) while its range has the day
+    /// already, so a range stepped or moved to stays put; else the one
+    /// `anchor(showing:)` gives, nil when that's the range around today.
+    static func anchor(revealing day: Date, anchor: Date?, setAt: Date, count: Int, now: Date,
+                       calendar: Calendar) -> Date? {
+        let current = calendar.isDate(setAt, inSameDayAs: now) ? anchor : nil
+        if shows(day, count: count, from: start(anchor: anchor, setAt: setAt, now: now, calendar: calendar), calendar: calendar) {
+            return current
+        }
+        return self.anchor(showing: day, count: count, now: now, calendar: calendar)
+    }
+
     /// The day the Calendar builds its range from: `anchor`, the day stepped
     /// to or planned on, else today. An anchor lasts only the day it was set:
     /// from the next, the Calendar shows the range around today again, as the

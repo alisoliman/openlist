@@ -140,7 +140,8 @@ struct RootView: View {
             env.workbench.go(.inbox)
             env.navigator.showInboxTriage()
         case .today: env.workbench.go(.today)
-        case .calendar: env.workbench.go(.calendar)
+        // Up Next and Agenda: today's work, whichever range the Calendar was left on.
+        case .calendar: env.workbench.showOnCalendar()
         case .activity: env.workbench.go(.activity)
         case .lists: env.workbench.go(.lists)
         }
