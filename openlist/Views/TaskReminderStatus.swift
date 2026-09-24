@@ -42,13 +42,13 @@ struct TaskReminderStatus: View {
                             : !recovery.hasSnapshot ? "Checking saved reminder…" : "Reminder changes are not yet saved",
                             systemImage: "exclamationmark.circle")
                         if let saved {
-                            Text("Last saved reminder: \(Store.absoluteDateText(saved.date, includesTime: true)).")
+                            Text("Last saved reminder: \(NXFormat.dayAndClock(saved.date)).")
                         }
                     } else {
                         let status = recovery.statuses[block.id] ?? .checking
                         Label(recovery.title(for: status), systemImage: status.needsRecovery ? "bell.badge" : "bell")
                             .accessibilityValue(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "")
-                            .help(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "Reminder status")
+                            .help(date.map { NXFormat.dayAndClock($0) } ?? "Reminder status")
                         if case .failed(let message) = status { Text(message).textSelection(.enabled) }
                         if let error = recovery.authorizationError { Text(error) }
                         ReminderRecoveryActions(taskID: block.id, status: status)
@@ -81,7 +81,7 @@ struct TaskReminderStatus: View {
                     .font(.system(size: 11.5, weight: .semibold))
             }
             .foregroundStyle(NX.amberText)
-            .help(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "Reminder status")
+            .help(date.map { NXFormat.dayAndClock($0) } ?? "Reminder status")
             Group {
                 if let error = recovery.libraryReadError { Text(error).textSelection(.enabled) }
                 if case .failed(let message) = status { Text(message).textSelection(.enabled) }

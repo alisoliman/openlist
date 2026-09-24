@@ -90,13 +90,14 @@ struct DueDatePicker: View {
             if !typedPhrase.isEmpty {
                 let parsed = DateParser.parse(typedPhrase)
                 if let date = parsed.date {
-                    // An accent chip, like capture's token previews, that
-                    // wraps when a long phrase outgrows the popover.
+                    // An accent chip in capture's chips' words, that wraps
+                    // when a long phrase outgrows the popover.
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: "arrow.turn.down.right")
                             .font(.system(size: 9.5, weight: .semibold))
                             .accessibilityHidden(true)
-                        Text(preview(date, includesTime: parsed.includesTime, recurrence: parsed.recurrence))
+                        Text(NXFormat.typedSchedule(date, includesTime: parsed.includesTime,
+                                                    repeat: parsed.recurrence?.displayText))
                             .font(.system(size: 11, weight: .semibold))
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -111,16 +112,6 @@ struct DueDatePicker: View {
                 }
             }
         }
-    }
-
-    private func preview(_ date: Date, includesTime: Bool, recurrence: Recurrence?) -> String {
-        var text = includesTime
-            ? date.formatted(date: .abbreviated, time: .shortened)
-            : date.formatted(date: .abbreviated, time: .omitted)
-        if let recurrence {
-            text += " · \(recurrence.displayText)"
-        }
-        return text
     }
 
     private func applyTypedPhrase() {

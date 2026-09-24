@@ -169,7 +169,7 @@ struct NextInspector: View {
         .background(NX.inspector)
         // Files dropped anywhere on the panel are kept with the task.
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-            NXTaskFiles(store: env.store).drop(providers, on: task.id)
+            NXTaskFiles(workbench: env.workbench).drop(providers, on: task.id)
         }
         .overlay {
             if dropTargeted {
@@ -378,7 +378,7 @@ struct NextInspector: View {
                 NXInspectorPill(isOn: task.reminderAt != nil) { openPicker(.reminder) } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "bell").font(.system(size: 10.5, weight: .medium))
-                        Text(task.reminderAt.map { "\(NXFormat.dueLabel($0)) \(NXFormat.clock($0))" } ?? "None")
+                        Text(task.reminderAt.map { NXFormat.dayAndClock($0) } ?? "None")
                     }
                 }
                 .popover(isPresented: pickerBinding(.reminder), arrowEdge: .bottom) { schedulePopover(.reminder) }

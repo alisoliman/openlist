@@ -79,6 +79,7 @@ struct NXInspectorPlanOptions: View {
                     Spacer(minLength: 6)
                     Button("Clear") { env.workbench.clearDeferral(task.id) }
                         .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+                        .padding(.trailing, -5)
                         .accessibilityLabel("Clear task deferral")
                 }
                 .font(.system(size: 11, weight: .medium))
@@ -363,7 +364,7 @@ struct NXInspectorFiles: View {
 
     var body: some View {
         let attachments = env.store.attachments(for: task.id)
-        let files = NXTaskFiles(store: env.store)
+        let files = NXTaskFiles(workbench: env.workbench)
         if addsNote != nil || attachments.isEmpty {
             HStack(spacing: 2) {
                 if let addsNote {
@@ -400,23 +401,23 @@ struct NXInspectorFiles: View {
     }
 }
 
-/// Keeps files with a task, chosen in the Open panel or dropped. Those that
-/// can't be kept are named in one notice under the toolbar, however many.
+/// Keeps files with a task, chosen in the Open panel or dropped, as one
+/// Workbench step (`Workbench.attachFiles`).
 struct NXTaskFiles {
-    let store: Store
+    let workbench: Workbench
 
     func choose(for block: Block) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
-        attach(panel.urls, to: block)
+        workbench.attachFiles(panel.urls, to: block.id)
     }
 
     func drop(_ providers: [NSItemProvider], on blockID: UUID) -> Bool {
         // The provider calls back off the main actor, so carry the id rather
         // than the model object itself.
-        let dropped = DroppedFiles(store: store, blockID: blockID, count: providers.count)
+        let dropped = DroppedFiles(workbench: workbench, blockID: blockID, count: providers.count)
         for (index, provider) in providers.enumerated() {
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
                 Task { @MainActor in dropped.receive(url, at: index) }
@@ -424,53 +425,18 @@ struct NXTaskFiles {
         }
         return true
     }
-
-    func attach(_ urls: [URL], to block: Block) {
-        var failures: [(name: String, error: Error)] = []
-        for url in urls {
-            do { try attach(url: url, to: block) } catch { failures.append((url.lastPathComponent, error)) }
-        }
-        if let notice = Self.notice(for: failures) { store.actionError = notice }
-    }
-
-    private func attach(url: URL, to block: Block) throws {
-        let media = try MediaStore.shared.importFile(at: url)
-        let existing = store.attachments(for: block.id)
-        let attachment = Attachment(
-            blockID: block.id,
-            filename: media.filename,
-            displayName: media.displayName,
-            contentType: media.contentType,
-            byteCount: media.byteCount,
-            sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep,
-            contentData: media.data
-        )
-        store.context.insert(attachment)
-        store.save()
-    }
-
-    /// "“a.pdf” and “b.pdf” could not be attached.", with the first one's
-    /// reason: up to three names, or two and "N other files" past that.
-    private static func notice(for failures: [(name: String, error: Error)]) -> String? {
-        guard let first = failures.first else { return nil }
-        let named = failures.count > 3 ? 2 : failures.count
-        var names = failures.prefix(named).map { NXFormat.quoted($0.name) }
-        if failures.count > named { names.append("\(failures.count - named) other files") }
-        let who = ListFormatter.localizedString(byJoining: names)
-        return "\(who) could not be attached. \(first.error.localizedDescription)"
-    }
 }
 
 /// A drop's files as their providers hand them over, attached together, in
 /// the order dropped, once the last has arrived.
 private final class DroppedFiles {
-    let store: Store
+    let workbench: Workbench
     let blockID: UUID
     private var urls: [URL?]
     private var remaining: Int
 
-    init(store: Store, blockID: UUID, count: Int) {
-        self.store = store
+    init(workbench: Workbench, blockID: UUID, count: Int) {
+        self.workbench = workbench
         self.blockID = blockID
         urls = Array(repeating: nil, count: count)
         remaining = count
@@ -479,8 +445,8 @@ private final class DroppedFiles {
     func receive(_ url: URL?, at index: Int) {
         urls[index] = url
         remaining -= 1
-        guard remaining == 0, let target = store.block(id: blockID) else { return }
-        NXTaskFiles(store: store).attach(urls.compactMap(\.self), to: target)
+        guard remaining == 0 else { return }
+        workbench.attachFiles(urls.compactMap(\.self), to: blockID)
     }
 }
 
@@ -502,9 +468,9 @@ struct NXInspectorHistory: View {
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Created \(Store.absoluteDateText(task.createdAt, includesTime: true))")
+                        Text("Created \(NXFormat.dayAndClock(task.createdAt))")
                         if let completedAt = task.completedAt {
-                            Text("Completed \(Store.absoluteDateText(completedAt, includesTime: true))")
+                            Text("Completed \(NXFormat.dayAndClock(completedAt))")
                         }
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -561,7 +527,7 @@ private struct NXInspectorHistoryPage: View {
 
     private func row(_ event: ActivityEvent) -> some View {
         let place = [event.listIcon, event.listTitle].filter { !$0.isEmpty }.joined(separator: " ")
-        let when = event.timestamp.formatted(date: .abbreviated, time: .shortened)
+        let when = NXFormat.dayAndClock(event.timestamp)
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: event.kind.symbol).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {

@@ -21,7 +21,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   back only the fields the step changed), change-log entry, tray. So do the native extras
   that edit the same things: the inspector's Schedule, Repeat, Reminder and label popovers,
   its Defer work and the Clear on its deferral (a deferral's Undo puts back the calendar
-  slots it took), and the Work panel's Move planned time… (a placement like Plan's, with
+  slots it took), the files attached and removed in its Files, and the Work panel's Move
+  planned time… (a placement like Plan's, with
   Show off the Calendar), all with tray; and the inspector's title and note and a list's
   title and description (edits: logged, no tray). Move leaves a task already in the list
   where it is, as the design's move only sets the list (natively a move lands at the end of
@@ -140,15 +141,19 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   under its task) and files kept with the task. As the design, the note shows only when there
   is one; until then a quiet "Add a note" row stands in, with "Attach a file" beside it until
   the task has files, when Files shows. Files dropped anywhere on the panel are attached;
-  removing one snaps with Undo, which brings the file back. The plan card ends with a quiet
+  attaching snaps with Undo, which takes the files off again, and removing one does too,
+  its Undo bringing the file back. The plan card ends with a quiet
   "More options" disclosure (estimate hints, how sessions run, the list's hours, Defer…, time
   recorded and Work history), and Activity with "Full history", the task's saved activity;
   both start closed. The footer is the design's Trash and Start working. Deviation: a
   completed task's Plan for today switch fades and Start working is off, as Plan and work
   skip completed tasks, where the design's still toggle and start. Copy Link is in
   the task's row menu and in Task ▸, which reaches the inspected task from the keyboard
-  too, each saying "Link copied" in the tray. The Schedule popover fits its section, up to
-  510pt, and its date and time controls are Next pills; Done first sets a due time still
+  too, each saying "Link copied" in the tray. The Schedule popover's tabs are the rows' Due,
+  Repeat and Reminder, in their order; it fits its section, up to 510pt, and its date and
+  time controls are Next pills. It writes days and times as the app does ("Fri 25 09:00",
+  a typed phrase as capture's chips), adding the year to a day in another year past the
+  week, as the Reminder pill and saved history do too; Done first sets a due time still
   being typed as Custom…, and Set reminder a reminder time. "Remind me at" is a draft only
   Set reminder sets: Done keeps the reminder there was, over a day or time picked there, or
   still being typed. The label picker (⇧⌘L) lists the name typed first, then labels starting

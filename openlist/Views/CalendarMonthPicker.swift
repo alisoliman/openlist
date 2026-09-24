@@ -142,8 +142,7 @@ struct NXDatePill: View {
 
     var body: some View {
         Button(action: action) {
-            NXValuePill(text: date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)),
-                        isExpanded: isOpen, hovering: hovering)
+            NXValuePill(text: NXFormat.dayLabel(date), isExpanded: isOpen, hovering: hovering)
         }
         .buttonStyle(NXBareButtonStyle())
         .onHover { hovering = $0 }

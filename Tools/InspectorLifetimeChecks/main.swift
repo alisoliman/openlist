@@ -300,6 +300,47 @@ do {
     check(reported == 1 && (orphan.modelContext == nil || orphan.isDeleted), "A file on no live task goes without a step")
 }
 
+// Files attached in the inspector's Files are one Undo step too, as taking
+// one off is: Undo takes them off again, their cached copies with them, and
+// Redo puts them back, bytes and all, after the files already there.
+do {
+    let undo = UndoManager()
+    undo.groupsByEvent = false
+    let task = store.appendBlock(kind: .task, text: "Sign the lease", to: .init(listID: list.id))
+    let kept = Attachment(blockID: task.id, filename: "kept.txt", displayName: "Kept.txt",
+        contentType: "text/plain", byteCount: 4, sortIndex: 5, contentData: Data("kept".utf8))
+    store.context.insert(kept)
+    store.save()
+    var media: [ImportedMedia] = []
+    for name in ["Lease.txt", "Deposit.txt"] {
+        let original = fixtureDirectory.appendingPathComponent(name)
+        try Data(name.utf8).write(to: original)
+        media.append(try MediaStore.shared.importFile(at: original))
+    }
+    var reported = 0
+    undo.beginUndoGrouping()
+    store.addAttachments(media, to: task, name: "Attached 2 files to “Sign the lease”", undoManager: undo) { reported += 1 }
+    undo.endUndoGrouping()
+    let attached = store.attachments(for: task.id)
+    check(reported == 1 && undo.canUndo && undo.undoActionName == "Attached 2 files to “Sign the lease”",
+          "Attaching files registers one named Undo step and reports it")
+    check(attached.map(\.displayName) == ["Kept.txt", "Lease.txt", "Deposit.txt"] && attached[2].contentData == media[1].data,
+          "Attached files keep their bytes and go after the task's files, in the order given")
+    let ids = attached.dropFirst().map(\.id)
+    undo.undo()
+    check(store.attachments(for: task.id).map(\.id) == [kept.id], "Undo takes the attached files off and leaves the others")
+    check(media.allSatisfy { MediaStore.shared.fileContents(filename: $0.filename) == nil }, "Undo lets the attached files' cached copies go")
+    undo.redo()
+    let redone = store.attachments(for: task.id)
+    check(Array(redone.dropFirst().map(\.id)) == ids && redone.last?.contentData == media[1].data,
+          "Redo puts the same files back with their bytes")
+    check(media.allSatisfy { MediaStore.shared.fileContents(filename: $0.filename) == Data($0.displayName.utf8) },
+          "Redo puts the attached files' cached copies back")
+    // Nothing kept is nothing to undo.
+    store.addAttachments([], to: task, name: "Attached nothing", undoManager: undo) { reported += 1 }
+    check(reported == 1 && undo.undoActionName == "Attached 2 files to “Sign the lease”", "Attaching no files registers no step")
+}
+
 // Defer… and its Clear, as the plan card's Workbench steps write them: the
 // deferral takes the day and the slots, and its Undo, putting back only the
 // fields it changed, restores the day it replaced. Clear lets a day still

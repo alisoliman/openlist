@@ -229,4 +229,27 @@ check(NXFormat.dueChange(NXFormat.day(offset: 1, now: setAt), includesTime: fals
       "A day without a time is named as the day")
 check(NXFormat.dueChange(tomorrowEvening, includesTime: true, from: evening, oldIncludesTime: true, now: tomorrowEvening) == "Today",
       "A date change is named as of when it was made")
+
+// The Schedule popover writes days and times as the app does: its Reminder
+// header as the pill that opens it, a typed phrase as capture's chips, and a
+// far day with its year, so a yearly repeat's next days tell apart.
+let morning = Calendar.current.date(bySettingHour: 9, minute: 5, second: 0, of: NXFormat.day(offset: 2, now: setAt))!
+check(NXFormat.dayAndClock(morning, now: setAt) == "\(NXFormat.dueLabel(morning, now: setAt)) 09:05",
+      "A reminder reads as the inspector's pill, its day and a 24-hour time")
+check(NXFormat.typedSchedule(morning, includesTime: true, repeat: "Every week", now: setAt)
+      == "\(NXFormat.typedDay(morning, now: setAt)) · 09:05 · Every week"
+      && NXFormat.typedDay(morning, now: setAt) == "\(NXFormat.dueLabel(morning, now: setAt)) · in 2 days",
+      "A typed phrase previews as capture's day, time and repeat chips")
+check(NXFormat.typedSchedule(morning, includesTime: false, now: setAt) == NXFormat.typedDay(morning, now: setAt),
+      "A phrase with no time or repeat previews its day alone")
+let nextYear = Calendar.current.date(byAdding: .year, value: 1, to: morning)!
+check(NXFormat.dayLabel(nextYear, now: setAt) == nextYear.formatted(.dateTime.day().month(.abbreviated).year())
+      && NXFormat.dayLabel(nextYear, now: setAt) != NXFormat.dueLabel(nextYear, now: setAt),
+      "A day in another year past the week names its year")
+check(NXFormat.dayLabel(morning, now: setAt) == NXFormat.dueLabel(morning, now: setAt)
+      && NXFormat.dayLabel(NXFormat.day(offset: 1, now: setAt), now: setAt) == "Tomorrow",
+      "A day this year, or within the week, reads as its due chip")
+let newYearsEve = Calendar.current.date(from: DateComponents(year: 2026, month: 12, day: 31, hour: 12))!
+let newYearsDay = Calendar.current.date(from: DateComponents(year: 2027, month: 1, day: 1, hour: 12))!
+check(NXFormat.dayLabel(newYearsDay, now: newYearsEve) == "Tomorrow", "Tomorrow in the next year is still Tomorrow")
 print("Passed \(checks) capture and triage checks")

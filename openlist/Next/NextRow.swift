@@ -360,36 +360,39 @@ struct NXCheckbox: View {
     var size: CGFloat = 16
     /// The list row's pop: the box grows at the dwell's start and the tick
     /// springs in. Without it, as the design's inspector boxes, only the fill
-    /// fades and the tick shows at once.
+    /// fades, over a fixed 200ms, and the outline and tick change at once.
     var pops = true
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack {
-                // The design's box: its fill's `background 200*ms ease`, and its
-                // outline's `border-color 160ms ease` whatever the Motion setting.
+                // The design's row box: its fill's `background 200*ms ease`, and
+                // its outline's `border-color 160ms ease` whatever the Motion
+                // setting. Its inspector boxes ease only the fill, `background
+                // 200ms ease`, also whatever the setting.
                 Circle()
-                    .animation(style.cssEase(200)) {
+                    .animation(pops ? style.cssEase(200) : NX.cssEase(200)) {
                         $0.foregroundStyle(filled ? (closing != nil ? style.accent : NX.green) : .clear)
                     }
                 Circle()
                     .strokeBorder(lineWidth: 1.5)
-                    .animation(NX.cssEase(160)) {
+                    .animation(pops ? NX.cssEase(160) : nil) {
                         $0.foregroundStyle(filled ? .clear : (NX.priorityStroke(priority) ?? NX.ink(0.3)))
                     }
-                // The design's tick: a 140ms fade and a 200ms spring, at
-                // those speeds whatever the Motion setting.
+                // The design's row tick: a 140ms fade and a 200ms spring, at
+                // those speeds whatever the Motion setting. Its inspector
+                // ticks show and go at once.
                 Image(systemName: "checkmark")
                     .font(.system(size: size * 0.6, weight: .heavy))
                     .foregroundStyle(.white)
-                    .animation(NX.cssEase(140)) { $0.opacity(filled ? 1 : 0) }
+                    .animation(pops ? NX.cssEase(140) : nil) { $0.opacity(filled ? 1 : 0) }
                     .animation(pops ? style.bounce(200) : nil) { $0.scaleEffect(filled || !pops ? 1 : 0.3) }
                     .accessibilityHidden(true)
                 if ringing { NXRing(color: style.accent, size: size) }
             }
             .frame(width: size, height: size)
-            // Without the pop, as the design's inspector boxes, only the fill changes.
+            // Without the pop, as the design's inspector boxes, the box keeps its size.
             .scaleEffect(pops && style.lively && closing == false ? 1.18 : 1)
             .animation(pops ? style.spring(240) : nil, value: closing)
             .contentShape(Rectangle().inset(by: -5))
