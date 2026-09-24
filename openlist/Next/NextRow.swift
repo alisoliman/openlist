@@ -13,8 +13,6 @@ struct NXRowOptions {
     var notes = false
     /// Tasks screen: text-only chips, the open icon hidden until focus.
     var quiet = false
-    /// Outline depth for subtasks on a list screen.
-    var depths: [UUID: Int] = [:]
     /// The clock relative and late chips read. Screens on a timeline pass its
     /// date so rows refresh with it; nil reads the time when the row draws.
     var now: Date?
@@ -28,7 +26,7 @@ struct NextTaskRow: View {
 
     var body: some View {
         let closing = env.workbench.closing[task.id]
-        NXTaskRowChrome(task: task, options: options, indent: CGFloat(options.depths[task.id] ?? 0) * 22) {
+        NXTaskRowChrome(task: task, options: options) {
             VStack(alignment: .leading, spacing: 2) {
                 NXStrikeText(text: task.displayTitle,
                              struck: closing ?? task.isCompleted,
