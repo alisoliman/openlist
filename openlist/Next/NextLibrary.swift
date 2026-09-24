@@ -237,6 +237,22 @@ struct NXListGlyph: View {
     }
 }
 
+/// A list as a menu item, as in Move to: its emoji before its name, or its
+/// symbol as the item's image rather than the symbol's name as text.
+struct NXListMenuButton: View {
+    let list: TaskList
+    let action: () -> Void
+
+    var body: some View {
+        let icon = list.glyph
+        if NXListGlyph.isSymbolName(icon) {
+            Button(list.displayTitle, systemImage: icon, action: action)
+        } else {
+            Button("\(icon) \(list.displayTitle)", action: action)
+        }
+    }
+}
+
 // MARK: - Shared queries
 
 extension NextLibrary {

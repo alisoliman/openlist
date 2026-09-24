@@ -80,8 +80,9 @@ struct openlistApp: App {
     var body: some Scene {
         Window("Openlist", id: WindowID.main) {
             if let env, let container {
+                // Its motion is the Next style's, which follows Reduce Motion,
+                // for keys as well as clicks.
                 RootView()
-                    .modifier(InteractionMotion())
                     .frame(minWidth: 640, minHeight: 420)
                     .environment(env)
                     .modelContainer(container)

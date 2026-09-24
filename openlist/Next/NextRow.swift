@@ -705,18 +705,13 @@ struct NXTaskMenu: View {
             }
         }
         Button("Due Today", systemImage: "calendar") { workbench.schedule(ids, offset: 0) }
-        Button("Due Tomorrow", systemImage: "sunset") { workbench.schedule(ids, offset: 1) }
+        Button("Due Tomorrow", systemImage: "sun.horizon") { workbench.schedule(ids, offset: 1) }
         Button("Plan for Today", systemImage: "calendar.badge.clock") { workbench.plan(ids) }
         Button("Find a Slot", systemImage: "sparkles") { ids.forEach(workbench.fit) }
         Button("Star", systemImage: "star") { workbench.star(ids) }
         Menu("Move to") {
             ForEach(library.lists, id: \.id) { list in
-                // A list icon that names an SF Symbol shows as the symbol, not its name.
-                if NXListGlyph.isSymbolName(list.glyph) {
-                    Button(list.displayTitle, systemImage: list.glyph) { workbench.move(ids, to: list.id) }
-                } else {
-                    Button("\(list.glyph) \(list.displayTitle)") { workbench.move(ids, to: list.id) }
-                }
+                NXListMenuButton(list: list) { workbench.move(ids, to: list.id) }
             }
         }
         Divider()

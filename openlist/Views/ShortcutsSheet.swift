@@ -6,7 +6,7 @@
 import SwiftUI
 
 /// ⌘/ — the full keyboard reference: the Next single keys first, then
-/// documents, formatting and the menu commands.
+/// writing in a list, formatting and the menu commands.
 struct ShortcutsSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
@@ -23,12 +23,14 @@ struct ShortcutsSheet: View {
         var shortcuts: [Shortcut]
     }
 
+    /// The keys the app handles today: the Next key map (NextKeys), the list
+    /// document's line keys (OutlineEditor under `.nextDocument`), and the menus.
     private let groups: [Group] = [
         Group(title: "Everywhere", shortcuts: [
-            Shortcut(keys: "N", action: "Capture a task"),
+            Shortcut(keys: "N", action: "New task"),
             Shortcut(keys: "/  ⌘F", action: "Search"),
             Shortcut(keys: "G then I T C A L H", action: "Go to Inbox, Today, Calendar, Tasks, Lists, Activity"),
-            Shortcut(keys: "⌘K", action: "Every action and place"),
+            Shortcut(keys: "⌘K", action: "Actions: every action and place"),
             Shortcut(keys: "⌘Z", action: "Undo the latest change"),
             Shortcut(keys: "⌘1–⌘6", action: "Inbox, Today, Calendar, Tasks, Lists, Activity"),
             Shortcut(keys: "⌘[  ⌘]", action: "Back, forward"),
@@ -40,15 +42,17 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "J K  ↑ ↓", action: "Move focus"),
             Shortcut(keys: "⇧J ⇧K  ⇧↑ ⇧↓", action: "Extend the selection"),
             Shortcut(keys: "⌘ click  ⇧ click", action: "Add or remove a row from the selection"),
-            Shortcut(keys: "↩", action: "Open details"),
-            Shortcut(keys: "E", action: "Complete or reopen"),
-            Shortcut(keys: "T  M", action: "Due today, tomorrow"),
-            Shortcut(keys: "F", action: "Star"),
-            Shortcut(keys: "P", action: "Plan into the calendar"),
-            Shortcut(keys: "D  ⌫", action: "Move to Trash"),
-            Shortcut(keys: "X", action: "Select the focused row"),
+            Shortcut(keys: "X", action: "Select or deselect the focused row"),
             Shortcut(keys: "⌘A", action: "Select every visible row"),
-            Shortcut(keys: "Esc", action: "Close details, clear selection"),
+            Shortcut(keys: "↩", action: "Open details"),
+            Shortcut(keys: "E", action: "Mark as done"),
+            Shortcut(keys: "T  M", action: "Due today, tomorrow"),
+            Shortcut(keys: "P", action: "Plan for today, or unplan"),
+            Shortcut(keys: "F", action: "Star or unstar"),
+            Shortcut(keys: "D  ⌫", action: "Move to Trash"),
+            Shortcut(keys: "Space", action: "Show or hide the note, in a list"),
+            Shortcut(keys: "⇥  ⇧⇥", action: "Nest or lift the rows, in a list"),
+            Shortcut(keys: "Esc", action: "Close details, clear selection or focus"),
         ]),
         Group(title: "Inbox triage", shortcuts: [
             Shortcut(keys: "1–9", action: "File into a list"),
@@ -56,10 +60,10 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "→", action: "Keep for later"),
             Shortcut(keys: "E", action: "Already done"),
             Shortcut(keys: "D", action: "Discard"),
-            Shortcut(keys: "↩", action: "Details"),
+            Shortcut(keys: "↩", action: "Open details"),
         ]),
         Group(title: "Capture", shortcuts: [
-            Shortcut(keys: "N  ⌘N", action: "Capture a task"),
+            Shortcut(keys: "N  ⌘N", action: "New task"),
             Shortcut(keys: "↩", action: "Add"),
             Shortcut(keys: "⇧↩", action: "Add another"),
             Shortcut(keys: "⇥ ⇧⇥", action: "Change destination"),
@@ -71,23 +75,27 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "!high", action: "Priority"),
             Shortcut(keys: "~15m", action: "Estimate"),
         ]),
-        Group(title: "Documents", shortcuts: [
-            Shortcut(keys: "#  ##  ###", action: "Heading 1, 2, 3"),
-            Shortcut(keys: "-", action: "Bullet list"),
+        Group(title: "Writing in a list", shortcuts: [
+            Shortcut(keys: "#  ##", action: "Heading, subheading"),
+            Shortcut(keys: "-", action: "Bullet"),
             Shortcut(keys: "[ ]", action: "Task"),
+            Shortcut(keys: ">", action: "Text"),
+            Shortcut(keys: "###", action: "Heading 3"),
             Shortcut(keys: "1.", action: "Numbered list"),
-            Shortcut(keys: ">", action: "Quote"),
             Shortcut(keys: "---", action: "Divider"),
-            Shortcut(keys: "/", action: "Open the block menu"),
-            Shortcut(keys: "↩", action: "New block below"),
-            Shortcut(keys: "⇥", action: "Indent"),
-            Shortcut(keys: "⇧⇥", action: "Outdent"),
-            Shortcut(keys: "⇧↩", action: "Line break inside a block"),
-            Shortcut(keys: "⌫", action: "Merge into the block above"),
-            Shortcut(keys: "⌥⌘↑  ⌥⌘↓", action: "Move block up, down"),
-            Shortcut(keys: "Esc", action: "Leave the editor"),
-            Shortcut(keys: "#label", action: "Attach a label"),
-            Shortcut(keys: "tomorrow at 6pm", action: "Set a due date by typing"),
+            Shortcut(keys: "/", action: "Turn into"),
+            Shortcut(keys: "↩", action: "New line below"),
+            Shortcut(keys: "↩", action: "On an empty line: out a level, or a task"),
+            Shortcut(keys: "⇥", action: "Subtask"),
+            Shortcut(keys: "⇧⇥", action: "Out a level"),
+            Shortcut(keys: "⇧↩", action: "A task's note; in other lines, a line break"),
+            Shortcut(keys: "⌫", action: "At the start: text, or out a level"),
+            Shortcut(keys: "⌫", action: "On an empty line: remove it"),
+            Shortcut(keys: "↑ ↓", action: "Line above, below"),
+            Shortcut(keys: "⌥⌘↑  ⌥⌘↓", action: "Move the line up, down"),
+            Shortcut(keys: "Esc", action: "Stop writing; a task keeps the focus"),
+            Shortcut(keys: "#label", action: "Label a task"),
+            Shortcut(keys: "tomorrow at 6pm", action: "Give a task a due date"),
             Shortcut(keys: "every monday", action: "Make a task repeat"),
         ]),
         Group(title: "Formatting", shortcuts: [
@@ -98,17 +106,18 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⌘L", action: "Add link"),
             Shortcut(keys: "**bold**", action: "Bold inline"),
             Shortcut(keys: "*italic*", action: "Italic inline"),
+            Shortcut(keys: "~~strike~~", action: "Strikethrough inline"),
             Shortcut(keys: "`code`", action: "Inline code"),
         ]),
         Group(title: "Task menu", shortcuts: [
-            Shortcut(keys: "⌘D", action: "Complete or reopen"),
-            Shortcut(keys: "⌘↩", action: "Open task details"),
-            Shortcut(keys: "⌃T", action: "Due today"),
+            Shortcut(keys: "⌘D", action: "Mark as done, or reopen"),
+            Shortcut(keys: "⌘↩", action: "Open details"),
+            Shortcut(keys: "⌃T  ⌃M", action: "Due today, tomorrow"),
             Shortcut(keys: "⌃D", action: "Add due date"),
             Shortcut(keys: "⌃⇧D", action: "Clear due date"),
             Shortcut(keys: "⌃L", action: "Add label"),
             Shortcut(keys: "⌃⇧L", action: "Clear labels"),
-            Shortcut(keys: "⇧⌘S", action: "Toggle star"),
+            Shortcut(keys: "⇧⌘S", action: "Star or unstar"),
         ]),
         Group(title: "Creating", shortcuts: [
             Shortcut(keys: "⇧⌘N", action: "New list"),
@@ -121,7 +130,13 @@ struct ShortcutsSheet: View {
         let style = env.workbench.style
         VStack(spacing: 0) {
             HStack(alignment: .center) {
-                NXPanelTitle("Keyboard shortcuts")
+                VStack(alignment: .leading, spacing: 4) {
+                    NXPanelTitle("Keyboard shortcuts")
+                    // As in the design, the single keys stand down while a line or field has the caret.
+                    Text("Single keys work when you’re not writing. Esc stops writing.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(NX.ink(0.5))
+                }
                 Spacer()
                 Button {
                     dismiss()

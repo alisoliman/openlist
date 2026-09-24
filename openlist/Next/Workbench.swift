@@ -138,6 +138,9 @@ final class Workbench {
     /// The list document on show, for the keys and Undo that reach it from
     /// outside its rows.
     @ObservationIgnored weak var document: OutlineEditor?
+    /// The lists in sidebar order as the window last drew them, for Task ▸
+    /// Move to, which would otherwise fetch them on every menu update.
+    @ObservationIgnored var drawnLists: [TaskList] = []
     /// Tasks whose note shows under them in the list document, remembered on
     /// this Mac.
     var openNotes: Set<UUID> = [] {
@@ -277,6 +280,7 @@ final class Workbench {
             accent: settings.accent.color,
             motion: reduced ? 0.4 : settings.motion.scale,
             lively: !reduced && settings.motion != .restrained,
+            slides: !reduced,
             dwell: Double(settings.undoDwellSeconds),
             compact: settings.density == .compact,
             serifTitles: settings.serifTitles

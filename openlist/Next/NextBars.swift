@@ -59,7 +59,7 @@ struct NXSelectionBar: View {
             divider
             barButton("Done", icon: "checkmark.circle", key: "E", tint: Color(hex: 0x6FD3A4), fit: fit) { workbench.complete(ids) }
             barButton("Today", icon: "calendar", key: "T", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 0) }
-            barButton("Tomorrow", icon: "sunset", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 1) }
+            barButton("Tomorrow", icon: "sun.horizon", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 1) }
             barButton("Plan", icon: "calendar.badge.clock", key: "P", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.plan(ids) }
             barButton("Star", icon: "star", key: "F", tint: Color(hex: 0xF2C14E), fit: fit) { workbench.star(ids) }
             barButton("Trash", icon: "trash", key: "D", tint: Color(hex: 0xFF8A8A), hover: Color(red: 1, green: 0.47, blue: 0.47).opacity(0.14),
@@ -253,9 +253,9 @@ struct NXBottomBars: View {
         let hasSelection = !NXSelectionBar.selected(workbench).isEmpty
         ZStack {
             if hasSelection && !env.navigator.isCommandPaletteOpen {
-                NXSelectionBar().transition(Self.barTransition)
+                NXSelectionBar().transition(style.slide(Self.barTransition))
             } else if let tray = workbench.tray, !hasSelection {
-                NXTray(message: tray).transition(Self.barTransition)
+                NXTray(message: tray).transition(style.slide(Self.barTransition))
             }
         }
         .animation(style.ease(220), value: hasSelection)

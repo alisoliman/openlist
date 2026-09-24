@@ -68,7 +68,7 @@ struct MoveListSheet: View {
                     if let list {
                         NXListGlyph(list: list, size: 13)
                     } else {
-                        Image(systemName: "square.stack.3d.up")
+                        Image(systemName: "square.2.layers.3d")
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(NX.ink(0.45))
                     }

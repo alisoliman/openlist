@@ -107,8 +107,11 @@ struct NextStyle: Equatable {
     var accent: Color = NextAccent.violet.color
     /// Multiplies animation durations: 0.6 restrained, 1 expressive, 1.2 playful, 0.4 reduced.
     var motion: Double = 1
-    /// Whether bounces, rings and slides play.
+    /// Whether bounces, rings and pops play.
     var lively = true
+    /// Whether the inspector, notch, bottom bars and overlay cards slide in.
+    /// Reduce Motion fades them instead, as its hint promises.
+    var slides = true
     var dwell: Double = 5
     var compact = false
     var serifTitles = true
@@ -119,6 +122,8 @@ struct NextStyle: Equatable {
     func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }
     func standard(_ base: Double) -> Animation { NX.standard(ms(base)) }
     func cssEase(_ base: Double) -> Animation { NX.cssEase(ms(base)) }
+    /// `transition`, or a fade where the style doesn't slide.
+    func slide(_ transition: AnyTransition) -> AnyTransition { slides ? transition : .opacity }
 }
 
 private struct NextStyleKey: EnvironmentKey {

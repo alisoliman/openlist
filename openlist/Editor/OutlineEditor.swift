@@ -1606,6 +1606,10 @@ final class OutlineEditor {
         return hooks.commandTargets().compactMap { env.store.block(id: $0) }.filter { $0.listID == document.listID }
     }
 
+    /// The tasks a menu command sent now would reach, so the Task menu's
+    /// titles, enabled state and Workbench items read the same targets.
+    var commandTaskIDs: [UUID] { commandTargets.filter(\.isTask).map(\.id) }
+
     private func handleCommand() {
         guard let command = env.consumeCommand() else { return }
         let targets = commandTargets
