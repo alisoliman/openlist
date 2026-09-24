@@ -12,6 +12,9 @@ import Foundation
 /// treated as ordinary text by the receiving view.
 nonisolated enum DragPayload {
     static let blockTypeIdentifier = "app.openlist.block-drag"
+    /// A sidebar list's own type, which only the sidebar takes: a document
+    /// line lists neither it nor text for it, so it marks no drop there.
+    static let listTypeIdentifier = "app.openlist.list-drag"
     /// A sidebar list, dragged to reorder the sidebar.
     case list
 
@@ -22,6 +25,18 @@ nonisolated enum DragPayload {
     func decode(_ value: String) -> UUID? {
         guard value.hasPrefix(prefix) else { return nil }
         return UUID(uuidString: String(value.dropFirst(prefix.count)))
+    }
+
+    /// The drag of `id`, on the list's own private type, so neither a line
+    /// nor another app ever reads it as text.
+    func provider(for id: UUID) -> NSItemProvider {
+        let payload = encode(id)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: Self.listTypeIdentifier, visibility: .ownProcess) { load in
+            load(Data(payload.utf8), nil)
+            return nil
+        }
+        return provider
     }
 
     enum BlockDrop: Equatable {

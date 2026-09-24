@@ -84,6 +84,10 @@ struct BlockTextView: NSViewRepresentable {
     /// Whether the strike also fades the text to the completed ink. A task
     /// struck during its completion dwell keeps its ink, as the design's does.
     var dimsStruck = true
+    /// Whether the text itself is struck through. A renderer that draws the
+    /// strike over the text, as the list document draws the design's across
+    /// a task, passes `false`: struck text then only fades, as `dimsStruck` says.
+    var drawsStrike = true
     /// Space above and below the text: the list document passes its kind's
     /// line-box inset, `NXEditor.lineBoxInset(for:)`.
     var verticalInset: CGFloat = 0
@@ -95,8 +99,9 @@ struct BlockTextView: NSViewRepresentable {
     /// Changes only when focus is moved programmatically, so ordinary typing
     /// never yanks the caret back.
     var focusToken: Int
-    /// While the `/` menu is showing it takes over Return, Tab and the arrows.
-    /// Only a `/` that starts the block opens it.
+    /// While the `/` menu is showing it takes over Return, ↑, ↓ and Escape.
+    /// Tab still nests the line, as the design's does. Only a `/` that
+    /// starts the block opens it.
     var isSlashMenuOpen: Bool = false
     /// The insertion point's colour. `nil` keeps AppKit's.
     var caretColor: NSColor? = nil
@@ -144,7 +149,8 @@ struct BlockTextView: NSViewRepresentable {
         view.linkTextAttributes = linkAttributes
 
         context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
-                                  struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck)
+                                  struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck,
+                                  drawsStrike: drawsStrike)
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
@@ -184,19 +190,21 @@ struct BlockTextView: NSViewRepresentable {
         let struck: Bool
         let strikeColor: NSColor?
         let dimsStruck: Bool
+        let drawsStrike: Bool
 
         init(attributedText: NSAttributedString, kind: BlockKind, isCompleted: Bool,
-             struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true) {
+             struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true, drawsStrike: Bool = true) {
             self.attributedText = NSAttributedString(attributedString: attributedText)
             self.kind = kind
             self.isCompleted = isCompleted
             self.struck = struck ?? isCompleted
-            self.strikeColor = self.struck ? strikeColor : nil
+            self.strikeColor = self.struck && drawsStrike ? strikeColor : nil
             self.dimsStruck = self.struck ? dimsStruck : true
+            self.drawsStrike = self.struck ? drawsStrike : true
         }
 
         /// Whether the storage shows a strike state other than the model's.
-        var overridesCompletion: Bool { struck != isCompleted || strikeColor != nil || !dimsStruck }
+        var overridesCompletion: Bool { struck != isCompleted || strikeColor != nil || !dimsStruck || !drawsStrike }
     }
 
     @MainActor
@@ -241,10 +249,12 @@ struct BlockTextView: NSViewRepresentable {
             // us, otherwise every keystroke would reset the caret.
             let current = ContentSignature(attributedText: parent.attributedText, kind: parent.kind,
                                            isCompleted: parent.isCompleted, struck: parent.struck,
-                                           strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck)
+                                           strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck,
+                                           drawsStrike: parent.drawsStrike)
             if signature != current || consumeRestyleRequest() {
                 apply(parent.attributedText, to: view, kind: parent.kind, isCompleted: parent.isCompleted,
-                      struck: parent.struck, strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck)
+                      struck: parent.struck, strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck,
+                      drawsStrike: parent.drawsStrike)
             }
         }
 
@@ -256,20 +266,23 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func apply(_ attributed: NSAttributedString, to view: BlockNSTextView, kind: BlockKind, isCompleted: Bool,
-                   struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true) {
+                   struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true, drawsStrike: Bool = true) {
             isApplyingExternalChange = true
             defer { isApplyingExternalChange = false }
 
             let applied = ContentSignature(attributedText: attributed, kind: kind, isCompleted: isCompleted,
-                                           struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck)
+                                           struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck,
+                                           drawsStrike: drawsStrike)
             let previousSelection = view.selectedRange()
             view.textStorage?.setAttributedString(applied.overridesCompletion
                 ? RichTextCodec.restylingCompletion(of: attributed, kind: kind, struck: applied.struck,
-                                                    strikeColor: applied.strikeColor, dimsCompleted: applied.dimsStruck)
+                                                    strikeColor: applied.strikeColor, dimsCompleted: applied.dimsStruck,
+                                                    strikes: applied.drawsStrike)
                 : attributed)
             view.typingAttributes = RichTextCodec.baseAttributes(for: kind, isCompleted: applied.struck,
                                                                  strikeColor: applied.strikeColor,
-                                                                 dimsCompleted: applied.dimsStruck)
+                                                                 dimsCompleted: applied.dimsStruck,
+                                                                 strikes: applied.drawsStrike)
             view.blockKind = kind
 
             let length = view.textStorage?.length ?? 0
@@ -291,7 +304,7 @@ struct BlockTextView: NSViewRepresentable {
         func recordLocalEdit(_ storage: NSAttributedString, kind: BlockKind) {
             let current = ContentSignature(attributedText: storage, kind: kind, isCompleted: parent.isCompleted,
                                            struck: parent.struck, strikeColor: parent.strikeColor,
-                                           dimsStruck: parent.dimsStruck)
+                                           dimsStruck: parent.dimsStruck, drawsStrike: parent.drawsStrike)
             guard current.overridesCompletion else {
                 signature = current
                 return
@@ -299,7 +312,7 @@ struct BlockTextView: NSViewRepresentable {
             signature = ContentSignature(
                 attributedText: RichTextCodec.restylingCompletion(of: storage, kind: kind, struck: parent.isCompleted),
                 kind: kind, isCompleted: parent.isCompleted, struck: parent.struck, strikeColor: parent.strikeColor,
-                dimsStruck: parent.dimsStruck
+                dimsStruck: parent.dimsStruck, drawsStrike: parent.drawsStrike
             )
         }
 
@@ -382,6 +395,9 @@ struct BlockTextView: NSViewRepresentable {
 
             recordLocalEdit(storage, kind: parent.kind)
             reportEdit(NSAttributedString(attributedString: storage))
+            // As the design's next change does, typing in a line that still
+            // starts with "/" brings back the card Escape put away.
+            dismissedSlashIndex = nil
             updateSlashQuery(in: view)
             view.invalidateIntrinsicContentSize()
         }
@@ -444,18 +460,12 @@ struct BlockTextView: NSViewRepresentable {
                 view.insertText("\u{2028}", replacementRange: selection)
                 return true
 
+            // Tab and ⇧Tab nest and lift the line with the `/` menu showing
+            // too, as the design's do, and leave it up.
             case #selector(NSResponder.insertTab(_:)):
-                if view.isSlashMenuOpen {
-                    view.slashMenuCommand?(.next)
-                    return true
-                }
                 return parent.callbacks.onTab(false, selection.location)
 
             case #selector(NSResponder.insertBacktab(_:)):
-                if view.isSlashMenuOpen {
-                    view.slashMenuCommand?(.previous)
-                    return true
-                }
                 return parent.callbacks.onTab(true, selection.location)
 
             case #selector(NSResponder.deleteBackward(_:)):

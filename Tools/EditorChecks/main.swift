@@ -216,6 +216,42 @@ let userStruck = NSMutableAttributedString(attributedString: RichTextCodec.decod
 RichTextCodec.toggleStrikethrough(in: userStruck, range: NSRange(location: 0, length: 4))
 check(RichTextCodec.restylingCompletion(of: RichTextCodec.restylingCompletion(of: userStruck, kind: .task, struck: true), kind: .task, struck: false).isEqual(to: userStruck),
     "Unstriking a task keeps the user's own strikethrough")
+// The list document draws a task's strike over its text, so it can draw
+// across as the design's does: the text itself only fades.
+let doneTitle = RichTextCodec.decode(nil, plainText: "Done task", kind: .task, isCompleted: true)
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: true, drawsStrike: false,
+    attributedText: doneTitle, isFocused: false, focusToken: 0, callbacks: unstruckParent.callbacks)
+coordinator.apply(doneTitle, to: native, kind: .task, isCompleted: true, drawsStrike: false)
+let fadedAttributes = native.textStorage!.attributes(at: 0, effectiveRange: nil)
+check(fadedAttributes[.strikethroughStyle] == nil && fadedAttributes[.foregroundColor] as? NSColor === NXEditor.completedInk
+    && native.typingAttributes[.strikethroughStyle] == nil, "A done task whose strike is drawn over it only fades its text")
+native.textStorage?.append(NSAttributedString(string: "!", attributes: native.typingAttributes))
+native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
+coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
+let fadedEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task, isCompleted: true)
+check(native.string == "Done task!" && coordinator.signature == BlockTextView.ContentSignature(attributedText: fadedEcho, kind: .task,
+    isCompleted: true, drawsStrike: false), "Typing in it matches the model's echo without resetting native editing")
+// Written, a done task reads at full ink, as the design's input does.
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: true, dimsStruck: false, drawsStrike: false,
+    attributedText: doneTitle, isFocused: true, focusToken: 0, callbacks: unstruckParent.callbacks)
+coordinator.apply(doneTitle, to: native, kind: .task, isCompleted: true, dimsStruck: false, drawsStrike: false)
+let writtenAttributes = native.textStorage!.attributes(at: 0, effectiveRange: nil)
+check(writtenAttributes[.strikethroughStyle] == nil && writtenAttributes[.foregroundColor] as? NSColor === NXEditor.ink
+    && native.typingAttributes[.foregroundColor] as? NSColor === NXEditor.ink, "A done task being written reads at full ink, unstruck")
+native.textStorage?.append(NSAttributedString(string: "?", attributes: native.typingAttributes))
+native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
+coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
+let writtenEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task, isCompleted: true)
+check(native.string == "Done task?" && coordinator.signature == BlockTextView.ContentSignature(attributedText: writtenEcho, kind: .task,
+    isCompleted: true, dimsStruck: false, drawsStrike: false), "Typing in it matches the model's echo, done as it is")
+check(BlockTextView.ContentSignature(attributedText: plain, kind: .task, isCompleted: false, drawsStrike: false)
+    == BlockTextView.ContentSignature(attributedText: plain, kind: .task, isCompleted: false),
+    "An open task's text is the same whoever draws its strike")
+let drawnOver = RichTextCodec.restylingCompletion(of: userStruck, kind: .task, struck: true, strikes: false)
+check(drawnOver.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) != nil
+    && drawnOver.attribute(.strikethroughStyle, at: 5, effectiveRange: nil) == nil,
+    "The user's own strikethrough stays under a drawn strike")
+coordinator.parent = unstruckParent
 
 // The list document converts a line only on the design's prefixes.
 func typedPrefix(_ text: String) -> BlockKind? {
@@ -298,6 +334,9 @@ coordinator.dismissSlash(in: input)
 lastQuery = nil
 coordinator.updateSlashQuery(in: input)
 check(lastQuery == nil, "Escape suppresses the same slash trigger during subsequent selection or layout updates")
+input.insertText("x", replacementRange: NSRange(location: 3, length: 0))
+check(lastQuery == "h2x", "Typing in the line after Escape brings the card back, as the design's next change does")
+coordinator.apply(slashLine, to: input, kind: .task, isCompleted: false)
 input.isSlashMenuOpen = false
 input.setSelectedRange(NSRange(location: 0, length: 0))
 coordinator.updateSlashQuery(in: input)
@@ -323,6 +362,23 @@ check(returnedText == "Before DELETE After" && returnedCaret == 7 && input.strin
 var tabCaret = -1
 coordinator.parent.callbacks.onTab = { _, caret in tabCaret = caret; return true }
 check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertTab(_:))) && tabCaret == 7, "Indentation receives the original mid-text caret")
+// With the / menu showing, Tab and ⇧Tab still nest and lift the line, as
+// the design's do; only the arrows move the menu's highlight.
+var slashCommands: [SlashMenuCommand] = []
+var backtabs = 0
+input.slashMenuCommand = { slashCommands.append($0) }
+coordinator.parent.callbacks.onTab = { isBacktab, caret in tabCaret = caret; if isBacktab { backtabs += 1 }; return true }
+input.isSlashMenuOpen = true
+input.setSelectedRange(NSRange(location: 3, length: 0))
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertTab(_:))) && tabCaret == 3
+    && coordinator.textView(input, doCommandBy: #selector(NSResponder.insertBacktab(_:))) && backtabs == 1 && slashCommands.isEmpty,
+    "Tab and ⇧Tab with the / menu showing reach the outline, not the menu")
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.moveDown(_:)))
+    && coordinator.textView(input, doCommandBy: #selector(NSResponder.moveUp(_:))) && slashCommands == [.next, .previous],
+    "↓ and ↑ move the / menu's highlight")
+input.isSlashMenuOpen = false
+input.slashMenuCommand = nil
+input.setSelectedRange(NSRange(location: 7, length: 7))
 input.setSelectedRange(NSRange(location: 0, length: 2))
 check(!coordinator.textView(input, doCommandBy: #selector(NSResponder.moveUp(_:))), "Up with selected text retains native selection behavior")
 // ← and → off a line's ends stay in it, as the design's lines are single inputs.
@@ -929,6 +985,11 @@ check(nextEditor.slashKinds(matching: "code") == [.code] && nextEditor.slashKind
     && nextEditor.slashKinds(matching: "num") == [.numbered] && nextEditor.slashKinds(matching: "heading") == [.heading1, .heading2, .heading3]
     && nextEditor.slashKinds(matching: "div") == [.divider] && nextEditor.slashKinds(matching: "ima") == [.image],
     "The editor's other kinds come up for their names")
+// As the design's card, each hint is the prefix that makes its kind as it's typed.
+check(OutlineSlashOption.all.filter(\.isExtra).allSatisfy(\.hint.isEmpty)
+    && OutlineSlashOption.all.filter { !$0.isExtra }.allSatisfy { option in
+        typedPrefix(option.hint + " ").map { $0 == .quote ? .paragraph : $0 } == option.kind
+    }, "Turn into shows a prefix only for the design's five, each one that makes its kind")
 
 // ⇧↩ writes a task's note. The design's other lines hold one line each,
 // and its Turn into card takes ⇧↩ as it takes Return.
@@ -957,6 +1018,24 @@ check(nextActions(slashed).onLineBreak() && slashed.kind == .heading1 && slashed
     && notesWritten == [confirm.id], "⇧↩ with the Turn into card open turns the line into the highlighted kind")
 nextEditor.commitLine()
 store.deleteBlock(slashed)
+// With nothing matching, Return does nothing, as the design's does: the
+// card stays up and the line keeps its "/". Tab still nests the line.
+let slashHolder = store.appendBlock(kind: .task, text: "Holder", to: nextDocument)
+let unmatched = store.appendBlock(kind: .task, text: "/xyz", to: nextDocument)
+store.save()
+nextActions(unmatched).onFocus()
+nextActions(unmatched).onSlashQuery("xyz", NSRange(location: 0, length: 4), .zero, .zero)
+nextEditor.handleSlashCommand(.confirm)
+check(nextEditor.slash?.blockID == unmatched.id && unmatched.text == "/xyz" && unmatched.kind == .task,
+    "Return with nothing matching keeps the Turn into card up and the line as typed")
+check(nextActions(unmatched).onLineBreak() && nextEditor.slash?.blockID == unmatched.id && notesWritten == [confirm.id],
+    "So does ⇧↩")
+check(nextActions(unmatched).onTab(false, 4) && unmatched.parentID == slashHolder.id && nextEditor.slash?.blockID == unmatched.id,
+    "Tab nests a line with the Turn into card open, and leaves the card up")
+nextEditor.dismissSlashMenu()
+nextEditor.commitLine()
+store.deleteBlock(unmatched)
+store.deleteBlock(slashHolder)
 store.save()
 nextEditor.hooks.editNote = nil
 
@@ -1027,6 +1106,77 @@ nextActions(laterTask).onFocus()
 nextActions(laterTask).onEndEditing(NSTextStorage())
 check(recorded.count == 4 && recorded.last?.edit == .edited(laterTask.id) && laterTask.kind == .bullet,
     "Leaving the line afterwards commits its edit, kind change and all")
+
+// A line is stored trimmed as it's left, as the design's commit stores it.
+nextEditor.appendTask()
+let spaced = store.block(id: nextEditor.focus.blockID!)!
+let spacedText = NSMutableAttributedString(string: "  Call mum \u{2028}", attributes: RichTextCodec.baseAttributes(for: .task))
+RichTextCodec.toggleTrait(.boldFontMask, in: spacedText, range: NSRange(location: 2, length: 4), kind: .task)
+nextActions(spaced).onChange(spacedText)
+recorded.removeAll()
+nextActions(spaced).onEndEditing(NSTextStorage())
+check(spaced.text == "Call mum" && fontTraits(store.attributedContent(of: spaced), at: 0).contains(.boldFontMask)
+    && !fontTraits(store.attributedContent(of: spaced), at: 5).contains(.boldFontMask)
+    && recorded.map(\.edit) == [.added(spaced.id)], "A line left is trimmed at both ends, its styling kept, in its one step")
+let olderSpacing = store.appendBlock(kind: .paragraph, text: "  Older spacing", to: nextDocument)
+let indented = store.appendBlock(kind: .code, text: "", to: nextDocument)
+store.save()
+recorded.removeAll()
+nextActions(olderSpacing).onFocus()
+nextActions(olderSpacing).onEndEditing(NSTextStorage())
+check(olderSpacing.text == "  Older spacing" && recorded.isEmpty, "A line the caret only passes through keeps its text")
+nextActions(indented).onFocus()
+nextActions(indented).onChange(NSAttributedString(string: "    return fare\u{2028}"))
+nextActions(indented).onEndEditing(NSTextStorage())
+check(indented.text == "    return fare\u{2028}", "Code, one of the editor's own kinds, keeps its indentation")
+store.deleteBlock(olderSpacing)
+store.deleteBlock(indented)
+store.save()
+
+// A commit the caret stays through, as a Task menu command's, keeps the
+// spaces under the caret. The line is trimmed once the caret leaves it, in
+// no step of its own: that commit's step holds what was written.
+let everyResponder = nextEditor.firstResponders
+nextEditor.appendTask()
+let staying = store.block(id: nextEditor.focus.blockID!)!
+let stayingCoordinator = BlockTextView(blockID: staying.id, kind: .task, isCompleted: false, attributedText: NSAttributedString(),
+    isFocused: true, focusToken: 0, callbacks: BlockEditorCallbacks()).makeCoordinator()
+let stayingView = BlockNSTextView(frame: .zero)
+stayingView.coordinator = stayingCoordinator
+nextEditor.firstResponders = { [stayingView] }
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk "))
+recorded.removeAll()
+nextEditor.commitLine()
+check(staying.text == "Buy milk " && recorded.map(\.edit) == [.added(staying.id)], "A commit the caret stays through keeps the spaces under it")
+nextEditor.commitLine()
+check(staying.text == "Buy milk ", "So does another while it stays")
+nextActions(staying).onEscape()
+check(staying.text == "Buy milk" && recorded.count == 1, "Escape then trims the line, in no step of its own")
+nextActions(staying).onFocus()
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk and eggs "))
+nextEditor.commitLine()
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk and eggs  "))
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk and eggs "))
+recorded.removeAll()
+nextActions(staying).onEndEditing(NSTextStorage())
+check(staying.text == "Buy milk and eggs" && recorded.isEmpty,
+    "Written on after it and left as it was then, the line is trimmed as it's left, in no step of its own")
+nextActions(staying).onFocus()
+nextActions(staying).onChange(NSAttributedString(string: " Pack bags "))
+nextEditor.commitLine()
+check(staying.text == " Pack bags ", "The caret staying keeps them once more")
+let showing = nextRows().map(\.id)
+nextEditor.visibleRowsDidChange(showing.filter { $0 != staying.id }, from: showing)
+check(staying.text == "Pack bags" && nextEditor.focus.blockID == nil, "A line leaving the page with the caret in it is trimmed as it goes")
+nextActions(staying).onFocus()
+nextActions(staying).onChange(NSAttributedString(string: "Pack bags "))
+nextEditor.commitLine()
+nextEditor.firstResponders = { [] }
+nextEditor.commitLine()
+check(staying.text == "Pack bags", "A later commit, once the caret has gone, trims it too")
+nextEditor.firstResponders = everyResponder
+store.deleteBlock(staying)
+store.save()
 
 // The store half: one Undo restores exactly what the edit touched.
 let sessionUndo = UndoManager()
@@ -1287,11 +1437,20 @@ for emptied in [watering, trip] {
 }
 check(store.block(id: watering.id) != nil && store.block(id: trip.id) != nil && tickets.parentID == trip.id,
     "A task emptied that holds a date, or has lines under it, keeps its line")
+// A line keeps what was typed, as the design's does: only the capture
+// card reads labels and dates out of it.
 fixEditor.appendTask()
 let labelled = store.block(id: fixEditor.focus.blockID!)!
 fixActions(labelled).onChange(NSAttributedString(string: "#errands"))
 fixEditor.commitLine()
-check(store.block(id: labelled.id) != nil && !labelled.labelIDs.isEmpty, "A new line of only a label keeps its line and label")
+check(store.block(id: labelled.id)?.text == "#errands" && labelled.labelIDs.isEmpty, "A line of a #label keeps it as its text")
+fixEditor.appendTask()
+let dated = store.block(id: fixEditor.focus.blockID!)!
+fixActions(dated).onChange(NSAttributedString(string: "Call mum tomorrow every monday"))
+_ = fixActions(dated).onReturn(0, content(dated))
+fixEditor.commitLine()
+check(dated.text == "Call mum tomorrow every monday" && dated.dueDate == nil && dated.recurrence == nil,
+    "A task line finished with Return keeps its date and repeat words as written")
 
 // Taken out, a line's lines go where they show: not under a done task the document lists apart.
 let doneAbove = store.appendBlock(kind: .task, text: "Done already", to: fixDocument)
@@ -1383,5 +1542,51 @@ check(movingSecond.kind == .bullet && movingEditor.focus.blockID == movingSecond
     && movingEditor.appliedFocusToken != movingEditor.focus.token,
     "A line turned into another kind sends the caret on to the text view that draws it")
 movingEditor.commitLine()
+
+// Only tasks fold the lines under them, and headings their sections: the
+// lines that draw a caret to open them again, as the design's do.
+let caretList = store.createList(title: "Folding")
+let caretDocument = DocumentContext(listID: caretList.id)
+let caretEditor = OutlineEditor(env: outlineEnv, document: caretDocument)
+func caretRows() -> [UUID] { caretEditor.visibleRows(in: store.blocks(inList: caretList.id)).map(\.id) }
+let caretHeading = store.appendBlock(kind: .heading1, text: "Kyoto", to: caretDocument)
+let caretTask = store.appendBlock(kind: .task, text: "Pack", to: caretDocument)
+let caretSubtask = store.insertChild(kind: .task, text: "Socks", of: caretTask, at: .last)
+let caretDeeper = store.insertChild(kind: .task, text: "Wool", of: caretSubtask, at: .last)
+let caretItem = store.appendBlock(kind: .bullet, text: "Shops", to: caretDocument)
+let caretUnderItem = store.insertChild(kind: .bullet, text: "Tenugui", of: caretItem, at: .last)
+let caretAlone = store.appendBlock(kind: .task, text: "Alone", to: caretDocument)
+store.save()
+store.setCollapsed(true, for: caretItem)
+check(caretRows().contains(caretUnderItem.id), "A list item an older list left folded shows its lines, as it has no caret to open them")
+store.setCollapsed(true, for: caretSubtask)
+check(!caretRows().contains(caretDeeper.id) && caretRows().contains(caretSubtask.id), "A folded task still folds what's under it")
+store.setCollapsed(false, for: caretSubtask)
+store.setCollapsed(false, for: caretItem)
+outlineEnv.activeDocument = caretDocument
+store.setCollapsed(true, for: caretTask)
+outlineEnv.pendingCommand = .collapseAll
+caretEditor.receiveCommand()
+check(caretHeading.isCollapsed && caretTask.isCollapsed && caretSubtask.isCollapsed && !caretDeeper.isCollapsed
+    && !caretItem.isCollapsed && !caretAlone.isCollapsed,
+    "Collapse All folds tasks with lines under them, folded away too, and headings with a section, and nothing else")
+store.setCollapsed(true, for: caretItem)
+outlineEnv.pendingCommand = .expandAll
+caretEditor.receiveCommand()
+check(!caretHeading.isCollapsed && !caretTask.isCollapsed && !caretSubtask.isCollapsed && !caretItem.isCollapsed,
+    "Expand All opens every fold, one an older list left on a list item too")
+store.setCollapsed(true, for: caretTask)
+caretEditor.turn(caretTask.id, into: .bullet)
+check(caretTask.kind == .bullet && !caretTask.isCollapsed && caretRows().contains(caretSubtask.id),
+    "A folded task turned into a list item opens, as the design's convert makes the line anew")
+store.setCollapsed(true, for: caretItem)
+caretEditor.turn(caretItem.id, into: .heading2)
+check(caretItem.kind == .heading2 && !caretItem.isCollapsed && caretRows().contains(caretUnderItem.id),
+    "A list item an older list left folded turned into a heading shows its section, as the design's would")
+store.setCollapsed(true, for: caretItem)
+caretEditor.turn(caretItem.id, into: .heading1)
+check(caretItem.kind == .heading1 && caretItem.isCollapsed && !caretRows().contains(caretUnderItem.id),
+    "A folded heading turned into another heading stays folded, as the design's convert keeps it")
+outlineEnv.activeDocument = nil
 
 print("✅ \(checks) editor/store checks passed")

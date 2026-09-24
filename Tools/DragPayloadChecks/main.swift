@@ -22,4 +22,15 @@ check(decode(DragPayload.encodeBlocks([], session: session)) == .invalid, "Empty
 check(decode("openlist-blocks:v2:\(session.uuidString):\(a.uuidString)") == .invalid, "Unknown versions fail closed")
 check(decode(DragPayload.list.encode(a)) == .invalid, "List drags cannot turn into task text")
 check(decode("Read the report\nand reply") == .text("Read the report\nand reply"), "External text keeps its native text path")
+// A sidebar list drags on a private type of its own, never as text a line
+// or another app could take in, nor as the rows' type a line marks a drop for.
+let listDrag = DragPayload.list.provider(for: a)
+check(listDrag.registeredTypeIdentifiers == [DragPayload.listTypeIdentifier]
+    && DragPayload.listTypeIdentifier != DragPayload.blockTypeIdentifier, "A list drags only on its own private type")
+let listPayload: String? = await withCheckedContinuation { continuation in
+    _ = listDrag.loadDataRepresentation(forTypeIdentifier: DragPayload.listTypeIdentifier) { data, _ in
+        continuation.resume(returning: data.map { String(decoding: $0, as: UTF8.self) })
+    }
+}
+check(listPayload.flatMap(DragPayload.list.decode) == a, "The list's payload names it")
 print("\(checks) drag payload checks passed")

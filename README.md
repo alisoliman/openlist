@@ -78,9 +78,7 @@ Typing drives everything:
 | `[ ]` · `[]` · `-` · `*` · `#` · `##` | a task, a bullet, a heading or a subheading |
 | `>` | a text line |
 | `**bold**` · `*italic*` · `~~strike~~` · `` `code` `` | inline styling |
-| `#label` | attaches a label |
 | paste of several lines | one block per line, nesting preserved |
-| "tomorrow at 6pm", "every monday", "in 3 days" | due date and repeat rule |
 
 ⇥ / ⇧⇥ indent and outdent tasks and list items, two levels deep at most; ⌫ at the
 start of a line turns a heading or list item into text, steps a nested line out,
@@ -316,10 +314,13 @@ tasks, notes and lists, ⇧⌥Space global quick-add from any app, and a menu ba
 popover. ⌘/ shows the full shortcut reference.
 
 Capture keeps the destination visible and previews detected dates, repeats,
-labels, priority and estimates as you type. Date detection follows Settings →
-Capture. Return adds the task, Shift-Return adds it and keeps capture open for the
-next, Tab steps the destination, and Escape cancels. Quick Add is the same card
-floating over the app you're in, and focus goes back to that app when it closes.
+labels, priority and estimates as you type: `#label` attaches a label, and
+"tomorrow at 6pm", "every monday" or "in 3 days" set the due date and repeat
+rule. A line written in a list's document keeps these words as typed. Date
+detection follows Settings → Capture. Return adds the task, Shift-Return adds it
+and keeps capture open for the next, Tab steps the destination, and Escape
+cancels. Quick Add is the same card floating over the app you're in, and focus
+goes back to that app when it closes.
 Clicking or switching away also closes it, but the next Quick Add within five
 minutes picks up what you'd typed. ⇧⌥Space works from launch, with or without
 a window open; with VoiceOver on, Quick Add brings Openlist forward so

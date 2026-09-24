@@ -7,16 +7,30 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// What a list in the sidebar takes: a list dragged as text, or the rows a
-/// task row or a list document's grip drags, in this library's own payload.
+/// What a list in the sidebar takes: another list, or the rows a task row
+/// or a list document's grip drags, in this library's own payloads.
 private nonisolated struct NXSidebarDrop: Transferable {
     let value: String
 
     static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.listTypeIdentifier)) { data in
+            NXSidebarDrop(value: String(decoding: data, as: UTF8.self))
+        }
         DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.blockTypeIdentifier)) { data in
             NXSidebarDrop(value: String(decoding: data, as: UTF8.self))
         }
-        ProxyRepresentation { (value: String) in NXSidebarDrop(value: value) }
+    }
+}
+
+/// What a sidebar section takes: only a list, so a row dragged over it
+/// marks no drop it would refuse.
+private nonisolated struct NXSidebarListDrop: Transferable {
+    let value: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.listTypeIdentifier)) { data in
+            NXSidebarListDrop(value: String(decoding: data, as: UTF8.self))
+        }
     }
 }
 
@@ -206,8 +220,8 @@ struct NextSidebar: View {
                         Button("Delete Section", role: .destructive) { deleteSection(section) }
                     }
                 }
-                .dropDestination(for: String.self) { items, _ in
-                    guard let dragged = draggedList(items) else { return false }
+                .dropDestination(for: NXSidebarListDrop.self) { items, _ in
+                    guard let dragged = draggedList(items.map(\.value)) else { return false }
                     env.store.move(list: dragged, toSection: section.id, above: nil)
                     return true
                 } isTargeted: { setDropTarget(section.id, $0) }
@@ -273,7 +287,8 @@ struct NextSidebar: View {
         } action: {
             workbench.go(workbench.route(for: list))
         }
-        .draggable(DragPayload.list.encode(list.id))
+        // Never as text, which a document line would take in.
+        .onDrag { DragPayload.list.provider(for: list.id) }
         // Past three levels the title keeps its room.
         .padding(.leading, CGFloat(min(depth, 3)) * 14)
         .contextMenu { listMenu(list, nested: depth > 0) }
