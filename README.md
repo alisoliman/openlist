@@ -103,7 +103,7 @@ choose which label to keep. Nothing merges until you confirm.
 
 Merging updates labels on all tasks, including nested, completed, and archived
 work, while retaining the destination identity/color and historical activity
-names. **Undo merge** stays available in Settings and the main window after
+names. **Undo merge** stays available at the top of the main window after
 navigation, until dismissed, another merge, or app restart. Task content and
 unrelated label edits made afterward are preserved by undo. The central merge
 path includes all stored blocks without a visibility filter; future retained
@@ -319,7 +319,7 @@ popover. ⌘/ shows the full shortcut reference.
 
 Capture keeps the destination visible and previews detected dates, repeats,
 and labels. Per-draft date detection lives in **Capture options** (the ellipsis);
-the default is in Settings → Tasks. Return adds the task, and Escape cancels.
+the default is in Settings → Capture. Return adds the task, and Escape cancels.
 Navigation, command selection, and keyboard scrolling do not animate. Custom
 pointer feedback lasts 140 ms; task rearrangement lasts 200 ms. Reduce Motion
 disables custom movement.
@@ -370,7 +370,7 @@ of the picture entirely.
 Provisioned builds automatically sync lists, nested tasks, notes, formatting,
 labels, sections, activity, images and attachments with your private iCloud
 database. Use the same Apple Account on your Macs and enable Openlist in iCloud
-settings. **Settings > iCloud** shows account availability, transfer activity,
+settings. **iCloud sync** in Settings shows account availability, transfer activity,
 the last upload/download in this session, and actionable errors.
 
 The existing SQLite store stays in place. The first sync uploads existing local
@@ -471,8 +471,8 @@ openlist/
   Editor/      BlockTextView (AppKit-backed), OutlineEditor, DocumentView,
                BlockRowView, SlashMenuView, MarkdownInputRules, BlockDragAndDrop
   Next/        Openlist Next shell: sidebar, screens, rows, inspector,
-               calendar, overlays, Workbench (shared UI state and actions)
-  Views/       RootView, document screens, shared pickers, settings
+               calendar, overlays, settings, Workbench (shared UI state and actions)
+  Views/       RootView, document screens, shared pickers
   Design/      Theme
 Shared/        ListAccent, WidgetSnapshot, AppGroup   (app + widget)
 OpenlistWidget/  WidgetKit extension
@@ -573,7 +573,7 @@ the running app's window and can drive it with keystrokes first, so UI changes
 can be verified rather than assumed. It is window-scoped — it never grabs the
 rest of the desktop — and needs Screen Recording (capture) plus Accessibility
 (keystrokes) granted to the terminal app. `OPENLIST_WINDOW=front` targets
-Settings or Quick Add instead of the main window.
+Quick Add instead of the main window.
 
 `Tools/add-widget-target.py` regenerates the widget target in the project file and
 is idempotent.
@@ -587,7 +587,7 @@ notification preferences, and macOS delivery policy still apply. Local schedulin
 status is rebuilt from the saved library and OS inventory after launch; it is not
 synced as a task fact.
 
-Task details and Settings → Tasks show permission problems and scheduling errors.
+Task details and Settings → Notifications show permission problems and scheduling errors.
 Use **Allow notifications** or **Open Notification Settings** for permission, and
 **Retry reminder** / **Retry future reminders** for eligible future times. Recovery
 never requests permission automatically and never replays expired reminders.

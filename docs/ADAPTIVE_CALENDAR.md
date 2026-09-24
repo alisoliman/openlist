@@ -58,7 +58,7 @@ current local time zone. Calendar week display follows Openlist’s existing
 **Week starts on** preference. Internally, weekday keys use Foundation’s numbering
 (Sunday = 1, Monday = 2, … Saturday = 7).
 
-Choose **Connect macOS calendars** in Calendar settings, then select calendars
+Choose **Connect macOS calendars** in Settings → Planning, then select calendars
 from accounts already configured on the Mac. macOS presents its EventKit
 **full access** permission because that is the system permission that permits
 reading events. Openlist’s adapter only reads calendars and events: it has no

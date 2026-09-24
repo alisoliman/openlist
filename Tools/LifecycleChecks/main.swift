@@ -145,7 +145,7 @@ if phase == "prepare" {
     check(count == 0 && !blocks.contains { $0.text == "Delete block" || ($0.text == "Doomed parent" && !$0.isTrashed) }, "History and cascade deletions remain durable")
     check(media.fileContents(filename: "keep.txt") == Data("keep.txt".utf8) && media.fileContents(filename: "delete-list.txt") != nil, "Remaining and retained media bytes survive process restart")
 
-    // Compose the same store operations as DataSettingsTab.reset. Native
+    // Compose the same store operations as NXDataSettings.reset. Native
     // destructive confirmation and navigation are covered separately by UI QA.
     check(store.permanentlyResetLibrary(), "Confirmed library reset succeeds")
     let resetBlocks = try allBlocks(), resetAttachments = try allAttachments()

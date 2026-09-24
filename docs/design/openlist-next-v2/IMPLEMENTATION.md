@@ -5,7 +5,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 ## Architecture
 
 - `openlist/Next/` holds the redesigned UI. Existing views remain for features the
-  design doesn't cover (document editor, settings window, sheets for list move etc.).
+  design doesn't cover (document editor, sheets for list move etc.).
 - `NextTheme` — tokens (paper #FCFBFA, sidebar #F1EEEA, inspector #F7F5F2, ink #17161A,
   semantic colours), Instrument Serif (bundled, `Resources/Fonts`), density, motion.
 - `Workbench` (@Observable, on AppEnvironment) — design interaction state: keyboard focus,
@@ -23,8 +23,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Modal flags reuse `navigator.isSearchOpen` and `navigator.isCommandPaletteOpen`; ⌘N goes
   through `env.presentTaskCapture()`, which opens the workbench capture
   (`workbench.openCapture`), so menu commands keep working.
-- New route `.settings` for the in-window design Settings page (full Settings window stays
-  reachable via "More settings…").
+- New route `.settings` for the in-window Settings page: the design's groups, then every
+  other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
 
 ## Status checklist
 

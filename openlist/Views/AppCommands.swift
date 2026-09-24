@@ -35,6 +35,12 @@ struct AppCommands: Commands {
                 }
             }.disabled(env.calendar.activeSession == nil)
         }
+        // Openlist ▸ Settings… opens the Settings page in the main window;
+        // there is no Settings window.
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { showSettings() }
+                .keyboardShortcut(",", modifiers: .command)
+        }
         // File ▸ replaces the template "New Window" with task and list creation.
         CommandGroup(replacing: .newItem) {
             Button("New Task…") {
@@ -231,6 +237,15 @@ struct AppCommands: Commands {
     /// block editor currently has focus.
     private func sendToResponder(_ selectorName: String) {
         NSApp.sendAction(Selector((selectorName)), to: nil, from: nil)
+    }
+
+    /// The main window's Settings page, over whatever was open. With the main
+    /// window key, NextKeyMonitor takes ⌘, before the menu does.
+    private func showSettings() {
+        openWindow(id: WindowID.main)
+        if env.workbench.captureOpen { env.workbench.closeCapture() }
+        env.workbench.go(.settings)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// The same list the sidebar's New list makes, with its tray and undo.

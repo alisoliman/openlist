@@ -49,7 +49,7 @@ func area(_ w: [String: Any]) -> Double {
 }
 
 // OPENLIST_WINDOW=front takes the frontmost real window (the list is ordered
-// front-to-back), which is how to reach Settings or Quick Add. The default
+// front-to-back), which is how to reach Quick Add. The default
 // takes the largest, which skips menus and popovers and lands on the main
 // window. The area floor drops shadows and other tiny helper windows.
 let real = windows.filter { area($0) > 10_000 }
