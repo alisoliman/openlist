@@ -388,7 +388,8 @@ private struct NXScrollRestoration: ViewModifier {
     }
 }
 
-/// Section title used on Lists, Activity and Settings.
+/// Section title used on Lists, Activity, Settings, the inspector and the
+/// Inbox's triage card: the design's 600 10.5/1.
 struct NXCapsTitle: View {
     let text: String
     var body: some View {
@@ -397,6 +398,7 @@ struct NXCapsTitle: View {
             .kerning(0.735)
             .textCase(.uppercase)
             .foregroundStyle(NX.ink(0.36))
+            .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
     }
 }
 

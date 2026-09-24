@@ -129,10 +129,12 @@ private struct NXHeatmapCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NXHeat.gap) {
                 ForEach(0..<weeks, id: \.self) { week in
+                    // The design's 500 10/1.
                     Text(monthLabel(week: week))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(NX.ink(0.42))
                         .fixedSize()
+                        .padding(.vertical, (10 - NXStrikeText.glyphLineHeight(10)) / 2)
                         .frame(width: NXHeat.cell, alignment: .leading)
                 }
             }
@@ -267,9 +269,11 @@ private struct NXActivityDayPanel: View {
                 .font(NX.serif(22))
                 .padding(.vertical, NX.serifLeading(22, lineHeight: 1.1))
                 .foregroundStyle(NX.ink)
+            // The design's 500 11.5/1.
             Text(items.isEmpty ? "No completions recorded" : "\(items.count) \(items.count == 1 ? "task" : "tasks") completed")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(NX.ink(0.48))
+                .padding(.vertical, (11.5 - NXStrikeText.glyphLineHeight(11.5)) / 2)
                 .padding(.top, 6)
                 .padding(.bottom, 12)
             VStack(spacing: 2) {
@@ -357,6 +361,8 @@ private struct NXSavedEvent {
     var blockID: UUID?
     var listID: UUID?
     var listTitle: String
+    /// Its list's icon then, which draws it once the list is gone.
+    var listIcon: String
     var at: Date
     var change: TaskActivityChange?
     /// How Changes groups it with the rest of the change that saved it:
@@ -372,6 +378,7 @@ private struct NXSavedEvent {
         blockID = event.blockID
         listID = event.listID
         listTitle = event.listTitle
+        listIcon = event.listIcon
         at = event.timestamp
         change = event.change
         let after = change?.after
@@ -417,6 +424,7 @@ private struct NXSavedItem {
     var detail: String?
     var listID: UUID?
     var listTitle: String
+    var listIcon: String
     var at: Date
 }
 
@@ -510,7 +518,7 @@ private struct NXSavedTasks {
         // Repeats rolled on with no other task closing, as the log draws them.
         let icon = counted.allSatisfy(\.rolls) ? "repeat" : NXChangesSection.icon(lead.kind)
         return NXSavedItem(id: "e\(lead.id)", icon: icon, tone: NXChangesSection.tone(lead.kind),
-                           label: label, listID: lead.listID, listTitle: lead.listTitle, at: lead.at)
+                           label: label, listID: lead.listID, listTitle: lead.listTitle, listIcon: lead.listIcon, at: lead.at)
     }
 
     func item(_ event: NXSavedEvent) -> NXSavedItem {
@@ -527,7 +535,7 @@ private struct NXSavedTasks {
                                // Its days named as of the change, as its label names them.
                                detail: ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: change,
                                                                     dateText: { NXFormat.dayText($0, includesTime: $1, now: event.at) }),
-                               listID: event.listID, listTitle: event.listTitle, at: event.at)
+                               listID: event.listID, listTitle: event.listTitle, listIcon: event.listIcon, at: event.at)
         // "archived list" as the tray says it, of the list as it is now.
         if event.kind == .restored, event.blockID != nil, !event.restoredList.isEmpty, recovered(event) == nil,
            let list = change?.after?.listID ?? event.listID {
@@ -603,7 +611,9 @@ private struct NXChangeItem: Identifiable {
     var label: String
     var detail: String?
     var list: TaskList?
+    /// A list since gone, as the row last knew it: its title and icon.
     var listTitle: String
+    var listIcon = ""
     var at: Date
     var canUndo = false
 }
@@ -668,8 +678,10 @@ private struct NXChangesSection: View {
             let key = "\(entry.batch)\(entry.label)"
             guard seen.insert(key).inserted else { continue }
             let list = entry.taskID.flatMap { lists[$0] }
+            // A list since gone draws by its title and icon, as Earlier's do.
+            let live = list.flatMap { library.list($0.id) }
             items.append(NXChangeItem(id: "s\(entry.id)", icon: Self.outline(entry.icon), tone: entry.tone, label: entry.label,
-                                      list: list, listTitle: list?.displayTitle ?? "", at: entry.at,
+                                      list: live, listTitle: list?.displayTitle ?? "", listIcon: list?.glyph ?? "", at: entry.at,
                                       canUndo: items.isEmpty && entry.batch == workbench.latestBatch && workbench.canUndo))
         }
         var rest = sessionSaved().map(item)[...]
@@ -685,14 +697,22 @@ private struct NXChangesSection: View {
     private func item(_ saved: NXSavedItem) -> NXChangeItem {
         let archived = saved.archivable.map { library.hierarchy.isArchived($0) } == true
         return NXChangeItem(id: saved.id, icon: saved.icon, tone: saved.tone, label: archived ? saved.archivedLabel : saved.label,
-                            detail: saved.detail, list: library.list(saved.listID), listTitle: saved.listTitle, at: saved.at)
+                            detail: saved.detail, list: library.list(saved.listID), listTitle: saved.listTitle,
+                            listIcon: saved.listIcon, at: saved.at)
     }
 
     /// Each logged task's list, the task found in the library or in Trash,
     /// which keeps it, so a row about a task still shows its list once it's
-    /// trashed, as the design's do. An erased task has none.
+    /// trashed, as the design's do, and once its list is trashed too. An
+    /// erased task has none.
     private func loggedLists(_ log: [ChangeEntry]) -> [UUID: TaskList] {
-        env.store.blocksIncludingTrash(ids: log.compactMap(\.taskID)).compactMapValues { library.list($0.listID) }
+        let tasks = env.store.blocksIncludingTrash(ids: log.compactMap(\.taskID))
+        let gone = Array(Set(tasks.values.compactMap(\.listID).filter { library.list($0) == nil }))
+        let found = gone.isEmpty ? [] : (try? env.store.context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate {
+            gone.contains($0.id)
+        }))) ?? []
+        let byID = Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return tasks.compactMapValues { task in library.list(task.listID) ?? task.listID.flatMap { byID[$0] } }
     }
 
     /// The glyph the tray and the log give the same change, always outline,
@@ -760,7 +780,14 @@ private struct NXChangeRow: View {
                     .foregroundStyle(NX.ink(0.4))
                     .lineLimit(1)
                 } else if !item.listTitle.isEmpty {
-                    Text(item.listTitle).font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.4)).lineLimit(1)
+                    // A list since gone, with the icon it had, as the day panel draws it.
+                    HStack(spacing: 4) {
+                        if !item.listIcon.isEmpty { NXListGlyph.text(item.listIcon, size: 11).accessibilityHidden(true) }
+                        Text(item.listTitle)
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NX.ink(0.4))
+                    .lineLimit(1)
                 }
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     Text(NXFormat.relative(item.at, now: context.date))

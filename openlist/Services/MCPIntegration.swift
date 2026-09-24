@@ -22,7 +22,6 @@ final class MCPIntegration {
     }
 
     private(set) var status = Status.off
-    var notice: String?
     private let settings: AppSettings
     private let adapter: MCPStoreAdapter
     private let tokenStore: any MCPTokenStorage
@@ -66,13 +65,14 @@ final class MCPIntegration {
         restart()
     }
 
-    func setPort(_ text: String) {
-        guard let port = Int(text), (1024...65535).contains(port) else {
-            notice = "Choose a port from 1024 to 65535."
-            return
-        }
+    /// False, changing nothing, for a port outside 1024 to 65535, which the
+    /// Port row says in its hint.
+    @discardableResult
+    func setPort(_ text: String) -> Bool {
+        guard let port = Int(text), (1024...65535).contains(port) else { return false }
         settings.mcpPort = port
         restart()
+        return true
     }
 
     func restart(rotatingToken: Bool = false) {
@@ -84,7 +84,6 @@ final class MCPIntegration {
         predecessor?.cancel()
         server = nil
         token = nil
-        notice = nil
         status = settings.mcpEnabled ? .starting : .off
         lifecycle = Task { [weak self] in
             await predecessor?.value

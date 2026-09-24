@@ -70,7 +70,7 @@ nonisolated enum LocalLinkError: LocalizedError, Equatable {
         case .wrongApp: "This link belongs to a different app edition. Open production links with Openlist and development links with Openlist Dev."
         case .wrongLibrary: "This link belongs to a different local library. Open it on the Mac and in the library where it was copied."
         case .identityUnavailable: "This library’s link identity could not be read. Your content is still available. Restart Openlist before copying or opening item links."
-        case .targetUnavailable: "This task or list is unavailable. It may have been deleted, changed to a text block, or removed from this library. Opening a link never restores content."
+        case .targetUnavailable: "This task or list is unavailable. It may have been deleted, changed to a text line, or removed from this library. Opening a link never restores content."
         }
     }
 }

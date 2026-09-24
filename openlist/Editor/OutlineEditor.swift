@@ -398,7 +398,7 @@ final class OutlineEditor {
     }
 
     func applySlashSelection(_ kind: BlockKind) {
-        editorEdit("Change block type") { applySlashSelectionContents(kind) }
+        editorEdit("Change line type") { applySlashSelectionContents(kind) }
     }
 
     /// The kinds the `/` menu offers for `query`, in its order.
@@ -559,7 +559,7 @@ final class OutlineEditor {
                 }
             },
             onMarkdownPrefix: { [self] kind in
-                editorEdit("Change block type") { applyMarkdownPrefix(kind, to: block) }
+                editorEdit("Change line type") { applyMarkdownPrefix(kind, to: block) }
             },
             onPasteMultiline: { [self] text in
                 paste(MarkdownInputRules.pasteLines(text), in: block)
@@ -867,7 +867,7 @@ final class OutlineEditor {
         guard let block = env.store.block(id: id), block.listID == document.listID,
               !block.kind.isVoid, !kind.isVoid, block.kind != kind else { return }
         commitLine()
-        editorEdit("Change block type", edit: .edited(id), joiningLine: false) {
+        editorEdit("Change line type", edit: .edited(id), joiningLine: false) {
             convert(block, to: kind)
             env.store.save()
         }
@@ -1323,7 +1323,7 @@ final class OutlineEditor {
         if Self.isBlank(block.text), !block.kind.isVoid, !fills(block, with: lines) {
             insertBeside(emptyLine: block, lines, position: .after)
         } else {
-            editorEdit("Paste blocks") { insertPastedLines(lines, at: block) }
+            editorEdit("Paste lines") { insertPastedLines(lines, at: block) }
         }
         return true
     }

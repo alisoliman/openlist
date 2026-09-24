@@ -50,7 +50,7 @@ enum FragmentContent {
         var seen = Set<UUID>()
         while let block = stack.popLast() {
             guard seen.insert(block.id).inserted, seen.count <= 10_000 else {
-                throw FragmentError.invalid("The source is cyclic or contains more than 10,000 blocks.")
+                throw FragmentError.invalid("The source is cyclic or contains more than 10,000 lines.")
             }
             originals.append(block)
             stack += (children[block.id] ?? []).reversed()

@@ -31,15 +31,15 @@ nonisolated struct DocumentFragment: Codable, Equatable, Sendable {
     func validate() throws {
         guard version == Self.currentVersion else { throw FragmentError.version(version) }
         guard !blocks.isEmpty, blocks.count <= 10_000, !roots.isEmpty,
-              labels.count <= 10_000 else { throw FragmentError.invalid("The fragment has an invalid item count.") }
+              labels.count <= 10_000 else { throw FragmentError.invalid("The copied content has an invalid item count.") }
         let ids = Set(blocks.map(\.id)), labelIDs = Set(labels.map(\.id))
         guard ids.count == blocks.count, labelIDs.count == labels.count,
               Set(roots).count == roots.count, Set(roots).isSubset(of: ids) else {
-            throw FragmentError.invalid("The fragment has duplicate or missing identities.")
+            throw FragmentError.invalid("The copied content has duplicate or missing items.")
         }
         let byID = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0) })
         guard Set(blocks.filter { $0.parentID == nil }.map(\.id)) == Set(roots) else {
-            throw FragmentError.invalid("The fragment roots do not match its structure.")
+            throw FragmentError.invalid("The copied content's top lines do not match its outline.")
         }
         var mediaBytes = 0
         for block in blocks {
@@ -48,7 +48,7 @@ nonisolated struct DocumentFragment: Codable, Equatable, Sendable {
             var parent = block.parentID
             while let id = parent {
                 guard let ancestor = byID[id], seen.insert(id).inserted, seen.count <= 512 else {
-                    throw FragmentError.invalid("The fragment has a missing parent, cycle, or more than 512 levels.")
+                    throw FragmentError.invalid("The copied content has a missing parent line, a cycle, or more than 512 levels.")
                 }
                 parent = ancestor.parentID
             }
@@ -69,10 +69,10 @@ nonisolated enum FragmentError: LocalizedError {
     case version(Int), invalid(String), tooLarge, destination, clipboard
     var errorDescription: String? {
         switch self {
-        case .version(let version): "This content uses Openlist fragment version \(version), which this app cannot paste. Update Openlist or paste its text instead."
+        case .version(let version): "This content was copied in a format this Openlist cannot paste (version \(version)). Update Openlist or paste its text instead."
         case .invalid(let reason): "Content was not pasted. \(reason)"
-        case .tooLarge: "This fragment is too large. Copy a smaller subtree (64 MB clipboard data, 40 MB total media, and 32 MB per file)."
-        case .destination: "The destination is no longer available. Choose an existing document and try again."
+        case .tooLarge: "This content is too large. Copy fewer lines (64 MB clipboard data, 40 MB total media, and 32 MB per file)."
+        case .destination: "The list or line it was pasted into is no longer available. Try again in a list that’s still there."
         case .clipboard: "Openlist could not write the content to the clipboard."
         }
     }

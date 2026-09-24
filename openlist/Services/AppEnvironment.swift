@@ -311,7 +311,7 @@ extension AppEnvironment {
         } catch {
             let reason = error as? LocalLinkError == .identityUnavailable
                 ? LocalLinkError.identityUnavailable.localizedDescription
-                : "This task or list is unavailable. It may have been deleted or changed to a text block."
+                : "This task or list is unavailable. It may have been deleted or changed to a text line."
             store.actionError = "The link was not copied. \(reason)"
         }
     }

@@ -206,7 +206,7 @@ enum MarkdownExporter {
             panel.title = "Export \(list.displayTitle)"
             panel.prompt = "Export"
             panel.message = documents.count > 1
-                ? "Choose where to export a folder containing one Markdown file per document, with parent and child links and shared assets. Existing files are kept."
+                ? "Choose where to export a folder holding one Markdown file for this list and one for each list nested in it, linked together, with their shared assets. Existing files are kept."
                 : "Choose a folder for \(filename) and its images and attachments. Keep the Markdown file and assets folder together when sharing. Existing files are kept."
             guard panel.runModal() == .OK, let folder = panel.url else { return false }
             url = destination(for: list, in: folder, documents: documents.count)

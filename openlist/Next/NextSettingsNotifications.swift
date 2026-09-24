@@ -43,7 +43,7 @@ struct NXNotificationSettings: View {
                 .sorted { $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date < $1.date }) { intent in
                 let status = recovery.statuses[intent.id]
                 let failure: String? = if case .failed(let message) = status { message } else { nil }
-                let hint = ["\(intent.listName) · \(Store.absoluteDateText(intent.date, includesTime: true))",
+                let hint = ["\(intent.listName) · \(NXFormat.moment(intent.date))",
                             status.map(recovery.title(for:)), failure].compactMap { $0 }.joined(separator: "\n")
                 NXSettingRow(label: intent.title, hint: hint, selectable: true) {
                     if let status { ReminderRecoveryActions(taskID: intent.id, status: status) }

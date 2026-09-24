@@ -123,7 +123,9 @@ private struct NXLabelSettingsRow: View {
             } label: {
                 Image(systemName: "trash").font(.system(size: 11, weight: .medium))
             }
-            .buttonStyle(NXHoverButtonStyle(hover: NX.red.opacity(0.1), radius: 6,
+            // The line's tint stands for its hover, as for the row's other
+            // buttons; only the glyph turns red under the pointer.
+            .buttonStyle(NXHoverButtonStyle(hover: .clear, radius: 6,
                                             padding: EdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5),
                                             foreground: NX.ink(0.4), hoverForeground: NX.redText))
             .accessibilityLabel("Delete label \(label.name)")
@@ -159,11 +161,11 @@ private struct NXLabelSettingsRow: View {
 
 /// A label's colour, drawn as the design's label mark, which pops up the
 /// colours to choose from on a press, or on Space once Tab has reached it.
+/// Its line's tint stands for its hover.
 private struct NXLabelSwatch: View {
     let label: TaskLabel
     @Environment(AppEnvironment.self) private var env
     @State private var menu = NXMenuAnchor()
-    @State private var hovering = false
 
     var body: some View {
         Button(action: choose) {
@@ -171,12 +173,10 @@ private struct NXLabelSwatch: View {
                 .fill(label.nxColor)
                 .frame(width: 8, height: 8)
                 .frame(width: 22, height: 22)
-                .background(NX.ink(hovering ? 0.06 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(NXBareButtonStyle(radius: 6))
         .background { NXMenuAnchorView(anchor: menu) }
         .overlay { NXMenuPress(action: choose) }
-        .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Colour for label \(label.name)")
         .accessibilityValue(label.accent.title)

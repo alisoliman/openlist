@@ -15,13 +15,7 @@ struct NXInspectorHeading<Accessory: View>: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // 600 10.5/1.
-            Text(title)
-                .font(.system(size: 10.5, weight: .semibold))
-                .kerning(0.735)
-                .textCase(.uppercase)
-                .foregroundStyle(NX.ink(0.36))
-                .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
+            NXCapsTitle(text: title)
             Spacer(minLength: 6)
             accessory()
         }
