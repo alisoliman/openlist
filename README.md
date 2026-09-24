@@ -92,9 +92,11 @@ the completion date, ending never / on a date / after N times), labels, priority
 stars, and progress rollups from subtasks.
 Completing a repeating task rolls it forward to the next occurrence rather than
 marking it done.
-Completion is silent. Pointer actions give a brief checkbox acknowledgement
-and settle completed tasks below pending siblings without a delay or bounce.
-Keyboard actions and Reduce Motion update immediately. Each task carries its
+Completing a task, by click or with **E**, strikes its row and leaves it in
+place for the undo window (2–8 seconds, set in Settings → Motion & feedback)
+before it settles below its pending siblings; the tray reports each completion
+with Undo. The **Motion** setting in Settings → Appearance sets how lively rows
+move, and **Reduce motion** drops the bounces and slides. Each task carries its
 subtasks and attached notes; reopening restores its stored manual position.
 
 In **Settings → Labels**, renaming into an existing name offers a merge review
@@ -264,8 +266,9 @@ before deadline**, and **Outside planning horizon**.
 
 The **Work** menu and command palette (⌘K) offer Show work, Start selected task,
 Stop current session, Resume task, and Complete current task. Existing selected-task
-shortcuts keep their meaning. Optional background work notifications are enabled
-in Calendar settings; reminder suppression survives replanning and restarting.
+shortcuts keep their meaning. Optional background work notifications are turned
+on with **Notify me about planned work** in Settings → Notifications; reminder
+suppression survives replanning and restarting.
 
 Connected macOS calendars supply read-only busy time. Session and completion
 history preserve recurring occurrences, support recorded-time corrections, and
@@ -424,8 +427,10 @@ Choose **Claude Desktop / stdio** or **VS Code / HTTP** in Settings, merge the
 copied configuration into your client's MCP settings, and reconnect. Other local
 clients can use the bundled stdio launcher or the Streamable HTTP endpoint with
 its bearer token.
-Client setup appears after MCP is enabled. **Connection options** contains the
-port and token-reset controls; access and token warnings remain visible.
+Client setup appears after MCP is enabled: the endpoint, the client
+configuration with **Copy configuration** and **Copy token**, the **Port**, and
+**Access token** with **Reset access token…**; access and token warnings remain
+visible.
 
 Keep copied configurations private: they contain your access token. Turning MCP
 off disconnects clients; resetting the token revokes old configurations. Connected
@@ -618,8 +623,9 @@ unconfirmed; the next launch reconciles it. Timeout never implies acceptance.
 ### Recovering deleted content
 
 Delete moves a task subtree or an entire list to **Trash** in the sidebar.
-Trash keeps content indefinitely; nothing is emptied automatically. Each item
-shows its former location and deletion time. Restore keeps
+Trash keeps content indefinitely; nothing is emptied automatically. A task
+entry shows where it came from and when it was deleted; a list entry shows its
+item count and deletion time. Restore keeps
 original IDs, rich notes, nested content, files, labels, completion and list
 ownership. Tasks in Trash are excluded from active views, search, widgets and
 reminders. Only eligible future reminders resume after restoration.
@@ -633,7 +639,7 @@ it does not rewrite the original notes. Archived lists keep their archive state.
 **Hold to erase** and **Hold to empty Trash** require confirmation and remove only
 files with no remaining live or retained references. These actions cannot be
 undone. Editor merges and undone captures use structural cleanup and session
-Undo; they do not fill Trash. Settings → Delete everything permanently
-removes both active content and Trash. Library backup format 3 includes Trash
+Undo; they do not fill Trash. **Delete everything…** in Settings → Data
+permanently removes both active content and Trash. Library backup format 3 includes Trash
 and its media; versions 1 and 2 can still be imported. A restore already staged
 by an older app must be cancelled and prepared again from the original backup.

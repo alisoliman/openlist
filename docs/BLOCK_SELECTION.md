@@ -26,18 +26,27 @@ their clicks and drags. `Model/BlockSelection.swift`, through
 
 ## Store invariants
 
-Complete and Reopen are explicit operations; the reopen path uses
+Done and Reopen are explicit operations. Done completes each selected task
+through `Store.toggleCompletion`, a repeat at once and the rest when the undo
+window ends, grouped as one Undo for the batch. Reopen uses
 `Store.setBulkCompletion`, whose one Undo restores each task's completion
-exactly. Move uses `Store.moveSelection`: it preserves the selected display
-order and descendants, and registers one move Undo. Trash takes the selected
-tasks with everything nested under them to durable Trash, with one Undo.
+exactly. A drag move uses `Store.moveSelection`: it preserves the selected
+display order and descendants, and registers one move Undo.
 
-Bulk snapshots exclude retained and permanently erased blocks, retained lists,
-and merged list aliases before selection, hierarchy, completion or move
-validation. A raw alias is never accepted as an available document owner. Move
-Undo requires its affected content and original parent/list destinations to
-remain available; older Undo cannot revive Trash content. Failed atomic bulk
-actions roll back their pending changes.
+Trash goes through `Store.trashBlocks` with the selected tasks that still exist
+and everything nested under them, in one transaction with one Undo. It is not
+all-or-nothing across the selection: a row trashed or erased since it was
+selected is skipped and the rest go to Trash. `Store.trashSelection`, which
+refuses a partly unavailable selection, is still checked but no screen uses it.
+
+`setBulkCompletion` and `moveSelection` snapshot the selection first, excluding
+retained and permanently erased blocks, retained lists, and merged list aliases
+before selection, hierarchy, completion or move validation, and reject the
+whole action if any selected row is unavailable. A raw alias is never accepted
+as an available document owner. Move Undo requires its affected content and
+original parent/list destinations to remain available; older Undo cannot
+revive Trash content. A failed save rolls back the whole bulk action, Trash
+included.
 
 `moveSelection(... expandsParent: true)` expands a collapsed destination in the
 same save as a positional move. One move Undo/Redo includes that expansion only
@@ -58,5 +67,7 @@ Info.plist.
 
 `Tools/run-block-selection-checks.sh` covers the outline selection model,
 `Tools/run-drag-payload-checks.sh` malformed, cross-session and manifest cases,
-and `Tools/run-bulk-action-checks.sh` bulk completion, moves, Trash, stale
-selections and destinations, save failures and separate-process reopening.
+`Tools/run-bulk-action-checks.sh` bulk completion, moves, `trashSelection`,
+stale selections and destinations, save failures and separate-process
+reopening, and `Tools/run-trash-checks.sh` the `trashBlocks` path the selection
+bar's Trash takes, including trashing several roots as one change.

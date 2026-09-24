@@ -12,9 +12,9 @@ scheduling source and separate deadline. With nothing planned for now it offers
 
 ## Behavior
 
-- Start (in task details, on Calendar's **Planned now** banner, from **Work →
-  Start Selected Task** or **Task → Start Working**) and Resume explicitly
-  create a work segment. **Stop working** saves it and leaves the task open; the
+- Starting (**Start working** in task details, **Start** on Calendar's
+  **Planned now** banner, **Work → Start Selected Task** or **Task → Start
+  Working**) and Resume explicitly create a work segment. **Stop working** saves it and leaves the task open; the
   resumable occurrence persists across relaunches.
 - **Later… → Remind in 15 minutes** quiets the occurrence without changing its
   plan. **Later… → Move planned time…** previews the other planned work that

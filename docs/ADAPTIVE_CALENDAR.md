@@ -66,11 +66,11 @@ are shown rather than represented as a successfully connected calendar.
 
 ## Work must be explicitly started
 
-A calendar block is a plan, not a running timer. Click **Start** in task details,
-choose **Task → Start Working**, or use **Start** on Calendar’s **Planned now**
-banner. Starting always records, even outside the list’s available hours or
-during a meeting: hours and busy time shape the plan and its warnings, not
-whether work may start. Starting another task switches straight away, and the
+A calendar block is a plan, not a running timer. Click **Start working** in task
+details, choose **Task → Start Working**, or use **Start** on Calendar’s
+**Planned now** banner. Starting always records, even outside the list’s
+available hours or during a meeting: hours and busy time shape the plan and its
+warnings, not whether work may start. Starting another task switches straight away, and the
 tray offers Undo. While work records, the toolbar’s work notch keeps **Done** and
 **Stop** available on every page; see [the work companion](WORK_COMPANION.md).
 
@@ -127,8 +127,8 @@ Pinned conflicts are shown in deadline coverage. Pins can conflict
 with meetings, other pins, active work, availability, breaks, deadlines, or the
 **Keep task together** choice. A conflicting pin does not count as safe deadline
 coverage. A missed pin is reported and unfinished work is replanned; it is never
-retrospectively treated as an active session. Active sessions cannot be dragged,
-moved, or pinned while running.
+retrospectively treated as an active session. Active sessions cannot be moved or
+pinned while running.
 
 Pins beyond the four-week horizon remain fixed and are reported as outside the
 plan. A pin crossing the horizon contributes only its in-horizon portion to
@@ -179,7 +179,8 @@ paused. Reduce Motion uses a simple fade.
 completion history. Session records retain the task title, occurrence,
 start, end, and pause reason. Completion records preserve each occurrence,
 including recurring tasks and completed descendants. History remains available
-when an ordinary task or list is deleted; **Delete all data** explicitly clears it.
+when an ordinary task or list is deleted; **Delete everything…** in
+Settings › Data explicitly clears it.
 
 Use **Correct time…** on a finished session to correct its minutes. The original
 start and end remain intact; **Restore original duration** removes the correction.
