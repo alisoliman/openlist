@@ -108,6 +108,22 @@ enum CalendarWeek {
         let start = span(from: now, calendar: calendar).start
         return Set(blocks.filter { !$0.isCompleted && ($0.isActive || $0.end > start) }.map(\.taskID))
     }
+
+    /// The block the inspector's "In the calendar …" names, of those the
+    /// calendar draws for the task's occurrence, as the design reads its
+    /// placement, past or done: the running or next one, else the latest
+    /// that still counts as placed (a missed slot, carried forward), else
+    /// where the task was done. Nil once it draws nothing there, or only a
+    /// slot missed before the week, as "Not planned yet" has it.
+    static func shownSlot(of taskID: UUID, occurrenceID: UUID, in blocks: [PlannedBlock], now: Date,
+                          calendar: Calendar) -> PlannedBlock? {
+        let drawn = blocks.filter { $0.taskID == taskID && $0.occurrenceID == occurrenceID }
+        let open = drawn.filter { !$0.isCompleted }
+        if let next = open.filter({ $0.isActive || $0.end > now }).min(by: { $0.start < $1.start }) { return next }
+        let placed = open.filter { !placedTaskIDs([$0], now: now, calendar: calendar).isEmpty }
+        if let missed = placed.max(by: { $0.start < $1.start }) { return missed }
+        return drawn.filter(\.isCompleted).max { $0.start < $1.start }
+    }
 }
 
 /// Where Plan put a task, or how far it looked for a free slot.

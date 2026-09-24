@@ -83,9 +83,10 @@ struct NextInspector: View {
                 Button { env.navigator.closeTask() } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .medium)).frame(width: 16, height: 16)
                 }
+                // As the design's, only its fill shows on hover.
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
                                                 padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
-                                                foreground: NX.ink(0.45), hoverForeground: NX.ink))
+                                                foreground: NX.ink(0.45)))
                 .help("Close (Esc)")
                 .accessibilityLabel("Close details")
             }
@@ -128,19 +129,15 @@ struct NextInspector: View {
                 }
                 .scrollIndicators(.automatic)
                 .task(id: readyRevealID) {
-                    // A reminder or a link opens the task as the design's
-                    // search does, its row keeping the focus for the keys;
-                    // only a match is shown in its field.
+                    // A reminder, a link or a search hit opens the task as
+                    // the design's search does, its row keeping the focus
+                    // for the keys; a match only brings its field into view.
                     guard readyRevealID != nil, let reveal, !reveal.query.isEmpty else { return }
                     await Task.yield()
                     guard !Task.isCancelled else { return }
                     if reveal.field == .note {
-                        focus = .note
-                        noteSelection = SearchProjection.range(of: reveal.query, in: note.value).map { TextSelection(range: $0) }
                         proxy.scrollTo(ContentReveal.Anchor.taskNote(task.id), anchor: .center)
                     } else {
-                        focus = .title
-                        titleSelection = SearchProjection.range(of: reveal.query, in: title.value).map { TextSelection(range: $0) }
                         proxy.scrollTo(ContentReveal.Anchor.taskTitle(task.id), anchor: .top)
                     }
                 }
@@ -266,9 +263,11 @@ struct NextInspector: View {
         title.reset(to: Self.title(of: target))
     }
 
+    /// As the list document commits a note: trailing space goes, and an
+    /// emptied note closes there too.
     private func commitNote() {
         guard let target = draftTarget else { return }
-        if let edited = note.editedValue(normalize: { $0 }), edited != target.note {
+        if let edited = note.editedValue(normalize: Workbench.committedNote), edited != target.note {
             workbench.setNote(edited, of: target)
         }
         note.reset(to: target.note)
@@ -302,14 +301,6 @@ struct NextInspector: View {
                 .onSubmit { focus = nil }
                 // Esc saves and stops editing; the next Esc closes the panel.
                 .onExitCommand { focus = nil }
-        }
-        .overlay {
-            if let reveal, reveal.field != .note {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(style.accent, lineWidth: 1.5)
-                    .padding(-5)
-                    .allowsHitTesting(false)
-            }
         }
     }
 
@@ -565,12 +556,11 @@ struct NextInspector: View {
         .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
     }
 
-    /// Reads what the calendar grid draws: explicit placements and running work, not past ones.
+    /// Reads a slot the calendar grid draws for the task, as the design reads
+    /// its placement, past or done ones too: see `CalendarWeek.shownSlot`.
     private var slotText: String {
-        let now = Date.now
-        guard let placement = env.calendar.visibleBlocks
-            .filter({ $0.taskID == task.id && $0.occurrenceID == task.occurrenceID && !$0.isCompleted && $0.end > now })
-            .min(by: { $0.start < $1.start }) else {
+        guard let placement = CalendarWeek.shownSlot(of: task.id, occurrenceID: task.occurrenceID, in: env.calendar.visibleBlocks,
+                                                     now: .now, calendar: env.settings.calendar) else {
             return "Not in the calendar yet — ⌘K › Find a slot"
         }
         let offset = NXFormat.dayOffset(placement.start)
@@ -606,13 +596,6 @@ struct NextInspector: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                if reveal?.field == .note {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(style.accent, lineWidth: 1.5)
-                        .allowsHitTesting(false)
-                }
-            }
     }
 
     private var activity: some View {
@@ -651,15 +634,15 @@ struct NextInspector: View {
     }
 
     private var startButton: some View {
-        let working = env.calendar.activeSession?.taskID == task.id
-        // Paused work on this task resumes where it left off rather than starting over.
-        let paused = workbench.isWorkPaused && workbench.workTask?.id == task.id
+        // Work on this task, running or paused, reads "Working…" as the
+        // design's does; Resume is the notch's.
+        let working = workbench.workTask?.id == task.id
         return Button {
-            if paused { workbench.toggleWorkPause() } else if !working { workbench.startWork(task.id) }
+            if !working { workbench.startWork(task.id) }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: working ? "timer" : "play.fill").font(.system(size: 12, weight: .medium))
-                Text(working ? "Working…" : paused ? "Resume" : "Start working").font(.system(size: 12, weight: .semibold))
+                Text(working ? "Working…" : "Start working").font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(working ? NX.ink(0.55) : .white)
             .padding(.vertical, 8)

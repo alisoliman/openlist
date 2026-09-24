@@ -569,7 +569,7 @@ private struct NXDocumentTask: View {
                             if let hint { NXNoteHint(placement: hint) }
                         }
                     if noteOpen || noteEditing {
-                        NXDocumentNote(task: task, listID: context.listID, editing: noteEditing)
+                        NXDocumentNote(task: task, editing: noteEditing)
                             .padding(.top, 3)
                             .padding(.bottom, 4)
                             .transition(.opacity.animation(.easeOut(duration: 0.18)))
@@ -700,7 +700,6 @@ private enum NXTextMeasure {
 private struct NXDocumentNote: View {
     @Environment(AppEnvironment.self) private var env
     let task: Block
-    let listID: UUID
     let editing: Bool
 
     var body: some View {
@@ -732,26 +731,20 @@ private struct NXDocumentNote: View {
         }
     }
 
-    /// The design's note commit: trailing space goes, the note stays open
-    /// only if it has something, and a change is one step, logged. An
-    /// editor left behind by a newer start of the note leaves that one open.
+    /// The design's note commit (`Workbench.setNote`, as the inspector's):
+    /// trailing space goes, the note stays open only if it has something,
+    /// and a change is one step, logged. An editor left behind by a newer
+    /// start of the note leaves that one open.
     private func commit(_ text: String, typing: NSTextStorage, edit: Int) {
         let workbench = env.workbench
-        let store = env.store
         if workbench.editingNoteID == task.id, workbench.noteEdit == edit { workbench.editingNoteID = nil }
-        let value = text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
-        if value.isEmpty { workbench.openNotes.remove(task.id) } else { workbench.openNotes.insert(task.id) }
+        if !Workbench.committedNote(text).isEmpty { workbench.openNotes.insert(task.id) }
         // The note's typing folds into its one step.
         let view = typing.layoutManagers.first?.firstTextView
         view?.breakUndoCoalescing()
         view?.undoManager?.removeAllActions(withTarget: typing)
-        guard let current = store.block(id: task.id), value != current.note else { return }
-        let title = current.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let label = "Edited note on \(NXFormat.quoted(title.isEmpty ? "Untitled" : title))"
-        store.undoableEditorEdit(in: listID, name: label, undoManager: workbench.undoManager,
-                                 didRegister: { workbench.logEdit(label, ids: [current.id]) }) {
-            store.setNote(value, for: current)
-        }
+        guard let current = env.store.block(id: task.id) else { return }
+        workbench.setNote(text, of: current)
     }
 }
 

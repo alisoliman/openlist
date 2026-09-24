@@ -332,7 +332,7 @@ do {
     check(task.selectedForDay == later, "Clear on a task with no deferral changes nothing")
 }
 
-// Defer…'s Undo and Redo, in the order Workbench.deferTask registers them:
+// Defer…'s Undo and Redo, in the order Workbench.deferWork registers them:
 // Undo rebuilds the occurrence's slots as `Workbench.setPlacements` does,
 // then puts back the fields; Redo defers again. Any number of steps leaves
 // one set, as it was, and another task's slot alone.
@@ -384,5 +384,20 @@ do {
               "Redoing a deferral takes the slots and the day again (step \(step))")
     }
     check(store.placements(taskID: other.id).count == 1, "A deferral's Undo and Redo leave another task's slot alone")
+}
+// The label picker's rows, which Return picks from: the best match first,
+// Create last and only for a name no label has.
+do {
+    let labels = ["Extra", "Travel", "tra", "Work"].map { TaskLabel(name: $0, accent: .blue) }
+    let partial = LabelPicker.choices(for: "tra", in: [labels[0], labels[1]])
+    check(partial.matches.map(\.name) == ["Travel", "Extra"] && partial.create == "tra",
+          "Part of a name lists the label starting with it first, with Create after the matches")
+    let exact = LabelPicker.choices(for: "#TRA", in: labels)
+    check(exact.matches.map(\.name) == ["tra", "Travel", "Extra"] && exact.create == nil,
+          "The name itself comes first, in any case, and offers no Create")
+    let none = LabelPicker.choices(for: "home", in: labels)
+    check(none.matches.isEmpty && none.create == "home", "With no match, Create is the only row")
+    let all = LabelPicker.choices(for: "  ", in: labels)
+    check(all.matches.map(\.name) == labels.map(\.name) && all.create == nil, "An empty query lists every label, in order")
 }
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

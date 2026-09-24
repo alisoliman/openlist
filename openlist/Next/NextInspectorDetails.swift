@@ -68,33 +68,10 @@ struct NXInspectorQuietAction: View {
     }
 }
 
-/// A chevron toggle for a part of a section the inspector builds only when open.
-private struct NXInspectorDisclosure: View {
-    @Environment(\.nextStyle) private var style
-    let title: String
-    @Binding var isExpanded: Bool
-
-    var body: some View {
-        Button { withAnimation(style.ease(220)) { isExpanded.toggle() } } label: {
-            HStack(spacing: 5) {
-                Text(title)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8.5, weight: .bold))
-                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
-            }
-            .font(.system(size: 11, weight: .semibold))
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                        padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                        foreground: NX.ink(0.5), hoverForeground: NX.ink))
-        .padding(.leading, -5)
-    }
-}
-
 // MARK: - Planning
 
-/// Calendar planning beyond the day toggle and estimate: why the plan falls
-/// short, deferral, how sessions run and what has been recorded.
+/// Calendar planning beyond the day toggle and estimate: deferral, how
+/// sessions run and what has been recorded.
 struct NXInspectorPlanOptions: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
@@ -104,14 +81,9 @@ struct NXInspectorPlanOptions: View {
     @State private var showsHistory = false
 
     var body: some View {
+        // As the design's card, it says nothing of the planner's own sessions,
+        // which the calendar never draws; the slot line says where the task is.
         VStack(alignment: .leading, spacing: 8) {
-            // Only work you asked the calendar to hold can fall short; an
-            // unplanned task just reads "Not in the calendar yet", as in the design.
-            if env.workbench.isPlanned(task) || !env.store.placements(taskID: task.id).isEmpty,
-               let assessment = env.calendar.plan.assessments.first(where: { $0.taskID == task.id }),
-               assessment.status != .scheduled || !assessment.conflicts.isEmpty {
-                shortfall(assessment)
-            }
             if let deferred = task.deferredUntil {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.uturn.forward").font(.system(size: 10.5, weight: .semibold))
@@ -123,25 +95,13 @@ struct NXInspectorPlanOptions: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.55))
             }
-            NXInspectorDisclosure(title: "More options", isExpanded: $expanded)
+            NXDisclosureButton("More options", isExpanded: $expanded)
             if expanded {
                 options.transition(.opacity)
             }
         }
         .popover(isPresented: $deferring, arrowEdge: .bottom) { TaskDeferralPicker(block: task).environment(env) }
         .sheet(isPresented: $showsHistory) { CalendarHistoryView(taskID: task.id).environment(env) }
-    }
-
-    private func shortfall(_ assessment: TaskScheduleAssessment) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(assessment.status.title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(assessment.status == .cannotFitBeforeDeadline ? NX.amberText : NX.ink(0.66))
-            Text("\(Int(assessment.beforeDeadlineMinutes.rounded())) of \(Int(assessment.requiredMinutes.rounded())) min covered · \(assessment.reason)")
-                .font(.system(size: 11))
-                .foregroundStyle(NX.ink(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     /// Built only when expanded: the suggestion and recorded time read history.
@@ -514,7 +474,7 @@ struct NXInspectorHistory: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            NXInspectorDisclosure(title: "Full history", isExpanded: $expanded)
+            NXDisclosureButton("Full history", isExpanded: $expanded)
                 .help("Newest first. Clearing activity history in Settings › Data also clears this.")
             // Queried only when open, so a closed disclosure fetches no history.
             if expanded {

@@ -34,17 +34,7 @@ struct ContentRevealNote: View {
                 .accessibilityAddTraits(.isHeader)
             note(highlighted(isWhole ? text : snippet))
             if !isWhole {
-                Button { withAnimation(style.ease(220)) { showsFullNote.toggle() } } label: {
-                    HStack(spacing: 5) {
-                        Text("Full note")
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8.5, weight: .bold))
-                            .rotationEffect(.degrees(showsFullNote ? 0 : -90))
-                    }
-                }
-                .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
-                .padding(.leading, -5)
-                .accessibilityValue(showsFullNote ? "Expanded" : "Collapsed")
+                NXDisclosureButton("Full note", isExpanded: $showsFullNote)
                 if showsFullNote { note(AttributedString(text)) }
             }
         }

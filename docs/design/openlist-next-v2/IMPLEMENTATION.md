@@ -88,19 +88,24 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
   the Inbox as its document. Native inspector extras: the title and note are edited in place
-  and files kept with the task. As the design, the note shows only when there is one; until
-  then a quiet "Add a note" row stands in, with "Attach a file" beside it until the task has
-  files, when Files shows. Files dropped anywhere on the panel are attached; removing one
-  snaps with Undo, which brings the file back. The plan card ends with a quiet "More
-  options" disclosure (estimate hints, how sessions run, the list's hours, Defer…, time
+  (the note saved as the document saves one: trailing space goes, and an emptied note closes
+  under its task) and files kept with the task. As the design, the note shows only when there
+  is one; until then a quiet "Add a note" row stands in, with "Attach a file" beside it until
+  the task has files, when Files shows. Files dropped anywhere on the panel are attached;
+  removing one snaps with Undo, which brings the file back. The plan card ends with a quiet
+  "More options" disclosure (estimate hints, how sessions run, the list's hours, Defer…, time
   recorded and Work history), and Activity with "Full history", the task's saved activity;
-  both start closed. The footer is the design's Trash and Start working; Copy Link is in
+  both start closed. The footer is the design's Trash and Start working. Deviation: a
+  completed task's Plan for today switch fades and Start working is off, as Plan and work
+  skip completed tasks, where the design's still toggle and start. Copy Link is in
   the task's row menu and in Task ▸, which reaches the inspected task from the keyboard
   too, each saying "Link copied" in the tray. The Schedule popover fits its section, up to
   510pt, and its date and time controls are Next pills; Done first sets a due time still
   being typed as Custom…, and Set reminder a reminder time. "Remind me at" is a draft only
   Set reminder sets: Done keeps the reminder there was, over a day or time picked there, or
-  still being typed.
+  still being typed. The label picker (⇧⌘L) lists the name typed first, then labels starting
+  with it, and Create last, only for a name no label has; Return picks the highlighted row,
+  the best match, which ↑/↓ and the pointer move.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists, which drag

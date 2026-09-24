@@ -140,8 +140,9 @@ coverage; its remaining fixed time is not silently moved into today.
 
 ## Understand deadline coverage
 
-The plan covers today and the following 27 local dates. A task’s details show its
-coverage status with its required and before-deadline minutes:
+The plan covers today and the following 27 local dates. It rates each task’s
+coverage from its required and before-deadline minutes. The rating stays inside the
+planner, as its sessions do: a task’s details show only where the calendar has it.
 
 | Status | Meaning |
 | --- | --- |
