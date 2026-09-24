@@ -166,6 +166,9 @@ enum TaskScheduleStatus: String, Codable, Sendable {
     }
 }
 
+/// The planner's rating of a task's deadline coverage. It stays inside the
+/// planner and its checks: no screen shows it, its reason or its conflicts,
+/// as the calendar draws only placed work.
 struct TaskScheduleAssessment: Identifiable, Sendable {
     var id: UUID { occurrenceID }
     var taskID: UUID

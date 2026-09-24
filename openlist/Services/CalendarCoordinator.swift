@@ -982,7 +982,6 @@ final class CalendarCoordinator {
         if store.placements(taskID: task.id).contains(where: { $0.occurrenceID == task.occurrenceID && $0.isPinned && $0.start <= now }) {
             for index in replacement.assessments.indices {
                 replacement.assessments[index].conflicts.append(AdaptiveScheduler.missedPlacementConflict)
-                replacement.assessments[index].reason += AdaptiveScheduler.missedPlacementReason
             }
         }
         let blocks = (anchors + replacement.blocks).sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }

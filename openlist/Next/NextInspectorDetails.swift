@@ -15,28 +15,16 @@ struct NXInspectorHeading<Accessory: View>: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // 600 10.5/1.
             Text(title)
                 .font(.system(size: 10.5, weight: .semibold))
-                .kerning(0.74)
+                .kerning(0.735)
                 .textCase(.uppercase)
                 .foregroundStyle(NX.ink(0.36))
+                .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
             Spacer(minLength: 6)
             accessory()
         }
-    }
-}
-
-/// A quiet text button for secondary inspector actions.
-private struct NXInspectorLink: View {
-    let title: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(title, action: action)
-            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                            padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                            foreground: NX.ink(0.6), hoverForeground: NX.ink))
-            .font(.system(size: 11, weight: .semibold))
     }
 }
 
@@ -89,7 +77,8 @@ struct NXInspectorPlanOptions: View {
                     Image(systemName: "arrow.uturn.forward").font(.system(size: 10.5, weight: .semibold))
                     Text("Deferred until \(NXFormat.dueLabel(deferred))")
                     Spacer(minLength: 6)
-                    NXInspectorLink(title: "Clear") { env.workbench.clearDeferral(task.id) }
+                    Button("Clear") { env.workbench.clearDeferral(task.id) }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                         .accessibilityLabel("Clear task deferral")
                 }
                 .font(.system(size: 11, weight: .medium))
@@ -138,7 +127,8 @@ struct NXInspectorPlanOptions: View {
             .foregroundStyle(NX.ink(0.45))
             HStack(spacing: 6) {
                 if !task.isCompleted {
-                    NXInspectorLink(title: "Defer…") { deferring = true }
+                    Button("Defer…") { deferring = true }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                         .padding(.leading, -5)
                 }
                 Spacer(minLength: 6)
@@ -146,7 +136,8 @@ struct NXInspectorPlanOptions: View {
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(NX.ink(0.45))
-                NXInspectorLink(title: "History") { showsHistory = true }
+                Button("History") { showsHistory = true }
+                    .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                     .padding(.trailing, -5)
             }
         }
@@ -160,7 +151,8 @@ struct NXInspectorPlanOptions: View {
                 .font(.system(size: 11))
                 .foregroundStyle(NX.ink(0.5))
                 .fixedSize(horizontal: false, vertical: true)
-            NXInspectorLink(title: title, action: perform)
+            Button(title, action: perform)
+                .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                 .padding(.leading, -5)
         }
     }
@@ -262,7 +254,7 @@ private struct NXInspectorSubtaskRow: View {
         HStack(spacing: 9) {
             // 18 a level; at the top it's still one of the row's gaps, as in the design.
             Color.clear.frame(width: CGFloat(row.depth) * 18, height: 1)
-            NXCheckbox(filled: filled, closing: closing, priority: .none, title: task.displayTitle, size: 15) {
+            NXCheckbox(filled: filled, closing: closing, priority: .none, title: task.displayTitle, size: 15, pops: false) {
                 workbench.toggle(task.id)
             }
             // 400 13/1.3.
@@ -394,11 +386,8 @@ struct NXInspectorFiles: View {
                             Image(systemName: "paperclip").font(.system(size: 10.5, weight: .semibold))
                             Text("Attach")
                         }
-                        .font(.system(size: 11, weight: .semibold))
                     }
-                    .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                                    padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                                    foreground: NX.ink(0.6), hoverForeground: NX.ink))
+                    .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                     .padding(.trailing, -5)
                     .help("Attach files, or drop them on the panel")
                     .accessibilityLabel("Attach files to task")
@@ -545,19 +534,24 @@ private struct NXInspectorHistoryPage: View {
         _events = Query(descriptor)
     }
 
+    /// Activity's 12/1.4, so the saved rows keep the rhythm of the ones above.
+    private var leading: CGFloat { 12 * 1.4 - NXStrikeText.glyphLineHeight(12) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if events.isEmpty {
                 Text("No recorded activity for this task.")
                     .font(.system(size: 12))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.45))
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 5 + leading / 2)
             } else {
                 ForEach(events.prefix(limit)) { event in
                     row(event)
                 }
                 if events.count > limit {
-                    NXInspectorLink(title: "Load older activity", action: loadOlder)
+                    Button("Load older activity", action: loadOlder)
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                         .padding(.leading, -5)
                         .padding(.top, 4)
                 }
@@ -573,7 +567,9 @@ private struct NXInspectorHistoryPage: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(event.kind.verb) “\(event.title)”")
                     .font(.system(size: 12))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.66))
+                    .padding(.vertical, leading / 2)
                 if !event.recordedDetail.isEmpty {
                     Text(event.recordedDetail)
                         .font(.system(size: 11))

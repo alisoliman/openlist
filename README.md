@@ -283,7 +283,7 @@ its hours. **Plan** on Calendar's **Not planned yet** column pins a task into it
 next free slot, and **Move planned time…** in the Work panel pins its block at
 another time, each as one change with Undo in the tray. A slot that goes by unworked stays on the
 calendar as **carried forward**, and the task's details show where the calendar
-has it. Deadline coverage
+has it. Deadline coverage, which the planner rates without showing,
 distinguishes **Scheduled**, **Cannot fit before deadline**, and **Outside
 planning horizon**.
 
@@ -365,8 +365,8 @@ and character width, and results include their list, ancestor path and a
 matching passage when needed.
 
 Opening a result resolves its current identity. Tasks open on their list, or the
-Inbox, with their row focused and their inspector open; in an archived list the
-match is selected in the title or note. Other blocks open their owning list's
+Inbox, with their row focused and their inspector open, scrolled to the matched
+title or note. Other blocks open their owning list's
 document (the Inbox's too), scroll to the exact result, tint it briefly and
 temporarily expose collapsed/completed ancestors. Leaving the page ends this
 temporary reveal without changing stored collapse, archive or completion

@@ -201,6 +201,9 @@ let missedPin = PlacementInput(id: UUID(), taskID: task(1).taskID, occurrenceID:
     start: now.addingTimeInterval(-3600), end: now.addingTimeInterval(-1800), isPinned: true)
 let missedPlan = plan([task(1, today: false)], placements: [missedPin])
 check(!missedPlan.assessments[0].conflicts.isEmpty, "Missed pinned commitment remains flagged")
+check(missedPlan.assessments[0].conflicts == [AdaptiveScheduler.missedPlacementConflict]
+      && missedPlan.assessments[0].reason == "All remaining work has scheduled time.",
+      "A missed pin is flagged by its conflict alone; the assessment's reason stays its status's own")
 check(missedPlan.blocks[0].start == now && !missedPlan.blocks[0].isActive, "Missed pin replans without pretending the task started")
 let wrongPin = PlacementInput(id: UUID(), taskID: task(99).taskID, occurrenceID: task(1).occurrenceID, start: eleven, end: noon, isPinned: true)
 check(plan([task(1)], placements: [wrongPin]).blocks.allSatisfy { !$0.isPinned }, "Mismatched task and occurrence cannot capture another task's pin")
