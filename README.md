@@ -58,10 +58,12 @@ and the [MIT license](LICENSE).
 
 A list's document holds tasks, paragraphs, three heading levels, bullets,
 numbered items, quotes, code and dividers, plus inline images. Subtasks are
-written in the list's document: tasks and list items nest under a task or list
-item, two levels deep as the design's indent allows, and headings and text stay
-at the top. The inspector lists a task's subtasks with their progress, and a
-subtask shows the task it belongs to.
+written in the list's document. Indenting, dragging, Add subtask and pasted
+Markdown nest only tasks and list items, only under a task or list item and two
+levels deep at most, as the design's indent allows, and a line turned into a
+heading or text goes to the top. Pasted Openlist content keeps the hierarchy it
+was copied with, and an older outline keeps its own. The inspector lists a
+task's subtasks with their progress, and a subtask shows the task it belongs to.
 
 Lists can also own separately titled **child list documents**. Create one with
 **New Child List** in a list's **…** menu; a parent shows its children above its
@@ -125,7 +127,7 @@ formatting, images and attachments. **Use as Template…** is a separate action 
 task and list menus for starting fresh work. Its confirmation offers **Keep
 repeating rules** only when the source contains a repeat rule; it starts unchecked.
 
-| Field | Duplicate | Use as template |
+| Field | Duplicate | Use as Template… |
 |---|---|---|
 | Content, hierarchy, sibling order, collapse state, formatting, notes | Keep | Keep |
 | Labels, priority, stars, estimates and planning preferences | Keep | Keep |
@@ -157,7 +159,7 @@ images, and files. Other apps receive it as readable Markdown, with images/files
 described by name, without private local file URLs.
 
 ⌘V in an empty line of a list document inserts the internal content; elsewhere
-it pastes as Markdown. Selected text and inline pastes retain normal text behavior;
+it pastes as Markdown. Selected text and inline pastes retain normal text behaviour;
 ordinary ⌘C still copies the selected text. The insertion has fresh IDs and independent
 media, and is one editor Undo/Redo operation. Pasted into a new empty line, such
 as one just opened with Return, the content takes that line's place; a line that
@@ -204,7 +206,7 @@ Inbox holds unorganized tasks and notes. Filing into a list moves the complete
 branch out of Inbox; setting a due date keeps it there. Inbox opens as triage,
 one task at a time: file it, schedule it, mark it done, discard it or keep it for
 later. Its header button shows it as a document instead. See
-[Inbox](docs/INBOX.md) for behavior and compatibility.
+[Inbox](docs/INBOX.md) for behaviour and compatibility.
 
 Task details end with **Activity**: this session's changes and, under **Full
 history**, a paginated timeline of committed title, date/time, completion,
@@ -212,7 +214,7 @@ recurrence, and list-move changes, with the creation and completion times. It
 shares history with Activity's **Changes**; **Clear all activity history…** in
 Settings › Data clears both after confirmation. Older entries retain only the
 facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md) for save,
-retention, and export behavior.
+retention, and export behaviour.
 
 The inspector keeps the title and active metadata above notes and subtasks.
 Empty notes and files use add actions rather than empty forms; removing a file
@@ -286,7 +288,7 @@ store and iCloud configuration; availability and calendar connections remain
 per-Mac.
 
 See the [calendar guide and developer invariants](docs/ADAPTIVE_CALENDAR.md) for
-setup, scheduling behavior, storage boundaries, and validation scope.
+setup, scheduling behaviour, storage boundaries, and validation scope.
 
 Settings → Tasks sets whether completed tasks show by default; each list can
 inherit it or explicitly show or hide them under **Completed Tasks** in its **…**
@@ -412,7 +414,7 @@ iCloud sync is not a backup. Settings > Data can create a complete, unencrypted
 the package before explicit quit/reopen, opens a separate local-only library,
 and retains the original library and a recovery backup. Return to the original
 library through the same Data settings. See [manual backup and restore](docs/LIBRARY_BACKUP.md)
-for the format, limits, recovery behavior and privacy details. App-wide
+for the format, limits, recovery behaviour and privacy details. App-wide
 preferences remain per-Mac, and reminders and widget snapshots are refreshed
 locally after imports. Widgets do not run their own sync engine.
 
@@ -465,7 +467,7 @@ Openlist focuses on personal, local-first workflows. These features are outside 
 | Feature | Why |
 |---|---|
 | Voice AI ("Talk") | Outside the local task-management scope |
-| AI Meeting Notes, AI Chat, Make AI, email/Slack summarisation | Requires online AI services |
+| AI Meeting Notes, AI Chat, Make AI, email/Slack summarization | Requires online AI services |
 | Integrations (Gmail, Slack, GitHub, Figma…) | Outside the local task-management scope |
 | Sharing, real-time collaboration, assignees, comments, voice messages | Requires a collaborative backend |
 | Unlimited-lists / storage caps | Lists here are uncapped |

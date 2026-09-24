@@ -97,11 +97,11 @@ profile described in [release maintenance](#releases). Compiling or
 notarizing an app does not establish that its container or schema is usable.
 
 Run `./Tools/check.sh` before submitting. Add regression checks when changing
-logic, persistence, exports or editing behavior. For UI changes, exercise the
+logic, persistence, exports or editing behaviour. For UI changes, exercise the
 actual native app and explain what you verified. See `Tools/screenshot.sh` for
 window-scoped capture. Keep fixtures separate from your personal lists.
 
-Describe the problem, resulting behavior and validation in each PR. Keep changes
+Describe the problem, resulting behaviour and validation in each PR. Keep changes
 focused and avoid unrelated formatting. Contributions are licensed under the
 repository's MIT license. Be respectful and constructive in discussions.
 
@@ -199,7 +199,7 @@ Before the first iCloud release and after each model/schema change:
    Schema deployment does not copy development records into Production.
 3. Test a correctly profiled Release build on two physical Macs signed into the
    same Apple Account. Verify creation, edits, deletion, media, offline/reconnect
-   behavior, and widget updates using disposable records. Follow
+   behaviour, and widget updates using disposable records. Follow
    [TN3164's synchronization diagnostics](https://developer.apple.com/documentation/technotes/tn3164-debugging-the-synchronization-of-nspersistentcloudkitcontainer)
    for native import/export failures.
 

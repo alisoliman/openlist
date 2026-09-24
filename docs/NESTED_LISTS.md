@@ -42,7 +42,7 @@ archived descendants, with fresh list/block/media IDs, preserved document
 boundaries, and activity attributed to each new document. Prior independent
 Trash groups are excluded. Copying a child creates a sibling copy.
 
-Single-document Markdown export keeps its existing behavior. A parent with child
+Single-document Markdown export keeps its existing behaviour. A parent with child
 documents exports a folder with one Markdown file per document and portable
 parent/child links and assets.
 

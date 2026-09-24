@@ -45,7 +45,7 @@ both store bootstrap and the main window; the initial Today navigation runs
 before the queue drains. A delivery is consumed once. Intentionally opening
 the same link again creates a new reveal request. Links activated by the
 existing rich-text editor use the same handler; other URL schemes retain their
-normal system behavior.
+normal system behaviour.
 
 Plain task notes show explicit **Open task link** / **Open list link** buttons
 below detected local references. Multiple references are numbered in note
@@ -81,7 +81,7 @@ between copied databases. An explicit future “duplicate as independent library
 operation must assign a new identity while the store is closed, using supported
 metadata APIs, before generating any links.
 
-Apple documents the UUID's copy behavior in
+Apple documents the UUID's copy behaviour in
 [NSStoreUUIDKey](https://developer.apple.com/documentation/coredata/nsstoreuuidkey).
 The URL entry follows SwiftUI's
 [external-event scene routing](https://developer.apple.com/documentation/swiftui/scene/handlesexternalevents(matching:)).

@@ -42,6 +42,11 @@ func rejects(_ tool: OpenlistMCPTool, _ args: [String: MCPValue], code: String =
     check(result.structuredContent?.objectValue?["error"]?.objectValue?["code"] == .string(code), "failure has code \(code)")
 }
 
+func failureMessage(_ tool: OpenlistMCPTool, _ args: [String: MCPValue]) throws -> String {
+    let result = try adapter.call(tool.rawValue, arguments: args, allowsWrites: true)
+    return result.structuredContent?.objectValue?["error"]?.objectValue?["message"]?.stringValue ?? ""
+}
+
 func id(_ value: [String: MCPValue], _ key: String) -> UUID {
     UUID(uuidString: value[key]!.objectValue!["id"]!.stringValue!)!
 }
@@ -165,6 +170,11 @@ if phase == "prepare" {
     try rejects(.moveTask, ["task_id": uuid(rootID), "list_id": uuid(workID), "parent_id": uuid(spareID)])
     try rejects(.moveTask, ["task_id": uuid(spareID), "list_id": uuid(workID), "parent_id": uuid(childID)])
     try rejects(.moveTask, ["task_id": uuid(spareChildID), "list_id": uuid(workID), "parent_id": uuid(noteID)])
+    let tooDeep = try failureMessage(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(noteID), "text": "Third level", "kind": "numbered"])
+    let movedTooDeep = try failureMessage(.moveTask, ["task_id": uuid(spareID), "list_id": uuid(workID), "parent_id": uuid(childID)])
+    check(tooDeep.hasPrefix("Lines nest two levels deep at most.") && !tooDeep.contains("moved")
+          && movedTooDeep.contains("counting the lines under the task being moved"),
+          "the depth failure names a moved task's lines only when a task with lines is moved")
     let looseID = id(try call(.createTask, ["title": "Loose", "list_id": uuid(workID)]), "task")
     _ = try call(.moveTask, ["task_id": uuid(looseID), "list_id": uuid(workID), "parent_id": uuid(spareChildID)])
     check(store.block(id: looseID)!.parentID == spareChildID, "a move under a subtask still lands two levels deep")

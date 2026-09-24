@@ -140,10 +140,6 @@ extension Store {
         save()
     }
 
-    func setDueToday(_ block: Block) {
-        setDueDate(Calendar.current.startOfDay(for: .now), includesTime: false, for: block)
-    }
-
     /// "Next week": the coming Monday, whichever day the week starts on here.
     /// When that Monday is tomorrow it's the one after, so it never repeats Tomorrow.
     static func nextWeekDay(from now: Date = .now, calendar: Calendar = .current) -> Date {

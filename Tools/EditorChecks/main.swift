@@ -690,7 +690,7 @@ check(claimed.last?.0 == .toggleStar && claimed.last?.1 == [firstSubtask.id] && 
 outlineEnv.pendingCommand = .setDueToday
 listEditor.receiveCommand()
 check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate == nil, "A task command the host declines does nothing, with no second path through the store")
-store.setDueToday(firstSubtask)
+store.setDueDate(Calendar.current.startOfDay(for: .now), includesTime: false, for: firstSubtask)
 // Lines a paste left selected refuse a line command in the tray, not a
 // notice card, and reach no host.
 var refusals: [String] = []
@@ -849,6 +849,35 @@ for _ in 0..<2 {
     pasteUndo.undo()
     pasteEditor.blocksDidChange(pasteBlocks().map(\.id))
 }
+
+// Markdown pasted or dropped as lines keeps to the document's nesting: a
+// line goes under the one its indent names only when both are tasks or list
+// items, two levels deep at most, counting where it lands, and otherwise
+// beside it, in its order.
+func pastedLines(_ markdown: String, after target: (DocumentContext) -> Block) -> [String] {
+    let list = store.createList(title: "Pasted lines")
+    let document = DocumentContext(listID: list.id)
+    let anchor = target(document)
+    store.save()
+    OutlineEditor(env: outlineEnv, document: document).dropText(markdown, after: anchor)
+    return BlockTree.flatten(store.blocks(inList: list.id), respectCollapse: false).map { "\($0.depth) \($0.block.text)" }
+}
+func packing(_ document: DocumentContext) -> (pack: Block, socks: Block) {
+    let pack = store.appendBlock(kind: .task, text: "Pack", to: document)
+    let socks = store.insertChild(kind: .task, text: "Socks", of: pack, at: .last)
+    _ = store.insertChild(kind: .task, text: "Shoes", of: pack, at: .last)
+    return (pack, socks)
+}
+check(pastedLines("- a\n  # b\n  - c") { packing($0).socks } == ["0 Pack", "1 Socks", "1 a", "1 Shoes", "0 b", "0 c"],
+    "A pasted heading never goes under a line, and a list item never under a heading")
+check(pastedLines("- [ ] one\n  - [ ] two\n    - [ ] three\n      - [ ] four") { packing($0).socks }
+    == ["0 Pack", "1 Socks", "1 one", "2 two", "2 three", "2 four", "1 Shoes"],
+    "Pasted lines nest two levels deep at most, counting the line they're pasted after")
+check(pastedLines("- a\n  - b\n- c") { store.appendBlock(kind: .task, text: "Start", to: $0) } == ["0 Start", "0 a", "1 b", "0 c"],
+    "A pasted line back at the first line's indent goes beside it again")
+check(pastedLines("Notes\n- [ ] Call") { store.insertChild(kind: .task, text: "", of: packing($0).pack, at: .last) }
+    == ["0 Pack", "1 Socks", "1 Shoes", "0 Notes", "0 Call"],
+    "Text pasted into an empty nested line takes it to the top, as typing does")
 
 // The list document's rules, from the design.
 let nextList = store.createList(title: "List document")

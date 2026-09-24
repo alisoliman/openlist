@@ -55,9 +55,9 @@ The contract includes every persisted property of all nine current model types:
 
 | Records | Included state |
 | --- | --- |
-| TaskList | IDs, parent document ownership, Inbox/alias identity, own archive choice, Trash group/recovery metadata, title/summary, icon/color, cover metadata and bytes, ordering, section and display/availability preferences, timestamps |
+| TaskList | IDs, parent document ownership, Inbox/alias identity, own archive choice, Trash group/recovery metadata, title/summary, icon/colour, cover metadata and bytes, ordering, section and display/availability preferences, timestamps |
 | Block | IDs, hierarchy, rich/plain text, all task/recurrence/reminder/calendar payloads, labels, media and timestamps |
-| SidebarSection and TaskLabel | IDs, names/colors, ordering, collapse/default/alias state and timestamps |
+| SidebarSection and TaskLabel | IDs, names/colours, ordering, collapse/default/alias state and timestamps |
 | Attachment | IDs, owning task, filename/display metadata, exact bytes, ordering and timestamps |
 | ActivityEvent | IDs, full history including old snapshots and undecodable legacy detail bytes |
 | WorkSession and CompletionRecord | IDs, occurrence and historical subject references, times, corrections, planned intervals and snapshots |
@@ -139,7 +139,7 @@ recorded heartbeat rather than claiming work continued after the backup. The
 original backup bytes and history are retained.
 
 **Return to original library** selects the retained original store and its
-preferences after quit/reopen, including its previous iCloud behavior. Changes
+preferences after quit/reopen, including its previous iCloud behaviour. Changes
 in the restored library are not merged. A readable departing library gets a
 recovery backup. If the restored store is unreadable, explicit return can still
 open a verified original; it retains the unreadable files and reports why a new

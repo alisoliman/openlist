@@ -116,7 +116,7 @@ enum OpenlistMCPTool: String, CaseIterable {
                 "expected_updated_at": expected,
             ]
             required = ["task_id", "list_id"]
-            description = "Move a task and all its descendants to the end of a destination list, or under parent_id, a task or list item. Omit parent_id to move to the root. Rejects cycles, archived destinations, completed ancestors, and a parent that would put the task or its subtasks more than two levels deep."
+            description = "Move a task and all its descendants to the end of a destination list, or under parent_id, a task or list item. Omit parent_id to move to the root. Rejects cycles, archived destinations, completed ancestors, and a parent that would put the task or the lines under it more than two levels deep."
         case .appendBlock:
             properties = [
                 "list_id": listID, "parent_id": parentID,

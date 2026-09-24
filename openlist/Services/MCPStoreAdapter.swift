@@ -399,7 +399,8 @@ private struct Snapshot {
         }
         let ancestors = BlockTree.ancestors(of: parent, in: blocks(in: list.id))
         guard ancestors.count + 1 + height <= OutlinePolicy.maximumDepth else {
-            throw MCPToolFailure.invalid("Lines nest two levels deep at most, counting the subtasks of a task being moved. Choose a parent nearer the document root.")
+            let moved = height > 0 ? ", counting the lines under the task being moved" : ""
+            throw MCPToolFailure.invalid("Lines nest two levels deep at most\(moved). Choose a parent nearer the document root.")
         }
         guard !(ancestors + [parent]).contains(where: { $0.isTask && $0.isCompleted }) else {
             throw MCPToolFailure.invalid("Reopen the completed parent task before adding or moving content under it.")

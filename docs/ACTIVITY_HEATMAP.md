@@ -7,7 +7,7 @@ day is an accessibility button whose description carries its date, its numeric
 count, that history may be incomplete, and how many entries have missing or
 conflicting counting details. Clicking a day shows its saved completion titles,
 lists and local times, and a title opens that task's details. Numbers remain
-visible in every colored cell, so color is never the only way to read the grid.
+visible in every coloured cell, so colour is never the only way to read the grid.
 The legend uses fixed bands: 1, 2–3, 4–6, and 7 or more recorded completions,
 defined once in `Shared/ActivityBand.swift` so the Activity widget shades a day
 the same way, and the card sums the range with the current streak. **Changes**, below, is the
@@ -60,14 +60,14 @@ history…** in Settings › Data clears the heatmap along with Changes and each
 task's history. Calendar-only records cannot repopulate it. **Delete
 everything…** removes these events too. Whole-library backups
 already preserve `changeData` bytes, including these optional fields. This
-feature changes neither backup schema nor private migration behavior.
+feature changes neither backup schema nor private migration behaviour.
 
 Inherited recurring children use their nearest recurring ancestor's cycle,
 which stays stable when a child is repeatedly reopened before the parent
 advances. Parent cascades can complete a self-recurring child without advancing
 its own rule; reopening history preserves that unadvanced cycle for both the
 child and its descendants. Completion Undo snapshots retain the same cycle for
-Redo. The calendar's own occurrence UUID behavior is unchanged.
+Redo. The calendar's own occurrence UUID behaviour is unchanged.
 Multi-selection completion and reopening use the same cycle facts, including
 their multi-root Undo/Redo. A failed atomic bulk action rolls back its pending
 cycle metadata along with its task changes.

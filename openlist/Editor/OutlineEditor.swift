@@ -1384,40 +1384,48 @@ final class OutlineEditor {
         BlockTree.flatten(blocks, respectCollapse: false).map { "\($0.id)/\($0.depth)" }
     }
 
+    /// Markdown pasted or dropped as lines, placed by the document's rules:
+    /// a line goes under the one its indent puts it under only when both are
+    /// tasks or list items and it stays two levels deep at most, counting
+    /// where the paste lands. Otherwise it goes beside that line, stepping out
+    /// as far as it must, after the lines already under it, so the pasted
+    /// lines keep their order and the document's lines keep their places.
     private func insertPastedText(_ text: String, after block: Block) {
         var lines = MarkdownInputRules.parseClipboard(text)
         guard !lines.isEmpty else { return }
 
-        var previous = block
-        // Tracks the last block created at each depth so nesting can be rebuilt.
-        var parentAtDepth: [Int: Block] = [:]
-
         // Pasting into an empty block fills it, rather than leaving a blank
-        // line above the pasted content.
+        // line above the pasted content. A kind that doesn't nest takes it to
+        // the top level, as typing its prefix does.
         if block.text.isEmpty, !block.kind.isVoid {
             let first = lines.removeFirst()
-            env.store.changeKind(block, to: first.kind)
+            convert(block, to: first.kind)
             env.store.setPlainText(block, first.text)
             block.isCompleted = first.isCompleted
             block.completedAt = first.isCompleted ? .now : nil
-            parentAtDepth[first.depth] = block
         }
 
+        // The lines from the document root to the last one placed, and the
+        // depth each level of the paste's indent last landed at.
+        var path: [Block] = BlockTree.ancestors(of: block, in: blocks).reversed() + [block]
+        var landed = [0: path.count - 1]
         for line in lines {
-            let created: Block
-            if line.depth > 0, let parent = parentAtDepth[line.depth - 1] {
-                created = env.store.insertChild(kind: line.kind, text: line.text, of: parent, at: .last)
-            } else {
-                created = env.store.insertBlock(kind: line.kind, text: line.text, after: previous)
+            let wanted = line.depth == 0 ? landed[0, default: 0] : landed[line.depth - 1, default: 0] + 1
+            var depth = min(wanted, path.count, OutlinePolicy.maximumDepth)
+            while depth > 0, !(OutlinePolicy.nests(line.kind) && OutlinePolicy.nests(path[depth - 1].kind)) {
+                depth -= 1
             }
+            let created = depth < path.count
+                ? env.store.insertBlock(kind: line.kind, text: line.text, after: path[depth])
+                : env.store.insertChild(kind: line.kind, text: line.text, of: path[depth - 1], at: .last)
             created.isCompleted = line.isCompleted
             if line.isCompleted { created.completedAt = .now }
-            parentAtDepth[line.depth] = created
-            previous = created
+            path = Array(path.prefix(depth)) + [created]
+            landed[line.depth] = depth
         }
 
         env.store.save()
-        focus.request(previous.id, caret: -1)
+        focus.request(path.last?.id, caret: -1)
     }
 
     private func editorEditFragment(after blockID: UUID) {

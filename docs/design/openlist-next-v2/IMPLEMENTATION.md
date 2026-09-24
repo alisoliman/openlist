@@ -86,6 +86,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   design's does, but never past two levels and only under a task or list item, which
   older outlines can break. MCP's create, move and append tools place lines by the same
   rules (`OutlinePolicy`), refusing a heading or text under a line, or a third level.
+  Markdown pasted or dropped as several lines (a native extra) keeps to them too: a line
+  its indent can't put under the one above goes beside it, as far out as it must.
   The Inbox's document mode is the same list document under
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
