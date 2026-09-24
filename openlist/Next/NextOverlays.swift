@@ -79,7 +79,7 @@ struct NextOverlays: View {
         ZStack(alignment: .top) {
             if workbench.captureOpen {
                 NXOverlayBackdrop(top: 96, close: { workbench.closeCapture() }) {
-                    NXCaptureCard(draft: workbench)
+                    NXCaptureCard(draft: workbench, add: { _ = workbench.createFromCapture(keepOpen: $0) })
                 }
             } else if navigator.isSearchOpen {
                 NXOverlayBackdrop(top: 72, close: { navigator.isSearchOpen = false }) {
@@ -169,6 +169,73 @@ private struct NXAutofocus: ViewModifier {
     }
 }
 
+/// Reports how far the field editor over this view has scrolled its line
+/// sideways, which it does to keep the caret in view once the text is wider
+/// than the field, so a copy drawn over the field can follow it.
+private struct NXFieldScroll: NSViewRepresentable {
+    let changed: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ScrollReader {
+        let view = ScrollReader()
+        view.changed = changed
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollReader, context: Context) {
+        nsView.changed = changed
+    }
+
+    final class ScrollReader: NSView {
+        var changed: ((CGFloat) -> Void)?
+        private var observers: [NSObjectProtocol] = []
+        private var offset: CGFloat = 0
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard window != nil else { return }
+            let center = NotificationCenter.default
+            // The field editor's clip view moves its bounds as it scrolls.
+            observers.append(center.addObserver(forName: NSView.boundsDidChangeNotification, object: nil,
+                                                queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, let clip = note.object as? NSClipView, clip.window === self.window,
+                          let editor = clip.documentView as? NSTextView, editor.isFieldEditor,
+                          let field = editor.delegate as? NSTextField, self.covers(field) else { return }
+                    self.report(clip.bounds.minX)
+                }
+            })
+            // Once it stops editing, the field draws its text from the start again.
+            observers.append(center.addObserver(forName: NSControl.textDidEndEditingNotification, object: nil,
+                                                queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, let field = note.object as? NSTextField, self.covers(field) else { return }
+                    self.report(0)
+                }
+            })
+        }
+
+        isolated deinit {
+            observers.forEach(NotificationCenter.default.removeObserver)
+        }
+
+        private func covers(_ field: NSTextField) -> Bool {
+            guard let window, field.window === window else { return false }
+            return field.convert(field.bounds, to: nil).intersects(convert(bounds, to: nil))
+        }
+
+        private func report(_ x: CGFloat) {
+            let x = max(0, x)
+            guard x != offset else { return }
+            offset = x
+            changed?(x)
+        }
+    }
+}
+
 // MARK: - Capture
 
 /// What a capture card types into: the text, where it goes, and what Return
@@ -184,9 +251,13 @@ protocol NXCaptureDraft: AnyObject, Observable {
     var captureForToday: Bool { get }
     /// The label screen capture opened on; the new task gets that label.
     var captureLabelID: UUID? { get }
+    /// Whether the new task is planned for today rather than given a due date.
+    var capturePlansForToday: Bool { get }
 }
 
 extension NXCaptureDraft {
+    var capturePlansForToday: Bool { false }
+
     /// The capture text read as the card tints it and Return saves it, with
     /// dates only while Settings reads them from typed text.
     func captureParse() -> CaptureParse {
@@ -196,21 +267,16 @@ extension NXCaptureDraft {
     /// What Return saves, which the capture card's chips preview. A task with
     /// no date of its own is due today when the draft is for today; captured
     /// on a label screen it also gets that label.
-    func capturePreview(_ parse: CaptureParse) -> TaskCaptureDraft.Preview {
+    func capturePreview(_ parse: CaptureParse) -> CaptureSnapshot {
         let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
-        return TaskCaptureDraft.Preview(
-            title: parse.title,
-            date: parse.schedule?.date ?? (captureForToday ? NXFormat.day(offset: 0) : nil),
-            includesTime: parse.schedule?.includesTime ?? false,
-            recurrence: parse.schedule?.recurrence,
-            labels: Array(Set(parse.labels + screenLabel)).sorted())
+        return parse.snapshot(dueToday: captureForToday, labels: screenLabel)
     }
 
     /// Saves the draft into its list, or Inbox: one capture for the title,
-    /// date, repeat and labels, then the priority and estimate its tokens name.
+    /// date, repeat, labels and plan, then the priority and estimate its tokens name.
     func saveCapture(_ parse: CaptureParse, appendToRoot: Bool = false) throws -> Block {
         let block = try store.saveCapture(capturePreview(parse), destinationID: captureListID ?? store.inboxList()?.id,
-                                          appendToRoot: appendToRoot)
+                                          selectedForDay: capturePlansForToday ? .now : nil, appendToRoot: appendToRoot)
         if let priority = parse.priority { store.setPriority(priority, for: block) }
         if let minutes = parse.estimateMinutes, minutes > 0 { store.setTaskEstimate(minutes, for: block) }
         return block
@@ -235,14 +301,18 @@ struct NXCaptureNotice: Equatable {
 }
 
 /// The design's capture card, over the main window or in the Quick Add panel.
-/// Its host handles Return, Tab and Escape.
+/// Its host handles Return, Tab and Escape; `add` is what Return and ⇧↩ do,
+/// offered to assistive technologies as the field's actions.
 struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     @Bindable var draft: Draft
     var notice: NXCaptureNotice?
+    var add: ((_ keepOpen: Bool) -> Void)?
     @State private var refocus = 0
+    /// How far the field has scrolled its text to keep the caret in view.
+    @State private var scroll: CGFloat = 0
 
     var body: some View {
         let parse = draft.captureParse()
@@ -253,21 +323,33 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                     .frame(width: 17, height: 17)
                     .padding(.top, 3)
                 ZStack(alignment: .leading) {
+                    // The tinted copy of the field's text, which scrolls with it
+                    // once the text is wider than the card. VoiceOver reads the field.
                     styled(parse)
                         .font(.system(size: 16))
                         .lineLimit(1)
                         .fixedSize()
+                        .offset(x: -scroll)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     TextField("", text: $draft.captureText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .foregroundStyle(.clear)
                         .modifier(NXAutofocus(refocus: refocus))
                         .accessibilityLabel("New task")
+                        .accessibilityHint("Type the task. A date, #label, !priority or ~estimate in the text is read as you type, as in Pay deposit friday 6pm #travel ~15m.")
                         .accessibilityIdentifier("capture.title")
+                        .accessibilityActions {
+                            if let add {
+                                Button("Add task") { add(false) }
+                                Button("Add task and keep capture open") { add(true) }
+                            }
+                        }
                 }
                 .frame(height: 24)
+                .background { NXFieldScroll { scroll = $0 } }
                 .clipped()
             }
             .padding(EdgeInsets(top: 16, leading: 18, bottom: 6, trailing: 18))
@@ -365,6 +447,9 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
         let preview = draft.capturePreview(parse)
         var chips: [NXChipModel] = []
+        if draft.capturePlansForToday {
+            chips.append(NXChipModel(id: "planned", label: "Planned today", icon: "calendar.badge.clock", tone: .accent))
+        }
         if let date = preview.date {
             let due = NXFormat.dueLabel(date)
             let relative = NXFormat.relativeDay(date)

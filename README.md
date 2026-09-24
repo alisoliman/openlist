@@ -322,6 +322,10 @@ labels, priority and estimates as you type. Date detection follows Settings →
 Tasks. Return adds the task, Shift-Return adds it and keeps capture open for the
 next, Tab steps the destination, and Escape cancels. Quick Add is the same card
 floating over the app you're in, and focus goes back to that app when it closes.
+Clicking or switching away also closes it, but the next Quick Add within five
+minutes picks up what you'd typed. ⇧⌥Space works from launch, with or without
+a window open; with VoiceOver on, Quick Add brings Openlist forward so
+VoiceOver can read it.
 Navigation, command selection, and keyboard scrolling do not animate. Custom
 pointer feedback lasts 140 ms; task rearrangement lasts 200 ms. Reduce Motion
 disables custom movement.

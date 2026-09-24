@@ -30,11 +30,14 @@ struct MenuBarView: View {
             } else {
                 // A plain stack, not a ScrollView: inside a MenuBarExtra window
                 // a ScrollView has no intrinsic height and collapses to zero,
-                // which hid this whole section. The row count is capped instead.
-                let shown = due.prefix(8)
+                // which hid this whole section. The row count is capped instead,
+                // and shared so each group with tasks keeps its heading.
+                let overdue = due.filter(Self.isOverdue)
+                let today = due.filter { !Self.isOverdue($0) }
+                let shown = Self.share(Self.rowLimit, overdue.count, today.count)
                 VStack(alignment: .leading, spacing: 1) {
-                    section("Overdue", count: due.count(where: Self.isOverdue), rows: shown.filter(Self.isOverdue))
-                    section("Due today", count: due.count { !Self.isOverdue($0) }, rows: shown.filter { !Self.isOverdue($0) })
+                    section("Overdue", tasks: overdue, showing: shown.first)
+                    section("Due today", tasks: today, showing: shown.second)
                 }
                 .padding(6)
             }
@@ -48,51 +51,59 @@ struct MenuBarView: View {
         .tint(style.accent)
     }
 
-    /// The design's "add" row, opening Quick Add.
+    /// The design's add row (`NXAddRow`), opening Quick Add.
     private var captureRow: some View {
         Button {
+            // Before the popover goes, so the card can wait for it to let go of the keyboard.
+            QuickCapturePanel.shared.showFromMenuBar(closing: NSApp.currentEvent?.window)
             dismiss()
-            // Once the menu has gone, so the panel keeps the keyboard.
-            DispatchQueue.main.async { QuickCapturePanel.shared.show() }
         } label: {
             HStack(spacing: 10) {
                 Circle()
-                    .strokeBorder(env.workbench.style.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
+                    .strokeBorder(NX.ink(0.24), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
                     .frame(width: 15, height: 15)
                 Text("New task…").font(.system(size: 13.5))
-                Spacer(minLength: 8)
                 Text("⇧⌥Space")
                     .font(NX.mono(10))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4))
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.035), radius: 9,
                                         padding: EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10),
-                                        foreground: NX.ink(0.55), hoverForeground: NX.ink))
+                                        foreground: NX.ink(0.36), hoverForeground: NX.ink(0.55)))
         .padding(6)
         .help("Quick Add (⇧⌥Space)")
     }
 
-    /// A small-caps heading and its rows; nothing when none are shown.
+    /// A small-caps heading with the design's group count, the first
+    /// `showing` rows, and the widgets' line for the rest; nothing without tasks.
     @ViewBuilder
-    private func section(_ title: String, count: Int, rows: [Block]) -> some View {
-        if !rows.isEmpty {
+    private func section(_ title: String, tasks: [Block], showing: Int) -> some View {
+        if !tasks.isEmpty {
             HStack(spacing: 6) {
                 NXCapsTitle(text: title)
-                Text("\(count)")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(NX.ink(0.3))
+                Text("\(tasks.count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NX.ink(0.38))
                     .monospacedDigit()
                 Spacer(minLength: 0)
             }
             .padding(EdgeInsets(top: 6, leading: 8, bottom: 4, trailing: 8))
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
-            ForEach(rows) { task in
+            ForEach(Array(tasks.prefix(showing))) { task in
                 MenuBarTaskRow(block: task)
+            }
+            if tasks.count > showing {
+                // In line with the row titles, past the checkbox.
+                Text("\(tasks.count - showing) more")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(NX.ink(0.36))
+                    .padding(EdgeInsets(top: 3, leading: 32, bottom: 4, trailing: 8))
             }
         }
     }
@@ -155,6 +166,16 @@ struct MenuBarView: View {
         ActiveTaskPolicy(lists: activeLists).tasks(in: openTasks)
     }
 
+    /// Rows the popover shows at most.
+    private static let rowLimit = 8
+
+    /// Half of `limit` for each group, a group with fewer tasks lending the
+    /// rest to the other.
+    private static func share(_ limit: Int, _ first: Int, _ second: Int) -> (first: Int, second: Int) {
+        let shownFirst = min(first, limit - min(second, limit / 2))
+        return (shownFirst, min(second, limit - shownFirst))
+    }
+
     /// Overdue and due-today work, soonest first.
     private var dueTasks: [Block] {
         activeOpenTasks
@@ -170,12 +191,13 @@ struct MenuBarView: View {
 }
 
 /// A compact task row inside the menu bar popover, like the inspector's
-/// subtask rows, with the due chip rows show.
+/// subtask rows, with the due chip rows show and the rows' density.
 struct MenuBarTaskRow: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.nextStyle) private var style
     @State private var hovering = false
 
     var body: some View {
@@ -200,7 +222,7 @@ struct MenuBarTaskRow: View {
 
             if let chip = dueChip { NXChip(chip: chip) }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, style.rowVerticalPadding)
         .padding(.horizontal, 8)
         .background(hovering ? NX.ink(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
@@ -209,14 +231,14 @@ struct MenuBarTaskRow: View {
         .accessibilityAction(named: "Open task", open)
     }
 
-    /// A time today, red once it has passed; otherwise the day, red when it
-    /// was an earlier one.
+    /// A time today, as rows show it: filled, and red once it has passed.
+    /// Otherwise the day, red when it was an earlier one.
     private var dueChip: NXChipModel? {
         guard let due = block.dueDate else { return nil }
         let offset = NXFormat.dayOffset(due)
         if block.includesTime, offset == 0 {
             return NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill",
-                               tone: due < .now ? .over : .accent, fill: true)
+                               tone: due < .now ? .over : .neutral, fill: true)
         }
         return NXChipModel(id: "due", label: NXFormat.dueLabel(due),
                            icon: offset < 0 ? "exclamationmark.circle.fill" : "calendar",

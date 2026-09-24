@@ -6,7 +6,7 @@ import SwiftUI
 /// `QuickCapturePanel`. Return adds the task and closes, Shift-Return adds it
 /// and keeps the card for the next, Tab steps the destination and Escape
 /// closes, as they do in the main window.
-struct QuickAddWindowView: View {
+struct QuickCaptureView: View {
     @Environment(AppEnvironment.self) private var env
     @Query(filter: TaskList.availablePredicate) private var allLists: [TaskList]
     @Query(filter: #Predicate<SidebarSection> { $0.mergedIntoID == nil }) private var sections: [SidebarSection]
@@ -15,9 +15,9 @@ struct QuickAddWindowView: View {
     @State private var notice: NXCaptureNotice?
     @State private var noticeRevision = 0
     @State private var shown = false
-    let close: () -> Void
+    let close: (QuickCapturePanel.Dismissal) -> Void
 
-    init(draft: QuickCaptureDraft, close: @escaping () -> Void) {
+    init(draft: QuickCaptureDraft, close: @escaping (QuickCapturePanel.Dismissal) -> Void) {
         _draft = State(initialValue: draft)
         self.close = close
     }
@@ -26,17 +26,21 @@ struct QuickAddWindowView: View {
         // The card reads lists and labels; task counts aren't shown here.
         let library = NextLibrary(lists: allLists, sections: sections, labels: labels, tasks: [])
         let style = env.workbench.style
-        NXCaptureCard(draft: draft, notice: notice)
+        // The design's popIn; with Reduce Motion or restrained motion it only fades.
+        let settled = shown || !style.lively
+        NXCaptureCard(draft: draft, notice: notice, add: { add(keepOpen: $0) })
             .frame(width: 600)
             .nxOverlayCard()
-            // The design's popIn.
-            .scaleEffect(shown ? 1 : 0.97, anchor: .top)
-            .offset(y: shown ? 0 : -4)
+            .scaleEffect(settled ? 1 : 0.97, anchor: .top)
+            .offset(y: settled ? 0 : -4)
             .opacity(shown ? 1 : 0)
             // Room for the card's shadow in the transparent panel.
             .padding(EdgeInsets(top: 28, leading: 56, bottom: 88, trailing: 56))
-            // Around the card is the design's backdrop, where a click closes.
-            .background { Color.clear.contentShape(Rectangle()).onTapGesture(perform: close) }
+            // A click on the shadow closes the card, as one on the backdrop
+            // does in the window. Clicks on the margin's clear pixels go to the
+            // app below, as they do around Spotlight, and close it by taking
+            // the keyboard. Either way the draft waits for the next Quick Add.
+            .background { Color.clear.contentShape(Rectangle()).onTapGesture { close(.dismissed) } }
             .background { QuickCaptureKeys(perform: { handle($0, lists: library.lists) }) }
             .environment(\.nextLibrary, library)
             .environment(\.nextStyle, style)
@@ -51,17 +55,27 @@ struct QuickAddWindowView: View {
     private func handle(_ key: QuickCaptureKey, lists: [TaskList]) {
         switch key {
         case let .add(keepOpen): add(keepOpen: keepOpen)
-        case let .step(delta): draft.cycleCaptureDestination(by: delta, among: lists.map(\.id))
-        case .close: close()
+        case let .step(delta):
+            // Command selection doesn't animate, as in the main window.
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { draft.cycleCaptureDestination(by: delta, among: lists.map(\.id)) }
+        case .close: close(.finished)
         }
     }
 
     private func add(keepOpen: Bool) {
         let parse = draft.captureParse()
-        guard !parse.title.isEmpty else { return }
+        guard !parse.title.isEmpty else {
+            // Tokens alone would make an untitled task; say so rather than doing nothing.
+            if !parse.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                show(NXCaptureNotice(text: "Type a title as well as the date, label, priority or estimate.", failed: true))
+            }
+            return
+        }
         let block: Block
         do {
-            block = try draft.saveCapture(parse)
+            block = try draft.saveCapture(parse, appendToRoot: draft.appendsToRoot)
         } catch {
             show(NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
                                  failed: true))
@@ -70,12 +84,14 @@ struct QuickAddWindowView: View {
         // The main window greets the task as it does its own captures.
         env.workbench.flash(\.fresh, [block.id], for: 1200)
         env.workbench.pulse(list: block.listID)
+        let added = "Added to \(env.store.list(id: block.listID)?.displayTitle ?? "Inbox")"
         if !keepOpen {
-            close()
+            AccessibilityNotification.Announcement(added).post()
+            close(.finished)
             return
         }
         draft.captureText = ""
-        show(NXCaptureNotice(text: "Added to \(env.store.list(id: block.listID)?.displayTitle ?? "Inbox")"))
+        show(NXCaptureNotice(text: added))
     }
 
     /// Shows a failure until the text changes, and what was added for two seconds.
@@ -93,22 +109,41 @@ struct QuickAddWindowView: View {
 }
 
 /// Quick Add's own draft, so its half-typed text never meets the main
-/// window's capture. It files into Inbox unless its caller chose a list.
+/// window's capture. It files into Inbox unless what opened it chose a list.
 @Observable @MainActor
 final class QuickCaptureDraft: NXCaptureDraft {
     @ObservationIgnored let store: Store
     @ObservationIgnored let settings: AppSettings
     var captureText = ""
     var captureListID: UUID?
-    let captureForToday: Bool
     let captureLabelID: UUID? = nil
+    private(set) var capturePlansForToday = false
+    /// The list a widget asked to add to the end of.
+    private var appendsTo: UUID?
 
-    init(store: Store, settings: AppSettings, listID: UUID? = nil, forToday: Bool? = nil) {
+    /// A task with no date of its own is due today while new tasks go to
+    /// Today, unless it is planned for today instead.
+    var captureForToday: Bool { !capturePlansForToday && settings.defaultDestination == .today }
+
+    /// Whether Return adds at the end of the destination's document: only
+    /// while it is still the list that asked for that.
+    var appendsToRoot: Bool { appendsTo != nil && appendsTo == captureListID }
+
+    init(store: Store, settings: AppSettings, request: QuickCaptureRequest) {
         self.store = store
         self.settings = settings
-        let chosen = store.list(id: listID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
+        captureListID = store.inboxList()?.id
+        apply(request)
+    }
+
+    /// Aims the draft where `request` asks, keeping its text; a request that
+    /// asks nothing leaves it as it was.
+    func apply(_ request: QuickCaptureRequest) {
+        guard request != QuickCaptureRequest() else { return }
+        let chosen = store.list(id: request.listID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
         captureListID = chosen?.id ?? store.inboxList()?.id
-        captureForToday = forToday ?? (settings.defaultDestination == .today)
+        capturePlansForToday = request.plansForToday
+        appendsTo = request.appendsToList ? chosen?.id : nil
     }
 }
 

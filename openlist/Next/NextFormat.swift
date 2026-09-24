@@ -222,4 +222,16 @@ struct CaptureParse {
         let value = raw.compactMap(\.wholeNumberValue).reduce(0) { min($0 * 10 + $1, cap) }
         return min(raw.lowercased().contains("h") ? value * 60 : value, cap)
     }
+
+    /// What Return saves, which the capture card's chips preview. A task with
+    /// no date of its own is due today when `dueToday`; `labels` join the ones
+    /// the text names, as a label screen's own label does.
+    func snapshot(dueToday: Bool = false, labels extra: [String] = []) -> CaptureSnapshot {
+        CaptureSnapshot(
+            title: title,
+            date: schedule?.date ?? (dueToday ? NXFormat.day(offset: 0) : nil),
+            includesTime: schedule?.includesTime ?? false,
+            recurrence: schedule?.recurrence,
+            labels: Array(Set(labels + extra)).sorted())
+    }
 }

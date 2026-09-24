@@ -62,7 +62,6 @@ struct RootView: View {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
         }
-        .task { installQuickCapture() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow else { return }
             env.isMainWindowKey = isMainWindow(window)
@@ -278,14 +277,6 @@ struct RootView: View {
             && !env.navigator.isSearchOpen && !env.navigator.isCommandPaletteOpen
             && !env.navigator.isShortcutSheetOpen && !env.workbench.captureOpen
             && env.navigator.openTaskID == nil
-    }
-
-    private func installQuickCapture() {
-        // The panel takes the keyboard without activating Openlist.
-        QuickCaptureHotKey.shared.onTrigger = { QuickCapturePanel.shared.show() }
-        if env.settings.quickCaptureHotKeyEnabled {
-            QuickCaptureHotKey.shared.register()
-        }
     }
 
     /// Overdue, due-today, starred and planned-for-today work — the number

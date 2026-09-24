@@ -49,11 +49,13 @@ struct openlistApp: App {
             _env = State(initialValue: environment)
             // Quick Add floats in a panel of its own rather than a scene.
             QuickCapturePanel.shared.install(env: environment, container: loaded.container)
-            // Menu-bar-only launches must also migrate files and start sync.
+            // Menu-bar-only launches must also migrate files and start sync,
+            // and take ⇧⌥Space, which needs no window.
             applicationDelegate.onDidLaunch = { [weak environment] in
                 guard let environment else { return }
                 environment.bootstrap()
                 environment.libraryMaintenance?.startDailySnapshots(settings: environment.settings)
+                QuickCapturePanel.shared.installHotKey(enabled: environment.settings.quickCaptureHotKeyEnabled)
             }
             applicationDelegate.hasPendingNotifications = { NotificationService.shared.reminders.isRefreshing }
             applicationDelegate.finishPendingNotifications = { await NotificationService.shared.reminders.drainForTermination() }
