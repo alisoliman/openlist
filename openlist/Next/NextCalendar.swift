@@ -16,12 +16,17 @@ struct NextCalendarScreen: View {
             // The range comes from the timeline's date, so a screen left open
             // overnight moves to the new day with its header.
             TimelineView(.everyMinute) { context in
-                // Week is the settings week around today, as Plan searches it.
-                let dates = CalendarWeek.days(count: days, from: context.date, calendar: env.settings.calendar)
+                // Week is the settings week around today, as Plan searches it,
+                // or around the day stepped to or planned on.
+                let calendar = env.settings.calendar
+                let dates = CalendarWeek.days(count: days, from: workbench.calendarAnchor ?? context.date, calendar: calendar)
                 VStack(alignment: .leading, spacing: 0) {
                     NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates)) {
-                        NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { value in
-                            withAnimation(style.ease(260)) { workbench.calendarDays = value }
+                        HStack(spacing: 10) {
+                            NXCalendarStepper(dates: dates, now: context.date, calendar: calendar)
+                            NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { value in
+                                withAnimation(style.ease(260)) { workbench.calendarDays = value }
+                            }
                         }
                     }
                     NXCalendarBody(dates: dates, now: context.date)
@@ -37,6 +42,57 @@ struct NextCalendarScreen: View {
         // The locale orders day and month, and drops a shared month once. The
         // dash gets the design's plain spaces, not the formatter's thin ones.
         return (first..<last).formatted(.interval.day().month(.wide)).replacingOccurrences(of: "\u{2009}", with: " ")
+    }
+}
+
+/// Steps the Calendar's range on or back a day, three days or a week at a
+/// time, and back to the one around today. A native extra: Plan goes on into
+/// the next week once this one has no hours left, which the design's week,
+/// always around a Wednesday, never needs.
+private struct NXCalendarStepper: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    let dates: [Date]
+    let now: Date
+    let calendar: Calendar
+
+    var body: some View {
+        let showsToday = dates.contains { calendar.isDate($0, inSameDayAs: now) }
+        HStack(spacing: 2) {
+            step(-1)
+            if !showsToday {
+                Button { move(to: nil) } label: {
+                    Text("Today").font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(buttonStyle(horizontal: 9))
+                .transition(.opacity)
+            }
+            step(1)
+        }
+        .padding(2)
+        .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .animation(style.ease(140), value: showsToday)
+    }
+
+    private func step(_ direction: Int) -> some View {
+        let label = (direction < 0 ? "Previous " : "Next ") + (dates.count == 7 ? "week" : dates.count == 3 ? "3 days" : "day")
+        return Button { move(to: CalendarWeek.anchor(stepping: dates, by: direction, now: now, calendar: calendar)) } label: {
+            Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 12, height: 15)
+        }
+        .buttonStyle(buttonStyle(horizontal: 6))
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func buttonStyle(horizontal: CGFloat) -> NXHoverButtonStyle {
+        NXHoverButtonStyle(hover: NX.ink(0.08), radius: 7, padding: EdgeInsets(top: 6, leading: horizontal, bottom: 6, trailing: horizontal),
+                           foreground: NX.ink(0.55), hoverForeground: NX.ink)
+    }
+
+    private func move(to anchor: Date?) {
+        withAnimation(style.ease(260)) { env.workbench.calendarAnchor = anchor }
     }
 }
 
@@ -92,8 +148,8 @@ private struct NXCalendarBody: View {
         return env.calendar.visibleBlocks.filter { $0.end > span.start && $0.start < span.end }
     }
 
-    /// Busy time in the days shown, earlier ones in the week included, where
-    /// the planner's own range, from today, doesn't reach.
+    /// Busy time in the days shown, earlier ones and weeks stepped to
+    /// included, where the planner's own range, from today, doesn't reach.
     private var busy: [FixedBusyTime] {
         guard let span else { return [] }
         return meetings.busyTimes(in: span, from: env.calendar.externalCalendars)
@@ -640,14 +696,18 @@ private struct NXCalendarBlock: View {
     }
 
     /// The note after the slot, in the design's order of precedence. Work that
-    /// can grow no further runs into what stopped it for as long as it runs.
+    /// can grow no further runs into what stopped it for as long as it runs,
+    /// and paused work reads as it did when it paused.
     private func note(missed: Bool, running: Bool, working: Bool, isNow: Bool) -> String? {
         if missed { return "carried forward" }
         if working {
-            if running, let conflict = env.calendar.workConflict, conflict.occurrenceID == block.occurrenceID {
+            let calendar = env.calendar
+            let paused = running ? nil : calendar.pausedWorkNote
+            if let conflict = running ? calendar.workConflict : paused?.conflict, conflict.occurrenceID == block.occurrenceID {
                 return "runs into " + env.workbench.conflictName(conflict)
             }
-            return running && env.calendar.workExtension?.occurrenceID == block.occurrenceID ? "extended" : "working"
+            let extended = running ? calendar.workExtension?.occurrenceID == block.occurrenceID : paused?.extended == true
+            return extended ? "extended" : "working"
         }
         if shifted { return "rescheduled" }
         return isNow ? "now" : nil
@@ -655,7 +715,9 @@ private struct NXCalendarBlock: View {
 
     private func spokenState(done: Bool, missed: Bool, paused: Bool, note: String?) -> String {
         let time = "\(NXFormat.clock(block.start)) to \(NXFormat.clock(block.end))"
-        let state = done ? "done" : missed ? "missed, carried forward" : paused ? "paused" : note
+        // Paused work says so, then what it ran into or that it was extended.
+        let pausedState = ["paused", note == "working" ? nil : note].compactMap { $0 }.joined(separator: ", ")
+        let state = done ? "done" : missed ? "missed, carried forward" : paused ? pausedState : note
         return [time, state].compactMap { $0 }.joined(separator: ", ")
     }
 }

@@ -48,12 +48,21 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the design; Return writes them again and J/K step to the tasks beside them.
 - Calendar: running work past its slot follows the design's overrun (the slot grows to the
   next quarter plus 15 min, later placements that day move out of its way, saved and
-  undoable, stopping only at meetings and breaks). Where it departs, to keep the list's
-  hours: the block also stops growing at their end, and a moved task stays inside its own
-  list's hours that day (the design allows up to 21:00), or where it is when none are left.
-  Work with no slot is drawn from when it started, up to its estimate or the next placed
-  task. Busy holds of 20 h or more (Out of office) aren't drawn as meetings but still keep
-  Plan and the planner away, so the day's header names them.
+  undoable, stopping only at meetings and breaks; Undo still moves them back after Pause,
+  Stop or Done). Where it departs, to keep the list's hours: the block also stops growing
+  at their end, and a moved task stays inside its own list's hours that day (the design
+  allows up to 21:00), or where it is when none are left. Work with no slot, which the
+  design never grows, is drawn from when it started up to its estimate or the next placed
+  task, then grows and moves later placements as a slot does. Time away from the Mac, for
+  work that tracks away, stops counting at the next pinned task instead of moving it.
+  Resumed work reads "working" until it grows again. Busy holds of 20 h or more (Out of
+  office) aren't drawn as meetings but still keep Plan and the planner away, so the day's
+  header names them.
+- Calendar week: the design's week always has today on a Wednesday. Natively, Plan keeps to
+  the week around today while it has hours long enough for the task (the design's "No free
+  slot this week"), then goes on into the next week, as a deferral past it gets its own. A
+  block landing past the days shown moves the Calendar's range there, and the header's
+  ‹ Today › steps the range a day, three days or a week at a time.
 
 ## Status checklist
 

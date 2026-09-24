@@ -76,11 +76,17 @@ final class CalendarCoordinator {
     private var approvedWorkEnd: Date?
     /// Where the running work's estimate runs out, to notice it changing.
     private var estimatedWorkEnd: Date?
-    /// Where the running work's block was when it paused, kept while it can resume.
-    private var pausedWork: (occurrenceID: UUID, start: Date, end: Date)?
+    /// Where the running work's block was when it paused, and how it read,
+    /// kept while it can resume.
+    private var pausedWork: PausedWork?
     /// The running work's extensions, newest last, and those Undo took back.
     private var extensionSteps: [WorkExtensionStep] = []
     private var undoneExtensionSteps: [WorkExtensionStep] = []
+    /// Extensions of work that has since stopped, and those Undo took back:
+    /// Undo and Redo still move the placements they moved, as the design's
+    /// Undo puts them back however the work stands.
+    private var settledExtensionSteps: [WorkExtensionStep] = []
+    private var undoneSettledSteps: [WorkExtensionStep] = []
     /// Set once Undo takes an extension back, so the block isn't grown again
     /// straight away. Work keeps recording past it.
     private var extensionsHeld = false
@@ -296,7 +302,11 @@ final class CalendarCoordinator {
             resumeTaskID = task.id
             resumeOccurrenceID = task.occurrenceID
             workSelection = WorkTaskReference(task)
-            pausedWork = drawn.map { ($0.occurrenceID, $0.start, $0.end) }
+            pausedWork = drawn.map { block in
+                PausedWork(occurrenceID: block.occurrenceID, start: block.start, end: block.end,
+                           extended: workExtension?.occurrenceID == block.occurrenceID,
+                           conflict: workConflict?.occurrenceID == block.occurrenceID ? workConflict : nil)
+            }
             persistResume()
         }
         activeSessionID = nil
@@ -649,24 +659,28 @@ final class CalendarCoordinator {
     }
 
     /// Whether Undo can still take `grant` back: the work it was given to is
-    /// still running and nothing has since replaced it.
+    /// still running and nothing has since replaced it, or, once that work
+    /// has stopped, a placement it moved is still where it left it.
     func canUndoExtension(_ grant: CalendarWorkExtension) -> Bool {
         extensionSteps.contains { $0.grant == grant && $0.sessionID == activeSessionID }
+            || settledExtensionSteps.contains { $0.grant == grant && canMove($0.moves, back: true) }
     }
 
     /// Whether Redo can still give back `grant`, which Undo took.
     func canRedoExtension(_ grant: CalendarWorkExtension) -> Bool {
         undoneExtensionSteps.contains { $0.grant == grant && $0.sessionID == activeSessionID }
+            || undoneSettledSteps.contains { $0.grant == grant && canMove($0.moves, back: false) }
     }
 
     /// Takes back the running work's latest extension: its block ends where it
     /// did and the tasks moved for it return to their slots, or, once another
     /// change has replaced those, are planned afresh around it. Work keeps
     /// recording, but the block isn't grown again until Redo or the next start.
+    /// Once the work has stopped, only the slot and the tasks go back.
     @discardableResult
     func undoExtension(_ grant: CalendarWorkExtension, now: Date = .now) -> Bool {
         guard let step = extensionSteps.last, step.grant == grant, workExtension == grant,
-              activeSession?.id == step.sessionID else { return false }
+              activeSession?.id == step.sessionID else { return undoSettledExtension(grant, now: now) }
         extensionSteps.removeLast()
         undoneExtensionSteps.append(step)
         approvedWorkEnd = step.previousEnd
@@ -690,7 +704,7 @@ final class CalendarCoordinator {
     @discardableResult
     func redoExtension(_ grant: CalendarWorkExtension, now: Date = .now) -> Bool {
         guard let step = undoneExtensionSteps.last, step.grant == grant, workExtension == step.previousGrant,
-              activeSession?.id == step.sessionID else { return false }
+              activeSession?.id == step.sessionID else { return redoSettledExtension(grant, now: now) }
         undoneExtensionSteps.removeLast()
         extensionSteps.append(step)
         approvedWorkEnd = grant.end
@@ -715,10 +729,77 @@ final class CalendarCoordinator {
         }
     }
 
+    /// Undo of an extension whose work has stopped: the slot it grew and the
+    /// tasks it moved go back where they were, each one that hasn't changed
+    /// since. Work on the task running again ends where its slot now does,
+    /// and isn't grown again until Redo or the next start.
+    private func undoSettledExtension(_ grant: CalendarWorkExtension, now: Date) -> Bool {
+        guard let index = settledExtensionSteps.lastIndex(where: { $0.grant == grant }),
+              canMove(settledExtensionSteps[index].moves, back: true) else { return false }
+        let step = settledExtensionSteps.remove(at: index)
+        undoneSettledSteps.append(step)
+        move(step.moves, back: true)
+        followSettledMove(of: step, undo: true)
+        replan(now: now)
+        return true
+    }
+
+    /// Redo of an extension whose work has stopped: its moves again.
+    private func redoSettledExtension(_ grant: CalendarWorkExtension, now: Date) -> Bool {
+        guard let index = undoneSettledSteps.lastIndex(where: { $0.grant == grant }),
+              canMove(undoneSettledSteps[index].moves, back: false) else { return false }
+        let step = undoneSettledSteps.remove(at: index)
+        settledExtensionSteps.append(step)
+        move(step.moves)
+        followSettledMove(of: step, undo: false)
+        replan(now: now)
+        return true
+    }
+
+    /// Once Undo or Redo has moved the stopped work's slot: paused, its block
+    /// reads extended only while an extension is left in place, and with
+    /// Undo no longer runs into anything, as the design's snapshot has it;
+    /// running again, it ends where its slot now ends.
+    private func followSettledMove(of step: WorkExtensionStep, undo: Bool) {
+        let occurrenceID = step.grant.occurrenceID
+        if pausedWork?.occurrenceID == occurrenceID {
+            pausedWork?.extended = settledExtensionSteps.contains { $0.grant.occurrenceID == occurrenceID }
+            if undo { pausedWork?.conflict = nil }
+        }
+        guard let session = activeSession, session.occurrenceID == occurrenceID,
+              let task = store.block(id: session.taskID), let estimate = estimatedWorkEnd else { return }
+        approvedWorkEnd = plannedWorkEnd(for: session, task: task, estimate: estimate)
+        overrunNudge = nil
+        // Redo lets it grow again, unless the running work has an Undo of its own to redo.
+        extensionsHeld = undo || undoneExtensionSteps.contains { $0.sessionID == activeSessionID }
+    }
+
+    /// Whether any placement `moves` took is still where they left it (or,
+    /// for Redo, where they took it from), for Undo or Redo to move.
+    private func canMove(_ moves: [PlacementMove], back: Bool) -> Bool {
+        guard !moves.isEmpty else { return false }
+        let placements = Dictionary(store.placements().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return moves.contains { move in
+            let at = back ? move.to : move.from
+            return placements[move.id].map { $0.start == at.start && $0.end == at.end } == true
+        }
+    }
+
     /// Clears what the running work's extensions and conflict left behind.
+    /// Their moves stay undoable once the work stops.
     private func resetExtensions() {
         workExtension = nil
         workConflict = nil
+        // Only the placements are left to put back, not the plan around them.
+        func settled(_ steps: [WorkExtensionStep]) -> [WorkExtensionStep] {
+            steps.filter { !$0.moves.isEmpty }.map { step in
+                var step = step
+                step.saved = nil
+                return step
+            }
+        }
+        settledExtensionSteps += settled(extensionSteps)
+        undoneSettledSteps += settled(undoneExtensionSteps)
         extensionSteps = []
         undoneExtensionSteps = []
         extensionsHeld = false
@@ -878,6 +959,13 @@ final class CalendarCoordinator {
         return PlannedBlock(id: slot?.id ?? "\(session.occurrenceID.uuidString)-active", taskID: task.id,
                             occurrenceID: session.occurrenceID, start: start, end: end, isPinned: slot?.isPinned ?? false,
                             placementID: slot?.placementID, conflicts: [], isActive: true)
+    }
+
+    /// How paused work's block reads while it can resume, as it did when the
+    /// work paused: what it had run into, or whether it had been extended.
+    var pausedWorkNote: (extended: Bool, conflict: CalendarWorkConflict?)? {
+        guard pausedBlockID != nil, let pausedWork, pausedWork.occurrenceID == resumeOccurrenceID else { return nil }
+        return (pausedWork.extended, pausedWork.conflict)
     }
 
     /// Where paused work's block was: as it paused, or after a relaunch,
@@ -1259,6 +1347,15 @@ struct CalendarWorkConflict: Equatable, Sendable {
     var start: Date
 }
 
+/// Where paused work's block was and how it read when the work paused.
+private struct PausedWork {
+    var occurrenceID: UUID
+    var start: Date
+    var end: Date
+    var extended: Bool
+    var conflict: CalendarWorkConflict?
+}
+
 /// A placement an extension moved, or the slot it grew.
 private struct PlacementMove {
     var id: UUID
@@ -1268,7 +1365,8 @@ private struct PlacementMove {
 }
 
 /// One extension of the running work, kept so Undo and Redo can take it back
-/// and give it again while that session runs.
+/// and give it again while that session runs, and move its placements once
+/// the work has stopped.
 private struct WorkExtensionStep {
     var sessionID: UUID
     var grant: CalendarWorkExtension

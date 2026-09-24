@@ -511,8 +511,74 @@ func checkSchedulingNudges() throws {
         planner.pause(now: date(14, 12, 5))
         check(planner.pausedBlockID != nil && planner.pausedBlockID == drawn(okrs)?.id && drawn(okrs)?.start == date(14, 10)
                 && drawn(okrs)?.end == date(14, 12) && drawn(okrs)?.isActive == false, "paused work keeps its grown slot, drawn as the work")
+        check(planner.pausedWorkNote?.conflict?.kind == .breakTime && planner.pausedWorkNote?.extended == true,
+              "paused work still runs into the break it ran into, and was extended, as the design's reads")
         planner.dismissResume()
-        check(planner.pausedBlockID == nil && drawn(okrs)?.end == date(14, 12), "stopped work leaves an ordinary slot where it ran")
+        check(planner.pausedBlockID == nil && planner.pausedWorkNote == nil && drawn(okrs)?.end == date(14, 12), "stopped work leaves an ordinary slot where it ran")
+    }
+    do {
+        // Once the work pauses, Undo still puts back what its extension moved,
+        // as the design's Undo restores the placements however the work stands.
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let okrs = add("Draft Q3 OKRs", to: fixtureStore, minutes: 90, priority: 3)
+        let feedback = add("Write interview feedback for Priya", to: fixtureStore, minutes: 20, priority: 2)
+        let slot = fixtureStore.setPlacement(for: okrs, start: date(14, 10), end: date(14, 11, 30), isPinned: true)!
+        let next = fixtureStore.setPlacement(for: feedback, start: date(14, 11, 30), end: date(14, 11, 50), isPinned: true)!
+        planner.bootstrap(now: date(14, 10), monitorsEnabled: false)
+        func drawn(_ task: Block) -> PlannedBlock? { planner.visibleBlocks.first { $0.taskID == task.id } }
+        check(planner.start(task: okrs, now: date(14, 10)), "undo after a pause fixture starts")
+        planner.tick(now: date(14, 11, 29), checkClockGap: false)
+        let grant = planner.workExtension!
+        check(slot.end == date(14, 11, 45) && next.start == date(14, 13) && grant.movedTaskIDs == [feedback.id], "the extension grows the slot and moves the next task")
+        planner.pause(now: date(14, 11, 35))
+        check(planner.workExtension == nil && planner.pausedWorkNote?.extended == true && planner.pausedWorkNote?.conflict == nil,
+              "paused work reads extended, as it did while it ran")
+        check(planner.canUndoExtension(grant) && !planner.canRedoExtension(grant), "after a pause, Undo still offers the extension's moves")
+        check(planner.undoExtension(grant, now: date(14, 11, 36)), "Undo after a pause takes the extension's moves back")
+        check(slot.end == date(14, 11, 30) && next.start == date(14, 11, 30) && next.end == date(14, 11, 50)
+                && drawn(feedback)?.start == date(14, 11, 30), "Undo after a pause puts the slot and the moved task back")
+        check(planner.pausedBlockID == drawn(okrs)?.id && planner.pausedWorkNote?.extended == false,
+              "with its extension undone, paused work keeps its block and reads working again")
+        check(!planner.canUndoExtension(grant) && planner.canRedoExtension(grant), "an undone extension's moves can be redone")
+        check(planner.redoExtension(grant, now: date(14, 11, 37)) && slot.end == date(14, 11, 45) && next.start == date(14, 13)
+                && planner.pausedWorkNote?.extended == true, "Redo after a pause moves them again")
+        // Another move since keeps the task where it now is.
+        next.start = date(14, 15)
+        next.end = date(14, 15, 20)
+        fixtureStore.save()
+        check(planner.undoExtension(grant, now: date(14, 11, 38)) && slot.end == date(14, 11, 30) && next.start == date(14, 15),
+              "Undo leaves a task moved since where it is")
+        check(planner.redoExtension(grant, now: date(14, 11, 39)) && slot.end == date(14, 11, 45), "Redo gives the slot back")
+        // Working again, the resumed block ends where its slot does once Undo shrinks it.
+        check(planner.start(task: okrs, now: date(14, 11, 40)), "undo after a pause fixture resumes")
+        check(drawn(okrs)?.isActive == true && drawn(okrs)?.end == date(14, 11, 45), "resumed work ends with its grown slot")
+        check(planner.undoExtension(grant, now: date(14, 11, 41)) && slot.end == date(14, 11, 30), "Undo of the paused extension works while the task runs again")
+        check(drawn(okrs)?.end == date(14, 11, 30), "the running block follows its slot back")
+        planner.tick(now: date(14, 11, 42), checkClockGap: false)
+        check(planner.workExtension == nil && slot.end == date(14, 11, 30), "and isn't grown again by itself straight away")
+        planner.stopWorking(now: date(14, 11, 43))
+        planner.dismissResume()
+        check(planner.canRedoExtension(grant) && planner.redoExtension(grant, now: date(14, 11, 44)) && slot.end == date(14, 11, 45),
+              "stopped work's extension can still be redone")
+        check(planner.undoExtension(grant, now: date(14, 11, 45)) && slot.end == date(14, 11, 30), "and undone again")
+    }
+    do {
+        // Done settles the extension too: Undo still moves its tasks back.
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let okrs = add("Finish while extended", to: fixtureStore, minutes: 90, priority: 3)
+        let feedback = add("Moved before Done", to: fixtureStore, minutes: 20, priority: 2)
+        fixtureStore.setPlacement(for: okrs, start: date(14, 10), end: date(14, 11, 30), isPinned: true)
+        let next = fixtureStore.setPlacement(for: feedback, start: date(14, 11, 30), end: date(14, 11, 50), isPinned: true)!
+        planner.bootstrap(now: date(14, 10), monitorsEnabled: false)
+        check(planner.start(task: okrs, now: date(14, 10)), "done after an extension fixture starts")
+        planner.tick(now: date(14, 11, 29), checkClockGap: false)
+        let grant = planner.workExtension!
+        check(next.start == date(14, 13), "the extension moves the next task before Done")
+        planner.complete(task: okrs, now: date(14, 11, 35))
+        check(planner.activeSession == nil && planner.canUndoExtension(grant), "after Done, Undo still offers the extension's moves")
+        check(planner.undoExtension(grant, now: date(14, 11, 36)) && next.start == date(14, 11, 30), "Undo after Done puts the moved task back")
     }
     do {
         // A task with no room left in its hours today stays where it is.
