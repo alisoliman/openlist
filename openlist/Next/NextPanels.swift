@@ -11,8 +11,9 @@ import SwiftUI
 /// "Start working" button, `secondary` its grey "Review kept tasks" one, whose
 /// hover deepens only the fill, and `destructive` Trash's red. `link` is a
 /// quiet action in the accent and `quiet` a grey one that darkens on hover,
-/// like the Tasks query's clear ×. Unlike `NXHoverButtonStyle`, a disabled
-/// button dims.
+/// like the Tasks query's clear ×. Hover swaps the fill at once, with no
+/// pressed dim, as the design's style-hover; unlike `NXHoverButtonStyle`, a
+/// disabled button dims.
 struct NXPanelButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, destructive, link, quiet }
     /// `regular` is the design's 8/12 button, `small` its 5/9 pill-sized one,
@@ -45,9 +46,8 @@ struct NXPanelButtonStyle: ButtonStyle {
                 // The design's `0 1px 2px` accent glow under its filled capture button.
                 .shadow(color: kind == .primary && isEnabled ? style.accent.opacity(0.4) : .clear, radius: 1, y: 1)
                 .contentShape(Rectangle())
-                .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
+                .opacity(isEnabled ? 1 : 0.45)
                 .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.12), value: hovering)
         }
 
         private var isText: Bool { kind == .link || kind == .quiet }

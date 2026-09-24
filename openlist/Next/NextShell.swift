@@ -78,18 +78,24 @@ struct NextShell: View {
         }
     }
 
-    /// A narrow window gives the inspector the sidebar's room while it's open,
-    /// and gets the sidebar back once the inspector closes or there's room again.
-    /// Under 980pt the page beside both would keep under 384pt, where the
-    /// design's overlay never meets a window that small; a native extra.
+    /// A narrow window gives the page the sidebar's room while the inspector
+    /// covers its right, and gets the sidebar back once the inspector closes
+    /// or there's room again; a native extra. The inspector overlays the page,
+    /// as the design's does, so the page keeps its width: what folding helps
+    /// is the strip left uncovered beside the sidebar and the 360pt inspector,
+    /// 804pt in the design's 1400pt window. It folds only while that strip
+    /// would be narrower than the inspector, under 956pt, where past the
+    /// page's 40pt margin rows show less than 320pt (4pt at the 640pt
+    /// minimum), and comes back 120pt wider, so a resize doesn't flip it.
     /// View ▸ Hide Sidebar is separate, so this never shows a sidebar the user hid.
     private func adaptSidebar() {
         let workbench = env.workbench
         let inspecting = env.navigator.openTaskID.flatMap { env.store.block(id: $0) }
             .map { $0.isTask && $0.trashID == nil } ?? false
+        let uncovered = width - 236 - 360
         var folded = workbench.isSidebarFoldedForRoom
-        if inspecting && width < 980 { folded = true }
-        else if !inspecting || width >= 1100 { folded = false }
+        if inspecting && uncovered < 360 { folded = true }
+        else if !inspecting || uncovered >= 480 { folded = false }
         guard folded != workbench.isSidebarFoldedForRoom else { return }
         if folded { endSidebarEditing() }
         withAnimation(workbench.style.ease(280)) { workbench.isSidebarFoldedForRoom = folded }

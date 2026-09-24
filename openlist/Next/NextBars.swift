@@ -130,15 +130,13 @@ struct NXTray: View {
                 }
                 .font(.system(size: 11.5, weight: .semibold))
                 .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.18), rest: .white.opacity(0.1), radius: 7,
-                                                padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
-                                                foreground: .white))
+                                                padding: Self.pillPadding, foreground: .white))
             }
             if message.undoable, workbench.canUndo {
                 Button("Undo ⌘Z") { workbench.undoLast() }
                     .font(.system(size: 11.5, weight: .semibold))
                     .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0xC9AEFF, opacity: 0.24), rest: Color(hex: 0xC9AEFF, opacity: 0.14), radius: 7,
-                                                    padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
-                                                    foreground: Color(hex: 0xC9AEFF)))
+                                                    padding: Self.pillPadding, foreground: Color(hex: 0xC9AEFF)))
             }
         }
         .foregroundStyle(.white)
@@ -157,6 +155,13 @@ struct NXTray: View {
         // A new message swaps in without animating the tray's size.
         .animation(nil, value: message.id)
     }
+
+    /// The design's 6/9 pill around its 600 11.5/1 text, fitted over SwiftUI's
+    /// taller line, so a tray with one is the design's 39.5pt.
+    private static let pillPadding: EdgeInsets = {
+        let vertical = 6 + (11.5 - NX.lineHeight(11.5)) / 2
+        return EdgeInsets(top: vertical, leading: 9, bottom: vertical, trailing: 9)
+    }()
 
     /// The drain takes the saturated tone, not the icon's pastel; the
     /// neutral one is the design's dark ink, barely there on the tray.
@@ -221,7 +226,9 @@ struct NXBottomBars: View {
         let workbench = env.workbench
         // Like its count, the bar goes by the selected rows on screen.
         let hasSelection = !NXSelectionBar.selected(workbench).isEmpty
-        ZStack {
+        // Each bar sits on the 26pt baseline, as the design's `bottom:26px`,
+        // so a shorter tray doesn't move while a taller bar leaves.
+        ZStack(alignment: .bottom) {
             if hasSelection && !env.navigator.isCommandPaletteOpen {
                 NXSelectionBar().transition(style.slide(Self.barTransition))
             } else if let tray = workbench.tray, !hasSelection {

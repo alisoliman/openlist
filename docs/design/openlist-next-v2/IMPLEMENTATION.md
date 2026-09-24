@@ -38,7 +38,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (`workbench.openCapture`), so menu commands keep working. Over an open capture ⌘N, ⌘F
   and ⌘, stand down and its draft stays, as the design's keys do, and so do the menus'
   other window items (New List, New Section, Export, the View screens, Back, Forward, Hide
-  Sidebar, Expand and Collapse All); only ⌘K's palette replaces it. Capture aims at the list on show only while it takes tasks: on an archived
+  Sidebar, Expand and Collapse All, the Work menu's, Keyboard Shortcuts); only ⌘K's palette
+  replaces it. Capture aims at the list on show only while it takes tasks: on an archived
   list's page, a native one, it aims at Inbox, as Quick Add does. A save that fails says so
   on the card, as Quick Add's does, not in the tray under the backdrop.
 - The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
@@ -74,11 +75,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - A screen header's progress and controls wrap under its title when they don't fit beside
   it, as the design's; a title too long for its line wraps beside the tile, where the
   design's would drop under it.
-- Deviation: in a window under 980 pt, opening details folds the sidebar away while they
-  stay open, where the design's inspector only covers the page: beside the sidebar and the
-  360 pt inspector the page would keep under 384 pt, down to 44 pt at the 640 pt minimum.
-  The sidebar comes back when details close or the window reaches 1100 pt; View ▸ Hide
-  Sidebar is separate, so this never shows a sidebar the user hid.
+- Deviation: in a window under 956 pt, opening details folds the sidebar away while they
+  stay open, where the design's inspector only covers the page. The page keeps its width
+  under the inspector either way; folding widens the strip left uncovered beside the
+  sidebar and the 360 pt inspector (804 pt in the design's 1400 pt window), and it folds
+  only where that strip would be narrower than the inspector, rows past the page's 40 pt
+  margin showing under 320 pt (4 pt at the 640 pt minimum). The sidebar comes back when
+  details close or the window reaches 1076 pt; View ▸ Hide Sidebar is separate, so this
+  never shows a sidebar the user hid.
 - Typing is on the window's undo stack natively, where the design keeps it out of Undo
   until a line commits. While a list document line holds typing, the toolbar's Undo names
   the step the line commits as ("Edited “…”", "Added “…”", "Removed an empty line"), which
@@ -326,7 +330,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the panel's completion reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo). Redo, a native extra, says "Redid — …"
-  with Undo, as Undo says "Undid — …". Completions made outside Next's rows
+  with Undo, as Undo says "Undid — …"; one of a task's Trash that moves nothing, either way,
+  says "Could not …", keeps the log as it was and leaves the stack. Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
   completion entry, and so does Settings' Export… ("Exported N lists as Markdown"). One-off
   refusals (`Store.refuse`: a drop the document's rules don't allow, rearranging a sorted

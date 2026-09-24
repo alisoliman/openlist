@@ -21,10 +21,18 @@ struct AppCommands: Commands {
         let reopens = !tasks.isEmpty && tasks.allSatisfy(env.workbench.isDoneOrClosing)
         let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
         let plans = env.workbench.canPlan(tasks)
+        // What acts on the window stands down over an open capture, as the
+        // design's keys do, rather than close it and drop the draft or change
+        // the page under it: Settings…, New List and New Section, Export,
+        // Search, the View items, the Work items and Keyboard Shortcuts are
+        // off while the window is key, and from elsewhere those that show
+        // something there only bring the window and its draft forward.
+        let keepsCapture = env.isMainWindowKey && env.workbench.captureOpen
 
         CommandMenu("Work") {
             // With the window closed, its toolbar shows the panel once it's up.
-            Button("Show Work") { inMainWindow { env.calendar.showWork(); env.showsWorkPanelOnOpen = true } }
+            Button("Show Work") { besideCapture { env.calendar.showWork(); env.showsWorkPanelOnOpen = true } }
+                .disabled(keepsCapture)
             // As Task ▸ Start Working, the palette's and the row menu's: the
             // notch shows the work, and a failure the tray.
             Button("Start Selected Task") { act { env.workbench.startWork($0[0]) } }
@@ -36,24 +44,18 @@ struct AppCommands: Commands {
                 env.calendar.isWorkPanelPresented = false
                 env.workbench.stopWork()
             }
-                .disabled(env.workbench.workTask == nil)
+                .disabled(keepsCapture || env.workbench.workTask == nil)
             // As the notch's ⏸ and ▶: in place, a failure in the tray.
             Button(env.workbench.isWorkPaused ? "Resume Task" : "Pause Task") { env.workbench.toggleWorkPause() }
-                .disabled(env.workbench.workTask == nil)
+                .disabled(keepsCapture || env.workbench.workTask == nil)
             Button("Complete Current Task") {
                 env.calendar.isWorkPanelPresented = false
                 env.workbench.finishWork()
             }
-                .disabled(env.workbench.workTask == nil)
+                .disabled(keepsCapture || env.workbench.workTask == nil)
         }
         // Openlist ▸ Settings… opens the Settings page in the main window;
         // there is no Settings window.
-        // What acts on the window stands down over an open capture, as the
-        // design's keys do, rather than close it and drop the draft or change
-        // the page under it: Settings…, New List and New Section, Export,
-        // Search and the View items are off while the window is key, and from
-        // elsewhere they only bring the window and its draft forward.
-        let keepsCapture = env.isMainWindowKey && env.workbench.captureOpen
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { showSettings() }
                 .keyboardShortcut(",", modifiers: .command)
@@ -269,8 +271,9 @@ struct AppCommands: Commands {
         }
 
         CommandGroup(replacing: .help) {
-            Button("Keyboard Shortcuts") { inMainWindow { env.navigator.isShortcutSheetOpen = true } }
+            Button("Keyboard Shortcuts") { besideCapture { env.navigator.isShortcutSheetOpen = true } }
                 .keyboardShortcut("/", modifiers: .command)
+                .disabled(keepsCapture)
         }
     }
 
