@@ -360,7 +360,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             .padding(EdgeInsets(top: 16, leading: 18, bottom: 6, trailing: 18))
 
             NXFlow(spacing: 6) {
-                ForEach(chips(parse)) { NXChip(chip: $0, fresh: true) }
+                ForEach(chips(parse)) { NXChip(chip: $0, fresh: $0.pops != .never) }
             }
             .frame(minHeight: 22, alignment: .leading)
             .padding(EdgeInsets(top: 6, leading: 46, bottom: 12, trailing: 18))
@@ -449,11 +449,13 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
 
     /// Every token previews as soon as it's typed, from the same parse and
     /// draft Return saves, so the chips show what it will store, in the order
-    /// the tokens were typed (`CaptureParse.chips`).
+    /// the tokens were typed (`CaptureParse.chips`). Only a typed token's chip
+    /// pops in; the Today and the label screen's label, which nothing typed
+    /// brought, never pop.
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
         var chips = parse.chips(for: draft.capturePreview(parse), forToday: draft.captureForToday).map { chip in
             switch chip.kind {
-            case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent)
+            case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent, pops: chip.typed ? .withRow : .never)
             case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
             case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
             case .label:
@@ -468,7 +470,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         // A label screen adds its own label, unless the text names it already.
         if let label = draft.captureLabelID.flatMap({ env.store.label(id: $0) }),
            !parse.labels.contains(label.name.lowercased()) {
-            chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor)))
+            chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor), pops: .never))
         }
         return chips
     }

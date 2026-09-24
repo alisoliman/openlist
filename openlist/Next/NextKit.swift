@@ -21,7 +21,8 @@ struct NXChipModel: Identifiable {
     var fill = false
     /// A list chip's list, whose glyph leads the label.
     var glyph: TaskList?
-    /// When it plays chipIn on a task row, as the design's `fresh` key.
+    /// When it plays chipIn on a task row, as the design's `fresh` key. On
+    /// the capture card every chip pops but a `.never` one.
     var pops: NXChipPop = .withRow
 }
 
@@ -504,9 +505,9 @@ struct NXProgress: View {
     }
 }
 
-/// Segmented control used by Calendar's range picker.
+/// Segmented control used by Calendar's range picker. The white pill moves
+/// at once, as the design's.
 struct NXSegmented<Value: Hashable>: View {
-    @Environment(\.nextStyle) private var style
     let options: [(Value, String)]
     let selection: Value
     var onSelect: (Value) -> Void
@@ -534,7 +535,6 @@ struct NXSegmented<Value: Hashable>: View {
         }
         .padding(2)
         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .animation(style.ease(140), value: selection)
     }
 }
 

@@ -23,9 +23,8 @@ struct NextCalendarScreen: View {
                 let dates = CalendarWeek.days(count: days, from: workbench.calendarStart(now: context.date), calendar: calendar)
                 let controls = HStack(spacing: 10) {
                     NXCalendarStepper(dates: dates, now: context.date, calendar: calendar)
-                    NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { value in
-                        withAnimation(style.ease(260)) { workbench.calendarDays = value }
-                    }
+                    // The range re-renders at once, as the design's.
+                    NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { workbench.calendarDays = $0 }
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     // The range control trails the title, wrapping under it as
@@ -57,7 +56,6 @@ struct NextCalendarScreen: View {
 /// always around a Wednesday, never needs.
 private struct NXCalendarStepper: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let dates: [Date]
     let now: Date
     let calendar: Calendar
@@ -71,13 +69,11 @@ private struct NXCalendarStepper: View {
                     Text("Today").font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(buttonStyle(horizontal: 9))
-                .transition(.opacity)
             }
             step(1)
         }
         .padding(2)
         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .animation(style.ease(140), value: showsToday)
     }
 
     private func step(_ direction: Int) -> some View {
@@ -97,9 +93,9 @@ private struct NXCalendarStepper: View {
                            foreground: NX.ink(0.55), hoverForeground: NX.ink)
     }
 
-    private func move(to anchor: Date?) {
-        withAnimation(style.ease(260)) { env.workbench.calendarAnchor = anchor }
-    }
+    /// Moves the range at once, its Today button with it, as the design's
+    /// range re-renders.
+    private func move(to anchor: Date?) { env.workbench.calendarAnchor = anchor }
 }
 
 private enum NXCal {
@@ -204,7 +200,7 @@ private struct NXCalendarBody: View {
                     Text("Start").font(.system(size: 12, weight: .semibold))
                 }
             }
-            .buttonStyle(NXHoverButtonStyle(hover: style.accent.mix(with: .black, by: 0.1), rest: style.accent, radius: 8,
+            .buttonStyle(NXHoverButtonStyle(hover: style.accentHover, rest: style.accent, radius: 8,
                                             padding: EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 12),
                                             foreground: .white, hoverForeground: .white))
         }
@@ -224,6 +220,9 @@ private struct NXCalendarBody: View {
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+        // A new hour range re-lays the grid at once, as the design's range
+        // re-renders, whatever change brought it.
+        .transaction(value: range) { $0.animation = nil }
     }
 
     private func columns(_ range: ClosedRange<Int>) -> some View {
@@ -491,6 +490,9 @@ private struct NXDayColumn: View {
                         .zIndex(5)
                 }
             }
+            // Nor does a new hour range play the 420ms below: blocks, meetings,
+            // breaks and the now line move at once, in line with the hour labels.
+            .transaction(value: range) { $0.animation = nil }
             // The design's 420ms top and height, whatever the Motion setting.
             .animation(NX.ease(420), value: layout.mapValues { [$0.top, $0.height, Double($0.lane), Double($0.laneCount)] })
         }

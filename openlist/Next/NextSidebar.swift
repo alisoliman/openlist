@@ -261,10 +261,7 @@ struct NextSidebar: View {
     }
 
     private func sectionHeader(_ title: String, open: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            // The design's chevron turns over 160ms, whatever the Motion setting.
-            withAnimation(NX.cssEase(160)) { action() }
-        } label: {
+        Button(action: action) {
             HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
@@ -275,6 +272,9 @@ struct NextSidebar: View {
                     .font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(NX.ink(0.3))
                     .rotationEffect(.degrees(open ? 90 : 0))
+                    // Only the chevron turns, over the design's 160ms whatever the
+                    // Motion setting; the lists show or go at once, as its do.
+                    .animation(NX.cssEase(160), value: open)
                 Spacer()
             }
             .padding(.top, 4)

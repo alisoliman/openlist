@@ -99,7 +99,7 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         let selected = workbench.selection.contains(id)
         let fresh = workbench.fresh.contains(id)
         let entering = fresh && !entered && entrance != nil
-        let restored = workbench.restored.contains(id)
+        let restored = workbench.restoredAll || workbench.restored.contains(id)
         let freshChip = workbench.freshChip.contains(id)
 
         HStack(alignment: .top, spacing: 0) {
@@ -184,11 +184,11 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         .scaleEffect(entering ? 0.99 : 1)
         .onAppear { if fresh { enter() } }
         .onChange(of: fresh) { _, isFresh in if isFresh, !entered { enter() } }
-        .opacity(flying ? 0 : closing != nil ? 0.62 : 1)
-        .offset(x: flying ? -56 : 0)
-        .scaleEffect(flying ? 0.97 : 1)
-        .animation(style.standard(280), value: flying)
-        .animation(style.ease(280), value: closing)
+        // As the design's `opacity Tms ease, transform Tms cubic-bezier(0.4,0,0.2,1)`:
+        // the closing dim and the fly's fade on CSS ease, only its slide and
+        // shrink on the standard curve.
+        .animation(style.cssEase(280)) { $0.opacity(flying ? 0 : closing != nil ? 0.62 : 1) }
+        .animation(style.standard(280)) { $0.offset(x: flying ? -56 : 0).scaleEffect(flying ? 0.97 : 1) }
         .zIndex(editing ? 4 : focused ? 3 : 0)
         .onHover { hovering = $0 }
         .onTapGesture {
@@ -620,7 +620,6 @@ struct NXGroupView: View {
                     }
                 }
                 .padding(.top, 2)
-                .transition(.opacity)
             }
         }
         .padding(.top, 16)
@@ -655,6 +654,9 @@ struct NXGroupView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(NX.ink(0.36))
                         .rotationEffect(.degrees(open ? 90 : 0))
+                        // Only the chevron turns, in the design's 180ms whatever the
+                        // Motion setting; the rows show or go at once, as its do.
+                        .animation(NX.cssEase(180), value: open)
                         .accessibilityHidden(true)
                 }
             }
@@ -675,10 +677,7 @@ struct NXGroupView: View {
         .onTapGesture(perform: toggle)
     }
 
-    private func toggle() {
-        // The design's chevron turns in 180ms whatever the Motion setting.
-        withAnimation(NX.cssEase(180)) { group.toggle(in: env.workbench) }
-    }
+    private func toggle() { group.toggle(in: env.workbench) }
 }
 
 /// A collapsible group head's role for VoiceOver: a button that says

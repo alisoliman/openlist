@@ -101,6 +101,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   as the design's. A bare time already past, or a repeat whose first day isn't today, shows
   the day it saves (tomorrow, the repeat's first day), where the design saves both today
   and shows no day.
+- Capture opened on a label screen (N or its "Add a task" row), a native extra, also gives
+  the task that label: the card shows it as a chip after the typed ones, and the task lands,
+  fresh, on the label screen, so the tray has no Show. The design's saves it with no label,
+  off the screen, and its tray offers Show.
 - Trash keeps one entry per trashed task or list, not a row per subtask: the subtasks
   restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
   counts entries. A list's Restore names where it goes back, as a task's names its list
@@ -266,6 +270,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   times), done blocks in their slot included, except for recorded work the design never draws
   (time tracked outside any slot, work running or paused with no slot): it takes lanes by its
   drawn box, so a few minutes of it isn't hidden under the block after it.
+  The grid's hours, the design's fixed 8–21, stretch to fit anything scheduled outside
+  them in the days shown; a new span re-lays the grid at once, as the design's range
+  re-renders.
   The Work panel's "N tasks rescheduled" and Start notifications come only from blocks the
   calendar draws, not from the planner's own sessions, and no Start comes while work is
   running or paused, as the design's "Planned now" hides then.

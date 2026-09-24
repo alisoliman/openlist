@@ -122,7 +122,7 @@ struct NXWorkButton: View {
         Button(action: action) {
             Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
         }
-        .buttonStyle(NXHoverButtonStyle(hover: prominent ? style.accent.opacity(0.86) : NX.ink(0.1),
+        .buttonStyle(NXHoverButtonStyle(hover: prominent ? style.accentHover : NX.ink(0.1),
                                         rest: prominent ? style.accent : NX.ink(0.05), radius: 8,
                                         padding: EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 12),
                                         foreground: prominent ? .white : NX.ink(0.72),

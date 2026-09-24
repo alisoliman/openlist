@@ -340,7 +340,7 @@ struct CaptureParse {
             }
         }
         if forToday, !showsDay, let date = preview.date, NXFormat.dayOffset(date, now: now) == 0 {
-            chips.insert(CaptureChip(id: "date-Today", kind: .day, label: "Today"), at: 0)
+            chips.insert(CaptureChip(id: "date-Today", kind: .day, label: "Today", typed: false), at: 0)
         }
         return chips
     }
@@ -353,4 +353,7 @@ struct CaptureChip: Equatable {
     let id: String
     let kind: Kind
     let label: String
+    /// Whether what was typed brings it, so it pops in as the design's typed
+    /// chips do. The Today a capture for today leads with is simply there.
+    var typed = true
 }

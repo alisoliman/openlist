@@ -82,7 +82,7 @@ struct NXPanelButtonStyle: ButtonStyle {
 
         private func fill(_ hot: Bool) -> Color {
             switch kind {
-            case .primary: hot ? style.accent.opacity(0.86) : style.accent
+            case .primary: hot ? style.accentHover : style.accent
             case .secondary: NX.ink(hot ? 0.1 : 0.06)
             case .destructive: NX.red.opacity(hot ? 0.16 : 0.1)
             case .link: hot ? style.accent.opacity(0.1) : .clear
