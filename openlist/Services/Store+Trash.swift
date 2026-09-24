@@ -251,7 +251,7 @@ extension Store {
                     let parent = block(id: root.parentID)
                     if owner == nil || (root.parentID != nil && parent?.listID != owner?.id) {
                         let recovery = TaskList(title: "Recovered items", icon: "🛟", accent: .orange)
-                        recovery.summary = "Content restored from an unavailable location. Each recovered item keeps its former location."
+                        recovery.summary = "Content restored from Trash after its list, or the task it was under, was gone."
                         recovery.isPinned = true
                         recovery.sectionID = defaultSection()?.id
                         recovery.sortIndex = (allLists.map(\.sortIndex).max() ?? 0) + BlockTree.indexStep

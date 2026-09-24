@@ -20,7 +20,7 @@ struct MoveListSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 NXPanelTitle("Move “\(list.displayTitle)”")
-                Text("Its child documents move with it. Sidebar pins and document contents stay attached to their existing lists.")
+                Text("Its nested lists, tasks, notes and files move with it. It stays pinned in the sidebar if it was.")
                     .font(.system(size: 12.5))
                     .foregroundStyle(NX.ink(0.55))
                     .fixedSize(horizontal: false, vertical: true)

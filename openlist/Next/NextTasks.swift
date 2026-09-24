@@ -508,6 +508,7 @@ private struct NXTasksQueryBar: View {
                     .monospacedDigit()
                     .foregroundStyle(NX.ink(0.4))
                     .transition(.opacity)
+                    .accessibilityLabel(count == 1 ? "1 matching task" : "\(count) matching tasks")
                 Button {
                     workbench.tasksQuery = ""
                     fieldFocused = true
@@ -520,6 +521,7 @@ private struct NXTasksQueryBar: View {
                                                 padding: EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2),
                                                 foreground: NX.ink(0.4), hoverForeground: NX.ink))
                 .transition(.opacity)
+                .accessibilityLabel("Clear filter")
             }
         }
         // 20 pt field + 11 pt puts the text on the same line as the tabs' 13 pt padding.

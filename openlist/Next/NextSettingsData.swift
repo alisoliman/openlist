@@ -95,7 +95,7 @@ struct NXDataSettings: View {
             NXSettingRow(label: "Your data",
                          hint: "\(Self.count(lists.count, "list")) · \(Self.count(tasks.count, "task")), \(completed) completed · \(Self.count(blocks.count - tasks.count, "other block"))")
             NXSettingRow(label: "Export every list as Markdown",
-                         hint: "Writes one Markdown file per list, with images and attachments in sibling assets folders. Existing files are kept.") {
+                         hint: "Writes one Markdown file per list, its images and attachments in an assets folder beside it. A list with nested lists becomes one folder holding them all. Existing files are kept.") {
                 Button("Export…") { exportAll() }
             }
             if let library = env.libraryMaintenance {
@@ -144,12 +144,7 @@ struct NXDataSettings: View {
 
         var exported = 0
         do {
-            for list in env.store.allLists(includeArchived: true) {
-                let filename = MarkdownExportPackage.safeFilename(list.displayTitle) + ".md"
-                let destination = MarkdownExportPackage.availableURL(in: folder, filename: filename)
-                try MarkdownExporter.write(list: list, store: env.store, to: destination)
-                exported += 1
-            }
+            try MarkdownExporter.writeAll(store: env.store, to: folder) { exported += $0 }
         } catch {
             let alert = NSAlert()
             alert.alertStyle = .warning

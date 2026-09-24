@@ -66,22 +66,23 @@ struct NextSettingsScreen: View {
                 }
                 NXSettingsGroup(title: "Library") {
                     let sync = env.sync.state
-                    NXSettingValue(label: "iCloud sync", hint: syncHint(sync), value: syncValue(sync),
-                                   isExpanded: expanded == .iCloud) { toggle(.iCloud) }
+                    // "Last synced …" keeps up while the page stays open, as Trash's times do.
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        NXSettingValue(label: "iCloud sync", hint: syncHint(sync, now: context.date), value: syncValue(sync),
+                                       isExpanded: expanded == .iCloud) { toggle(.iCloud) }
+                    }
                     if expanded == .iCloud { NXICloudDetails() }
                     if let maintenance = env.libraryMaintenance {
-                        let failure = maintenance.error ?? maintenance.pendingQuitError ?? maintenance.snapshotError
+                        // The design's snapshot row: a backup or restore made
+                        // by hand, and what it reports, are Data's.
                         let daily = settings.takesDailySnapshots
                         NXSettingMenu(label: "Back up library",
-                                      hint: failure ?? maintenance.status
+                                      hint: maintenance.snapshotError
                                           ?? (daily ? "Keeps \(LibrarySnapshots.retained) daily snapshots" : "Daily snapshots are off"),
-                                      isError: failure != nil,
-                                      value: maintenance.isBusy ? "Working…" : daily ? "Daily" : "Off",
+                                      isError: maintenance.snapshotError != nil,
+                                      value: daily ? "Daily" : "Off",
                                       entries: nxChoices([true, false], selection: $settings.takesDailySnapshots) { $0 ? "Daily" : "Off" } + [
                                           .divider,
-                                          .command("Back up now…", isEnabled: !maintenance.isBusy && !maintenance.hasPendingRestore) {
-                                              Task { await maintenance.exportBackup() }
-                                          },
                                           .command("Show Snapshots in Finder") { maintenance.showSnapshots() },
                                       ])
                             .onChange(of: settings.takesDailySnapshots) { _, daily in
@@ -183,10 +184,10 @@ struct NextSettingsScreen: View {
         return state.title
     }
 
-    private func syncHint(_ state: ICloudSyncState) -> String {
+    private func syncHint(_ state: ICloudSyncState, now: Date) -> String {
         guard state.isEnabled, case .available = state.account, !state.hasProblem else { return state.title }
         let last = [state.lastUpload, state.lastDownload].compactMap { $0 }.max()
-        return last.map { "Last synced \(NXFormat.relative($0))" } ?? "Syncs privately through your Apple Account"
+        return last.map { "Last synced \(NXFormat.relative($0, now: now))" } ?? "Syncs privately through your Apple Account"
     }
 }
 

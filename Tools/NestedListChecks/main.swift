@@ -97,6 +97,17 @@ if phase == "write" {
     try check(MarkdownExporter.markdown(for: parent, store: store).contains("Document: Project › Research"), "Clipboard export identifies each document path")
     do { try MarkdownExporter.write(list: parent, store: store, to: export); fatalError("Overwrote an existing export") }
     catch { checks += 1 }
+    let everyList = directory.appendingPathComponent("Every list")
+    try FileManager.default.createDirectory(at: everyList, withIntermediateDirectories: false)
+    var exported = 0
+    try MarkdownExporter.writeAll(store: store, to: everyList) { exported += $0 }
+    let written = try FileManager.default.contentsOfDirectory(atPath: everyList.path)
+    try check(written.contains("Project") && written.contains("Other project.md") && !written.contains("Project.md")
+        && !written.contains { $0.hasPrefix("Research") || $0.hasPrefix("Sources") },
+        "Export every list writes each top-level list once, a parent as a folder of its nested lists")
+    try check(try FileManager.default.contentsOfDirectory(atPath: everyList.appendingPathComponent("Project").path)
+        .filter { $0.hasSuffix(".md") }.count == 3, "Export every list keeps the parent's nested lists in its folder")
+    try check(exported == store.allLists(includeArchived: true).count, "Export every list counts each list, nested ones included, once")
 
     let beforeMove = BackupTaskList(child)
     let rejecting = Store(context: context, commitContext: { _ in throw CocoaError(.fileWriteOutOfSpace) })

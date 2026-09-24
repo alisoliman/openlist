@@ -65,6 +65,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   only shortens the slides.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
+  Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
+  snapshot failed); a backup or restore made by hand, and what it reports, are Data's.
 - Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking
   space in every text field, so a global hot key on it would take that from every app. The
   Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space.
@@ -72,7 +74,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
   counts entries. A list's Restore names where it goes back, as a task's names its list
   (under its parent, or at the top level once the parent is gone), and Undo takes it back
-  to Trash as a task's does.
+  to Trash as a task's does. A task whose list, or the task it was under, is gone goes back
+  to a pinned Recovered items list, a native extra; its tray and log entry add where it
+  came from ("… to Recovered items — from Work › Launch").
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
   `OutlineEditor` engine, which keeps the design's rules (`OutlinePolicy`), tasks on `NXTaskRowChrome` (the
   Next row's chrome with the live text as its title) and the other kinds in the same
@@ -209,9 +213,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   written (the new task at Return, its title as typed, the line itself when it goes)
   reaches saved history as one entry once the line ends, as the design logs it: "Added
   “…”", "Edited “…”" or "Removed an empty line", or none for a new line left empty. So a
-  task's line reads the same in Earlier after a relaunch. Deviations: tasks pasted into a
-  line keep an "Added" each there, and a heading or text line, which has no saved history,
-  shows in This session only. History saved before this shows as it was recorded.
+  task's line reads the same in Earlier after a relaunch, as do a label added, a note, a
+  restore and a date, which Earlier names as of when it was set. Deviations: tasks pasted
+  into a line keep an "Added" each there, and a heading or text line, which has no saved
+  history, shows in This session only; a note shows in Earlier only when it was first
+  written, the one change to it saved history keeps. History saved before this shows as it
+  was recorded. The day panel lists saved completions, so a task trashed or erased since
+  still shows there, with the list it was done in; only one still in the library opens.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the

@@ -254,15 +254,22 @@ private struct NXActivityDayPanel: View {
                 .padding(.bottom, 12)
             VStack(spacing: 2) {
                 ForEach(items) { item in
+                    let task = item.taskID.flatMap { env.store.block(id: $0) }
+                    // One trashed or erased since keeps the list it was done
+                    // in, as the design's rows keep theirs.
+                    let list = library.list(task?.listID ?? item.listID)
+                    let title = item.title.isEmpty ? "Untitled" : item.title
                     HStack(spacing: 9) {
                         Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NX.green)
-                        Text(item.title.isEmpty ? "Untitled" : item.title)
+                        Text(title)
                             .font(.system(size: 12.5))
                             .foregroundStyle(NX.ink)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        if let list = item.taskID.flatMap({ env.store.block(id: $0) }).flatMap({ library.list($0.listID) }) {
+                        if let list {
                             NXListGlyph(list: list, size: 10.5).help(list.displayTitle)
+                        } else if !item.listIcon.isEmpty {
+                            NXListGlyph.text(item.listIcon, size: 10.5).foregroundStyle(NX.ink(0.42)).help(item.listTitle)
                         } else if !item.listTitle.isEmpty {
                             Text(item.listTitle).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.42)).lineLimit(1)
                         }
@@ -272,7 +279,14 @@ private struct NXActivityDayPanel: View {
                     .padding(.horizontal, 4)
                     .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
                     .contentShape(Rectangle())
-                    .onTapGesture { if let id = item.taskID, env.store.block(id: id) != nil { env.workbench.inspect(id) } }
+                    .onTapGesture { if let task { env.workbench.inspect(task.id) } }
+                    // One element, which opens the task while it's there.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(title)
+                    .accessibilityValue([list?.displayTitle ?? item.listTitle, "completed at \(NXFormat.clock(item.date))"]
+                        .filter { !$0.isEmpty }.joined(separator: ", "))
+                    .accessibilityAddTraits(task == nil ? [] : [.isButton])
+                    .accessibilityAction { if let task { env.workbench.inspect(task.id) } }
                 }
             }
         }
@@ -345,10 +359,11 @@ private struct NXChangesSection: View {
         let workbench = env.workbench
         var seen: Set<String> = []
         var items: [NXChangeItem] = []
+        let lists = loggedLists(workbench.log)
         for entry in workbench.log {
             let key = "\(entry.batch)\(entry.label)"
             guard seen.insert(key).inserted else { continue }
-            let list = entry.taskID.flatMap { env.store.block(id: $0) }.flatMap { library.list($0.listID) }
+            let list = entry.taskID.flatMap { lists[$0] }
             items.append(NXChangeItem(id: "s\(entry.id)", icon: Self.outline(entry.icon), tone: entry.tone, label: entry.label,
                                       list: list, listTitle: list?.displayTitle ?? "", at: entry.at,
                                       canUndo: items.isEmpty && entry.batch == workbench.latestBatch && workbench.canUndo))
@@ -372,17 +387,38 @@ private struct NXChangesSection: View {
         events.filter { $0.timestamp < env.workbench.startedAt }.prefix(40).map(item)
     }
 
+    /// Each logged task's list, the task found in the library or in Trash,
+    /// which keeps it, so a row about a task still shows its list once it's
+    /// trashed, as the design's do. An erased task has none.
+    private func loggedLists(_ log: [ChangeEntry]) -> [UUID: TaskList] {
+        let ids = Array(Set(log.compactMap(\.taskID)))
+        guard !ids.isEmpty,
+              let tasks = try? env.store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
+        else { return [:] }
+        return Dictionary(tasks.compactMap { task in library.list(task.listID).map { (task.id, $0) } },
+                          uniquingKeysWith: { first, _ in first })
+    }
+
     private func item(_ event: ActivityEvent) -> NXChangeItem {
-        // A line taken out as it was left empty is an edit, as the log draws it.
+        // A line taken out as it was left empty is an edit, as the log draws
+        // it. MCP saves a heading or text line it adds as a note, which reads
+        // as the line added, as the design's new line does.
         let removedLine = event.change?.removedEmptyLine == true
-        return NXChangeItem(id: "e\(event.id)", icon: removedLine ? "pencil" : Self.icon(event.kind),
-                            tone: removedLine ? .neutral : Self.tone(event.kind),
-                            label: Self.label(event), detail: event.recordedDetail,
+        let addedLine = event.kind == .noteAdded && env.store.block(id: event.blockID).map { !$0.isTask } == true
+        let kind: ActivityKind = removedLine ? .renamed : addedLine ? .created : event.kind
+        return NXChangeItem(id: "e\(event.id)", icon: Self.icon(kind), tone: Self.tone(kind),
+                            label: addedLine ? "Added \(Self.title(event))" : Self.label(event), detail: event.recordedDetail,
                             list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
     }
 
+    private static func title(_ event: ActivityEvent) -> String {
+        NXFormat.quoted(event.title.isEmpty ? "Untitled" : event.title)
+    }
+
+    /// A saved change worded as the log words it when it's made, so it reads
+    /// the same after a relaunch.
     private static func label(_ event: ActivityEvent) -> String {
-        let title = NXFormat.quoted(event.title.isEmpty ? "Untitled" : event.title)
+        let title = Self.title(event)
         let after = event.change?.after
         switch event.kind {
         case .completed: return "\(title) done"
@@ -390,8 +426,11 @@ private struct NXChangesSection: View {
         case .moved:
             if let list = after?.listTitle, !list.isEmpty { return "Moved \(title) to \(list)" }
             return "Moved \(title)"
+        // The day as it was named when it was set, not as it is today.
         case .scheduled:
-            if let due = after?.dueDate { return "\(title) → \(NXFormat.dueLabel(due))" }
+            if let due = after?.dueDate {
+                return "\(title) → \(NXFormat.dueLabel(due, now: event.timestamp))" + (after?.includesTime == true ? " \(NXFormat.clock(due))" : "")
+            }
             return "Scheduled \(title)"
         case .unscheduled: return "Cleared date on \(title)"
         // A task's title is its line's text, which the design edits.
@@ -399,6 +438,11 @@ private struct NXChangesSection: View {
         case .deleted where event.change?.removedEmptyLine == true: return "Removed an empty line"
         // A list's, like a task's, is in Trash, where it can be restored.
         case .deleted, .listDeleted: return "Moved \(title) to Trash"
+        case .labeled where !event.detail.isEmpty: return "Added #\(event.detail) · \(title)"
+        case .noteAdded: return "Edited note on \(title)"
+        case .restored:
+            let list = after.flatMap { $0.listTitle.isEmpty ? nil : $0.listTitle } ?? event.listTitle
+            return list.isEmpty ? "Restored \(title)" : "Restored \(title) to \(list)"
         default: return "\(event.kind.verb) \(title)"
         }
     }
@@ -415,8 +459,7 @@ private struct NXChangesSection: View {
         case .deleted, .listDeleted: "trash"
         case .labeled: "tag"
         case .starred: "star"
-        case .noteAdded: "text.bubble"
-        case .renamed: "pencil"
+        case .noteAdded, .renamed: "pencil"
         case .restored: "arrow.up.bin"
         }
     }

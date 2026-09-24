@@ -48,6 +48,28 @@ enum MarkdownExporter {
         }
     }
 
+    /// Settings' Export every list: each top-level list in `folder`, as its
+    /// own Export writes it, so a list with nested lists is one folder holding
+    /// them all and none is written twice. `wrote` hears how many lists each
+    /// write took, so a failure part way can say how many were exported.
+    @MainActor
+    static func writeAll(store: Store, to folder: URL, wrote: (Int) -> Void = { _ in }) throws {
+        let hierarchy = store.listHierarchy()
+        for list in store.allLists(includeArchived: true) where hierarchy.parent(of: list.id) == nil {
+            let documents = hierarchy.subtree(of: list.id).count
+            try write(list: list, store: store, to: destination(for: list, in: folder, documents: documents))
+            wrote(documents)
+        }
+    }
+
+    /// Where a list's export goes in `folder`: "List.md", or a "List" folder
+    /// when it has nested lists, a new name beside what's there.
+    @MainActor
+    private static func destination(for list: TaskList, in folder: URL, documents: Int) -> URL {
+        let name = MarkdownExportPackage.safeFilename(list.displayTitle)
+        return MarkdownExportPackage.availableURL(in: folder, filename: documents > 1 ? name : name + ".md")
+    }
+
     @MainActor
     private static func assets(for list: TaskList, store: Store) throws -> [MarkdownExportPackage.Asset] {
         var assets: [MarkdownExportPackage.Asset] = []
@@ -181,7 +203,7 @@ enum MarkdownExporter {
                 ? "Choose where to export a folder containing one Markdown file per document, with parent and child links and shared assets. Existing files are kept."
                 : "Choose a folder for \(filename) and its images and attachments. Keep the Markdown file and assets folder together when sharing. Existing files are kept."
             guard panel.runModal() == .OK, let folder = panel.url else { return }
-            url = MarkdownExportPackage.availableURL(in: folder, filename: documents.count > 1 ? MarkdownExportPackage.safeFilename(list.displayTitle) : filename)
+            url = destination(for: list, in: folder, documents: documents.count)
         } else {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
