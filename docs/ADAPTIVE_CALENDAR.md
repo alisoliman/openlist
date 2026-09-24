@@ -102,6 +102,8 @@ where they were rather than being moved as missed; pausing replans them and the
 remaining work into the next available slot. **Defer…** pauses work, removes that
 occurrence’s explicit placements, and chooses the next day on which planning may
 start. Its deadline stays unchanged, so deferral can reveal a deadline conflict.
+Undo takes a deferral back, placements included; **Clear** ends one, keeping the
+task selected for today once its day has come.
 
 Lock, screen sleep, system sleep, and inactive user-session notifications pause
 active work and offer **Resume** on return. **Track work away from this Mac** is

@@ -10,6 +10,8 @@ struct TaskSchedulePicker: View {
     @State private var section: DetailPicker
     /// The section's height as last laid out; nil until it first is.
     @State private var contentHeight: CGFloat?
+    /// A time still being typed as Custom…, like the due time, which Done sets first.
+    @State private var typedValue: NXPendingCustomValue?
     private static let maximumHeight: CGFloat = 510
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
@@ -40,7 +42,7 @@ struct TaskSchedulePicker: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                Button("Done") { dismiss() }
+                Button("Done", action: done)
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
             }
 
@@ -80,5 +82,16 @@ struct TaskSchedulePicker: View {
         .presentationBackground(NX.card)
         .tint(style.accent)
         .environment(\.calendar, env.settings.calendar)
+        .onPreferenceChange(NXPendingCustomValueKey.self) { typedValue = $0 }
+    }
+
+    /// Closing while a time is still being typed keeps what was typed, as
+    /// leaving its field does, where closing the popover may not get to it.
+    private func done() {
+        if let typedValue {
+            guard typedValue.commit() else { NSSound.beep(); return }
+            self.typedValue = nil
+        }
+        dismiss()
     }
 }

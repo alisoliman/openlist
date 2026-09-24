@@ -56,6 +56,20 @@ extension Store {
         save()
     }
 
+    /// Ends a deferral: the task no longer waits for its day. The day it was
+    /// selected for goes with it while still ahead; once that day has come
+    /// the task stays selected, as it's planned for today by then.
+    func clearDeferral(_ block: Block, now: Date = .now) {
+        guard block.isTask, block.deferredUntil != nil else { return }
+        let calendar = Calendar.current
+        if let day = block.selectedForDay, calendar.startOfDay(for: day) > calendar.startOfDay(for: now) {
+            block.selectedForDay = nil
+        }
+        block.deferredUntil = nil
+        block.touch()
+        save()
+    }
+
     func setTaskEstimate(_ minutes: Int, for block: Block) {
         block.schedulingEstimateMinutes = max(0, min(60 * 24 * 28, minutes))
         block.touch()

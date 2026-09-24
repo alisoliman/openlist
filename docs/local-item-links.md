@@ -1,6 +1,6 @@
 # Local item links
 
-Copy Link in a task menu or inspector, a list menu, gallery card, or sidebar
+Copy Link in a task menu, a list menu, gallery card, or sidebar
 copies a URL for that identity. Openlist resolves the current task/list when
 the link is opened, so renaming a task or moving it to another list does not
 change its link. Duplicating a task/list gives the copy fresh item IDs; old

@@ -35,7 +35,8 @@ struct LabelPicker: View {
                                 env.workbench.toggleLabel(block.id, labelID: labelID)
                             } label: {
                                 HStack(spacing: 9) {
-                                    Circle()
+                                    // The design's label mark, as the sidebar draws it.
+                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
                                         .fill(label.accent.color)
                                         .frame(width: 8, height: 8)
                                         .frame(width: 16)

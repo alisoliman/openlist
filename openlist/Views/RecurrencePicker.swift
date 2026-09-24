@@ -176,9 +176,11 @@ struct RecurrencePicker: View {
         }
     }
 
+    /// The days in the order the week starts on, as the month grids under
+    /// Ends and Due have them; each keeps its own weekday number.
     private var weekdayPicker: some View {
         HStack(spacing: 4) {
-            ForEach(1...7, id: \.self) { day in
+            ForEach(NXHours.weekdays(env.settings.calendar), id: \.self) { day in
                 NXInspectorPill(isOn: weekdays.contains(day)) {
                     if weekdays.contains(day) { weekdays.remove(day) } else { weekdays.insert(day) }
                     apply()

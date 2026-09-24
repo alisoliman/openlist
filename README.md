@@ -212,9 +212,9 @@ facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md) for save,
 retention, and export behavior.
 
 The inspector keeps the title and active metadata above notes and subtasks.
-Empty notes and files use add actions rather than empty forms. Its footer has
-**Trash**, **Copy Link** and **Start**. Priority and label controls remain named
-for accessibility.
+Empty notes and files use add actions rather than empty forms; removing a file
+can be undone. Its footer has **Trash** and **Start**; **Copy Link** is in the
+task's menu. Priority and label controls remain named for accessibility.
 **Add subtask** goes to the task's list document, opening it if needed, unfolds
 the task and writes a new subtask line at the end of its subtasks, as one Undo
 step.

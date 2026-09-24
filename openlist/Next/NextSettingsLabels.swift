@@ -160,8 +160,8 @@ private struct NXLabelSettingsRow: View {
     }
 }
 
-/// A label's colour dot, which pops up the colours to choose from on a press,
-/// or on Space once Tab has reached it.
+/// A label's colour, drawn as the design's label mark, which pops up the
+/// colours to choose from on a press, or on Space once Tab has reached it.
 private struct NXLabelSwatch: View {
     let label: TaskLabel
     @Environment(AppEnvironment.self) private var env
@@ -170,9 +170,9 @@ private struct NXLabelSwatch: View {
 
     var body: some View {
         Button(action: choose) {
-            Circle()
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(label.nxColor)
-                .frame(width: 11, height: 11)
+                .frame(width: 8, height: 8)
                 .frame(width: 22, height: 22)
                 .background(NX.ink(hovering ? 0.06 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }

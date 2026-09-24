@@ -117,7 +117,7 @@ struct NXInspectorPlanOptions: View {
                     Image(systemName: "arrow.uturn.forward").font(.system(size: 10.5, weight: .semibold))
                     Text("Deferred until \(NXFormat.dueLabel(deferred))")
                     Spacer(minLength: 6)
-                    NXInspectorLink(title: "Clear") { env.store.deselectForToday(task) }
+                    NXInspectorLink(title: "Clear") { env.workbench.clearDeferral(task.id) }
                         .accessibilityLabel("Clear task deferral")
                 }
                 .font(.system(size: 11, weight: .medium))
@@ -444,11 +444,7 @@ struct NXInspectorFiles: View {
                     .accessibilityLabel("Attach files to task")
                 }
                 ForEach(attachments) { attachment in
-                    AttachmentRow(attachment: attachment) {
-                        env.store.removeEditorMedia(filename: attachment.filename)
-                        env.store.context.delete(attachment)
-                        env.store.save()
-                    }
+                    AttachmentRow(attachment: attachment) { env.workbench.removeAttachment(attachment) }
                 }
             }
         }

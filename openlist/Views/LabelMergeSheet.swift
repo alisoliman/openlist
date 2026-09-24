@@ -28,7 +28,8 @@ struct LabelMergeSheet: View {
                             let isOn = destinationID == label.id
                             Button { destinationID = label.id } label: {
                                 HStack(spacing: 9) {
-                                    Circle().fill(label.accent.color).frame(width: 8, height: 8).frame(width: 16)
+                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                        .fill(label.accent.color).frame(width: 8, height: 8).frame(width: 16)
                                     Text(label.name)
                                         .font(.system(size: 13, weight: .medium))
                                         .lineLimit(1)
