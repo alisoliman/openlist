@@ -325,11 +325,20 @@ check(nestedOutline(deepList.id) == ["0 A", "1 B", "2 C", "2 D", "1 E"] && deepR
 check(nestedOutline(target.id).allSatisfy { Int($0.prefix(1))! <= OutlinePolicy.maximumDepth },
     "The mixed-depth fixture pasted at the top keeps to two levels")
 
-for literal in ["```swift\n# not a heading\n\n- not a bullet\n```", "first\n\nlast", "first  \nsecond", "  indented\nnext", " one space\nnext", "\u{00a0}nonbreaking indent\nnext", "[title](https://example.com)\n<script>data</script>"] {
-    let parsed = MarkdownInputRules.parseClipboard(literal)
-    check(parsed.count == 1 ? parsed[0].text == literal : parsed.map(\.text).joined(separator: "\n") == literal, "Unsupported external Markdown preserves literal content")
+// External text as a paste reads it: what doesn't read as Markdown keeps its words, a
+// trimmed text line for each non-blank line and a fenced block as one code line.
+let fenced = MarkdownInputRules.pasteLines("```swift\n# not a heading\n\n- not a bullet\n```")
+check(fenced.map(\.kind) == [.code] && fenced.map(\.text) == ["# not a heading\n\n- not a bullet"], "An external fenced block pastes as one code line, its content literal")
+for (source, lines) in [("first\n\nlast", ["first", "last"]), ("first  \nsecond", ["first", "second"]), ("  indented\nnext", ["indented", "next"]),
+                        (" one space\nnext", ["one space", "next"]), ("\u{00a0}nonbreaking indent\nnext", ["nonbreaking indent", "next"]),
+                        ("[title](https://example.com)\n<script>data</script>", ["[title](https://example.com)", "<script>data</script>"])] {
+    let parsed = MarkdownInputRules.pasteLines(source)
+    check(parsed.allSatisfy { $0.kind == .paragraph && $0.depth == 0 } && parsed.map(\.text) == lines, "Unsupported external Markdown pastes as trimmed text lines, keeping its words")
 }
-check(MarkdownInputRules.parseClipboard("- [ ] Parent\n  - [x] Child").map(\.depth) == [0, 1], "Supported external task Markdown keeps nesting")
+check(MarkdownInputRules.pasteLines("- [ ] Parent\n  - [x] Child").map(\.depth) == [0, 1], "Supported external task Markdown keeps nesting")
+// The fallback takes the whole paste: one blank line anywhere keeps every line's markers as text.
+let spaced = MarkdownInputRules.pasteLines("## Groceries\n\n- [ ] Milk\n- [ ] Eggs")
+check(spaced.allSatisfy { $0.kind == .paragraph && $0.depth == 0 } && spaced.map(\.text) == ["## Groceries", "- [ ] Milk", "- [ ] Eggs"], "A blank line anywhere pastes every line as text, markers included")
 try payload.write(to: fragmentURL)
 store.deleteBlock(root); try store.persistChanges()
 check(store.block(id: sourceID) == nil && media.fileContents(filename: copiedFilename) == blob, "Source deletion leaves pasted files independent")

@@ -217,8 +217,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Quick Add as Today's own add row does, an undated task due today, so it shows in the
   widget; the design's footer is plain Quick Add. A List widget whose chosen list is gone
   shows the first list, as an unconfigured one does; with no list besides Inbox it reads
-  "No lists" and opens Lists, where the design always has a list. Quick Add counts an Inbox
-  task's first hour in minutes ("12m"), a native extra: the design's ages start at "2h". The
+  "No lists" and opens Lists, where the design always has a list. Large List's add chip
+  names the whole list ("Add to Weekend in Kyoto"), as the app's add row does, where the
+  design's names a short form lists don't have ("Add to Kyoto"); a name too long to fit
+  whole reads "New task", as Today's chip does. Quick Add counts an Inbox task's first hour
+  in minutes ("12m"), a native extra: the design's ages start at "2h". The
   gallery's sample week is the one today falls in: today has the design's Wednesday and
   every other day its own weekday's meetings (on a weekday today's own move to Wednesday; a
   weekend's give way), and planned slots stay on their tasks' due days, after any meeting
@@ -364,9 +367,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   pasted under only when both are tasks or list items, two levels deep at most, and
   otherwise goes beside it, stepping out after the lines already under it, so a heading or
   text line pasted under a nested line comes to the top after that line's task and the
-  document's lines keep their places. Text that doesn't read as Markdown comes in as a trimmed text
-  line for each of its lines, a fenced block as one code line. A code line takes a paste as
-  it is.
+  document's lines keep their places. A paste that doesn't read line for line as Markdown (a
+  blank line, trailing space, an indent a list wouldn't have or a fence anywhere in it) comes
+  in whole as a trimmed text line for each non-blank line, markers and all, a fenced block
+  as one code line. A code line takes a paste as it is.
   The card opens above its line when it wouldn't fit under it on the visible page, and a
   row the pointer moves onto takes the highlight.
 

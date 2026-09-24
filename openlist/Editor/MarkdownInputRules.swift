@@ -171,16 +171,9 @@ enum MarkdownInputRules {
         var isCompleted: Bool
     }
 
-    /// External Markdown has no internal fidelity promise. When conversion
-    /// would lose whitespace, code fences, or unsupported indentation, keep
-    /// the complete source as one literal paragraph instead of guessing.
-    static func parseClipboard(_ source: String) -> [ParsedLine] {
-        readingAsLines(source) ?? (source.isEmpty ? [] : [ParsedLine(kind: .paragraph, text: source, depth: 0, isCompleted: false)])
-    }
-
     /// Pasted text as a list document's lines, which hold one line each, as
     /// the design's do. Markdown that reads as lines comes in as
-    /// `parseClipboard` reads it. Anything else comes in as written, a text
+    /// `parseMarkdown` reads it. Anything else comes in as written, a text
     /// line for each of its lines, trimmed as the design's commit trims a
     /// line, and a fenced block as one code line, which keeps its breaks and
     /// indent. The breaks around the text, as copied lines end with one,

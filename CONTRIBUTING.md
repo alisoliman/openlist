@@ -255,9 +255,9 @@ preserves the retained original database, WAL, and external payload bytes.
 List covers add optional `coverFilename`, externally stored `coverData`,
 `coverMetadataData`, and `coverPresentationRaw` fields to TaskList. These are
 CloudKit schema changes subject to the production schema gate above. Logical
-backup format 4 includes cover assets and presentation; formats 1, 2, and 3 remain
-readable. Compilation and local fixtures do not verify cloud delivery or the
-Production schema.
+backup format 4 added cover assets and presentation; current exports use format 5
+(see docs/LIBRARY_BACKUP.md) and formats 1–4 remain readable. Compilation and local
+fixtures do not verify cloud delivery or the Production schema.
 
 ### Nested document persistence
 
