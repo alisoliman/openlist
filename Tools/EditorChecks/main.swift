@@ -727,6 +727,60 @@ check(listEditor.actions(for: lastDrawn).onArrowOut(.down, 0) && listEditor.focu
     "Keeping a done task on screen retires the drawn rows")
 listEditor.completedTasksKeptVisible = []
 
+// A renderer keeps the rows it last drew until it draws again, so rows of a
+// pasted subtree outlive the Undo that takes their blocks away. The next
+// render, and every handler on such a row, must cope, and Redo's fresh
+// models draw again.
+let pasteList = store.createList(title: "Retained paste")
+let pasteDocument = DocumentContext(listID: pasteList.id)
+let pasteSource = store.appendBlock(kind: .task, text: "Pasted parent", to: pasteDocument)
+let pasteSourceChild = store.insertChild(kind: .task, text: "Pasted child", of: pasteSource)
+store.save()
+let pastedFragment = try FragmentContent.capture([pasteSource.id], store: store)
+let pasteEditor = OutlineEditor(env: outlineEnv, document: pasteDocument)
+let pasteUndo = UndoManager()
+pasteUndo.groupsByEvent = false
+func pasteBlocks() -> [Block] { store.blocks(inList: pasteList.id) }
+for _ in 0..<2 {
+    pasteUndo.beginUndoGrouping()
+    let pastedID = store.undoableEditorEdit(in: pasteList.id, name: "Paste content", undoManager: pasteUndo, includingNewLabels: true) {
+        try! store.pasteFragment(pastedFragment, in: pasteDocument, after: pasteSource.id)[0]
+    }
+    pasteUndo.endUndoGrouping()
+    let drawn = pasteEditor.rowsToDraw(in: pasteBlocks())
+    let retained = drawn.first { $0.id == pastedID }!
+    check(retained.hasChildren && drawn.count == 4, "The pasted subtree is drawn after its source")
+    pasteEditor.actions(for: retained).onFocus()
+    check(pasteEditor.focus.blockID == pastedID, "The pasted parent takes the caret")
+    pasteUndo.undo()
+    check(store.block(id: pastedID) == nil, "Undo takes the pasted subtree away")
+    check(retained.id == pastedID && Set([retained]).contains(retained), "Retained row identity and hashing require no deleted model reads")
+    // The renderer's query can still hold the models Undo deleted.
+    let redrawn = pasteEditor.rowsToDraw(in: drawn.map(\.block))
+    check(redrawn.map(\.id) == [pasteSource.id, pasteSourceChild.id]
+        && pasteEditor.visibleRows(in: pasteBlocks()).map(\.id) == redrawn.map(\.id),
+        "The next render leaves the undone paste out, even from a query that still holds it")
+    pasteEditor.visibleRowsDidChange(redrawn.map(\.id), from: drawn.map(\.id))
+    pasteEditor.blocksDidChange(pasteBlocks().map(\.id))
+    check(pasteEditor.focus.blockID == nil, "Undo taking the line with the caret lets the caret go")
+    let late = pasteEditor.actions(for: retained)
+    check(!late.onArrowOut(.up, 0) && !late.onArrowOut(.down, 0), "Arrows on a row Undo took away go nowhere")
+    late.onFocus()
+    check(pasteEditor.focus.blockID == nil && !outlineEnv.navigator.selection.contains(pastedID),
+        "A row Undo took away never takes the caret")
+    late.onChange(NSAttributedString(string: "Late edit"))
+    check(store.block(id: pastedID) == nil && pasteSource.text == "Pasted parent", "A late edit on a row Undo took away writes nothing")
+    pasteUndo.redo()
+    let restored = pasteEditor.rowsToDraw(in: pasteBlocks())
+    let fresh = restored.first { $0.id == pastedID }
+    check(restored.count == 4 && fresh?.hasChildren == true && fresh?.block.modelContext != nil,
+        "Redo's fresh models draw again with their subtree")
+    check(pasteEditor.actions(for: fresh!).onArrowOut(.up, 0) && pasteEditor.focus.blockID == pasteSourceChild.id,
+        "A row of Redo's model takes the keys again")
+    pasteUndo.undo()
+    pasteEditor.blocksDidChange(pasteBlocks().map(\.id))
+}
+
 // The list document's rules, from the design.
 let nextList = store.createList(title: "List document")
 let nextDocument = DocumentContext(listID: nextList.id)

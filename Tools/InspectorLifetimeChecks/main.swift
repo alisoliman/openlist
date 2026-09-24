@@ -122,6 +122,27 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     store.onEditorBlocksRemoved = nil
     window.contentView = nil
 }
+// A row kept from before Undo of the paste that made its block, as the list
+// document keeps the rows it last drew, answers identity and hashing from
+// what it stored: the saved deletion leaves no model to read.
+let destination = store.createList(title: "Retained pasted rows")
+let fragment = try FragmentContent.capture([source.id], store: store)
+for _ in 0..<3 {
+    let undo = UndoManager()
+    undo.groupsByEvent = false
+    undo.beginUndoGrouping()
+    let rootID = store.undoableEditorEdit(in: destination.id, name: "Paste content", undoManager: undo, includingNewLabels: true) {
+        try! store.pasteFragment(fragment, in: .init(listID: destination.id), after: nil)[0]
+    }
+    undo.endUndoGrouping()
+    let row = BlockRow(block: store.block(id: rootID)!, depth: 0, ordinal: 0, hasChildren: true, isCollapsed: false)
+    undo.undo()
+    check(store.block(id: rootID) == nil, "Undo takes the pasted subtree away")
+    check(row.id == rootID && Set([row]).contains(row), "Retained row identity and hashing require no deleted model reads")
+    undo.redo()
+    check(store.block(id: rootID) != nil && store.attachments(for: rootID).count == 1, "Redo brings back a fresh model and its attachment")
+    undo.undo()
+}
 // Exercise the actual native editor callbacks for typed and single-line pasted
 // capture. A private pasteboard avoids changing the user's clipboard.
 func nativeTextView(in view: NSView) -> BlockNSTextView? {
