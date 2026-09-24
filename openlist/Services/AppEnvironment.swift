@@ -290,8 +290,8 @@ final class AppEnvironment {
 // MARK: - Convenience
 
 extension AppEnvironment {
-    /// Every Copy Link: the link on the pasteboard, said in the tray, or why
-    /// it couldn't be made in the link notice.
+    /// Every Copy Link, from a menu or Task ▸: the link on the clipboard and
+    /// "Link copied" in the tray, or the link notice saying why there is none.
     func copyLink(to target: LocalLink.Target) {
         // An earlier link's error would otherwise hide this copy's result.
         localLinks.error = nil

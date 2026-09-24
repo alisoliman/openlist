@@ -51,25 +51,13 @@ struct NextShell: View {
             adaptSidebar()
         }
         .onChange(of: env.navigator.openTaskID) { adaptSidebar() }
+        .onChange(of: env.navigator.searchActivation) { landReveal() }
         // Back/Forward, reveals and deletions change the route without `go`.
         .onChange(of: env.navigator.route) {
             env.workbench.routeDidChange()
             settleRevealedLists()
         }
         .onChange(of: revealedDocuments) { settleRevealedLists() }
-        .onChange(of: env.navigator.searchActivation) { landReveal() }
-    }
-
-    /// A reminder, a link or a search hit that opens a task lands as the
-    /// design's search does: its row takes the focus, once the new screen is
-    /// up so it scrolls there, and the task stays open in the inspector.
-    private func landReveal() {
-        let navigator = env.navigator, workbench = env.workbench
-        guard let taskID = navigator.contentReveal?.taskID else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-            guard navigator.contentReveal?.taskID == taskID else { return }
-            workbench.inspect(taskID)
-        }
     }
 
     /// The library the window draws, its lists left on the workbench for
@@ -92,6 +80,18 @@ struct NextShell: View {
                 overlays.revealedDocuments.remove(id)
                 navigator.setListViewMode(.tasks, for: id)
             }
+        }
+    }
+
+    /// A reminder, a link or a search hit that opens a task lands as the
+    /// design's search does: its row takes the focus, once the new screen is
+    /// up so it scrolls there, and the task stays open in the inspector.
+    private func landReveal() {
+        let navigator = env.navigator, workbench = env.workbench
+        guard let taskID = navigator.contentReveal?.taskID else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+            guard navigator.contentReveal?.taskID == taskID else { return }
+            workbench.inspect(taskID)
         }
     }
 

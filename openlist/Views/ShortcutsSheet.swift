@@ -83,7 +83,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "[ ]", action: "Task"),
             Shortcut(keys: ">", action: "Text"),
             Shortcut(keys: "/", action: "Turn into"),
-            Shortcut(keys: "/ then a name", action: "Heading 3, numbered, quote, code, divider"),
+            Shortcut(keys: "/ then a name", action: "Heading 3, numbered, quote, code, divider, image"),
             Shortcut(keys: "↩", action: "New line below"),
             Shortcut(keys: "↩", action: "On an empty line: out a level, or a task"),
             Shortcut(keys: "⇥", action: "Subtask"),

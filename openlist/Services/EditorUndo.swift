@@ -262,6 +262,14 @@ final class EditorEditSession {
         for id in touchedIDs { expected[id] = current.blocks[id] }
         expectedAttachments = current.attachments.filter { $0.value.blockID.map(touchedIDs.contains) == true }
     }
+
+    /// A copy to try a commit on, leaving this session as it is.
+    fileprivate func copy() -> EditorEditSession {
+        let copy = EditorEditSession(listIDs: listIDs, baseline: baseline, touchedIDs: touchedIDs)
+        copy.expected = expected
+        copy.expectedAttachments = expectedAttachments
+        return copy
+    }
 }
 
 private struct EditorLabelRecord: Equatable {
@@ -391,6 +399,18 @@ extension Store {
         }
         undoManager.setActionName(name)
         return true
+    }
+
+    /// Whether ``commitEditorSession(_:name:undoManager:)`` would register
+    /// an Undo now, leaving the session as it is. `blockIDs`, blocks the
+    /// session added that are about to go, are left out as gone.
+    func editorSessionHasChanges(_ session: EditorEditSession, excluding blockIDs: Set<UUID> = []) -> Bool {
+        let after = EditorSnapshot(store: self, listIDs: session.listIDs,
+                                   blockIDs: session.touchedIDs.subtracting(blockIDs))
+        let probe = session.copy()
+        probe.absorbChanges(in: after)
+        let changed = probe.baseline.changedIDs(comparedTo: after)
+        return !changed.blocks.isEmpty || !changed.attachments.isEmpty
     }
 
     /// Copy before the async disk deletion, never after it.

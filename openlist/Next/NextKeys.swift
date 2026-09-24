@@ -375,6 +375,9 @@ final class NextKeyHandler {
         case Key.escape:
             if navigator.openTaskID != nil { navigator.closeTask() }
             else if !workbench.selection.isEmpty { workbench.clearSelection() }
+            // With nothing else to let go, a line a search hit or link
+            // revealed ends in place, as the design's search leaves nothing behind.
+            else if workbench.focusID == nil, navigator.contentReveal != nil { navigator.finishReveal() }
             else { workbench.focusID = nil }
             return true
         default:

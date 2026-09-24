@@ -510,9 +510,10 @@ private struct NXListDescription: View {
         .task(id: readyRevealID) {
             litRevealID = readyRevealID
             guard readyRevealID != nil else { return }
-            try? await Task.sleep(for: .milliseconds(1400))
+            try? await Task.sleep(for: .milliseconds(1200))
             guard !Task.isCancelled else { return }
-            withAnimation(style.ease(400)) { litRevealID = nil }
+            // The design's row background transition: 700ms ease.
+            withAnimation(NX.cssEase(700)) { litRevealID = nil }
         }
         .task(id: readyRevealID) {
             guard readyRevealID != nil, let reveal = env.navigator.contentReveal else { return }

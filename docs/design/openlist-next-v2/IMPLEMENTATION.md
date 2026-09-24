@@ -46,9 +46,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   labels.
 - Typing is on the window's undo stack natively, where the design keeps it out of Undo
   until a line commits. While a list document line holds typing, the toolbar's Undo names
-  the step the line commits as ("Edited “…”", "Added “…”"), which it takes back after
-  finishing the line (the design drops the typing and undoes the step before); the tray's
-  and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
+  the step the line commits as ("Edited “…”", "Added “…”", "Removed an empty line"), which
+  it takes back after finishing the line (the design drops the typing and undoes the step
+  before), or, when finishing registers none, as for a new line left empty, the step under
+  its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
   bars and the overlay cards in rather than sliding them, as its hint says, where the design
@@ -147,12 +148,18 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the
-  design's note block, the match in the accent.
+  design's note block, the match in the accent. Deviation: that "Matched note" card stays
+  where the reveal notices went, as the only place such a note reads.
 - Reminders, item links (Copy Link, widget rows) and search hits land as the design's
   search does, with no notice: on the task's list or the Inbox, its row focused and the
   inspector open. A hit on a line past the design's (heading, text, a note, a list
-  description) opens that list's document for the visit, the Inbox's too, and takes the
-  design's fresh tint for 1.4 s. Only a target that can't open says so, in a notice.
+  description) opens that list's document for the visit, the Inbox's too, puts the caret at
+  the match and takes the tint of the design's fresh rows (`A+1C`, held 1.2 s, fading as their
+  700 ms background transition), a native extra: the design's search lands only on tasks,
+  and its line with the caret would drop the tint. Such a reveal keeps folded and done lines
+  on its path shown until the page is left, a revealed parent is folded, or Esc, with no
+  details, selection or focus left to close, ends it in place; the document lasts the visit.
+  Only a target that can't open says so, in a notice.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
   Image) are a native extra: their lines draw and edit in the document, the Turn into
   card brings them up for their names after "/" (with no query it shows the design's

@@ -78,9 +78,9 @@ Typing drives everything:
 | `[ ]` · `[]` · `-` · `*` · `#` · `##` | a task, a bullet, a heading or a subheading |
 | `>` | a text line |
 | `**bold**` · `*italic*` · `~~strike~~` · `` `code` `` | inline styling |
-| `#label` | attaches a label |
 | paste of several lines | one block per line, nesting preserved |
-| "tomorrow at 6pm", "every monday", "in 3 days" | due date and repeat rule |
+
+A line keeps its text as typed; labels and dates are read in capture.
 
 ⇥ / ⇧⇥ indent and outdent tasks and list items, two levels deep at most; ⌫ at the
 start of a line turns a heading or list item into text, steps a nested line out,
@@ -315,8 +315,9 @@ The [list Tasks guide](docs/LIST_TASKS.md) covers the presentation and its check
 and a menu bar popover. ⌘/ shows the full shortcut reference.
 
 Capture keeps the destination visible and previews detected dates, repeats,
-labels, priority and estimates as you type. Date detection follows Settings →
-Capture. Return adds the task, Shift-Return adds it and keeps capture open for the
+labels, priority and estimates as you type: "tomorrow at 6pm" or "in 3 days" sets
+the due date, "every monday" the repeat rule, `#label` a label, `!high` the
+priority and `~15m` the estimate. Date detection follows Settings → Capture. Return adds the task, Shift-Return adds it and keeps capture open for the
 next, Tab steps the destination, and Escape cancels. Quick Add is the same card
 floating over the app you're in, and focus goes back to that app when it closes.
 Clicking or switching away also closes it, but the next Quick Add within five

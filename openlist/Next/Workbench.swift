@@ -641,13 +641,16 @@ final class Workbench {
     /// The label the toolbar's Undo button shows, or nil when nothing can be undone.
     /// It names what Undo will take back: the entry on top of the stack, or,
     /// while a list document line has typing there, the step the line
-    /// commits as, since Undo finishes the line first. The text system's
-    /// name for that typing would read "Typing" whenever a line is written.
+    /// commits as, since Undo finishes the line first, or the step under its
+    /// typing when finishing it registers none. The text system's name for
+    /// that typing would read "Typing" whenever a line is written.
     var undoLabel: String? {
         _ = undoRevision
         guard let undoManager, undoManager.canUndo else { return nil }
         let name = undoManager.undoActionName
-        if Self.textActionNames.contains(name), let line = document?.lineStepName { return line }
+        if Self.textActionNames.contains(name), let document, document.isWritingLine {
+            return document.lineStepName ?? document.stepUnderLine
+        }
         return name.isEmpty ? "Undo" : name
     }
 

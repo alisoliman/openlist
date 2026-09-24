@@ -291,7 +291,12 @@ struct NextInspector: View {
         openPicker(requested)
     }
 
-    private func copyLink() { env.copyLink(to: .task(task.id)) }
+    private func copyLink() {
+        // An earlier link's error would otherwise hide this copy's result.
+        env.localLinks.error = nil
+        env.copyLink(to: .task(task.id))
+        if env.localLinks.error == nil { workbench.showTray("Link copied", icon: "link") }
+    }
 
     // MARK: Title
 

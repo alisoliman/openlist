@@ -184,7 +184,13 @@ final class Navigator {
         searchActivation &+= 1
     }
 
-    func finishReveal() { contentReveal = nil }
+    /// Ends a reveal in place: what it exposed folds back, and the line it
+    /// selected lets go, unless the selection has moved on. The document a
+    /// reveal opened lasts the visit.
+    func finishReveal() {
+        if let id = contentReveal?.blockID, selection == [id] { clearSelection() }
+        contentReveal = nil
+    }
 
     /// A page in the history, and where it was scrolled to when it was left.
     private struct Visit {

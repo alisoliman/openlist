@@ -842,6 +842,12 @@ check(afterHeading.kind == .task && afterHeading.parentID == nil && nextIndex(af
     "A heading is followed by a task, which takes the caret")
 check(nextActions(afterHeading).onReturn(0, NSAttributedString()) && afterHeading.kind == .task && addedLines.count == 1,
     "Return on an empty top-level task does nothing")
+// Undo finishes the line first, so the toolbar names only a step that registers.
+check(nextEditor.isWritingLine && nextEditor.lineStepName == nil, "A new line left empty names no step of its own")
+nextActions(afterHeading).onChange(NSAttributedString(string: "P"))
+check(nextEditor.lineStepName == "Added", "A new line with text names the step that adds it")
+nextActions(afterHeading).onChange(NSAttributedString())
+check(nextEditor.lineStepName == nil, "A new line typed in and emptied again names no step: Undo takes back the one before")
 nextEditor.commitLine()
 check(store.block(id: afterHeading.id) == nil && recorded.isEmpty, "A new line left empty goes without an undo step")
 check(nextActions(book).onReturn(content(book).length, content(book)), "Return at the end of a task with subtasks adds a line")
@@ -891,6 +897,30 @@ check(nextActions(blank).onBackspaceAtStart(NSAttributedString()) && store.block
     && nextEditor.focus.blockID == aboveBlank && nextEditor.focus.caret == -1,
     "Backspace in an empty line removes it and edits the end of the line above")
 check(recorded.map(\.name) == ["Removed an empty line"], "Removing an empty line is its own undo step")
+nextEditor.commitLine()
+recorded.removeAll()
+
+// The toolbar's Undo names what finishing the line being written registers.
+nextActions(prose).onFocus()
+check(nextEditor.lineStepName == nil, "A line the caret only arrived at names no step")
+let proseText = prose.text
+nextActions(prose).onChange(NSAttributedString(string: proseText + "!"))
+check(nextEditor.lineStepName == "Edited", "A line being written names its edit")
+nextActions(prose).onChange(NSAttributedString(string: proseText))
+let typedBackName = nextEditor.lineStepName
+nextEditor.commitLine()
+check(prose.text == proseText && recorded.map(\.name) == (typedBackName.map { [$0] } ?? []),
+    "A line typed back as it was names just the step finishing it records")
+recorded.removeAll()
+let spare = store.appendBlock(kind: .task, text: "Spare", to: nextDocument)
+store.save()
+nextActions(spare).onFocus()
+nextActions(spare).onChange(NSAttributedString())
+check(nextEditor.lineStepName == "Removed an empty line", "A line emptied names the step that takes it away, not an edit")
+nextEditor.commitLine()
+check(store.block(id: spare.id) == nil && recorded.map(\.name) == ["Removed an empty line"],
+    "Finishing it records that step")
+recorded.removeAll()
 
 // Markdown shorthands.
 nextActions(item).onMarkdownPrefix(.quote)
