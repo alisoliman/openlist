@@ -36,10 +36,12 @@ nonisolated enum MomentText {
 
     /// A moment in the plan or in history: its day, with the year only when
     /// it isn't this one, then its time, "Today 10:00", "Fri 25 10:00" or
-    /// "3 Oct 2025 10:00". In a sentence the relative days go lower case, as
+    /// "3 Oct 2025 10:00". Without `year` it's the Due row's day, as a
+    /// reminder reads. In a sentence the relative days go lower case, as
     /// "Due today 18:00".
-    static func moment(_ date: Date, includesTime: Bool = true, inSentence: Bool = false, now: Date = .now) -> String {
-        var day = day(date, now: now, year: true)
+    static func moment(_ date: Date, includesTime: Bool = true, year: Bool = true, inSentence: Bool = false,
+                       now: Date = .now) -> String {
+        var day = day(date, now: now, year: year)
         if inSentence, ["Today", "Tomorrow", "Yesterday"].contains(day) { day = day.lowercased() }
         return includesTime ? "\(day) \(clock(date))" : day
     }

@@ -231,4 +231,19 @@ for timestamp in [1_806_198_300.0, 1_824_951_900.0] {
     check(abs(trigger.dateComponents.date!.timeIntervalSince(target)) < 1, "DST-boundary trigger preserves intended absolute instant")
     check(request.identifier == request.content.userInfo["blockID"] as? String, "Stable task UUID owns the only request identifier")
 }
+// The Reminder tab speaks plainly, not in the scheduler's terms, for each
+// reason the Store gives a saved reminder that waits.
+check(ReminderStatus.inactive("task completed").title == "Off while the task is done"
+      && ReminderStatus.inactive("list archived").title == "Off while the list is archived"
+      && ReminderStatus.inactive("list unavailable").title == "Off while its list can’t be found"
+      && ReminderStatus.inactive("in Trash").title == "Off while it’s in Trash",
+      "A reminder that waits says why in plain words")
+let plainTitles: [ReminderStatus] = [.checking, .accepted, .permissionNeeded, .denied, .expired,
+                                     .inactive("task completed"), .failed("x"), .unavailable]
+check(plainTitles.allSatisfy { status in
+          !["macOS", "Saved ·", "Not scheduled", "replayed", "scheduling"].contains { status.title.contains($0) }
+      }, "No reminder status reads as the scheduler's state")
+check(ReminderStatus.failed("x").title == "The reminder couldn’t be scheduled"
+      && ReminderStatus.permissionNeeded.title == "Notifications aren’t allowed yet",
+      "A status that needs the user reads whole beside a task's title in Settings")
 print("\(checks) reminder recovery checks passed")

@@ -258,8 +258,20 @@ check(NXFormat.dayLabel(nextYear, now: setAt) == nextYear.formatted(.dateTime.da
       && NXFormat.dayLabel(nextYear, now: setAt) != NXFormat.dueLabel(nextYear, now: setAt),
       "A day in another year past the week names its year")
 check(NXFormat.dueAndClock(nextYear, now: setAt) == "\(NXFormat.dueLabel(nextYear, now: setAt)) 09:05"
-      && NXFormat.dayAndClock(nextYear, now: setAt) == "\(NXFormat.dayLabel(nextYear, now: setAt)) 09:05",
+      && NXFormat.moment(nextYear, now: setAt) == "\(NXFormat.dayLabel(nextYear, now: setAt)) 09:05",
       "The Reminder pill reads a far reminder as the Due row does, with no year; history names it")
+let todayMorning = Calendar.current.date(bySettingHour: 9, minute: 5, second: 0, of: setAt)!
+check(NXFormat.dueAndClock(todayMorning, now: setAt) == "Today 09:05"
+      && NXFormat.dueAndClock(todayMorning, inSentence: true, now: setAt) == "today 09:05"
+      && NXFormat.dueAndClock(morning, inSentence: true, now: setAt) == NXFormat.dueAndClock(morning, now: setAt),
+      "In a sentence only the relative days of a reminder go lower case")
+check(NXFormat.reminds(at: todayMorning, atDueTime: false, now: setAt) == "Reminds you today 09:05"
+      && NXFormat.reminds(at: morning, atDueTime: true, now: setAt)
+          == "Reminds you at the due time, \(NXFormat.dueAndClock(morning, now: setAt))",
+      "The Reminder tab says when it reminds you, and that it's the due time for a timed task with no reminder of its own")
+check(NXFormat.atDueTime(morning, now: setAt) == "At the due time · \(NXFormat.dueAndClock(morning, now: setAt))"
+      && NXFormat.atDueTime(todayMorning, now: setAt) == "At the due time · Today 09:05",
+      "The Reminder tab's header names the due time a timed task with no reminder of its own reminds you at")
 check(NXFormat.dayLabel(morning, now: setAt) == NXFormat.dueLabel(morning, now: setAt)
       && NXFormat.dayLabel(NXFormat.day(offset: 1, now: setAt), now: setAt) == "Tomorrow",
       "A day this year, or within the week, reads as its due chip")
@@ -283,22 +295,32 @@ check(NXFormat.dayLabel(noon(2027, 1, 1), now: newYearsEve) == "Tomorrow", "Tomo
 check(NXFormat.dayLabel(noon(2027, 1, 3), now: newYearsEve) == NXFormat.dueLabel(noon(2027, 1, 3), now: newYearsEve)
       && NXFormat.dayLabel(noon(2026, 12, 31), now: noon(2027, 1, 1)) == "Yesterday",
       "A day within the week across the new year reads as its due chip")
+// One way to write a moment: the day pills', the Reminder pill's and
+// history's words are MomentText's, with or without the year and time.
+for (date, now) in [(noon(2026, 6, 16), midYear), (noon(2026, 6, 22), midYear), (noon(2027, 6, 30), midYear),
+                    (noon(2025, 12, 20), midYear), (noon(2027, 1, 3), newYearsEve), (nextYear, setAt)] {
+    check(NXFormat.dayLabel(date, now: now) == NXFormat.moment(date, includesTime: false, now: now)
+          && NXFormat.dayLabel(date, now: now) == MomentText.day(date, now: now, year: true)
+          && NXFormat.moment(date, now: now) == "\(NXFormat.dayLabel(date, now: now)) \(NXFormat.clock(date))"
+          && NXFormat.dueAndClock(date, now: now) == "\(NXFormat.dueLabel(date, now: now)) \(NXFormat.clock(date))",
+          "A day and a moment read the same wherever the app writes them")
+}
 
-// Saved history writes its due dates in the words it gives when it happened:
-// the inspector's Full history and Changes pass the app's, the system's otherwise.
+// Saved history writes its due dates in the app's words, as of today unless
+// the screen passes its own, as Changes names them as of the change.
 func state(_ due: Date?, timed: Bool) -> TaskActivityState {
     TaskActivityState(title: "Pay rent", dueDate: due, includesTime: timed, isCompleted: false, listID: nil,
                       listTitle: "Home", listIcon: "", occurrenceID: UUID())
 }
-let appWords: (Date, Bool) -> String = { NXFormat.dayText($0, includesTime: $1, now: midYear) }
+let appWords: (Date, Bool) -> String = { NXFormat.moment($0, includesTime: $1, now: midYear) }
 let rescheduled = TaskActivityChange(before: state(noon(2026, 6, 16), timed: false),
                                      after: state(Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: noon(2026, 6, 30))!, timed: true))
 check(ActivityEvent.recordedDetail(.scheduled, detail: "", change: rescheduled, dateText: appWords)
       == "Tomorrow → \(NXFormat.dueLabel(noon(2026, 6, 30), now: midYear)) 09:00",
       "A rescheduled day reads as the row's due chips, its time 24-hour")
 check(ActivityEvent.recordedDetail(.scheduled, detail: "", change: rescheduled)
-      == "\(ActivityEvent.appDateText(noon(2026, 6, 16), includesTime: false)) → \(ActivityEvent.appDateText(rescheduled.after!.dueDate!, includesTime: true))",
-      "Without the app's words, history keeps the system's")
+      == "\(NXFormat.moment(noon(2026, 6, 16), includesTime: false)) → \(NXFormat.moment(rescheduled.after!.dueDate!))",
+      "Without words of its own, history writes the app's moment, as of today")
 var completion = TaskActivityChange(before: state(noon(2025, 12, 20), timed: false), after: state(noon(2027, 6, 30), timed: false))
 completion.completionID = UUID()
 completion.completedDueDate = noon(2025, 12, 20)

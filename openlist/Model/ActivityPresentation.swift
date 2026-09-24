@@ -5,9 +5,10 @@ extension ActivityEvent {
 
     /// An event's `recordedDetail`, from its change decoded already, its due
     /// dates written by `dateText` (a date, and whether it has a time): the
-    /// app's words unless the screen showing it passes its own.
+    /// app's words, "Fri 25 09:00", "3 Oct 2025" (`MomentText.moment`), unless
+    /// the screen showing it passes its own.
     static func recordedDetail(_ kind: ActivityKind, detail: String, change: TaskActivityChange?,
-                               dateText: (Date, Bool) -> String = appDateText) -> String {
+                               dateText: (Date, Bool) -> String = { MomentText.moment($0, includesTime: $1) }) -> String {
         // A change with neither state only says which change saved it.
         guard let change, change.before != nil || change.after != nil else { return detail }
         let before = change.before
@@ -46,11 +47,6 @@ extension ActivityEvent {
         default:
             return detail
         }
-    }
-
-    /// A due date in the app's words: "Fri 25 09:00", "3 Oct 2025".
-    static func appDateText(_ date: Date, includesTime: Bool) -> String {
-        MomentText.moment(date, includesTime: includesTime)
     }
 
     private static func listText(_ state: TaskActivityState?) -> String {

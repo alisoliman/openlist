@@ -83,13 +83,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
   bars, the overlay cards and the Turn into card in rather than sliding them, and Trash's
   restored row out, the list document's new and converted lines (its rowIn and morphIn)
-  rather than sliding them into place, and chips, the selection check and the cards that
-  lift in (Today is clear, the Inbox's done card, Planned now, Not planned yet) rather than
-  raising them, and eases the tick and switch knobs without their overshoot, as its hint
-  says, where the design shortens the inspector's slide and plays the others unchanged. Each
-  fade takes as long as that slide or rise. Task rows and calendar blocks keep the design's
-  rowIn slide there, as the design plays it (a task row's shortened, a calendar block's at
-  its fixed 380ms).
+  rather than sliding them into place, and chips, the selection check and the cards and rows
+  that lift in (Today is clear, the Inbox's done card, Planned now, Not planned yet, the
+  inspector's Activity) rather than raising them, and eases the tick and switch knobs
+  without their overshoot, as its hint says, where the design shortens the inspector's slide
+  and plays the others unchanged. Each fade takes as long as that slide or rise. Task rows
+  and calendar blocks keep the design's rowIn slide there, as the design plays it (a task
+  row's shortened, a calendar block's at its fixed 380ms).
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
@@ -174,7 +174,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
   the Inbox as its document. Native inspector extras: the title and note are edited in place
   (the note saved as the document saves one: trailing space goes, and an emptied note closes
-  under its task) and files kept with the task. As the design, the note shows only when there
+  under its task; a click off the field, on a row, subtask, crumb or pill, ends the edit as
+  a browser blurs an input, and the caret never follows to another task, so the keys act on
+  the row, while one in the note's box puts the caret at the nearest place in it, as a
+  textarea's padding does, and a box left empty closes once the click is over, so what
+  was clicked below it doesn't move away) and files kept with the task. As the design, the note shows only when there
   is one; until then a quiet "Add a note" row stands in, with "Attach a file" beside it until
   the task has files, when Files shows. Files dropped anywhere on the panel are attached;
   attaching snaps with Undo, which takes the files off again, and removing one does too, its
@@ -190,9 +194,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   days and times as the app does: its Reminder header as the Reminder pill, in the Due row's
   words ("Fri 25 09:00"), and a typed phrase as capture's chips. Its day pills and a
   repeat's Next occurrences add the year to a day in another year past the week, as saved
-  history does (Full history's times and dates, Changes' details), where the Due and
-  Reminder rows keep the design's dueLabel; Done first sets a due time still being typed as
-  Custom…, and Set reminder a reminder time. "Remind me at" is a draft only Set reminder
+  history does (`MomentText`, below), where the Due and Reminder rows keep the design's
+  dueLabel. Its Due tab clears a date with the Due row's grey None, and its Reminder tab's
+  Remove reminder is grey too, red being for deletions; that tab says in plain words
+  whether and when the task reminds you ("Reminds you at the due time, today 18:00",
+  "Off while the task is done"). A timed task with no reminder of its own, which reminds
+  you at its due time, says so: the pill reads "At the due time", the header adds the
+  time beside a grey bell, and the tab's At the due time is lit. Done first sets a due
+  time still being typed as Custom…, and Set reminder a reminder time. "Remind me at" is a draft only Set reminder
   sets: Done keeps the reminder there was, over a day or time picked there, or still being
   typed. The label picker (⇧⌘L) lists the name typed first, then labels starting with it,
   and Create last, only for a name no label has; Return picks the highlighted row, the best
@@ -320,9 +329,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   "Not planned yet" takes tasks due from a week back to the end of the week around today
   (the settings week, as Plan searches it), or four days out when that is later: the
   design's −7…+4, whose +4 is its Sunday.
-- The Work panel, Work history, the inspector's Full history and Settings › Data, native
-  extras, write a moment as the pills and the Calendar do: "Today 10:00", "Fri 25 10:00",
-  with the year only when it isn't this one (`MomentText`); a planned slot reads "Today
+- The Work panel, Work history, the inspector's Full history, Changes' details, Merge
+  labels and Settings › Data, native extras, write a moment as the pills and the Calendar
+  do: "Today 10:00", "Fri 25 10:00", with the year only when it isn't this one, and the
+  Schedule popover's day pills a day so; one helper writes them all (`MomentText`, through
+  `NXFormat.moment` and `dayLabel`). A planned slot reads "Today
   10:00–11:30 · 90 min". Work history words a session's pause as the Work panel does, and
   the panel's completion reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message

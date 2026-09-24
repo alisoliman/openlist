@@ -526,7 +526,7 @@ private struct NXSavedTasks {
                                label: addedLine ? "Added \(Self.title(event))" : label(event),
                                // Its days named as of the change, as its label names them.
                                detail: ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: change,
-                                                                    dateText: { NXFormat.dayText($0, includesTime: $1, now: event.at) }),
+                                                                    dateText: { NXFormat.moment($0, includesTime: $1, now: event.at) }),
                                listID: event.listID, listTitle: event.listTitle, at: event.at)
         // "archived list" as the tray says it, of the list as it is now.
         if event.kind == .restored, event.blockID != nil, !event.restoredList.isEmpty, recovered(event) == nil,

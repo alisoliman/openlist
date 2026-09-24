@@ -33,7 +33,7 @@ struct LabelMergeSheet: View {
                                     Text(label.name)
                                         .font(.system(size: 13, weight: .medium))
                                         .lineLimit(1)
-                                    Text("\(label.accent.title) · created \(NXFormat.dayAndClock(label.createdAt))")
+                                    Text("\(label.accent.title) · created \(NXFormat.moment(label.createdAt))")
                                         .font(.system(size: 11.5))
                                         .foregroundStyle(NX.ink(0.45))
                                         .lineLimit(1)

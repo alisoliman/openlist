@@ -30,16 +30,30 @@ nonisolated enum ReminderAuthorization: Equatable, Sendable {
 nonisolated enum ReminderStatus: Equatable, Sendable {
     case checking, accepted, permissionNeeded, denied, expired, inactive(String), failed(String), unavailable
 
+    /// In plain words, as the app speaks elsewhere, not the scheduler's. The
+    /// ones that need the user read whole wherever they show, beside a task's
+    /// title in Settings too; the others show only under the Reminder tab's.
     var title: String {
         switch self {
         case .checking: "Checking reminder…"
-        case .accepted: "Accepted by macOS"
-        case .permissionNeeded: "Saved · notification permission needed"
-        case .denied: "Saved · notifications turned off"
-        case .expired: "Expired · will not be replayed"
-        case .inactive(let reason): "Not scheduled · \(reason)"
-        case .failed: "Saved · scheduling failed"
-        case .unavailable: "Saved · reminders disabled in this review build"
+        case .accepted: "Reminder set"
+        case .permissionNeeded: "Notifications aren’t allowed yet"
+        case .denied: "Notifications are off for Openlist"
+        case .expired: "Already passed"
+        case .inactive(let reason): Self.offTitle(reason)
+        case .failed: "The reminder couldn’t be scheduled"
+        case .unavailable: "Reminders are off in this review build"
+        }
+    }
+
+    /// Why a saved reminder waits, from the reason the Store gives.
+    private static func offTitle(_ reason: String) -> String {
+        switch reason {
+        case "task completed": "Off while the task is done"
+        case "list archived": "Off while the list is archived"
+        case "list unavailable": "Off while its list can’t be found"
+        case "in Trash": "Off while it’s in Trash"
+        default: "Off · \(reason)"
         }
     }
     var needsRecovery: Bool {

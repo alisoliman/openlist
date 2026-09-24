@@ -623,10 +623,12 @@ is idempotent.
 
 ### Reminder scheduling and recovery
 
-A task’s reminder time is saved intent. Openlist reports **Accepted by macOS**
-only after the notification center returns a matching pending request for that
-saved task occurrence. This does not prove that an alert was displayed: Focus,
-notification preferences, and macOS delivery policy still apply. Local scheduling
+A task’s reminder time is saved intent. The Schedule popover’s Reminder tab says
+**Reminds you** at that time (or at the due time, for a timed task with no reminder
+of its own) only after the notification center returns a matching pending request
+for that saved task occurrence. This does not prove that an alert was displayed:
+Focus, notification preferences, and macOS delivery policy still apply, as its help
+tag says. Local scheduling
 status is rebuilt from the saved library and OS inventory after launch; it is not
 synced as a task fact.
 
