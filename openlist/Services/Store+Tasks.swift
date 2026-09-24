@@ -52,7 +52,7 @@ extension Store {
             block.deferredUntil = nextEligible
             // The reminder has to travel with the occurrence, or it stays in
             // the past and every future repeat is silently unreminded.
-            shiftReminder(on: block, fromDue: previousDue)
+            shiftReminder(on: block, fromDue: previousDue, timed: block.includesTime)
 
             // Subtasks reset so the next occurrence starts fresh.
             resetSubtasks(of: block, now: now, nextEligible: nextEligible, completedCycleID: completedCycleID)
@@ -127,10 +127,10 @@ extension Store {
     // MARK: - Scheduling
 
     func setDueDate(_ date: Date?, includesTime: Bool = false, for block: Block) {
-        let previousDue = block.dueDate
+        let previousDue = block.dueDate, wasTimed = block.includesTime
         block.dueDate = date
         block.includesTime = date == nil ? false : includesTime
-        if date != nil { shiftReminder(on: block, fromDue: previousDue) }
+        if date != nil { shiftReminder(on: block, fromDue: previousDue, timed: wasTimed) }
         block.touch()
 
         if date == nil {
@@ -169,20 +169,21 @@ extension Store {
         save()
     }
 
-    /// Moves a reminder with the due date, keeping it as far from it: the
-    /// same calendar days and time, so "1 day before" keeps its clock time
-    /// across a daylight-saving change.
+    /// Moves a reminder with the due date (`ReminderOffset.reminder`): as far
+    /// from a due time, "1 day before" at the same clock time across a
+    /// daylight-saving change, and at the same clock time the same calendar
+    /// days away when either due is a day without a time.
     ///
     /// A reminder is meaningful relative to its occurrence ("15 minutes
     /// before"), so rescheduling the task has to carry it along.
-    private func shiftReminder(on block: Block, fromDue previousDue: Date?) {
+    private func shiftReminder(on block: Block, fromDue previousDue: Date?, timed wasTimed: Bool) {
         guard
             let reminder = block.reminderAt,
             let previousDue,
             let newDue = block.dueDate
         else { return }
-        let calendar = Calendar.current
-        block.reminderAt = ReminderOffset(from: previousDue, to: reminder, calendar: calendar).date(from: newDue, calendar: calendar)
+        block.reminderAt = ReminderOffset.reminder(reminder, movedFrom: previousDue, timed: wasTimed,
+                                                   to: newDue, timed: block.includesTime, calendar: .current)
     }
 
     /// Kept as a mutation callsite marker. OS state only follows committed

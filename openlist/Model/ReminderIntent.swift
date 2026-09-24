@@ -36,6 +36,21 @@ nonisolated struct ReminderOffset: Equatable, Sendable {
         Self.moving(due, days: days, calendar: calendar).addingTimeInterval(seconds)
     }
 
+    /// `reminder` carried along when its task's due date moves. Between two
+    /// due times it keeps its offset. A day without a time reminds at a clock
+    /// time on or around it (9:00 at the due time), so when either due is one
+    /// the reminder keeps its clock time and moves the calendar days the due
+    /// date did, across a daylight-saving change too.
+    static func reminder(_ reminder: Date, movedFrom previousDue: Date, timed wasTimed: Bool,
+                         to newDue: Date, timed isTimed: Bool, calendar: Calendar) -> Date {
+        guard wasTimed, isTimed else {
+            let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: previousDue),
+                                               to: calendar.startOfDay(for: newDue)).day ?? 0
+            return moving(reminder, days: days, calendar: calendar)
+        }
+        return ReminderOffset(from: previousDue, to: reminder, calendar: calendar).date(from: newDue, calendar: calendar)
+    }
+
     private static func moving(_ date: Date, days: Int, calendar: Calendar) -> Date {
         days == 0 ? date : calendar.date(byAdding: .day, value: days, to: date) ?? date.addingTimeInterval(TimeInterval(days) * 86_400)
     }

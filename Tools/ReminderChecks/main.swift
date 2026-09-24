@@ -269,5 +269,22 @@ do {
     check(early.date(from: fallDue, calendar: amsterdam) == local(10, 24, 8, 45)
           && early.date(from: local(3, 20, 9), calendar: amsterdam) == local(3, 19, 8, 45),
           "A day and 15 minutes before moves as it reads, and back")
+    // A day without a time reminds at a clock time (9:00 at the due time),
+    // which it keeps wherever the due date moves.
+    func moved(_ reminder: Date, _ from: Date, timed wasTimed: Bool, _ to: Date, timed isTimed: Bool) -> Date {
+        ReminderOffset.reminder(reminder, movedFrom: from, timed: wasTimed, to: to, timed: isTimed, calendar: amsterdam)
+    }
+    check(moved(local(3, 27, 9), local(3, 27, 0), timed: false, local(3, 29, 0), timed: false) == local(3, 29, 9)
+          && moved(local(3, 27, 9), local(3, 27, 0), timed: false, local(10, 25, 0), timed: false) == local(10, 25, 9)
+          && moved(local(3, 28, 8, 50), local(3, 28, 0), timed: false, local(3, 29, 0), timed: false) == local(3, 29, 8, 50),
+          "A due day without a time keeps its reminder's clock time onto a daylight-saving day")
+    check(moved(local(3, 26, 18), local(3, 27, 0), timed: false, local(10, 25, 0), timed: false) == local(10, 24, 18),
+          "A reminder the evening before a due day without a time stays the evening before")
+    check(moved(local(3, 27, 9), local(3, 27, 0), timed: false, local(3, 29, 14), timed: true) == local(3, 29, 9)
+          && moved(local(3, 27, 13, 50), local(3, 27, 14), timed: true, local(3, 29, 0), timed: false) == local(3, 29, 13, 50),
+          "Adding or taking off a due time keeps the reminder's clock time, not a stretch from midnight")
+    check(moved(local(3, 19, 9), local(3, 20, 9), timed: true, local(3, 29, 9), timed: true) == local(3, 28, 9)
+          && moved(local(3, 29, 1, 30), local(3, 29, 3, 30), timed: true, local(3, 30, 3, 30), timed: true) == local(3, 30, 2, 30),
+          "Between due times a reminder keeps its days and minutes")
 }
 print("\(checks) reminder recovery checks passed")
