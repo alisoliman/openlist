@@ -18,6 +18,17 @@ enum MarkdownInputRules {
         var kind: BlockKind
     }
 
+    /// Which block prefixes a line converts on.
+    enum BlockPrefixes {
+        /// Every prefix the editor knows.
+        case all
+        /// The design's list document's: `# `, `## `, `- `, `* `, `[ ] `,
+        /// `[] ` and `> `. Anything else stays as typed.
+        case design
+    }
+
+    private static let designPrefixes: Set<String> = ["## ", "# ", "[] ", "[ ] ", "* ", "- ", "> "]
+
     /// Block-level prefixes, longest first so `###` beats `#`.
     private static let blockPrefixes: [(String, BlockKind)] = [
         ("### ", .heading3),
@@ -48,14 +59,15 @@ enum MarkdownInputRules {
         in storage: NSTextStorage,
         caret: Int,
         wasInsertion: Bool,
-        kind: BlockKind
+        kind: BlockKind,
+        prefixes: BlockPrefixes = .all
     ) -> BlockPrefixMatch? {
         guard wasInsertion, kind != .code else { return nil }
 
         let text = storage.string as NSString
         guard text.length > 0 else { return nil }
 
-        for (prefix, kind) in blockPrefixes {
+        for (prefix, kind) in blockPrefixes where prefixes == .all || designPrefixes.contains(prefix) {
             let prefixLength = (prefix as NSString).length
             guard caret == prefixLength, text.length >= prefixLength else { continue }
             if text.substring(to: prefixLength).lowercased() == prefix {

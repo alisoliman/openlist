@@ -152,7 +152,7 @@ enum OutlineEdit: Equatable {
 }
 
 /// One `/` menu entry in the Next document: the design's five kinds, then
-/// the editor's other kinds under "More".
+/// the editor's other kinds, which only a query for them brings up.
 struct OutlineSlashOption: Identifiable, Equatable {
     let kind: BlockKind
     let label: String
@@ -177,13 +177,19 @@ struct OutlineSlashOption: Identifiable, Equatable {
         OutlineSlashOption(kind: .image, label: "Image", symbol: "photo", hint: "", isExtra: true),
     ]
 
-    /// The design filters by label; the editor's own search words find a
-    /// kind too, so "h1" and "todo" still work.
+    /// With no query, the design's five, and for one letter just what the
+    /// design's filter by label brings up. From the second letter the
+    /// editor's own search words find a kind too, so "h1" and "todo" still
+    /// work, and the other kinds come up for their name or search words as
+    /// typed from the start.
     static func matching(_ query: String) -> [OutlineSlashOption] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !needle.isEmpty else { return all }
+        guard !needle.isEmpty else { return all.filter { !$0.isExtra } }
+        let words = needle.count > 1
         return all.filter { option in
-            option.label.lowercased().contains(needle) || option.kind.searchTerms.contains { $0.hasPrefix(needle) }
+            let label = option.label.lowercased()
+            if words, option.kind.searchTerms.contains(where: { $0.hasPrefix(needle) }) { return true }
+            return option.isExtra ? words && label.hasPrefix(needle) : label.contains(needle)
         }
     }
 }
@@ -220,8 +226,8 @@ struct OutlineHooks {
     var didRecordEdit: (OutlineEdit, _ name: String) -> Void = { _, _ in }
     /// A new line took the caret.
     var didAddLine: (UUID) -> Void = { _ in }
-    /// Shift-Return on a task, for a host that edits notes in place. `nil`
-    /// inserts a soft break, as it does in any other line.
+    /// Shift-Return on a Next document task, for a host that edits notes in
+    /// place. `nil` leaves the key doing nothing there, as on the other lines.
     var editNote: ((UUID) -> Void)?
 }
 
@@ -568,7 +574,7 @@ final class OutlineEditor {
                 env.store.scheduleSave(after: .seconds(1))
             },
             onReturn: { [self] caret, content in
-                if policy == .nextDocument { return nextReturn(block: block, caret: caret, content: content) }
+                if policy == .nextDocument { return nextReturn(block: block, content: content) }
                 return editorEdit("Split block") { handleReturn(block: block, caret: caret, content: content) }
             },
             onTab: { [self] isBacktab, caret in
@@ -661,10 +667,21 @@ final class OutlineEditor {
                 }
             },
             onLineBreak: { [self] in
-                guard policy == .nextDocument, block.isTask, let editNote = hooks.editNote else { return false }
+                guard policy == .nextDocument else { return false }
+                // The design's Turn into card takes ⇧↩ as it takes Return.
+                if slash?.blockID == blockID {
+                    handleSlashCommand(.confirm)
+                    return true
+                }
+                // The design's lines hold one line each: ⇧↩ writes a task's
+                // note and does nothing elsewhere. Code, one of the editor's
+                // own kinds, keeps its soft break for a snippet of more lines.
+                guard block.kind != .code else { return false }
+                guard block.isTask, let editNote = hooks.editNote else { return true }
                 commitLine()
                 focus.request(nil)
-                editNote(blockID)
+                // A new line left empty went as its title was committed.
+                if env.store.block(id: blockID) != nil { editNote(blockID) }
                 return true
             },
             onSetCaption: { [self] caption in
@@ -821,13 +838,16 @@ final class OutlineEditor {
     }
 
     private func handleArrow(from block: Block, direction: EditorArrow, caret: Int) -> Bool {
+        // The design's lines are single inputs, which ← and → never leave.
+        if policy == .nextDocument, direction == .left || direction == .right { return false }
+        let backward = direction == .up || direction == .left
         let currentRows = rows
         guard let index = currentRows.firstIndex(where: { $0.id == block.id }) else { return false }
 
         // Dividers and images host no text view, so stepping onto one would
         // consume the key and strand the caret. Skip past them, and decline the
         // key entirely when there is nothing focusable left in that direction.
-        let candidates = direction == .up
+        let candidates = backward
             ? currentRows[..<index].reversed().map { $0 }
             : Array(currentRows[(index + 1)...])
         guard let target = candidates.first(where: { !$0.block.kind.isVoid }) else { return false }
@@ -835,7 +855,7 @@ final class OutlineEditor {
         commitInlineMetadata(block)
         commitLine()
         // The design's startEdit puts the caret at the end of the line either way.
-        focus.request(target.id, caret: direction == .up || policy == .nextDocument ? -1 : 0)
+        focus.request(target.id, caret: backward || policy == .nextDocument ? -1 : 0)
         return true
     }
 
@@ -904,11 +924,11 @@ final class OutlineEditor {
     }
 
     /// The design's Return. An empty line steps out a level, or at the top
-    /// turns into a task. Otherwise the line is finished and a new one opens
-    /// below: a heading is followed by a task, text by text, anything else by
-    /// its own kind, and a task whose subtree shows takes it as its first
-    /// child. Mid-line, the rest of the line moves down into it.
-    private func nextReturn(block: Block, caret: Int, content: NSAttributedString) -> Bool {
+    /// turns into a task. Otherwise the line is finished, all of it wherever
+    /// the caret is, and a new empty one opens below: a heading is followed
+    /// by a task, text by text, anything else by its own kind, and a task
+    /// whose subtree shows takes it as its first child.
+    private func nextReturn(block: Block, content: NSAttributedString) -> Bool {
         if content.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let changed = editorEdit("Edit line") { () -> Bool in
                 if depth(of: block) > 0, canOutdent(block) { return env.store.outdent(block) }
@@ -924,41 +944,22 @@ final class OutlineEditor {
         }
 
         let row = rows.first { $0.id == block.id }
-        guard caret >= content.length else {
-            // The split belongs to this line's edit; the new line starts its own.
-            let created = editorEdit("Split line") { nextLine(after: block, row: row, splittingAt: caret, content: content) }
-            env.store.save()
-            unfold(toShow: created.id)
-            focus.request(created.id, caret: 0)
-            hooks.didAddLine(created.id)
-            return true
-        }
         commitInlineMetadata(block)
         commitLine()
         guard block.modelContext != nil, !block.isDeleted else { return true }
-        addLine(covering: [block.id]) { nextLine(after: block, row: row, splittingAt: caret, content: content) }
+        addLine(covering: [block.id]) { nextLine(after: block, row: row) }
         return true
     }
 
-    private func nextLine(after block: Block, row: BlockRow?, splittingAt caret: Int,
-                          content: NSAttributedString) -> Block {
+    private func nextLine(after block: Block, row: BlockRow?) -> Block {
         let kind: BlockKind = switch block.kind {
         case .heading1, .heading2, .heading3: .task
         case .quote, .divider, .image: .paragraph
         default: block.kind
         }
-        let created = block.isTask && !block.isCollapsed && row?.hasChildren == true
+        return block.isTask && !block.isCollapsed && row?.hasChildren == true
             ? env.store.insertChild(kind: kind, of: block)
             : env.store.insertBlock(kind: kind, after: block)
-        if caret < content.length {
-            let (head, tail) = RichTextCodec.split(content, at: caret)
-            env.store.setContent(block, attributed: head)
-            // Restyled for its new kind, keeping only the user's own styling.
-            let restyled = RichTextCodec.decode(RichTextCodec.encode(tail, kind: block.kind),
-                                                plainText: RichTextCodec.plainText(from: tail), kind: kind)
-            env.store.setContent(created, attributed: restyled)
-        }
-        return created
     }
 
     private func nextTab(block: Block, isBacktab: Bool, caret: Int) -> Bool {
@@ -1107,13 +1108,30 @@ final class OutlineEditor {
     /// subtasks, which takes the caret. The task, and whatever folds it
     /// away, open first so the new line shows. A task two levels deep
     /// takes none, as the design's indent allows no deeper.
+    ///
+    /// As the design's, the line follows the last line under the task, at
+    /// that line's depth, as Return there would add it: a task whose last
+    /// subtask has one of its own gets another beside that one. It stays
+    /// within two levels, and under a task or list item.
     func appendSubtask(to taskID: UUID) {
         let current = blocks
-        guard policy == .nextDocument, let task = current.first(where: { $0.id == taskID }), task.isTask,
-              BlockTree.ancestors(of: task, in: current).count < OutlinePolicy.maximumDepth else { return }
+        guard policy == .nextDocument, let task = current.first(where: { $0.id == taskID }), task.isTask else { return }
+        let depth = BlockTree.ancestors(of: task, in: current).count
+        guard depth < OutlinePolicy.maximumDepth else { return }
         unfold(toShow: taskID)
         env.store.setCollapsed(false, for: task)
-        addLine(covering: [taskID]) { env.store.insertChild(kind: .task, of: task, at: .last) }
+        let lines = BlockTree.flatten(current, root: taskID, respectCollapse: false)
+        let lineByID = Dictionary(lines.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var last = lines.last
+        while let line = last, let parentID = line.block.parentID, parentID != taskID,
+              depth + 1 + line.depth > OutlinePolicy.maximumDepth
+                || lineByID[parentID].map({ !OutlinePolicy.nests($0.block.kind) }) ?? true {
+            last = lineByID[parentID]
+        }
+        addLine(covering: [taskID]) {
+            if let last { env.store.insertBlock(kind: .task, after: last.block) }
+            else { env.store.insertChild(kind: .task, of: task, at: .last) }
+        }
     }
 
     /// Opens the tasks, list items and headings that fold `id` away, and

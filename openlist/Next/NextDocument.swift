@@ -127,7 +127,6 @@ private struct NXDocumentLines: View {
     private var hooks: OutlineHooks {
         let workbench = env.workbench
         let store = env.store
-        let navigator = env.navigator
         var hooks = OutlineHooks()
         hooks.toggleCompletion = { workbench.toggle($0) }
         hooks.openDetails = { workbench.inspect($0) }
@@ -135,12 +134,12 @@ private struct NXDocumentLines: View {
             guard let block = store.block(id: id) else { return }
             // As the design's startEdit: a task takes the focus, and the
             // selection clears. A closing task keeps closing: only a click
-            // on it takes it back, which its text view hears first.
+            // on it takes it back, which its text view hears first. The
+            // inspector stays where it is; a click beside the text, J/K or
+            // Return move it.
             workbench.clearSelection()
             if workbench.editingNoteID != nil { workbench.editingNoteID = nil }
             workbench.focusID = block.isTask ? id : nil
-            // A new line leaves the inspector where it is, as the design's addLine does.
-            if block.isTask, navigator.openTaskID != nil, !workbench.fresh.contains(id) { navigator.openTask(id) }
         }
         // The caret leaves; a task stays focused for the keys. A heading or
         // text line takes no focus, as in the design, and the keys go back
@@ -515,46 +514,56 @@ private struct NXDocumentTask: View {
         let hint = !editing && !noteOpen && !noteEditing && !task.note.isEmpty
             ? NXNoteHint.placement(after: context.contents.content(of: task, store: env.store), width: titleWidth)
             : nil
-        // The line plays its own rowIn, and has no hover of its own.
-        NXTaskRowChrome(task: task, options: NXRowOptions(showList: false, listID: context.listID),
-                        indent: CGFloat(row.depth) * 26, leadingChips: progressChip,
-                        editing: editing || noteEditing, entrance: nil, draggable: false,
-                        hoverFill: false, opensOnHover: true,
-                        onClick: {
-                            // Clicking beside the text leaves any line being written, as a click away does.
-                            NXDocumentEditing.end()
-                            workbench.click(id, command: NXModifiers.command, shift: NXModifiers.shift)
-                        }) {
-            VStack(alignment: .leading, spacing: 0) {
-                NXLineText(row: row, context: context, editing: editing)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
-                    // A hint with no room after the last line takes the next,
-                    // as the design's inline icon wraps.
-                    .padding(.bottom, hint?.wraps == true ? NXNoteHint.linePitch : 0)
-                    .overlay(alignment: .topLeading) {
-                        if let hint { NXNoteHint(placement: hint) }
+        // The design's 20s clock, so a done subtask's chip moves on from
+        // "just now", and a due or late chip turns with the time.
+        TimelineView(.periodic(from: .now, by: 20)) { clock in
+            // The line plays its own rowIn, and has no hover of its own.
+            NXTaskRowChrome(task: task, options: NXRowOptions(showList: false, listID: context.listID, now: clock.date),
+                            indent: CGFloat(row.depth) * 26, leadingChips: progressChip,
+                            editing: editing || noteEditing, entrance: nil, draggable: false,
+                            hoverFill: false, opensOnHover: true,
+                            onClick: {
+                                // Clicking beside the text leaves any line being written, as a click away does.
+                                NXDocumentEditing.end()
+                                workbench.click(id, command: NXModifiers.command, shift: NXModifiers.shift)
+                            }) {
+                VStack(alignment: .leading, spacing: 0) {
+                    NXLineText(row: row, context: context, editing: editing)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
+                        // A hint with no room after the last line takes the next,
+                        // as the design's inline icon wraps.
+                        .padding(.bottom, hint?.wraps == true ? NXNoteHint.linePitch : 0)
+                        .overlay(alignment: .topLeading) {
+                            if let hint { NXNoteHint(placement: hint) }
+                        }
+                    if noteOpen || noteEditing {
+                        NXDocumentNote(task: task, listID: context.listID, editing: noteEditing)
+                            .padding(.top, 3)
+                            .padding(.bottom, 4)
+                            .transition(.opacity.animation(.easeOut(duration: 0.18)))
                     }
-                if noteOpen || noteEditing {
-                    NXDocumentNote(task: task, listID: context.listID, editing: noteEditing)
-                        .padding(.top, 3)
-                        .padding(.bottom, 4)
-                        .transition(.opacity.animation(.easeOut(duration: 0.18)))
                 }
+            } buttons: {
+                Button {
+                    // The note being written is left first, as the design's
+                    // textarea blurs: it's saved, then hidden, or opened again
+                    // if it's still empty.
+                    NXDocumentEditing.end()
+                    workbench.toggleNote(id)
+                } label: {
+                    Image(systemName: "text.alignleft").font(.system(size: 12.5, weight: .medium))
+                }
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
+                                                padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
+                                                foreground: noteOpen ? style.accent : NX.ink(0.45), hoverForeground: NX.ink))
+                .onHover { noteHovering = $0 }
+                // Full strength under the pointer, as the design's hover has it.
+                .opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : 0.2)
+                .animation(.easeOut(duration: 0.14), value: noteOpen)
+                .animation(.easeOut(duration: 0.14), value: noteHovering)
+                .help("Note · Space")
+                .accessibilityLabel(noteOpen ? "Hide note" : "Show note")
             }
-        } buttons: {
-            Button { workbench.toggleNote(id) } label: {
-                Image(systemName: "text.alignleft").font(.system(size: 12.5, weight: .medium))
-            }
-            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
-                                            padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                            foreground: noteOpen ? style.accent : NX.ink(0.45), hoverForeground: NX.ink))
-            .onHover { noteHovering = $0 }
-            // Full strength under the pointer, as the design's hover has it.
-            .opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : 0.2)
-            .animation(.easeOut(duration: 0.14), value: noteOpen)
-            .animation(.easeOut(duration: 0.14), value: noteHovering)
-            .help("Note · Space")
-            .accessibilityLabel(noteOpen ? "Hide note" : "Show note")
         }
     }
 
@@ -626,8 +635,14 @@ private struct NXDocumentNote: View {
 
     var body: some View {
         if editing {
-            NXNoteEditor(initial: task.note, caretColor: env.settings.accent.editorColor, onCommit: commit,
+            let edit = env.workbench.noteEdit
+            NXNoteEditor(initial: task.note, caretColor: env.settings.accent.editorColor,
+                         onCommit: { commit($0, typing: $1, edit: edit) },
                          onBackToTitle: { env.workbench.document?.edit(task.id) })
+                // Left and started again in one update, as the note button
+                // does to an empty note, the note gets a new editor, which
+                // takes the keyboard as the one left can't.
+                .id(edit)
         } else {
             let empty = task.note.isEmpty
             let leading = max(0, 13 * 1.55 - NXStrikeText.glyphLineHeight(13))
@@ -648,11 +663,12 @@ private struct NXDocumentNote: View {
     }
 
     /// The design's note commit: trailing space goes, the note stays open
-    /// only if it has something, and a change is one step, logged.
-    private func commit(_ text: String, typing: NSTextStorage) {
+    /// only if it has something, and a change is one step, logged. An
+    /// editor left behind by a newer start of the note leaves that one open.
+    private func commit(_ text: String, typing: NSTextStorage, edit: Int) {
         let workbench = env.workbench
         let store = env.store
-        if workbench.editingNoteID == task.id { workbench.editingNoteID = nil }
+        if workbench.editingNoteID == task.id, workbench.noteEdit == edit { workbench.editingNoteID = nil }
         let value = text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
         if value.isEmpty { workbench.openNotes.remove(task.id) } else { workbench.openNotes.insert(task.id) }
         // The note's typing folds into its one step.
@@ -669,9 +685,9 @@ private struct NXDocumentNote: View {
     }
 }
 
-/// The note's textarea: 400 13/1.55 ink .66. Return breaks the line; Esc and
-/// ⌘Return commit; ⇧Tab commits and goes back to the title. Leaving it by
-/// any other way commits too.
+/// The note's textarea: 400 13/1.55 ink .66. Return breaks the line; Esc,
+/// ⌘Return and Tab commit; ⇧Tab commits and goes back to the title. Leaving
+/// it by any other way commits too.
 private struct NXNoteEditor: NSViewRepresentable {
     let initial: String
     let caretColor: NSColor
@@ -754,7 +770,9 @@ private struct NXNoteEditor: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             switch selector {
-            case #selector(NSResponder.cancelOperation(_:)):
+            // Tab leaves the note, as it leaves the design's textarea, rather
+            // than typing a tab into it. ⌥Tab still types one.
+            case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.insertTab(_:)):
                 textView.window?.makeFirstResponder(nil)
                 return true
             case #selector(NSResponder.insertBacktab(_:)):
@@ -1009,6 +1027,8 @@ private struct NXLineText: View {
             focusToken: context.focus.token,
             isSlashMenuOpen: context.slashBlockID == id,
             slashOpensAtStartOnly: true,
+            markdownPrefixes: .design,
+            returnKeepsSelection: true,
             caretColor: env.settings.accent.editorColor,
             onSlashCommand: { editor.handleSlashCommand($0) },
             callbacks: callbacks
@@ -1072,30 +1092,44 @@ enum NXDocumentEditing {
 // MARK: - Turn into
 
 /// The design's "Turn into" card under a line that starts with `/`: its
-/// five kinds, then the editor's others under "More".
+/// five kinds, and the editor's others as a query brings them up. It opens
+/// above the line when it wouldn't fit below it on the visible page.
 private struct NXSlashCard: View {
     @Environment(\.nextStyle) private var style
     let editor: OutlineEditor
     let anchors: [UUID: Anchor<CGRect>]
+    /// The card's height as last laid out, and for how many rows.
+    @State private var measured: (rows: Int, height: CGFloat)?
 
     var body: some View {
         if let slash = editor.slash, let anchor = anchors[slash.blockID] {
             GeometryReader { proxy in
-                let frame = proxy[anchor]
-                card(options: OutlineSlashOption.matching(slash.query), selected: slash.selectedIndex)
-                    .offset(x: frame.minX - 6, y: frame.maxY + 6)
+                let line = proxy[anchor]
+                let options = OutlineSlashOption.matching(slash.query)
+                let height = measured.flatMap { $0.rows == options.count ? $0.height : nil }
+                    ?? Self.estimatedHeight(rows: options.count)
+                // The line's viewport is in its text view's space.
+                let above = SlashMenuLayout.cardOpensAbove(line: line, height: height,
+                    viewport: slash.viewport.offsetBy(dx: line.minX, dy: line.minY))
+                card(options: options, selected: slash.selectedIndex, above: above)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured = (options.count, $0) }
+                    // Above, its bottom 6pt over the line, whatever its height.
+                    .frame(height: above ? max(0, line.minY - 6) : nil, alignment: .bottomLeading)
+                    .offset(x: line.minX - 6, y: above ? 0 : line.maxY + 6)
             }
             .id(slash.blockID)
         }
     }
 
-    private func card(options: [OutlineSlashOption], selected: Int) -> some View {
+    /// The card's height for `rows` rows before it has been laid out.
+    private static func estimatedHeight(rows: Int) -> CGFloat {
+        10 + 25 + CGFloat(rows) * 33
+    }
+
+    private func card(options: [OutlineSlashOption], selected: Int, above: Bool) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             header("Turn into")
             ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                if option.isExtra, index == 0 || !options[index - 1].isExtra {
-                    header("More")
-                }
                 item(option, index: index, selected: index == selected)
             }
         }
@@ -1104,7 +1138,7 @@ private struct NXSlashCard: View {
         .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .nxCardShadow(radius: 11, hairline: 0.14, drop: 0.18, y: 16, blur: 40)
         .background(SlashMenuDismissal(onDismiss: { editor.dismissSlashMenu() }))
-        .modifier(NXPopIn())
+        .modifier(NXPopIn(fromBelow: above))
     }
 
     private func header(_ text: String) -> some View {
@@ -1140,21 +1174,28 @@ private struct NXSlashCard: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .onHover { if $0 { editor.highlightSlashResult(index) } }
+        .onHover { inside in
+            // A row that comes up under a still pointer, as the card opens
+            // or filters with a key, leaves the highlight Return picks.
+            let typing = NSApp.currentEvent.map { [.keyDown, .keyUp, .flagsChanged].contains($0.type) } ?? false
+            if inside, !typing { editor.highlightSlashResult(index) }
+        }
         .accessibilityAddTraits(selected ? .isSelected : [])
         .help(option.kind.subtitle)
     }
 }
 
 /// The design's popIn, from the top-left corner, each time a card opens.
+/// A card over its line pops in from the bottom-left, toward the line.
 private struct NXPopIn: ViewModifier {
     @Environment(\.nextStyle) private var style
+    var fromBelow = false
     @State private var shown = false
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(shown ? 1 : 0.97, anchor: .topLeading)
-            .offset(y: shown ? 0 : -4)
+            .scaleEffect(shown ? 1 : 0.97, anchor: fromBelow ? .bottomLeading : .topLeading)
+            .offset(y: shown ? 0 : fromBelow ? 4 : -4)
             .opacity(shown ? 1 : 0)
             .onAppear { withAnimation(.timingCurve(0.2, 0.9, 0.2, 1, duration: style.ms(160) / 1000)) { shown = true } }
     }

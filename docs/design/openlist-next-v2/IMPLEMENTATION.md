@@ -57,7 +57,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
   writes the new line in the list document (`Workbench.addSubtask`,
-  `OutlineEditor.appendSubtask`). The Inbox's document mode is the same list document under
+  `OutlineEditor.appendSubtask`), after the task's last line and at its depth, as the
+  design's does, but never past two levels and only under a task or list item, which
+  older outlines can break. The Inbox's document mode is the same list document under
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
   the Inbox as its document. Native inspector extras: the title and note are edited in place
@@ -126,6 +128,18 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the
   design's note block, the match in the accent.
+- The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
+  Image) are a native extra: their lines draw and edit in the document, the Turn into
+  card brings them up for their names after "/" (with no query it shows the design's
+  five under its one header, and a single letter filters the five by label as the
+  design's does), and a line's Turn Into menu lists them all. From the second letter
+  the editor's search words bring kinds up too, so `/h1`, `/todo` or `/hr` find Heading,
+  Task or Divider, and a query can list a kind whose label doesn't hold it. Only the
+  design's prefixes (`# `, `## `, `- `, `* `, `[ ] `, `[] `, `> `) convert a line as it's
+  typed; the editor's inline `**bold**`, `_italic_`, `~~strike~~` and `` `code` `` rules
+  still style it, as the Format menu does. ⇧↩ types a soft break only in a code line.
+  The card opens above its line when it wouldn't fit under it on the visible page, and a
+  row the pointer moves onto takes the highlight.
 
 ## Status checklist
 
