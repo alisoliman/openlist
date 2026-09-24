@@ -453,11 +453,13 @@ private struct NXHeaderTitleField: View {
         }
     }
 
-    /// Return or clicking away: a name that isn't empty, and has changed, is kept.
+    /// Return or clicking away: a name that isn't empty, and has changed, is
+    /// kept, on one line, as a paste's or ⌥↩'s breaks become spaces.
     private func commit() {
         guard rename.isEditing.wrappedValue else { return }
         rename.isEditing.wrappedValue = false
-        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = BlockNSTextView.joiningLines(NSAttributedString(string: draft)).string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty, name != rename.value { rename.commit(name) }
     }
 }

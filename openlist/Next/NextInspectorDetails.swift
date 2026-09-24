@@ -40,7 +40,7 @@ struct NXInspectorQuietAction: View {
                 // 500 12.5/1.
                 Text(title)
                     .font(.system(size: 12.5, weight: .medium))
-                    .padding(.vertical, (12.5 - NXStrikeText.glyphLineHeight(12.5)) / 2)
+                    .padding(.vertical, (12.5 - NX.lineHeight(12.5)) / 2)
                 if fills { Spacer(minLength: 0) }
             }
         }
@@ -194,29 +194,27 @@ struct NXInspectorSubtasks: View {
         let workbench = env.workbench
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                Text("Subtasks")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .kerning(0.735)
-                    .textCase(.uppercase)
-                    .foregroundStyle(NX.ink(0.36))
-                // Empty without subtasks, and still spaced, as the design's count is.
+                NXCapsTitle(text: "Subtasks")
+                // Empty without subtasks, and still spaced, as the design's
+                // count is; in the same 10.5/1 line box as the title.
                 Text(rows.isEmpty ? "" : "\(done)/\(rows.count)")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(NX.ink(0.45))
                     .monospacedDigit()
+                    .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2).fill(NX.ink(0.07))
+                        // As the design's, only the width eases; the fill
+                        // turns green at once as the last one closes.
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(!rows.isEmpty && done == rows.count ? NX.green : style.accent)
+                            .animation(nil) { $0.foregroundStyle(!rows.isEmpty && done == rows.count ? NX.green : style.accent) }
                             .frame(width: proxy.size.width * fraction)
                     }
                     .animation(NX.cssEase(400), value: fraction)
                 }
                 .frame(height: 3)
             }
-            // The design's line-height 1.
-            .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
             .padding(.bottom, 6)
             ForEach(rows) { row in
                 NXInspectorSubtaskRow(row: row)
@@ -259,7 +257,7 @@ private struct NXInspectorSubtaskRow: View {
                 .strikethrough(filled, color: NX.ink(0.42))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .padding(.vertical, (13 * 1.3 - NXStrikeText.glyphLineHeight(13)) / 2)
+                .padding(.vertical, (13 * 1.3 - NX.lineHeight(13)) / 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
                 .font(.system(size: 10.5, weight: .semibold))
@@ -269,8 +267,8 @@ private struct NXInspectorSubtaskRow: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(hovering ? NX.ink(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .opacity(closing != nil ? 0.6 : 1)
-        .animation(.easeOut(duration: 0.3), value: closing != nil)
+        // The design's `opacity 300ms ease`, which eases nothing else.
+        .animation(NX.cssEase(300)) { $0.opacity(closing != nil ? 0.6 : 1) }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { workbench.inspect(task.id) }
@@ -495,7 +493,7 @@ private struct NXInspectorHistoryPage: View {
     }
 
     /// Activity's 12/1.4, so the saved rows keep the rhythm of the ones above.
-    private var leading: CGFloat { 12 * 1.4 - NXStrikeText.glyphLineHeight(12) }
+    private var leading: CGFloat { 12 * 1.4 - NX.lineHeight(12) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

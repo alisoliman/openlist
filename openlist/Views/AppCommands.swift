@@ -156,12 +156,12 @@ struct AppCommands: Commands {
             Button(reopens ? "Reopen" : "Mark as Done") { env.send(.toggleCompletion) }
                 .keyboardShortcut("d", modifiers: .command)
                 .disabled(targets.isEmpty)
-            // ⌘↩ finishes a note being written in the list document, as the
-            // design's does. A disabled item leaves the key to the note, where
-            // an enabled one would take it first.
+            // ⌘↩ finishes a note being written in the list document or the
+            // inspector, as the design's does. A disabled item leaves the key
+            // to the note, where an enabled one would take it first.
             Button("Open Details") { env.send(.openDetails) }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(single == nil || env.workbench.editingNoteID != nil)
+                .disabled(single == nil || env.workbench.editingNoteID != nil || env.workbench.isWritingInspectorNote)
 
             Divider()
 

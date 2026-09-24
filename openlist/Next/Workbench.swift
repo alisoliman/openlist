@@ -178,6 +178,9 @@ final class Workbench {
     /// When a note was last asked to take the keyboard, which it does a
     /// moment later, for the keys typed in between.
     @ObservationIgnored private(set) var noteEditRequestedAt: Date?
+    /// The inspector's note has the keyboard, where ⌘↩ finishes it as it
+    /// finishes the list document's.
+    var isWritingInspectorNote = false
     /// The task the inspector's Add subtask is for, until its list's document
     /// is on show to write the new line.
     @ObservationIgnored var pendingSubtaskParentID: UUID? {

@@ -186,12 +186,17 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
   the Inbox as its document. Native inspector extras: the title and note are edited in place
-  (the note saved as the document saves one: trailing space goes, and an emptied note closes
+  (in the design's line boxes, a done title struck through even while written; the note
+  with the document note's keys, Return breaking its line, Esc, Tab or ⌘↩ finishing it and
+  ⇧Tab going back to the title, and the title kept to one line, as a document line is:
+  Return or Esc finishes it, Tab goes on to the note and a paste's breaks become spaces;
+  the note saved as the document saves one: trailing space goes, and an emptied note closes
   under its task; a click off the field, on a row, subtask, crumb or pill, ends the edit as
   a browser blurs an input, and the caret never follows to another task, so the keys act on
   the row, while one in the note's box puts the caret at the nearest place in it, as a
-  textarea's padding does, and a box left empty closes once the click is over, so what
-  was clicked below it doesn't move away) and files kept with the task. As the design, the note shows only when there
+  textarea's padding does, a click on a capture, search or palette card over the panel
+  staying the card's, and a box left empty closes once the click is over, so what was
+  clicked below it doesn't move away) and files kept with the task. As the design, the note shows only when there
   is one; until then a quiet "Add a note" row stands in, with "Attach a file" beside it until
   the task has files, when Files shows. Files dropped anywhere on the panel are attached;
   attaching snaps with Undo, which takes the files off again, and removing one does too, its
