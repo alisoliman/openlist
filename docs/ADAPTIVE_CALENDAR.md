@@ -10,10 +10,15 @@ current time has a marker, and movement respects Reduce Motion.
 ## Put work into the plan
 
 Open a task’s inspector and turn on **Plan for today**, choose **Task → Plan for
-Today**, or press **P** on a selected row. Tasks with a deadline inside the next
-four weeks also enter the plan automatically. Undated backlog stays unscheduled
-until selected, deferred to a day, or given an explicit placement. A selection that overruns its
-day carries forward until the task is completed or deselected.
+Today**, or press **P** on a selected row. The calendar draws only work placed on
+it: a task picked for today, or due soon, waits under **Not planned yet** until
+**Plan** or **Task → Find a Slot** places it (see
+[Place a task](#place-a-task-or-move-its-planned-time)). The rolling plan behind
+the Work panel’s suggestion and deadline coverage takes in selected tasks and, by
+itself, tasks with a deadline inside the next four weeks; it never adds a block to
+the calendar. Undated backlog stays unscheduled until selected, deferred to a day,
+or placed. A selection that overruns its day carries forward until the task is
+completed or deselected.
 
 Planning intent is separate from **Due**, **Star**, and reminders. Selecting a task
 for today does not manufacture a deadline. Due dates still work as they did
@@ -26,7 +31,7 @@ or change the inherited default in **Settings > Calendar**. **Use default**
 removes an individual override. An estimate is the expected total active time for
 the current occurrence, so previously recorded work reduces its remaining time.
 
-The planner first considers deadlines at risk, then work selected for today,
+That plan first considers deadlines at risk, then work selected for today,
 then other upcoming deadlines. Earlier deadlines and task priority break ties;
 priority orders tasks selected for today. Flexible work uses available slots,
 with overflow moving into later days. Work can split into sessions with a
@@ -75,14 +80,18 @@ warnings, not whether work may start. Starting another task switches straight aw
 tray offers Undo. While work records, the toolbar’s work notch keeps **Done** and
 **Stop** available on every page; see [the work companion](WORK_COMPANION.md).
 
-At a planned start, the **Planned now** banner offers one-click **Start**. If it
-is ignored for five minutes, only the missed task moves into the next free gap;
-the rest of the day stays steady. Missed time is never logged as work. Any resulting deadline
-risk remains visible in coverage.
+While a placed slot runs, the **Planned now** banner offers one-click **Start**.
+A slot that goes by without it stays where it was drawn, marked **carried
+forward**, and nothing else on the calendar moves; the task is listed under **Not
+planned yet** again once that week is over. Missed time is never logged as work.
+The rolling plan moves only the missed task’s remaining work into its next free
+gap, for the Work panel’s suggestion, and any resulting deadline risk remains
+visible in coverage.
 
 Recording continues past the estimate. A minute before the working block ends,
 it grows to the next quarter hour plus **15 minutes**, clipped to the next fixed
-boundary, and later flexible work moves out of its way. The tray reports each
+boundary, and the later placements that day move out of its way, each to the next
+free quarter hour in its list’s hours. The tray reports each
 extension with Undo, which puts the previous blocks back (or, once another change
 has replaced them, plans them afresh); work keeps recording, and the block is not
 grown again until Redo or the next start. Undo is offered only while that work is
@@ -95,14 +104,14 @@ details until resolved. Background calendar nudges use silent macOS notification
 when notification permission is available; the in-app work notch remains
 available without that permission.
 
-When a meeting, a break, or another task’s pinned time leaves the working block
-no more room, work keeps recording and the work notch names what
-it is running into. The end of available hours only stops the block growing, as
-the planner never places work past it. Blocks the running work runs over stay
-where they were rather than being moved as missed; pausing replans them and the
-remaining work into the next available slot. **Defer…** pauses work, removes that
-occurrence’s explicit placements, and chooses the next day on which planning may
-start. Its deadline stays unchanged, so deferral can reveal a deadline conflict.
+When a meeting or a break leaves the working block no more room, work keeps
+recording and the work notch names what it is running into. The end of available
+hours only stops the block growing, as the planner never places work past it. A
+placement it runs over with no room left that day stays where it is, beside the
+running work. **Defer…** pauses work, removes that occurrence’s placements, and
+chooses the day from which the task is picked for today; nothing puts it back on
+the calendar by itself, and **Plan** looks for time from that day. Its deadline
+stays unchanged, so deferral can reveal a deadline conflict.
 Undo takes a deferral back, placements included; **Clear** ends one, keeping the
 task selected for today once its day has come.
 
@@ -123,15 +132,17 @@ was absent is not silently recorded as work.
 today that have no block. Its **Plan** button, and **Task → Find a Slot**, place
 the task in the next free slot around meetings and your hours, as one change with
 Undo in the tray. That placement is pinned. In the Work panel, **Later… → Move
-planned time…** saves a preferred placement instead, which can yield to busy time,
-deadlines and changes in remaining work; when it can’t be kept, a notice says
-why. Neither changes the task’s due date.
+planned time…** moves a placed block to another start, as long as it is: its sheet
+lists what the new time would overlap on the calendar (**Move anyway** keeps the
+overlap), and the move is pinned the same way, one change with Undo in the tray.
+None of these changes the task’s due date.
 
 Pinned conflicts are shown in deadline coverage. Pins can conflict
 with meetings, other pins, active work, availability, breaks, deadlines, or the
 **Keep task together** choice. A conflicting pin does not count as safe deadline
-coverage. A missed pin is reported and unfinished work is replanned; it is never
-retrospectively treated as an active session. Active sessions cannot be moved or
+coverage. A missed pin is reported and stays drawn as carried forward, while the
+rolling plan replans the unfinished work; it is never retrospectively treated as
+an active session. Active sessions cannot be moved or
 pinned while running.
 
 Pins beyond the four-week horizon remain fixed and are reported as outside the
@@ -164,8 +175,8 @@ future occurrences to forecast every repetition across four weeks.
 Every range retains completed occurrences with a checkmark, muted color, and
 strikethrough. Tracked work occupies its actual recorded intervals, including
 approved time corrections. Work completed without Start keeps its original
-planned slots and says **Time not tracked**. Older records without saved slots
-use a completion marker rather than inventing a duration.
+planned slots and says **Time not tracked**. A completion with neither a slot nor
+recorded work leaves no block rather than inventing a duration.
 
 Completed blocks do not reserve capacity. Finishing early immediately frees
 remaining time, and reused time appears side by side with completion history.
@@ -203,7 +214,7 @@ change estimates without that approval.
 | --- | --- |
 | Task selection, deferral, estimate override, keep-together, away-tracking choice, occurrence identity | Additive fields in the existing SwiftData task records. Participate in the existing private CloudKit sync when the build is provisioned. |
 | List Work/Personal choice | Additive field on the existing list record, with Work as the migration default. |
-| Preferred/pinned placements, work sessions, completion records and time corrections | Separate SwiftData models in the existing local store and CloudKit configuration. History uses snapshot fields rather than cascading task relationships. |
+| Placements, work sessions, completion records and time corrections | Separate SwiftData models in the existing local store and CloudKit configuration. History uses snapshot fields rather than cascading task relationships. |
 | Weekly hours, breaks, overrides, default estimate, minimum session | Per-Mac preferences, consistent with existing app-wide settings. |
 | Connected calendar selection and permission, device identity | Per-Mac state. EventKit remains the external source of truth. |
 | Generated schedule and fetched external busy events | Derived in memory. No generated EventKit events or remote scheduling service. |
@@ -229,8 +240,9 @@ normal reconciliation and, if necessary, a recorded-time correction.
   completion/recurrence lifecycle records an occurrence **before** advancing its
   identity, clearing placements, or resetting descendants. Duplicate, reopen, move,
   archive, and deletion paths must preserve these identities appropriately.
-- Generated blocks are disposable. Save a `SchedulePlacement` only for deliberate
-  moves or pins. Conflicting placements do not count toward safe deadline coverage.
+- Generated blocks are disposable and never drawn. Save a `SchedulePlacement` only
+  for explicit planning (Plan, Find a Slot, Move planned time…); the overrun only
+  moves saved ones. Conflicting placements do not count toward safe deadline coverage.
 - New SwiftData fields have migration defaults; no required external credential or
   calendar permission may block opening an existing local store.
 - External calendar access is read-only by implementation, even though the macOS
@@ -262,7 +274,7 @@ The focused checks run production code with deterministic or isolated inputs:
 | Scheduling | Deadline competition, unscheduled backlog, overflow, minimum-session fragmentation, keep-together, overlapping work/personal hours, breaks/overrides, fixed events, active overruns, pin conflicts, horizon states, and DST. |
 | Calendar persistence | Migration from a legacy SQLite fixture, reopen durability, recurrence/descendant history, duplication/deletion behavior, estimates, placements, suggestions, corrections, and explicit reset. |
 | Calendar runtime | Explicit start, pause/resume, overrun shifts, fixed boundaries, completion/deferral, lock/away handlers, interruption/restart recovery, and external-source fixtures. |
-| Calendar layout | Completed and future blocks sharing time, collision detection using minimum rendered heights, zero-duration markers, dense history, and deterministic lane ordering. |
+| Calendar layout | Completed and future blocks sharing time, lanes over the items’ times with recorded work keeping its minimum rendered height, zero-duration markers, dense history, and deterministic lane ordering. |
 | Full project checks | The focused calendar suites plus existing logic, editor, duplication, export, lifecycle, visibility, sync, signing, MCP, and helper checks. |
 
 Before the completion-history and nudge refinements, validation on 2026-09-13 passed **984 scheduling assertions**,
@@ -271,9 +283,6 @@ real read-only SQLite save failures and recovery, alongside legacy migration and
 disk reopen. The full project check also passed. The final horizon-pin regression
 was followed by another focused scheduling run. Debug and unsigned Release builds
 passed, including release bundle validation.
-
-Feasible future preferred placements take precedence over the automatic today
-fallback, and infeasible moves explain the conflict.
 
 Runtime handler tests do not prove physical Mac lock/sleep notifications; fixture
 busy time does not prove live EventKit account permission/import behavior; schema

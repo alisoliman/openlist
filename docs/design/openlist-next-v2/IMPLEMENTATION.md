@@ -164,6 +164,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   that takes in any of 12:00–13:00 is named Lunch, as the design's; any other reads as a
   break. A block's title keeps its lines and its time and state wrap under it, cut off at
   the block's edge, as the design's; the last whole line of a cut state ends in an ellipsis.
+  Lanes follow the items' times, as the design's, except for recorded work the design never
+  draws (a done block of tracked time, work running or paused with no slot): it takes lanes
+  by its drawn box, so a few minutes of it isn't hidden under the block after it.
   The Work panel's "N tasks rescheduled" and Start notifications come only from blocks the
   calendar draws, not from the planner's own sessions, and no Start comes while work is
   running or paused, as the design's "Planned now" hides then.

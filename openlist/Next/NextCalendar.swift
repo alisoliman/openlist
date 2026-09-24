@@ -509,14 +509,22 @@ private struct NXDayColumn: View {
         max(0, slot.laneCount > 1 ? width / CGFloat(slot.laneCount) - 4 : width - 6)
     }
 
+    /// Lanes over the items' times, as the design's: one starting when another
+    /// ends keeps the full width, drawn over what a minimum height put past
+    /// that end. Recorded work, which the design never draws (a done block
+    /// of tracked time, work running or paused with no slot), keeps its whole
+    /// box, so a few minutes of it don't go under the next block.
     private func arrange() -> [String: CalendarOverlapLayout.Placement] {
         var items = events.map { event in
             CalendarOverlapLayout.Item(id: event.id, top: Double(top(event.start) + 1),
-                                       height: Double(max(16, top(event.end) - top(event.start) - 2)))
+                                       height: Double(max(16, top(event.end) - top(event.start) - 2)),
+                                       end: Double(top(event.end) + 1))
         }
         items += blocks.map { block in
-            CalendarOverlapLayout.Item(id: block.id, top: Double(top(block.start) + 1),
-                                       height: Double(max(18, top(block.end) - top(block.start) - 2)))
+            let recorded = block.isTimeTracked || (block.placementID == nil && !block.isCompleted)
+            return CalendarOverlapLayout.Item(id: block.id, top: Double(top(block.start) + 1),
+                                              height: Double(max(18, top(block.end) - top(block.start) - 2)),
+                                              end: recorded ? nil : Double(top(block.end) + 1))
         }
         let placements = CalendarOverlapLayout.arrange(items)
         return Dictionary(placements.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -642,11 +650,17 @@ private struct NXCalendarBlock: View {
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
+        // A missed block's content keeps inside its dashed border, as the design's does.
+        .padding(missed ? 1 : 0)
         // No taller than its slot, so what overflows is cut at the bottom
         // instead of the block growing past its hours.
         .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
         .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(ring, lineWidth: 1))
+        // The design's inset ring, which a missed block's border keeps inside
+        // it: a solid line within the dashes, the fill showing between them.
+        .overlay(RoundedRectangle(cornerRadius: missed ? 6 : 7, style: .continuous)
+            .strokeBorder(ring, lineWidth: 1)
+            .padding(missed ? 1 : 0))
         .overlay {
             if missed {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
