@@ -294,6 +294,7 @@ struct NXSettingLine<Content: View>: View {
 
     var body: some View {
         HStack(spacing: 12) { content }
+            .environment(\.nxSettingLineTints, true)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,6 +302,19 @@ struct NXSettingLine<Content: View>: View {
             .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
+    }
+}
+
+private struct NXSettingLineTintsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Set within a settings line, whose own hover tint stands for its pills'
+    /// and buttons', as the design's row does for its value pill.
+    var nxSettingLineTints: Bool {
+        get { self[NXSettingLineTintsKey.self] }
+        set { self[NXSettingLineTintsKey.self] = newValue }
     }
 }
 
@@ -385,7 +399,6 @@ extension NXSettingRow where Accessory == EmptyView {
 }
 
 struct NXSettingToggle: View {
-    @Environment(\.nextStyle) private var style
     @Environment(\.isEnabled) private var isEnabled
     let label: String
     let hint: String
@@ -394,21 +407,8 @@ struct NXSettingToggle: View {
     var body: some View {
         NXSettingRow(label: label, hint: hint) {
             // A button, so Tab reaches the switch and Space flips it.
-            Button { isOn.toggle() } label: {
-                Capsule()
-                    .fill(isOn ? style.accent : NX.ink(0.16))
-                    .frame(width: 34, height: 20)
-                    .overlay(alignment: .leading) {
-                        Circle().fill(.white)
-                            .frame(width: 16, height: 16)
-                            .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
-                            .offset(x: isOn ? 16 : 2)
-                            .animation(style.spring(200), value: isOn)
-                    }
-                    // The design's `background 180ms ease` (CSS `ease`).
-                    .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: style.ms(180) / 1000), value: isOn)
-            }
-            .buttonStyle(NXBareButtonStyle(radius: 10))
+            Button { isOn.toggle() } label: { NXSwitch(isOn: isOn) }
+                .buttonStyle(NXBareButtonStyle(radius: 10))
         }
         .opacity(isEnabled ? 1 : 0.45)
         .onTapGesture { if isEnabled { isOn.toggle() } }
@@ -417,7 +417,10 @@ struct NXSettingToggle: View {
 }
 
 /// The design's value pill: `500 12px/1`, `6px 9px`, radius 7 on ink 0.05.
+/// In a settings line it has no hover of its own, as the design's: the line
+/// tints instead. Elsewhere, as in a details panel or a popover, it darkens.
 struct NXValuePill: View {
+    @Environment(\.nxSettingLineTints) private var lineTints
     let text: String
     var swatch: Color?
     /// Shows a chevron that turns up while the row's details are open.
@@ -447,7 +450,7 @@ struct NXValuePill: View {
         .lineLimit(1)
         .padding(.vertical, 6)
         .padding(.horizontal, 9)
-        .background(NX.ink(hovering ? 0.09 : 0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(NX.ink(hovering && !lineTints ? 0.09 : 0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
@@ -495,8 +498,9 @@ struct NXSettingDetail<Content: View>: View {
 
 // MARK: - Buttons and fields
 
-/// A settings action drawn as the row's value pill, darker on hover. A
-/// destructive button is red.
+/// A settings action drawn as the row's value pill, and like it darker on
+/// hover only outside a settings line; a press dims it. A destructive
+/// button is red.
 struct NXSettingButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         Pill(configuration: configuration)
@@ -504,12 +508,13 @@ struct NXSettingButtonStyle: ButtonStyle {
 
     private struct Pill: View {
         @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.nxSettingLineTints) private var lineTints
         let configuration: Configuration
         @State private var hovering = false
 
         var body: some View {
             let destructive = configuration.role == .destructive
-            let active = hovering && isEnabled
+            let active = hovering && isEnabled && !lineTints
             configuration.label
                 .frame(height: 12)
                 .font(.system(size: 12, weight: .medium))

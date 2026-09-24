@@ -408,4 +408,17 @@ do {
             && !NXPanelRowStyle.greys(highlighted: nil, hovering: false, pressed: false),
           "A menu row with no highlight to follow greys on hover")
 }
+// The inspector's switch, like the row's tick, keeps the design's fixed
+// spring at every Motion setting; only Reduce Motion drops its overshoot.
+// What the design paces with ms() still scales.
+do {
+    let restrained = NextStyle(motion: 0.6, lively: false)
+    let playful = NextStyle(motion: 1.2)
+    let reduced = NextStyle(motion: 0.4, lively: false, slides: false)
+    check(restrained.bounce(200) == NX.spring(200) && playful.bounce(200) == NX.spring(200),
+          "The switch knob springs over the design's 200ms under Restrained and Playful")
+    check(reduced.bounce(200) == NX.ease(200), "Reduce Motion eases the knob over 200ms without its overshoot")
+    check(restrained.ease(320) == NX.ease(192) && playful.ease(320) == NX.ease(384) && restrained.spring(240) == NX.ease(144),
+          "A row's rowIn still follows the Motion setting, and Restrained drops the checkbox's bounce")
+}
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

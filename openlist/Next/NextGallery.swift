@@ -85,7 +85,6 @@ struct NextListsGallery: View {
 
 private struct NXListCard: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let list: TaskList
     /// Every task in the list, subtasks included, as the list header counts them.
     let tasks: [Block]
@@ -154,7 +153,8 @@ private struct NXListCard: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(hovering ? 0.14 : 0.12), lineWidth: 0.5))
         .shadow(color: NX.shadowWarm.opacity(hovering ? 0.1 : 0.04), radius: hovering ? 14 : 3, y: hovering ? 12 : 2)
         .offset(y: hovering ? -2 : 0)
-        .animation(style.ease(200), value: hovering)
+        // The design's 200ms lift, whatever the Motion setting.
+        .animation(NX.ease(200), value: hovering)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onHover { hovering = $0 }
         .onTapGesture { env.workbench.go(env.workbench.route(for: list)) }
@@ -252,7 +252,6 @@ struct NextTrashScreen: View {
 
 /// "Trash is empty.", fading in whenever it appears, as the design's does.
 private struct NXTrashEmpty: View {
-    @Environment(\.nextStyle) private var style
     @State private var shown = false
 
     var body: some View {
@@ -265,7 +264,8 @@ private struct NXTrashEmpty: View {
                 .strokeBorder(NX.ink(0.14), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .padding(.top, 6)
             .opacity(shown ? 1 : 0)
-            .onAppear { withAnimation(style.cssEase(240)) { shown = true } }
+            // The design's fadeIn, whatever the Motion setting.
+            .onAppear { withAnimation(NX.cssEase(240)) { shown = true } }
     }
 }
 

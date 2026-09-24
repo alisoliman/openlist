@@ -71,13 +71,19 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
-  bars, the overlay cards and the Turn into card in rather than sliding them, as its hint
-  says, where the design shortens the inspector's slide and plays the others' unchanged.
-  Each fade takes as long as that slide.
+  bars, the overlay cards and the Turn into card in rather than sliding them, and chips, the
+  selection check and the cards that lift in (Today is clear, the Inbox's done card,
+  Planned now, Not planned yet) rather than raising them, and eases the tick and switch
+  knobs without their overshoot, as its hint says, where the design shortens the
+  inspector's slide and plays the others unchanged. Each fade takes as long as that slide
+  or rise.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
   snapshot failed); a backup or restore made by hand, and what it reports, are Data's.
+  In a row only the row tints under the pointer, as the design's; the value pills and
+  buttons of the native extras outside one (the hours and iCloud panels, the Due, Repeat
+  and Reminder popovers) darken instead, since nothing else shows their hover.
 - Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking
   space in every text field, so a global hot key on it would take that from every app. The
   Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space. A task it adds goes

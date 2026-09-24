@@ -231,7 +231,6 @@ private struct NXHeatCell: View {
 
 private struct NXActivityDayPanel: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let heatmap: ActivityHeatmap
     @State private var shown = false
@@ -297,10 +296,11 @@ private struct NXActivityDayPanel: View {
         .padding(.horizontal, 18)
         .background(NX.inspector, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.08), lineWidth: 0.5))
-        // The design's fadeIn plays once, as the screen opens; a day picked
-        // after that changes the panel in place.
+        // The design's fadeIn plays once, as the screen opens, at its own
+        // speed whatever the Motion setting; a day picked after that changes
+        // the panel in place.
         .opacity(shown ? 1 : 0)
-        .onAppear { withAnimation(style.cssEase(200)) { shown = true } }
+        .onAppear { withAnimation(NX.cssEase(200)) { shown = true } }
     }
 
     /// The day's tasks, found in the library or in Trash, which keeps them

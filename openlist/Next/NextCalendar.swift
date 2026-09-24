@@ -28,15 +28,9 @@ struct NextCalendarScreen: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    // Too narrow for both, the range control wraps under the
-                    // title, as the design's header row does, its 12px gap apart.
-                    ViewThatFits(in: .horizontal) {
-                        header(dates) { controls }
-                        VStack(alignment: .leading, spacing: 12) {
-                            header(dates) { EmptyView() }
-                            controls
-                        }
-                    }
+                    // The range control trails the title, wrapping under it as
+                    // every header's controls do.
+                    header(dates) { controls }
                     NXCalendarBody(dates: dates, now: context.date)
                         .padding(.top, 18)
                 }
@@ -217,7 +211,7 @@ private struct NXCalendarBody: View {
         .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 12))
         .background(style.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(style.accent.opacity(0.2), lineWidth: 1))
-        .modifier(NXLiftIn())
+        .modifier(NXLiftIn(animation: NX.cssEase(260)))
     }
 
     private func grid(_ range: ClosedRange<Int>) -> some View {
@@ -496,7 +490,8 @@ private struct NXDayColumn: View {
                         .zIndex(5)
                 }
             }
-            .animation(style.ease(420), value: layout.mapValues { [$0.top, $0.height, Double($0.lane), Double($0.laneCount)] })
+            // The design's 420ms top and height, whatever the Motion setting.
+            .animation(NX.ease(420), value: layout.mapValues { [$0.top, $0.height, Double($0.lane), Double($0.laneCount)] })
         }
         .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.07)).frame(width: 0.5) }
     }
@@ -713,8 +708,9 @@ private struct NXCalendarBlock: View {
     private func enter() {
         entered = false
         // A planned block usually arrives already fresh. Animating back on
-        // the next update keeps both changes from merging into one.
-        Task { @MainActor in withAnimation(style.ease(380)) { entered = true } }
+        // the next update keeps both changes from merging into one. The
+        // design's rowIn takes 380ms here whatever the Motion setting.
+        Task { @MainActor in withAnimation(NX.ease(380)) { entered = true } }
     }
 
     /// The note after the slot, in the design's order of precedence. Work that
@@ -766,8 +762,10 @@ private struct NXUnplannedColumn: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(EdgeInsets(top: 0, leading: 2, bottom: 4, trailing: 2))
             ForEach(tasks) { task in
+                // Each card plays the design's liftIn as it appears, the Calendar opening too.
                 card(task)
-                    .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity.combined(with: .scale(scale: 0.96))))
+                    .modifier(NXLiftIn(animation: NX.cssEase(220)))
+                    .transition(.asymmetric(insertion: .identity, removal: .opacity.combined(with: .scale(scale: 0.96))))
             }
             if tasks.isEmpty {
                 Text("Everything due this week has a slot.")
@@ -780,7 +778,7 @@ private struct NXUnplannedColumn: View {
                         .strokeBorder(NX.ink(0.16), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
         }
-        .animation(style.ease(220), value: tasks.map(\.id))
+        .animation(NX.ease(220), value: tasks.map(\.id))
     }
 
     private var unplanned: [Block] {

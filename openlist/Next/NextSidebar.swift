@@ -262,7 +262,8 @@ struct NextSidebar: View {
 
     private func sectionHeader(_ title: String, open: Bool, action: @escaping () -> Void) -> some View {
         Button {
-            withAnimation(style.ease(160)) { action() }
+            // The design's chevron turns over 160ms, whatever the Motion setting.
+            withAnimation(NX.cssEase(160)) { action() }
         } label: {
             HStack(spacing: 4) {
                 Text(title)
@@ -566,8 +567,9 @@ private struct NXSidebarRow<Content: View>: View {
             .accessibilityAction { action() }
     }
 
-    /// The design's `300ms ease` (CSS `ease`) on the background and shadow.
-    private var fade: Animation { .timingCurve(0.25, 0.1, 0.25, 1, duration: style.ms(300) / 1000) }
+    /// The design's `300ms ease` (CSS `ease`) on the background and shadow,
+    /// whatever the Motion setting.
+    private var fade: Animation { NX.cssEase(300) }
 }
 
 /// The count bump when something lands in a list. It plays when `trigger`

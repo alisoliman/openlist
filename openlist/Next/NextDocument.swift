@@ -601,7 +601,7 @@ private struct NXDocumentTask: View {
     private var progressChip: [NXChipModel] {
         guard let progress = context.progress[row.id], progress.total > 0 else { return [] }
         return [NXChipModel(id: "subtasks", label: "\(progress.done)/\(progress.total)", icon: "arrow.turn.down.right",
-                            tone: progress.done == progress.total ? .green : .neutral)]
+                            tone: progress.done == progress.total ? .green : .neutral, pops: .never)]
     }
 }
 
