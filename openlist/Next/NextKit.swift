@@ -520,7 +520,7 @@ struct NXSegmented<Value: Hashable>: View {
                     Text(label)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(selection == value ? NX.ink : NX.ink(0.55))
-                        .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
+                        .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background {

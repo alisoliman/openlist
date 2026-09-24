@@ -131,9 +131,9 @@ private struct NXTriageCard: View {
         let workbench = env.workbench
         let exit = workbench.triageExit
         let lifted = liftedID == task.id
-        // The design's 22/1.3: the extra leading between lines and, halved,
-        // above the first and below the last.
-        let titleLeading = 22 * 1.3 - NXStrikeText.glyphLineHeight(22)
+        // The design's 22/1.3 over SwiftUI's 26pt line: 2.6pt between lines,
+        // half of it above the first and below the last.
+        let titleLeading = 22 * 1.3 - NX.lineHeight(22)
         VStack(alignment: .leading, spacing: 0) {
             topLine
             Text(task.displayTitle)
@@ -217,7 +217,7 @@ private struct NXTriageCard: View {
                 .kerning(0.84)
                 .textCase(.uppercase)
                 .foregroundStyle(NX.inbox)
-                .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
+                .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
             HStack(spacing: 3) {
                 ForEach(0..<total, id: \.self) { index in
                     Capsule()
@@ -230,12 +230,12 @@ private struct NXTriageCard: View {
             Text("\(remaining) to go")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.42))
-                .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
+                .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
             Spacer(minLength: 8)
             Text("Captured \(NXFormat.relative(task.createdAt, now: now))")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.4))
-                .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
+                .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
         }
         .padding(.top, 14)
         .padding(.horizontal, 18)
@@ -257,9 +257,9 @@ private struct NXTriageCard: View {
     private var schedule: some View {
         let load = Dictionary(grouping: library.open.compactMap { $0.dueDate.map { NXFormat.dayOffset($0, now: now) } }, by: { $0 })
             .mapValues(\.count)
-        // The hint's 10.5/1.4: the extra leading between lines and, halved,
-        // above the first and below the last.
-        let hintLeading = 10.5 * 1.4 - NXStrikeText.glyphLineHeight(10.5)
+        // The hint's 10.5/1.4 over a 13pt line: 1.7pt between lines, half of
+        // it above the first and below the last.
+        let hintLeading = 10.5 * 1.4 - NX.lineHeight(10.5)
         return VStack(alignment: .leading, spacing: 0) {
             caps("Or schedule — stays in Inbox")
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 4), count: 4), spacing: 4) {
@@ -298,10 +298,10 @@ private struct NXTriageCard: View {
             Button { workbench.triage(task, action: .right) } label: {
                 HStack(spacing: 6) {
                     Text("Keep for later").font(.system(size: 12, weight: .semibold))
-                        .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
+                        .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
                     // SF Mono has SF's line.
                     Text("→").font(NX.mono(10, weight: .medium)).opacity(0.6)
-                        .padding(.vertical, (10 - NXStrikeText.glyphLineHeight(10)) / 2)
+                        .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                 }
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.primaryButtonHover, rest: NX.primaryButton, radius: 8,
@@ -331,10 +331,16 @@ private struct NXTriageCard: View {
     private func footerButton(_ title: String, icon: String, key: String, hover: Color, hoverText: Color? = nil,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
+            // The design's 15pt icon box and 12/1 and 9.5/1 labels, so each
+            // button is its 29pt, 7 + 15 + 7, whatever the symbol's height,
+            // and the footer its 53pt.
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 13, weight: .medium))
+                    .frame(height: 15)
                 Text(title).font(.system(size: 12, weight: .medium))
+                    .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
                 Text(key).font(NX.mono(9.5, weight: .medium)).opacity(0.5)
+                    .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
             }
         }
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8,
@@ -396,12 +402,12 @@ private struct NXTriageDay: View {
                 .kerning(0.38)
                 .textCase(.uppercase)
                 .foregroundStyle(NX.ink(0.42))
-                .padding(.vertical, (9.5 - NXStrikeText.glyphLineHeight(9.5)) / 2)
+                .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
             Text("\(Calendar.current.component(.day, from: date))")
                 .font(.system(size: 16, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(NX.ink)
-                .padding(.vertical, (16 - NXStrikeText.glyphLineHeight(16)) / 2)
+                .padding(.vertical, (16 - NX.lineHeight(16)) / 2)
             HStack(spacing: 2) {
                 ForEach(0..<min(load, 4), id: \.self) { _ in
                     Circle().fill(load >= 3 ? NX.red : NX.ink(0.3)).frame(width: 4, height: 4)
@@ -431,9 +437,9 @@ private struct NXTriageEmpty: View {
 
     var body: some View {
         let workbench = env.workbench
-        // The summary's 13/1.45: the extra leading between lines and, halved,
-        // above the first and below the last.
-        let summaryLeading = 13 * 1.45 - NXStrikeText.glyphLineHeight(13)
+        // The summary's 13/1.45 over a 16pt line: 2.85pt between lines, half
+        // of it above the first and below the last.
+        let summaryLeading = 13 * 1.45 - NX.lineHeight(13)
         HStack(spacing: 18) {
             Circle().fill(NX.green)
                 .frame(width: 48, height: 48)
@@ -456,7 +462,7 @@ private struct NXTriageEmpty: View {
             } label: {
                 Text("Review kept tasks")
                     .font(.system(size: 12, weight: .semibold))
-                    .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
+                    .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
