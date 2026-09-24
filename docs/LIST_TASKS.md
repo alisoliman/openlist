@@ -20,18 +20,17 @@ Lines edit and complete their original blocks, and details open the same task.
 Exact-content search and reminder navigation show the list as its document for
 that visit, so hidden prose can be revealed, without changing the saved choice.
 
-Capture into the list on show, from **New task** or ⌘N, places the new task at
-the end of its document in either presentation, then shows it at its sorted
-position. Capture elsewhere keeps its Inbox default and prepends. Users can
-still choose another destination.
+Capture places the new task at the end of its list's document, as the design's
+does, wherever it was captured from and in either presentation; a list on show
+then shows it at its sorted position. Capture elsewhere keeps its Inbox default.
+Users can still choose another destination.
 
 ## Automated checks
 
 - `Tools/run-inbox-navigation-checks.sh`: per-list presentation, command
   ownership, back/forward, preference relaunch and prose reveal.
-- `Tools/run-capture-checks.sh`: capture into the list on show appends to the
-  document root and preserves prior hierarchy and indices, while ordinary
-  captures still prepend.
+- `Tools/run-capture-checks.sh`: capture appends to the document root, in the
+  order captures are made, and preserves prior hierarchy and indices.
 - `Tools/run-list-tasks-checks.sh`: `ListTasksProjection`, the flat queue of a
   list's tasks the List widget shows: mixed headings, collapsed branches, rich
   prose, nested tasks, every sort and stable ties, hidden completed tasks and

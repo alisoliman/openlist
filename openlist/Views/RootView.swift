@@ -121,8 +121,7 @@ struct RootView: View {
         switch route {
         case let .capture(listID, forToday):
             // The Quick Add panel floats over the app in front without activating Openlist.
-            QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, dueToday: forToday,
-                                                                        appendsToList: listID != nil))
+            QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, dueToday: forToday))
             return
         // This Mac's choice for the Inbox, even straight after a triage visit.
         case .inbox:

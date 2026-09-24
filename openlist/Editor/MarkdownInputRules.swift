@@ -58,32 +58,6 @@ enum MarkdownInputRules {
         return nil
     }
 
-    /// Where the active `/` menu trigger starts, or `nil` if there isn't one.
-    ///
-    /// A trigger is a `/` at the start of the block or after whitespace, with
-    /// no whitespace between it and the caret.
-    static func slashTriggerIndex(in text: NSString, caret: Int) -> Int? {
-        guard caret > 0, caret <= text.length else { return nil }
-
-        var index = caret - 1
-        while index >= 0 {
-            let scalar = text.character(at: index)
-            let character = Character(UnicodeScalar(scalar) ?? " ")
-
-            if character == "/" {
-                // Must start the block or follow whitespace.
-                if index == 0 { return index }
-                let previous = Character(UnicodeScalar(text.character(at: index - 1)) ?? " ")
-                return previous.isWhitespace ? index : nil
-            }
-            if character.isWhitespace || character.isNewline { return nil }
-            // A long run without a slash is ordinary text.
-            if caret - index > 24 { return nil }
-            index -= 1
-        }
-        return nil
-    }
-
     // MARK: - Inline rules
 
     private struct InlineRule {

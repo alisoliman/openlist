@@ -275,9 +275,8 @@ extension NXCaptureDraft {
 
     /// Saves the draft into its list, or Inbox: one capture for the title,
     /// date, repeat, labels and plan, then the priority and estimate its tokens name.
-    func saveCapture(_ parse: CaptureParse, appendToRoot: Bool = false) throws -> Block {
-        let block = try store.saveCapture(capturePreview(parse), destinationID: captureListID ?? store.inboxList()?.id,
-                                          appendToRoot: appendToRoot)
+    func saveCapture(_ parse: CaptureParse) throws -> Block {
+        let block = try store.saveCapture(capturePreview(parse), destinationID: captureListID ?? store.inboxList()?.id)
         if let priority = parse.priority { store.setPriority(priority, for: block) }
         if let minutes = parse.estimateMinutes, minutes > 0 { store.setTaskEstimate(minutes, for: block) }
         return block

@@ -15,9 +15,6 @@ struct QuickCaptureRequest: Equatable {
     /// Makes a task with no date of its own due today, as Today's add row
     /// does, so it shows in the Today widget that asked.
     var dueToday = false
-    /// Adds the task at the end of `listID`'s document, where that list's
-    /// Tasks view has its add row, while that list is still the destination.
-    var appendsToList = false
 }
 
 /// Quick Add: the design's capture card floating over whatever app is in

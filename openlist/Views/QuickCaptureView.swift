@@ -76,7 +76,7 @@ struct QuickCaptureView: View {
         }
         let block: Block
         do {
-            block = try draft.saveCapture(parse, appendToRoot: draft.appendsToRoot)
+            block = try draft.saveCapture(parse)
         } catch {
             show(NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
                                  failed: true))
@@ -120,16 +120,10 @@ final class QuickCaptureDraft: NXCaptureDraft {
     let captureLabelID: UUID? = nil
     /// The Today widget asked for a task due today.
     private var dueToday = false
-    /// The list a widget asked to add to the end of.
-    private var appendsTo: UUID?
 
     /// A task with no date of its own is due today when the Today widget
     /// asked for one, or while new tasks go to Today.
     var captureForToday: Bool { dueToday || settings.defaultDestination == .today }
-
-    /// Whether Return adds at the end of the destination's document: only
-    /// while it is still the list that asked for that.
-    var appendsToRoot: Bool { appendsTo != nil && appendsTo == captureListID }
 
     init(store: Store, settings: AppSettings, request: QuickCaptureRequest) {
         self.store = store
@@ -144,7 +138,6 @@ final class QuickCaptureDraft: NXCaptureDraft {
         let chosen = store.list(id: request.listID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
         captureListID = chosen?.id ?? store.inboxList()?.id
         dueToday = request.dueToday
-        appendsTo = request.appendsToList ? chosen?.id : nil
     }
 }
 

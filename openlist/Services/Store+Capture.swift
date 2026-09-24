@@ -20,8 +20,9 @@ struct CaptureSnapshot {
 extension Store {
     /// Save a capture atomically. Failure rolls back only this capture;
     /// existing editor changes are flushed before starting the transaction.
-    func saveCapture(_ snapshot: CaptureSnapshot, destinationID: UUID?, selectedForDay: Date? = nil,
-                     appendToRoot: Bool = false) throws -> Block {
+    /// The task goes at the end of its list's document, as the design's
+    /// capture, which gives it no place of its own, sorts it after every line.
+    func saveCapture(_ snapshot: CaptureSnapshot, destinationID: UUID?, selectedForDay: Date? = nil) throws -> Block {
         guard !snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CaptureError.emptyTitle
         }
@@ -32,8 +33,7 @@ extension Store {
         isSavingSuspended = true
         defer { isSavingSuspended = false }
         do {
-            let document = DocumentContext(listID: destination.id)
-            let block = appendToRoot ? appendBlock(kind: .task, to: document) : prependTask(to: document)
+            let block = appendBlock(kind: .task, to: DocumentContext(listID: destination.id))
             setPlainText(block, snapshot.title)
             block.dueDate = snapshot.date
             block.selectedForDay = selectedForDay.map { Calendar.current.startOfDay(for: $0) }

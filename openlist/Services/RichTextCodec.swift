@@ -158,15 +158,12 @@ enum RichTextCodec {
     /// Font, colour and paragraph style for a block kind in its normal state.
     ///
     /// - Parameters:
-    ///   - strikeColor: the completion strike's colour, when it should differ
-    ///     from the editor's strike ink.
     ///   - dimsCompleted: whether completed text fades to the completed ink.
-    ///     A task struck during its completion dwell keeps its ink.
+    ///     A done task being written keeps its ink.
     ///   - strikes: whether completed text is struck through, where a
     ///     renderer draws no strike over it of its own.
     static func baseAttributes(for kind: BlockKind, isCompleted: Bool = false,
-                               strikeColor: NSColor? = nil, dimsCompleted: Bool = true,
-                               strikes: Bool = true) -> [NSAttributedString.Key: Any] {
+                               dimsCompleted: Bool = true, strikes: Bool = true) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         let font = NXEditor.nsFont(for: kind)
         // Keep the first and last line at the font's natural height. A line
@@ -185,7 +182,7 @@ enum RichTextCodec {
 
         if isCompleted, strikes {
             attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-            attributes[.strikethroughColor] = strikeColor ?? NXEditor.strikeInk
+            attributes[.strikethroughColor] = NXEditor.strikeInk
         }
         return attributes
     }
@@ -200,12 +197,10 @@ enum RichTextCodec {
     /// With `strikes` false, struck text only fades, for a renderer that
     /// draws the strike over it.
     static func restylingCompletion(of attributed: NSAttributedString, kind: BlockKind, struck: Bool,
-                                    strikeColor: NSColor? = nil, dimsCompleted: Bool = true,
-                                    strikes: Bool = true) -> NSAttributedString {
+                                    dimsCompleted: Bool = true, strikes: Bool = true) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: attributed)
         let full = NSRange(location: 0, length: result.length)
-        let base = baseAttributes(for: kind, isCompleted: struck, strikeColor: strikeColor, dimsCompleted: dimsCompleted,
-                                  strikes: strikes)
+        let base = baseAttributes(for: kind, isCompleted: struck, dimsCompleted: dimsCompleted, strikes: strikes)
         attributed.enumerateAttributes(in: full) { attributes, range, _ in
             if attributes[.link] == nil, let color = base[.foregroundColor] {
                 result.addAttribute(.foregroundColor, value: color, range: range)

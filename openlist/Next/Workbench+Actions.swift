@@ -800,13 +800,11 @@ extension Workbench {
     func createFromCapture(keepOpen: Bool) -> Block? {
         let parse = captureParse()
         guard !parse.title.isEmpty else { return nil }
-        let destinationID = captureListID ?? store.inboxList()?.id
-        // Captured into the list on show, a task goes at the end of its
-        // document, where the add row sits; anywhere else it's prepended.
-        let appendsToRoot = navigator.documentListID.map { $0 == destinationID } ?? false
+        // The task goes at the end of its list's document, where the add row
+        // sits, wherever it was captured from, as the design's does.
         let block: Block
         do {
-            block = try saveCapture(parse, appendToRoot: appendsToRoot)
+            block = try saveCapture(parse)
         } catch {
             showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
             return nil
@@ -829,7 +827,9 @@ extension Workbench {
         flash(\.fresh, [block.id], for: 1200)
         pulse(list: block.listID)
         // At the end of the document on show, under a folded last heading, it opens.
-        if appendsToRoot, document?.document.listID == block.listID { document?.unfold(toShow: block.id) }
+        if navigator.documentListID == block.listID, document?.document.listID == block.listID {
+            document?.unfold(toShow: block.id)
+        }
         if keepOpen { captureText = "" } else { closeCapture() }
         return block
     }

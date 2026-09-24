@@ -133,6 +133,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
   heading or task folds it away. Headings and text take no key focus after Escape, as in
   the design; Return writes them again and J/K step to the tasks beside them.
+- A line turned into a heading or text keeps the lines under it, as the design's convert
+  leaves their depth alone: they still draw a level in under it, and turned back into a
+  task or list item it holds them again. Deviation, of the tree the document is stored as:
+  a line two levels in under a nested line so turned comes a level in, and Return on such a
+  heading opens its new line after them, where the design's opens it right under the heading.
 - Inbox triage skips a subtask while an open task above it waits, as that task's card
   carries it; one under done tasks only is triaged as its own card.
 - Widgets (`OpenlistWidget/`) depart from `widgets/` where WidgetKit sets the terms. Only a
@@ -191,7 +196,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Settings; Undo puts it back where it sat on each task), Settings' Add, rename and colour
   of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
-  Copy Content and Subtasks (for Paste in an empty document line) and every Copy Link
+  Copy Content and Subtasks (for Paste in a document line) and every Copy Link
   only copy, saying so in the tray. An Undo or Redo of a label or list change, or of a
   Restore, that fails says so in the tray, keeps the log as it was and leaves the stack.
   An edit logged while the tray still shows an earlier change, like a new section's name,
@@ -239,6 +244,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   `_italic_`, `~~strike~~` and `` `code` `` rules still style it, as the Format menu does.
   ⇧↩ types a soft break only in a code line, and a code line keeps its indent where the
   others are stored trimmed, as the design's commit does, once the caret leaves them.
+  A paste keeps a line to one line, as the design's input does: over a selection, or as a
+  drop into the line, each break it brings becomes a space. Native extras, with nothing
+  selected: Openlist content goes in whole after the line, and several lines of text
+  become lines of their own after it (filling it while it's empty), a text line for each
+  line of text that doesn't read as Markdown. A code line takes a paste as it is.
   The card opens above its line when it wouldn't fit under it on the visible page, and a
   row the pointer moves onto takes the highlight.
 
