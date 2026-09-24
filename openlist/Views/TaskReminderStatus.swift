@@ -46,16 +46,19 @@ struct TaskReminderStatus: View {
                         }
                     } else {
                         let status = recovery.statuses[block.id] ?? .checking
-                        Label(recovery.title(for: status), systemImage: status.needsRecovery ? "bell.badge" : "bell")
+                        // Once macOS holds it, the line says when it reminds
+                        // you, and that it's the due time when the task has
+                        // no reminder of its own.
+                        let accepted = status == .accepted && !recovery.isSimulated
+                        let title = accepted ? date.map { NXFormat.reminds(at: $0, atDueTime: block.reminderAt == nil) } : nil
+                        Label(title ?? recovery.title(for: status), systemImage: Self.symbol(for: status))
                             .accessibilityValue(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "")
-                            .help(date.map { NXFormat.dueAndClock($0) } ?? "Reminder status")
+                            .help(accepted ? "How it shows depends on Focus and your notification settings."
+                                : date.map { NXFormat.dueAndClock($0) } ?? "Reminder status")
                         if case .failed(let message) = status { Text(message).textSelection(.enabled) }
                         if let error = recovery.authorizationError { Text(error) }
                         ReminderRecoveryActions(taskID: block.id, status: status)
                         if recovery.isSimulated { Text("Review simulation only. No macOS notification is scheduled or displayed.") }
-                        if status == .accepted && !recovery.isSimulated {
-                            Text("Delivery depends on Focus and system settings.")
-                        }
                     }
                 }
                 .font(.system(size: 11.5))
@@ -64,6 +67,16 @@ struct TaskReminderStatus: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .task { recovery.refresh() }
             }
+        }
+    }
+
+    /// A reminder waiting on the user rings with a badge, one that won't come
+    /// is struck, as the Reminder tab's "No reminder".
+    private static func symbol(for status: ReminderStatus) -> String {
+        if status.needsRecovery { return "bell.badge" }
+        switch status {
+        case .expired, .inactive: return "bell.slash"
+        default: return "bell"
         }
     }
 

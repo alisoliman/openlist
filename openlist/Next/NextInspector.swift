@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import AppKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -38,6 +39,71 @@ private final class NXLineage {
     }
 }
 
+/// Ends the title's or note's editing when the mouse goes down off the field,
+/// as a browser blurs an input on a click elsewhere. AppKit leaves a text field
+/// first responder when a SwiftUI row, subtask, crumb or pill is clicked, so
+/// the next key would type into the title, the next task's once the panel
+/// moves on, rather than act on the row. It watches only while one is edited.
+@MainActor
+private final class NXInspectorClicks {
+    private var monitor: Any?
+    /// The panel's own view, for its window and frame.
+    weak var panel: NSView?
+
+    func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated { self?.release(for: event) }
+            return event
+        }
+    }
+
+    func uninstall() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    /// Lets the field go at once, as the panel moves to another task.
+    func endEditing() {
+        guard let window = panel?.window, editedFrame(in: window) != nil else { return }
+        window.makeFirstResponder(nil)
+    }
+
+    /// A click in the field, or on a scroller, leaves it be; another field
+    /// clicked takes the keys once this one lets them go.
+    private func release(for event: NSEvent) {
+        guard let window = panel?.window, event.window === window,
+              let frame = editedFrame(in: window), !frame.contains(event.locationInWindow),
+              !(window.contentView?.hitTest(event.locationInWindow) is NSScroller) else { return }
+        window.makeFirstResponder(nil)
+    }
+
+    /// Where the field being edited is in the window, when it's the panel's.
+    private func editedFrame(in window: NSWindow) -> CGRect? {
+        guard let panel, let editor = window.firstResponder as? NSText else { return nil }
+        let field = editor.delegate as? NSView ?? editor
+        let frame = field.convert(field.visibleRect, to: nil)
+        return panel.convert(panel.bounds, to: nil).contains(CGPoint(x: frame.midX, y: frame.midY)) ? frame : nil
+    }
+}
+
+/// Hands `NXInspectorClicks` the panel's view, taking no clicks itself.
+private struct NXInspectorPanelMark: NSViewRepresentable {
+    let clicks: NXInspectorClicks
+
+    func makeNSView(context: Context) -> NSView {
+        let view = MarkView()
+        clicks.panel = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) { clicks.panel = nsView }
+
+    private final class MarkView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
 /// The 360pt panel that slides in from the right with one task's details.
 struct NextInspector: View {
     @Environment(AppEnvironment.self) private var env
@@ -55,6 +121,7 @@ struct NextInspector: View {
     /// "Add a note" opened the note, which shows while it has focus or text.
     @State private var addingNote = false
     @State private var dropTargeted = false
+    @State private var clicks = NXInspectorClicks()
     @FocusState private var focus: Field?
 
     enum Field { case title, note }
@@ -167,6 +234,7 @@ struct NextInspector: View {
         .frame(width: 360)
         .frame(maxHeight: .infinity)
         .background(NX.inspector)
+        .background(NXInspectorPanelMark(clicks: clicks))
         // Files dropped anywhere on the panel are kept with the task.
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             NXTaskFiles(workbench: env.workbench).drop(providers, on: task.id)
@@ -189,8 +257,14 @@ struct NextInspector: View {
             adoptRequestedPicker()
         }
         .onChange(of: task.id) { _, _ in
-            // The shell reuses this view for every task: save the old task's
-            // drafts before loading the new one's.
+            // The shell reuses this view for every task. A field being edited
+            // lets go first, as a browser blurs it, so the caret doesn't
+            // follow to the next task and the keys act on the row; then the
+            // old task's drafts are saved before the new one's load.
+            if focus != nil {
+                clicks.endEditing()
+                focus = nil
+            }
             commitTitle()
             commitNote()
             if picker?.taskID != task.id { picker = nil }
@@ -198,12 +272,13 @@ struct NextInspector: View {
         }
         .onChange(of: task.text) { _, _ in title.receive(Self.title(of: task)) }
         .onChange(of: task.note) { _, _ in note.receive(task.note) }
-        .onChange(of: focus) { old, _ in
+        .onChange(of: focus) { old, new in
             if old == .title { commitTitle() }
             if old == .note {
                 commitNote()
                 addingNote = false
             }
+            if new == nil { clicks.uninstall() } else { clicks.install() }
         }
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
         .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
@@ -213,6 +288,7 @@ struct NextInspector: View {
         .onDisappear {
             commitTitle()
             commitNote()
+            clicks.uninstall()
         }
     }
 
@@ -613,16 +689,23 @@ struct NextInspector: View {
         return VStack(alignment: .leading, spacing: 0) {
             NXInspectorHeading(title: "Activity") { EmptyView() }
                 .padding(.bottom, 8)
+            // Each row, the capture's too, plays the design's liftIn as it
+            // appears: with the panel, for another task or as a change logs
+            // it. A row Undo takes back, or the last task's, goes at once, as
+            // the design's does.
             ForEach(entries) { entry in
                 activityRow(icon: entry.icon, text: entry.label, date: entry.at)
-                    .transition(.offset(y: 6).combined(with: .opacity))
+                    .modifier(NXLiftIn(animation: NX.cssEase(220)))
+                    .transition(.identity)
             }
             activityRow(icon: "plus.circle", text: "Captured in \(captured)", date: task.createdAt)
+                .modifier(NXLiftIn(animation: NX.cssEase(220)))
+                .transition(.identity)
+                .id(task.id)
             NXInspectorHistory(task: task)
                 .id(task.id)
                 .padding(.top, 6)
         }
-        .animation(style.ease(220), value: workbench.entries(for: task.id).count)
     }
 
     private func activityRow(icon: String, text: String, date: Date) -> some View {

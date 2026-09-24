@@ -44,32 +44,24 @@ enum NXFormat {
     }
 
     /// `dueLabel`, with the year for a day past the week in another year, for
-    /// dates that may be far off, like a reminder or a repeat's next days.
+    /// dates that may be far off, like a reminder or a repeat's next days:
+    /// `moment`'s day, without its time.
     static func dayLabel(_ date: Date, now: Date = .now) -> String {
-        let offset = dayOffset(date, now: now)
-        guard !(-1..<7).contains(offset),
-              calendar.component(.year, from: date) != calendar.component(.year, from: now) else {
-            return dueLabel(date, now: now)
-        }
-        return date.formatted(.dateTime.day().month(.abbreviated).year())
+        MomentText.day(date, now: now, year: true)
     }
 
     /// A day and time in the Due row's words, as the inspector's Reminder
-    /// pill reads: "Fri 25 09:00".
-    static func dueAndClock(_ date: Date, now: Date = .now) -> String {
-        "\(dueLabel(date, now: now)) \(clock(date))"
+    /// pill reads: "Fri 25 09:00", in a sentence "today 09:00".
+    static func dueAndClock(_ date: Date, inSentence: Bool = false, now: Date = .now) -> String {
+        MomentText.moment(date, year: false, inSentence: inSentence, now: now)
     }
 
-    /// A day and time with `dayLabel`'s year, as saved history writes when
-    /// something happened: "Today 14:05", "25 Sep 2025 09:00".
-    static func dayAndClock(_ date: Date, now: Date = .now) -> String {
-        "\(dayLabel(date, now: now)) \(clock(date))"
-    }
-
-    /// A day, and its time when it has one, as saved history writes a due
-    /// date: "Fri 25 09:00", "3 Oct".
-    static func dayText(_ date: Date, includesTime: Bool, now: Date = .now) -> String {
-        includesTime ? dayAndClock(date, now: now) : dayLabel(date, now: now)
+    /// A reminder macOS holds, as the Reminder tab says it: "Reminds you today
+    /// 09:00", or for a timed task with no reminder of its own, "Reminds you
+    /// at the due time, Fri 25 18:00".
+    static func reminds(at date: Date, atDueTime: Bool, now: Date = .now) -> String {
+        let when = dueAndClock(date, inSentence: true, now: now)
+        return atDueTime ? "Reminds you at the due time, \(when)" : "Reminds you \(when)"
     }
 
     /// A new due date as the tray and Changes name it: its day, and its time

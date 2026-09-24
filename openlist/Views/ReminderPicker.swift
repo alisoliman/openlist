@@ -36,11 +36,13 @@ struct ReminderPicker: View {
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
                 Spacer(minLength: 6)
+                // Grey, as the design's None clears a date: it can be undone,
+                // and red is for deleting things.
                 if block.reminderAt != nil {
                     Button("Remove reminder") {
                         env.workbench.setReminder(block.id, at: nil)
                     }
-                    .buttonStyle(NXPanelButtonStyle(kind: .destructive, size: .small))
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                 }
             }
 

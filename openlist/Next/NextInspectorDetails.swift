@@ -468,9 +468,9 @@ struct NXInspectorHistory: View {
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Created \(NXFormat.dayAndClock(task.createdAt))")
+                        Text("Created \(NXFormat.moment(task.createdAt))")
                         if let completedAt = task.completedAt {
-                            Text("Completed \(NXFormat.dayAndClock(completedAt))")
+                            Text("Completed \(NXFormat.moment(completedAt))")
                         }
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -526,11 +526,10 @@ private struct NXInspectorHistoryPage: View {
     }
 
     private func row(_ event: ActivityEvent) -> some View {
-        let when = NXFormat.dayAndClock(event.timestamp)
+        let when = NXFormat.moment(event.timestamp)
         let spoken = event.listTitle.isEmpty ? when : "\(when) · \(event.listTitle)"
-        // Its due dates in the words of the time under them.
-        let detail = ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: event.change,
-                                                  dateText: { NXFormat.dayText($0, includesTime: $1) })
+        // Its due dates in the words of the time under them, as recordedDetail writes them.
+        let detail = ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: event.change)
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: event.kind.symbol).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {

@@ -65,14 +65,6 @@ struct DueDatePicker: View {
                 }
                 NXToggle(isOn: includesTime, label: "Include a time") { includesTimeBinding.wrappedValue.toggle() }
             }
-
-            if block.dueDate != nil {
-                Button("Clear due date") {
-                    env.workbench.schedule([block.id], offset: nil)
-                    load()
-                }
-                .buttonStyle(NXPanelButtonStyle(kind: .destructive, size: .small))
-            }
         }
         .onAppear(perform: load)
         .onChange(of: block.dueDate) { _, _ in load() }
@@ -142,6 +134,21 @@ struct DueDatePicker: View {
                        day: day(NXFormat.nextWeekOffset())) {
                 env.workbench.schedule([block.id], offset: NXFormat.nextWeekOffset())
             }
+            // The Due row's None, as the design clears a date: a grey pill,
+            // not the red it keeps for deleting things, on while there's none.
+            let none = block.dueDate == nil
+            NXInspectorPill(isOn: none) {
+                env.workbench.schedule([block.id], offset: nil)
+                load()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "xmark").font(.system(size: 10.5, weight: .medium))
+                    Text("None")
+                }
+            }
+            .help(none ? "No due date" : "Clear due date")
+            .accessibilityLabel(none ? "No due date" : "Clear due date")
+            .accessibilityAddTraits(none ? .isSelected : [])
         }
     }
 
