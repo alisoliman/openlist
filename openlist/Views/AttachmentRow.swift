@@ -6,6 +6,7 @@ struct AttachmentRow: View {
     let attachment: Attachment
     let onDelete: () -> Void
 
+    @Environment(AppEnvironment.self) private var env
     @State private var isHovering = false
 
     var body: some View {
@@ -61,14 +62,14 @@ struct AttachmentRow: View {
         .onTapGesture(count: 2, perform: openAttachment)
     }
 
+    /// A file that won't open says so in the window's notice.
     private func openAttachment() {
         guard attachment.modelContext != nil, !attachment.isDeleted else { return }
+        let failure = "“\(attachment.displayName)” could not be opened."
         do {
-            guard NSWorkspace.shared.open(try attachment.fileURL()) else {
-                throw CocoaError(.fileReadUnknown)
-            }
+            if !NSWorkspace.shared.open(try attachment.fileURL()) { env.store.actionError = failure }
         } catch {
-            MarkdownExporter.presentError(error, operation: "Open attachment \(attachment.displayName)")
+            env.store.actionError = "\(failure) \(error.localizedDescription)"
         }
     }
 }

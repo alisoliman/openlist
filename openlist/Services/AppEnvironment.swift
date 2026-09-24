@@ -81,6 +81,8 @@ final class AppEnvironment {
     /// honoured everywhere rather than only in the sidebar.
     var listPendingDeletion: TaskList?
     var listPendingMove: TaskList?
+    /// Format ▸ Add Link…'s question, for the window's link sheet.
+    var linkPrompt: LinkPrompt?
 
     /// Which picker the inspector should pop open, set by ⇧⌘D / ⇧⌘L.
     var requestedPicker: DetailPicker?

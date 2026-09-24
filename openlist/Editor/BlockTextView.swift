@@ -540,6 +540,21 @@ enum SlashMenuCommand {
     case next, previous, confirm, dismiss
 }
 
+/// What Format ▸ Add Link… (⌘L) asks about: the selected text, the link it
+/// has (empty for none), and where the answer goes. Cancel sends none.
+struct LinkPrompt: Identifiable {
+    enum Answer {
+        /// The URL as typed; ``BlockNSTextView/linkURL(from:)`` reads it.
+        case apply(String)
+        case remove
+    }
+
+    let id = UUID()
+    let text: String
+    let currentURL: String
+    let answer: (Answer) -> Void
+}
+
 /// `NSTextView` subclass that self-sizes, draws a placeholder, and exposes the
 /// formatting actions the app's Format menu sends down the responder chain.
 final class BlockNSTextView: NSTextView {
@@ -819,6 +834,7 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘B — sent from the Format menu via the responder chain.
     @objc func toggleBold(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleTrait(.boldFontMask, in: storage, range: range, kind: self.blockKind)
         }
@@ -826,6 +842,7 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘I
     @objc func toggleItalic(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleTrait(.italicFontMask, in: storage, range: range, kind: self.blockKind)
         }
@@ -833,6 +850,7 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘⇧X
     @objc func toggleStrikethrough(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleStrikethrough(in: storage, range: range)
         }
@@ -840,51 +858,62 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘E
     @objc func toggleInlineCode(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleInlineCode(in: storage, range: range, kind: self.blockKind)
         }
     }
 
+    /// Asks ⌘L's question, in the window's Next link sheet; the app sets it.
+    /// With none, as in the headless checks, ⌘L asks nothing.
+    static var linkPrompter: ((LinkPrompt) -> Void)?
+
     /// ⌘L — asks for a URL, then links the selection.
     @objc func promptForLink(_ sender: Any?) {
         let range = selectedRange()
-        guard range.length > 0, let storage = textStorage else { return }
+        guard range.length > 0, !isUnderSheet, let storage = textStorage, let prompter = Self.linkPrompter else { return }
 
         let existing = storage.attribute(.link, at: range.location, effectiveRange: nil)
         let currentURL = (existing as? URL)?.absoluteString ?? (existing as? String) ?? ""
+        let text = storage.attributedSubstring(from: range).string
+        prompter(LinkPrompt(text: text, currentURL: currentURL) { [weak self] answer in
+            self?.applyLink(answer, to: range, text: text)
+        })
+    }
 
-        let alert = NSAlert()
-        alert.messageText = "Add link"
-        alert.informativeText = "Enter a URL for “\(storage.attributedSubstring(from: range).string)”."
-        alert.addButton(withTitle: "Apply")
-        alert.addButton(withTitle: "Cancel")
-        if !currentURL.isEmpty { alert.addButton(withTitle: "Remove") }
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.stringValue = currentURL.isEmpty ? "https://" : currentURL
-        field.placeholderString = "https://example.com"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-
-        let response = alert.runModal()
-        guard response != .alertSecondButtonReturn else { return }
-
-        if response == .alertThirdButtonReturn {
-            applyFormatting { storage, range in
-                RichTextCodec.setLink(nil, in: storage, range: range)
-            }
-            return
+    /// The sheet's answer, for the text it asked about. The sheet doesn't stop
+    /// the app as the old modal alert did, so a line that changed meanwhile,
+    /// by sync or an agent, keeps its text as it now is.
+    private func applyLink(_ answer: LinkPrompt.Answer, to range: NSRange, text: String) {
+        guard let storage = textStorage, NSMaxRange(range) <= storage.length,
+              storage.attributedSubstring(from: range).string == text else { return }
+        let url: URL?
+        switch answer {
+        case .remove: url = nil
+        case let .apply(entry):
+            guard let typed = Self.linkURL(from: entry) else { return }
+            url = typed
         }
-
-        var text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        if !text.contains("://") { text = "https://" + text }
-        guard let url = URL(string: text) else { return }
-
+        setSelectedRange(range)
         applyFormatting { storage, range in
             RichTextCodec.setLink(url, in: storage, range: range)
         }
     }
+
+    /// The URL typed for a link, trimmed, with `https://` in front when it
+    /// names no scheme. `nil` for an empty entry or one that isn't a URL.
+    static func linkURL(from entry: String) -> URL? {
+        var text = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if !text.contains("://") { text = "https://" + text }
+        return URL(string: text)
+    }
+
+    /// Whether a sheet is over this line's window, as Add Link…'s is. The
+    /// Format menu sends its actions on to the window under a sheet whose
+    /// field doesn't take them, and this line keeps its selection there, so
+    /// the menu would format, or ask again, behind the sheet.
+    private var isUnderSheet: Bool { window?.attachedSheet != nil }
 
     /// Mutates the selected range and pushes the result back to the model.
     private func applyFormatting(_ body: (NSMutableAttributedString, NSRange) -> Void) {
@@ -911,7 +940,7 @@ final class BlockNSTextView: NSTextView {
              #selector(toggleStrikethrough(_:)),
              #selector(toggleInlineCode(_:)),
              #selector(promptForLink(_:)):
-            return selectedRange().length > 0
+            return selectedRange().length > 0 && !isUnderSheet
         default:
             return super.validateUserInterfaceItem(item)
         }

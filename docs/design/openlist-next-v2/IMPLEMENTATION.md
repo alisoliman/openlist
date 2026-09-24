@@ -130,10 +130,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Inbox, which drag on a private type of their own that no line takes), and search
   reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
   puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
-  says "Copied “List” as Markdown" in the tray. Its Hours picks the Work or Personal hours
-  Plan and Start working use for the list, which the design takes from its section; the
-  header's subtitle stays the design's "N open · Section". Open notes are remembered per
-  task on this Mac.
+  says "Copied “List” as Markdown" in the tray, as Export says "Exported “List” as Markdown"
+  once written. Its Hours picks the Work or Personal hours Plan and Start working use for
+  the list, which the design takes from its section; the header's subtitle stays the
+  design's "N open · Section". Open notes are remembered per task on this Mac.
 - Today's, a list's and a label's Completed groups fold as one, as the design's
   `completedOpen`: the last fold shows on every screen (`NXCompletedFold`). Until the user
   folds one, each opens as its setting says: a list's own Completed Tasks (a native extra),
@@ -217,10 +217,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
-  completion entry. One-off refusals (`Store.refuse`: a drop the document's rules don't
-  allow, rearranging a sorted list) pass there; what needs dealing with (saving, sync,
-  links, label maintenance, Trash failures, failed undos) stays a notice card, all of them
-  in one place under the toolbar.
+  completion entry, and so does Settings' Export… ("Exported N lists as Markdown"). One-off
+  refusals (`Store.refuse`: a drop the document's rules don't allow, rearranging a sorted
+  list) pass there; what needs dealing with (saving, sync, links, label maintenance, Trash
+  failures, failed undos) stays a notice card, all of them in one place under the toolbar.
+  So does an export, Copy as Markdown, cover change or image that fails, and a file that
+  can't be attached or opened, where system alerts were: a red card (`Store.actionError`),
+  one for files that fail together. VoiceOver hears that card, and the editor's grey one,
+  as each appears.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
   (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), a list's Duplicate, Use as
   Template… (the copy opens; Undo takes it to Trash) and Move List…, a list dragged in the
@@ -241,7 +245,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Delete everything, Return to original library, Reset access token), are Next sheets too,
   where Return presses neither button. Delete everything also clears the window's undo stack
   and Changes' This session; the tray then says "Deleted everything for good", with no
-  Undo. Their buttons, and the inline hours editor's, are `NXPanelButtonStyle`.
+  Undo. Their buttons, and the inline hours editor's, are `NXPanelButtonStyle`. Format ▸ Add
+  Link… (⌘L) asks for its URL in a Next sheet too (`NXLinkSheet`; Return applies, Esc
+  cancels), and Trash's hold-to-erase asks VoiceOver, which can't hold, in the confirmation
+  sheet. Deviation: the only system alerts left are the window's shown when the library
+  can't open, which has no shell, tray or notices.
 - Activity › Changes › This session is the log, with the saved history it didn't write
   merged in (MCP, another Mac). What a list document line saves to its task while it's
   written (the new task at Return, its title as typed, the line itself when it goes)

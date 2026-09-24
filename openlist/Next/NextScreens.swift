@@ -309,7 +309,6 @@ private struct NXListOptions: View {
     /// Starts the description under the header, or writes the one there.
     let describe: () -> Void
     @State private var appearanceOpen = false
-    @State private var coverError: String?
 
     var body: some View {
         let navigator = env.navigator
@@ -339,9 +338,9 @@ private struct NXListOptions: View {
                 Button("Move List…") { env.listPendingMove = list }
             }
             CopyItemLinkButton(target: .list(list.id))
-            // A native extra: the design exports, and has no copy.
+            // Native extras: the design has neither copy nor export.
             Button("Copy as Markdown") { copyMarkdown() }
-            Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
+            Button("Export as Markdown…") { env.workbench.exportMarkdown(list) }
         } label: {
             Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium))
         }
@@ -355,12 +354,6 @@ private struct NXListOptions: View {
         .accessibilityLabel("List options")
         .popover(isPresented: $appearanceOpen, arrowEdge: .bottom) {
             ListAppearancePicker(list: list).environment(env)
-        }
-        .alert("Cover could not be changed", isPresented: Binding(get: { coverError != nil },
-                                                                  set: { if !$0 { coverError = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(coverError ?? "")
         }
     }
 
@@ -399,8 +392,10 @@ private struct NXListOptions: View {
         }
     }
 
+    /// A cover change that fails says why in the window's notice, as its
+    /// Undo's failure does.
     private func perform(_ operation: () throws -> Void) {
-        do { try operation() } catch { coverError = error.localizedDescription }
+        do { try operation() } catch { env.store.actionError = "The cover could not be changed. \(error.localizedDescription)" }
     }
 
     /// The list's document on the clipboard, as Export writes it, said in the tray.

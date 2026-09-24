@@ -328,7 +328,7 @@ extension Workbench {
                 try workbench.store.restoreListCover(list, to: state)
                 return true
             } catch {
-                workbench.store.editorNotice = "The cover could not be changed back. \(error.localizedDescription)"
+                workbench.store.actionError = "The cover could not be changed back. \(error.localizedDescription)"
                 return false
             }
         }

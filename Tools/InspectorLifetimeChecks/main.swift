@@ -92,7 +92,7 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     // its intrinsic size is independent of the old window's fixed height.
     let invalidHost = NSHostingView(rootView: RetainedInspector(block: retained, attachment: retainedAttachment).environment(env))
     check(invalidHost.fittingSize.height < 30, "Deleted label picker and attachment render empty")
-    let attachmentHost = NSHostingView(rootView: AttachmentRow(attachment: retainedAttachment, onDelete: {}))
+    let attachmentHost = NSHostingView(rootView: AttachmentRow(attachment: retainedAttachment, onDelete: {}).environment(env))
     check(attachmentHost.fittingSize.height == 0, "Retained attachment renders empty independently")
     check(undo.canRedo, "Inspector invalidation leaves Redo available")
     undo.redo()

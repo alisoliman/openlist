@@ -181,6 +181,64 @@ coordinator.textDidChange(Notification(name: NSText.didChangeNotification, objec
 let typingEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
 check(coordinator.signature == BlockTextView.ContentSignature(attributedText: typingEcho, kind: .task, isCompleted: false), "Ordinary typing still produces a matching model echo without resetting native editing")
 
+// Format ▸ Add Link… asks in the window's Next sheet, which answers once the
+// menu action has returned, for the text it asked about.
+check(BlockNSTextView.linkURL(from: " example.com\n") == URL(string: "https://example.com")
+    && BlockNSTextView.linkURL(from: "http://example.com") == URL(string: "http://example.com")
+    && BlockNSTextView.linkURL(from: "  ") == nil, "A typed link is trimmed, with https:// when it names no scheme")
+var linkPrompt: LinkPrompt?
+native.setSelectedRange(NSRange(location: 0, length: 6))
+BlockNSTextView.linkPrompter = { linkPrompt = $0 }
+native.promptForLink(nil)
+check(linkPrompt?.text == "Remote" && linkPrompt?.currentURL == "", "⌘L asks about the selected text, with no link yet")
+native.setSelectedRange(NSRange(location: 3, length: 0))
+linkPrompt?.answer(.apply("example.com"))
+let linkedEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
+check(native.textStorage?.attribute(.link, at: 0, effectiveRange: nil) as? URL == URL(string: "https://example.com")
+    && native.textStorage?.attribute(.link, at: 6, effectiveRange: nil) == nil
+    && linkedEcho.attribute(.link, at: 5, effectiveRange: nil) != nil, "Apply links just the text asked about, and reports the edit")
+linkPrompt = nil
+native.setSelectedRange(NSRange(location: 0, length: 6))
+native.promptForLink(nil)
+check(linkPrompt?.currentURL == "https://example.com", "⌘L on a link asks with the link it has, which Remove Link takes away")
+linkPrompt?.answer(.remove)
+check(native.textStorage?.attribute(.link, at: 0, effectiveRange: nil) == nil
+    && RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task).attribute(.link, at: 0, effectiveRange: nil) == nil,
+    "Remove Link unlinks the text, and reports the edit")
+native.setSelectedRange(NSRange(location: 0, length: 6))
+native.promptForLink(nil)
+let changedMeanwhile = RichTextCodec.decode(nil, plainText: "Edited elsewhere", kind: .task)
+coordinator.apply(changedMeanwhile, to: native, kind: .task, isCompleted: false)
+linkPrompt?.answer(.apply("example.org"))
+check(native.textStorage?.attribute(.link, at: 0, effectiveRange: nil) == nil,
+    "An answer for text that changed while the sheet was up links nothing")
+// The Format menu sends its actions on to the window under a sheet, where the
+// line that asked keeps its selection: it neither formats nor asks again there.
+_ = NSApplication.shared
+let sheetHost = NSWindow(contentRect: CGRect(x: -10000, y: -10000, width: 320, height: 200), styleMask: .borderless, backing: .buffered, defer: false)
+let linkSheetWindow = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 100), styleMask: .titled, backing: .buffered, defer: false)
+let underSheet = BlockNSTextView(frame: CGRect(x: 0, y: 0, width: 320, height: 40))
+underSheet.textStorage?.setAttributedString(NSAttributedString(string: "Remote", attributes: RichTextCodec.baseAttributes(for: .task)))
+sheetHost.contentView?.addSubview(underSheet)
+underSheet.setSelectedRange(NSRange(location: 0, length: 6))
+let isBoldUnderSheet = {
+    (underSheet.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        .map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == true
+}
+let boldItem = NSMenuItem(title: "Bold", action: #selector(BlockNSTextView.toggleBold(_:)), keyEquivalent: "")
+sheetHost.beginSheet(linkSheetWindow) { _ in }
+linkPrompt = nil
+underSheet.toggleBold(nil)
+underSheet.promptForLink(nil)
+check(!isBoldUnderSheet() && linkPrompt == nil && !underSheet.validateUserInterfaceItem(boldItem),
+    "Under a sheet, the Format menu neither formats the selection behind it nor asks for a link again")
+sheetHost.endSheet(linkSheetWindow)
+underSheet.toggleBold(nil)
+check(isBoldUnderSheet() && underSheet.validateUserInterfaceItem(boldItem), "Once the sheet has gone, the Format menu formats the line again")
+underSheet.removeFromSuperview()
+BlockNSTextView.linkPrompter = nil
+coordinator.apply(plain, to: native, kind: .task, isCompleted: false)
+
 let unstruckParent = coordinator.parent
 let completedTitle = RichTextCodec.decode(nil, plainText: "Done", kind: .quote, isCompleted: true)
 check(RichTextCodec.restylingCompletion(of: completedTitle, kind: .quote, struck: true).isEqual(to: completedTitle)

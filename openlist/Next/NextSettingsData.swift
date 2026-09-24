@@ -145,13 +145,13 @@ struct NXDataSettings: View {
         var exported = 0
         do {
             try MarkdownExporter.writeAll(store: env.store, to: folder) { exported += $0 }
+            // Said in the tray, as a list's own export is.
+            env.workbench.showTray("Exported \(Self.count(exported, "list")) as Markdown", icon: "square.and.arrow.up")
         } catch {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Export stopped"
-            alert.informativeText = "\(exported) list(s) were exported. The remaining lists were not exported.\n\n\(error.localizedDescription)"
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            // What needs dealing with stays in the window's notice.
+            let done = exported == 0 ? "No lists were exported."
+                : "\(Self.count(exported, "list")) \(exported == 1 ? "was" : "were") exported; the remaining lists were not."
+            env.store.actionError = "Export stopped. \(done) \(error.localizedDescription)"
         }
     }
 
@@ -225,9 +225,10 @@ private struct NXLibraryBackupRows: View {
     }
 }
 
-/// A Settings confirmation in a Next sheet, as Delete List's is: the
-/// question, what it does, and Cancel beside the button that does it. What
-/// it confirms can't be undone, so Return presses neither; Escape cancels.
+/// A confirmation in a Next sheet, as Delete List's is, for Settings' own
+/// and for Trash's hold-to-erase when VoiceOver, which can't hold, erases:
+/// the question, what it does, and Cancel beside the button that does it.
+/// What it confirms can't be undone, so Return presses neither; Escape cancels.
 struct NXConfirmationSheet: View {
     let title: String
     let message: String

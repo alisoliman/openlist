@@ -338,6 +338,6 @@ struct AppCommands: Commands {
             let listID = env.navigator.route.listID,
             let list = env.store.list(id: listID)
         else { return }
-        MarkdownExporter.presentSavePanel(for: list, store: env.store)
+        env.workbench.exportMarkdown(list)
     }
 }

@@ -411,7 +411,8 @@ struct NXInspectorFiles: View {
     }
 }
 
-/// Keeps files with a task, chosen in the Open panel or dropped.
+/// Keeps files with a task, chosen in the Open panel or dropped. Those that
+/// can't be kept are named in one notice under the toolbar, however many.
 struct NXTaskFiles {
     let store: Store
 
@@ -420,45 +421,77 @@ struct NXTaskFiles {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            attach(url: url, to: block)
-        }
+        attach(panel.urls, to: block)
     }
 
     func drop(_ providers: [NSItemProvider], on blockID: UUID) -> Bool {
         // The provider calls back off the main actor, so carry the id rather
         // than the model object itself.
-        let store = store
-        for provider in providers {
+        let dropped = DroppedFiles(store: store, blockID: blockID, count: providers.count)
+        for (index, provider) in providers.enumerated() {
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                Task { @MainActor in
-                    guard let target = store.block(id: blockID) else { return }
-                    NXTaskFiles(store: store).attach(url: url, to: target)
-                }
+                Task { @MainActor in dropped.receive(url, at: index) }
             }
         }
         return true
     }
 
-    func attach(url: URL, to block: Block) {
-        do {
-            let media = try MediaStore.shared.importFile(at: url)
-            let existing = store.attachments(for: block.id)
-            let attachment = Attachment(
-                blockID: block.id,
-                filename: media.filename,
-                displayName: media.displayName,
-                contentType: media.contentType,
-                byteCount: media.byteCount,
-                sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep,
-                contentData: media.data
-            )
-            store.context.insert(attachment)
-            store.save()
-        } catch {
-            MarkdownExporter.presentError(error, operation: "Import attachment")
+    func attach(_ urls: [URL], to block: Block) {
+        var failures: [(name: String, error: Error)] = []
+        for url in urls {
+            do { try attach(url: url, to: block) } catch { failures.append((url.lastPathComponent, error)) }
         }
+        if let notice = Self.notice(for: failures) { store.actionError = notice }
+    }
+
+    private func attach(url: URL, to block: Block) throws {
+        let media = try MediaStore.shared.importFile(at: url)
+        let existing = store.attachments(for: block.id)
+        let attachment = Attachment(
+            blockID: block.id,
+            filename: media.filename,
+            displayName: media.displayName,
+            contentType: media.contentType,
+            byteCount: media.byteCount,
+            sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep,
+            contentData: media.data
+        )
+        store.context.insert(attachment)
+        store.save()
+    }
+
+    /// "“a.pdf” and “b.pdf” could not be attached.", with the first one's
+    /// reason: up to three names, or two and "N other files" past that.
+    private static func notice(for failures: [(name: String, error: Error)]) -> String? {
+        guard let first = failures.first else { return nil }
+        let named = failures.count > 3 ? 2 : failures.count
+        var names = failures.prefix(named).map { NXFormat.quoted($0.name) }
+        if failures.count > named { names.append("\(failures.count - named) other files") }
+        let who = ListFormatter.localizedString(byJoining: names)
+        return "\(who) could not be attached. \(first.error.localizedDescription)"
+    }
+}
+
+/// A drop's files as their providers hand them over, attached together, in
+/// the order dropped, once the last has arrived.
+private final class DroppedFiles {
+    let store: Store
+    let blockID: UUID
+    private var urls: [URL?]
+    private var remaining: Int
+
+    init(store: Store, blockID: UUID, count: Int) {
+        self.store = store
+        self.blockID = blockID
+        urls = Array(repeating: nil, count: count)
+        remaining = count
+    }
+
+    func receive(_ url: URL?, at index: Int) {
+        urls[index] = url
+        remaining -= 1
+        guard remaining == 0, let target = store.block(id: blockID) else { return }
+        NXTaskFiles(store: store).attach(urls.compactMap(\.self), to: target)
     }
 }
 
