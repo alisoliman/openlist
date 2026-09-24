@@ -137,9 +137,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
   (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), Delete Label (sidebar and
   Settings; Undo puts it back where it sat on each task), Merge labels, a list's Icon &
-  Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text, Copy
-  Content and Subtasks (for Paste in an empty document line) and every Copy Link only
-  copy, saying so in the tray. An Undo or
+  Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
+  Copy Content and Subtasks (for Paste in an empty document line) and every Copy Link
+  only copy, saying so in the tray. An Undo or
   Redo of a label or list change that fails says so in the tray, keeps the log as it was
   and leaves the stack. Deviation: a merge undoes in turn on the window's stack, by ⌘Z or
   the tray, where the old "Undo merge" card took back the latest merge out of order,

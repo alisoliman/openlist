@@ -990,6 +990,9 @@ final class OutlineEditor {
     /// as one step.
     private final class LineEdit {
         let blockID: UUID
+        /// The name of the stack's top step as the caret arrived, under the
+        /// line's typing, if there was one.
+        var stepBelow: String?
         /// Added by this edit, so taking it out again leaves nothing to undo.
         var isNew: Bool
         /// Changed more than the line's text.
@@ -998,21 +1001,18 @@ final class OutlineEditor {
         /// task or a spacer in an older list is, so passing through leaves it.
         let arrivedEmpty: Bool
         let session: EditorEditSession
-        /// The name of the stack's top step before the line's typing, if any.
-        var stepBelow: String?
         /// Where the line's typing Undo is registered, folded into this step.
         /// A line whose kind changes can be drawn by a new text view. Held
         /// until the step ends, by identity: the undo manager doesn't keep
         /// them, and a text view gone with its storage would leave its typing.
         let undoTargets = NSHashTable<NSTextStorage>(options: [.strongMemory, .objectPointerPersonality])
 
-        init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession, stepBelow: String?) {
+        init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession) {
             self.blockID = blockID
             self.isNew = isNew
             isStructural = isNew
             self.arrivedEmpty = arrivedEmpty
             self.session = session
-            self.stepBelow = stepBelow
         }
     }
 
@@ -1029,10 +1029,10 @@ final class OutlineEditor {
         commitLine()
         guard let block = env.store.block(id: id) else { return nil }
         let edit = LineEdit(blockID: id, isNew: false, arrivedEmpty: Self.isBlank(block.text),
-                            session: env.store.beginEditorSession(in: document.listID, covering: [id]),
-                            stepBelow: undoStepName)
+                            session: env.store.beginEditorSession(in: document.listID, covering: [id]))
         line = edit
         observeUndo()
+        edit.stepBelow = undoStepName
         return edit
     }
 
@@ -1044,8 +1044,9 @@ final class OutlineEditor {
         let session = env.store.beginEditorSession(in: document.listID, covering: ids)
         let created = env.store.recordInEditorSession(session, create)
         env.store.save()
-        line = LineEdit(blockID: created.id, isNew: true, arrivedEmpty: true, session: session, stepBelow: undoStepName)
+        line = LineEdit(blockID: created.id, isNew: true, arrivedEmpty: true, session: session)
         observeUndo()
+        line?.stepBelow = undoStepName
         unfold(toShow: created.id)
         env.activeDocument = document
         focus.request(created.id, caret: 0)
@@ -1072,12 +1073,6 @@ final class OutlineEditor {
 
     private static func isBlank(_ text: String) -> Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// The name of the step Undo would take back now, if any.
-    private var undoStepName: String? {
-        guard let undoManager, undoManager.canUndo else { return nil }
-        return undoManager.undoActionName.isEmpty ? "Undo" : undoManager.undoActionName
     }
 
     /// Finishes the line being edited. A line left empty is removed, as the
@@ -1248,6 +1243,12 @@ final class OutlineEditor {
     }
 
     private var undoManager: UndoManager? { NSApp?.keyWindow?.undoManager }
+
+    /// The name of the step Undo would take back now, if any.
+    private var undoStepName: String? {
+        guard let undoManager, undoManager.canUndo else { return nil }
+        return undoManager.undoActionName.isEmpty ? "Undo" : undoManager.undoActionName
+    }
 
     func move(_ draggedIDs: [UUID], relativeTo target: BlockRow, position: DropPosition) {
         guard sorting == .manual else { return }
