@@ -60,16 +60,21 @@ final class Navigator {
     /// list or choosing a presentation ends it; it is never saved.
     private var revealedDocumentListID: UUID?
 
-    /// Lists open as a task list until this Mac chooses Document for them.
+    /// Lists open as their document, and the Inbox as triage, until this Mac
+    /// chooses otherwise for them.
     func listViewMode(for listID: UUID) -> ListViewMode {
         if listID == revealedDocumentListID, route == .list(listID) { return .document }
-        return listViewModes[listID] ?? .tasks
+        return listViewModes[listID] ?? defaultViewMode(for: listID)
+    }
+
+    private func defaultViewMode(for listID: UUID) -> ListViewMode {
+        listID == inboxListID ? .tasks : .document
     }
 
     func setListViewMode(_ mode: ListViewMode, for listID: UUID) {
         let shown = listViewMode(for: listID)
         if revealedDocumentListID == listID { revealedDocumentListID = nil }
-        if (listViewModes[listID] ?? .tasks) != mode {
+        if (listViewModes[listID] ?? defaultViewMode(for: listID)) != mode {
             listViewModes[listID] = mode
             defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
                           forKey: Self.listViewModesKey)
@@ -77,17 +82,29 @@ final class Navigator {
         guard shown != mode else { return }
         if route == .list(listID) || (route == .inbox && listID == inboxListID) {
             contentReveal = nil
-            openTaskID = nil
             clearSelection()
         }
+        // The Inbox's document is the legacy editor, which takes the task
+        // panel over. A list is the Next document either way.
+        if route == .inbox && listID == inboxListID { openTaskID = nil }
     }
 
-    /// Whether the screen on show is a document editor that owns menu commands.
-    /// Everything else is a Next screen served by the workbench targets.
-    var hasDocumentEditor: Bool {
+    /// Whether the screen on show is the legacy document editor, which keeps
+    /// its own keys: the Inbox shown as a document. The single-key map and
+    /// the workbench's Undo stand aside for it.
+    var legacyDocumentOwnsKeys: Bool {
+        guard route == .inbox else { return false }
+        return inboxListID.map { listViewMode(for: $0) == .document } ?? false
+    }
+
+    /// Whether the screen on show is a document that takes the outline's menu
+    /// commands: every list, drawn as the Next list document in either
+    /// presentation, and the Inbox as a document. Everything else is a Next
+    /// screen served by the workbench targets.
+    var documentOwnsEditorCommands: Bool {
         switch route {
-        case let .list(id): listViewMode(for: id) == .document
-        case .inbox: inboxListID.map { listViewMode(for: $0) == .document } ?? false
+        case .list: true
+        case .inbox: legacyDocumentOwnsKeys
         default: false
         }
     }

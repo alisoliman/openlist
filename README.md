@@ -497,7 +497,10 @@ block, ⇥ that re-parents it, ⌫ that merges into the row above, arrow keys th
 between blocks. Each block therefore hosts a bare `NSTextView` (explicit TextKit 1,
 so `sizeThatFits` can measure synchronously) and `OutlineEditor` arbitrates the keys.
 `OutlineEditor` owns the caret, the `/` menu and every structural edit, and knows
-nothing about how rows look, so `DocumentView` is only one renderer over it.
+nothing about how rows look. `DocumentView` is the legacy renderer over it (the
+Inbox as a document, a task's subtasks); `NXDocumentOutline` in `Next/` draws every
+list as the Next design's document, with the engine's `.nextDocument` policy: the
+design's indent, Return and Backspace rules, and one undo step per line edited.
 Everything else is SwiftUI.
 
 ---

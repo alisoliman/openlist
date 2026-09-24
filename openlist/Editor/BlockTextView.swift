@@ -41,6 +41,18 @@ struct BlockEditorCallbacks {
     /// dumping the whole thing into this one block.
     var onPasteMultiline: (String) -> Bool = { _ in false }
     var onPasteFragment: () -> Bool = { false }
+    /// The text view gave up the keyboard. `undoTarget` is what its typing
+    /// Undo is registered against, for an outline that folds that typing
+    /// into one step of its own.
+    var onEndEditing: (_ undoTarget: NSTextStorage) -> Void = { _ in }
+    /// Shift-Return. Return `true` to claim it; otherwise it inserts a soft
+    /// break in the same block.
+    var onLineBreak: () -> Bool = { false }
+    /// A click on the text while it isn't editing. Return `true` to claim
+    /// it, so the text view neither takes the keyboard nor moves a caret.
+    var onInactiveClick: (NSEvent) -> Bool = { _ in false }
+    /// A double-click on the text, after the text view has selected a word.
+    var onDoubleClick: () -> Void = {}
 }
 
 /// A single editable line of a document, backed by `NSTextView`.
@@ -62,6 +74,9 @@ struct BlockTextView: NSViewRepresentable {
     /// instance: the colour is part of the content signature, so one made per
     /// render would restyle the text, and reset the caret, on every update.
     var strikeColor: NSColor? = nil
+    /// Whether the strike also fades the text to the completed ink. A task
+    /// struck during its completion dwell keeps its ink, as the design's does.
+    var dimsStruck = true
     /// Space above and below the text. The legacy document pads a line to
     /// its gutter; a renderer matching Next's row titles passes 0.
     var verticalInset: CGFloat = Theme.Editor.textVerticalInset
@@ -75,6 +90,11 @@ struct BlockTextView: NSViewRepresentable {
     var focusToken: Int
     /// While the `/` menu is showing it takes over Return, Tab and the arrows.
     var isSlashMenuOpen: Bool = false
+    /// Only a `/` that starts the block opens the menu, rather than one
+    /// after any space.
+    var slashOpensAtStartOnly = false
+    /// The insertion point's colour. `nil` keeps AppKit's.
+    var caretColor: NSColor? = nil
     var onSlashCommand: (SlashMenuCommand) -> Void = { _ in }
     var callbacks: BlockEditorCallbacks
 
@@ -117,10 +137,11 @@ struct BlockTextView: NSViewRepresentable {
         view.linkTextAttributes = linkAttributes
 
         context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
-                                  struck: struck, strikeColor: strikeColor)
+                                  struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck)
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
+        if let caretColor { view.insertionPointColor = caretColor }
         return view
     }
 
@@ -129,6 +150,7 @@ struct BlockTextView: NSViewRepresentable {
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
+        if let caretColor, view.insertionPointColor !== caretColor { view.insertionPointColor = caretColor }
         if view.textContainerInset.height != verticalInset {
             view.textContainerInset = NSSize(width: 0, height: verticalInset)
             view.invalidateIntrinsicContentSize()
@@ -141,11 +163,12 @@ struct BlockTextView: NSViewRepresentable {
             kind: kind,
             isCompleted: isCompleted,
             struck: struck,
-            strikeColor: strikeColor
+            strikeColor: strikeColor,
+            dimsStruck: dimsStruck
         )
         if context.coordinator.signature != signature || context.coordinator.consumeRestyleRequest() {
             context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
-                                      struck: struck, strikeColor: strikeColor)
+                                      struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck)
         }
 
         context.coordinator.syncFocus(view: view, shouldFocus: isFocused, caret: pendingCaret, token: focusToken)
@@ -167,18 +190,20 @@ struct BlockTextView: NSViewRepresentable {
         let isCompleted: Bool
         let struck: Bool
         let strikeColor: NSColor?
+        let dimsStruck: Bool
 
         init(attributedText: NSAttributedString, kind: BlockKind, isCompleted: Bool,
-             struck: Bool? = nil, strikeColor: NSColor? = nil) {
+             struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true) {
             self.attributedText = NSAttributedString(attributedString: attributedText)
             self.kind = kind
             self.isCompleted = isCompleted
             self.struck = struck ?? isCompleted
             self.strikeColor = self.struck ? strikeColor : nil
+            self.dimsStruck = self.struck ? dimsStruck : true
         }
 
         /// Whether the storage shows a strike state other than the model's.
-        var overridesCompletion: Bool { struck != isCompleted || strikeColor != nil }
+        var overridesCompletion: Bool { struck != isCompleted || strikeColor != nil || !dimsStruck }
     }
 
     @MainActor
@@ -207,18 +232,20 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func apply(_ attributed: NSAttributedString, to view: BlockNSTextView, kind: BlockKind, isCompleted: Bool,
-                   struck: Bool? = nil, strikeColor: NSColor? = nil) {
+                   struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true) {
             isApplyingExternalChange = true
             defer { isApplyingExternalChange = false }
 
             let applied = ContentSignature(attributedText: attributed, kind: kind, isCompleted: isCompleted,
-                                           struck: struck, strikeColor: strikeColor)
+                                           struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck)
             let previousSelection = view.selectedRange()
             view.textStorage?.setAttributedString(applied.overridesCompletion
-                ? RichTextCodec.restylingCompletion(of: attributed, kind: kind, struck: applied.struck, strikeColor: applied.strikeColor)
+                ? RichTextCodec.restylingCompletion(of: attributed, kind: kind, struck: applied.struck,
+                                                    strikeColor: applied.strikeColor, dimsCompleted: applied.dimsStruck)
                 : attributed)
             view.typingAttributes = RichTextCodec.baseAttributes(for: kind, isCompleted: applied.struck,
-                                                                 strikeColor: applied.strikeColor)
+                                                                 strikeColor: applied.strikeColor,
+                                                                 dimsCompleted: applied.dimsStruck)
             view.blockKind = kind
 
             let length = view.textStorage?.length ?? 0
@@ -239,14 +266,16 @@ struct BlockTextView: NSViewRepresentable {
         /// form, which is what the echo will carry.
         func recordLocalEdit(_ storage: NSAttributedString, kind: BlockKind) {
             let current = ContentSignature(attributedText: storage, kind: kind, isCompleted: parent.isCompleted,
-                                           struck: parent.struck, strikeColor: parent.strikeColor)
+                                           struck: parent.struck, strikeColor: parent.strikeColor,
+                                           dimsStruck: parent.dimsStruck)
             guard current.overridesCompletion else {
                 signature = current
                 return
             }
             signature = ContentSignature(
                 attributedText: RichTextCodec.restylingCompletion(of: storage, kind: kind, struck: parent.isCompleted),
-                kind: kind, isCompleted: parent.isCompleted, struck: parent.struck, strikeColor: parent.strikeColor
+                kind: kind, isCompleted: parent.isCompleted, struck: parent.struck, strikeColor: parent.strikeColor,
+                dimsStruck: parent.dimsStruck
             )
         }
 
@@ -335,7 +364,9 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func textDidEndEditing(_ notification: Notification) {
-            guard let view = notification.object as? BlockNSTextView, view.isSlashMenuOpen else { return }
+            guard let view = notification.object as? BlockNSTextView else { return }
+            if let storage = view.textStorage { parent.callbacks.onEndEditing(storage) }
+            guard view.isSlashMenuOpen else { return }
             // Allow a popup button action to consume the query first.
             DispatchQueue.main.async { [weak self, weak view] in
                 guard let self, let view, view.window?.firstResponder !== view else { return }
@@ -376,6 +407,7 @@ struct BlockTextView: NSViewRepresentable {
                 return parent.callbacks.onReturn(view.selectedRange().location, NSAttributedString(attributedString: storage))
 
             case #selector(NSResponder.insertLineBreak(_:)):
+                if !view.isSlashMenuOpen, parent.callbacks.onLineBreak() { return true }
                 // Shift-Return inserts a soft break inside the same block.
                 view.insertText("\u{2028}", replacementRange: selection)
                 return true
@@ -466,7 +498,8 @@ struct BlockTextView: NSViewRepresentable {
             let text = storage.string as NSString
             let caret = min(selection.location, text.length)
             guard !view.hasMarkedText(), parent.kind != .code,
-                  let slashIndex = MarkdownInputRules.slashTriggerIndex(in: text, caret: caret) else {
+                  let slashIndex = MarkdownInputRules.slashTriggerIndex(in: text, caret: caret),
+                  slashIndex == 0 || !parent.slashOpensAtStartOnly else {
                 dismissedSlashIndex = nil
                 if view.isSlashMenuOpen {
                     parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
@@ -787,6 +820,16 @@ final class BlockNSTextView: NSTextView {
         default:
             return super.validateUserInterfaceItem(item)
         }
+    }
+
+    // MARK: Clicks
+
+    override func mouseDown(with event: NSEvent) {
+        if window?.firstResponder !== self, coordinator?.parent.callbacks.onInactiveClick(event) == true { return }
+        super.mouseDown(with: event)
+        // AppKit's own tracking has run to the mouse-up by now, so the word
+        // is selected before the outline hears about the double-click.
+        if event.clickCount == 2 { coordinator?.parent.callbacks.onDoubleClick() }
     }
 
     // MARK: Focus reporting

@@ -130,6 +130,37 @@ final class Workbench {
     var searchIncludesCompleted = false
     var activityDay: Date?
 
+    // MARK: List document
+
+    /// The list document on show, for the keys and Undo that reach it from
+    /// outside its rows.
+    @ObservationIgnored weak var document: OutlineEditor?
+    /// Tasks whose note shows under them in the list document.
+    var openNotes: Set<UUID> = []
+    /// The task whose note is being written in place.
+    var editingNoteID: UUID?
+
+    /// Space, or a task's note button: shows or hides its note under it. A
+    /// task with no note starts one instead.
+    func toggleNote(_ id: UUID) {
+        guard let task = store.block(id: id), task.isTask else { return }
+        if !openNotes.contains(id), task.note.isEmpty {
+            editNote(id)
+            return
+        }
+        withAnimation(style.ease(180)) {
+            if openNotes.contains(id) { openNotes.remove(id) } else { openNotes.insert(id) }
+        }
+    }
+
+    /// Opens a task's note for writing in place, as ⇧↩ does from its title.
+    func editNote(_ id: UUID) {
+        openNotes.insert(id)
+        editingNoteID = id
+        focusID = id
+        clearSelection()
+    }
+
     /// View ▸ Hide Sidebar. The shell also folds the sidebar away while a
     /// narrow window shows the inspector; either one hides it.
     var isSidebarHidden = false
@@ -359,6 +390,13 @@ final class Workbench {
         showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
     }
 
+    /// Logs an edit the list document has just put on the undo stack, in the
+    /// same step, so it shows in Changes and names the toolbar's Undo. As in
+    /// the design, an edit shows no tray.
+    func logEdit(_ label: String, ids: [UUID]) {
+        attach(record(label, icon: "pencil", tone: .neutral, ids: ids), restores: false)
+    }
+
     var latestBatch: Int? { log.first?.batch }
 
     func entries(for taskID: UUID) -> [ChangeEntry] { log.filter { $0.taskID == taskID } }
@@ -476,6 +514,8 @@ final class Workbench {
     /// Toolbar, tray and ⌘Z: step the window's undo stack. A completion still in
     /// its dwell is an entry there like any other; undoing it cancels the dwell.
     func undoLast() {
+        // A line still being written is one step of its own, so finish it.
+        document?.commitLine()
         guard let undoManager, undoManager.canUndo else { return }
         undoManager.undo()
     }

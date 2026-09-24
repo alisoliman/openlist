@@ -43,6 +43,8 @@ final class NextKeyHandler {
     weak var view: NSView?
     private var monitor: Any?
     private var clickMonitor: Any?
+    /// Keys pressed while the list document moves its caret, in order.
+    private var heldKeys: [NSEvent] = []
 
     init(env: AppEnvironment, library: NextLibrary, overlays: NXOverlayState) {
         self.env = env
@@ -71,7 +73,7 @@ final class NextKeyHandler {
     }
 
     private enum Key {
-        static let enter: UInt16 = 36, keypadEnter: UInt16 = 76, tab: UInt16 = 48, escape: UInt16 = 53
+        static let enter: UInt16 = 36, keypadEnter: UInt16 = 76, tab: UInt16 = 48, escape: UInt16 = 53, space: UInt16 = 49
         static let delete: UInt16 = 51, forwardDelete: UInt16 = 117
         static let left: UInt16 = 123, right: UInt16 = 124, down: UInt16 = 125, up: UInt16 = 126
     }
@@ -91,6 +93,15 @@ final class NextKeyHandler {
         let isEditingText = responder is NSText || responder is NSTextView
         let isComposing = (responder as? NSTextInputClient)?.hasMarkedText() == true
         let isEnter = key == Key.enter || key == Key.keypadEnter
+
+        // After Return or Backspace the list document's caret is on its way
+        // to another line. Keys typed meanwhile wait for it, in order, rather
+        // than type into the line it left or reach the single-key map.
+        if !flags.contains(.command), !heldKeys.isEmpty || workbench.document?.isMovingCaret == true {
+            heldKeys.append(event)
+            if heldKeys.count == 1 { releaseHeldKeys(in: window, since: .now) }
+            return true
+        }
 
         if flags == .command && chars == "k" && navigator.isCommandPaletteOpen {
             navigator.isCommandPaletteOpen = false
@@ -170,6 +181,10 @@ final class NextKeyHandler {
             return true
         }
 
+        // Undo while a list document line is being written: once the line's
+        // edit has changed more than its text, Undo takes the whole edit back.
+        if flags == .command, chars == "z", isEditingText { workbench.document?.prepareForUndo() }
+
         // Every other text field and the document editor keep their keys.
         if isEditingText { return false }
         // So do controls and views outside the shell's own hosting view, such
@@ -177,8 +192,8 @@ final class NextKeyHandler {
         if isForeign(responder) { return false }
 
         if flags == .command {
-            // A document keeps its own Undo and Select All.
-            guard !navigator.hasDocumentEditor else { return false }
+            // The legacy document keeps its own Undo and Select All.
+            guard !navigator.legacyDocumentOwnsKeys else { return false }
             switch chars {
             case "z":
                 workbench.undoLast()
@@ -222,6 +237,26 @@ final class NextKeyHandler {
         }
     }
 
+    /// Hands held keys on once the caret has landed, or, if it never does,
+    /// once the wait has run out and the document has let the move go.
+    private func releaseHeldKeys(in window: NSWindow, since start: Date) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self, weak window] in
+            guard let self else { return }
+            guard let window else { self.heldKeys = []; return }
+            let document = self.env.workbench.document
+            if document?.isMovingCaret == true, Date.now.timeIntervalSince(start) < 0.4 {
+                self.releaseHeldKeys(in: window, since: start)
+                return
+            }
+            if document?.isMovingCaret == true { document?.requestFocus(nil) }
+            let keys = self.heldKeys
+            self.heldKeys = []
+            // Straight to the window, past this monitor: each key reaches the
+            // line that now has the caret, or the single-key map if none does.
+            for key in keys where !self.handle(key) { window.sendEvent(key) }
+        }
+    }
+
     private func blurQuery(_ window: NSWindow) {
         env.workbench.tasksQueryFocused = false
         window.makeFirstResponder(nil)
@@ -239,7 +274,7 @@ final class NextKeyHandler {
     /// another control or field still lets that one take focus. Text fields
     /// and document screens keep AppKit's own behaviour.
     private func releaseForeignFocus(for event: NSEvent) {
-        guard let window = view?.window, event.window === window, !env.navigator.hasDocumentEditor,
+        guard let window = view?.window, event.window === window, !env.navigator.legacyDocumentOwnsKeys,
               let focused = window.firstResponder as? NSView, !(focused is NSText), isForeign(focused),
               !focused.bounds.contains(focused.convert(event.locationInWindow, from: nil)) else { return }
         window.makeFirstResponder(nil)
@@ -259,9 +294,9 @@ final class NextKeyHandler {
             }
         }
 
-        // A document list keeps its keys; only going, capturing, searching and
-        // closing the inspector stay global there.
-        if navigator.hasDocumentEditor {
+        // The legacy document keeps its keys; only going, capturing,
+        // searching and closing the inspector stay global there.
+        if navigator.legacyDocumentOwnsKeys {
             if key == Key.escape, !shift, navigator.openTaskID != nil {
                 navigator.closeTask()
                 return true
@@ -300,7 +335,19 @@ final class NextKeyHandler {
             workbench.moveFocus(by: key == Key.down ? 1 : -1, extending: shift)
             return true
         case Key.enter, Key.keypadEnter:
-            if let id = workbench.focusID ?? workbench.targetIDs.first { workbench.inspect(id) }
+            // A list document's heading or text has no details: Return edits it.
+            if let document = workbench.document, let id = workbench.focusID,
+               let block = env.store.block(id: id), !block.isTask, block.listID == navigator.route.listID {
+                document.edit(id)
+            } else if let id = workbench.focusID ?? workbench.targetIDs.first { workbench.inspect(id) }
+            return true
+        case Key.tab where workbench.document != nil:
+            // Tab and ⇧Tab nest and lift the focused rows, as they do the line being written.
+            workbench.document?.indent(workbench.targetIDs, outdent: shift)
+            return true
+        case Key.space where workbench.document != nil && !shift:
+            // Notes open in place, in the document's own rows.
+            if let id = workbench.focusID, workbench.document?.shows(id) == true { workbench.toggleNote(id) }
             return true
         case Key.escape:
             if navigator.openTaskID != nil { navigator.closeTask() }

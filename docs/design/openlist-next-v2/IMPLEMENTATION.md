@@ -25,6 +25,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (`workbench.openCapture`), so menu commands keep working.
 - New route `.settings` for the in-window design Settings page (full Settings window stays
   reachable via "More settings…").
+- Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
+  `OutlineEditor` engine under its `.nextDocument` policy, tasks on `NXTaskRowChrome` (the
+  Next row's chrome with the live text as its title) and the other kinds in the same
+  language. Done top-level tasks leave for the Completed group below. Each line's edit is
+  one undo step with the design's label and a change-log entry. The Tasks presentation is
+  the same document showing only its tasks. `Navigator.legacyDocumentOwnsKeys` (the Inbox
+  document) and `documentOwnsEditorCommands` (any list) replace `hasDocumentEditor`.
 
 ## Status checklist
 
@@ -41,3 +48,6 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - [x] Calendar (grid, not planned yet, plan, planned now, overrun)
 - [x] Lists gallery, Activity (+ Changes), Trash (hold), Settings
 - [x] Build + native verification screenshots
+- [x] List document: lines, carets, notes, Turn into, completed split, keys, undo and log
+- [ ] Inspector subtasks and "Subtask of", Inbox document mode, list options menu,
+      title in place, drag grip, search reveal

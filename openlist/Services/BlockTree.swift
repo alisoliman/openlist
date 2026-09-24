@@ -168,7 +168,11 @@ enum BlockTree {
 
     /// Temporarily revealed ancestors/targets remain visible without changing
     /// completion preferences or exposing every other completed branch.
-    static func hidingCompletedTasks(in rows: [BlockRow], revealing: Set<UUID> = []) -> [BlockRow] {
+    ///
+    /// - Parameter topLevelOnly: hides only completed tasks at depth 0, with
+    ///   their subtrees, keeping nested completed tasks where they are.
+    static func hidingCompletedTasks(in rows: [BlockRow], revealing: Set<UUID> = [],
+                                     topLevelOnly: Bool = false) -> [BlockRow] {
         var result: [BlockRow] = []
         var skipDeeperThan: Int?
         for row in rows {
@@ -176,11 +180,54 @@ enum BlockTree {
                 if row.depth > limit { continue }
                 skipDeeperThan = nil
             }
-            if row.block.isTask, row.block.isCompleted, !revealing.contains(row.id) {
+            if row.block.isTask, row.block.isCompleted, !topLevelOnly || row.depth == 0, !revealing.contains(row.id) {
                 skipDeeperThan = row.depth
                 continue
             }
             result.append(row)
+        }
+        return result
+    }
+
+    // MARK: - Heading sections
+
+    /// The level of a heading that bounds a section, `nil` for other kinds.
+    static func sectionLevel(of kind: BlockKind) -> Int? {
+        switch kind {
+        case .heading1: 1
+        case .heading2: 2
+        case .heading3: 3
+        default: nil
+        }
+    }
+
+    /// Each top-level heading's section: the rows after it up to the next
+    /// top-level heading of the same or a higher level, at any depth. Pass
+    /// every row of the document, so a section counts what it hides too.
+    static func sections(in rows: [BlockRow]) -> [UUID: ArraySlice<BlockRow>] {
+        var sections: [UUID: ArraySlice<BlockRow>] = [:]
+        for (index, row) in rows.enumerated() where row.depth == 0 {
+            guard let level = sectionLevel(of: row.block.kind) else { continue }
+            let rest = rows[(index + 1)...]
+            let end = rest.firstIndex { $0.depth == 0 && (sectionLevel(of: $0.block.kind) ?? .max) <= level } ?? rows.endIndex
+            sections[row.id] = rows[(index + 1)..<end]
+        }
+        return sections
+    }
+
+    /// Hides a collapsed top-level heading's section, the way a collapsed
+    /// task hides its subtree.
+    static func hidingCollapsedSections(in rows: [BlockRow], revealing: Set<UUID> = []) -> [BlockRow] {
+        var result: [BlockRow] = []
+        var hiddenUntilLevel: Int?
+        for row in rows {
+            let level = row.depth == 0 ? sectionLevel(of: row.block.kind) : nil
+            if let limit = hiddenUntilLevel {
+                guard let level, level <= limit else { continue }
+                hiddenUntilLevel = nil
+            }
+            result.append(row)
+            if let level, row.block.isCollapsed, !revealing.contains(row.id) { hiddenUntilLevel = level }
         }
         return result
     }

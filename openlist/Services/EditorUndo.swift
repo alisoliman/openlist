@@ -147,9 +147,12 @@ private struct EditorSnapshot {
     var labels: [UUID: EditorLabelRecord]
     var hasLabelSnapshot: Bool
 
-    init(store: Store, listIDs: Set<UUID>, includingNewLabels: Bool = false) {
+    /// - Parameter blockIDs: records only these blocks and their attachments,
+    ///   for an edit known to touch nothing else. `nil` records every block.
+    init(store: Store, listIDs: Set<UUID>, blockIDs: Set<UUID>? = nil, includingNewLabels: Bool = false) {
         self.listIDs = Set(listIDs.map { store.resolvedListID($0) ?? $0 })
-        let models = self.listIDs.flatMap { store.blocks(inList: $0) }
+        let listed = self.listIDs.flatMap { store.blocks(inList: $0) }
+        let models = blockIDs.map { ids in listed.filter { ids.contains($0.id) } } ?? listed
         blocks = Dictionary(uniqueKeysWithValues: models.map { ($0.id, EditorBlockRecord($0)) })
         attachments = Dictionary(uniqueKeysWithValues: models.flatMap { store.attachments(for: $0.id) }.map { ($0.id, EditorAttachmentRecord($0)) })
         if includingNewLabels, let models = try? store.context.fetch(FetchDescriptor<TaskLabel>()) {
@@ -172,6 +175,26 @@ private struct EditorSnapshot {
     }
 }
 
+/// An edit that spans several events, undone as one step: typing in one
+/// line, and whatever else changed while that line held the caret.
+///
+/// Its baseline holds every block the edit has touched, as it was before the
+/// edit first touched it, so the one Undo it registers restores exactly
+/// those and leaves anything else that changed meanwhile alone.
+final class EditorEditSession {
+    fileprivate let listIDs: Set<UUID>
+    fileprivate var baseline: EditorSnapshot
+    fileprivate var media: [String: Data] = [:]
+    /// The blocks the edit may have changed, including ones it created.
+    fileprivate(set) var touchedIDs: Set<UUID>
+
+    fileprivate init(listIDs: Set<UUID>, baseline: EditorSnapshot, touchedIDs: Set<UUID>) {
+        self.listIDs = listIDs
+        self.baseline = baseline
+        self.touchedIDs = touchedIDs
+    }
+}
+
 private struct EditorLabelRecord: Equatable {
     var id: UUID
     var name: String
@@ -190,11 +213,15 @@ private struct EditorLabelRecord: Equatable {
 extension Store {
     /// Registers one inverse for a structural edit with the same window undo
     /// manager used by NSTextView. Native typing undo remains native.
-    func undoableEditorEdit<T>(in listID: UUID, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false, _ body: () -> T) -> T {
-        undoableEditorEdit(in: Set([listID]), name: name, undoManager: undoManager, includingNewLabels: includingNewLabels, body)
+    /// `didRegister` runs once the inverse is on the stack, in the same step.
+    func undoableEditorEdit<T>(in listID: UUID, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false,
+                               didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
+        undoableEditorEdit(in: Set([listID]), name: name, undoManager: undoManager, includingNewLabels: includingNewLabels,
+                           didRegister: didRegister, body)
     }
 
-    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false, _ body: () -> T) -> T {
+    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false,
+                               didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
         guard let undoManager, !isRecordingEditorEdit else { return body() }
         let before = EditorSnapshot(store: self, listIDs: listIDs, includingNewLabels: includingNewLabels)
         isRecordingEditorEdit = true
@@ -212,7 +239,70 @@ extension Store {
             store.restoreEditorEdit(from: after, to: before, media: media, name: name, undoManager: undoManager)
         }
         undoManager.setActionName(name)
+        didRegister?()
         return result
+    }
+
+    /// Starts an edit that ``commitEditorSession(_:name:undoManager:)`` will
+    /// undo as one step, from how `blockIDs` are now.
+    func beginEditorSession(in listID: UUID, covering blockIDs: Set<UUID>) -> EditorEditSession {
+        let listIDs = Set([listID])
+        return EditorEditSession(listIDs: listIDs,
+                                 baseline: EditorSnapshot(store: self, listIDs: listIDs, blockIDs: blockIDs),
+                                 touchedIDs: blockIDs)
+    }
+
+    /// Runs a structural change as part of `session`, registering no Undo of
+    /// its own: whatever it changes, the session's one step restores.
+    func recordInEditorSession<T>(_ session: EditorEditSession, _ body: () -> T) -> T {
+        guard !isRecordingEditorEdit else { return body() }
+        let before = EditorSnapshot(store: self, listIDs: session.listIDs)
+        isRecordingEditorEdit = true
+        editorMediaBackups = [:]
+        let result = body()
+        let after = EditorSnapshot(store: self, listIDs: session.listIDs)
+        session.media.merge(editorMediaBackups) { first, _ in first }
+        isRecordingEditorEdit = false
+        editorMediaBackups = [:]
+        let changed = before.changedIDs(comparedTo: after)
+        let owners = changed.attachments.flatMap { id in
+            [before.attachments[id]?.blockID, after.attachments[id]?.blockID].compactMap { $0 }
+        }
+        // A block's first change in the session is the one its baseline keeps.
+        for id in changed.blocks.union(owners) where !session.touchedIDs.contains(id) {
+            session.touchedIDs.insert(id)
+            session.baseline.blocks[id] = before.blocks[id]
+            for (attachmentID, record) in before.attachments where record.blockID == id {
+                session.baseline.attachments[attachmentID] = record
+            }
+        }
+        return result
+    }
+
+    /// Takes the session's blocks as they are now for its baseline. An Undo
+    /// or Redo made while the session is open has already been recorded, so
+    /// the session must not restore past it.
+    func rebaseEditorSession(_ session: EditorEditSession) {
+        session.baseline = EditorSnapshot(store: self, listIDs: session.listIDs, blockIDs: session.touchedIDs)
+        session.media = [:]
+    }
+
+    /// Registers the session's one Undo, named `name`. `false`, and nothing
+    /// registered, when its blocks are back as they began.
+    @discardableResult
+    func commitEditorSession(_ session: EditorEditSession, name: String, undoManager: UndoManager?) -> Bool {
+        let after = EditorSnapshot(store: self, listIDs: session.listIDs, blockIDs: session.touchedIDs)
+        let before = session.baseline
+        let changed = before.changedIDs(comparedTo: after)
+        guard !changed.blocks.isEmpty || !changed.attachments.isEmpty else { return false }
+        guard let undoManager else { return true }
+        let media = session.media
+        undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
+            guard let undoManager else { return }
+            store.restoreEditorEdit(from: after, to: before, media: media, name: name, undoManager: undoManager)
+        }
+        undoManager.setActionName(name)
+        return true
     }
 
     /// Copy before the async disk deletion, never after it.

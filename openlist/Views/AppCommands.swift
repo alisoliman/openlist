@@ -199,7 +199,10 @@ struct AppCommands: Commands {
     private var taskTargetIDs: [UUID] {
         guard env.isMainWindowKey, !env.workbench.captureOpen, !env.navigator.isCommandPaletteOpen,
               !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return [] }
-        guard env.activeDocument != nil else { return env.workbench.targetIDs }
+        // The Next list document acts on the workbench's targets too; the
+        // legacy editor and the inspector's subtasks on their own selection.
+        guard env.activeDocument != nil, env.navigator.legacyDocumentOwnsKeys || env.activeDocument?.rootBlockID != nil
+        else { return env.workbench.targetIDs }
         guard env.navigator.selection.count == 1, let id = env.navigator.selection.first,
               env.store.block(id: id)?.isTask == true else { return [] }
         return [id]
@@ -217,12 +220,17 @@ struct AppCommands: Commands {
     }
 
     private var hasBlockSelection: Bool {
-        !env.workbench.captureOpen && !env.navigator.isCommandPaletteOpen
-            && env.navigator.selection.count == 1 && env.navigator.selection.contains { env.store.block(id: $0) != nil }
+        guard !env.workbench.captureOpen, !env.navigator.isCommandPaletteOpen else { return false }
+        if env.navigator.selection.count == 1, env.navigator.selection.contains(where: { env.store.block(id: $0) != nil }) {
+            return true
+        }
+        // The Next list document's rows are focused and selected on the workbench.
+        return env.activeDocument?.rootBlockID == nil && !env.navigator.legacyDocumentOwnsKeys
+            && !env.workbench.targetIDs.isEmpty
     }
 
     private var hasDocumentContext: Bool {
-        env.activeDocument != nil && (env.navigator.hasDocumentEditor || env.navigator.openTaskID != nil)
+        env.activeDocument != nil && (env.navigator.documentOwnsEditorCommands || env.navigator.openTaskID != nil)
     }
 
     // MARK: - Actions

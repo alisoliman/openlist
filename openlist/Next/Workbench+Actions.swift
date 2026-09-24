@@ -108,8 +108,10 @@ extension Workbench {
         else { complete(tasks.filter { !$0.isCompleted }.map(\.id)) }
     }
 
+    /// Completes `ids` and their open subtasks, which close with them, as the
+    /// design's complete does.
     func complete(_ ids: [UUID]) {
-        let candidates = tasks(ids).filter { !$0.isCompleted && closing[$0.id] == nil }
+        let candidates = tasks(withSubtasksOf: ids, openOnly: true).filter { !$0.isCompleted && closing[$0.id] == nil }
         guard !candidates.isEmpty else { return }
         let rolls = candidates.filter { $0.recurrence != nil }
         if let session = calendar.activeSession, candidates.contains(where: { $0.id == session.taskID }) {
@@ -262,8 +264,36 @@ extension Workbench {
 
     // MARK: Trash
 
+    /// `ids`' tasks, each followed by the tasks nested under it in document
+    /// order, once each.
+    private func tasks(withSubtasksOf ids: [UUID], openOnly: Bool) -> [Block] {
+        var indexes: [UUID: [UUID?: [Block]]] = [:]
+        var seen = Set<UUID>()
+        var result: [Block] = []
+        func add(_ block: Block) {
+            guard seen.insert(block.id).inserted else { return }
+            if block.isTask { result.append(block) }
+        }
+        for root in ids.compactMap({ store.block(id: $0) }) {
+            add(root)
+            guard let listID = root.listID else { continue }
+            let index = indexes[listID] ?? BlockTree.childIndex(of: store.blocks(inList: listID))
+            indexes[listID] = index
+            var stack = (index[root.id] ?? []).reversed().map { $0 }
+            while let block = stack.popLast() {
+                if !(openOnly && block.isTask && block.isCompleted) { add(block) }
+                stack += (index[block.id] ?? []).reversed()
+            }
+        }
+        return result
+    }
+
+    /// Moves `ids` to Trash with everything nested under them, as the
+    /// design's trash does: their subtasks fly out and count with them.
     func trash(_ ids: [UUID]) {
-        let tasks = ids.compactMap { store.block(id: $0) }
+        let roots = ids.compactMap { store.block(id: $0) }
+        let subtasks = tasks(withSubtasksOf: ids, openOnly: false).filter { !ids.contains($0.id) }
+        let tasks = roots + subtasks
         guard !tasks.isEmpty else { return }
         let taskIDs = tasks.map(\.id)
         // A row still in its dwell goes to Trash instead of completing.
@@ -398,9 +428,9 @@ extension Workbench {
         guard !parse.title.isEmpty else { return nil }
         let preview = capturePreview(parse)
         let destinationID = captureListID ?? store.inboxList()?.id
-        // Captured into the list whose Tasks view is showing, a task goes at the
-        // end, where that view's add row sits; anywhere else it's prepended.
-        let appendsToRoot = navigator.route.listID.map { $0 == destinationID && navigator.listViewMode(for: $0) == .tasks } ?? false
+        // Captured into the list on show, a task goes at the end of its
+        // document, where the add row sits; anywhere else it's prepended.
+        let appendsToRoot = navigator.route.listID.map { $0 == destinationID } ?? false
         let block: Block
         do {
             block = try store.saveCapture(preview, destinationID: destinationID, appendToRoot: appendsToRoot)

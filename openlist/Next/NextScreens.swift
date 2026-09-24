@@ -221,25 +221,35 @@ struct NXViewModeButton: View {
     }
 }
 
+/// A list: its header, then the list itself as the design's document, then
+/// the tasks done at its top level, which leave the document once settled.
 struct NextListScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
     let list: TaskList
+    /// The Tasks presentation: the same document with only its tasks.
+    var tasksOnly = false
+    /// The document's task rows, which lead the page's J/K order.
+    @State private var documentRowIDs: [UUID] = []
 
     var body: some View {
         let workbench = env.workbench
-        let (ordered, ancestors) = outline()
-        let open = ordered.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
-        let done = ordered.filter { $0.isCompleted && workbench.closing[$0.id] == nil }.sorted(by: Block.byCompletionDate)
-        let depths = Self.depths(open, ancestors: ancestors)
-        let groups = Self.groups(open: open, done: done, showsCompleted: env.settings.showsCompletedTasks)
+        let tasks = library.tasks(in: list.id)
+        let open = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
+        // As the design's list branch: subtasks stay struck in place.
+        let done = tasks.filter { $0.isCompleted && workbench.closing[$0.id] == nil && $0.parentID == nil }
+            .sorted(by: Block.byCompletionDate)
+        let groups = done.isEmpty ? [] : [
+            NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green, rows: done,
+                    collapsible: true, defaultOpen: list.showsCompleted(default: env.settings.showsCompletedTasks)),
+        ]
         let section = library.sectionTitle(for: list)
         let archived = library.archived.contains { $0.id == list.id }
-        NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
+        NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXScreenHeader(tile: .list(list), color: list.nxColor, title: list.displayTitle,
                            subtitle: "\(open.count) open" + (section.isEmpty ? "" : " · \(section)")
                                + (archived ? " · Archived" : "") + " ·",
-                           progress: (ordered.filter(\.isCompleted).count, ordered.count),
+                           progress: (tasks.filter(\.isCompleted).count, tasks.count),
                            accessory: AnyView(NXHoursMenu(list: list))) {
                 // A list archived through its parent unarchives with the parent.
                 if list.isArchived {
@@ -253,12 +263,15 @@ struct NextListScreen: View {
                 }
                 NXViewModeButton(listID: list.id)
             }
+            NXDocumentOutline(list: list, tasksOnly: tasksOnly)
+                // The Turn into card draws over the Completed group.
+                .zIndex(1)
+                .onPreferenceChange(NXDocumentRowsKey.self) { documentRowIDs = $0 }
             // The design's 20s clock, so Completed's done-ago chips move on.
             TimelineView(.periodic(from: .now, by: 20)) { context in
                 NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: list.id, notes: true,
-                                                                    depths: depths, now: context.date))
+                                                                    now: context.date))
             }
-            NXAddRow(text: "Add to \(list.displayTitle)", listID: list.id)
         }
         .onAppear { env.store.markOpened(list) }
     }
@@ -270,46 +283,6 @@ struct NextListScreen: View {
                                   rows: done, collapsible: true, defaultOpen: showsCompleted))
         }
         return groups
-    }
-
-    /// Outline depth within the rows shown: only task ancestors in the same run
-    /// count, so a subtask whose parent is finished, or anything in Completed,
-    /// never looks nested under an unrelated row.
-    static func depths(_ rows: [Block], ancestors: [UUID: [UUID]]) -> [UUID: Int] {
-        let shown = Set(rows.lazy.map(\.id))
-        var depths: [UUID: Int] = [:]
-        for row in rows {
-            let depth = ancestors[row.id, default: []].filter(shown.contains).count
-            if depth > 0 { depths[row.id] = depth }
-        }
-        return depths
-    }
-
-    /// Tasks in document order, with each one's task ancestors, outermost first.
-    private func outline() -> ([Block], [UUID: [UUID]]) {
-        // Archived lists opened from the Lists gallery keep their tasks too.
-        let tasks = library.tasks(in: list.id)
-        let taskIDs = Set(tasks.lazy.map(\.id))
-        guard !taskIDs.isEmpty else { return ([], [:]) }
-        let rows = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
-        var ordered: [Block] = []
-        var ancestors: [UUID: [UUID]] = [:]
-        // Stack of (document depth, task id or nil) for the current ancestor chain.
-        var chain: [(depth: Int, taskID: UUID?)] = []
-        for row in rows {
-            while let last = chain.last, last.depth >= row.depth { chain.removeLast() }
-            let isTask = taskIDs.contains(row.id)
-            if isTask {
-                ordered.append(row.block)
-                let above = chain.compactMap(\.taskID)
-                if !above.isEmpty { ancestors[row.id] = above }
-            }
-            chain.append((row.depth, isTask ? row.id : nil))
-        }
-        // Tasks the outline could not reach still belong on the screen.
-        let seen = Set(ordered.map(\.id))
-        ordered += tasks.filter { !seen.contains($0.id) }
-        return (ordered, ancestors)
     }
 }
 

@@ -195,7 +195,7 @@ private struct NextRoutedScreen: View {
         Group {
             switch navigator.route {
             case .inbox:
-                if navigator.hasDocumentEditor, let inboxID = navigator.inboxListID {
+                if navigator.legacyDocumentOwnsKeys, let inboxID = navigator.inboxListID {
                     InboxScreen()
                         .modifier(NXNoRows())
                         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -221,15 +221,8 @@ private struct NextRoutedScreen: View {
             case .settings: NextSettingsScreen()
             case let .list(id):
                 if let list = library.list(id) ?? env.store.list(id: id) {
-                    if navigator.listViewMode(for: id) == .document {
-                        ListScreen(list: list)
-                            .modifier(NXNoRows())
-                            .safeAreaInset(edge: .bottom, spacing: 0) {
-                                SelectionActionsBar(scopeID: navigator.rowSelection.scopeID)
-                            }
-                    } else {
-                        NextListScreen(list: list)
-                    }
+                    // Both presentations are the list document; Tasks shows only its tasks.
+                    NextListScreen(list: list, tasksOnly: navigator.listViewMode(for: id) == .tasks)
                 } else {
                     MissingContentView(message: "This list no longer exists.").modifier(NXNoRows())
                 }
