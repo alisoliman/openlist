@@ -131,7 +131,9 @@ struct BlockTextView: NSViewRepresentable {
         view.isAutomaticTextReplacementEnabled = false
         view.isAutomaticSpellingCorrectionEnabled = false
         view.isAutomaticLinkDetectionEnabled = true
-        view.isContinuousSpellCheckingEnabled = true
+        // Spelling is checked only in the line being written (see
+        // becomeFirstResponder), so a document at rest reads without squiggles.
+        view.isContinuousSpellCheckingEnabled = false
         view.usesFindBar = false
         let linkAttributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: Theme.Editor.link,
@@ -875,7 +877,23 @@ final class BlockNSTextView: NSTextView {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { coordinator?.parent.callbacks.onFocus() }
+        if result {
+            isContinuousSpellCheckingEnabled = true
+            coordinator?.parent.callbacks.onFocus()
+        }
+        return result
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        if result {
+            isContinuousSpellCheckingEnabled = false
+            // Turning checking off leaves the marks it drew; clear them too.
+            if let storage = textStorage, storage.length > 0 {
+                layoutManager?.removeTemporaryAttribute(.spellingState,
+                                                        forCharacterRange: NSRange(location: 0, length: storage.length))
+            }
+        }
         return result
     }
 }
