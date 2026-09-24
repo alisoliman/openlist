@@ -294,6 +294,7 @@ struct NXSettingLine<Content: View>: View {
 
     var body: some View {
         HStack(spacing: 12) { content }
+            .environment(\.nxSettingLineTints, true)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,6 +302,19 @@ struct NXSettingLine<Content: View>: View {
             .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
+    }
+}
+
+private struct NXSettingLineTintsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Set within a settings line, whose own hover tint stands for its pills'
+    /// and buttons', as the design's row does for its value pill.
+    var nxSettingLineTints: Bool {
+        get { self[NXSettingLineTintsKey.self] }
+        set { self[NXSettingLineTintsKey.self] = newValue }
     }
 }
 
@@ -403,14 +417,16 @@ struct NXSettingToggle: View {
 }
 
 /// The design's value pill: `500 12px/1`, `6px 9px`, radius 7 on ink 0.05.
-/// It has no hover of its own, as the design's; a settings row under the
-/// pointer tints instead.
+/// In a settings line it has no hover of its own, as the design's: the line
+/// tints instead. Elsewhere, as in a details panel or a popover, it darkens.
 struct NXValuePill: View {
+    @Environment(\.nxSettingLineTints) private var lineTints
     let text: String
     var swatch: Color?
     /// Shows a chevron that turns up while the row's details are open.
     var isExpanded: Bool?
     var monospacedDigits = false
+    var hovering = false
 
     /// Where the text starts, from the pill's leading edge: its padding, then
     /// the swatch and its gap.
@@ -434,7 +450,7 @@ struct NXValuePill: View {
         .lineLimit(1)
         .padding(.vertical, 6)
         .padding(.horizontal, 9)
-        .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(NX.ink(hovering && !lineTints ? 0.09 : 0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
@@ -482,8 +498,9 @@ struct NXSettingDetail<Content: View>: View {
 
 // MARK: - Buttons and fields
 
-/// A settings action drawn as the row's value pill, with no hover of its own
-/// as the pill has none; a press dims it. A destructive button is red.
+/// A settings action drawn as the row's value pill, and like it darker on
+/// hover only outside a settings line; a press dims it. A destructive
+/// button is red.
 struct NXSettingButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         Pill(configuration: configuration)
@@ -491,28 +508,33 @@ struct NXSettingButtonStyle: ButtonStyle {
 
     private struct Pill: View {
         @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.nxSettingLineTints) private var lineTints
         let configuration: Configuration
+        @State private var hovering = false
 
         var body: some View {
             let destructive = configuration.role == .destructive
+            let active = hovering && isEnabled && !lineTints
             configuration.label
                 .frame(height: 12)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
-                .foregroundStyle(destructive ? NX.redText : NX.ink(0.6))
+                .foregroundStyle(destructive ? NX.redText : NX.ink(active ? 0.75 : 0.6))
                 .padding(.vertical, 6)
                 .padding(.horizontal, 9)
-                .background(destructive ? NX.red.opacity(0.1) : NX.ink(0.05),
+                .background(destructive ? NX.red.opacity(active ? 0.16 : 0.1) : NX.ink(active ? 0.09 : 0.05),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .opacity(isEnabled ? configuration.isPressed ? 0.8 : 1 : 0.45)
                 .fixedSize()
                 .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.14), value: hovering)
         }
     }
 }
 
 /// A control drawn only as its label, like a switch or a value pill, which
-/// shows its own disabled look. As a button, Tab reaches it with
+/// shows its own hover and disabled look. As a button, Tab reaches it with
 /// keyboard navigation on and Space presses it; its focus ring follows `radius`.
 struct NXBareButtonStyle: ButtonStyle {
     var radius: CGFloat = 7
@@ -713,6 +735,7 @@ struct NXPopUpPill: View {
     var custom: NXCustomValue?
     let entries: [NXMenuEntry]
     @State private var anchor = NXMenuAnchor()
+    @State private var hovering = false
     /// The custom value being typed in place of the pill.
     @State private var customText: String?
 
@@ -721,12 +744,13 @@ struct NXPopUpPill: View {
             NXCustomValueField(custom: custom, text: $customText)
         } else {
             Button(action: popUp) {
-                NXValuePill(text: value, swatch: swatch, monospacedDigits: monospacedDigits)
+                NXValuePill(text: value, swatch: swatch, monospacedDigits: monospacedDigits, hovering: hovering && isEnabled)
             }
             .buttonStyle(NXBareButtonStyle())
             .background { NXMenuAnchorView(anchor: anchor) }
             .overlay { NXMenuPress(action: popUp) }
             .opacity(isEnabled ? 1 : 0.45)
+            .onHover { hovering = $0 }
             .fixedSize(horizontal: !truncates, vertical: true)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)

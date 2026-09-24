@@ -80,6 +80,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
   snapshot failed); a backup or restore made by hand, and what it reports, are Data's.
+  In a row only the row tints under the pointer, as the design's; the value pills and
+  buttons of the native extras outside one (the hours and iCloud panels, the Due, Repeat
+  and Reminder popovers) darken instead, since nothing else shows their hover.
 - Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking
   space in every text field, so a global hot key on it would take that from every app. The
   Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space. A task it adds goes

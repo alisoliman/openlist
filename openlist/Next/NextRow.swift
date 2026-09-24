@@ -127,8 +127,9 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
             // where the design would squeeze it to nothing.
             NXChipFlow(spacing: 6, titleRoom: min(96, NXStrikeText.lineWidth(task.displayTitle))) {
                 ForEach(leadingChips + NXRowChips.chips(for: task, options: options, library: library, workbench: workbench)) { chip in
-                    // A change pops every chip; a new row pops all but its list and star.
-                    NXChip(chip: chip, fresh: freshChip || fresh && chip.popsWithRow, quiet: options.quiet)
+                    // A change pops every chip but the subtask count and done time; a new
+                    // row pops all but those and its list and star.
+                    NXChip(chip: chip, fresh: chip.pops.plays(fresh: fresh, changed: freshChip), quiet: options.quiet)
                 }
                 if selected { NXSelectionMark() }
                 buttons()
@@ -353,10 +354,17 @@ struct NXCheckbox: View {
     var body: some View {
         Button(action: action) {
             ZStack {
+                // The design's box: its fill's `background 200*ms ease`, and its
+                // outline's `border-color 160ms ease` whatever the Motion setting.
                 Circle()
-                    .fill(filled ? (closing != nil ? style.accent : NX.green) : .clear)
+                    .animation(style.cssEase(200)) {
+                        $0.foregroundStyle(filled ? (closing != nil ? style.accent : NX.green) : .clear)
+                    }
                 Circle()
-                    .strokeBorder(filled ? .clear : (NX.priorityStroke(priority) ?? NX.ink(0.3)), lineWidth: 1.5)
+                    .strokeBorder(lineWidth: 1.5)
+                    .animation(NX.cssEase(160)) {
+                        $0.foregroundStyle(filled ? .clear : (NX.priorityStroke(priority) ?? NX.ink(0.3)))
+                    }
                 // The design's tick: a 140ms fade and a 200ms spring, at
                 // those speeds whatever the Motion setting.
                 Image(systemName: "checkmark")
@@ -370,7 +378,6 @@ struct NXCheckbox: View {
             .frame(width: size, height: size)
             .scaleEffect(style.lively && closing == false ? 1.18 : 1)
             .animation(style.spring(240), value: closing)
-            .animation(style.ease(200), value: filled)
             .contentShape(Rectangle().inset(by: -5))
         }
         .buttonStyle(.plain)
@@ -480,7 +487,7 @@ enum NXRowChips {
         let done = task.isCompleted
         let now = options.now ?? .now
         if options.showList, task.listID != options.listID, let list = library.list(task.listID) {
-            chips.append(NXChipModel(id: "list", label: list.displayTitle, glyph: list, popsWithRow: false))
+            chips.append(NXChipModel(id: "list", label: list.displayTitle, glyph: list, pops: .onChange))
         }
         for id in task.labelIDs {
             if let label = library.label(id) {
@@ -507,10 +514,10 @@ enum NXRowChips {
                                      tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0))
         }
         if task.isStarred {
-            chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true, popsWithRow: false))
+            chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true, pops: .onChange))
         }
         if done, let at = task.completedAt {
-            chips.append(NXChipModel(id: "done", label: NXFormat.relative(at, now: now)))
+            chips.append(NXChipModel(id: "done", label: NXFormat.relative(at, now: now), pops: .never))
         }
         return chips
     }

@@ -21,9 +21,28 @@ struct NXChipModel: Identifiable {
     var fill = false
     /// A list chip's list, whose glyph leads the label.
     var glyph: TaskList?
-    /// Plays chipIn with a fresh row, as most of the design's row chips do.
-    /// Its list and star chips arrive with the row and pop only when changed.
-    var popsWithRow = true
+    /// When it plays chipIn on a task row, as the design's `fresh` key.
+    var pops: NXChipPop = .withRow
+}
+
+/// When a task row's chip plays chipIn, as each of the design's row chips
+/// sets its `fresh` key.
+enum NXChipPop {
+    /// With a fresh row and whenever the row's chips change, as most do.
+    case withRow
+    /// Only when the row's chips change: a list or star chip arrives with a new row.
+    case onChange
+    /// Never, as the subtask count and a done task's time.
+    case never
+
+    /// Whether the chip pops on a row that's `fresh` or whose chips `changed`.
+    func plays(fresh: Bool, changed: Bool) -> Bool {
+        switch self {
+        case .withRow: fresh || changed
+        case .onChange: changed
+        case .never: false
+        }
+    }
 }
 
 struct NXChip: View {
