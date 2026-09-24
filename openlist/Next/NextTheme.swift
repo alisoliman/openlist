@@ -121,9 +121,15 @@ struct NextStyle: Equatable {
     var serifTitles = true
 
     var rowVerticalPadding: CGFloat { compact ? 3 : 5 }
-    /// A filled accent button under the pointer: the accent a shade darker,
-    /// as the design's Planned now Start goes from #7C4DF0 to #6A3BDE.
-    var accentHover: Color { accent.mix(with: .black, by: 0.1) }
+    /// A filled accent button under the pointer: each sRGB channel of the
+    /// accent 0x12 down, as the design's Planned now Start goes from #7C4DF0
+    /// to #6A3BDE.
+    var accentHover: Color {
+        guard let rgb = NSColor(accent).usingColorSpace(.sRGB) else { return accent }
+        let shade = { (value: CGFloat) in max(0, value - 0x12 / 255) }
+        return Color(.sRGB, red: shade(rgb.redComponent), green: shade(rgb.greenComponent),
+                     blue: shade(rgb.blueComponent), opacity: rgb.alphaComponent)
+    }
     func ms(_ base: Double) -> Double { (base * motion).rounded() }
     func ease(_ base: Double) -> Animation { NX.ease(ms(base)) }
     func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }

@@ -220,6 +220,9 @@ private struct NXCalendarBody: View {
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+        // A new hour range re-lays the grid at once, as the design's range
+        // re-renders, whatever change brought it.
+        .transaction(value: range) { $0.animation = nil }
     }
 
     private func columns(_ range: ClosedRange<Int>) -> some View {
@@ -487,6 +490,9 @@ private struct NXDayColumn: View {
                         .zIndex(5)
                 }
             }
+            // Nor does a new hour range play the 420ms below: blocks, meetings,
+            // breaks and the now line move at once, in line with the hour labels.
+            .transaction(value: range) { $0.animation = nil }
             // The design's 420ms top and height, whatever the Motion setting.
             .animation(NX.ease(420), value: layout.mapValues { [$0.top, $0.height, Double($0.lane), Double($0.laneCount)] })
         }
