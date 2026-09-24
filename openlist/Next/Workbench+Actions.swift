@@ -217,19 +217,22 @@ extension Workbench {
         } else {
             snap(describe(tasks) + " done", icon: "checkmark.circle.fill", tone: .green, ids: ids)
         }
+        if let batch = latestBatch { outsideCompletionBatches.insert(batch) }
     }
 
     /// Whether the change log already holds this completion or reopen of the
     /// same tasks, as when one of Next's own is saved late. Next writes a
     /// completion once its dwell ends, so the Store's action arrives up to the
-    /// dwell (plus the row stagger) after its entry.
+    /// dwell (plus the row stagger) after its entry. An outside completion's
+    /// own report never counts: ticked, unticked and ticked again from the
+    /// menu bar, the second tick reports too.
     private func isReported(_ action: CompletionUndoAction, _ change: CompletionUndoChange) -> Bool {
         let roots = Set([change.rootTaskID] + change.additionalRootTaskIDs)
         let window = style.dwell + 5 + Double(roots.count) * style.ms(75) / 1000
         let since = action.createdAt.addingTimeInterval(-window)
         // Newest first, so only the recent entries are read.
         return log.lazy.prefix { $0.at >= since }.contains { entry in
-            guard let id = entry.taskID, roots.contains(id) else { return false }
+            guard let id = entry.taskID, roots.contains(id), !outsideCompletionBatches.contains(entry.batch) else { return false }
             return action.isReopening ? entry.icon == "arrow.uturn.backward" : entry.tone == .green
         }
     }
@@ -380,6 +383,20 @@ extension Workbench {
         NSPasteboard.general.setString(task.text, forType: .string)
     }
 
+    /// The task menu's Copy Content and Subtasks: the task with everything
+    /// under it, notes, formatting and files included, which Paste in an empty
+    /// list document line puts back as lines; elsewhere it pastes as Markdown.
+    func copyContent(_ id: UUID) {
+        document?.commitLine()
+        guard let task = store.block(id: id) else { return }
+        do {
+            try FragmentClipboard.copy([id], store: store)
+            showTray("Copied \(describe([task])) with its subtasks", icon: "list.bullet.clipboard")
+        } catch {
+            showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
+        }
+    }
+
     // MARK: Trash
 
     /// `ids`' tasks, each followed by the tasks nested under it in document
@@ -512,24 +529,28 @@ extension Workbench {
         if navigator.route == .label(label.id) { navigator.replace(with: .tasks) }
         guard let deleted = store.deleteLabel(label) else { return }
         let taken = LabelDeletion(deleted)
-        registerUndo(text, undo: { workbench in
-            if let id = workbench.store.restoreDeletedLabel(taken.deleted) { taken.labelID = id }
+        snap(text, icon: "tag.slash", tone: .red, ids: Array(deleted.positions.keys), undo: { workbench in
+            guard let id = workbench.store.restoreDeletedLabel(taken.deleted) else { return false }
+            taken.labelID = id
+            return true
         }, redo: { workbench in
-            guard let label = workbench.store.label(id: taken.labelID) else { return }
+            // Deleted again meanwhile, it's gone already.
+            guard let label = workbench.store.label(id: taken.labelID) else { return true }
             if workbench.navigator.route == .label(label.id) { workbench.navigator.replace(with: .tasks) }
-            if let deleted = workbench.store.deleteLabel(label) { taken.deleted = deleted }
+            guard let deleted = workbench.store.deleteLabel(label) else { return false }
+            taken.deleted = deleted
+            return true
         })
-        snap(text, icon: "tag.slash", tone: .red, ids: Array(deleted.positions.keys))
     }
 
     /// Settings' Merge labels as one change, with Undo in the tray and on ⌘Z
-    /// rather than in a notice of its own. Redo merges again from the labels
-    /// as they are by then.
+    /// rather than in a notice of its own, taken in turn with the window's
+    /// other changes. Redo merges again from the labels as they are by then.
     func mergeLabels(_ plan: LabelMergePlan) throws {
         try store.mergeLabels(plan)
         let text = "Merged #\(plan.source.name) into #\(plan.destination.name)"
         let merged = LabelMerge(plan)
-        registerUndo(text, undo: { workbench in
+        snap(text, icon: "arrow.triangle.merge", tone: .accent, ids: [], undo: { workbench in
             workbench.store.undoLabelMerge(merged.plan)
         }, redo: { workbench in
             let store = workbench.store
@@ -537,11 +558,12 @@ extension Workbench {
                 let plan = try store.labelMergePlan(sourceID: merged.plan.source.id, destinationID: merged.plan.destination.id)
                 try store.mergeLabels(plan)
                 merged.plan = plan
+                return true
             } catch {
                 store.labelMaintenanceError = "The labels were not merged again. \(error.localizedDescription)"
+                return false
             }
         })
-        snap(text, icon: "arrow.triangle.merge", tone: .accent, ids: [])
     }
 
     /// The hours Plan and Start working use for a list's tasks.

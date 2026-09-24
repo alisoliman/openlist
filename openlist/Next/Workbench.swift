@@ -229,6 +229,9 @@ final class Workbench {
     /// Where the Store's completion Undo goes while a completion batch writes;
     /// nil sends it to the window.
     @ObservationIgnored private(set) var completionUndoTarget: UndoManager?
+    /// The log batches that report completions made outside Next's rows,
+    /// which never stand for one of Next's own saved late.
+    @ObservationIgnored var outsideCompletionBatches: Set<Int> = []
     @ObservationIgnored weak var undoManager: UndoManager? {
         didSet { if oldValue !== undoManager { observeUndo() } }
     }
@@ -442,6 +445,16 @@ final class Workbench {
         showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
     }
 
+    /// Records and announces a change whose Undo or Redo can fail, like a
+    /// label's, with the change and its log half in one window entry. `undo`
+    /// and `redo` say whether they did what they were to; see the `attach`
+    /// that takes them.
+    func snap(_ label: String, icon: String, tone: TrayTone, ids: [UUID], destination: TrayDestination? = nil,
+              undo: @escaping @MainActor (Workbench) -> Bool, redo: @escaping @MainActor (Workbench) -> Bool) {
+        attach(record(label, icon: icon, tone: tone, ids: ids), restores: false, undo: undo, redo: redo)
+        showTray(label, icon: icon, tone: tone, undoable: true, destination: destination)
+    }
+
     /// Logs an edit the list document has just put on the undo stack, in the
     /// same step, so it shows in Changes and names the toolbar's Undo. As in
     /// the design, an edit shows no tray.
@@ -525,6 +538,32 @@ final class Workbench {
                 guard let self else { return }
                 if restores { self.relog(mark) } else { self.unlog(mark) }
                 self.attach(mark, restores: !restores)
+            }
+        }
+        undoManager.setActionName(mark.label)
+    }
+
+    /// The window entry of a change whose Undo or Redo can fail. A step that
+    /// did its part moves the batch in or out of the log as `attach` does. One
+    /// that failed changed nothing, so the log stays as it was and the tray
+    /// says so in place of "Undid", while the Store's notice says why. It
+    /// registers nothing, so the entry leaves the stack rather than stay on
+    /// top of everything under it.
+    private func attach(_ mark: LogMark, restores: Bool, undo: @escaping @MainActor (Workbench) -> Bool,
+                        redo: @escaping @MainActor (Workbench) -> Bool) {
+        guard let undoManager else { return }
+        // The manager holds its target weakly; the handler keeps the mark alive.
+        undoManager.registerUndo(withTarget: mark) { [weak self, mark] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard restores ? redo(self) : undo(self) else {
+                    self.showTray("Could not \(restores ? "redo" : "undo") — \(mark.label)",
+                                  icon: "exclamationmark.triangle", tone: .red)
+                    self.undoRevision += 1
+                    return
+                }
+                if restores { self.relog(mark) } else { self.unlog(mark) }
+                self.attach(mark, restores: !restores, undo: undo, redo: redo)
             }
         }
         undoManager.setActionName(mark.label)
@@ -933,7 +972,15 @@ final class Workbench {
         guard moveToTrash(list) else { return false }
         let mark = record(label, icon: "trash", tone: .red, ids: [id])
         mark.trashedListID = id
-        attach(listTrash: mark, id: id, restores: false)
+        // The handlers keep the id, never the model.
+        attach(mark, restores: false, undo: { workbench in
+            // Restored from Trash by hand meanwhile, it's back already.
+            !workbench.store.isInTrash(id) || workbench.store.restoreTrash(ids: [id])
+        }, redo: { workbench in
+            // Out of the library, it's in Trash already or erased.
+            guard let list = workbench.store.list(id: id) else { return true }
+            return workbench.moveToTrash(list)
+        })
         trashUndos.add(mark)
         showTray(label, icon: "trash", tone: .red, undoable: true,
                  destination: TrayDestination(label: "Open Trash", route: .trash))
@@ -941,35 +988,18 @@ final class Workbench {
     }
 
     /// Trashes the list through the Store, leaving its page, or a nested
-    /// list's, for Today as it goes.
+    /// list's, for Today as it goes. As the design's trash does, its tasks
+    /// leave the inspector, the focus and the selection with it.
     private func moveToTrash(_ list: TaskList) -> Bool {
-        let owned = Set(store.listHierarchy().subtree(of: list.id).map(\.id))
-        let wasOpen = navigator.route.listID.map(owned.contains) == true
+        let owned = store.listHierarchy().subtree(of: list.id).map(\.id)
+        let wasOpen = navigator.route.listID.map(Set(owned).contains) == true
+        let blockIDs = Set(owned.flatMap { store.blocks(inList: $0).map(\.id) })
         guard store.trashList(list) else { return false }
         if wasOpen { navigator.replace(with: .today) }
+        if let open = navigator.openTaskID, blockIDs.contains(open) { navigator.closeTask() }
+        if let focusID, blockIDs.contains(focusID) { self.focusID = nil }
+        selection.subtract(blockIDs)
         return true
-    }
-
-    /// The list trash's one window entry. Undo restores its Trash entry,
-    /// Redo moves it to Trash again; the handler keeps the id, never the model.
-    private func attach(listTrash mark: LogMark, id: UUID, restores: Bool) {
-        guard let undoManager else { return }
-        // The manager holds its target weakly; the handler keeps the mark alive.
-        undoManager.registerUndo(withTarget: mark) { [weak self, mark] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if restores {
-                    if let list = self.store.list(id: id) { _ = self.moveToTrash(list) }
-                    self.relog(mark)
-                } else {
-                    // Restored from Trash by hand meanwhile, it's back already.
-                    if self.store.isInTrash(id) { self.store.restoreTrash(ids: [id]) }
-                    self.unlog(mark)
-                }
-                self.attach(listTrash: mark, id: id, restores: !restores)
-            }
-        }
-        undoManager.setActionName(mark.label)
     }
 
     /// Logs a task's restore from Trash with its one window entry: Undo moves

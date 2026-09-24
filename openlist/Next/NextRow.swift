@@ -684,6 +684,7 @@ struct NXTaskMenu: View {
             Button("Start Working", systemImage: "play") { workbench.startWork(ids[0]) }
             CopyItemLinkButton(target: .task(ids[0]))
             Button("Copy Text", systemImage: "doc.on.clipboard") { workbench.copyText(ids[0]) }
+            Button("Copy Content and Subtasks", systemImage: "list.bullet.clipboard") { workbench.copyContent(ids[0]) }
             Divider()
             Button("Duplicate", systemImage: "plus.square.on.square") { workbench.duplicate(ids[0]) }
             Button("Use as Template…", systemImage: "doc.on.doc") {

@@ -62,6 +62,8 @@ final class Store {
     var trashNotice: String?
     @ObservationIgnored var permanentlyErasedBlockIDs: Set<UUID> = []
     @ObservationIgnored var trashMediaRollbacks: [() -> Void] = []
+    /// The latest merge, which ``undoLabelMerge(_:)`` takes back when given
+    /// no plan. The window's Undo holds its own merge's plan instead.
     var labelMergeUndo: LabelMergePlan?
     var labelMaintenanceError: String?
     var labelRevision = 0

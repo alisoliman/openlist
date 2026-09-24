@@ -82,13 +82,13 @@ struct ContentRevealNote: View {
             .textSelection(.enabled)
     }
 
-    /// The match as the design's search marks it: the accent on its faint tint.
+    /// The match as the design's search marks it: the accent on its faint
+    /// tint, in the note's own weight.
     private func highlighted(_ excerpt: String) -> AttributedString {
         var value = AttributedString(excerpt)
         if let range = value.range(of: query, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) {
             value[range].foregroundColor = style.accent
             value[range].backgroundColor = style.accent.opacity(0.15)
-            value[range].inlinePresentationIntent = .stronglyEmphasized
         }
         return value
     }

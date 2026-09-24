@@ -113,7 +113,9 @@ private struct NextMain: View {
         ZStack(alignment: .topLeading) {
             VStack(spacing: 0) {
                 NextToolbar(crumb: crumb)
+                // Clear of the inspector, which would cover their buttons.
                 NextNotices()
+                    .padding(.trailing, inspected == nil ? 0 : 360)
                 NextRoutedScreen()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .clipped()
@@ -150,7 +152,8 @@ private struct NextMain: View {
             let section = library.sectionTitle(for: list)
             return section.isEmpty ? list.displayTitle : "\(section) › \(list.displayTitle)"
         case let .label(id):
-            return "Labels › #\(library.label(id)?.name ?? "")"
+            guard let label = library.label(id) else { return "Labels" }
+            return "Labels › #\(label.name)"
         case .inbox: return "Inbox"
         case .today: return "Today"
         case .calendar: return "Calendar"
