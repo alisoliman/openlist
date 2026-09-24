@@ -3,18 +3,39 @@ import SwiftUI
 struct WorkMovePicker: View {
     let block: PlannedBlock
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     @Environment(\.dismiss) private var dismiss
     @State private var date = Date.now
     @State private var changes: [WorkPlanChange] = []
     @State private var feedback: String?
 
+    private var calendar: Calendar { env.settings.calendar }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Move planned work").font(.system(size: 13, weight: .semibold)).foregroundStyle(NX.ink)
-            Text(env.store.block(id: block.taskID)?.displayTitle ?? "Task")
-                .font(.system(size: 15, weight: .semibold)).foregroundStyle(NX.ink)
-            DatePicker("Start", selection: $date, in: Date.now...)
-                .font(.system(size: 12.5))
+            VStack(alignment: .leading, spacing: 6) {
+                NXPanelTitle("Move planned work")
+                Text(env.store.block(id: block.taskID)?.displayTitle ?? "Task")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(NX.ink(0.55))
+                    .lineLimit(2)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                NXCapsTitle(text: "Start")
+                // Never before now, as the work can't start in the past.
+                CalendarMonthPicker(selection: date, calendar: calendar, earliest: .now) { day in
+                    date = CalendarMonthGrid.date(day, atMinute: CalendarMonthGrid.minute(of: date, calendar: calendar),
+                                                  notBefore: .now, calendar: calendar)
+                }
+                HStack(spacing: 8) {
+                    Text("At")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(NX.ink(0.6))
+                    NXTimePill(label: "Start time", minute: CalendarMonthGrid.minute(of: date, calendar: calendar)) { minute in
+                        date = CalendarMonthGrid.date(date, atMinute: minute, notBefore: .now, calendar: calendar)
+                    }
+                }
+            }
             Text("This changes your preferred work time, not your deadline.")
                 .font(.system(size: 12)).foregroundStyle(NX.ink(0.5))
             if !changes.isEmpty {
@@ -24,13 +45,17 @@ struct WorkMovePicker: View {
             }
             if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(NX.ink(0.72)) }
             HStack(spacing: 8) {
-                NXWorkButton("Cancel") { dismiss() }
-                Spacer(minLength: 8)
-                NXWorkButton(changes.isEmpty ? "Move" : "Move and update plan", prominent: true, action: confirm)
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+                Button(changes.isEmpty ? "Move" : "Move and update plan", action: confirm)
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(NXPanelButtonStyle(kind: .primary))
             }
         }
-        .padding(20).frame(width: 400)
-        .background(NX.card)
+        .padding(24).frame(width: 400)
+        .presentationBackground(NX.card)
+        .tint(style.accent)
         .onAppear { date = max(.now, block.start); refresh() }
         .onChange(of: date) { _, _ in refresh() }
     }

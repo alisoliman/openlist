@@ -3,7 +3,8 @@ import SwiftData
 import SwiftUI
 import UserNotifications
 
-/// Reminder time editor, offering offsets relative to the due date.
+/// Reminder time editor, offering offsets relative to the due date. Each
+/// change goes through the workbench: one Undo step, with its tray.
 struct ReminderPicker: View {
     let block: Block
 
@@ -11,6 +12,9 @@ struct ReminderPicker: View {
     @Environment(\.nextStyle) private var style
 
     @State private var customDate: Date = .now
+    @State private var picksDay = false
+
+    private var calendar: Calendar { env.settings.calendar }
 
     var body: some View {
         // SwiftUI may update this child after a saved deletion, before its
@@ -31,7 +35,7 @@ struct ReminderPicker: View {
                 Spacer(minLength: 6)
                 if block.reminderAt != nil {
                     Button("Remove reminder") {
-                        env.store.setReminder(nil, for: block)
+                        env.workbench.setReminder(block.id, at: nil)
                     }
                     .buttonStyle(NXPanelButtonStyle(kind: .destructive, size: .small))
                 }
@@ -55,26 +59,36 @@ struct ReminderPicker: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 NXCapsTitle(text: "Remind me at")
-                HStack(spacing: 8) {
-                    DatePicker("Remind me at", selection: $customDate)
-                        .labelsHidden()
-                        .datePickerStyle(.compact)
+                HStack(spacing: 6) {
+                    NXDatePill(label: "Reminder day", date: customDate, isOpen: picksDay) {
+                        withAnimation(style.ease(180)) { picksDay.toggle() }
+                    }
+                    NXTimePill(label: "Reminder time", minute: CalendarMonthGrid.minute(of: customDate, calendar: calendar)) { minute in
+                        customDate = CalendarMonthGrid.date(customDate, atMinute: minute, calendar: calendar)
+                    }
                     Spacer(minLength: 6)
                     Button("Set reminder") {
-                        env.store.setReminder(customDate, for: block)
+                        env.workbench.setReminder(block.id, at: customDate)
                     }
                     .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
+                }
+                if picksDay {
+                    CalendarMonthPicker(selection: customDate, calendar: calendar) { day in
+                        customDate = CalendarMonthGrid.date(day, atMinute: CalendarMonthGrid.minute(of: customDate, calendar: calendar),
+                                                            calendar: calendar)
+                        withAnimation(style.ease(180)) { picksDay = false }
+                    }
+                    .transition(.opacity)
                 }
             }
 
             TaskReminderStatus(block: block)
         }
         .onChange(of: block.reminderAt) { _, date in
-            customDate = date ?? block.dueDate ?? .now
+            customDate = date ?? offsetDate(minutes: 0) ?? .now
         }
         .onAppear {
-            customDate = block.reminderAt ?? block.dueDate ?? .now
-
+            customDate = block.reminderAt ?? offsetDate(minutes: 0) ?? .now
         }
     }
 
@@ -92,7 +106,7 @@ struct ReminderPicker: View {
         let isOn = date.flatMap { date in block.reminderAt.map { abs($0.timeIntervalSince(date)) < 1 } } ?? false
         return NXInspectorPill(isOn: isOn) {
             guard let date = offsetDate(minutes: minutes) else { return }
-            env.store.setReminder(date, for: block)
+            env.workbench.setReminder(block.id, at: date)
         } label: {
             Text(title)
         }

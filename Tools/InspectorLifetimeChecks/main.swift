@@ -298,4 +298,41 @@ for paste in [false, true] {
     check(!fixture.edits.consume(for: block), "A later Open Details action cannot reparse committed capture")
     window.contentView = nil
 }
+
+// The inspector's title, note and a label made in its picker go through the
+// workbench as editor edits: Undo puts back only what the edit changed, and a
+// label the edit made leaves with it and comes back, the same one, on Redo.
+do {
+    let undo = UndoManager()
+    undo.groupsByEvent = false
+    func edit(_ name: String, labels: Bool = false, _ body: () -> Void) {
+        undo.beginUndoGrouping()
+        store.undoableEditorEdit(in: list.id, name: name, undoManager: undo, includingNewLabels: labels, body)
+        undo.endUndoGrouping()
+    }
+    let task = store.appendBlock(kind: .task, text: "Book flights", to: .init(listID: list.id))
+    store.save()
+    edit("Edited “Book trains”") { store.setText("Book trains", for: task) }
+    // A popover schedules it meanwhile.
+    store.setDueDate(.now, for: task)
+    undo.undo()
+    check(store.block(id: task.id)?.text == "Book flights", "Undoing an inspector title edit puts the title back")
+    check(store.block(id: task.id)?.dueDate != nil, "Undoing an inspector title edit leaves a date set since")
+    edit("Edited note on “Book flights”") { store.setNote("Window seat", for: task) }
+    store.setPriority(.high, for: task)
+    undo.undo()
+    check(store.block(id: task.id)?.note == "", "Undoing an inspector note edit puts the note back")
+    check(store.block(id: task.id)?.priority == .high, "Undoing an inspector note edit leaves a priority set since")
+    edit("Added #travel · “Book flights”", labels: true) {
+        if let label = store.findOrCreateLabel(named: "travel") { store.addLabel(label, to: task) }
+    }
+    let created = store.matchingLabels(named: "travel").first
+    check(created.map { store.block(id: task.id)?.labelIDs.contains($0.id) == true } == true, "The picker's new label is on the task")
+    undo.undo()
+    check(store.matchingLabels(named: "travel").isEmpty, "Undo takes back the label the picker made")
+    check(store.block(id: task.id)?.labelIDs.isEmpty == true, "Undo takes the new label off the task")
+    undo.redo()
+    check(store.matchingLabels(named: "travel").first?.id == created?.id, "Redo brings back the same label")
+    check(created.map { store.block(id: task.id)?.labelIDs == [$0.id] } == true, "Redo puts the label back on the task")
+}
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

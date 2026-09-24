@@ -5,6 +5,7 @@
 
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A task's ancestors in its list document, nearest first, looked up again
 /// only when the chain changes, so typing in the task doesn't fetch them on
@@ -53,6 +54,9 @@ struct NextInspector: View {
     @State private var titleSelection: TextSelection?
     @State private var noteSelection: TextSelection?
     @State private var lineage = NXLineage()
+    /// "Add a note" opened the note, which shows while it has focus or text.
+    @State private var addingNote = false
+    @State private var dropTargeted = false
     @FocusState private var focus: Field?
 
     enum Field { case title, note }
@@ -103,18 +107,21 @@ struct NextInspector: View {
                             .id(ContentReveal.Anchor.taskTitle(task.id))
                         properties(list: list)
                         TaskReminderStatus(block: task, attentionOnly: true)
-                        // As the design: not for the Inbox's tasks, nor two levels down.
-                        if !library.isInbox(task), ancestors.count < OutlinePolicy.maximumDepth {
-                            NXInspectorSubtasks(task: task)
+                        // As the design: not two levels down.
+                        if ancestors.count < OutlinePolicy.maximumDepth {
+                            NXInspectorSubtasks(task: task, showsEmpty: offersSubtasks)
                                 .id(task.id)
                         }
                         planCard
-                        VStack(alignment: .leading, spacing: 8) {
-                            noteBox
-                                .id(ContentReveal.Anchor.taskNote(task.id))
-                            TaskNoteLinks(note: task.note)
+                        // As the design, the note shows only when there is one.
+                        if showsNote {
+                            VStack(alignment: .leading, spacing: 8) {
+                                noteBox
+                                    .id(ContentReveal.Anchor.taskNote(task.id))
+                                TaskNoteLinks(note: task.note)
+                            }
                         }
-                        NXInspectorFiles(task: task)
+                        NXInspectorFiles(task: task, addsNote: noteAction)
                         activity
                     }
                     .padding(.top, 16)
@@ -122,6 +129,19 @@ struct NextInspector: View {
                     .padding(.bottom, 20)
                 }
                 .scrollIndicators(.automatic)
+                // Files dropped anywhere on the panel are kept with the task.
+                .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+                    NXTaskFiles(store: env.store).drop(providers, on: task.id)
+                }
+                .overlay {
+                    if dropTargeted {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(style.accent.opacity(0.5), lineWidth: 1)
+                            .background(style.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .padding(6)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .task(id: readyRevealID) {
                     guard readyRevealID != nil, let reveal else { return }
                     await Task.yield()
@@ -189,11 +209,14 @@ struct NextInspector: View {
             if picker?.taskID != task.id { picker = nil }
             load()
         }
-        .onChange(of: task.text) { _, _ in title.receive(task.displayTitle) }
+        .onChange(of: task.text) { _, _ in title.receive(Self.title(of: task)) }
         .onChange(of: task.note) { _, _ in note.receive(task.note) }
         .onChange(of: focus) { old, _ in
             if old == .title { commitTitle() }
-            if old == .note { commitNote() }
+            if old == .note {
+                commitNote()
+                addingNote = false
+            }
         }
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
         .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
@@ -206,12 +229,27 @@ struct NextInspector: View {
         }
     }
 
+    /// Whether Subtasks shows before the task has any. The design's Inbox has
+    /// no document, so its tasks get none; here they nest in the Inbox's
+    /// document, so they do while the Inbox shows as one.
+    private var offersSubtasks: Bool {
+        guard library.isInbox(task) else { return true }
+        return env.navigator.inboxListID.map { env.navigator.listViewMode(for: $0) == .document } ?? false
+    }
+
     private func load() {
         draftID = task.id
-        title.reset(to: task.displayTitle)
+        title.reset(to: Self.title(of: task))
         note.reset(to: task.note)
         titleSelection = nil
         noteSelection = nil
+        addingNote = false
+    }
+
+    /// The title as written, so an untitled task shows the field's placeholder, as
+    /// the design shows its text, rather than the "Untitled" it goes by elsewhere.
+    private static func title(of task: Block) -> String {
+        task.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The task the drafts were loaded from. Unlike `store.block(id:)` this
@@ -225,20 +263,21 @@ struct NextInspector: View {
         return block
     }
 
-    /// Writes only what the user typed, to the task the draft was loaded from.
+    /// Writes only what the user typed, to the task the draft was loaded
+    /// from, as one Undo step with a Changes entry.
     private func commitTitle() {
         guard let target = draftTarget else { return }
         if let edited = title.editedValue(normalize: { $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
-           !edited.isEmpty, edited != target.displayTitle {
-            env.store.setText(edited, for: target)
+           !edited.isEmpty, edited != Self.title(of: target) {
+            workbench.setTitle(edited, of: target)
         }
-        title.reset(to: target.displayTitle)
+        title.reset(to: Self.title(of: target))
     }
 
     private func commitNote() {
         guard let target = draftTarget else { return }
         if let edited = note.editedValue(normalize: { $0 }), edited != target.note {
-            env.store.setNote(edited, for: target)
+            workbench.setNote(edited, of: target)
         }
         note.reset(to: target.note)
     }
@@ -305,12 +344,16 @@ struct NextInspector: View {
                         .padding(.bottom, 2)
                     NXFlow(spacing: 4) {
                         ForEach(library.lists, id: \.id) { option in
-                            NXInspectorPill(isOn: option.id == task.listID, padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7)) {
-                                if option.id != task.listID { workbench.move([task.id], to: option.id, quiet: true) }
+                            let current = option.id == task.listID
+                            NXInspectorPill(isOn: current, padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7)) {
+                                if !current { workbench.move([task.id], to: option.id, quiet: true) }
                             } label: {
                                 NXListGlyph(list: option, size: 13)
                             }
                             .help(option.displayTitle)
+                            // Named, not read as its emoji.
+                            .accessibilityLabel(current ? option.displayTitle : "Move to \(option.displayTitle)")
+                            .accessibilityAddTraits(current ? .isSelected : [])
                         }
                     }
                 }
@@ -510,7 +553,7 @@ struct NextInspector: View {
             HStack(spacing: 8) {
                 Text("Estimate").font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.5))
                 Spacer(minLength: 6)
-                NXStepButton(icon: "minus") { workbench.setEstimate(task.id, delta: -5) }
+                NXStepButton(icon: "minus", label: "Shorter estimate") { workbench.setEstimate(task.id, delta: -5) }
                 // Like the design's 44pt cell, a wider value overflows it evenly.
                 Text("\(estimate) min")
                     .font(.system(size: 12, weight: .semibold))
@@ -519,7 +562,7 @@ struct NextInspector: View {
                     .contentTransition(.numericText())
                     .fixedSize()
                     .frame(width: 44)
-                NXStepButton(icon: "plus") { workbench.setEstimate(task.id, delta: 5) }
+                NXStepButton(icon: "plus", label: "Longer estimate") { workbench.setEstimate(task.id, delta: 5) }
             }
             .padding(.top, 11)
             Text(slotText)
@@ -552,6 +595,16 @@ struct NextInspector: View {
 
     // MARK: Note & activity
 
+    /// A note, or one being written or revealed; else "Add a note" stands in.
+    private var showsNote: Bool {
+        !note.value.isEmpty || !task.note.isEmpty || addingNote || focus == .note || reveal?.field == .note
+    }
+
+    /// What "Add a note" does while it stands in for the note.
+    private var noteAction: (() -> Void)? {
+        showsNote ? nil : { addingNote = true }
+    }
+
     private var noteBox: some View {
         TextField("Add a note", text: $note.value, selection: $noteSelection, axis: .vertical)
             .textFieldStyle(.plain)
@@ -561,6 +614,10 @@ struct NextInspector: View {
             .foregroundStyle(NX.ink(0.7))
             .focused($focus, equals: .note)
             .onExitCommand { focus = nil }
+            .onAppear {
+                // Opened by "Add a note": once the field is on screen, or the focus can miss it.
+                if addingNote { DispatchQueue.main.async { focus = .note } }
+            }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))

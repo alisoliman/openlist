@@ -2,10 +2,15 @@ import SwiftData
 import SwiftUI
 
 /// One scheduling surface; switching sections never dismisses the popover or
-/// commits an untouched control. Edits use the existing store semantics.
+/// commits an untouched control. Edits go through the workbench, as the
+/// inspector's pills do. Like the design's cards, it fits what it shows, up
+/// to a height past which the section scrolls.
 struct TaskSchedulePicker: View {
     let block: Block
     @State private var section: DetailPicker
+    /// The section's height as last laid out; nil until it first is.
+    @State private var contentHeight: CGFloat?
+    private static let maximumHeight: CGFloat = 510
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.dismiss) private var dismiss
@@ -60,9 +65,15 @@ struct TaskSchedulePicker: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 2)
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { height in
+                    // The first height lands as it is; a new section, or one
+                    // that grows or shrinks, eases to its own.
+                    if contentHeight == nil { contentHeight = height }
+                    else { withAnimation(style.ease(200)) { contentHeight = height } }
+                }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: 510)
+            .frame(height: min(contentHeight ?? Self.maximumHeight, Self.maximumHeight))
         }
         .padding(16)
         .frame(width: 350)

@@ -1,7 +1,8 @@
 import SwiftData
 import SwiftUI
 
-/// Repeat-rule editor.
+/// Repeat-rule editor. Each change goes through the workbench: one Undo
+/// step, with its tray.
 struct RecurrencePicker: View {
     let block: Block
 
@@ -16,6 +17,7 @@ struct RecurrencePicker: View {
     @State private var ending: Ending = .never
     @State private var endDate: Date = .now
     @State private var occurrenceLimit = 10
+    @State private var picksEndDay = false
 
     /// How a repeat series stops. The model and engine already honour both an
     /// end date and an occurrence count; this is the missing way to set them.
@@ -138,9 +140,16 @@ struct RecurrencePicker: View {
             case .never:
                 EmptyView()
             case .onDate:
-                DatePicker("Repeat end date", selection: editing($endDate), displayedComponents: .date)
-                    .labelsHidden()
-                    .fixedSize()
+                NXDatePill(label: "Repeat end date", date: endDate, isOpen: picksEndDay) {
+                    withAnimation(style.ease(180)) { picksEndDay.toggle() }
+                }
+                if picksEndDay {
+                    CalendarMonthPicker(selection: endDate, calendar: env.settings.calendar) { day in
+                        editing($endDate).wrappedValue = day
+                        withAnimation(style.ease(180)) { picksEndDay = false }
+                    }
+                    .transition(.opacity)
+                }
             case .afterCount:
                 NXRepeatStepper(label: "Occurrences", value: editing($occurrenceLimit), range: 1...365,
                                 spoken: occurrenceLimit == 1 ? "1 time" : "\(occurrenceLimit) times") {
@@ -162,7 +171,7 @@ struct RecurrencePicker: View {
 
     private func presetPill(_ title: String, rule: Recurrence) -> some View {
         pill(title, isOn: block.recurrence?.displayText == rule.displayText) {
-            env.store.setRecurrence(rule, for: block)
+            env.workbench.setRecurrence(block.id, rule)
             load()
         }
     }
@@ -212,7 +221,7 @@ struct RecurrencePicker: View {
     private var enabledBinding: Binding<Bool> {
         Binding(get: { isEnabled }, set: { enabled in
             isEnabled = enabled
-            if enabled { apply() } else { env.store.setRecurrence(nil, for: block) }
+            if enabled { apply() } else { env.workbench.setRecurrence(block.id, nil) }
         })
     }
 
@@ -245,7 +254,7 @@ struct RecurrencePicker: View {
             rule.endDate = nil
             rule.occurrenceLimit = occurrenceLimit
         }
-        env.store.setRecurrence(rule, for: block)
+        env.workbench.setRecurrence(block.id, rule)
     }
 }
 
@@ -284,7 +293,8 @@ private struct NXRepeatStepper<Value: View>: View {
     }
 
     private func step(_ icon: String, by amount: Int) -> some View {
-        NXStepButton(icon: icon) { change(by: amount) }
+        // The stepper speaks as one control; these names are for completeness.
+        NXStepButton(icon: icon, label: amount < 0 ? "Fewer" : "More") { change(by: amount) }
             .disabled(!range.contains(value + amount))
             .opacity(range.contains(value + amount) ? 1 : 0.45)
     }
