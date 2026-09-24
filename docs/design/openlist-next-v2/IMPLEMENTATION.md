@@ -307,10 +307,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the editor's search words bring kinds up too, so `/h1`, `/todo` or `/hr` find Heading,
   Task or Divider, and a query can list a kind whose label doesn't hold it. Only the
   design's prefixes (`# `, `## `, `- `, `* `, `[ ] `, `[] `, `> `) convert a line, as it's
-  typed or as a paste at its start leaves it starting with one (so a pasted `- [ ] Buy yen`
-  makes a list item, as the design's `-` comes first), and only the design's five show one
-  in the card; the editor's inline `**bold**`, `_italic_`, `~~strike~~` and `` `code` ``
-  rules still style it, as the Format menu does. A right-click in the line being written
+  typed or as a paste or drop at its start leaves it starting with one (so a pasted
+  `- [ ] Buy yen` makes a list item, as only `- ` matches at its start in the design's
+  anchored pattern; text dragged within the line itself stays as dropped, where AppKit
+  moves it), and only the design's five show one in the card; the editor's inline
+  `**bold**`, `_italic_`, `~~strike~~` and `` `code` `` rules still style it, as the
+  Format menu does. A right-click in the line being written
   offers the Format menu's styles in place of AppKit's Font and Layout Orientation menus,
   whose fonts, underline, colours and sizes the document doesn't keep.
   ⇧↩ types a soft break only in a code line, and a code line keeps its indent where the
@@ -319,8 +321,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   drop into the line, each break it brings becomes a space, and Openlist content goes in
   as the text of its lines, a space between them. Native extras, with nothing selected:
   Openlist content goes in whole after the line (or as far out as its levels need), and
-  several lines of text become lines of their own after it (filling it while it's empty),
-  read as Markdown, so `- [ ] ` there makes a task, under the document's rules: `> ` makes
+  several lines of text, or Openlist content's Markdown under Paste and Match Style even as
+  one line, become lines of their own after it (filling it while it's empty), read as
+  Markdown, so `- [ ] ` there makes a task, under the document's rules: `> ` makes
   text, or right under a pasted task that task's note; a line nests under the line it was
   pasted under only when both are tasks or list items, two levels deep at most, and
   otherwise goes beside it, stepping out after the lines already under it, so a heading or

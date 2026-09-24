@@ -159,20 +159,25 @@ subtree, including hidden/completed descendants, notes, supported inline formatt
 images, and files. Other apps receive it as readable Markdown, with images/files
 described by name, without private local file URLs.
 
-⌘V in a line of a list document inserts the internal content after that line;
-over selected text it pastes the text of the content's lines, a space between them,
-and in other apps it pastes as Markdown. A list document's lines hold one line each,
-so a paste over selected text puts a space for each line break it brings; a code line
-keeps them. Ordinary ⌘C still copies the selected text.
+⌘V in a line of a list document inserts the internal content after that line, or,
+when what it holds can't go there, beside a line that line is under, after the lines
+under it; over selected text it pastes the text of the content's lines, a space
+between them, and in other apps it pastes as Markdown. With nothing selected, Paste
+and Match Style (⌥⇧⌘V) puts the content's Markdown in as lines of their own, as
+pasted Markdown goes in. A list document's lines hold one line each, so a paste over
+selected text puts a space for each line break it brings; a code line keeps them.
+Ordinary ⌘C still copies the selected text.
 The insertion has fresh IDs and independent media, and is one editor Undo/Redo
 operation. Pasted into a new empty line, such as one just opened with Return, the
-content takes that line's place; a line that was already empty is kept. Completed
+content takes that line's place when it fits there; otherwise it goes in where it
+fits and the empty line goes. A line that was already empty is kept. Completed
 content remains completed and follows the destination's visibility/sort settings.
 
-Content paste keeps text, formatting, links, notes, hierarchy, completion/date,
-collapse, stars, priority, estimates, and planning preferences. **Dates, reminders,
-repeating rules, selected day, and deferral are cleared.** Repeat progress,
-occurrence IDs, calendar placements, work sessions, and prior history never transfer.
+Content paste keeps text, formatting, links, notes, hierarchy (within the list
+document's two levels), completion/date, collapse, stars, priority, estimates, and
+planning preferences. **Dates, reminders, repeating rules, selected day, and
+deferral are cleared.** Repeat progress, occurrence IDs, calendar placements, work
+sessions, and prior history never transfer.
 Every pasted task gets a fresh Created event; Undo/Redo records Deleted/Restored.
 Links retain their original destinations rather than being rewritten to the new IDs.
 

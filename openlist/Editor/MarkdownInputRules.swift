@@ -34,8 +34,8 @@ enum MarkdownInputRules {
     ///
     /// Two guards matter. The caret must sit immediately after the prefix, so
     /// typing further along a line that starts with "- " converts nothing (a
-    /// paste is `matchPastedPrefix`'s). And the change must have been an
-    /// insertion — otherwise backspacing the "x" out of `# xSection` would
+    /// paste or drop is `matchPastedPrefix`'s). And the change must have been
+    /// an insertion — otherwise backspacing the "x" out of `# xSection` would
     /// leave `# Section`, match the heading rule, and turn a line the user
     /// was editing into a heading.
     static func matchBlockPrefix(
@@ -59,10 +59,11 @@ enum MarkdownInputRules {
         return nil
     }
 
-    /// The design's prefix a paste at the start of a block left it starting
-    /// with, as the design's change converts a pasted `# Packing` into a
-    /// heading "Packing". `- [ ] ` is a list item's prefix there, as `- `
-    /// comes first. A code block keeps what's pasted.
+    /// The design's prefix a paste or drop at the start of a block left it
+    /// starting with, as the design's change converts a pasted `# Packing`
+    /// into a heading "Packing". `- [ ] ` reads as a list item there, as only
+    /// `- ` matches at its start, as in the design's anchored pattern. A code
+    /// block keeps what's pasted.
     static func matchPastedPrefix(in storage: NSTextStorage, kind: BlockKind) -> BlockPrefixMatch? {
         guard kind != .code else { return nil }
         let text = storage.string as NSString

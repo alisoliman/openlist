@@ -758,20 +758,19 @@ final class BlockNSTextView: NSTextView {
     ///
     /// With nothing selected, Openlist content goes in after the line, whole,
     /// and several lines of text become lines of their own, after this one
-    /// or filling it while it's empty. Over a selection, Openlist content
-    /// goes in as the text of its lines, a space between them. Anything else
-    /// is AppKit's paste, styled text included, with each line break it
-    /// brings made a space, as the design's single-line inputs take a paste,
-    /// and one at the start of the line that leaves it starting with one of
-    /// the design's prefixes converts it, as the design's change does. A
-    /// code line, one of the editor's own kinds, keeps the breaks and prefixes.
+    /// or filling it while it's empty, as Openlist content's Markdown does
+    /// under Paste and Match Style, however many lines it has. Over a
+    /// selection, Openlist content goes in as the text of its lines, a space
+    /// between them. Anything else is AppKit's paste, styled text included,
+    /// read as `readSelection(from:type:)` reads it. A code line, one of the
+    /// editor's own kinds, keeps the breaks and prefixes.
     private(set) var isPasting = false
 
     override func paste(_ sender: Any?) {
         paste(from: .general) { super.paste(sender) }
     }
 
-    /// Paste and Match Style reads Openlist content as the text it carries.
+    /// Paste and Match Style reads Openlist content as the Markdown it carries.
     override func pasteAsPlainText(_ sender: Any?) {
         paste(from: .general, structured: false) { super.pasteAsPlainText(sender) }
     }
@@ -783,10 +782,13 @@ final class BlockNSTextView: NSTextView {
         let fragment = NSPasteboard.PasteboardType("solimanali.openlist.document-fragment")
         if selectedRange().length == 0 {
             let callbacks = coordinator?.parent.callbacks
-            if structured, pasteboard.availableType(from: [fragment]) != nil, callbacks?.onPasteFragment() == true { return }
-            // One line with a break at its end is still one line.
+            let isContent = pasteboard.availableType(from: [fragment]) != nil
+            if structured, isContent, callbacks?.onPasteFragment() == true { return }
+            // One line with a break at its end is still one line. Openlist
+            // content's Markdown is lines even as one, so a copied task
+            // stays a task.
             if blockKind != .code, let text = pasteboard.string(forType: .string),
-               text.trimmingCharacters(in: .newlines).rangeOfCharacter(from: .newlines) != nil,
+               isContent || text.trimmingCharacters(in: .newlines).rangeOfCharacter(from: .newlines) != nil,
                callbacks?.onPasteMultiline(text) == true { return }
         } else if blockKind != .code, let data = pasteboard.data(forType: fragment),
                   let content = try? DocumentFragment.decode(data) {
@@ -794,9 +796,7 @@ final class BlockNSTextView: NSTextView {
             insertText(Self.lineTexts(of: content), replacementRange: selectedRange())
             return
         }
-        let atStart = selectedRange().location == 0, before = string
         native()
-        if atStart, string != before { coordinator?.convertPastedPrefix(in: self) }
     }
 
     /// The text of Openlist content's lines, in order, a space between them.
@@ -812,21 +812,41 @@ final class BlockNSTextView: NSTextView {
         return texts.filter { !$0.isEmpty }.joined(separator: " ")
     }
 
+    /// Set while a drop of text dragged within this line is read, which
+    /// AppKit also takes out of its old place.
+    private var isDroppingOwnText = false
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        isDroppingOwnText = (sender.draggingSource as AnyObject?) === self
+        defer { isDroppingOwnText = false }
+        return super.performDragOperation(sender)
+    }
+
     /// Every paste and text drop into the line reads through here, so each
-    /// line break it brings becomes a space.
+    /// line break it brings becomes a space, as the design's single-line
+    /// inputs take a paste, and one at the start of the line that leaves it
+    /// starting with one of the design's prefixes converts it, as the
+    /// design's change does.
     override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
         let range = rangeForUserTextChange
         let length = textStorage?.length ?? 0
+        let before = string
         guard super.readSelection(from: pboard, type: type) else { return false }
         guard blockKind != .code, range.location != NSNotFound, let storage = textStorage else { return true }
         let pasted = NSRange(location: range.location, length: range.length + storage.length - length)
-        guard pasted.length > 0, NSMaxRange(pasted) <= storage.length else { return true }
-        let text = storage.attributedSubstring(from: pasted)
-        let joined = Self.joiningLines(text)
-        guard joined.string != text.string, shouldChangeText(in: pasted, replacementString: joined.string) else { return true }
-        storage.replaceCharacters(in: pasted, with: joined)
-        didChangeText()
-        setSelectedRange(NSRange(location: pasted.location + joined.length, length: 0))
+        if pasted.length > 0, NSMaxRange(pasted) <= storage.length {
+            let text = storage.attributedSubstring(from: pasted)
+            let joined = Self.joiningLines(text)
+            if joined.string != text.string, shouldChangeText(in: pasted, replacementString: joined.string) {
+                storage.replaceCharacters(in: pasted, with: joined)
+                didChangeText()
+                setSelectedRange(NSRange(location: pasted.location + joined.length, length: 0))
+            }
+        }
+        // A drop of a prefix alone may have converted as it was typed, leaving
+        // the line as it was. Text dragged within the line stays as dropped,
+        // so AppKit finds its old place where it left it.
+        if range.location == 0, string != before, !isDroppingOwnText { coordinator?.convertPastedPrefix(in: self) }
         return true
     }
 
