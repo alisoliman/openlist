@@ -158,5 +158,16 @@ let behindRows = publisher.buildSnapshot().lists.first { $0.id == behind.id }
 check(behindRows?.openCount == 52
       && behindRows?.openItems.map(\.title) == (0..<WidgetSnapshot.ListSummary.openRows).map { "Late \($0)" },
       "A long list carries its first \(WidgetSnapshot.ListSummary.openRows) open rows")
+// The Inbox carries spare rows past the 4 medium Quick Add lists, for ticks
+// queued in Today while the app is quit on Inbox tasks that are due.
+for index in 1...9 {
+    let waiting = Block(kind: .task, text: "Waiting \(index)", listID: store.inboxList()!.id, sortIndex: Double(index))
+    waiting.createdAt = Date.now.addingTimeInterval(Double(index) * 60)
+    store.context.insert(waiting)
+}
+store.save()
+let waitingInbox = publisher.buildSnapshot()
+check(waitingInbox.inboxCount == 10 && waitingInbox.inboxItems.map(\.title) == (2...9).reversed().map { "Waiting \($0)" },
+      "The Inbox carries its newest \(WidgetSnapshot.inboxRows) open rows, newest first: \(waitingInbox.inboxItems.map(\.title))")
 
 print("Passed \(checks) widget publisher checks")

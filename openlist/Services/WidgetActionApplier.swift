@@ -43,7 +43,8 @@ final class WidgetActionApplier {
         publisher.refreshNow(forcingReload: true)
     }
 
-    /// Applies every queued action, oldest first, then removes their files.
+    /// Applies every queued action, oldest first, but a tick and its untick,
+    /// which take each other back, then removes their files.
     ///
     /// The files go only once the snapshot shows what they did: until then the
     /// widget lays them over the old snapshot, so a reload in between doesn't
@@ -57,10 +58,22 @@ final class WidgetActionApplier {
         WidgetActionQueue.removeUnreadable(keeping: Set(pending.map(\.url)))
         guard !pending.isEmpty else { return }
         bootstrap()
+        let actions = pending.map(\.action)
+        var takenBack: Set<Int> = []
         var late: WidgetAction?
-        for (_, action) in pending {
+        for (index, action) in actions.enumerated() where !takenBack.contains(index) {
             if action.kind.isWork, Date.now.timeIntervalSince(action.createdAt) > Self.workActionLifetime {
                 late = action
+                continue
+            }
+            // A tick and its untick, either way round, that the widget has
+            // been showing as neither: skipped together, the task keeps its
+            // place, its slot and its completion. Applied, a reopen would
+            // take the slot away, or give the task a new occurrence the tick
+            // after it no longer names.
+            if let task = shownTask(action),
+               let undo = WidgetAction.takingBack(index, in: actions, whileCompleted: task.isCompleted) {
+                takenBack.insert(undo)
                 continue
             }
             perform(action)
@@ -110,12 +123,19 @@ final class WidgetActionApplier {
         }
     }
 
+    /// The task `action` names, while it's still the one the widget showed:
+    /// not trashed, on the same occurrence, and not in a dwell.
+    private func shownTask(_ action: WidgetAction) -> Block? {
+        guard let task = store.block(id: action.taskID), task.isTask, task.trashID == nil,
+              action.occurrenceID.map({ $0 == task.occurrenceID }) != false,
+              workbench.closing[task.id] == nil else { return nil }
+        return task
+    }
+
     /// Applies `action` if its task is still the one the widget showed, in the
     /// state the widget showed it in.
     private func perform(_ action: WidgetAction) {
-        guard let task = store.block(id: action.taskID), task.isTask, task.trashID == nil,
-              action.occurrenceID.map({ $0 == task.occurrenceID }) != false,
-              workbench.closing[task.id] == nil else { return }
+        guard let task = shownTask(action) else { return }
         switch action.kind {
         case .complete:
             guard !task.isCompleted else { return }

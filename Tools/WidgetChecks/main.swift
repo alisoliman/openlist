@@ -160,8 +160,53 @@ uncarried.lists[kyotoIndex].openItems.removeAll { $0.id == id("k3") }
 check(SnapshotOverlay.apply([tick], to: uncarried) == ticked, "A Today tick past its list's rows still counts in the list")
 check(SnapshotOverlay.apply([tick, tick], to: uncarried) == ticked, "and counts once")
 let backAgain = SnapshotOverlay.apply([tick, WidgetAction(kind: .reopen, taskID: id("k3"), occurrenceID: id("k3"))], to: uncarried)
-check(backAgain.lists[kyotoIndex].openCount == 5 && backAgain.lists[kyotoIndex].doneCount == 1
-      && backAgain.todayItems.contains { $0.id == id("k3") }, "and a reopen after it counts it open again")
+check(backAgain == uncarried && backAgain.todayItems.contains { $0.id == id("k3") }, "and a reopen after it counts it open again")
+
+// A tick and its untick queued while the app is quit take each other back, as
+// the app skips them: the task is where it was, its Agenda block tinted, and
+// Up Next offers it, as the design's untick leaves it.
+func action(_ kind: WidgetAction.Kind, _ key: String) -> WidgetAction {
+    WidgetAction(kind: kind, taskID: id(key), occurrenceID: id(key), createdAt: WidgetSampleData.referenceDate)
+}
+let deposit = SnapshotOverlay.apply([action(.complete, "k2"), action(.reopen, "k2")], to: design)
+check(deposit == design, "A queued tick and untick leave the snapshot as the app published it, agenda included")
+check(ListModel(deposit.lists[kyotoIndex], showsCompleted: true, clock: clock).rows.map(\.id) == ["k3", "k4", "k2", "k1", "k5", "k6"].map(id),
+      "and the row keeps its place in the list")
+check(SnapshotOverlay.apply([action(.reopen, "k6"), action(.complete, "k6")], to: design) == design, "An untick and its tick do too")
+check(SnapshotOverlay.apply([action(.complete, "k2"), action(.complete, "k3"), action(.reopen, "k2")], to: design)
+      == SnapshotOverlay.apply([action(.complete, "k3")], to: design), "whatever other tasks are ticked between them")
+check(SnapshotOverlay.apply([action(.complete, "k2"), action(.reopen, "k2"), action(.complete, "k2")], to: design)
+      == SnapshotOverlay.apply([action(.complete, "k2")], to: design), "and a third tick still counts")
+let reopenElsewhere = WidgetAction(kind: .reopen, taskID: id("k2"), occurrenceID: UUID())
+check(WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.complete, "k3"), action(.reopen, "k2")]) == 2
+      && WidgetAction.takingBack(0, in: [action(.complete, "k2"), reopenElsewhere]) == nil
+      && WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.startWork, "k2"), action(.reopen, "k2")]) == nil
+      && WidgetAction.takingBack(0, in: [action(.startWork, "k2"), action(.startWork, "k2")]) == nil,
+      "Only the next action on the task, the opposite tick on the same occurrence, takes one back")
+// The app skips the pair only while the task is as the first found it, which
+// is what the overlay reads off the snapshot: open for a tick, done for an untick.
+check(WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.reopen, "k2")], whileCompleted: false) == 1
+      && WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.reopen, "k2")], whileCompleted: true) == nil
+      && WidgetAction.takingBack(0, in: [action(.reopen, "k6"), action(.complete, "k6")], whileCompleted: true) == 1
+      && WidgetAction.takingBack(0, in: [action(.reopen, "k6"), action(.complete, "k6")], whileCompleted: false) == nil
+      && WidgetAction.takingBack(0, in: [action(.startWork, "k2"), action(.startWork, "k2")], whileCompleted: false) == nil,
+      "The app skips a tick and its untick only from the state the first found")
+// A tick the app already published, then an untick: the untick still reopens it.
+let publishedDone = SnapshotOverlay.apply([action(.complete, "k2")], to: design)
+let evenings = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(6 * 3_600 + 20 * 60))
+check(UpNextModel(publishedDone, clock: evenings).state == .clear, "At 17:00, with the deposit done, the day is clear")
+for queued in [[action(.reopen, "k2")], [action(.complete, "k2"), action(.reopen, "k2")]] {
+    // The app, finding the task done, skips no pair here either.
+    check(WidgetAction.takingBack(0, in: queued, whileCompleted: true) == nil, "The app applies the reopen, \(queued.count) queued")
+    let open = SnapshotOverlay.apply(queued, to: publishedDone)
+    let blocks = open.agenda.flatMap(\.items)
+    check(!blocks.contains { $0.taskID == id("k2") } && blocks.count == design.agenda.flatMap(\.items).count - 1,
+          "A queued reopen takes the task's done block off the Agenda, as the app does, \(queued.count) queued")
+    check(UpNextModel(open, clock: evenings).state == .clear, "so Up Next offers no Start the app would drop")
+    check(open.lists[kyotoIndex].openItems.map(\.id) == ["k3", "k4", "k1", "k5", "k2"].map(id)
+          && open.lists[kyotoIndex].openCount == 5 && open.todayItems.contains { $0.id == id("k2") },
+          "A row the app published done goes back after the list's open rows")
+}
 check([WidgetAction.Kind.startWork, .pauseWork, .resumeWork, .finishWork].allSatisfy(\.isWork)
       && ![WidgetAction.Kind.complete, .reopen].contains(where: \.isWork), "Only the timer's buttons are work")
 
@@ -244,6 +289,22 @@ check(orphaned.state == .paused && orphaned.timer == .paused(seconds: 600), "A t
 let capture = CaptureModel(design, clock: clock)
 check(capture.count == 6 && capture.items.map(\.age) == ["2h", "5h", "1d", "2d"], "Quick Add: 6 waiting, the newest four with ages")
 check(CaptureModel.age(WidgetSampleData.referenceDate.addingTimeInterval(-20), now: WidgetSampleData.referenceDate) == "1m", "A fresh capture reads 1m")
+// An Inbox task due today, ticked in Today while the app is quit: the snapshot
+// carries spare Inbox rows, as the publisher writes them, so medium Quick Add
+// still lists the newest four, the next one moving up, as the design's.
+var dueInInbox = design
+dueInInbox.inboxItems = Array(design.inboxItems.prefix(5))
+dueInInbox.inboxCount = 5
+var inboxRow = design.todayItems[0]
+inboxRow.id = dueInInbox.inboxItems[1].id
+inboxRow.occurrenceID = inboxRow.id
+inboxRow.listID = id("inbox")
+dueInInbox.todayItems.append(inboxRow)
+let inboxTicked = CaptureModel(SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: inboxRow.id, occurrenceID: inboxRow.id)],
+                                                     to: dueInInbox), clock: clock)
+check(inboxTicked.count == 4 && inboxTicked.items.map(\.id) == [0, 2, 3, 4].map { dueInInbox.inboxItems[$0].id },
+      "A queued tick on an Inbox task leaves Quick Add 4 rows under Inbox 4")
+check(WidgetSnapshot.inboxRows > CaptureModel.shown, "The snapshot carries spare Inbox rows")
 
 // Quick Add's timeline has an entry wherever an age shown moves on, so none stays behind.
 let captureStart = WidgetSampleData.referenceDate
