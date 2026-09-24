@@ -14,46 +14,41 @@ store.context.autosaveEnabled = false
 store.bootstrap()
 let inbox = store.inboxList()!
 let list = store.createList(title: "Work")
-var draft = TaskCaptureDraft(text: "Call mum tomorrow at 6pm #home every week")
-let preview = draft.preview
-check(preview.title == "Call mum", "Preview strips accepted date, time, label and repeat tokens")
-check(preview.date != nil && preview.includesTime && preview.recurrence != nil, "Preview shows full parsed schedule")
-check(preview.labels == ["home"], "Preview names labels without creating them")
-check(store.allLabels().isEmpty && store.blocks(inList: inbox.id).isEmpty, "Draft preview must never persist tasks or labels")
-draft.removesDate = true
-draft.removesRecurrence = true
-draft.removedLabels = ["home"]
-check(draft.preview.date == nil && draft.preview.recurrence == nil && draft.preview.labels.isEmpty, "Removed metadata stays removed in saved preview")
-check(draft.preview.title == "Call mum", "Removing detected details preserves the reviewed task title")
-let task = try store.saveCapture(draft.preview, destinationID: list.id)
+let preview = CaptureParse("Call mum tomorrow at 6pm #home every week").snapshot()
+check(preview.title == "Call mum", "The snapshot strips the date, time, label and repeat tokens")
+check(preview.date != nil && preview.includesTime && preview.recurrence != nil, "The snapshot keeps the full parsed schedule")
+check(preview.labels == ["home"], "The snapshot names labels without creating them")
+check(store.allLabels().isEmpty && store.blocks(inList: inbox.id).isEmpty, "A snapshot never persists tasks or labels")
+let task = try store.saveCapture(CaptureSnapshot(title: "Call mum"), destinationID: list.id)
 check(task.listID == list.id && task.text == "Call mum", "Capture saves to explicitly chosen destination")
 let heading = store.appendBlock(kind: .heading1, text: "Notes at the end", to: .init(listID: list.id))
 let nested = store.appendBlock(kind: .task, text: "Original nested task", to: .init(listID: list.id, rootBlockID: task.id))
 let storedOrder = [task, heading, nested].map { ($0.id, $0.parentID, $0.sortIndex) }
-let appended = try store.saveCapture(TaskCaptureDraft.Preview(title: "Alphabetically first"),
+let appended = try store.saveCapture(CaptureSnapshot(title: "Alphabetically first"),
                                     destinationID: list.id, appendToRoot: true)
 check(appended.listID == list.id && appended.parentID == nil && appended.sortIndex > heading.sortIndex,
       "Tasks-mode capture appends to the owning document root independently of displayed sort")
 check(zip([task, heading, nested], storedOrder).allSatisfy { block, snapshot in
     block.id == snapshot.0 && block.parentID == snapshot.1 && block.sortIndex == snapshot.2
 }, "Appending in Tasks mode leaves existing document hierarchy and indices untouched")
-let prepended = try store.saveCapture(TaskCaptureDraft.Preview(title: "Normal capture"), destinationID: list.id)
+let prepended = try store.saveCapture(CaptureSnapshot(title: "Normal capture"), destinationID: list.id)
 check(prepended.parentID == nil && prepended.sortIndex < task.sortIndex,
       "Existing capture keeps its default prepend behavior")
-check(task.dueDate == nil && task.recurrence == nil && task.labelIDs.isEmpty, "Capture must not reparse removed metadata")
+check(task.dueDate == nil && task.recurrence == nil && task.labelIDs.isEmpty, "Capture saves only what its snapshot holds")
 let parsed = try store.saveCapture(preview, destinationID: nil)
 check(parsed.listID == inbox.id && parsed.dueDate == preview.date && parsed.includesTime, "Inbox fallback preserves exact preview schedule")
 check(parsed.recurrence != nil && store.labels(for: parsed).map(\.name) == ["home"], "Capture persists labels and recurrence")
 check(store.recentActivity().filter { $0.blockID == parsed.id && $0.kind == .created }.count == 1, "Capture emits one creation event")
-let labelOnly = TaskCaptureDraft(text: "#home").preview
-check(labelOnly.title == "#home" && labelOnly.labels.isEmpty, "Label-only input must not save an empty title")
-let literal = TaskCaptureDraft(text: "Call tomorrow", parsesNaturalLanguage: false).preview
+let labelOnly = CaptureParse("#home").snapshot()
+check(labelOnly.title.isEmpty && labelOnly.labels == ["home"], "Label-only input has no title for Return to save")
+let literal = CaptureParse("Call tomorrow", parsesDates: false).snapshot()
 check(literal.title == "Call tomorrow" && literal.date == nil, "Disabled detection preserves literal date words")
-let today = TaskCaptureDraft(text: "Call mum", dueTodayWhenUndated: true)
-check(today.preview.date != nil, "Default Today schedule is part of visible preview")
-var noDate = today
-noDate.removesDate = true
-check(noDate.preview.date == nil, "User can remove default Today schedule")
+let today = CaptureParse("Call mum").snapshot(dueToday: true)
+check(today.date == Calendar.current.startOfDay(for: .now) && !today.includesTime, "A capture for today is due today when it names no date")
+let named = CaptureParse("Call mum next week").snapshot(dueToday: true)
+check(named.date.map { NXFormat.dayOffset($0) > 0 } == true, "A date in the text wins over today")
+check(CaptureParse("Plan #Trip").snapshot(labels: ["trip", "work"]).labels == ["trip", "work"],
+      "A label screen's label joins the text's without doubling")
 let before = store.blocks(inList: list.id).count
 list.isArchived = true
 store.save()
@@ -64,7 +59,7 @@ do {
     check(store.blocks(inList: list.id).count == before, "Rejected capture does not create a task")
 }
 do {
-    _ = try store.saveCapture(TaskCaptureDraft(text: "   ").preview, destinationID: nil)
+    _ = try store.saveCapture(CaptureParse("   ").snapshot(), destinationID: nil)
     preconditionFailure("Whitespace capture should fail")
 } catch {
     check(store.blocks(inList: inbox.id).count == 1, "Empty draft does not create a task")
@@ -73,7 +68,7 @@ let undo = UndoManager()
 undo.groupsByEvent = false
 let target = store.createList(title: "Triage")
 let planningDate = Date.now
-let plannedCapture = try store.saveCapture(TaskCaptureDraft(text: "Review integration").preview,
+let plannedCapture = try store.saveCapture(CaptureSnapshot(title: "Review integration"),
                                          destinationID: target.id, selectedForDay: planningDate)
 check(plannedCapture.selectedForDay == Calendar.current.startOfDay(for: planningDate), "Calendar capture preserves its planning day")
 check(plannedCapture.dueDate == nil, "Planning a captured task does not invent a due date")
@@ -168,7 +163,7 @@ check(!(CaptureParse("Dinner tonight", reference: captureReference).schedule?.in
 
 // Undoing a capture erases the task outright: no Trash entry and no history.
 let undoList = store.createList(title: "Undo target")
-let captured = try store.saveCapture(TaskCaptureDraft(text: "Book ryokan tomorrow #travel").preview, destinationID: undoList.id)
+let captured = try store.saveCapture(CaptureParse("Book ryokan tomorrow #travel").snapshot(), destinationID: undoList.id)
 let capturedID = captured.id
 let capturedFields = BackupBlock(captured)
 let trashBefore = try store.trashEntries().count
@@ -213,7 +208,7 @@ let failingStore = Store(context: readonly.mainContext)
 failingStore.context.autosaveEnabled = false
 let readonlyInbox = failingStore.inboxList()!
 do {
-    _ = try failingStore.saveCapture(TaskCaptureDraft(text: "Preserve draft tomorrow #failure-label").preview, destinationID: readonlyInbox.id)
+    _ = try failingStore.saveCapture(CaptureParse("Preserve draft tomorrow #failure-label").snapshot(), destinationID: readonlyInbox.id)
     preconditionFailure("Read-only capture must fail")
 } catch {
     check(failingStore.blocks(inList: readonlyInbox.id).isEmpty, "Failed persistence rolls back the inserted task")

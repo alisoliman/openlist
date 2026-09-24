@@ -47,11 +47,15 @@ struct openlistApp: App {
                 libraryID: try? LibraryIdentity.read(at: startup.storeURL),
                 libraryStorage: storage, libraryStartup: startup)
             _env = State(initialValue: environment)
-            // Menu-bar-only launches must also migrate files and start sync.
+            // Quick Add floats in a panel of its own rather than a scene.
+            QuickCapturePanel.shared.install(env: environment, container: loaded.container)
+            // Menu-bar-only launches must also migrate files and start sync,
+            // and take ⇧⌥Space, which needs no window.
             applicationDelegate.onDidLaunch = { [weak environment] in
                 guard let environment else { return }
                 environment.bootstrap()
                 environment.libraryMaintenance?.startDailySnapshots(settings: environment.settings)
+                QuickCapturePanel.shared.installHotKey(enabled: environment.settings.quickCaptureHotKeyEnabled)
             }
             applicationDelegate.hasPendingNotifications = { NotificationService.shared.reminders.isRefreshing }
             applicationDelegate.finishPendingNotifications = { await NotificationService.shared.reminders.drainForTermination() }
@@ -132,28 +136,14 @@ struct openlistApp: App {
             if let env { AppCommands(env: env) }
         }
 
-        Window("Quick Add", id: WindowID.quickAdd) {
+        MenuBarExtra("Openlist", systemImage: "checkmark.circle", isInserted: menuBarBinding) {
             if let env, let container {
-                QuickAddWindowView()
-                    .modifier(InteractionMotion())
+                // Its motion is the Next style's, which follows Reduce Motion.
+                MenuBarView()
                     .environment(env)
                     .modelContainer(container)
                     .environment(\.calendar, env.settings.calendar)
                     .preferredColorScheme(env.settings.appearance.colorScheme)
-            }
-        }
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
-        .defaultPosition(.top)
-        .handlesExternalEvents(matching: [])
-
-        MenuBarExtra("Openlist", systemImage: "checkmark.circle", isInserted: menuBarBinding) {
-            if let env, let container {
-                MenuBarView()
-                    .modifier(InteractionMotion())
-                    .environment(env)
-                    .modelContainer(container)
-                    .environment(\.calendar, env.settings.calendar)
             }
         }
         .menuBarExtraStyle(.window)
@@ -176,5 +166,4 @@ struct openlistApp: App {
 
 enum WindowID {
     static let main = "main"
-    static let quickAdd = "quick-add"
 }

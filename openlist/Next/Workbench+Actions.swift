@@ -373,43 +373,24 @@ extension Workbench {
 
     // MARK: Capture
 
-    /// The capture text read as the card tints it and Return saves it, with
-    /// dates only while Settings reads them from typed text.
-    func captureParse() -> CaptureParse {
-        CaptureParse(captureText, parsesDates: settings.parsesNaturalLanguageDates)
-    }
-
-    /// What Return saves, which the capture card's chips preview. A task with
-    /// no date of its own is due today when captured on Today or when New
-    /// tasks go to Today; on a label screen it also gets that label.
-    func capturePreview(_ parse: CaptureParse) -> TaskCaptureDraft.Preview {
-        let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
-        return TaskCaptureDraft.Preview(
-            title: parse.title,
-            date: parse.schedule?.date ?? (captureForToday ? NXFormat.day(offset: 0) : nil),
-            includesTime: parse.schedule?.includesTime ?? false,
-            recurrence: parse.schedule?.recurrence,
-            labels: Array(Set(parse.labels + screenLabel)).sorted())
-    }
+    // Reading and saving the draft (`captureParse`, `capturePreview`,
+    // `saveCapture`) is `NXCaptureDraft`'s, shared with the Quick Add panel.
 
     @discardableResult
     func createFromCapture(keepOpen: Bool) -> Block? {
         let parse = captureParse()
         guard !parse.title.isEmpty else { return nil }
-        let preview = capturePreview(parse)
         let destinationID = captureListID ?? store.inboxList()?.id
         // Captured into the list whose Tasks view is showing, a task goes at the
         // end, where that view's add row sits; anywhere else it's prepended.
         let appendsToRoot = navigator.route.listID.map { $0 == destinationID && navigator.listViewMode(for: $0) == .tasks } ?? false
         let block: Block
         do {
-            block = try store.saveCapture(preview, destinationID: destinationID, appendToRoot: appendsToRoot)
+            block = try saveCapture(parse, appendToRoot: appendsToRoot)
         } catch {
             showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
             return nil
         }
-        if let priority = parse.priority { store.setPriority(priority, for: block) }
-        if let minutes = parse.estimateMinutes, minutes > 0 { store.setTaskEstimate(minutes, for: block) }
         let list = store.list(id: block.listID)
         let here: Bool = {
             switch navigator.route {
@@ -471,13 +452,6 @@ extension Workbench {
     func closeCapture() {
         withAnimation(style.ease(180)) { captureOpen = false }
         captureText = ""
-    }
-
-    /// Tab and Shift-Tab step the destination through Inbox and every list.
-    func cycleCaptureDestination(by delta: Int, among ids: [UUID]) {
-        guard !ids.isEmpty else { return }
-        let index = ids.firstIndex { $0 == captureListID } ?? 0
-        captureListID = ids[(index + delta + ids.count) % ids.count]
     }
 
     // MARK: Inbox triage

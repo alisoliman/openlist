@@ -58,7 +58,7 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Quick Add…") { openWindow(id: WindowID.quickAdd) }
+            Button("Quick Add…") { QuickCapturePanel.shared.show() }
                 .keyboardShortcut(.space, modifiers: [.shift, .option])
         }
 
