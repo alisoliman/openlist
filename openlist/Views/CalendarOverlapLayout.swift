@@ -90,3 +90,30 @@ enum CalendarOverlapLayout {
         return result
     }
 }
+
+// MARK: - The day column's clock
+
+extension CalendarOverlapLayout {
+    /// `time`'s wall-clock hour on `day`, fractional, where the day column
+    /// draws it against its hour labels and now line: 10:40 is 10.67 on a day
+    /// the clocks change too, where the time since midnight is an hour more
+    /// or less. Past midnight it goes on counting, 24 and up.
+    static func hours(_ time: Date, on day: Date, calendar: Calendar) -> Double {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: day), to: calendar.startOfDay(for: time)).day ?? 0
+        let parts = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: time)
+        let seconds = Double(parts.second ?? 0) + Double(parts.nanosecond ?? 0) / 1_000_000_000
+        return Double(24 * days + (parts.hour ?? 0)) + Double(parts.minute ?? 0) / 60 + seconds / 3600
+    }
+
+    /// The moment the clock reads `minute` after midnight on `day`, as the
+    /// planner reads the work hours: a time the clocks skip is the next one
+    /// there is, and 24:00 is the next midnight.
+    static func time(minute: Int, on day: Date, calendar: Calendar) -> Date {
+        let start = calendar.startOfDay(for: day)
+        let next = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+        let minute = min(max(minute, 0), 1440)
+        guard minute < 1440 else { return next }
+        return calendar.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: start,
+                             matchingPolicy: .nextTime, repeatedTimePolicy: .first, direction: .forward) ?? next
+    }
+}

@@ -17,18 +17,21 @@ final class CalendarNotificationBridge {
 
     private let store: Store
     private let calendar: CalendarCoordinator
-    private let navigator: Navigator
+    private let workbench: Workbench
     private let service: NotificationService
+    /// Opens the main window again if it was closed, as a reminder's click
+    /// does: the Calendar and the inspector a click opens are that window's.
+    var openMainWindow: (() -> Void)?
     private var updateTask: Task<Void, Never>?
     private var lastPostedID: String?
     private var deliveredStarts: Set<String> = Set(ReviewSession.defaults.stringArray(forKey: "work.deliveredStarts") ?? [])
     private var observers: [NSObjectProtocol] = []
 
-    init(store: Store, calendar: CalendarCoordinator, navigator: Navigator,
+    init(store: Store, calendar: CalendarCoordinator, workbench: Workbench,
          service: NotificationService = .shared) {
         self.store = store
         self.calendar = calendar
-        self.navigator = navigator
+        self.workbench = workbench
         self.service = service
         guard ReviewSession.identifier == nil else { return }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
@@ -82,9 +85,14 @@ final class CalendarNotificationBridge {
         service.removeCalendarNudge(identifier: identifier)
         guard action != UNNotificationDismissActionIdentifier else { return }
         if action == UNNotificationDefaultActionIdentifier || action == NotificationService.calendarOpenPlanAction {
-            navigator.go(to: .calendar)
+            // In the main window, over whatever was up there, as a reminder
+            // lands: the task opens as its block on the Calendar opens it.
+            openMainWindow?()
+            workbench.go(.calendar)
+            workbench.navigator.isShortcutSheetOpen = false
             if let task = store.block(id: taskID), task.occurrenceID == occurrenceID {
-                navigator.openTask(taskID)
+                workbench.focusID = nil
+                workbench.navigator.openTask(taskID)
             }
             NSApp.activate(ignoringOtherApps: true)
             update()

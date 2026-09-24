@@ -55,7 +55,7 @@ final class AppEnvironment {
     private let widgetActions: WidgetActionApplier
     /// Retained so the notification centre keeps a live delegate.
     private let notificationDelegate = NotificationDelegate()
-    private let calendarNotifications: CalendarNotificationBridge
+    let calendarNotifications: CalendarNotificationBridge
     private var hasBootstrapped = false
     @ObservationIgnored private var notificationActivityObserver: NSObjectProtocol?
     @ObservationIgnored private var derivedRecoveryTask: Task<Void, Never>?
@@ -115,9 +115,9 @@ final class AppEnvironment {
         reminderNavigation = ReminderNavigation(navigator: navigator)
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store, libraryID: libraryID)
-        calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
         workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar,
                               defaults: ReviewSession.defaults)
+        calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, workbench: workbench)
         widgetActions = WidgetActionApplier(store: store, workbench: workbench, calendar: calendar, publisher: widgetPublisher)
         assert(WidgetRoute.scheme == LocalLink.scheme, "Widget routes and item links share the app's URL scheme")
 
