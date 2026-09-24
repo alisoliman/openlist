@@ -355,11 +355,6 @@ final class CalendarCoordinator {
         return resume
     }
 
-    func resume() {
-        guard let task = resumableTask else { dismissResume(); return }
-        requestWork(WorkTaskReference(task))
-    }
-
     func dismissResume() {
         resumeTaskID = nil
         resumeOccurrenceID = nil

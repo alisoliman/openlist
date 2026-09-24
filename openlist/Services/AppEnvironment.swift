@@ -87,7 +87,8 @@ final class AppEnvironment {
     var activeDocument: DocumentContext?
 
     /// Whether the main window is key. The Task menu acts on that window's
-    /// rows, so it stays off while Quick Add or Settings has the keyboard.
+    /// rows, so it stays off while Quick Add or the menu bar's popover has
+    /// the keyboard.
     var isMainWindowKey = false
 
     init(context: ModelContext, sync: ICloudSyncMonitor,
@@ -324,11 +325,5 @@ extension AppEnvironment {
     func performDeleteList(_ list: TaskList) {
         listPendingDeletion = nil
         workbench.trashList(list)
-    }
-
-    /// Opens a task in the inspector with one of its pickers already showing.
-    func openTask(_ id: UUID, showing picker: DetailPicker?) {
-        requestedPicker = picker
-        navigator.openTask(id)
     }
 }

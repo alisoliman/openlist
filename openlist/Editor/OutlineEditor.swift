@@ -84,35 +84,6 @@ extension BlockRowActions {
     }
 }
 
-/// The editing rules an outline follows, the list document's from the
-/// design. Only tasks and list items nest, two levels deep at most, and never
-/// under a heading or text; Return and Backspace step a line out or convert
-/// it instead of merging; `> ` makes text; done top-level tasks leave the
-/// document; and a line's whole edit, from the caret arriving to it leaving,
-/// is one undo step. A line left empty is removed.
-enum OutlinePolicy {
-    /// Kinds that nest under a line of their own family.
-    static func nests(_ kind: BlockKind) -> Bool {
-        kind == .task || kind == .bullet || kind == .numbered
-    }
-
-    /// Kinds whose lines, folded, hide the lines under them: only tasks, as
-    /// in the design. A heading folds its section instead, and a list item
-    /// or text line, which draws no caret, never folds, whatever an older
-    /// list or a kind change left set on it.
-    static func folds(_ kind: BlockKind) -> Bool {
-        kind == .task
-    }
-
-    /// The deepest a line can be indented.
-    static let maximumDepth = 2
-
-    /// Whether a line takes lines dropped into it.
-    static func holdsDrops(_ row: BlockRow) -> Bool {
-        nests(row.block.kind) && row.depth < maximumDepth
-    }
-}
-
 /// An outline change a host can name and log.
 enum OutlineEdit: Equatable {
     /// A line added and written, from the caret arriving to it leaving.
@@ -189,19 +160,18 @@ struct OutlineSlashOption: Identifiable, Equatable {
     }
 }
 
-/// Host policy an outline defers to. Each default leaves the outline, the
-/// store or the navigator to act, so a host sets only what it does itself.
+/// Host policy an outline defers to. Each default leaves the outline to act,
+/// or does nothing, so a host sets only what it does itself.
 struct OutlineHooks {
-    /// Shows a task's details. `nil` opens it in the navigator's inspector.
-    var openDetails: ((UUID) -> Void)?
     /// A block took the caret. It can fire more than once for one click.
     var didFocus: (UUID) -> Void = { _ in }
     /// Escape left a block. The text view has already resigned first
     /// responder and the outline has let go of the caret, which the host's
     /// keys can put back with ``OutlineEditor/resumeEditing()``.
     var didEscape: (UUID) -> Void = { _ in }
-    /// Offered each menu command and its targets before the store's shared
-    /// task commands and the outline's own. Return `true` to claim it.
+    /// Offered each menu command and its targets before the outline's own.
+    /// Return `true` to claim it. Task commands, which the outline doesn't
+    /// run, are the host's: one it declines does nothing.
     var taskCommand: (EditorCommand, [UUID]) -> Bool = { _, _ in false }
     /// What a menu command acts on when no row holds the caret and the
     /// navigator has no selection, such as the host's focused row.
@@ -627,10 +597,6 @@ final class OutlineEditor {
                 drawnRows = nil
             }
         )
-    }
-
-    private func openDetails(_ block: Block) {
-        if let open = hooks.openDetails { open(block.id) } else { env.navigator.openTask(block.id) }
     }
 
     // MARK: - Key handling
@@ -1524,11 +1490,9 @@ final class OutlineEditor {
             return
         }
 
-        // Anything that is just "act on these blocks" is defined once on the
-        // store, unless the host claims it; only the cases that need the
-        // outline or the caret stay here.
-        if hooks.taskCommand(command, targets.map(\.id))
-            || env.store.perform(command, on: targets, undoManager: NSApp?.keyWindow?.undoManager) {
+        // Task commands are the host's, which runs them through its own
+        // action layer; only the cases that need the outline stay here.
+        if hooks.taskCommand(command, targets.map(\.id)) {
             if command == .deleteSelection {
                 focus.request(nil)
                 env.navigator.selection.removeAll()
@@ -1537,21 +1501,6 @@ final class OutlineEditor {
         }
 
         switch command {
-        case .openDetails:
-            if let first = targets.first(where: \.isTask) {
-                openDetails(first)
-            }
-
-        case .pickDueDate:
-            if let first = targets.first(where: \.isTask) {
-                env.openTask(first.id, showing: .due)
-            }
-
-        case .pickLabel:
-            if let first = targets.first(where: \.isTask) {
-                env.openTask(first.id, showing: .labels)
-            }
-
         case .indent:
             env.store.batch { for block in topmost(targets) { _ = indentLine(block) } }
 

@@ -142,8 +142,8 @@ struct RootView: View {
 
     // MARK: - Commands outside a document
 
-    /// This window, or a popover shown from it (a child window). Quick Add,
-    /// Settings and the menu bar window are not, so the Task menu ignores them.
+    /// This window, or a popover shown from it (a child window). Quick Add
+    /// and the menu bar's popover are not, so the Task menu ignores them.
     private func isMainWindow(_ window: NSWindow) -> Bool {
         var candidate: NSWindow? = window
         while let current = candidate {
@@ -298,7 +298,8 @@ private final class RootWindowReference {
 }
 
 /// Identifies this RootView's window without relying on SwiftUI's generated
-/// window identifiers or accidentally targeting Quick Add and Settings.
+/// window identifiers or accidentally targeting Quick Add or the menu bar's
+/// popover.
 private struct RootWindowReader: NSViewRepresentable {
     let onChange: (NSWindow?) -> Void
 

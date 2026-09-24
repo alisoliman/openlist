@@ -591,7 +591,7 @@ struct NextInspector: View {
     }
 
     private var noteBox: some View {
-        TextField("Add a note", text: $note.value, selection: $noteSelection, axis: .vertical)
+        TextField("Add a note…", text: $note.value, selection: $noteSelection, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             // The design's 1.55 line height, over the system font's own.

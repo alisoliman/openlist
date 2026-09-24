@@ -291,7 +291,7 @@ struct AppCommands: Commands {
     }
 
     private var hasDocumentContext: Bool {
-        env.activeDocument != nil && (env.navigator.documentOwnsEditorCommands || env.navigator.openTaskID != nil)
+        env.activeDocument != nil && env.navigator.documentOwnsEditorCommands
     }
 
     // MARK: - Actions

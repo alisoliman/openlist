@@ -62,7 +62,7 @@ extension Store {
         for definition in fragment.labels {
             let name = TaskLabel.normalize(definition.name)
             guard !name.isEmpty, let accent = ListAccent(rawValue: definition.accent) else {
-                throw FragmentError.invalid("A label has an invalid name or color.")
+                throw FragmentError.invalid("A label has an invalid name or colour.")
             }
             let matches = existingLabels.filter { TaskLabel.namesMatch($0.name, name) }.sorted {
                 $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt

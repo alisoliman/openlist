@@ -16,9 +16,13 @@ Children completed by a parent receive their own entries. Undo and Redo add
 truthful inverse/new entries; they do not erase the prior action. Labels,
 priority, and note differences are outside this timeline's new detail scope.
 
-Outline title edits coalesce until a one-second pause or an explicit editor
-action saves. Inspector titles and notes commit on submit, focus end, closing the
-inspector, app focus loss, or quit. A save for another explicit action also
+A list document line's edit is one entry, as the design logs it. What the line
+saves to its task while it is written (the new task at Return, its title as
+typed, the line itself if it is left empty) is left out of history as it saves,
+on the one-second editor debounce or an explicit editor action, and written once
+the line ends: **Added**, **Edited** or **Removed an empty line**, or nothing
+for a new line left empty. Inspector titles and notes commit on submit, focus
+end, closing the inspector, app focus loss, or quit. A save for another explicit action also
 commits current model edits. Saving without a tracked change adds
 no event. Sample data does not generate an invented action history.
 
@@ -29,7 +33,9 @@ fallback. Existing events receive no fabricated migration data.
 
 ## Saving and retention
 
-Tracked task edits and their generated history save in the same SwiftData transaction.
+Tracked task edits and their generated history save in the same SwiftData
+transaction. A list document line is the exception: its task edits save as it is
+written, and its one entry goes with the first save after the line ends.
 Store owns the save boundary; its context does not independently autosave.
 Editor text has a debounce fallback, explicit editing actions save immediately,
 and lifecycle handling commits local drafts before the final save. Quit is
@@ -60,7 +66,7 @@ history; whole-library backups do (see [manual backup and restore](LIBRARY_BACKU
 
 | Writer | Save boundary |
 | --- | --- |
-| Outline rich/plain text and captions | Document change debounce; explicit editor-action save |
+| Outline rich/plain text and captions | Document change debounce; explicit editor-action save. A line's history is written with the first save after it ends |
 | Inspector task title | Store text debounce; submit/blur/disappear save |
 | Due-date pickers, completion, recurrence, moves | Existing Store save/batch boundary |
 | List title, summary, appearance, sorting | Existing synchronous Store save |

@@ -132,7 +132,7 @@ if phase == "prepare" {
     let childID = id(try call(.createTask, ["title": "Child", "parent_id": uuid(rootID)]), "task")
     check(store.block(id: childID)!.listID == workID && store.block(id: childID)!.parentID == rootID, "parent-only capture inherits the parent's list")
     let noteID = id(try call(.appendBlock, [
-        "list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested context", "kind": "heading2",
+        "list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested context", "kind": "bullet",
     ]), "block")
     check(try store.taskActivity(for: noteID).contains { $0.kind == .noteAdded && $0.title == "Nested context" }, "MCP standalone text block preserves its existing noteAdded activity")
     let editSession = UUID()
@@ -149,6 +149,29 @@ if phase == "prepare" {
     check(detail["blocks"]!.arrayValue!.count == 1 && detail["total"] == 2 && detail["next_offset"] == 1, "collapsed task details paginate all descendants")
     let listPage = try call(.getList, ["list_id": uuid(workID)])
     check(listPage["blocks"]!.arrayValue!.map { $0.objectValue!["depth"]! } == [0, 1, 2], "list reading preserves complete outline depth")
+    // Lines go where the list document puts them: only tasks and list items
+    // nest, under a task or list item, two levels deep at most.
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested heading", "kind": "heading2"])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(rootID), "text": "Nested text"])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(rootID), "kind": "divider", "text": ""])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(noteID), "text": "Third level", "kind": "numbered"])
+    try rejects(.createTask, ["title": "Third level", "parent_id": uuid(noteID)])
+    let sectionID = id(try call(.appendBlock, ["list_id": uuid(workID), "text": "Section", "kind": "heading1"]), "block")
+    let proseID = id(try call(.appendBlock, ["list_id": uuid(workID), "text": "Prose"]), "block")
+    try rejects(.createTask, ["title": "Under a heading", "parent_id": uuid(sectionID)])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(proseID), "text": "Under text", "kind": "bullet"])
+    let spareID = id(try call(.createTask, ["title": "Spare", "list_id": uuid(workID)]), "task")
+    let spareChildID = id(try call(.createTask, ["title": "Spare child", "parent_id": uuid(spareID)]), "task")
+    try rejects(.moveTask, ["task_id": uuid(rootID), "list_id": uuid(workID), "parent_id": uuid(spareID)])
+    try rejects(.moveTask, ["task_id": uuid(spareID), "list_id": uuid(workID), "parent_id": uuid(childID)])
+    try rejects(.moveTask, ["task_id": uuid(spareChildID), "list_id": uuid(workID), "parent_id": uuid(noteID)])
+    let looseID = id(try call(.createTask, ["title": "Loose", "list_id": uuid(workID)]), "task")
+    _ = try call(.moveTask, ["task_id": uuid(looseID), "list_id": uuid(workID), "parent_id": uuid(spareChildID)])
+    check(store.block(id: looseID)!.parentID == spareChildID, "a move under a subtask still lands two levels deep")
+    let itemID = id(try call(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(spareID), "text": "Packing", "kind": "numbered"]), "block")
+    _ = try call(.createTask, ["title": "Under a list item", "parent_id": uuid(itemID)])
+    check(try call(.getTask, ["task_id": uuid(spareID)])["blocks"]!.arrayValue!.map { $0.objectValue!["depth"]! } == [0, 1, 0, 1],
+          "tasks and list items nest under a task or list item, as in the list document")
     check(try call(.listTasks, ["label_id": uuid(labelID)])["tasks"]!.arrayValue!.count == 1, "label filter finds the task")
     check(try call(.listTasks, ["query": "FIXTURE NOTE"])["tasks"]!.arrayValue!.count == 1, "search includes task notes case-insensitively")
     check(try call(.listTasks, ["offset": .int(Int.max)])["tasks"]!.arrayValue!.isEmpty, "extreme offsets neither overflow nor repeat results")

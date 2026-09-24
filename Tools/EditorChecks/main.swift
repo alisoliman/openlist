@@ -672,25 +672,38 @@ listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
 listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onFocus()
 check(listEditor.escapedBlockID == nil, "Clicking into any row ends the wait to resume")
 
-// Hooks replace host policy; without one, the store or navigator acts.
-var openedIDs: [UUID] = []
-listEditor.hooks.openDetails = { openedIDs.append($0) }
-outlineEnv.pendingCommand = .openDetails
-listEditor.receiveCommand()
-check(openedIDs == [secondSubtask.id] && outlineEnv.navigator.openTaskID == nil, "A details hook opens the task in the navigator's place")
+// Task commands are the host's; the outline runs only its own.
 var claimed: [(EditorCommand, [UUID])] = []
 listEditor.hooks.taskCommand = { command, ids in
     claimed.append((command, ids))
     return command == .toggleStar
 }
+outlineEnv.pendingCommand = .openDetails
+listEditor.receiveCommand()
+check(claimed.last?.0 == .openDetails && claimed.last?.1 == [secondSubtask.id] && outlineEnv.navigator.openTaskID == nil,
+    "Details are the host's to open, never the navigator's behind its back")
 listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 outlineEnv.pendingCommand = .toggleStar
 listEditor.receiveCommand()
 check(claimed.last?.0 == .toggleStar && claimed.last?.1 == [firstSubtask.id] && !firstSubtask.isStarred,
-    "A host claims task commands for the command targets before the store")
+    "A host claims task commands for the command targets")
 outlineEnv.pendingCommand = .setDueToday
 listEditor.receiveCommand()
-check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate != nil, "Commands a host declines fall back to the store")
+check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate == nil, "A task command the host declines does nothing, with no second path through the store")
+store.setDueToday(firstSubtask)
+// Lines a paste left selected refuse a line command in the tray, not a
+// notice card, and reach no host.
+var refusals: [String] = []
+store.onRefusal = { refusals.append($0) }
+let claimsBeforeRefusal = claimed.count
+store.editorNotice = nil
+outlineEnv.navigator.selection = [firstSubtask.id, secondSubtask.id]
+outlineEnv.pendingCommand = .toggleStar
+listEditor.receiveCommand()
+check(refusals.count == 1 && store.editorNotice == nil && claimed.count == claimsBeforeRefusal && !firstSubtask.isStarred,
+    "A task command on several selected lines is refused in the tray")
+store.onRefusal = nil
+outlineEnv.navigator.selection = [firstSubtask.id]
 let menuElsewhere = store.createList(title: "Menu targets elsewhere")
 outlineEnv.activeDocument = DocumentContext(listID: menuElsewhere.id)
 outlineEnv.pendingCommand = .clearDueDate

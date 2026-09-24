@@ -200,12 +200,6 @@ struct NXListMenuButton: View {
 // MARK: - Shared queries
 
 extension NextLibrary {
-    /// Whether a task sits under another task rather than at a list's top level.
-    func isSubtask(_ task: Block) -> Bool {
-        guard let parentID = task.parentID else { return false }
-        return tasksByID[parentID] != nil
-    }
-
     /// Whether an open task sits above this one, through its parent tasks.
     func isUnderOpenTask(_ task: Block) -> Bool {
         var seen: Set<UUID> = [task.id]

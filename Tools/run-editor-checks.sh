@@ -14,6 +14,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/editor-check
   openlist/Services/Navigator.swift openlist/Services/SelectionCommandPolicy.swift openlist/Services/DragPayload.swift openlist/Services/SearchProjection.swift \
   openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift openlist/Services/FragmentMarkdown.swift openlist/Services/InlineMarkdown.swift \
   openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift openlist/Editor/SlashMenuLayout.swift \
-  openlist/Editor/OutlineEditor.swift openlist/Editor/SlashMenuDismissal.swift openlist/Editor/BlockDragAndDrop.swift \
+  openlist/Editor/OutlineEditor.swift openlist/Editor/OutlinePolicy.swift openlist/Editor/SlashMenuDismissal.swift openlist/Editor/BlockDragAndDrop.swift \
   Tools/EditorChecks/Support.swift Tools/InspectorLifetimeChecks/LifetimeSupport.swift Tools/EditorChecks/main.swift
 "$OUT/editor-checks"

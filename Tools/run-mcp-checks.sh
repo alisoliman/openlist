@@ -44,7 +44,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -enable-upcoming-feat
     openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
     openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
     openlist/Services/ActiveTaskPolicy.swift openlist/Services/AppSettings.swift \
-    openlist/Services/MCPTools.swift openlist/Services/MCPStoreAdapter.swift \
+    openlist/Services/MCPTools.swift openlist/Services/MCPStoreAdapter.swift openlist/Editor/OutlinePolicy.swift \
     openlist/Services/MCPTokenStore.swift openlist/Services/MCPIntegration.swift \
     Tools/EditorChecks/Support.swift Tools/MCPChecks/HelperRoundTrip.swift Tools/MCPChecks/main.swift
 HELPER=${OPENLIST_MCP_HELPER:-"$OUT/openlist-mcp"}

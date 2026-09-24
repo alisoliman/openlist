@@ -84,7 +84,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   writes the new line in the list document (`Workbench.addSubtask`,
   `OutlineEditor.appendSubtask`), after the task's last line and at its depth, as the
   design's does, but never past two levels and only under a task or list item, which
-  older outlines can break. The Inbox's document mode is the same list document under
+  older outlines can break. MCP's create, move and append tools place lines by the same
+  rules (`OutlinePolicy`), refusing a heading or text under a line, or a third level.
+  The Inbox's document mode is the same list document under
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
   the Inbox as its document. Native inspector extras: the title and note are edited in place
@@ -180,8 +182,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
   completion entry. One-off refusals (`Store.refuse`: a drop the document's rules don't
-  allow, rearranging a sorted list) pass there; what needs dealing with (saving, sync,
-  links, label maintenance, Trash failures, failed undos) stays a notice card, all of them
+  allow, rearranging a sorted list, a line command on the lines a paste left selected)
+  pass there; what needs dealing with (saving, sync, links, label maintenance, Trash
+  failures, failed undos) stays a notice card, all of them
   in one place under the toolbar.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
   (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), a list's Duplicate, Use as

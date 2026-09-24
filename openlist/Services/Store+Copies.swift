@@ -6,7 +6,7 @@ enum CopyError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable: "The source is no longer available."
-        case .ordering: "There is no space next to this item. Reorder its neighbors and try again."
+        case .ordering: "There is no space next to this item. Reorder its neighbours and try again."
         }
     }
 }

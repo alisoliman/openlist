@@ -56,10 +56,11 @@ and the [MIT license](LICENSE).
 
 ### Lists are documents, not checklists
 
-A list holds an arbitrarily deep tree of blocks — tasks, paragraphs, three heading
-levels, bullets, numbered items, quotes, code and dividers, plus inline images.
-Subtasks are written in the list's document, two levels deep as the design's
-indent allows; the inspector lists a task's subtasks with their progress, and a
+A list's document holds tasks, paragraphs, three heading levels, bullets,
+numbered items, quotes, code and dividers, plus inline images. Subtasks are
+written in the list's document: tasks and list items nest under a task or list
+item, two levels deep as the design's indent allows, and headings and text stay
+at the top. The inspector lists a task's subtasks with their progress, and a
 subtask shows the task it belongs to.
 
 Lists can also own separately titled **child list documents**. Create one with
@@ -103,13 +104,13 @@ move, and **Reduce motion** drops the bounces and slides. Each task carries its
 subtasks and attached notes; reopening restores its stored manual position.
 
 In **Settings → Labels**, renaming into an existing name offers a merge review
-with the surviving label's name, color, and affected-task count. Matching trims
+with the surviving label's name, colour, and affected-task count. Matching trims
 outer whitespace and leading `#` characters and ignores case; internal spacing
 is preserved. Existing duplicate names expose **Merge duplicates**, where you
 choose which label to keep. Nothing merges until you confirm.
 
 Merging updates labels on all tasks, including nested, completed, and archived
-work, while retaining the destination identity/color and historical activity
+work, while retaining the destination identity/colour and historical activity
 names. The merge reports in the tray with **Undo**, and ⌘Z takes it back too, in
 turn with the window's other changes: changes made after it are undone first.
 Undo brings the merged label back on each task that had it; label edits that reach
@@ -120,7 +121,7 @@ Trash records must use that path or extend it if stored separately.
 ### Reusable copies
 
 **Duplicate** copies a task's complete nested procedure, including prose, notes,
-formatting, images and attachments. **Use as template…** is a separate action in
+formatting, images and attachments. **Use as Template…** is a separate action in
 task and list menus for starting fresh work. Its confirmation offers **Keep
 repeating rules** only when the source contains a repeat rule; it starts unchecked.
 
@@ -138,13 +139,15 @@ repeating rules** only when the source contains a repeat rule; it starts uncheck
 Each copied task starts with its own creation event. Copying never transfers source
 activity; task Undo/Redo appends deletion/restoration under the new task identity.
 
-A task copy lands after its source in the same parent/list and opens selected in
-the inspector. A list copy opens as an active, non-system list named “Name copy”,
-keeping its description, appearance, display preferences and sidebar section.
-Task copies in an archived list stay in that list. The source remains unchanged;
-storage or file failures leave no partial copy. Task copies share the editor's
-Undo/Redo, including the complete subtree and files. List copying retains its
-existing behavior without Undo. Clipboard copying keeps its separate semantics.
+A task copy lands right after its source in the same parent/list and is
+highlighted there; only a template copy also opens in the inspector. A list copy
+opens as an active, non-system list named “Name copy”, keeping its description,
+appearance, display preferences and sidebar section. Task copies in an archived
+list stay in that list. The source remains unchanged; storage or file failures
+leave no partial copy. Each copy, of a task or a list, is one change in the tray
+with Undo. Task copies share the editor's Undo/Redo, including the complete
+subtree and files; a list copy's Undo takes the copy to Trash. Clipboard copying
+keeps its separate semantics.
 
 ### Document content on the clipboard
 
@@ -156,7 +159,9 @@ described by name, without private local file URLs.
 ⌘V in an empty line of a list document inserts the internal content; elsewhere
 it pastes as Markdown. Selected text and inline pastes retain normal text behavior;
 ordinary ⌘C still copies the selected text. The insertion has fresh IDs and independent
-media, and is one editor Undo/Redo operation. A blank destination row is retained.
+media, and is one editor Undo/Redo operation. Pasted into a new empty line, such
+as one just opened with Return, the content takes that line's place; a line that
+was already empty is kept.
 Completed content remains completed and follows the destination's visibility/sort settings.
 
 Content paste keeps text, formatting, links, notes, hierarchy, completion/date,
@@ -167,8 +172,8 @@ Every pasted task gets a fresh Created event; Undo/Redo records Deleted/Restored
 Links retain their original destinations rather than being rewritten to the new IDs.
 
 Labels match destination names case-insensitively, without trusting source UUIDs.
-Existing destination labels and colors win; missing labels are created with the
-copied name/color in the same transaction. Undo removes a newly introduced label
+Existing destination labels and colours win; missing labels are created with the
+copied name/colour in the same transaction. Undo removes a newly introduced label
 only if it is still unchanged and unused elsewhere; Redo reuses or restores it.
 
 The private version-1 clipboard payload embeds file bytes and supported text-style
@@ -211,7 +216,7 @@ retention, and export behavior.
 
 The inspector keeps the title and active metadata above notes and subtasks.
 Empty notes and files use add actions rather than empty forms; removing a file
-can be undone. Its footer has **Trash** and **Start**; **Copy Link** is in the
+can be undone. Its footer has **Trash** and **Start working**; **Copy Link** is in the
 task's menu and in Task ▸ **Copy Link**. Priority and label controls remain
 named for accessibility.
 **Add subtask** goes to the task's list document, opening it if needed, unfolds
@@ -428,8 +433,10 @@ Dock badge, and local-first storage with native SwiftData/CloudKit sync.
 Openlist ships a native MCP server and stdio launcher. Enable it in
 **Settings > AI Agents**, copy a client configuration, and keep Openlist running.
 Agents can read lists, tasks and notes, or optionally create, edit, complete,
-move and archive them. Access is off by default, read-only unless you allow
-changes, and protected by a Keychain-backed token on a localhost-only endpoint.
+move and archive them. Their writes follow the list document's rules: tasks and
+list items go under a task or list item, two levels deep at most. Access is off
+by default, read-only unless you allow changes, and protected by a
+Keychain-backed token on a localhost-only endpoint.
 No Node/Python runtime or cloud service is required.
 
 Choose **Claude Desktop / stdio** or **VS Code / HTTP** in Settings, merge the
@@ -475,8 +482,9 @@ openlist/
                RecurrenceEngine, RichTextCodec, MediaStore, MarkdownExporter,
                NotificationService, QuickCaptureHotKey, WidgetSnapshotPublisher,
                ICloudConfiguration, ICloudSyncMonitor, ICloudSyncState
-  Editor/      the list document's engine: OutlineEditor, BlockTextView
-               (AppKit-backed), MarkdownInputRules, BlockDragAndDrop
+  Editor/      the list document's engine: OutlineEditor, OutlinePolicy (its
+               rules), BlockTextView (AppKit-backed), MarkdownInputRules,
+               BlockDragAndDrop
   Next/        Openlist Next shell: sidebar, screens, rows, the list document,
                inspector, calendar, overlays, settings, Workbench (shared UI
                state and actions), and the design tokens (NextTheme, NXEditor)

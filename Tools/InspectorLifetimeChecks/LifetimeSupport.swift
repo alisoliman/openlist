@@ -13,7 +13,6 @@ enum DetailPicker: String { case due, repeatRule, reminder, labels }
     let settings = FixtureSettings()
     let navigator = Navigator()
     let workbench: FixtureWorkbench
-    func openTask(_ id: UUID, showing: DetailPicker) { navigator.openTask(id) }
     func consumeCommand() -> EditorCommand? { defer { pendingCommand = nil }; return pendingCommand }
     func copyLink(to target: LocalLink.Target) {}
 

@@ -101,7 +101,7 @@ final class CalendarNotificationBridge {
             calendar.requestWork(WorkTaskReference(task))
         case NotificationService.calendarLaterAction where nudge.category == NotificationService.calendarStartCategory:
             calendar.quietWork(WorkTaskReference(task))
-        case NotificationService.calendarDoneAction where nudge.category == NotificationService.calendarOverrunCategory || nudge.category == NotificationService.calendarHeadsUpCategory:
+        case NotificationService.calendarDoneAction where nudge.category == NotificationService.calendarHeadsUpCategory:
             calendar.complete(task: task)
         default: break
         }

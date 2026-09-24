@@ -136,7 +136,6 @@ private struct NXDocumentLines: View {
         let workbench = env.workbench
         let store = env.store
         var hooks = OutlineHooks()
-        hooks.openDetails = { workbench.inspect($0) }
         hooks.didFocus = { id in
             guard let block = store.block(id: id) else { return }
             // As the design's startEdit: a task takes the focus, and the
