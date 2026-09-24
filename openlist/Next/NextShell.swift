@@ -400,17 +400,29 @@ struct NXCapsTitle: View {
     }
 }
 
-/// Dashed empty box used by Calendar and Trash.
+/// The design's Trash box ("Trash is empty."), for the empty and failed
+/// states of a page: 400 13/1.5 at ink 0.45, 34 pt in from a 1 pt dashed
+/// border, radius 14, fading in over 240ms whenever it appears.
 struct NXDashedEmpty: View {
     let text: String
+    @State private var shown = false
+
     var body: some View {
+        // The extra leading between lines and, halved, above the first and below the last.
+        let leading = 13 * 1.5 - NXStrikeText.glyphLineHeight(13)
         Text(text)
-            .font(.system(size: 12.5))
-            .foregroundStyle(NX.ink(0.42))
+            .font(.system(size: 13))
+            .foregroundStyle(NX.ink(0.45))
+            .multilineTextAlignment(.center)
+            .lineSpacing(leading)
+            .padding(.vertical, leading / 2)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 22)
-            .padding(.horizontal, 16)
-            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+            // The border sits outside the design's 34 pt padding.
+            .padding(35)
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(NX.ink(0.14), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .opacity(shown ? 1 : 0)
+            // The design's fadeIn, whatever the Motion setting.
+            .onAppear { withAnimation(NX.cssEase(240)) { shown = true } }
     }
 }

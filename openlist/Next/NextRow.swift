@@ -131,7 +131,9 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                     // row pops all but those and its list and star.
                     NXChip(chip: chip, fresh: chip.pops.plays(fresh: fresh, changed: freshChip), quiet: options.quiet)
                 }
-                if selected { NXSelectionMark() }
+                // It pops in with its own chipIn and goes at once, as the
+                // design's; the chips beside it jump to make room.
+                if selected { NXSelectionMark().transition(.identity) }
                 buttons()
                 Button {
                     // The inspector takes the keys, not the line being written.
@@ -389,12 +391,16 @@ struct NXCheckbox: View {
                     .animation(pops ? NX.cssEase(140) : nil) { $0.opacity(filled ? 1 : 0) }
                     .animation(pops ? style.bounce(200) : nil) { $0.scaleEffect(filled || !pops ? 1 : 0.3) }
                     .accessibilityHidden(true)
-                if ringing { NXRing(color: style.accent, size: size) }
             }
             .frame(width: size, height: size)
             // Without the pop, as the design's inspector boxes, the box keeps its size.
             .scaleEffect(pops && style.lively && closing == false ? 1.18 : 1)
             .animation(pops ? style.spring(240) : nil, value: closing)
+            // The box's sibling in the design, so it grows at its own size
+            // whatever the pop does, and shows and goes at once.
+            .overlay {
+                if ringing { NXRing(color: style.accent, size: size).transition(.identity) }
+            }
             .contentShape(Rectangle().inset(by: -5))
         }
         .buttonStyle(.plain)
@@ -604,18 +610,20 @@ struct NXGroupView: View {
             if open {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(group.rows, id: \.id) { task in
-                        // A fresh row plays its own rowIn, so an animated insertion doesn't slide it twice.
-                        let slides = !env.workbench.fresh.contains(task.id)
+                        // Rows come and go at once, as the design's, however the
+                        // change was animated: only a fresh row plays its own rowIn.
                         NextTaskRow(task: task, options: options)
-                            .transition(.asymmetric(
-                                insertion: slides ? .offset(y: -8).combined(with: .scale(scale: 0.99)).combined(with: .opacity) : .identity,
-                                removal: .opacity))
+                            .transition(.identity)
                     }
                     if group.rows.isEmpty, !group.emptyText.isEmpty {
+                        // The design's 12.5/1.4: the extra leading between lines
+                        // and, halved, above the first and below the last.
+                        let leading = 12.5 * 1.4 - NXStrikeText.glyphLineHeight(12.5)
                         Text(group.emptyText)
                             .font(.system(size: 12.5))
                             .foregroundStyle(NX.ink(0.4))
-                            .padding(.vertical, 10)
+                            .lineSpacing(leading)
+                            .padding(.vertical, 10 + leading / 2)
                             .padding(.horizontal, 12)
                     }
                 }
@@ -712,7 +720,10 @@ struct NXAddRow: View {
             Circle()
                 .strokeBorder(NX.ink(0.24), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
                 .frame(width: 15, height: 15)
-            Text(text).font(.system(size: 13.5))
+            // 400 13.5/1.3, as the document's add row.
+            Text(text)
+                .font(.system(size: 13.5))
+                .padding(.vertical, (13.5 * 1.3 - NXStrikeText.glyphLineHeight(13.5)) / 2)
             Text("N")
                 .font(NX.mono(10))
                 .padding(.horizontal, 5)

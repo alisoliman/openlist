@@ -351,6 +351,8 @@ private struct NXTasksQueryBar: View {
                     Text(workbench.tasksGrouping.title)
                         .font(.system(size: 13.5, weight: .medium))
                         .fixedSize()
+                        // The design's 13.5/1 line box.
+                        .padding(.vertical, (13.5 - NXStrikeText.glyphLineHeight(13.5)) / 2)
                         .padding(.bottom, 13)
                         .contentShape(Rectangle())
                 }
@@ -364,11 +366,15 @@ private struct NXTasksQueryBar: View {
                     // Right-aligned with the field, unless that would push it past the page's leading edge.
                     let shift = max(0, width - clusterEnd)
                     pillPopover(query: query, width: width)
-                        // Guides rather than an offset, so its click region moves with it.
-                        .alignmentGuide(.top) { $0[.top] - 38 }
+                        // 8 pt under the 29 pt field, as the design's. Guides
+                        // rather than an offset, so its click region moves with it.
+                        .alignmentGuide(.top) { $0[.top] - 37 }
                         .alignmentGuide(.trailing) { $0[.trailing] - shift }
-                        .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity)
-                            .combined(with: .offset(y: -4)))
+                        // The design's popIn as it shows; it goes at once.
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity)
+                                .combined(with: .offset(y: -4)),
+                            removal: .identity))
                 }
             }
         }
@@ -424,13 +430,16 @@ private struct NXTasksQueryBar: View {
             ForEach(TasksStatusFilter.allCases) { status in
                 let on = workbench.tasksStatus == status
                 Button { workbench.tasksStatus = status } label: {
+                    // The design's 13.5/1 and 11/1 line boxes.
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(status.title).font(.system(size: 13.5, weight: on ? .semibold : .medium))
                             .foregroundStyle(on ? NX.ink : NX.ink(0.42))
+                            .padding(.vertical, (13.5 - NXStrikeText.glyphLineHeight(13.5)) / 2)
                         Text("\(counts[status] ?? 0)")
                             .font(.system(size: 11, weight: .medium))
                             .monospacedDigit()
                             .foregroundStyle(NX.ink(on ? 0.45 : 0.28))
+                            .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
                     }
                     .animation(.easeOut(duration: 0.16), value: on)
                     .padding(.bottom, 13)
@@ -528,8 +537,8 @@ private struct NXTasksQueryBar: View {
                 .accessibilityLabel("Clear filter")
             }
         }
-        // 20 pt field + 11 pt puts the text on the same line as the tabs' 13 pt padding.
-        .padding(.bottom, 11)
+        // The design's 20 pt field and 9 pt under it.
+        .padding(.bottom, 9)
         // Narrower than its width only when the bar has wrapped and the page is narrower still.
         .frame(minWidth: 0, idealWidth: width, maxWidth: width, alignment: .leading)
         .clipped()
@@ -583,6 +592,8 @@ private struct NXTasksQueryBar: View {
                         .kerning(0.76)
                         .textCase(.uppercase)
                         .foregroundStyle(NX.ink(0.34))
+                        // The design's 9.5/1 line box.
+                        .padding(.vertical, (9.5 - NXStrikeText.glyphLineHeight(9.5)) / 2)
                         .frame(width: 44, alignment: .leading)
                         .padding(.top, 7)
                     NXFlow(spacing: 5) {
@@ -597,8 +608,13 @@ private struct NXTasksQueryBar: View {
                 }
                 .padding(.vertical, 5)
             }
+            // The design's 10.5/1.3: the extra leading between lines and,
+            // halved, above the first and below the last.
+            let footLeading = 10.5 * 1.3 - NXStrikeText.glyphLineHeight(10.5)
             HStack(spacing: 8) {
                 Text("Words combine — “kyoto overdue #travel”. Anything else matches the title.")
+                    .lineSpacing(footLeading)
+                    .padding(.vertical, footLeading / 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("⇥ complete · esc clear").fixedSize()
             }
@@ -631,7 +647,9 @@ private struct NXQueryPill: View {
     var body: some View {
         HStack(spacing: 5) {
             if let list { NXListGlyph(list: list, size: 11) }
+            // The design's 12/1 line box, so the pill is 24 pt.
             Text(label).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
         }
         .foregroundStyle(isOn ? .white : NX.ink(0.7))
         .padding(.vertical, 6)
@@ -649,7 +667,8 @@ private struct NXQueryPill: View {
     }
 }
 
-/// Plain text button that changes colour on hover.
+/// Plain text button that changes colour on hover, over the design's 160ms,
+/// with no pressed state, as the design has none.
 struct NXTextHoverStyle: ButtonStyle {
     var color: Color
     var hover: Color
@@ -667,7 +686,6 @@ struct NXTextHoverStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .foregroundStyle(hovering ? hover : color)
-                .opacity(configuration.isPressed ? 0.7 : 1)
                 .onHover { hovering = $0 }
                 .animation(.easeOut(duration: 0.16), value: hovering)
         }
@@ -876,6 +894,9 @@ private struct NXTasksSentenceBar: View {
     /// The bar's width and where each token starts in it, so a menu stays on the page.
     @State private var barWidth: CGFloat = .infinity
     @State private var tokenStarts: [NXTasksMenu: CGFloat] = [:]
+    /// The menu open before this update. The design's is one card, so a menu
+    /// opened straight from another moves to its token without its popIn.
+    @State private var shownMenu: NXTasksMenu?
 
     private nonisolated static let space = "tasks-sentence-bar"
     private static let menuWidth: CGFloat = 250
@@ -909,7 +930,9 @@ private struct NXTasksSentenceBar: View {
                                                     padding: EdgeInsets(top: 5, leading: 7, bottom: 5, trailing: 7),
                                                     foreground: NX.ink(0.45), hoverForeground: NX.ink))
                     .padding(.leading, 4)
-                    .transition(.opacity)
+                    // The design's fadeIn, 160ms ease, whatever the Motion
+                    // setting; it goes at once.
+                    .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(160)), removal: .identity))
                 }
             }
             .font(.system(size: 13))
@@ -954,10 +977,8 @@ private struct NXTasksSentenceBar: View {
         .padding(.top, 18)
         .padding(.bottom, 4)
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
-        // The design's Reset fadeIn and menu popIn, whatever the Motion setting.
-        .animation(NX.cssEase(160), value: isDirty)
-        .animation(NX.ease(160), value: menu)
         .onChange(of: env.navigator.route) { _, _ in menu = nil }
+        .onChange(of: menu) { _, now in shownMenu = now }
         .onAppear {
             clicks.install { clicks, event in
                 // A click outside the open menu closes it; the tokens open and close their own.
@@ -1009,8 +1030,14 @@ private struct NXTasksSentenceBar: View {
                     .alignmentGuide(.bottom) { $0[.top] - 6 }
                     // Guides rather than an offset, so its click region moves with it.
                     .alignmentGuide(.leading) { $0[.leading] + shift }
-                    .transition(.scale(scale: 0.97, anchor: .topLeading).combined(with: .opacity)
-                        .combined(with: .offset(y: -4)))
+                    // The design's popIn, 160ms whatever the Motion setting,
+                    // as it opens; it goes at once.
+                    .transition(.asymmetric(
+                        insertion: shownMenu == nil
+                            ? .scale(scale: 0.97, anchor: .topLeading).combined(with: .opacity)
+                                .combined(with: .offset(y: -4)).animation(NX.ease(160))
+                            : .identity,
+                        removal: .identity))
             }
         }
         // Over the words and tokens after it.
@@ -1109,7 +1136,9 @@ private struct NXSentenceToken: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
+        // The design's `background 140ms ease`, under the pointer and as its menu opens.
         .animation(.easeOut(duration: 0.14), value: hovering)
+        .animation(.easeOut(duration: 0.14), value: isOpen)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(isOpen ? "Expanded" : "Collapsed")

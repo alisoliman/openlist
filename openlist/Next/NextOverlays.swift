@@ -146,7 +146,8 @@ private struct NXOverlayBackdrop<Card: View>: View {
                 .opacity(shown ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .transition(.opacity)
+        // The design's fadeIn as it opens; closed, it goes at once, card and all.
+        .transition(.asymmetric(insertion: .opacity, removal: .identity))
         .onAppear { withAnimation(NX.ease(180)) { shown = true } }
     }
 }

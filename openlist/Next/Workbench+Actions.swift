@@ -973,7 +973,7 @@ extension Workbench {
     }
 
     func closeCapture() {
-        withAnimation(style.ease(180)) { captureOpen = false }
+        captureOpen = false
         captureText = ""
         captureNotice = nil
     }

@@ -221,12 +221,13 @@ struct NXBottomBars: View {
         let hasSelection = !NXSelectionBar.selected(workbench).isEmpty
         ZStack {
             if hasSelection && !env.navigator.isCommandPaletteOpen {
-                NXSelectionBar().transition(style.slide(Self.barTransition))
+                NXSelectionBar().transition(barTransition)
             } else if let tray = workbench.tray, !hasSelection {
-                NXTray(message: tray).transition(style.slide(Self.barTransition))
+                NXTray(message: tray).transition(barTransition)
             }
         }
         // The design's barIn, at its own speed whatever the Motion setting.
+        // Each bar goes at once, as the design's leave with their state.
         .animation(NX.ease(220), value: hasSelection)
         .animation(NX.ease(200), value: workbench.tray == nil)
         .padding(.bottom, 26)
@@ -240,7 +241,9 @@ struct NXBottomBars: View {
         }
     }
 
-    static let barTransition = AnyTransition.asymmetric(
-        insertion: .offset(y: 10).combined(with: .scale(scale: 0.97)).combined(with: .opacity),
-        removal: .opacity)
+    /// The design's barIn as a bar shows, or a fade with Reduce Motion; none as it goes.
+    private var barTransition: AnyTransition {
+        .asymmetric(insertion: style.slide(.offset(y: 10).combined(with: .scale(scale: 0.97)).combined(with: .opacity)),
+                    removal: .identity)
+    }
 }

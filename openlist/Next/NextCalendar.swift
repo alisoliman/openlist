@@ -782,10 +782,11 @@ private struct NXUnplannedColumn: View {
                 .padding(.vertical, hintLeading / 2)
                 .padding(EdgeInsets(top: 0, leading: 2, bottom: 4, trailing: 2))
             ForEach(tasks) { task in
-                // Each card plays the design's liftIn as it appears, the Calendar opening too.
+                // Each card plays the design's liftIn as it appears, the Calendar
+                // opening too, and goes at once, the cards below moving up.
                 card(task)
                     .modifier(NXLiftIn(animation: NX.cssEase(220)))
-                    .transition(.asymmetric(insertion: .identity, removal: .opacity.combined(with: .scale(scale: 0.96))))
+                    .transition(.identity)
             }
             if tasks.isEmpty {
                 Text("Everything due this week has a slot.")
@@ -800,7 +801,9 @@ private struct NXUnplannedColumn: View {
                         .strokeBorder(NX.ink(0.16), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
         }
-        .animation(NX.ease(220), value: tasks.map(\.id))
+        // Whatever takes a card out, a completion's animated start too, the
+        // cards below move up at once, as the design's do.
+        .transaction(value: tasks.map(\.id)) { $0.animation = nil }
     }
 
     private var unplanned: [Block] {

@@ -98,7 +98,8 @@ struct NextSidebar: View {
                             sectionBlock(nil, title: "Other lists", collapsed: workbench.collapsedGroups.contains("sec-other"),
                                          lists: other) { toggle("sec-other") }
                         }
-                        labelsBlock
+                        // Like "Other lists", no header until there's a label under it.
+                        if !library.labels.isEmpty { labelsBlock }
                     }
                     .padding(.horizontal, 8)
                     .padding(.top, 2)

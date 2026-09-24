@@ -61,7 +61,9 @@ struct NextToolbar: View {
                         NXNotchIdeal(titleRoom: 60) { undoButton(undo, labelled: !working) }
                         undoButton(undo, labelled: false)
                     }
-                    .transition(.opacity)
+                    // The design's fadeIn, 200ms ease, as it shows; it goes at
+                    // once, and its label changes in place.
+                    .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(200)), removal: .identity))
                 }
                 toolButton(icon: "bolt", help: "Actions (⌘K)") {
                     if !working {
@@ -106,7 +108,13 @@ struct NextToolbar: View {
         .overlay(alignment: .top) {
             // Centred, but never over the crumb or the buttons.
             NXNotchPlacement(leading: 18 + trafficLightsInset + leadingWidth + 8, trailing: 18 + trailingWidth + 8) {
-                if working { NXWorkNotch().transition(style.slide(.move(edge: .top))) }
+                // The design's notchDrop, at its own 420ms whatever the Motion
+                // setting; it goes at once when the work ends, and the labels
+                // beside it change at once, as the design's do.
+                if working {
+                    NXWorkNotch().transition(.asymmetric(insertion: style.slide(.move(edge: .top)).animation(NX.ease(420)),
+                                                         removal: .identity))
+                }
             }
         }
         .popover(isPresented: $calendar.isWorkPanelPresented, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
@@ -128,9 +136,6 @@ struct NextToolbar: View {
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                 userInfo: [.announcement: announcement, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         }
-        // The design's notchDrop plays at its own speed whatever the Motion setting.
-        .animation(NX.ease(420), value: working)
-        .animation(.easeOut(duration: 0.2), value: workbench.undoLabel)
         .zIndex(40)
     }
 
