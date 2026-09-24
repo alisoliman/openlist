@@ -17,34 +17,61 @@ struct LabelMergeSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Merge labels?").font(.title2.bold())
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Merge labels?")
+                .font(NX.serif(26))
+                .padding(.vertical, NX.serifLeading(26, lineHeight: 1.1))
+                .foregroundStyle(NX.ink)
             if destinations.count > 1 {
-                Picker("Keep this label", selection: $destinationID) {
-                    ForEach(destinations) { label in
-                        Text("\(label.name) · \(label.accent.title) · created \(label.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                            .tag(Optional(label.id))
-                    }
+                let kept = destinations.first { $0.id == destinationID }
+                HStack(spacing: 8) {
+                    Text("Keep this label").font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
+                        .fixedSize()
+                    // The menu tells matching labels apart by when they were made;
+                    // the pill names the choice and truncates a long name.
+                    NXPopUpPill(value: kept.map { "\($0.name) · \($0.accent.title)" } ?? "Choose",
+                                label: "Keep this label", swatch: kept?.nxColor, truncates: true,
+                                entries: destinations.map { label in
+                                    .choice(title(label), isSelected: label.id == destinationID, swatch: label.nxColor) {
+                                        destinationID = label.id
+                                    }
+                                })
                 }
             }
             if let plan {
                 Text("Replace “\(plan.source.name)” with the existing label below.")
-                Label("\(plan.destination.name) · \(plan.destination.accent.title)", systemImage: "tag.fill")
-                    .foregroundStyle(plan.destination.accent.color)
-                    .font(.headline)
-                    .accessibilityLabel("Surviving label: \(plan.destination.name), color: \(plan.destination.accent.title)")
+                    .font(.system(size: 13))
+                    .foregroundStyle(NX.ink(0.7))
+                HStack(spacing: 5) {
+                    Image(systemName: "tag.fill").font(.system(size: 11, weight: .semibold))
+                    Text("\(plan.destination.name) · \(plan.destination.accent.title)")
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(plan.destination.accent.color)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                .background(plan.destination.accent.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Surviving label: \(plan.destination.name), color: \(plan.destination.accent.title)")
                 Text("This updates \(plan.affectedTaskCount) \(plan.affectedTaskCount == 1 ? "task" : "tasks"), including completed, nested, and archived tasks. The surviving label will be used by \(plan.resultingTaskCount) \(plan.resultingTaskCount == 1 ? "task" : "tasks") in total.")
-                Text("The existing label keeps its color. Tasks using both labels keep one copy. You can undo this merge after leaving Settings.")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(NX.ink(0.7))
+                Text("The existing label keeps its color. Tasks using both labels keep one copy. You can undo this merge from the notice at the top of the window.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(NX.ink(0.48))
             }
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
+                    .font(.system(size: 12))
+                    .foregroundStyle(NX.redText)
             }
-            HStack {
+            HStack(spacing: 6) {
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(NXDialogButtonStyle(kind: .secondary))
+                    .keyboardShortcut(.cancelAction)
                 Button("Merge labels", action: merge)
+                    .buttonStyle(NXDialogButtonStyle(kind: .primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(plan == nil)
             }
@@ -52,11 +79,16 @@ struct LabelMergeSheet: View {
         .padding(24)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+        .background(NX.card)
         .onAppear {
             destinationID = destinations.first?.id
             refreshPlan()
         }
         .onChange(of: destinationID) { refreshPlan() }
+    }
+
+    private func title(_ label: TaskLabel) -> String {
+        "\(label.name) · \(label.accent.title) · created \(label.createdAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
     private func refreshPlan() {

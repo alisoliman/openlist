@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Owned by the shared Store and shown in both Settings and the main window.
+/// Owned by the shared Store and shown above every screen of the main window,
+/// Settings included.
 struct LabelMergeNotice: View {
     @Environment(AppEnvironment.self) private var env
 

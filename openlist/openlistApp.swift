@@ -147,18 +147,6 @@ struct openlistApp: App {
         .defaultPosition(.top)
         .handlesExternalEvents(matching: [])
 
-        Settings {
-            if let env, let container {
-                SettingsView()
-                    .modifier(InteractionMotion())
-                    .environment(env)
-                    .modelContainer(container)
-                    .environment(\.calendar, env.settings.calendar)
-                    .preferredColorScheme(env.settings.appearance.colorScheme)
-            }
-        }
-        .handlesExternalEvents(matching: [])
-
         MenuBarExtra("Openlist", systemImage: "checkmark.circle", isInserted: menuBarBinding) {
             if let env, let container {
                 MenuBarView()
