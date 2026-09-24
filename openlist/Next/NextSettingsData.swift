@@ -114,17 +114,18 @@ struct NXDataSettings: View {
                 }
             }
         }
-        .alert("Clear all activity history?", isPresented: $isConfirmingClearHistory) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear History", role: .destructive) { env.workbench.clearActivityHistory() }
-        } message: {
-            Text("This removes every change in Activity, the completion heatmap and each task’s history, including older events, on synced devices. Your tasks are kept.")
+        .sheet(isPresented: $isConfirmingClearHistory) {
+            NXConfirmationSheet(title: "Clear all activity history?",
+                                message: "This removes every change in Activity, the completion heatmap and each task’s history, including older events, on synced devices. Your tasks are kept.",
+                                confirm: "Clear History") { env.workbench.clearActivityHistory() }
         }
-        .alert("Delete everything?", isPresented: $isConfirmingReset) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) { reset() }
-        } message: {
-            Text("All lists, tasks, notes and labels will be permanently removed. These deletions also sync to iCloud and your other Macs when connected.")
+        .background {
+            // A second sheet, on a view of its own.
+            Color.clear.sheet(isPresented: $isConfirmingReset) {
+                NXConfirmationSheet(title: "Delete everything?",
+                                    message: "All lists, tasks, notes and labels will be permanently removed. These deletions also sync to iCloud and your other Macs when connected.",
+                                    confirm: "Delete") { reset() }
+            }
         }
     }
 
@@ -160,7 +161,7 @@ struct NXDataSettings: View {
     }
 
     private func reset() {
-        guard env.store.permanentlyResetLibrary() else { return }
+        guard env.workbench.resetLibrary() else { return }
         // The page stays open: replacing the route with itself still closes the
         // inspector and selection on tasks that are gone. A list's or label's
         // screen goes with them.
@@ -216,12 +217,58 @@ private struct NXLibraryBackupRows: View {
                 LibraryRestorePreview(preview: preview, library: library)
             }
         }
-        .alert("Return to the original library?", isPresented: $confirmsReturn) {
-            Button("Cancel", role: .cancel) {}
-            Button("Return to Original and Quit") { Task { await library.returnToOriginal() } }
-        } message: {
-            Text("Open Openlist again after it quits. The original library and its preferences will return, including its previous iCloud behavior. This restored copy will be retained separately; its changes are not merged into the original.")
+        .background {
+            // A second sheet, on a view of its own.
+            Color.clear.sheet(isPresented: $confirmsReturn) {
+                NXConfirmationSheet(title: "Return to the original library?",
+                                    message: "Open Openlist again after it quits. The original library and its preferences will return, including its previous iCloud behavior. This restored copy will be retained separately; its changes are not merged into the original.",
+                                    confirm: "Return to Original and Quit", isDestructive: false) {
+                    Task { await library.returnToOriginal() }
+                }
+            }
         }
+    }
+}
+
+/// A Settings confirmation in a Next sheet, as Delete List's is: the
+/// question, what it does, and Cancel beside the button that does it. What
+/// it confirms can't be undone, so Return presses neither; Escape cancels.
+struct NXConfirmationSheet: View {
+    let title: String
+    let message: String
+    let confirm: String
+    var isDestructive = true
+    let action: () -> Void
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let style = env.workbench.style
+        VStack(alignment: .leading, spacing: 16) {
+            NXPanelTitle(title)
+            Text(message)
+                .font(.system(size: 12.5))
+                .lineSpacing(2)
+                .foregroundStyle(NX.ink(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+                Button(confirm, role: isDestructive ? .destructive : nil) {
+                    dismiss()
+                    action()
+                }
+                .buttonStyle(NXPanelButtonStyle(kind: isDestructive ? .destructive : .primary))
+            }
+        }
+        .padding(24)
+        .frame(width: 430)
+        .presentationBackground(NX.card)
+        .tint(style.accent)
+        // Presented from the window, outside the Next shell's style.
+        .environment(\.nextStyle, style)
     }
 }
 
@@ -229,14 +276,13 @@ private struct NXLibraryBackupRows: View {
 private struct LibraryRestorePreview: View {
     let preview: LibraryBackupPackage.Validated
     @Bindable var library: LibraryMaintenance
+    @Environment(AppEnvironment.self) private var env
 
     var body: some View {
+        let style = env.workbench.style
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Restore this backup?")
-                    .font(NX.serif(26))
-                    .padding(.vertical, NX.serifLeading(26, lineHeight: 1.1))
-                    .foregroundStyle(NX.ink)
+                NXPanelTitle("Restore this backup?")
                 Text("Format \(preview.manifest.version) · \(preview.manifest.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(NX.ink(0.48))
@@ -272,16 +318,19 @@ private struct LibraryRestorePreview: View {
                 if library.isBusy { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Cancel", role: .cancel) { library.preview = nil }
-                    .buttonStyle(NXDialogButtonStyle(kind: .secondary))
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                     .keyboardShortcut(.cancelAction)
                 Button("Restore and Quit", role: .destructive) { Task { await library.confirmRestore() } }
-                    .buttonStyle(NXDialogButtonStyle(kind: .destructive))
+                    .buttonStyle(NXPanelButtonStyle(kind: .destructive))
             }
             .disabled(library.isBusy)
         }
         .padding(24)
         .frame(width: 490)
-        .background(NX.card)
+        .presentationBackground(NX.card)
+        .tint(style.accent)
+        // Presented from the window, outside the Next shell's style.
+        .environment(\.nextStyle, style)
         .interactiveDismissDisabled(library.isBusy)
     }
 

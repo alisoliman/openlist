@@ -1293,6 +1293,28 @@ fixActions(labelled).onChange(NSAttributedString(string: "#errands"))
 fixEditor.commitLine()
 check(store.block(id: labelled.id) != nil && !labelled.labelIDs.isEmpty, "A new line of only a label keeps its line and label")
 
+// Every line's edit says what it touched as it ends, a new line left empty
+// too, which records nothing, so the change log owns what the line saved.
+var endedLines: [(ids: Set<UUID>, since: Date)] = []
+fixEditor.hooks.didEndLine = { endedLines.append(($0, $1)) }
+fixRecorded.removeAll()
+let beforeDropped = Date.now
+fixEditor.appendTask()
+let dropped = fixEditor.focus.blockID!
+fixEditor.commitLine()
+check(store.block(id: dropped) == nil && fixRecorded.isEmpty && endedLines.count == 1
+    && endedLines[0].ids.contains(dropped) && endedLines[0].since >= beforeDropped,
+    "A new line left empty goes with no entry, and still says which line it was and when it began")
+fixEditor.appendTask()
+let writtenLine = store.block(id: fixEditor.focus.blockID!)!
+fixActions(writtenLine).onChange(NSAttributedString(string: "Pack the camera"))
+fixEditor.commitLine()
+check(fixRecorded.last == .added(writtenLine.id) && endedLines.count == 2 && endedLines[1].ids.contains(writtenLine.id),
+    "A line written and left records Added and says it touched its block")
+fixEditor.commitLine()
+check(endedLines.count == 2, "With no line open, nothing ends")
+fixEditor.hooks.didEndLine = { _, _ in }
+
 // Taken out, a line's lines go where they show: not under a done task the document lists apart.
 let doneAbove = store.appendBlock(kind: .task, text: "Done already", to: fixDocument)
 let emptiedParent = store.appendBlock(kind: .task, text: "", to: fixDocument)

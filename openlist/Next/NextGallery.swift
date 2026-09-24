@@ -67,17 +67,18 @@ struct NextListsGallery: View {
         }
     }
 
-    /// The first three open top-level tasks, in the list's document order.
-    /// Worked out here, once per library change, so hovering a card never fetches.
+    /// The first three open tasks, subtasks included as the design's card
+    /// takes them, in the list's document order. Worked out here, once per
+    /// library change, so hovering a card never fetches.
     private func peek(_ list: TaskList, tasks: [Block]) -> [Block] {
-        let top = tasks.filter { !$0.isCompleted && !library.isSubtask($0) }
-        guard top.count > 1 else { return top }
-        let ids = Set(top.map(\.id))
+        let open = tasks.filter { !$0.isCompleted }
+        guard open.count > 1 else { return open }
+        let ids = Set(open.map(\.id))
         var ordered = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
             .map(\.block).filter { ids.contains($0.id) }
         // Tasks the outline could not reach still belong on the card.
         let seen = Set(ordered.map(\.id))
-        ordered += top.filter { !seen.contains($0.id) }
+        ordered += open.filter { !seen.contains($0.id) }
         return Array(ordered.prefix(3))
     }
 }
@@ -173,7 +174,7 @@ private struct NXListCard: View {
         if !isArchived && path.isEmpty {
             Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") { workbench.setPinned(!list.isPinned, for: list) }
         }
-        Button("Duplicate") { workbench.go(.list(env.store.duplicateList(list).id)) }
+        Button("Duplicate") { workbench.duplicateList(list) }
         Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
         Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
         Button("Move List…") { env.listPendingMove = list }

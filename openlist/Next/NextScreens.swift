@@ -349,11 +349,11 @@ private struct NXListOptions: View {
         Menu {
             Toggle("Show Tasks Only", isOn: Binding(get: { navigator.listViewMode(for: list.id) == .tasks },
                                                     set: { navigator.setListViewMode($0 ? .tasks : .document, for: list.id) }))
-            Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.store.setSorting($0, for: list) })) {
+            Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.workbench.setSorting($0, for: list) })) {
                 ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             Picker("Completed Tasks", selection: Binding(get: { list.completedVisibility },
-                                                         set: { env.store.setCompletedVisibility($0, for: list) })) {
+                                                         set: { env.workbench.setCompletedVisibility($0, for: list) })) {
                 ForEach(TaskList.CompletedVisibility.allCases) { Text($0.title).tag($0) }
             }
             Divider()
@@ -397,17 +397,17 @@ private struct NXListOptions: View {
     private var coverItems: some View {
         Button(list.coverFilename == nil ? "Add Cover from File…" : "Replace Cover from File…") {
             guard let source = Self.chooseCoverImage(for: list) else { return }
-            perform { try env.store.setListCover(list, from: source) }
+            perform { try env.workbench.setCover(of: list, from: source) }
         }
         if list.coverFilename != nil {
             Picker("Cover Display", selection: Binding(get: { list.coverPresentation }, set: { presentation in
-                perform { try env.store.setListCoverPresentation(list, presentation: presentation) }
+                perform { try env.workbench.setCoverPresentation(presentation, of: list) }
             })) {
                 ForEach(ListCoverPresentation.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.inline)
             Divider()
-            Button("Remove Cover", role: .destructive) { perform { try env.store.removeListCover(list) } }
+            Button("Remove Cover", role: .destructive) { perform { try env.workbench.removeCover(of: list) } }
         }
     }
 

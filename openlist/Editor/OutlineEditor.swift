@@ -203,6 +203,10 @@ struct OutlineHooks {
     /// changes. Anything it registers on the window's undo manager now lands
     /// in the same step.
     var didRecordEdit: (OutlineEdit, _ name: String) -> Void = { _, _ in }
+    /// A line's edit ended, recorded or not, as a new line left empty isn't:
+    /// the blocks it touched and when it began. Its typing saves as it goes,
+    /// for a host that tells that history apart from changes made elsewhere.
+    var didEndLine: (_ ids: Set<UUID>, _ since: Date) -> Void = { _, _ in }
     /// A new line took the caret.
     var didAddLine: (UUID) -> Void = { _ in }
     /// Shift-Return on a task, for a host that edits notes in place. `nil`
@@ -973,18 +977,21 @@ final class OutlineEditor {
         /// task or a spacer in an older list is, so passing through leaves it.
         let arrivedEmpty: Bool
         let session: EditorEditSession
+        /// When the edit began: the caret's first change, or the new line's creation.
+        let startedAt: Date
         /// Where the line's typing Undo is registered, folded into this step.
         /// A line whose kind changes can be drawn by a new text view. Held
         /// until the step ends, by identity: the undo manager doesn't keep
         /// them, and a text view gone with its storage would leave its typing.
         let undoTargets = NSHashTable<NSTextStorage>(options: [.strongMemory, .objectPointerPersonality])
 
-        init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession) {
+        init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession, startedAt: Date = .now) {
             self.blockID = blockID
             self.isNew = isNew
             isStructural = isNew
             self.arrivedEmpty = arrivedEmpty
             self.session = session
+            self.startedAt = startedAt
         }
     }
 
@@ -1012,10 +1019,11 @@ final class OutlineEditor {
     /// away opens, so the caret has a line to land in.
     private func addLine(covering ids: Set<UUID>, _ create: () -> Block) {
         commitLine()
+        let start = Date.now
         let session = env.store.beginEditorSession(in: document.listID, covering: ids)
         let created = env.store.recordInEditorSession(session, create)
         env.store.save()
-        line = LineEdit(blockID: created.id, isNew: true, arrivedEmpty: true, session: session)
+        line = LineEdit(blockID: created.id, isNew: true, arrivedEmpty: true, session: session, startedAt: start)
         observeUndo()
         unfold(toShow: created.id)
         env.activeDocument = document
@@ -1054,7 +1062,10 @@ final class OutlineEditor {
     func commitLine(undoTarget: NSTextStorage? = nil, removingEmpty: Bool = false) {
         guard let edit = line else { return }
         line = nil
-        defer { drawnRows = nil }
+        defer {
+            drawnRows = nil
+            hooks.didEndLine(edit.session.touchedIDs, edit.startedAt)
+        }
         for storage in [undoTarget, textStorage(editing: edit.blockID)].compactMap({ $0 }) { edit.undoTargets.add(storage) }
         let targets = edit.undoTargets.allObjects
         guard let block = env.store.block(id: edit.blockID) else {

@@ -98,18 +98,15 @@ struct TemplateCopySheet: View {
 
     private func createCopy() {
         do {
-            let mode = CopyMode.template(keepingRecurrence: keepsRecurrence)
+            // One change with Undo in the tray: a task's copy opens in the
+            // inspector, a list's on its page.
             switch request.source {
             case let .task(id):
-                // One change with Undo in the tray; the copy opens in the inspector.
                 try env.workbench.copyAsTemplate(id, keepingRecurrence: keepsRecurrence)
-                dismiss()
             case let .list(id):
-                guard let list = env.store.list(id: id) else { throw CopyError.unavailable }
-                let copyID = try env.store.copyList(list, mode: mode)
-                dismiss()
-                env.navigator.go(to: .list(copyID))
+                try env.workbench.copyListAsTemplate(id, keepingRecurrence: keepsRecurrence)
             }
+            dismiss()
         } catch {
             self.error = "The copy was not created. \(error.localizedDescription)"
         }

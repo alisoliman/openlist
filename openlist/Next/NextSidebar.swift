@@ -54,30 +54,40 @@ struct NextSidebar: View {
             searchField
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    VStack(spacing: 1) {
-                        ForEach(NavItem.all, id: \.route) { item in navRow(item) }
-                    }
-                    ForEach(library.sections, id: \.id) { section in
-                        sectionBlock(section, title: section.displayTitle, collapsed: section.isCollapsed,
-                                     lists: library.lists(in: section)) {
-                            env.store.setCollapsed(!section.isCollapsed, for: section)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        VStack(spacing: 1) {
+                            ForEach(NavItem.all, id: \.route) { item in navRow(item) }
                         }
+                        ForEach(library.sections, id: \.id) { section in
+                            sectionBlock(section, title: section.displayTitle, collapsed: section.isCollapsed,
+                                         lists: library.lists(in: section)) {
+                                env.store.setCollapsed(!section.isCollapsed, for: section)
+                            }
+                            .id(section.id)
+                        }
+                        // Unpinned lists are only in the Lists gallery.
+                        let other = library.unsectioned.filter(\.isPinned)
+                        if !other.isEmpty {
+                            sectionBlock(nil, title: "Other lists", collapsed: workbench.collapsedGroups.contains("sec-other"),
+                                         lists: other) { toggle("sec-other") }
+                        }
+                        labelsBlock
                     }
-                    // Unpinned lists are only in the Lists gallery.
-                    let other = library.unsectioned.filter(\.isPinned)
-                    if !other.isEmpty {
-                        sectionBlock(nil, title: "Other lists", collapsed: workbench.collapsedGroups.contains("sec-other"),
-                                     lists: other) { toggle("sec-other") }
-                    }
-                    labelsBlock
+                    .padding(.horizontal, 8)
+                    .padding(.top, 2)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 2)
-                .padding(.bottom, 12)
+                .scrollIndicators(.automatic)
+                // File ▸ New Section's section: its name field opens, in view.
+                .onChange(of: workbench.namingSectionID, initial: true) { _, id in
+                    guard let id, let section = env.store.allSections().first(where: { $0.id == id }) else { return }
+                    workbench.namingSectionID = nil
+                    startRename(.section(id), draft: section.title)
+                    DispatchQueue.main.async { withAnimation(style.ease(240)) { proxy.scrollTo(id, anchor: .center) } }
+                }
             }
-            .scrollIndicators(.automatic)
             footer
         }
         .frame(width: 236)
@@ -208,7 +218,7 @@ struct NextSidebar: View {
                 }
                 .dropDestination(for: String.self) { items, _ in
                     guard let dragged = draggedList(items) else { return false }
-                    env.store.move(list: dragged, toSection: section.id, above: nil)
+                    workbench.moveList(dragged, toSection: section.id, above: nil)
                     return true
                 } isTargeted: { setDropTarget(section.id, $0) }
         }
@@ -238,14 +248,10 @@ struct NextSidebar: View {
         .accessibilityValue(open ? "Expanded" : "Collapsed")
     }
 
-    /// Its lists stay in the sidebar, under "Other lists".
+    /// Its lists stay in the sidebar, under "Other lists"; Undo files them back.
     private func deleteSection(_ section: SidebarSection) {
         if renaming == .section(section.id) { renaming = nil }
-        let title = section.displayTitle
-        let hadLists = !library.lists(in: section).isEmpty
-        env.store.deleteSection(section)
-        workbench.showTray(hadLists ? "Deleted “\(title)”. Its lists moved to Other lists" : "Deleted “\(title)”",
-                           icon: "folder.badge.minus")
+        workbench.deleteSection(section)
     }
 
     @ViewBuilder
@@ -299,7 +305,7 @@ struct NextSidebar: View {
             workbench.go(workbench.route(for: list))
         }
         Divider()
-        Button("Duplicate") { workbench.go(.list(env.store.duplicateList(list).id)) }
+        Button("Duplicate") { workbench.duplicateList(list) }
         Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
         Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
         // A nested list shows under its parent whether pinned or not.
@@ -318,7 +324,7 @@ struct NextSidebar: View {
         if items.contains(where: { DragPayload.list.decode($0) != nil }) {
             guard !nested, let sectionID = list.sectionID, let dragged = draggedList(items),
                   dragged.id != list.id else { return false }
-            env.store.move(list: dragged, toSection: sectionID, above: list)
+            workbench.moveList(dragged, toSection: sectionID, above: list)
             return true
         }
         // Rows move only in this library's session payload. A bare row ID,
@@ -382,7 +388,7 @@ struct NextSidebar: View {
             if let list = library.list(id), !name.isEmpty, name != list.title { env.workbench.renameList(id, to: name) }
         case let .section(id):
             if let section = library.sections.first(where: { $0.id == id }), !section.isDeleted, section.modelContext != nil {
-                env.store.rename(section, to: name)
+                workbench.renameSection(section.id, to: name)
             }
         }
         renaming = nil

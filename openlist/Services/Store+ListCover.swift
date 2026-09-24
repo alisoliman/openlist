@@ -20,6 +20,20 @@ extension Store {
                             metadata: list.coverMetadataData, presentation: presentation.rawValue)
     }
 
+    /// A list's cover as it is, with its bytes, which the cache may let go
+    /// of once another replaces it, for Undo of a change to it.
+    func listCoverState(_ list: TaskList) -> ListCoverState {
+        ListCoverState(filename: list.coverFilename,
+                       data: list.coverData ?? list.coverFilename.flatMap { MediaStore.shared.fileContents(filename: $0) },
+                       metadata: list.coverMetadataData, presentation: list.coverPresentationRaw)
+    }
+
+    /// Puts a cover back as ``listCoverState(_:)`` read it, its file too.
+    func restoreListCover(_ list: TaskList, to state: ListCoverState) throws {
+        try mutateListCover(list, filename: state.filename, data: state.data, metadata: state.metadata,
+                            presentation: state.presentation)
+    }
+
     private func mutateListCover(_ list: TaskList, filename: String?, data: Data?, metadata: Data?, presentation: String?) throws {
         guard self.list(id: list.id) === list, !list.isDeleted, !list.isSystemInbox else { throw ListCoverError.unavailable }
         // Commit existing drafts first. A failed preflight has changed no cover fields or files.
@@ -61,4 +75,12 @@ extension Store {
         let attachments = try context.fetch(FetchDescriptor<Attachment>()).filter { !$0.isDeleted }
         return Set(lists.compactMap(\.coverFilename) + blocks.compactMap(\.mediaFilename) + attachments.map(\.filename))
     }
+}
+
+/// A list's cover, bytes included, as Undo and Redo of a cover change put it.
+struct ListCoverState: Equatable {
+    var filename: String?
+    var data: Data?
+    var metadata: Data?
+    var presentation: String?
 }

@@ -6,6 +6,7 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftData
 import SwiftUI
 
 /// A calendar placement, kept by value so Undo and Redo can rebuild a task's set.
@@ -38,6 +39,14 @@ private final class LabelDeletion {
 private final class LabelMerge {
     var plan: LabelMergePlan
     init(_ plan: LabelMergePlan) { self.plan = plan }
+}
+
+/// A label Settings made: what Undo deleted of it, for the Redo that brings
+/// it back, and the id the Undo after that deletes.
+private final class LabelCreation {
+    var labelID: UUID
+    var deleted: DeletedLabel?
+    init(_ labelID: UUID) { self.labelID = labelID }
 }
 
 extension Workbench {
@@ -186,7 +195,7 @@ extension Workbench {
             snap("\(NXFormat.quoted(task.displayTitle)) rolls to \(NXFormat.dueLabel(task.dueDate))",
                  icon: "repeat", tone: .green, ids: ids)
         } else {
-            snap(describe(tasks) + " done", icon: "checkmark.circle.fill", tone: .green, ids: ids)
+            snap(describe(tasks) + " done", icon: "checkmark.circle", tone: .green, ids: ids)
         }
         if let batch = latestBatch { outsideCompletionBatches.insert(batch) }
     }
@@ -235,7 +244,7 @@ extension Workbench {
         let tasks = tasks(ids)
         guard !tasks.isEmpty else { return }
         let on = !tasks.allSatisfy(\.isStarred)
-        edit(tasks, label: (on ? "Starred " : "Unstarred ") + describe(tasks), icon: "star.fill", tone: .amber) { task in
+        edit(tasks, label: (on ? "Starred " : "Unstarred ") + describe(tasks), icon: "star", tone: .amber) { task in
             if task.isStarred != on { store.toggleStar(task) }
         }
     }
@@ -263,7 +272,7 @@ extension Workbench {
         case .medium: "medium"
         case .high: "high"
         }
-        edit([task], label: "Priority \(word) · \(describe([task]))", icon: "flag.fill", tone: .red, chip: false) { task in
+        edit([task], label: "Priority \(word) · \(describe([task]))", icon: "flag", tone: .red, chip: false) { task in
             store.setPriority(priority, for: task)
         }
     }
@@ -499,37 +508,41 @@ extension Workbench {
         if let open = navigator.openTaskID, taskIDs.contains(open) { navigator.closeTask() }
     }
 
+    /// Trash's Restore, as the design's: the tray says where the entry goes
+    /// back to the moment it's clicked, with Undo, and the row flies out.
     func restore(_ entry: TrashEntry) {
-        let title = entry.metadata?.listTitle ?? "its list"
-        let label = "Restored \(NXFormat.quoted(entry.title)) to \(title)"
-        withAnimation(style.ease(300)) { _ = flying.insert(entry.id) }
-        let delay = Int(ms(300))
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(delay))
-            guard let self else { return }
-            // Written first, as a trash lands: the row leaves Trash as it
-            // stops flying, and one that stays comes back.
-            let restored = self.store.restoreTrash(ids: [entry.id])
-            self.flying.remove(entry.id)
-            guard restored else {
-                self.showTray(self.store.trashError ?? "This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
-                return
-            }
-            let restoredList = self.store.block(id: entry.id).flatMap { self.store.list(id: $0.listID) }
-                ?? (entry.isList ? self.store.list(id: entry.id) : nil)
-            let destination = restoredList.map { TrayDestination(label: "Open \($0.displayTitle)", route: self.route(for: $0)) }
-            let text = restoredList.map {
-                let place = $0.isEffectivelyArchived ? "archived list \($0.displayTitle)" : $0.displayTitle
-                return "Restored \(NXFormat.quoted(entry.title)) to \(place)"
-            } ?? label
-            if entry.isList {
-                self.snap(text, icon: "arrow.uturn.backward.circle", tone: .accent, ids: [entry.id],
-                          undoable: false, destination: destination)
-            } else {
-                self.snapRestore(text, id: entry.id, icon: "arrow.uturn.backward.circle", tone: .accent, destination: destination)
-            }
-            self.markRestored([entry.id])
+        let place = restoredPlace(of: entry)
+        beginRestore(entry, label: place.text, destination: place.destination)
+    }
+
+    /// What the tray says of a restore about to be written, and where its
+    /// Open goes, read from the entry as Trash holds it, as the Store will
+    /// put it back: a task in its list, or in Recovered items once that
+    /// list or the task it sat under is gone; a list under its parent, or at
+    /// the top level once the parent is gone.
+    private func restoredPlace(of entry: TrashEntry) -> (text: String, destination: TrayDestination?) {
+        let id = entry.id
+        let title = NXFormat.quoted(entry.title)
+        if entry.isList {
+            guard let list = try? store.context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id })).first
+            else { return ("Restored \(title)", nil) }
+            let parent = list.parentListID.flatMap { store.list(id: $0) }
+            var text = "Restored \(title)"
+            if let parent { text += " to \(store.listHierarchy().path(for: parent.id))" }
+            else if list.parentListID != nil { text += " to the top level — its parent list is unavailable" }
+            if list.isArchived || parent?.isEffectivelyArchived == true { text += " (archived)" }
+            return (text, TrayDestination(label: "Open \(list.displayTitle)", route: .list(id)))
         }
+        guard let root = try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })).first else {
+            return ("Restored \(title) to \(entry.metadata?.listTitle ?? "its list")", nil)
+        }
+        let owner = store.list(id: root.listID)
+        let parent = store.block(id: root.parentID)
+        guard let owner, root.parentID == nil || parent?.listID == owner.id else {
+            return ("Restored \(title) to Recovered items", nil)
+        }
+        let place = owner.isEffectivelyArchived ? "archived list \(owner.displayTitle)" : owner.displayTitle
+        return ("Restored \(title) to \(place)", TrayDestination(label: "Open \(owner.displayTitle)", route: route(for: owner)))
     }
 
     func erase(_ ids: [UUID]) {
@@ -550,7 +563,7 @@ extension Workbench {
         let id = list.id
         let label = "Created “Untitled list” in \(section?.displayTitle ?? "Lists")"
         registerListCreationUndo(label, listID: id)
-        snap(label, icon: "plus.circle.fill", tone: .accent, ids: [])
+        snap(label, icon: "plus.circle", tone: .accent, ids: [])
         pulse(list: id)
         namingListID = id
         go(.list(id))
@@ -655,6 +668,79 @@ extension Workbench {
         })
     }
 
+    /// Settings' Add: a label on nothing yet, as one change the tray can
+    /// undo, which takes it off whatever has it by then. A name another
+    /// label already has says so instead. True once the name is dealt with.
+    @discardableResult
+    func createLabel(named rawName: String) -> Bool {
+        let name = TaskLabel.normalize(rawName)
+        guard !name.isEmpty else { return false }
+        if let existing = store.matchingLabels(named: name).first {
+            showTray("#\(existing.name) already exists", icon: "tag", tone: .neutral)
+            return true
+        }
+        guard let label = store.findOrCreateLabel(named: name) else { return false }
+        store.save()
+        let created = LabelCreation(label.id)
+        snap("Created #\(label.name)", icon: "tag", tone: .accent, ids: [], undo: { workbench in
+            // Deleted meanwhile, it's gone already.
+            guard let label = workbench.store.label(id: created.labelID) else { return true }
+            if workbench.navigator.route == .label(label.id) { workbench.navigator.replace(with: .tasks) }
+            guard let deleted = workbench.store.deleteLabel(label) else { return false }
+            created.deleted = deleted
+            return true
+        }, redo: { workbench in
+            guard let deleted = created.deleted else { return true }
+            guard let id = workbench.store.restoreDeletedLabel(deleted) else { return false }
+            created.labelID = id
+            created.deleted = nil
+            return true
+        })
+        return true
+    }
+
+    /// Settings' rename in place, which every task's #chip shows at once, as
+    /// one change the tray can undo. Throws, changing nothing, when the
+    /// Store refuses the name.
+    func renameLabel(_ label: TaskLabel, to rawName: String) throws {
+        let id = label.id
+        let previous = label.name
+        try store.renameLabel(id: id, to: rawName)
+        guard let name = store.label(id: id)?.name, name != previous else { return }
+        snap("Renamed #\(previous) to #\(name)", icon: "tag", tone: .accent, ids: [], undo: { workbench in
+            workbench.renameLabel(id: id, to: previous)
+        }, redo: { workbench in
+            workbench.renameLabel(id: id, to: name)
+        })
+    }
+
+    /// Undo and Redo of a rename, which a label named so since refuses.
+    private func renameLabel(id: UUID, to name: String) -> Bool {
+        do {
+            try store.renameLabel(id: id, to: name)
+            return true
+        } catch {
+            store.labelMaintenanceError = "The label was not renamed. \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// A label's colour dot in Settings, like a list's Icon & Colour…: each
+    /// pick one change the tray can undo.
+    func setLabelAccent(_ accent: ListAccent, for label: TaskLabel) {
+        guard label.accent != accent else { return }
+        let id = label.id
+        let previous = label.accent
+        let apply: @MainActor (Workbench, ListAccent) -> Void = { workbench, accent in
+            guard let label = workbench.store.label(id: id) else { return }
+            workbench.store.setAccent(accent, for: label)
+        }
+        apply(self, accent)
+        let text = "#\(label.name) colour → \(accent.title)"
+        registerUndo(text, undo: { apply($0, previous) }, redo: { apply($0, accent) })
+        snap(text, icon: "paintpalette", tone: .accent, ids: [])
+    }
+
     /// The hours Plan and Start working use for a list's tasks.
     func hours(for list: TaskList) -> AvailabilityCategory {
         AvailabilityCategory(rawValue: list.availabilityCategoryRaw) ?? .work
@@ -708,7 +794,7 @@ extension Workbench {
         }()
         let name = list?.displayTitle ?? "Inbox"
         registerCreationUndo("Added to \(name)", taskID: block.id)
-        snap("Added to \(name)", icon: "plus.circle.fill", tone: .accent, ids: [block.id],
+        snap("Added to \(name)", icon: "plus.circle", tone: .accent, ids: [block.id],
              destination: here || list == nil ? nil : TrayDestination(label: "Show", route: route(for: list!)))
         flash(\.fresh, [block.id], for: 1200)
         pulse(list: block.listID)

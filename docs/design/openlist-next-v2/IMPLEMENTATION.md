@@ -51,7 +51,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space.
 - Trash keeps one entry per trashed task or list, not a row per subtask: the subtasks
   restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
-  counts entries.
+  counts entries. A list's Restore names where it goes back, as a task's names its list
+  (under its parent, or at the top level once the parent is gone), and Undo takes it back
+  to Trash as a task's does.
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
   `OutlineEditor` engine, which keeps the design's rules (`OutlinePolicy`), tasks on `NXTaskRowChrome` (the
   Next row's chrome with the live text as its title) and the other kinds in the same
@@ -125,8 +127,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   links, label maintenance, Trash failures, failed undos) stays a notice card, all of them
   in one place under the toolbar.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
-  (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), Delete Label (sidebar and
-  Settings; Undo puts it back where it sat on each task), Merge labels, a list's Icon &
+  (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), a list's Duplicate, Use as
+  Template… (the copy opens; Undo takes it to Trash) and Move List…, a list dragged in the
+  sidebar, New and Delete Section (New Section also opens its name field; a rename is logged
+  as an edit), the "…" menu's Sort, Completed Tasks and Cover, Delete Label (sidebar and
+  Settings; Undo puts it back where it sat on each task), Settings' Add, rename and colour
+  of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
   Copy Content and Subtasks (for Paste in an empty document line) only copy. An Undo or
   Redo of a label or list change that fails says so in the tray, keeps the log as it was
@@ -134,6 +140,17 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the tray, where the old "Undo merge" card took back the latest merge out of order,
   keeping later changes. Deviation: "Confirm before deleting a list" stays a preference
   (on by default), asked in a Next sheet; the design asks nothing, as Undo covers it.
+  Settings' own confirmations, for what no Undo takes back (Clear all activity history,
+  Delete everything, Return to original library, Reset access token), are Next sheets too,
+  where Return presses neither button. Delete everything also clears the session: the
+  window's undo stack, Changes' This session and the tray. Settings' inline hours editor
+  keeps the design's dark "Keep for later" fill for Save override; the sheets' buttons are
+  `NXPanelButtonStyle`.
+- Activity › Changes › This session is the log, with the saved history it didn't write
+  merged in (MCP, another Mac). What a list document line saves while it's written (its new
+  task at Return, its title as typed, the line itself when it goes) counts as its one entry,
+  as the design logs it, or as none for a new line left empty. Earlier shows saved history
+  as it was recorded.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the

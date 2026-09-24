@@ -115,6 +115,33 @@ if phase == "prepare" {
     store.deleteSection(defaultSection)
     check(store.defaultSection()?.id == defaultSection.id, "Default sidebar section cannot be deleted")
 
+    // Undo of Delete Section and of a sidebar drag, as the Workbench registers them.
+    let unfiled = store.sidebarPlacements()
+    let undoSection = store.createSection(title: "Undo section")
+    store.move(list: keep, toSection: undoSection.id, above: nil)
+    store.move(list: archived, toSection: undoSection.id, above: keep)
+    let filed = store.sidebarPlacements()
+    let removed = store.removeSection(undoSection)
+    check(removed?.lists.count == 2 && keep.sectionID == nil && archived.sectionID == nil && keep.isPinned,
+          "Removing a section keeps what Undo needs, and its lists stay in the sidebar")
+    check(store.removeSection(defaultSection) == nil, "The default section is never removed")
+    store.move(list: archived, toSection: defaultSection.id, above: nil)
+    check(removed.map(store.restoreSection) == true && store.allSections().contains { $0.id == undoSection.id && $0.title == "Undo section" },
+          "Undo brings the section back under its own id")
+    check(keep.sectionID == undoSection.id && keep.sidebarIndex == filed[keep.id]?.sidebarIndex && archived.sectionID == defaultSection.id,
+          "Its lists go back in it where they sat, unless filed elsewhere since")
+    let beforeDrag = store.sidebarPlacements()
+    store.move(list: keep, toSection: defaultSection.id, above: archived)
+    let afterDrag = store.sidebarPlacements()
+    let dragged = afterDrag.filter { beforeDrag[$0.key] != $0.value }
+    store.applySidebarPlacements(beforeDrag.filter { dragged[$0.key] != nil }, expecting: dragged)
+    check(!dragged.isEmpty && store.sidebarPlacements() == beforeDrag, "Undoing a sidebar drag puts back exactly what it moved")
+    store.applySidebarPlacements(afterDrag, expecting: beforeDrag)
+    check(store.sidebarPlacements() == afterDrag, "Redoing it moves them again")
+    store.deleteSection(store.allSections().first { $0.id == undoSection.id }!)
+    store.applySidebarPlacements(unfiled, expecting: store.sidebarPlacements())
+    check(store.sidebarPlacements() == unfiled, "The lists are back where the section checks left them")
+
     // More than the former UI fetch cap, so clearing cannot silently leave
     // older records behind. Also covers the history step in reset.
     store.clearActivity()
