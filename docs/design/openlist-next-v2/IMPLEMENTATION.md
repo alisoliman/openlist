@@ -51,7 +51,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
   Image) are a native extra: their lines draw and edit in the document, the Turn into
   card brings them up for their names after "/" (with no query it shows the design's
-  five under its one header), and a line's Turn Into menu lists them all. Only the
+  five under its one header, and a single letter filters the five by label as the
+  design's does), and a line's Turn Into menu lists them all. From the second letter
+  the editor's search words bring kinds up too, so `/h1`, `/todo` or `/hr` find Heading,
+  Task or Divider, and a query can list a kind whose label doesn't hold it. Only the
   design's prefixes (`# `, `## `, `- `, `* `, `[ ] `, `[] `, `> `) convert a line as it's
   typed; the editor's inline `**bold**`, `_italic_`, `~~strike~~` and `` `code` `` rules
   still style it, as the Format menu does. ⇧↩ types a soft break only in a code line.

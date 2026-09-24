@@ -145,8 +145,16 @@ final class Workbench {
     }
     /// The task whose note is being written in place.
     var editingNoteID: UUID? {
-        didSet { if editingNoteID != nil, editingNoteID != oldValue { noteEditRequestedAt = .now } }
+        didSet {
+            guard editingNoteID != nil, editingNoteID != oldValue else { return }
+            noteEditRequestedAt = .now
+            noteEdit &+= 1
+        }
     }
+    /// Counts the notes started, so a note left and started again in one
+    /// update, as the note button does to an empty one, gets an editor of
+    /// its own, which takes the keyboard.
+    private(set) var noteEdit = 0
     /// When a note was last asked to take the keyboard, which it does a
     /// moment later, for the keys typed in between.
     @ObservationIgnored private(set) var noteEditRequestedAt: Date?

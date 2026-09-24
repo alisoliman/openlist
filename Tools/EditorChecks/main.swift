@@ -903,6 +903,21 @@ check(nextEditor.slashKinds(matching: "sub") == [.heading2] && nextEditor.slashK
     && nextEditor.slashKinds(matching: "h1") == [.heading1], "Turn into filters by label and the editor's search words")
 check(nextEditor.slashKinds(matching: "u") == [.heading2, .bullet] && nextEditor.slashKinds(matching: "e") == [.heading1, .heading2, .bullet, .paragraph],
     "A letter brings up what the design's filter does, not every other kind whose name holds it")
+// The design's slashOpts: its five, whose label holds the query.
+let designSlashOptions: [(kind: BlockKind, label: String)] = [(.task, "Task"), (.heading1, "Heading"), (.heading2, "Subheading"),
+                                                              (.bullet, "Bullet"), (.paragraph, "Text")]
+func designSlashKinds(_ query: String) -> [BlockKind] {
+    designSlashOptions.filter { query.isEmpty || $0.label.lowercased().contains(query) }.map { $0.kind }
+}
+check(nextEditor.slashKinds(matching: "s") == [.task, .heading2] && nextEditor.slashKinds(matching: "t") == [.task, .bullet, .paragraph]
+    && nextEditor.slashKinds(matching: "l") == [.bullet] && nextEditor.slashKinds(matching: "h") == [.heading1, .heading2]
+    && nextEditor.slashKinds(matching: "c").isEmpty,
+    "A letter brings up no kind for its search words alone")
+check("abcdefghijklmnopqrstuvwxyz0123456789".allSatisfy { nextEditor.slashKinds(matching: String($0)) == designSlashKinds(String($0)) },
+    "Every letter filters Turn into as the design's slashOpts does")
+check(nextEditor.slashKinds(matching: "todo") == [.task] && nextEditor.slashKinds(matching: "hr") == [.divider]
+    && nextEditor.slashKinds(matching: "co") == [.code],
+    "From the second letter the editor's search words and the other kinds' names come in")
 check(nextEditor.slashKinds(matching: "code") == [.code] && nextEditor.slashKinds(matching: "quo") == [.quote]
     && nextEditor.slashKinds(matching: "num") == [.numbered] && nextEditor.slashKinds(matching: "heading") == [.heading1, .heading2, .heading3]
     && nextEditor.slashKinds(matching: "div") == [.divider] && nextEditor.slashKinds(matching: "ima") == [.image],

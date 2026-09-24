@@ -635,8 +635,14 @@ private struct NXDocumentNote: View {
 
     var body: some View {
         if editing {
-            NXNoteEditor(initial: task.note, caretColor: env.settings.accent.editorColor, onCommit: commit,
+            let edit = env.workbench.noteEdit
+            NXNoteEditor(initial: task.note, caretColor: env.settings.accent.editorColor,
+                         onCommit: { commit($0, typing: $1, edit: edit) },
                          onBackToTitle: { env.workbench.document?.edit(task.id) })
+                // Left and started again in one update, as the note button
+                // does to an empty note, the note gets a new editor, which
+                // takes the keyboard as the one left can't.
+                .id(edit)
         } else {
             let empty = task.note.isEmpty
             let leading = max(0, 13 * 1.55 - NXStrikeText.glyphLineHeight(13))
@@ -657,11 +663,12 @@ private struct NXDocumentNote: View {
     }
 
     /// The design's note commit: trailing space goes, the note stays open
-    /// only if it has something, and a change is one step, logged.
-    private func commit(_ text: String, typing: NSTextStorage) {
+    /// only if it has something, and a change is one step, logged. An
+    /// editor left behind by a newer start of the note leaves that one open.
+    private func commit(_ text: String, typing: NSTextStorage, edit: Int) {
         let workbench = env.workbench
         let store = env.store
-        if workbench.editingNoteID == task.id { workbench.editingNoteID = nil }
+        if workbench.editingNoteID == task.id, workbench.noteEdit == edit { workbench.editingNoteID = nil }
         let value = text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
         if value.isEmpty { workbench.openNotes.remove(task.id) } else { workbench.openNotes.insert(task.id) }
         // The note's typing folds into its one step.

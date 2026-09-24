@@ -177,18 +177,19 @@ struct OutlineSlashOption: Identifiable, Equatable {
         OutlineSlashOption(kind: .image, label: "Image", symbol: "photo", hint: "", isExtra: true),
     ]
 
-    /// With no query, the design's five. The design filters by label; the
+    /// With no query, the design's five, and for one letter just what the
+    /// design's filter by label brings up. From the second letter the
     /// editor's own search words find a kind too, so "h1" and "todo" still
-    /// work. The other kinds come up for their name or search words as
-    /// typed from the start, so a letter the design's filter takes doesn't
-    /// bring them all.
+    /// work, and the other kinds come up for their name or search words as
+    /// typed from the start.
     static func matching(_ query: String) -> [OutlineSlashOption] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else { return all.filter { !$0.isExtra } }
+        let words = needle.count > 1
         return all.filter { option in
             let label = option.label.lowercased()
-            return (option.isExtra ? label.hasPrefix(needle) : label.contains(needle))
-                || option.kind.searchTerms.contains { $0.hasPrefix(needle) }
+            if words, option.kind.searchTerms.contains(where: { $0.hasPrefix(needle) }) { return true }
+            return option.isExtra ? words && label.hasPrefix(needle) : label.contains(needle)
         }
     }
 }
