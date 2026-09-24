@@ -93,6 +93,7 @@ final class WidgetSnapshotPublisher {
     func buildSnapshot(now: Date = .now) -> WidgetSnapshot {
         let calendar = settingsCalendar()
         let lists = store.allLists()
+        let hierarchy = ListHierarchy(lists)
         var listsByID: [UUID: TaskList] = [:]
         for list in lists { listsByID[list.id] = list }
         // Tasks only: prose never shows in a widget, and a library's
@@ -101,7 +102,7 @@ final class WidgetSnapshotPublisher {
         let allTasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
             $0.trashID == nil && $0.kindRaw == "task"
         }))) ?? []).filter { !$0.isDeleted }
-        let tasks = ActiveTaskPolicy(lists: lists).tasks(in: allTasks)
+        let tasks = ActiveTaskPolicy(hierarchy: hierarchy).tasks(in: allTasks)
         let inbox = InboxPolicy(lists: lists)
 
         let todayStart = calendar.startOfDay(for: now)
@@ -116,8 +117,8 @@ final class WidgetSnapshotPublisher {
                 title: task.displayTitle,
                 listID: task.listID,
                 listName: list?.displayTitle ?? "",
-                listIcon: list?.icon ?? "",
-                accent: (list?.accent ?? .graphite).rawValue,
+                listIcon: list?.glyph ?? "",
+                accent: list?.widgetAccent ?? ListAccent.graphite.rawValue,
                 dueDate: task.dueDate,
                 includesTime: task.includesTime,
                 isCompleted: task.isCompleted,
@@ -176,15 +177,19 @@ final class WidgetSnapshotPublisher {
         let tasksByList = Dictionary(grouping: allTasks.filter { $0.listID != nil }, by: { $0.listID! })
         let above = blocksAbove(allTasks)
         var orders: [UUID: (key: Int, ids: [UUID])] = [:]
-        snapshot.lists = lists.filter { !$0.isSystemInbox }.prefix(60).map { list in
+        // The List widget's picker and its default follow the sidebar. Every
+        // active list is here, so the one a widget shows stays however many
+        // lists are made, moved or reordered ahead of it.
+        let sidebar = hierarchy.sidebarOrder(lists, sections: store.allSections())
+        snapshot.lists = sidebar.filter { !$0.isSystemInbox }.map { list in
             let owned = tasksByList[list.id] ?? []
             let open = openTasks(in: list, tasks: owned, above: above, limit: 7, orders: &orders)
             let done = owned.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
             return WidgetSnapshot.ListSummary(
                 id: list.id,
                 title: list.displayTitle,
-                icon: list.icon,
-                accent: list.accent.rawValue,
+                icon: list.glyph,
+                accent: list.widgetAccent,
                 openCount: listCounts[list.id]?.open ?? 0,
                 doneCount: listCounts[list.id]?.done ?? 0,
                 openItems: open.map(item),
@@ -210,6 +215,8 @@ final class WidgetSnapshotPublisher {
     /// typing in the list's prose leaves it be.
     private func openTasks(in list: TaskList, tasks: [Block], above: [UUID: Block], limit: Int,
                            orders: inout [UUID: (key: Int, ids: [UUID])]) -> [Block] {
+        // A list with nothing open has no order to work out.
+        guard tasks.contains(where: { !$0.isCompleted }) else { return [] }
         let sorting = list.sorting
         func hash(_ body: (inout Hasher) -> Void) -> Int {
             var hasher = Hasher()
@@ -278,4 +285,10 @@ final class WidgetSnapshotPublisher {
         heatmapCache = (key, activity)
         return activity
     }
+}
+
+extension TaskList {
+    /// The colour the widgets draw a list's tasks in, as the app draws them:
+    /// Inbox's own blue (`NX.inbox`) as `#RRGGBB`, else the list's accent.
+    var widgetAccent: String { isSystemInbox ? "#3A7BD8" : accent.rawValue }
 }

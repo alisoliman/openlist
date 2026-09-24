@@ -12,9 +12,10 @@ import Foundation
 /// collide with version 1 item links (`openlist://v1/<library>/task/<id>`),
 /// which this type builds but leaves to `LocalLink` to open.
 nonisolated enum WidgetRoute: Equatable, Hashable, Sendable {
-    /// Quick Add, optionally filing into a list or planning for today.
+    /// Quick Add, optionally filing into a list, or with a task that has no
+    /// date of its own due today, as Today's add row makes it.
     case capture(listID: UUID?, forToday: Bool)
-    case inbox, triage, today, calendar, activity
+    case inbox, triage, today, calendar, activity, lists
 
     #if OPENLIST_DEV
     static let scheme = "openlist-dev"
@@ -34,6 +35,7 @@ nonisolated enum WidgetRoute: Equatable, Hashable, Sendable {
         case "today": self = .today
         case "calendar": self = .calendar
         case "activity": self = .activity
+        case "lists": self = .lists
         default: return nil
         }
     }
@@ -53,6 +55,7 @@ nonisolated enum WidgetRoute: Equatable, Hashable, Sendable {
         case .today: parts.host = "today"
         case .calendar: parts.host = "calendar"
         case .activity: parts.host = "activity"
+        case .lists: parts.host = "lists"
         }
         return parts.url!
     }

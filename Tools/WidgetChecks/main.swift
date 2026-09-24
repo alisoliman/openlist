@@ -97,7 +97,7 @@ check(try LocalLink.parse(WidgetRoute.taskURL(libraryID: libraryID, taskID: task
 check(WidgetRoute.taskURL(libraryID: nil, taskID: taskID) == WidgetRoute.today.url, "Without a library identity a row opens Today")
 check(WidgetRoute.scheme == LocalLink.scheme, "Widget routes use the edition's scheme")
 for route in [WidgetRoute.capture(listID: nil, forToday: false), .capture(listID: listID, forToday: true), .capture(listID: nil, forToday: true),
-              .inbox, .triage, .today, .calendar, .activity] {
+              .inbox, .triage, .today, .calendar, .activity, .lists] {
     check(WidgetRoute(url: route.url) == route, "\(route.url.absoluteString) round-trips")
 }
 check(WidgetRoute(url: WidgetRoute.taskURL(libraryID: libraryID, taskID: taskID)) == nil, "Item links are left to LocalLink")
@@ -192,6 +192,7 @@ morningDone.agenda = morningDone.agenda.map { day in
 let afternoon = UpNextModel(morningDone, clock: clock)
 check(afternoon.state == .next && afternoon.time == "13:00–13:30" && afternoon.note == "in 140 min", "Long waits count minutes, as the design")
 check(UpNextModel.minutes(80 * 60) == "80 min" && UpNextModel.minutes(-30) == "0 min", "80 min left, never below 0 min")
+check(upNext.accent == "blue" && evening.accent == nil, "The block's list colour, for a symbol icon; none once the day is clear")
 
 let paused = UpNextModel(session, clock: clock)
 check(paused.state == .paused && paused.label == "Paused" && paused.timer == .paused(seconds: 18), "The session: paused at 00:18")
@@ -249,5 +250,8 @@ check(AgendaModel(design, clock: across).range == "28 September – 4 October", 
 check(abs(EmojiSize.points(forDesign: 15) - 38.0 / 3) < 0.001 && abs(EmojiSize.points(forDesign: 10) - 8.3) < 0.001
       && abs(EmojiSize.points(forDesign: 10.5) - 8.8) < 0.001, "Small emoji draw at the design's size, not Core Text's larger one")
 check(EmojiSize.points(forDesign: 24) == 24 && EmojiSize.points(forDesign: 30) == 30, "From 24 px the two agree")
+// A list icon from synced or older data can name an SF Symbol, which draws as the symbol.
+check(ListIcon.isSymbolName("briefcase.fill") && ListIcon.isSymbolName("checklist"), "SF Symbol names read as symbols")
+check(!["🗻", "📋", "", "ab", "not.a.symbol.name"].contains(where: ListIcon.isSymbolName), "Emoji and other text stay text")
 
 print("Passed \(checks) widget snapshot, route, overlay and design checks")

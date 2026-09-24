@@ -83,4 +83,41 @@ check(dated.dueDays == [WidgetSnapshot.DueDay(day: yesterday, count: 1), WidgetS
       "A day each for yesterday's and today's work")
 check(dated.overdueCount == 1 && dated.dueTodayCount == 1, "Version 1's counts are written too")
 
+// Icons and colours as the app draws them: Inbox's own blue and glyph, and
+// the default icon for a list without one.
+store.bootstrap()
+let filed = Block(kind: .task, text: "Filed later", listID: store.inboxList()!.id, sortIndex: 0)
+filed.dueDate = today
+store.context.insert(filed)
+list.icon = ""
+store.save()
+let drawn = publisher.buildSnapshot()
+let filedRow = drawn.todayItems.first { $0.id == filed.id }
+check(filedRow?.accent == "#3A7BD8" && filedRow?.listIcon == "📥", "An Inbox task takes Inbox's own colour and glyph")
+check(drawn.lists.first { $0.id == list.id }?.icon == "📋" && drawn.todayItems.first { $0.id == mango.id }?.listIcon == "📋",
+      "A list without an icon shows the default one")
+
+// The List widget's picker and its default follow the sidebar: by section,
+// then place, nested lists after their parent, and lists no section holds last.
+let work = store.createSection(title: "Work")
+let alpha = store.createList(title: "Alpha", in: work)
+let beta = store.createList(title: "Beta", in: work)
+_ = store.createList(title: "Home")
+store.createChildList(in: alpha)!.title = "Alpha notes"
+store.move(list: beta, toSection: work.id, above: alpha)
+store.save()
+let picker = publisher.buildSnapshot().lists.map(\.title)
+check(picker == ["Home", "Beta", "Alpha", "Alpha notes", "Trip"], "Lists come in sidebar order, not creation order: \(picker)")
+
+// Every active list is published, with its rows, so a List widget's list in a
+// later section stays however many new lists join the sidebar ahead of it.
+store.context.insert(Block(kind: .task, text: "Plan offsite", listID: beta.id, sortIndex: 0))
+for index in 1...60 { store.createList(title: "More \(index)") }
+let crowded = publisher.buildSnapshot().lists
+store.createList(title: "Newest")
+let pushed = publisher.buildSnapshot().lists
+check(crowded.count == 65 && pushed.count == 66 && pushed.last?.id == list.id, "Past 60 lists, every one is published")
+check(pushed.first { $0.id == beta.id }?.openItems.map(\.title) == ["Plan offsite"],
+      "A later section's list keeps its place and rows after a new list is made")
+
 print("Passed \(checks) widget publisher checks")

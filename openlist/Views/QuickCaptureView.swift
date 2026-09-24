@@ -118,13 +118,14 @@ final class QuickCaptureDraft: NXCaptureDraft {
     var captureText = ""
     var captureListID: UUID?
     let captureLabelID: UUID? = nil
-    private(set) var capturePlansForToday = false
+    /// The Today widget asked for a task due today.
+    private var dueToday = false
     /// The list a widget asked to add to the end of.
     private var appendsTo: UUID?
 
-    /// A task with no date of its own is due today while new tasks go to
-    /// Today, unless it is planned for today instead.
-    var captureForToday: Bool { !capturePlansForToday && settings.defaultDestination == .today }
+    /// A task with no date of its own is due today when the Today widget
+    /// asked for one, or while new tasks go to Today.
+    var captureForToday: Bool { dueToday || settings.defaultDestination == .today }
 
     /// Whether Return adds at the end of the destination's document: only
     /// while it is still the list that asked for that.
@@ -137,13 +138,12 @@ final class QuickCaptureDraft: NXCaptureDraft {
         apply(request)
     }
 
-    /// Aims the draft where `request` asks, keeping its text; a request that
-    /// asks nothing leaves it as it was.
+    /// Aims the draft where `request` asks, keeping its text: Inbox with no
+    /// date when it names no list and doesn't ask for today.
     func apply(_ request: QuickCaptureRequest) {
-        guard request != QuickCaptureRequest() else { return }
         let chosen = store.list(id: request.listID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
         captureListID = chosen?.id ?? store.inboxList()?.id
-        capturePlansForToday = request.plansForToday
+        dueToday = request.dueToday
         appendsTo = request.appendsToList ? chosen?.id : nil
     }
 }

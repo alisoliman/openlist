@@ -16,8 +16,13 @@ struct ListEntity: AppEntity {
     var title: String
     var icon: String
 
+    /// "🗻 Weekend in Kyoto", or the list's SF Symbol as the entry's image
+    /// rather than its name in the title.
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(icon.isEmpty ? "" : icon + " ")\(title)")
+        if ListIcon.isSymbolName(icon) {
+            return DisplayRepresentation(title: "\(title)", image: DisplayRepresentation.Image(systemName: icon))
+        }
+        return DisplayRepresentation(title: "\(icon.isEmpty ? "" : icon + " ")\(title)")
     }
 
     init(_ list: WidgetSnapshot.ListSummary) {

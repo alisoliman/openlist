@@ -31,8 +31,9 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         var title: String
         var listID: UUID?
         var listName: String
+        /// The list's glyph: an emoji, or an SF Symbol's name (`ListIcon`).
         var listIcon: String
-        /// Raw value of `ListAccent`.
+        /// Raw value of `ListAccent`, or `#RRGGBB` for Inbox's own colour.
         var accent: String
         var dueDate: Date?
         var includesTime: Bool

@@ -34,10 +34,7 @@ struct ListWidgetView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            Text(model.emoji)
-                .font(.system(size: EmojiSize.points(forDesign: 15)))
-                .grayscale(palette.isDimmed ? 1 : 0)
-                .brightness(palette.isDimmed ? 0.25 : 0)
+            glyph
                 .frame(width: 28, height: 28)
                 .background(palette.tint(model.accent), in: RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 6) {
@@ -57,6 +54,21 @@ struct ListWidgetView: View {
                 }
                 ThinBar(progress: model.progress, color: palette.col(model.accent))
             }
+        }
+    }
+
+    /// The tile's 15 px emoji, or an SF Symbol in the list's colour, as the
+    /// app draws one, rather than its name.
+    @ViewBuilder private var glyph: some View {
+        if ListIcon.isSymbolName(model.emoji) {
+            Image(systemName: model.emoji)
+                .font(.system(size: 15 * 0.9, weight: .medium))
+                .foregroundStyle(palette.col(model.accent))
+        } else {
+            Text(model.emoji)
+                .font(.system(size: EmojiSize.points(forDesign: 15)))
+                .grayscale(palette.isDimmed ? 1 : 0)
+                .brightness(palette.isDimmed ? 0.25 : 0)
         }
     }
 

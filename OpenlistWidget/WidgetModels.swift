@@ -229,6 +229,8 @@ struct UpNextModel: Equatable {
     var title: String
     var listIcon: String
     var listName: String
+    /// The list's colour, for a symbol icon.
+    var accent: String?
     /// "50 min left" or "in 20 min"; the clock replaces it while working.
     var note: String
     var progress: Double
@@ -273,6 +275,7 @@ struct UpNextModel: Equatable {
             title = work.title
             listIcon = work.listIcon
             listName = work.listName
+            accent = work.accent
             taskID = work.taskID
             occurrenceID = work.occurrenceID
             timer = work.isRunning ? .running(anchor: work.elapsedAnchor) : .paused(seconds: work.pausedElapsed)
@@ -290,6 +293,7 @@ struct UpNextModel: Equatable {
             title = block.title
             listIcon = block.listIcon ?? ""
             listName = block.listName ?? ""
+            accent = block.accent
             taskID = block.taskID
             occurrenceID = block.occurrenceID
             timer = nil
@@ -307,6 +311,7 @@ struct UpNextModel: Equatable {
             title = "Nothing else planned"
             listIcon = ""
             listName = "Your day is clear"
+            accent = nil
             note = ""
             time = ""
             progress = 0
