@@ -145,7 +145,7 @@ struct NXTaskQuery {
     }
 
     @MainActor
-    func apply(_ query: String, to pool: [Block], workbench: Workbench) -> [Block] {
+    func apply(_ query: String, to pool: [Block], workbench: Workbench, now: Date = .now) -> [Block] {
         let filter = parse(query).filter
         // By day, as the design and the row chips: overdue is earlier days, so a
         // time already past today still counts as today.
@@ -160,7 +160,7 @@ struct NXTaskQuery {
             }
         }
         return pool.filter { task in
-            let offset = task.dueDate.map { NXFormat.dayOffset($0) }
+            let offset = task.dueDate.map { NXFormat.dayOffset($0, now: now) }
             let title = task.displayTitle.lowercased()
             return (filter.lists.isEmpty || task.listID.map(filter.lists.contains) == true)
                 && (filter.due.isEmpty || filter.due.contains { dueMatches($0, offset) })
@@ -222,7 +222,7 @@ struct NextTasksScreen: View {
     }
 
     @MainActor
-    static func pool(tasks: [Block], library: NextLibrary, workbench: Workbench, queryMode: Bool) -> [Block] {
+    static func pool(tasks: [Block], library: NextLibrary, workbench: Workbench, queryMode: Bool, now: Date) -> [Block] {
         var pool = tasks.filter { task in
             switch workbench.tasksStatus {
             case .open: !task.isCompleted || workbench.closing[task.id] != nil
@@ -231,7 +231,7 @@ struct NextTasksScreen: View {
             }
         }
         if queryMode {
-            pool = NXTaskQuery(library: library).apply(workbench.tasksQuery, to: pool, workbench: workbench)
+            pool = NXTaskQuery(library: library).apply(workbench.tasksQuery, to: pool, workbench: workbench, now: now)
         } else {
             if !workbench.tasksListFilter.isEmpty {
                 pool = pool.filter { $0.listID.map(workbench.tasksListFilter.contains) == true }
@@ -243,7 +243,7 @@ struct NextTasksScreen: View {
     }
 
     @MainActor
-    static func groups(pool: [Block], library: NextLibrary, workbench: Workbench, accent: Color) -> [NXGroup] {
+    static func groups(pool: [Block], library: NextLibrary, workbench: Workbench, accent: Color, now: Date) -> [NXGroup] {
         var groups: [NXGroup] = []
         switch workbench.tasksGrouping {
         case .list:
@@ -255,7 +255,7 @@ struct NextTasksScreen: View {
             }
         case .due:
             let muted = NX.ink(0.5)
-            let offset = { (task: Block) in task.dueDate.map { NXFormat.dayOffset($0) } }
+            let offset = { (task: Block) in task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
             let buckets: [(String, Color, (Block) -> Bool)] = [
                 ("Overdue", NX.red, { offset($0).map { $0 < 0 } ?? false }),
                 ("Today", accent, { offset($0) == 0 }),
@@ -292,12 +292,24 @@ private struct NXTasksPage: View {
     @State private var showsCompleted = false
 
     var body: some View {
+        // The design's 20s clock: done-ago chips move on, and the date
+        // buckets and words read the day it is, midnight included.
+        TimelineView(.periodic(from: .now, by: 20)) { context in
+            page(now: context.date)
+        }
+        .onAppear { showsCompleted = env.navigator.route == .completed }
+        .onDisappear {
+            if showsCompleted, env.workbench.tasksStatus == .done { env.workbench.tasksStatus = .open }
+        }
+    }
+
+    private func page(now: Date) -> some View {
         let workbench = env.workbench
         let queryMode = env.settings.tasksFilterStyle == .query
-        let pool = NextTasksScreen.pool(tasks: tasks, library: library, workbench: workbench, queryMode: queryMode)
-        let groups = NextTasksScreen.groups(pool: pool, library: library, workbench: workbench, accent: style.accent)
+        let pool = NextTasksScreen.pool(tasks: tasks, library: library, workbench: workbench, queryMode: queryMode, now: now)
+        let groups = NextTasksScreen.groups(pool: pool, library: library, workbench: workbench, accent: style.accent, now: now)
         let listCount = library.lists.count
-        NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
+        return NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXScreenHeader(tile: .icon("checklist"), color: NX.green, title: "Tasks",
                            subtitle: "\(library.open.count) open across \(listCount) \(listCount == 1 ? "list" : "lists")")
             Group {
@@ -308,11 +320,7 @@ private struct NXTasksPage: View {
                 }
             }
             .zIndex(10)
-            NXGroupsStack(groups: groups, options: NXRowOptions(showList: workbench.tasksGrouping != .list, quiet: true))
-        }
-        .onAppear { showsCompleted = env.navigator.route == .completed }
-        .onDisappear {
-            if showsCompleted, workbench.tasksStatus == .done { workbench.tasksStatus = .open }
+            NXGroupsStack(groups: groups, options: NXRowOptions(showList: workbench.tasksGrouping != .list, quiet: true, now: now))
         }
     }
 }
@@ -634,6 +642,10 @@ private struct NXQueryPill: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
         .animation(.easeOut(duration: 0.14), value: isOn)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { action() }
     }
 }
 
@@ -882,7 +894,7 @@ private struct NXTasksSentenceBar: View {
                 Text("Showing")
                 token(.status, workbench.tasksStatus.word)
                 Text("tasks in")
-                token(.lists, listsLabel)
+                token(.lists, listsToken.label, list: listsToken.list)
                 Text("by")
                 token(.group, workbench.tasksGrouping.word)
                 if isDirty {
@@ -972,15 +984,16 @@ private struct NXTasksSentenceBar: View {
             || !workbench.tasksListFilter.isEmpty || !workbench.tasksTitleFilter.isEmpty
     }
 
-    private var listsLabel: String {
+    /// The lists token's words, and the one list whose glyph leads them.
+    private var listsToken: (label: String, list: TaskList?) {
         let filter = env.workbench.tasksListFilter
-        if filter.isEmpty { return "all lists" }
-        if filter.count == 1, let list = library.list(filter.first) { return "\(list.glyph) \(list.displayTitle)" }
-        return "\(filter.count) lists"
+        if filter.isEmpty { return ("all lists", nil) }
+        if filter.count == 1, let list = library.list(filter.first) { return (list.displayTitle, list) }
+        return ("\(filter.count) lists", nil)
     }
 
-    private func token(_ key: NXTasksMenu, _ label: String) -> some View {
-        NXSentenceToken(label: label, isOpen: menu == key) {
+    private func token(_ key: NXTasksMenu, _ label: String, list: TaskList? = nil) -> some View {
+        NXSentenceToken(label: label, list: list, isOpen: menu == key) {
             menu = menu == key ? nil : key
         }
         .nxClickRegion("tokens", in: clicks)
@@ -1070,13 +1083,19 @@ private struct NXTasksSentenceBar: View {
 
 private struct NXSentenceToken: View {
     let label: String
+    /// A single list, whose glyph leads the label.
+    var list: TaskList?
     let isOpen: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 1) {
-            Text(label).font(.system(size: 13, weight: .semibold)).foregroundStyle(NX.ink).lineLimit(1)
+            // One run, as the design's `emoji + " " + name`, the emoji at the design's size.
+            Group {
+                if let list { Text("\(NXListGlyph.text(list, size: 13)) \(label)") } else { Text(label) }
+            }
+            .font(.system(size: 13, weight: .semibold)).foregroundStyle(NX.ink).lineLimit(1)
             // The design's 14 pt icon box, which spaces the chevron from the label and the edge.
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(NX.ink(0.5))
                 .frame(width: 14, height: 14)
@@ -1090,5 +1109,10 @@ private struct NXSentenceToken: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
         .animation(.easeOut(duration: 0.14), value: hovering)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
     }
 }

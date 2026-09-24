@@ -81,7 +81,19 @@ let child = TaskList(title: "Needle child list")
 child.parentListID = list.id
 let childHit = try SearchProjection(corpus: SearchCorpus(blocks: [], lists: lists + [child]), options: SearchOptions(query: "child list")).hits
 check(childHit.first?.context == "List · Project collection", "a nested list hit names where it sits")
-check(allHits.first { $0.id == .block(completed.id) }?.context == "📋 Project collection · Completed", "task context puts its state after its place")
+check(allHits.first { $0.id == .block(completed.id) }?.context == "Project collection · Completed", "task context puts its state after its place")
+check(allHits.first { $0.id == .block(completed.id) }?.listIcon == "📋"
+      && allHits.first { $0.id == .block(orphan.id) }.map { $0.listIcon == nil && $0.context == "Unavailable list" } == true,
+      "a task hit carries its list's icon apart from the context, for the row to draw")
+let symbolList = TaskList(title: "Symbol list", icon: "checklist")
+let blankList = TaskList(title: "Blank list", icon: "")
+let symbolTask = Block(kind: .task, text: "Symbol needle", listID: symbolList.id, sortIndex: 0)
+let blankTask = Block(kind: .task, text: "Blank needle", listID: blankList.id, sortIndex: 1)
+let iconHits = try SearchProjection(corpus: SearchCorpus(blocks: [symbolTask, blankTask], lists: [symbolList, blankList]),
+                                    options: SearchOptions(query: "needle")).hits
+check(iconHits.first { $0.id == .block(symbolTask.id) }.map { $0.listIcon == "checklist" && $0.context == "Symbol list" } == true,
+      "an SF Symbol list icon never reads as its name in the context")
+check(iconHits.first { $0.id == .block(blankTask.id) }?.listIcon == "📋", "a list with no icon shows the default one")
 for (haystack, needle) in [("café", "CAFE"), ("cafe\u{301}", "CAFÉ"), ("résumé", "resume"), ("ＡＢＣ", "abc"), ("🧑🏽‍💻 note", "🧑🏽‍💻")] {
     check(SearchProjection.matches(haystack, needle), "Unicode match \(needle)")
     check(SearchProjection.snippet(haystack, matching: needle).contains(haystack), "snippet keeps complete graphemes")
