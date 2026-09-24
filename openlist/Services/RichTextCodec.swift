@@ -239,13 +239,6 @@ enum RichTextCodec {
 
     // MARK: - Editing helpers
 
-    /// Concatenates two blocks' contents, used when Backspace merges rows.
-    static func merged(_ lhs: NSAttributedString, _ rhs: NSAttributedString) -> NSAttributedString {
-        let result = NSMutableAttributedString(attributedString: lhs)
-        result.append(rhs)
-        return result
-    }
-
     /// Rewrites the text of an attributed string while keeping the styling of
     /// everything that did not change.
     ///
@@ -291,14 +284,6 @@ enum RichTextCodec {
             with: NSAttributedString(string: inserted, attributes: attributes)
         )
         return result
-    }
-
-    /// Splits at `location`, returning the text before and after the caret.
-    static func split(_ source: NSAttributedString, at location: Int) -> (head: NSAttributedString, tail: NSAttributedString) {
-        let clamped = max(0, min(location, source.length))
-        let head = source.attributedSubstring(from: NSRange(location: 0, length: clamped))
-        let tail = source.attributedSubstring(from: NSRange(location: clamped, length: source.length - clamped))
-        return (head, tail)
     }
 
     /// Toggles a font trait across `range`, matching the behaviour of ⌘B / ⌘I.

@@ -165,7 +165,7 @@ private struct NextMain: View {
         case .inbox: return "Inbox"
         case .today: return "Today"
         case .calendar: return "Calendar"
-        case .tasks, .completed: return "Tasks"
+        case .tasks: return "Tasks"
         case .lists: return "Lists"
         case .activity: return "Activity"
         case .trash: return "Trash"
@@ -197,7 +197,6 @@ private struct NextRoutedScreen: View {
     @Environment(\.nextLibrary) private var library
 
     var body: some View {
-        let workbench = env.workbench
         let navigator = env.navigator
         Group {
             switch navigator.route {
@@ -211,8 +210,6 @@ private struct NextRoutedScreen: View {
             case .today: NextTodayScreen()
             case .calendar: NextCalendarScreen()
             case .tasks: NextTasksScreen()
-            case .completed:
-                NextTasksScreen().onAppear { workbench.tasksStatus = .done }
             case .activity: NextActivityScreen()
             case .lists: NextListsGallery()
             case .trash: NextTrashScreen()

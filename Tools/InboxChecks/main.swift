@@ -65,7 +65,7 @@ let other = store.block(id: id(7))!
 other.inboxMembershipData = oldPayload
 store.save()
 check(try !policy().includes(other), "Legacy selected tasks in real lists stay filed")
-store.setDueTomorrow(nested)
+store.setDueDate(Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now)), includesTime: false, for: nested)
 check(try policy().includes(nested), "Setting a date keeps a capture in Inbox")
 // "Next week" is the coming Monday, whatever day the week starts on, and the
 // Monday after when the coming one is tomorrow.
@@ -81,9 +81,9 @@ for firstWeekday in [1, 2] {
     check(Store.nextWeekDay(from: day(9, 28), calendar: gregorian) == day(10, 5), "Next week from a Monday is the Monday after")
     check(Store.nextWeekDay(from: day(10, 24), calendar: gregorian) == day(10, 26), "Next week lands on Monday's midnight across a clock change")
 }
-store.setDueNextWeek(nested)
+store.setDueDate(Store.nextWeekDay(), includesTime: false, for: nested)
 check(nested.dueDate == Store.nextWeekDay() && !nested.includesTime && Calendar.current.component(.weekday, from: nested.dueDate!) == 2,
-      "Inbox's Next week sets the coming Monday, all day")
+      "Next week is the coming Monday, all day")
 check(try policy().includes(nested), "Next week keeps a capture in Inbox")
 let originalID = task.id, originalNote = task.note, labels = task.labelIDs
 let descendants = BlockTree.descendants(of: task.id, in: store.blocks(inList: inbox.id))

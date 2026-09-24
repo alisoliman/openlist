@@ -311,7 +311,7 @@ check(Set(try history(pendingTask.id).map(\.id)) == pendingSourceEvents, "Task a
 let detached = store.duplicateList(list)
 try checkCreationHistory(store.blocks(inList: detached.id), owningList: detached)
 check(detached.id != list.id && !detached.isArchived && detached.isPinned, "List Duplicate retains its existing active-copy destination behavior")
-store.deleteList(detached)
+store.trashList(detached)
 // The list template contains source + adjacent sibling; remove the task copy temporarily.
 undo.undo()
 let listCopyID = try store.copyList(list, mode: .template(keepingRecurrence: false))

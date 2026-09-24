@@ -130,9 +130,6 @@ final class AppEnvironment {
                 requestedPicker = nil
                 navigator.closeTask()
             }
-            if let rootID = activeDocument?.rootBlockID, ids.contains(rootID) {
-                activeDocument = nil
-            }
         }
         store.onDidSave = { [weak widgetPublisher, weak calendar] in
             widgetPublisher?.scheduleRefresh()
@@ -204,12 +201,6 @@ final class AppEnvironment {
     /// On Today the task it makes is due today.
     func presentTaskCapture(text: String = "") {
         workbench.openCapture(text: text)
-    }
-
-    /// The copy on its list's screen, the Inbox's being triage, in the inspector.
-    func showCopiedTask(id: UUID, listID: UUID) {
-        if let list = store.list(id: listID) { workbench.go(workbench.route(for: list)) }
-        workbench.inspect(id)
     }
 
     func consumeCommand() -> EditorCommand? {

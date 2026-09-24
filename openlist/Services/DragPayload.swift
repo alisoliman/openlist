@@ -39,10 +39,10 @@ nonisolated enum DragPayload {
         "openlist-blocks:v1:\(session.uuidString):" + ids.map(\.uuidString).joined(separator: ",")
     }
 
-    /// A bare UUID has no library identity. Accept the legacy shape only when
-    /// this environment is actively dragging that exact single row. The drop
-    /// delegate captures that local authorization before asynchronous loading.
-    static func blockDrop(_ value: String, session: UUID, activeLegacyID: UUID?) -> BlockDrop {
+    /// Rows travel as `encodeBlocks`, tagged with this library's drag session.
+    /// A bare UUID has no library identity, so the older single-row shape is
+    /// never a local move, nor text to insert.
+    static func blockDrop(_ value: String, session: UUID) -> BlockDrop {
         if value.hasPrefix("openlist-blocks:") {
             let parts = value.split(separator: ":", omittingEmptySubsequences: false)
             guard parts.count == 4, parts[1] == "v1", UUID(uuidString: String(parts[2])) == session else { return .invalid }
@@ -52,11 +52,7 @@ nonisolated enum DragPayload {
             guard ids.count == values.count, Set(ids).count == ids.count else { return .invalid }
             return .blocks(ids)
         }
-        if value.hasPrefix("openlist-block:") {
-            guard let id = DragPayload.block.decode(value), id == activeLegacyID else { return .invalid }
-            return .blocks([id])
-        }
-        if value.hasPrefix("openlist-list:") { return .invalid }
+        if value.hasPrefix("openlist-block:") || value.hasPrefix("openlist-list:") { return .invalid }
         return .text(value)
     }
 }

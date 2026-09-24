@@ -281,11 +281,6 @@ final class Store {
         return list
     }
 
-    @discardableResult
-    func deleteList(_ list: TaskList) -> Bool {
-        trashList(list)
-    }
-
     func duplicateList(_ list: TaskList) -> TaskList {
         do {
             let id = try copyList(list, mode: .duplicate)

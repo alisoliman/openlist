@@ -285,8 +285,8 @@ enum BlockTree {
     /// Every descendant of `blockID`, at any depth.
     ///
     /// Rebuilds the parent index on each call — fine for one-off use, but when
-    /// walking many blocks prefer ``subtaskCounts(in:)`` or hoist
-    /// ``childIndex(of:)`` and use ``descendants(of:using:)``.
+    /// walking many blocks hoist ``childIndex(of:)`` and use
+    /// ``descendants(of:using:)``.
     static func descendants(of blockID: UUID, in blocks: [Block]) -> [Block] {
         descendants(of: blockID, using: childIndex(of: blocks, root: blockID))
     }
@@ -302,44 +302,6 @@ enum BlockTree {
             queue.append(contentsOf: kids.map(\.id))
         }
         return result
-    }
-
-    /// Completed/total subtask counts for **every** block, in one pass.
-    ///
-    /// Computing these individually is quadratic: each `descendants` call
-    /// rebuilds the whole index. A document view needs the number for every
-    /// row, so it wants the whole table at once.
-    static func subtaskCounts(in blocks: [Block]) -> [UUID: (done: Int, total: Int)] {
-        let index = childIndex(of: blocks)
-        var counts: [UUID: (done: Int, total: Int)] = [:]
-        counts.reserveCapacity(blocks.count)
-
-        // Post-order: a block's totals are its children's totals plus the
-        // children themselves, so each block is visited exactly once.
-        func visit(_ block: Block) -> (done: Int, total: Int) {
-            if let cached = counts[block.id] { return cached }
-
-            var done = 0
-            var total = 0
-            for child in index[block.id] ?? [] {
-                let sub = visit(child)
-                if child.isTask {
-                    total += 1
-                    if child.isCompleted { done += 1 }
-                }
-                done += sub.done
-                total += sub.total
-            }
-
-            let result = (done, total)
-            counts[block.id] = result
-            return result
-        }
-
-        for block in blocks where counts[block.id] == nil {
-            _ = visit(block)
-        }
-        return counts
     }
 
     /// Walks up the parent chain, nearest ancestor first.

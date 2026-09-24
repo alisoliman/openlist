@@ -15,8 +15,8 @@ enum DropPosition {
     case inside
 }
 
-/// A positional drop target. Dragging starts only in the selection gutter,
-/// leaving native text drags and selected-character copy untouched.
+/// A positional drop target. Dragging starts only at a line's grip, leaving
+/// native text drags and selected-character copy untouched.
 struct BlockDragAndDrop: ViewModifier {
     let row: BlockRow
     /// Reordering is only offered while the stored order is what's on screen —
@@ -57,7 +57,6 @@ struct BlockDragAndDrop: ViewModifier {
                         rowHeight: rowHeight,
                         indicator: $indicator,
                         sessionID: env.navigator.blockDragSessionID,
-                        activeLegacyID: { env.navigator.activeLegacyBlockDragID },
                         onMove: onMove,
                         onDropText: onDropText,
                         onInvalid: { env.store.refuse("This internal drag is invalid or belongs to another library. No rows were changed.") },
@@ -97,7 +96,6 @@ private struct RowDropDelegate: DropDelegate {
     let rowHeight: CGFloat
     @Binding var indicator: DropPosition?
     let sessionID: UUID
-    let activeLegacyID: () -> UUID?
     let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
     let onInvalid: () -> Void
@@ -131,7 +129,6 @@ private struct RowDropDelegate: DropDelegate {
             return false
         }
 
-        let legacyID = activeLegacyID()
         if provider.hasItemConformingToTypeIdentifier(DragPayload.blockTypeIdentifier) {
             provider.loadDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier) { data, _ in
                 Task { @MainActor in
@@ -139,7 +136,7 @@ private struct RowDropDelegate: DropDelegate {
                     // not inspect its kind, ID or position after deletion.
                     guard targetIsAvailable else { onUnavailable(); return }
                     guard let data, let value = String(data: data, encoding: .utf8),
-                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID, activeLegacyID: nil) else {
+                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID) else {
                         onInvalid()
                         return
                     }
@@ -152,7 +149,7 @@ private struct RowDropDelegate: DropDelegate {
             guard let string = value as? String else { return }
             Task { @MainActor in
                 guard targetIsAvailable else { onUnavailable(); return }
-                switch DragPayload.blockDrop(string, session: sessionID, activeLegacyID: legacyID) {
+                switch DragPayload.blockDrop(string, session: sessionID) {
                 case .blocks(let ids): onMove(ids, target)
                 case .text(let text): onDropText(text)
                 case .invalid: onInvalid()

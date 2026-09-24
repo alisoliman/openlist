@@ -288,18 +288,12 @@ private struct NXTasksPage: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let tasks: [Block]
-    /// Completed opens this screen on Done; leaving it hands Tasks back its Open default.
-    @State private var showsCompleted = false
 
     var body: some View {
         // The design's 20s clock: done-ago chips move on, and the date
         // buckets and words read the day it is, midnight included.
         TimelineView(.periodic(from: .now, by: 20)) { context in
             page(now: context.date)
-        }
-        .onAppear { showsCompleted = env.navigator.route == .completed }
-        .onDisappear {
-            if showsCompleted, env.workbench.tasksStatus == .done { env.workbench.tasksStatus = .open }
         }
     }
 

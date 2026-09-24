@@ -18,7 +18,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inbox-checks
   openlist/Services/Store+BulkActions.swift openlist/Services/Store+Tasks.swift openlist/Services/Store+LabelMerge.swift openlist/Services/Store+Calendar.swift \
   openlist/Services/Store+CompletionUndo.swift openlist/Services/Store+Capture.swift \
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift openlist/Services/ActiveTaskPolicy.swift openlist/Services/WidgetSnapshotPublisher.swift openlist/Services/ListTasksProjection.swift \
-  openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift openlist/Services/Navigator.swift openlist/Services/DragPayload.swift \
+  openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift openlist/Services/Navigator.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   Tools/EditorChecks/Support.swift Tools/InboxChecks/main.swift
 "$OUT/legacy-inbox" "$OUT/Legacy.store"

@@ -7,15 +7,13 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 let session = UUID(), otherSession = UUID()
 let a = UUID(), b = UUID()
-func decode(_ value: String, legacy: UUID? = nil) -> DragPayload.BlockDrop {
-    DragPayload.blockDrop(value, session: session, activeLegacyID: legacy)
+func decode(_ value: String) -> DragPayload.BlockDrop {
+    DragPayload.blockDrop(value, session: session)
 }
 check(decode(DragPayload.encodeBlocks([b, a], session: session)) == .blocks([b, a]), "Multi-row payload preserves selected visible order")
 check(decode(DragPayload.encodeBlocks([a], session: session)) == .blocks([a]), "Versioned single row remains supported")
 check(decode(DragPayload.encodeBlocks([a], session: otherSession)) == .invalid, "Identical block UUID from another library/session cannot move local content")
-check(decode(DragPayload.block.encode(a)) == .invalid, "Unauthenticated legacy IDs are not ordinary text or local moves")
-check(decode(DragPayload.block.encode(a), legacy: a) == .blocks([a]), "An active same-environment legacy single drag is supported")
-check(decode(DragPayload.block.encode(a), legacy: b) == .invalid, "A legacy payload cannot borrow another active row's authorization")
+check(decode(DragPayload.block.encode(a)) == .invalid, "Unauthenticated single-row IDs are not ordinary text or local moves")
 check(decode("openlist-block:bad") == .invalid, "Malformed legacy prefix never inserts literal text")
 check(decode("openlist-blocks:v1:\(session.uuidString):\(a.uuidString),bad") == .invalid, "One malformed ID rejects the entire payload")
 check(decode("openlist-blocks:v1:\(session.uuidString):\(a.uuidString),") == .invalid, "A missing trailing root rejects the entire payload")

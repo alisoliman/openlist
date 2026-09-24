@@ -54,7 +54,7 @@ check(copiedImage.mediaCaption == child.mediaCaption && copiedImage.mediaWidth =
 let copiedAttachment = store.attachments(for: copiedImage.id).first!
 check(copiedAttachment.filename != originalFile && media.fileContents(filename: copiedAttachment.filename) == fileBytes, "List attachment has independent complete file")
 check(copiedAttachment.displayName == attachment.displayName && copiedAttachment.createdAt == attachment.createdAt && copiedAttachment.contentType == attachment.contentType && copiedAttachment.sortIndex == attachment.sortIndex, "Attachment metadata preserved")
-store.deleteList(duplicatedList)
+store.trashList(duplicatedList)
 check(media.fileContents(filename: originalImage) == imageBytes && media.fileContents(filename: originalFile) == fileBytes, "Deleting duplicate list leaves original media intact")
 
 let blockCopy = store.duplicateBlock(child)

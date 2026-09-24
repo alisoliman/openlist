@@ -157,7 +157,7 @@ final class NextKeyHandler {
         }
 
         // Only the Tasks screen has the query; the flag alone can outlive it.
-        if workbench.tasksQueryFocused && isEditingText && (navigator.route == .tasks || navigator.route == .completed) {
+        if workbench.tasksQueryFocused && isEditingText && navigator.route == .tasks {
             guard !isComposing, flags.isEmpty || flags == .shift else { return false }
             switch key {
             // Tab never leaves the field; without Shift it takes the completion, if there is one.
@@ -178,7 +178,7 @@ final class NextKeyHandler {
 
         // An open sentence-bar menu takes Esc before the inspector, the selection and the focus do.
         if key == Key.escape && flags.isEmpty && !isComposing && workbench.tasksMenu != nil
-            && (navigator.route == .tasks || navigator.route == .completed) {
+            && navigator.route == .tasks {
             workbench.tasksMenu = nil
             return true
         }

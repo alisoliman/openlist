@@ -101,14 +101,12 @@ check(navigator.listViewMode(for: listID) == .document && navigator.contentRevea
 check(navigator.listViewMode(for: unrelatedListID) == .tasks,
       "Revealing one list leaves another list's Tasks preference unchanged")
 let linkSelectionScope = UUID()
-navigator.selectRow(task.id, gesture: .replace, scope: linkSelectionScope, visible: [task.id, duplicate.id])
-navigator.selectRow(duplicate.id, gesture: .toggle, scope: linkSelectionScope, visible: [task.id, duplicate.id])
-check(navigator.isSelectingRows && navigator.selection.count == 2, "Fixture starts with a real multi-row selection")
+navigator.selectForEditing(duplicate.id, scope: linkSelectionScope, visible: [task.id, duplicate.id])
+check(navigator.selection == [duplicate.id] && navigator.rowSelection.scopeID == linkSelectionScope,
+      "Fixture starts with another line selected in a document")
 links.receive(taskURL)
-check(!navigator.isSelectingRows && navigator.rowSelection.scopeID == nil && navigator.orderedSelection.isEmpty,
-      "Exact task link clears stale bulk selection and its ordering scope")
-check(navigator.selection == [taskID] && navigator.openTaskID == taskID,
-      "Exact task link selects its target for editing without entering bulk mode")
+check(navigator.rowSelection.scopeID == nil, "Exact task link clears the stale selection's scope")
+check(navigator.selection == [taskID] && navigator.openTaskID == taskID, "Exact task link selects its target for editing")
 
 let firstActivation = navigator.searchActivation
 links.windowReady(true)

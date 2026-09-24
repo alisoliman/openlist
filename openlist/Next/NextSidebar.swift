@@ -324,7 +324,7 @@ struct NextSidebar: View {
         let session = env.navigator.blockDragSessionID
         let ids = items.flatMap { item -> [UUID] in
             if let id = DragPayload.block.decode(item) { return [id] }
-            guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session, activeLegacyID: nil) else { return [] }
+            guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session) else { return [] }
             return ids
         }
         guard !ids.isEmpty else { return false }

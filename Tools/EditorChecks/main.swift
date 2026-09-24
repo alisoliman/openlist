@@ -52,22 +52,21 @@ store.save()
 let undo = UndoManager()
 undo.groupsByEvent = false
 undo.beginUndoGrouping()
-store.undoableEditorEdit(in: list.id, name: "Merge blocks", undoManager: undo) {
-    _ = store.backspaceAtStart(second, content: store.attributedContent(of: second), in: document)
+store.undoableEditorEdit(in: list.id, name: "Delete", undoManager: undo) {
+    store.deleteBlock(second, liftChildren: true)
     store.save()
 }
 undo.endUndoGrouping()
-check(store.block(id: secondID) == nil, "Merge removes second row")
-check(store.block(id: childID)?.parentID == first.id, "Merge adopts child")
-check(first.note == "Keep this note" && first.dueDate == due && first.isStarred, "Merge preserves task details")
-check(store.attachments(for: first.id).first?.id == attachmentID && MediaStore.shared.fileContents(filename: filename) == bytes, "Merge moves attachments without deleting their files")
-check(undo.canUndo, "Merge registers an undo action")
-// A later unrelated metadata edit to the surviving task must not be rolled back.
+check(store.block(id: secondID) == nil, "Deleting a line removes its row")
+check(store.block(id: childID)?.parentID == nil, "What was under the line stays, a level up")
+check(store.attachments(for: secondID).isEmpty && MediaStore.shared.fileContents(filename: filename) == nil, "Deleting a line removes its files")
+check(undo.canUndo, "Deleting registers an undo action")
+// A later unrelated metadata edit to another task must not be rolled back.
 first.mediaCaption = "Unrelated later caption"
 store.save()
 undo.undo()
 let restored = store.block(id: secondID)!
-check(first.text == "First" && restored.text == "Second", "Undo restores separate texts")
+check(first.text == "First" && restored.text == "Second", "Undo restores the line's text")
 check(restored.richData == richData, "Undo restores rich content")
 check(restored.note == "Keep this note" && first.note.isEmpty && first.mediaCaption == "Unrelated later caption", "Undo restores notes without overwriting unrelated fields")
 check(restored.dueDate == due && restored.reminderAt == due.addingTimeInterval(-600), "Undo restores schedule and reminder")
@@ -78,22 +77,22 @@ check(store.attachments(for: secondID).first?.id == attachmentID, "Undo restores
 check(MediaStore.shared.fileContents(filename: filename) == bytes, "Undo restores deleted attachment bytes")
 check(undo.canRedo, "Undo registers redo")
 undo.redo()
-check(store.block(id: secondID) == nil && first.text == "FirstSecond", "Redo reapplies merge")
+check(store.block(id: secondID) == nil && store.block(id: childID)?.parentID == nil, "Redo deletes the line again")
 undo.undo()
 check(store.attachments(for: secondID).first?.filename == filename && MediaStore.shared.fileContents(filename: filename) == bytes, "Repeated undo restores attachment again")
 
 undo.removeAllActions()
 undo.beginUndoGrouping()
-store.undoableEditorEdit(in: list.id, name: "Split block", undoManager: undo) {
-    _ = store.splitBlock(first, at: 2, content: store.attributedContent(of: first))
+store.undoableEditorEdit(in: list.id, name: "Added a line", undoManager: undo) {
+    _ = store.insertBlock(kind: .task, text: "Added", after: first)
     store.save()
 }
 undo.endUndoGrouping()
-let countAfterSplit = store.blocks(inList: list.id).count
+let countAfterAdd = store.blocks(inList: list.id).count
 undo.undo()
-check(first.text == "First" && store.blocks(inList: list.id).count == countAfterSplit - 1, "Split undo restores original block")
+check(first.text == "First" && store.blocks(inList: list.id).count == countAfterAdd - 1, "Undoing an added line removes it")
 undo.redo()
-check(store.blocks(inList: list.id).count == countAfterSplit, "Split redo restores new block")
+check(store.blocks(inList: list.id).count == countAfterAdd, "Redo adds the line again")
 
 undo.removeAllActions()
 let destination = store.createList(title: "Move destination")
@@ -109,19 +108,6 @@ check(store.block(id: secondID)?.listID == list.id && store.block(id: childID)?.
 undo.redo()
 check(store.block(id: secondID)?.listID == destination.id && store.attachments(for: secondID).first?.id == attachmentID, "Cross-list redo retains attachments")
 undo.undo()
-
-let conflictList = store.createList(title: "Conflicting schedules")
-let conflictDocument = DocumentContext(listID: conflictList.id)
-let earlier = store.appendBlock(kind: .task, text: "Earlier", to: conflictDocument)
-earlier.dueDate = due
-let conflict = store.appendBlock(kind: .task, text: "Conflicting", to: conflictDocument)
-conflict.dueDate = due.addingTimeInterval(86_400)
-let conflictID = conflict.id
-let beforeConflict = store.blocks(inList: conflictList.id).count
-_ = store.backspaceAtStart(conflict, content: store.attributedContent(of: conflict), in: conflictDocument)
-check(store.block(id: conflictID) != nil && store.blocks(inList: conflictList.id).count == beforeConflict && store.editorNotice != nil, "Conflicting task schedules do not lose a row")
-_ = store.backspaceAtStart(earlier, content: store.attributedContent(of: earlier), in: conflictDocument)
-check(earlier.isTask && earlier.dueDate == due, "Backspace at first task preserves its kind and schedule")
 
 undo.removeAllActions()
 let image = store.appendBlock(kind: .image, to: document)
@@ -151,7 +137,7 @@ store.undoableEditorEdit(in: removedList.id, name: "New task", undoManager: undo
 }
 undo.endUndoGrouping()
 let removedListID = removedList.id
-store.deleteList(removedList)
+store.trashList(removedList)
 undo.undo()
 check(store.blocks(inList: removedListID).isEmpty && store.editorNotice?.contains("unavailable") == true, "Undo waits for a retained list to be restored before applying its edits")
 

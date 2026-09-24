@@ -113,7 +113,7 @@ if phase == "delete" {
     try check(store.trashBlocks([child]), "Child independently deleted")
     var closed = Set<UUID>()
     store.onEditorBlocksRemoved = { closed.formUnion($0) }
-    try check(store.deleteList(list), "List deleted after child")
+    try check(store.trashList(list), "List deleted after child")
     try check(context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil })).allSatisfy { $0.listID != oldListID },
               "A trashed list's blocks leave live counts, as Settings' Your data takes them")
     try check(closed.contains(parent.id) && !closed.contains(childID), "List deletion closes its members and preserves independently retained ownership")
@@ -121,7 +121,7 @@ if phase == "delete" {
     try check(store.allLists(includeArchived: true).allSatisfy { $0.id != oldListID }, "Retained list excluded even when including archives")
     try check(store.restoreTrash(ids: [oldListID]), "List restore succeeds")
     try check(store.block(id: parent.id) != nil && store.block(id: childID) == nil, "List restore never revives earlier deleted child")
-    try check(store.deleteList(list), "List can be retained again")
+    try check(store.trashList(list), "List can be retained again")
     try check(store.permanentlyEraseTrash(ids: [oldListID]), "List can be erased while separately retained child remains")
     try snapshot().validate()
     try check(store.trashEntries().count == 1, "Independent child remains a valid backup/recovery entry after owner erased")
@@ -159,7 +159,7 @@ if phase == "delete" {
         try check(failing.trashEntries().isEmpty, "Failed deletion publishes no Trash ghost")
         try check(failing.recentActivity().count == savedCount, "Failed delete publishes no ghost history")
         let liveList = failing.list(id: listID)!
-        try check(!failing.deleteList(liveList) && !liveList.isTrashed, "Same list recovers from actual readonly failure")
+        try check(!failing.trashList(liveList) && !liveList.isTrashed, "Same list recovers from actual readonly failure")
     }
     try check(!task.isTrashed && session.endedAt == nil, "Independent writer still has original values")
     try check(store.trashBlocks([task]), "Writer prepares retained fixture for readonly restore/erase")
@@ -317,12 +317,12 @@ if phase == "delete" {
     try check(store.permanentlyEraseTrash(ids: [other.id]), "Media failure can be retried")
     try check(!FileManager.default.fileExists(atPath: MediaStore.shared.url(for: "shared.dat").path), "Last reference erase removes cached bytes")
     let a = store.appendBlock(kind: .paragraph, text: "Before", to: DocumentContext(listID: list.id))
-    let b = store.insertBlock(kind: .paragraph, text: "After", after: a)
+    let b = store.insertBlock(kind: .paragraph, text: "", after: a)
     try store.persistChanges()
     let before = try store.trashEntries().count
-    _ = store.backspaceAtStart(b, content: NSAttributedString(string: b.text), in: DocumentContext(listID: list.id))
+    store.deleteBlock(b, liftChildren: true)
     try store.persistChanges()
-    try check(store.trashEntries().count == before, "Editor merge does not create Trash")
+    try check(store.trashEntries().count == before, "Removing an empty document line does not create Trash")
     let eraseUndo = UndoManager()
     eraseUndo.groupsByEvent = false
     eraseUndo.beginUndoGrouping()

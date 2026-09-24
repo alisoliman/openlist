@@ -153,11 +153,6 @@ extension Block {
         return includesTime ? dueDate < .now : dueDate < Calendar.current.startOfDay(for: .now)
     }
 
-    var isDueToday: Bool {
-        guard let dueDate else { return false }
-        return Calendar.current.isDateInToday(dueDate)
-    }
-
     /// Finished at some point today — the set Today's "completed" group shows.
     var isCompletedToday: Bool {
         guard isCompleted, let completedAt else { return false }
