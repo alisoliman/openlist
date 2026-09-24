@@ -62,11 +62,14 @@ private struct NXCalendarStepper: View {
 
     var body: some View {
         let showsToday = dates.contains { calendar.isDate($0, inSameDayAs: now) }
+        // As tall as the range switch beside it, 28pt: each button is 6 + 12 + 6,
+        // its Today in the switch's 500 12/1 box.
         HStack(spacing: 2) {
             step(-1)
             if !showsToday {
                 Button { move(to: nil) } label: {
                     Text("Today").font(.system(size: 12, weight: .medium))
+                        .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
                 }
                 .buttonStyle(buttonStyle(horizontal: 9))
             }
@@ -81,7 +84,7 @@ private struct NXCalendarStepper: View {
         return Button { move(to: CalendarWeek.anchor(stepping: dates, by: direction, now: now, calendar: calendar)) } label: {
             Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
                 .font(.system(size: 11, weight: .semibold))
-                .frame(width: 12, height: 15)
+                .frame(width: 12, height: 12)
         }
         .buttonStyle(buttonStyle(horizontal: 6))
         .help(label)
@@ -102,6 +105,11 @@ private enum NXCal {
     static let hourHeight: CGFloat = 40
     static let gutter: CGFloat = 52
     static let minColumn: CGFloat = 92
+    /// Blocks' and meetings' 10.5/1.25 titles and 9.5/1.3 time and state
+    /// lines: the extra leading between lines and, halved, above the first
+    /// and below the last.
+    static let titleLeading = 10.5 * 1.25 - NXStrikeText.glyphLineHeight(10.5)
+    static let timeLeading = 9.5 * 1.3 - NXStrikeText.glyphLineHeight(9.5)
 }
 
 private struct NXCalendarBody: View {
@@ -395,16 +403,21 @@ private struct NXHourGutter: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ForEach(Array(range.dropFirst().dropLast()), id: \.self) { hour in
+                // The design's 500 10/1 box (SF Mono has SF's line), so the
+                // label sits where the design's top puts it on its hour line.
                 Text(String(format: "%02d:00", hour))
                     .font(NX.mono(10))
                     .foregroundStyle(NX.ink(0.36))
+                    .padding(.vertical, (10 - NXStrikeText.glyphLineHeight(10)) / 2)
                     .padding(.trailing, 8)
                     .offset(y: CGFloat(hour - range.lowerBound) * NXCal.hourHeight - 6)
             }
             if showsNow, let y = NXDayColumn.offset(of: now, range: range) {
+                // 600 9.5/1 in its 2pt padding: the design's 13.5pt pill.
                 Text(NXFormat.clock(now))
                     .font(NX.mono(9.5, weight: .semibold))
                     .foregroundStyle(.white)
+                    .padding(.vertical, (9.5 - NXStrikeText.glyphLineHeight(9.5)) / 2)
                     .padding(.vertical, 2)
                     .padding(.horizontal, 4)
                     .background(NX.red, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -539,9 +552,13 @@ private struct NXDayColumn: View {
     private func eventView(_ event: FixedBusyTime) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(event.title).font(.system(size: 10.5, weight: .semibold))
+                .lineSpacing(NXCal.titleLeading)
+                .padding(.vertical, NXCal.titleLeading / 2)
             Text("\(NXFormat.clock(event.start))–\(NXFormat.clock(event.end))")
                 .font(.system(size: 9.5, weight: .medium))
                 .opacity(0.7)
+                .lineSpacing(NXCal.timeLeading)
+                .padding(.vertical, NXCal.timeLeading / 2)
         }
         .foregroundStyle(NX.ink(0.62))
         .padding(.vertical, 3)
@@ -633,6 +650,8 @@ private struct NXCalendarBlock: View {
                     .foregroundStyle(fg)
                     .lineLimit(height < 30 ? 1 : nil)
                     .truncationMode(.tail)
+                    .lineSpacing(NXCal.titleLeading)
+                    .padding(.vertical, NXCal.titleLeading / 2)
             }
             // The title keeps all its lines, as the design's, whose row never
             // shrinks; the time and state wrap into what's left under it, and
@@ -642,6 +661,8 @@ private struct NXCalendarBlock: View {
                 Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.ink(0.5))
+                    .lineSpacing(NXCal.timeLeading)
+                    .padding(.vertical, NXCal.timeLeading / 2)
                     .padding(.leading, 17)
             }
         }
@@ -782,10 +803,12 @@ private struct NXUnplannedColumn: View {
                 .padding(.vertical, hintLeading / 2)
                 .padding(EdgeInsets(top: 0, leading: 2, bottom: 4, trailing: 2))
             ForEach(tasks) { task in
-                // Each card plays the design's liftIn as it appears, the Calendar opening too.
+                // Each card plays the design's liftIn as it appears, the Calendar
+                // opening too. A planned one goes at once and the cards under
+                // it close up at once, as the design's list re-renders.
                 card(task)
                     .modifier(NXLiftIn(animation: NX.cssEase(220)))
-                    .transition(.asymmetric(insertion: .identity, removal: .opacity.combined(with: .scale(scale: 0.96))))
+                    .transition(.identity)
             }
             if tasks.isEmpty {
                 Text("Everything due this week has a slot.")
@@ -800,7 +823,7 @@ private struct NXUnplannedColumn: View {
                         .strokeBorder(NX.ink(0.16), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
         }
-        .animation(NX.ease(220), value: tasks.map(\.id))
+        .transaction(value: tasks.map(\.id)) { $0.animation = nil }
     }
 
     private var unplanned: [Block] {

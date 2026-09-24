@@ -131,18 +131,20 @@ private struct NXTriageCard: View {
         let workbench = env.workbench
         let exit = workbench.triageExit
         let lifted = liftedID == task.id
+        // The design's 22/1.3: the extra leading between lines and, halved,
+        // above the first and below the last.
+        let titleLeading = 22 * 1.3 - NXStrikeText.glyphLineHeight(22)
         VStack(alignment: .leading, spacing: 0) {
             topLine
-            // The design's 22/1.3: 2.6pt between lines, half of it above and below.
             Text(task.displayTitle)
                 .font(.system(size: 22, weight: .medium))
                 .kerning(-0.11)
-                .lineSpacing(2.6)
+                .lineSpacing(titleLeading)
                 .foregroundStyle(NX.ink)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 13.3)
+                .padding(.top, 12 + titleLeading / 2)
                 .padding(.horizontal, 18)
-                .padding(.bottom, 5.3)
+                .padding(.bottom, 4 + titleLeading / 2)
             HStack(spacing: 6) {
                 ForEach(chips) { NXChip(chip: $0) }
             }
@@ -207,12 +209,15 @@ private struct NXTriageCard: View {
     private var topLine: some View {
         let workbench = env.workbench
         let total = min(12, workbench.reviewed + remaining)
+        // Each label takes the design's line-height 1 box, so the row is its
+        // 11pt, the count's and age's.
         return HStack(spacing: 10) {
             Text("Triage")
                 .font(.system(size: 10.5, weight: .semibold))
                 .kerning(0.84)
                 .textCase(.uppercase)
                 .foregroundStyle(NX.inbox)
+                .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
             HStack(spacing: 3) {
                 ForEach(0..<total, id: \.self) { index in
                     Capsule()
@@ -225,10 +230,12 @@ private struct NXTriageCard: View {
             Text("\(remaining) to go")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.42))
+                .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
             Spacer(minLength: 8)
             Text("Captured \(NXFormat.relative(task.createdAt, now: now))")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.4))
+                .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
         }
         .padding(.top, 14)
         .padding(.horizontal, 18)
@@ -250,6 +257,9 @@ private struct NXTriageCard: View {
     private var schedule: some View {
         let load = Dictionary(grouping: library.open.compactMap { $0.dueDate.map { NXFormat.dayOffset($0, now: now) } }, by: { $0 })
             .mapValues(\.count)
+        // The hint's 10.5/1.4: the extra leading between lines and, halved,
+        // above the first and below the last.
+        let hintLeading = 10.5 * 1.4 - NXStrikeText.glyphLineHeight(10.5)
         return VStack(alignment: .leading, spacing: 0) {
             caps("Or schedule — stays in Inbox")
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 4), count: 4), spacing: 4) {
@@ -259,13 +269,12 @@ private struct NXTriageCard: View {
                     }
                 }
             }
-            // The design's 10.5/1.4 over a 13pt line: 1.7pt between lines, half of it above and below.
             Text("T today · M tomorrow · dots show what’s already due")
                 .font(.system(size: 10.5, weight: .medium))
-                .lineSpacing(1.7)
+                .lineSpacing(hintLeading)
                 .foregroundStyle(NX.ink(0.4))
-                .padding(.top, 8.85)
-                .padding(.bottom, 0.85)
+                .padding(.top, 8 + hintLeading / 2)
+                .padding(.bottom, hintLeading / 2)
         }
     }
 
@@ -284,10 +293,15 @@ private struct NXTriageCard: View {
                 env.navigator.openTask(task.id)
             }
             Spacer(minLength: 8)
+            // Both labels take the design's line-height 1 box, so the button
+            // is its 28pt: 8 + 12 + 8.
             Button { workbench.triage(task, action: .right) } label: {
                 HStack(spacing: 6) {
                     Text("Keep for later").font(.system(size: 12, weight: .semibold))
+                        .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
+                    // SF Mono has SF's line.
                     Text("→").font(NX.mono(10, weight: .medium)).opacity(0.6)
+                        .padding(.vertical, (10 - NXStrikeText.glyphLineHeight(10)) / 2)
                 }
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.primaryButtonHover, rest: NX.primaryButton, radius: 8,
@@ -417,27 +431,33 @@ private struct NXTriageEmpty: View {
 
     var body: some View {
         let workbench = env.workbench
+        // The summary's 13/1.45: the extra leading between lines and, halved,
+        // above the first and below the last.
+        let summaryLeading = 13 * 1.45 - NXStrikeText.glyphLineHeight(13)
         HStack(spacing: 18) {
             Circle().fill(NX.green)
                 .frame(width: 48, height: 48)
                 .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 4) {
                 Text("Inbox triaged").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
-                // The design's 13/1.45 over a 16pt line: 2.85pt between lines, half of it above and below.
                 Text("\(workbench.reviewed) reviewed this session. Tasks you kept or scheduled stay in Inbox until you file them.")
                     .font(.system(size: 13))
-                    .lineSpacing(2.85)
+                    .lineSpacing(summaryLeading)
                     .foregroundStyle(NX.ink(0.56))
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 1.425)
+                    .padding(.vertical, summaryLeading / 2)
             }
             Spacer(minLength: 8)
             // Always offered, as in the design; with nothing kept it just starts the count again.
-            Button("Review kept tasks") {
+            // The design's 600 12/1, so the button is its 28pt: 8 + 12 + 8.
+            Button {
                 workbench.kept = []
                 workbench.reviewed = 0
+            } label: {
+                Text("Review kept tasks")
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
             }
-            .font(.system(size: 12, weight: .semibold))
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: NX.ink(0.7)))

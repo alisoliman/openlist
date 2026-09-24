@@ -8,17 +8,21 @@ Native Undo returns the branch to its original location.
 A due date, completion, recurrence or reopening does not change ownership.
 Completed visibility uses the existing per-list preference; pending branches
 appear before completed branches, without separating children from their parent.
-The sidebar, menu bar and widget count open tasks owned by the system Inbox.
-Standalone notes remain visible and do not inflate task counts.
+The sidebar counts the tasks still to triage, as the design does: tasks the card
+kept for later or scheduled, and subtasks under an open task, which go with its
+card, are left out. The menu bar and widgets count every open task owned by the
+system Inbox. Standalone notes remain visible and do not inflate task counts.
 
 Inbox opens as triage. One card takes each open task in turn: **File into**
 lists the first nine destinations (keys 1–9), **Or schedule — stays in Inbox**
 sets one of the next eight days (T today, M tomorrow), and **Already done** (E),
-**Discard** (D, to Trash), **Details** (↩) and **Keep for later** (→) finish the
-card. The remaining tasks wait under **Up next**, and kept ones under **Kept for
-later**, as ordinary rows. The header's document button shows the Inbox as its
-document instead, with its notes and headings; this Mac remembers that choice,
-and the widget's Triage link opens triage for that visit only.
+**Discard** (D, to Trash) and **Keep for later** (→) finish the card. **Details**
+(↩) opens the task in the inspector and leaves its card on top, where the triage
+keys still act on it. The remaining tasks wait under **Up next**, and kept ones
+under **Kept for later**, as ordinary rows. The header's document button shows
+the Inbox as its document instead, with its notes and headings; this Mac
+remembers that choice, and the widget's Triage link opens triage for that visit
+only.
 
 ## Compatibility
 

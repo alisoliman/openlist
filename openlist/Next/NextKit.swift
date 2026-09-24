@@ -516,9 +516,11 @@ struct NXSegmented<Value: Hashable>: View {
         HStack(spacing: 2) {
             ForEach(options, id: \.0) { value, label in
                 Button { onSelect(value) } label: {
+                    // The design's 500 12/1, so the control is its 28pt: 2 + 6 + 12 + 6 + 2.
                     Text(label)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(selection == value ? NX.ink : NX.ink(0.55))
+                        .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background {
