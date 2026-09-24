@@ -112,9 +112,9 @@ struct NextStyle: Equatable {
     /// Whether the checkbox's bounce and ring play, as the design's lively().
     var lively = true
     /// Whether the inspector, notch, bottom bars and overlay cards slide in,
-    /// chips, the selection check and lifted cards rise into place, and the
-    /// tick and switch knob overshoot. Reduce Motion fades and eases them
-    /// instead, as its hint promises.
+    /// Trash's restored row slides out, chips, the selection check and lifted
+    /// cards rise into place, and the tick and switch knob overshoot. Reduce
+    /// Motion fades and eases them instead, as its hint promises.
     var slides = true
     var dwell: Double = 5
     var compact = false

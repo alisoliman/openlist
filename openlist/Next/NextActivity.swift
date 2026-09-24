@@ -507,7 +507,9 @@ private struct NXSavedTasks {
         case .restored: label = lead.restoredList.isEmpty ? "Restored \(tasks)" : "Restored \(tasks) to \(lead.restoredList)"
         default: label = "\(lead.kind.verb) \(tasks)"
         }
-        return NXSavedItem(id: "e\(lead.id)", icon: NXChangesSection.icon(lead.kind), tone: NXChangesSection.tone(lead.kind),
+        // Repeats rolled on with no other task closing, as the log draws them.
+        let icon = counted.allSatisfy(\.rolls) ? "repeat" : NXChangesSection.icon(lead.kind)
+        return NXSavedItem(id: "e\(lead.id)", icon: icon, tone: NXChangesSection.tone(lead.kind),
                            label: label, listID: lead.listID, listTitle: lead.listTitle, at: lead.at)
     }
 
@@ -517,8 +519,9 @@ private struct NXSavedTasks {
         let removedLine = change?.removedEmptyLine == true
         let addedLine = event.kind == .noteAdded && event.blockID.map(lines.contains) == true
         let kind: ActivityKind = removedLine ? .renamed : addedLine ? .created : event.kind
-        // A copy, as the log draws Duplicate's and Use as Template…'s.
-        let icon = change?.copy == nil ? NXChangesSection.icon(kind) : "plus.square.on.square"
+        // A copy, as the log draws Duplicate's and Use as Template…'s, and a
+        // repeat rolled on, as it draws one alone.
+        let icon = change?.copy != nil ? "plus.square.on.square" : event.rolls ? "repeat" : NXChangesSection.icon(kind)
         var item = NXSavedItem(id: "e\(event.id)", icon: icon, tone: NXChangesSection.tone(kind),
                                label: addedLine ? "Added \(Self.title(event))" : label(event),
                                // Its days named as of the change, as its label names them.
@@ -546,7 +549,11 @@ private struct NXSavedTasks {
         let before = change?.before
         let after = change?.after
         switch event.kind {
-        case .completed: return "\(title) done"
+        // A repeat's names the next date the same save rolled it on to, as it
+        // was named then.
+        case .completed:
+            if event.rolls, let due = after?.dueDate { return "\(title) rolls to \(NXFormat.dueLabel(due, now: event.at))" }
+            return "\(title) done"
         // A copy's, named as it was made: a list's by the list it copied.
         case .created where change?.copy != nil, .listCreated where change?.copy != nil:
             return change?.copy == .template ? "Copied \(title) as a template" : "Duplicated \(title)"

@@ -9,7 +9,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   openlist/Model/Recurrence.swift openlist/Model/ListCover.swift openlist/Services/MediaStore.swift \
   Tools/SyncChecks/ReviewSession.swift Tools/SyncChecks/LegacyFixture.swift
 xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
-  -o "$OUT/sync-checks" openlist/Model/*.swift Shared/ListAccent.swift Shared/WidgetSnapshot.swift \
+  -o "$OUT/sync-checks" openlist/Model/*.swift Shared/ListAccent.swift Shared/ListIcon.swift Shared/WidgetSnapshot.swift \
   Tools/SyncChecks/ReviewSession.swift openlist/Next/NextEditorTypography.swift \
   openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift \
   openlist/Services/Store+Tasks.swift openlist/Services/Store+LabelMerge.swift openlist/Services/Store+Calendar.swift openlist/Services/Store+CompletionUndo.swift openlist/Services/Store+Capture.swift openlist/Services/Store+Sync.swift \

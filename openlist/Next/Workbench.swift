@@ -535,13 +535,15 @@ final class Workbench {
     func entries(for taskID: UUID) -> [ChangeEntry] { log.filter { $0.taskID == taskID } }
 
     /// Settings' Clear all activity history: the saved history, then, once it's
-    /// gone, the log, so Changes and each task's Activity start over. The undo
-    /// stack keeps its steps; redoing one from before the clear logs it anew.
+    /// gone, the log, so Changes and each task's Activity start over, said in
+    /// the tray as Settings' other Data actions are. The undo stack keeps its
+    /// steps; redoing one from before the clear logs it anew.
     func clearActivityHistory() {
         store.clearActivity()
         guard store.persistenceError == nil else { return }
         log.removeAll()
         clearedBatch = batchCounter
+        showTray("Cleared all activity history", icon: "clock.arrow.circlepath")
         undoRevision += 1
     }
 
@@ -1196,10 +1198,11 @@ final class Workbench {
         trashUndos.add(restore.mark)
         showTray(label, icon: "arrow.up.bin", tone: .accent, undoable: true, destination: destination)
         restoring.append(restore)
-        withAnimation(style.ease(300)) { _ = flying.insert(entry.id) }
-        let delay = ms(300)
+        // The row flies out on its own fixed animation, and the restore is
+        // written after the design's fixed 300 ms, whatever the Motion setting.
+        flying.insert(entry.id)
         restore.task = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(Int(delay)))
+            try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled, let self else { return }
             self.land(restore)
         }
@@ -1270,7 +1273,8 @@ final class Workbench {
                         task.cancel()
                         restore.task = nil
                         self.restoring.removeAll { $0 === restore }
-                        withAnimation(self.style.ease(260)) { _ = self.flying.remove(id) }
+                        // The row flies back on its own animation.
+                        self.flying.remove(id)
                     } else if restore.isList {
                         // The handler keeps the id, never the model, which Trash may erase.
                         // Out of the library, it's in Trash already or erased.

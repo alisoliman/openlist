@@ -99,5 +99,15 @@ do {
 } catch { check(true, "Missing model media surfaces a write error") }
 check(try String(contentsOf: destination, encoding: .utf8) == markdown, "Failed integrated export preserves existing Markdown")
 check(try FileManager.default.contentsOfDirectory(atPath: exportFolder.path).sorted() == beforeNames, "Failed integrated export leaves no partial package")
+
+// The H1 carries the glyph the app draws: an emoji, the placeholder for none,
+// and never the name of an SF Symbol from synced or older data.
+func heading(icon: String) throws -> String? {
+    let titled = store.createList(title: "Glyph fixture", icon: icon)
+    return try MarkdownExporter.markdown(for: titled, store: store).components(separatedBy: .newlines).first
+}
+check(try heading(icon: "🪴") == "# 🪴 Glyph fixture", "Export's heading keeps a list's emoji")
+check(try heading(icon: "") == "# 📋 Glyph fixture", "Export's heading draws a list with no icon as the app does")
+check(try heading(icon: "folder.fill") == "# Glyph fixture", "Export's heading leaves out an SF Symbol's name")
 print(failures == 0 ? "✅ \(checks) full export integration checks passed" : "❌ \(failures)/\(checks) full export integration checks failed")
 exit(failures == 0 ? 0 : 1)

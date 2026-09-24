@@ -77,14 +77,15 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
-  bars, the overlay cards and the Turn into card in rather than sliding them, the list
-  document's new and converted lines (its rowIn and morphIn) rather than sliding them into
-  place, and chips, the selection check and the cards that lift in (Today is clear, the
-  Inbox's done card, Planned now, Not planned yet) rather than raising them, and eases the
-  tick and switch knobs without their overshoot, as its hint says, where the design shortens
-  the inspector's slide and plays the others unchanged. Each fade takes as long as that
-  slide or rise. Task rows and calendar blocks keep the design's rowIn slide there, as the
-  design plays it (a task row's shortened, a calendar block's at its fixed 380ms).
+  bars, the overlay cards and the Turn into card in rather than sliding them, and Trash's
+  restored row out, the list document's new and converted lines (its rowIn and morphIn)
+  rather than sliding them into place, and chips, the selection check and the cards that
+  lift in (Today is clear, the Inbox's done card, Planned now, Not planned yet) rather than
+  raising them, and eases the tick and switch knobs without their overshoot, as its hint
+  says, where the design shortens the inspector's slide and plays the others unchanged. Each
+  fade takes as long as that slide or rise. Task rows and calendar blocks keep the design's
+  rowIn slide there, as the design plays it (a task row's shortened, a calendar block's at
+  its fixed 380ms).
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
@@ -328,11 +329,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Delete everything, Return to original library, Reset access token), are Next sheets too,
   where Return presses neither button. Delete everything also clears the window's undo stack
   and Changes' This session; the tray then says "Deleted everything for good", with no
-  Undo. Their buttons, and the inline hours editor's, are `NXPanelButtonStyle`. Format ▸ Add
-  Link… (⌘L) asks for its URL in a Next sheet too (`NXLinkSheet`; Return applies, Esc
-  cancels), and Trash's hold-to-erase asks VoiceOver, which can't hold, in the confirmation
-  sheet. Deviation: the only system alerts left are the window's shown when the library
-  can't open, which has no shell, tray or notices.
+  Undo. Clear all activity history empties Changes but keeps the undo stack; its tray says
+  "Cleared all activity history", with no Undo. Their buttons, and the inline hours
+  editor's, are `NXPanelButtonStyle`. Format ▸ Add Link… (⌘L) asks for its URL in a Next
+  sheet too (`NXLinkSheet`; Return applies, Esc cancels), and Trash's hold-to-erase asks
+  VoiceOver, which can't hold, in the confirmation sheet. Deviation: the only system alerts
+  left are the window's shown when the library can't open, which has no shell, tray or
+  notices.
 - Activity › Changes › This session is the log, with the saved history it didn't write
   merged in (MCP, another Mac). What a list document line saves to its task while it's
   written (the new task at Return, its title as typed, the line itself when it goes)
@@ -369,10 +372,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   and its line with the caret would drop the tint. Such a reveal keeps folded and done lines
   on its path shown until the page is left, a revealed parent is folded, or Esc, with no
   details, selection or focus left to close, ends it in place; the document lasts the visit.
-  Only a target that can't open says so, in a notice. A hit reads as the design's two
-  lines, a task's whose note alone matched ending "· matched in note"; a heading or text
-  line's also quotes the passage under its title when the line is long or its note
-  matched, and a list's its description when only that matched.
+  Only a target that can't open says so, in a notice: one grey untitled card, for a reminder
+  as for an item link or widget row, whether the target is gone or the link isn't this app's
+  or library's or can't be read. A library whose link identity can't be read says so in red,
+  as a Copy Link that fails does, with the app's other failed actions. A hit reads as the
+  design's two lines, a task's whose note alone matched ending "· matched in note"; a
+  heading or text line's also quotes the passage under its title when the line is long or
+  its note matched, and a list's its description when only that matched.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
   Image) are a native extra: their lines draw and edit in the document, the Turn into
   card brings them up for their names after "/" (with no query it shows the design's

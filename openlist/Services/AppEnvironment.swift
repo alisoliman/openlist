@@ -298,10 +298,10 @@ final class AppEnvironment {
 
 extension AppEnvironment {
     /// Every Copy Link, from a menu or Task ▸: the link on the clipboard and
-    /// "Link copied" in the tray, or the link notice saying why there is none.
+    /// "Link copied" in the tray, or, drawn red as other failed actions are,
+    /// the action notice saying why there is none. The link notice is for a
+    /// link that can't open.
     func copyLink(to target: LocalLink.Target) {
-        // An earlier link's error would otherwise hide this copy's result.
-        localLinks.error = nil
         do {
             let url = try localLinks.link(to: target)
             NSPasteboard.general.clearContents()
@@ -309,7 +309,10 @@ extension AppEnvironment {
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
             workbench.showTray("Link copied", icon: "link")
         } catch {
-            localLinks.error = error as? LocalLinkError ?? .targetUnavailable
+            let reason = error as? LocalLinkError == .identityUnavailable
+                ? LocalLinkError.identityUnavailable.localizedDescription
+                : "This task or list is unavailable. It may have been deleted or changed to a text block."
+            store.actionError = "The link was not copied. \(reason)"
         }
     }
 
