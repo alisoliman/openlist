@@ -359,7 +359,13 @@ private struct NXTriageListRow: View {
                 .frame(width: 16, height: 16)
                 .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             NXListGlyph(list: list, size: 13)
-            Text(list.displayTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink).lineLimit(1)
+            // The design's 13/1, wrapping inside the row when the column is
+            // narrow: exact 13pt lines, which trim SwiftUI's 16 from below,
+            // raised by half the trim so the ink is centred as CSS centres it.
+            Text(list.displayTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
+                .lineHeight(.exact(points: 13))
+                .offset(y: (13 - NX.lineHeight(13)) / 2)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Text("\(count)").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(NX.ink(0.34))
         }

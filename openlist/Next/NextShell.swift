@@ -406,7 +406,7 @@ struct NXCapsTitle: View {
             .kerning(0.735)
             .textCase(.uppercase)
             .foregroundStyle(NX.ink(0.36))
-            .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
+            .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
     }
 }
 

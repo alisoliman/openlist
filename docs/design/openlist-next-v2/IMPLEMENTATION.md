@@ -333,7 +333,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   done block's own check reopens it there.
   The Work panel's "N tasks rescheduled" and Start notifications come only from blocks the
   calendar draws, not from the planner's own sessions, and no Start comes while work is
-  running or paused, as the design's "Planned now" hides then.
+  running or paused, as the design's "Planned now" hides then. A long Planned now title
+  wraps and the banner grows, as the design's; its label and time keep to one line, where
+  the design's flex row would squeeze them onto two beside a very long title.
 - Calendar week: the design's week always has today on a Wednesday. Natively, Plan keeps to
   the week around today while it has hours long enough for the task (the design's "No free
   slot this week"), then goes on into the next week, as a deferral past it gets its own. A

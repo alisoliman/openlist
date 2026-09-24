@@ -137,7 +137,8 @@ Undo in the tray. That placement is pinned. In the Work panel, **Later… → Mo
 planned time…** moves a placed block to another start, as long as it is: its sheet
 lists what the new time would overlap on the calendar (**Move anyway** keeps the
 overlap), and the move is pinned the same way, one change with Undo in the tray.
-None of these changes the task’s due date.
+None of these changes the task’s due date or picks it for today, so a placed task
+shows in Today only when it is due by today, picked for today or starred.
 
 Pins can conflict with meetings, other pins, active work, availability, breaks,
 deadlines, or the **Keep task together** choice. A conflicting pin does not count

@@ -246,18 +246,21 @@ do {
     check(task.schedulingEstimateMinutes == 45 && task.labelIDs == [garden.id] && task.dueDate == friday,
           "Redo leaves the estimate, label and date set since")
 
-    // Planning selects a task for its day; its Undo takes back only that.
+    // Planning places a task without picking it for a day, as the design's
+    // Plan only adds the placement.
     let plant = store.appendBlock(kind: .task, text: "Repot the fern", to: .init(listID: list.id))
     store.setTaskEstimate(30, for: plant)
-    let unplanned = TaskFields(plant)
+    store.setDueDate(friday, for: plant)
     let start = Calendar.current.date(byAdding: .hour, value: 10, to: monday)!
     store.setPlacement(for: plant, start: start, end: start.addingTimeInterval(1800), isPinned: true)
-    let placed = TaskFields(plant)
-    check(plant.selectedForDay != nil, "A placement selects an unselected task for its day")
-    store.setTaskEstimate(60, for: plant)
-    unplanned.apply(to: plant, replacing: placed)
-    check(plant.selectedForDay == nil, "Undoing the plan takes back the day it selected")
-    check(plant.schedulingEstimateMinutes == 60, "Undoing the plan leaves an estimate stepped since")
+    check(plant.selectedForDay == nil, "A placement leaves a dated task unpicked for its day")
+    let undated = store.appendBlock(kind: .task, text: "Oil the hinges", to: .init(listID: list.id))
+    store.setPlacement(for: undated, start: start, end: start.addingTimeInterval(1800), isPinned: true)
+    check(undated.selectedForDay == nil, "A placement leaves an undated task unpicked for its day")
+    store.selectForToday(undated)
+    let picked = undated.selectedForDay
+    store.setPlacement(for: undated, start: start.addingTimeInterval(86_400), end: start.addingTimeInterval(88_200), isPinned: true)
+    check(undated.selectedForDay == picked, "A placement on another day keeps the day a task was picked for")
     store.save()
 }
 

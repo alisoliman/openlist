@@ -1,7 +1,8 @@
 // Checks NX.lineHeight against the line SwiftUI lays out, which the Next
-// UI's CSS line boxes are fitted over: a label's (size − line) / 2 padding
-// and a paragraph's size × line-height − line leading. Compiled against the
-// real openlist/Next/NextTextLine.swift by Tools/run-logic-checks.sh.
+// UI's CSS line boxes are fitted over: a label's (size − line) / 2 padding,
+// a paragraph's size × line-height − line leading, and the exact lines of a
+// text whose CSS line is under SwiftUI's. Compiled against the real
+// openlist/Next/NextTextLine.swift by Tools/run-logic-checks.sh.
 
 import AppKit
 import SwiftUI
@@ -25,6 +26,24 @@ func height<V: View>(_ view: V) -> CGFloat {
 }
 
 func lines(_ count: Int) -> String { Array(repeating: "Hg", count: count).joined(separator: "\n") }
+
+/// The first and last rows `view` inks, in quarter points, drawn at 4x over white.
+@MainActor
+func ink<V: View>(_ view: V) -> ClosedRange<Double>? {
+    let renderer = ImageRenderer(content: view.fixedSize().background(Color.white))
+    renderer.scale = 4
+    guard let image = renderer.cgImage,
+          let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                  bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+    let rows = (0..<image.height).filter { y in
+        (0..<image.width).contains { x in data[(y * image.width + x) * 4 + 3] > 200 && data[(y * image.width + x) * 4] < 128 }
+    }
+    guard let first = rows.first, let last = rows.last else { return nil }
+    return Double(first) / 4...Double(last + 1) / 4
+}
 
 MainActor.assumeIsolated {
     // One line, at every half point the UI's text uses and the rows' 13.8,
@@ -67,6 +86,38 @@ MainActor.assumeIsolated {
             check(text == stacked.rounded(.up), "\(count) lines of \(size)/\(lineHeight)", "\(text) against \(stacked)")
         }
     }
+
+    // A wrapping text whose CSS line is under SwiftUI's, as the triage card's
+    // list names (13/1) and the Planned now title (13/1.2) are, takes exact
+    // lines, so n of them stack at the design's n × size × line-height.
+    for (size, lineHeight) in [(CGFloat(13), CGFloat(1)), (13, 1.2)] {
+        for count in [1, 2, 3] {
+            let text = height(Text(lines(count)).font(.system(size: size, weight: .medium))
+                .lineHeight(.exact(points: size * lineHeight)))
+            let stacked = CGFloat(count) * size * lineHeight
+            check(text == stacked.rounded(.up), "\(count) exact lines of \(size)/\(lineHeight)", "\(text) against \(stacked)")
+        }
+    }
+    // An exact line trims SwiftUI's from below, so raised by half the trim its
+    // ink sits where a label padded by (size − line) / 2 has it, centred.
+    let exact = ink(Text("H").font(.system(size: 13, weight: .medium))
+        .lineHeight(.exact(points: 13)).offset(y: (13 - NX.lineHeight(13)) / 2))
+    let padded = ink(Text("H").font(.system(size: 13, weight: .medium)).padding(.vertical, (13 - NX.lineHeight(13)) / 2))
+    check(exact != nil && exact == padded, "a raised exact line centres its ink", "\(String(describing: exact)) against \(String(describing: padded))")
+
+    // A symbol in the design's icon box beside a line-height 1 label, as the
+    // Calendar's Start (a 14pt box, 12/1, 7pt padding) and Plan (13pt, 11/1,
+    // 5pt) are: the box, not the symbol's own height, sets the button's.
+    let start = height(HStack(spacing: 5) {
+        Image(systemName: "play.fill").font(.system(size: 11)).frame(height: 14)
+        Text("Start").font(.system(size: 12, weight: .semibold)).padding(.vertical, (12 - NX.lineHeight(12)) / 2)
+    }.padding(.vertical, 7))
+    check(start == 28, "Start's 7 + 14 + 7 box", "\(start)")
+    let plan = height(HStack(spacing: 3) {
+        Image(systemName: "sparkles").font(.system(size: 11)).frame(height: 13)
+        Text("Plan").font(.system(size: 11, weight: .semibold)).padding(.vertical, (11 - NX.lineHeight(11)) / 2)
+    }.padding(.vertical, 5))
+    check(plan == 23, "Plan's 5 + 13 + 5 box", "\(plan)")
 }
 
 print(failures == 0 ? "✅ \(checks) line-height checks passed" : "❌ \(failures)/\(checks) failed")

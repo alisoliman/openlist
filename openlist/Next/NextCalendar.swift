@@ -187,25 +187,41 @@ private struct NXCalendarBody: View {
     }
 
     private func banner(_ block: PlannedBlock, task: Block) -> some View {
-        HStack(spacing: 12) {
+        // The title's exact 13/1.2 lines, raised by half what they trim off
+        // SwiftUI's 16 so the ink sits where CSS centres it; the labels and
+        // Start take the design's line-height 1 boxes, so the banner is its
+        // 48pt, 10 + 28 + 10, until a long title wraps.
+        let titleLine = 13 * 1.2
+        return HStack(spacing: 12) {
             NXBreathingDot(color: style.accent, size: 8)
             Text("Planned now")
                 .font(.system(size: 11, weight: .semibold))
                 .kerning(0.66)
                 .textCase(.uppercase)
                 .foregroundStyle(style.accent)
+                .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
+                .fixedSize()
+            // Only the title gives way to a narrow row, wrapping as the design's does.
             Text(task.displayTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(NX.ink)
-                .lineLimit(1)
+                .lineHeight(.exact(points: titleLine))
+                .offset(y: (titleLine - NX.lineHeight(13)) / 2)
+                .fixedSize(horizontal: false, vertical: true)
             Text("\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(NX.ink(0.5))
+                .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
+                .fixedSize()
             Spacer(minLength: 8)
             Button { env.workbench.startWork(task.id) } label: {
+                // The design's 14pt icon box, whatever the symbol's height,
+                // so the button is its 28pt: 7 + 14 + 7.
                 HStack(spacing: 5) {
                     Image(systemName: "play.fill").font(.system(size: 11))
+                        .frame(height: 14)
                     Text("Start").font(.system(size: 12, weight: .semibold))
+                        .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
                 }
             }
             .buttonStyle(NXHoverButtonStyle(hover: style.accentHover, rest: style.accent, radius: 8,
@@ -499,12 +515,14 @@ private struct NXDayColumn: View {
                 }
 
                 if isToday, let y = Self.offset(of: now, range: range) {
+                    // From the time down, as the design's: the line starts where
+                    // today's shading ends, its dot 0.5pt above its middle.
                     Rectangle().fill(NX.red)
                         .frame(height: 2)
                         .overlay(alignment: .leading) {
-                            Circle().fill(NX.red).frame(width: 8, height: 8).offset(x: -4)
+                            Circle().fill(NX.red).frame(width: 8, height: 8).offset(x: -4, y: -0.5)
                         }
-                        .offset(y: y - 1)
+                        .offset(y: y)
                         .allowsHitTesting(false)
                         .zIndex(5)
                 }
@@ -594,6 +612,25 @@ private nonisolated struct NXHatch: Shape {
             path.closeSubpath()
             x += step
         }
+        return path
+    }
+}
+
+/// A focused block's accent ring, outside its edge as the design's
+/// `0 0 0 2px` box-shadow is. Its spread animates, so it grows out from the
+/// edge and shrinks back as the shadow's does.
+private nonisolated struct NXFocusRing: Shape {
+    var spread: CGFloat
+
+    var animatableData: CGFloat {
+        get { spread }
+        set { spread = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        guard spread > 0 else { return Path() }
+        var path = Path(roundedRect: rect.insetBy(dx: -spread, dy: -spread), cornerRadius: 7 + spread, style: .continuous)
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 7, height: 7), style: .continuous)
         return path
     }
 }
@@ -692,10 +729,12 @@ private struct NXCalendarBlock: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        // The design eases its 2pt accent ring in and out with the rest of
+        // the box-shadow, 240ms, clicking from block to block too.
         .overlay {
-            if focused {
-                RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(style.accent, lineWidth: 2).padding(-2)
-            }
+            NXFocusRing(spread: focused ? 2 : 0)
+                .fill(style.accent.opacity(focused ? 1 : 0), style: FillStyle(eoFill: true))
+                .animation(NX.cssEase(240), value: focused)
         }
         .shadow(color: working ? color.opacity(0.33) : .clear, radius: 8, y: 6)
         .brightness(hovering ? -0.03 : 0)
@@ -706,8 +745,9 @@ private struct NXCalendarBlock: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: open)
-        .animation(.easeOut(duration: 0.24), value: done)
-        .animation(.easeOut(duration: 0.24), value: working)
+        // The design's `background 240ms ease, box-shadow 240ms ease`.
+        .animation(NX.cssEase(240), value: done)
+        .animation(NX.cssEase(240), value: working)
         .onChange(of: fresh, initial: true) { _, isFresh in
             if isFresh { enter() }
         }
@@ -875,9 +915,13 @@ private struct NXUnplannedColumn: View {
                     .padding(.vertical, chipLine)
                 Spacer(minLength: 4)
                 Button { env.workbench.fit(task.id) } label: {
+                    // The design's 13pt icon box and 11/1 label, so the
+                    // button, the row's tallest, is its 23pt: 5 + 13 + 5.
                     HStack(spacing: 3) {
                         Image(systemName: "sparkles").font(.system(size: 11))
+                            .frame(height: 13)
                         Text("Plan").font(.system(size: 11, weight: .semibold))
+                            .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
                     }
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), rest: style.accent.opacity(0.1), radius: 6,

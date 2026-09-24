@@ -127,7 +127,7 @@ struct NextTodayScreen: View {
                 Text("Today is clear").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
                 // The design's 13/1.45: the extra leading between lines and,
                 // halved, above the first and below the last.
-                let leading = 13 * 1.45 - NXStrikeText.glyphLineHeight(13)
+                let leading = 13 * 1.45 - NX.lineHeight(13)
                 Text("\(done) finished today. Nothing is overdue, due, planned or starred.")
                     .font(.system(size: 13))
                     .lineSpacing(leading)
