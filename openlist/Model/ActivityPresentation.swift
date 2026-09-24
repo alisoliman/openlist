@@ -1,8 +1,12 @@
 import Foundation
 
 extension ActivityEvent {
-    var recordedDetail: String {
-        guard let change else { return detail }
+    var recordedDetail: String { Self.recordedDetail(kind, detail: detail, change: change) }
+
+    /// An event's `recordedDetail`, from its change decoded already.
+    static func recordedDetail(_ kind: ActivityKind, detail: String, change: TaskActivityChange?) -> String {
+        // A change with neither state only says which change saved it.
+        guard let change, change.before != nil || change.after != nil else { return detail }
         let before = change.before
         let after = change.after
         switch kind {

@@ -1347,7 +1347,12 @@ final class OutlineEditor {
             let name = hooks.nameEdit(edit) ?? edit.defaultName
             undoManager?.setActionName(name)
             hooks.didRecordEdit(edit, name)
-        } catch { env.store.editorNotice = error.localizedDescription }
+        } catch {
+            // As for a move from the menu: a refusal that changed nothing
+            // passes in the tray, a move that failed to save is the red card.
+            if error is BulkActionError { env.store.refuse(error.localizedDescription) }
+            else { env.store.actionError = error.localizedDescription }
+        }
     }
 
     /// Where a drag lands under the design's rules: only tasks and list
@@ -1463,7 +1468,7 @@ final class OutlineEditor {
                 let ids = try env.store.pasteFragment(FragmentClipboard.read(), in: document, after: blockID)
                 env.navigator.selection = Set(ids)
                 focus.request(ids.first, caret: 0)
-            } catch { env.store.editorNotice = error.localizedDescription }
+            } catch { env.store.actionError = error.localizedDescription }
         }
     }
 

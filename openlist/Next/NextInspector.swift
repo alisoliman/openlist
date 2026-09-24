@@ -241,10 +241,7 @@ struct NextInspector: View {
     /// also finds it in Trash, so when a menu or shortcut trashes the open
     /// task, what was typed goes with it and comes back on Undo or Restore.
     private var draftTarget: Block? {
-        guard let id = draftID else { return nil }
-        let descriptor = FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })
-        guard let block = try? env.store.context.fetch(descriptor).first,
-              block.modelContext != nil, !block.isDeleted else { return nil }
+        guard let block = env.store.blockIncludingTrash(id: draftID), block.modelContext != nil else { return nil }
         return block
     }
 

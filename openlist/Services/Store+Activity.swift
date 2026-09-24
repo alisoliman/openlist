@@ -149,6 +149,15 @@ extension Store {
         return result
     }
 
+    /// Runs a change that saves more than once, like tasks completed
+    /// together, so its history is one batch, as a single save's is.
+    func withActivityBatch<T>(_ batch: UUID, _ body: () throws -> T) rethrows -> T {
+        let previous = activityBatch
+        activityBatch = batch
+        defer { activityBatch = previous }
+        return try body()
+    }
+
     /// Task history is independent of `recentActivity`, which Changes reads.
     func taskActivity(for taskID: UUID, limit: Int = 50, offset: Int = 0) throws -> [ActivityEvent] {
         let excluded = Array(uncommittedActivityIDs)

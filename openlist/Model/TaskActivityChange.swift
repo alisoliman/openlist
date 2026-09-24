@@ -32,6 +32,18 @@ nonisolated struct TaskActivityChange: Codable, Equatable, Sendable {
     /// the design logs as "Removed an empty line", not as a task moved to
     /// Trash. Optional for compatibility with existing history.
     var removedEmptyLine: Bool?
+    /// Shared by the history one change saves, a task each, so Changes shows
+    /// it as the one row the log gives the change. Nil in history saved
+    /// before it, which shows as it was recorded.
+    var batchID: UUID?
+    /// A copy's first task, or the list a list's copy made: how it was made,
+    /// which Changes names it by as the log does.
+    var copy: ActivityCopy?
+}
+
+/// How a copy was made: Duplicate, or Use as Template….
+nonisolated enum ActivityCopy: String, Codable, Sendable {
+    case duplicate, template
 }
 
 /// A staged legacy event retains its action time across retries. Each attempt

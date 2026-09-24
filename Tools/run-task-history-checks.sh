@@ -13,7 +13,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/task-history
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift openlist/Services/Navigator.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
-  openlist/Services/SampleData.swift Tools/EditorChecks/Support.swift Tools/TaskHistoryChecks/main.swift
+  openlist/Services/SampleData.swift openlist/Next/NextSavedChanges.swift Tools/EditorChecks/Support.swift Tools/TaskHistoryChecks/main.swift
 "$OUT/task-history-checks" "$OUT/History.store" write
 "$OUT/task-history-checks" "$OUT/History.store" reopen
 "$OUT/task-history-checks" "$OUT/History.store" verify-clear

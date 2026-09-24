@@ -47,6 +47,8 @@ final class Store {
     /// List document lines' own saves to their tasks, which reach saved
     /// history as one entry each once the line ends.
     @ObservationIgnored var lineHistory = EditorLineHistory()
+    /// The batch of a change written in several saves; see `withActivityBatch`.
+    @ObservationIgnored var activityBatch: UUID?
 
     /// Set by ``batch(_:)`` so a run of mutations commits once.
     var isSavingSuspended = false
@@ -62,8 +64,9 @@ final class Store {
     var persistenceError: String?
     var editorNotice: String?
     /// Why the last export, Copy as Markdown, cover change, image or file
-    /// failed, where a system alert said so before. It stays, red, under the
-    /// toolbar until dismissed; VoiceOver hears it as it appears.
+    /// failed, where a system alert said so before, or a Duplicate, move,
+    /// Copy Content and Subtasks or paste. It stays, red, under the toolbar
+    /// until dismissed; VoiceOver hears it as it appears.
     var actionError: String?
     /// Takes what ``refuse(_:)`` reports; the window shows it in its tray.
     @ObservationIgnored var onRefusal: ((String) -> Void)?
@@ -313,7 +316,7 @@ final class Store {
             let id = try copyList(list, mode: .duplicate)
             return self.list(id: id) ?? list
         } catch {
-            editorNotice = "The list was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
+            actionError = "The list was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
             return list
         }
     }
@@ -423,6 +426,10 @@ final class Store {
         if context.hasChanges || !pendingActivity.isEmpty || lineHistory.hasEnded {
             context.processPendingChanges()
             let staged = try stagedTaskActivity() + stagedLegacyActivity()
+            // One save is one change, a task each: Changes shows its history
+            // as the one row the log gives it.
+            let batch = activityBatch ?? UUID()
+            for event in staged { event.batchID = batch }
             // After staging, which holds what the lines saved last.
             let events = staged + endedLineActivity()
             for event in events { context.insert(event) }
@@ -503,13 +510,16 @@ final class Store {
         ))
     }
 
-    /// The newest saved history, optionally only from `start` on or from before `end`.
-    func recentActivity(limit: Int = 300, since start: Date = .distantPast, before end: Date = .distantFuture) -> [ActivityEvent] {
+    /// The newest saved history, optionally only from `start` on or from
+    /// before `end`, and past the first `offset` of it.
+    func recentActivity(limit: Int = 300, since start: Date = .distantPast, before end: Date = .distantFuture,
+                        offset: Int = 0) -> [ActivityEvent] {
         let excluded = Array(uncommittedActivityIDs)
         var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate {
             $0.timestamp >= start && $0.timestamp < end && !excluded.contains($0.id)
         }, sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
         descriptor.fetchLimit = limit
+        descriptor.fetchOffset = offset
         return (try? context.fetch(descriptor)) ?? []
     }
 

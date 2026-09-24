@@ -14,7 +14,7 @@ struct NextActivityScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @State private var heatmap: ActivityHeatmap?
-    @State private var events: [ActivityEvent] = []
+    @State private var history = NXSavedHistory()
     @State private var loadError: String?
 
     var body: some View {
@@ -48,7 +48,7 @@ struct NextActivityScreen: View {
                 }
             }
             .padding(.top, 22)
-            NXChangesSection(events: events).padding(.top, 28)
+            NXChangesSection(history: history).padding(.top, 28)
         }
         .task { refresh() }
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in refresh() }
@@ -71,10 +71,30 @@ struct NextActivityScreen: View {
 
     /// Saved history from this session, which Changes merges with the log,
     /// then the newest from before it for Earlier. Fetched apart so a long
-    /// session never crowds Earlier out.
+    /// session never crowds Earlier out. Earlier's rows are changes, not
+    /// events, so it reads on until it has its 40, however many tasks one
+    /// change saved history for, up to a bound. Each event is decoded once,
+    /// here, and Earlier's rows are worded here, not as Changes draws.
     private func loadEvents() {
+        let store = env.store
         let start = env.workbench.startedAt
-        events = env.store.recentActivity(limit: 200, since: start) + env.store.recentActivity(limit: 40, before: start)
+        var saved: [NXSavedEvent] = []
+        var facts: [NXSavedFact] = []
+        var rows: [[Int]] = []
+        while saved.count < 4000 {
+            let page = store.recentActivity(limit: 200, before: start, offset: saved.count).map(NXSavedEvent.init)
+            saved += page
+            facts += page.map(\.fact)
+            rows = NXSavedChanges.rows(facts)
+            if page.count < 200 || rows.count > NXChangesSection.earlierRows { break }
+        }
+        let earlier = rows.prefix(NXChangesSection.earlierRows).map { $0.map { saved[$0] } }
+        let session = store.recentActivity(limit: 200, since: start).map(NXSavedEvent.init)
+        // The session's rows as they'd be with nothing the log wrote left
+        // out, which only ever takes some of a row's history away.
+        let sessionRows = NXSavedChanges.rows(session.map(\.fact)).map { $0.map { session[$0] } }
+        let tasks = NXSavedTasks(earlier + sessionRows, store: store)
+        history = NXSavedHistory(session: session, earlier: earlier.map(tasks.item), tasks: tasks)
     }
 }
 
@@ -306,11 +326,7 @@ private struct NXActivityDayPanel: View {
     /// The day's tasks, found in the library or in Trash, which keeps them
     /// with their list; one erased since isn't there.
     private func completedTasks(_ items: [ActivityCompletion]) -> [UUID: Block] {
-        let ids = Array(Set(items.compactMap(\.taskID)))
-        guard !ids.isEmpty,
-              let tasks = try? env.store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
-        else { return [:] }
-        return Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        env.store.blocksIncludingTrash(ids: items.compactMap(\.taskID))
     }
 }
 
@@ -332,6 +348,245 @@ private struct NXDayRowOpen: ViewModifier {
 
 // MARK: Changes
 
+/// A saved event as Changes reads it, its change decoded once, as it loads.
+private struct NXSavedEvent {
+    var id: UUID
+    var kind: ActivityKind
+    var title: String
+    var detail: String
+    var blockID: UUID?
+    var listID: UUID?
+    var listTitle: String
+    var at: Date
+    var change: TaskActivityChange?
+    /// How Changes groups it with the rest of the change that saved it:
+    /// the tasks one change moved, scheduled or trashed read as its one row,
+    /// as they do in the log, and a list's own event takes in its tasks'.
+    var fact: NXSavedFact
+
+    init(_ event: ActivityEvent) {
+        id = event.id
+        kind = event.kind
+        title = event.title
+        detail = event.detail
+        blockID = event.blockID
+        listID = event.listID
+        listTitle = event.listTitle
+        at = event.timestamp
+        change = event.change
+        let after = change?.after
+        fact = NXSavedFact(batch: change?.batchID, kind: event.kindRaw)
+        switch kind {
+        case .listDeleted: fact.takes = ActivityKind.deleted.rawValue
+        case .listCreated: fact.takes = ActivityKind.created.rawValue
+        case .restored where blockID == nil: fact.takes = ActivityKind.restored.rawValue
+        case _ where blockID == nil: break
+        case .completed, .deleted, .unscheduled, .reopened, .completionUndone, .starred: fact.key = event.kindRaw
+        case .moved, .restored: fact.key = "\(event.kindRaw) \(after?.listID?.uuidString ?? listTitle)"
+        case .created: fact.key = "\(event.kindRaw) \(listID?.uuidString ?? "")"
+        // The day, which the row names; each task keeps its own time.
+        case .scheduled:
+            fact.key = "\(event.kindRaw) \(after?.dueDate.map { Calendar.current.startOfDay(for: $0).timeIntervalSinceReferenceDate } ?? 0)"
+        case .labeled: fact.key = "\(event.kindRaw) \(detail)"
+        // An edit or a note names its one task.
+        default: break
+        }
+    }
+
+    /// Whether it's a task's tracked history, with the task's state.
+    var hasTaskHistory: Bool { change.map { $0.before != nil || $0.after != nil } == true }
+
+    /// A repeat's completion, which rolled it on to its next date.
+    var rolls: Bool { kind == .completed && change?.advancesOccurrence == true }
+
+    /// The list a restore put the task back in, as it was then.
+    var restoredList: String { change?.after.flatMap { $0.listTitle.isEmpty ? nil : $0.listTitle } ?? listTitle }
+}
+
+/// A row of saved history, worded as it loads. What it shows of the library
+/// as it is now, its list and whether that's archived, is read as it draws.
+private struct NXSavedItem {
+    var id: String
+    var icon: String
+    var tone: TrayTone
+    var label: String
+    /// A list that, archived now, words the row as `archivedLabel`, as the
+    /// tray says it.
+    var archivable: UUID?
+    var archivedLabel = ""
+    var detail: String?
+    var listID: UUID?
+    var listTitle: String
+    var at: Date
+}
+
+/// Saved history as Changes reads it, each time it loads: this session's,
+/// which Changes merges with the log as it draws, and Earlier's rows.
+private struct NXSavedHistory {
+    var session: [NXSavedEvent] = []
+    var earlier: [NXSavedItem] = []
+    var tasks = NXSavedTasks()
+}
+
+/// What saved rows read of their tasks, found in the library or in Trash as
+/// they load, and the wording that reads them by.
+private struct NXSavedTasks {
+    /// The parents of the tasks a change's row counts.
+    var parents: [UUID: UUID] = [:]
+    /// The saved notes that are a heading or text line MCP added, which it
+    /// saves as a note: each reads as the line added, as the design's new
+    /// line does.
+    var lines: Set<UUID> = []
+    /// Where a task restored to Recovered items came from.
+    var recoveredFrom: [UUID: String] = [:]
+
+    init() {}
+
+    /// Read in one go for `rows`: a line MCP added, a restored task's
+    /// provenance, and the tasks a move, restore, add or completion took with
+    /// it, which only a row of more than one needs, and never a list's.
+    init(_ rows: [[NXSavedEvent]], store: Store) {
+        var notes: Set<UUID> = [], recovered: Set<UUID> = [], tracked: Set<UUID> = []
+        var counted: Set<UUID> = [], rolled: Set<UUID> = []
+        for row in rows {
+            for event in row {
+                guard let id = event.blockID else { continue }
+                if event.kind == .noteAdded { notes.insert(id) }
+                if event.kind == .restored, event.restoredList == "Recovered items" { recovered.insert(id) }
+                if event.hasTaskHistory { tracked.insert(id) }
+            }
+            guard row.count > 1, row[0].fact.takes == nil else { continue }
+            switch row[0].kind {
+            case .moved, .restored, .created: counted.formUnion(row.compactMap(\.blockID))
+            // A repeat resets its subtasks at any depth, so its row reads theirs.
+            case .completed where row.contains(where: \.rolls): rolled.formUnion(row.compactMap(\.blockID))
+            default: break
+            }
+        }
+        let blocks = store.blocksIncludingTrash(ids: notes.union(recovered).union(counted).union(rolled))
+        for id in counted.union(rolled) { parents[id] = blocks[id]?.parentID }
+        var seen = rolled
+        var above = Set(rolled.compactMap { parents[$0] }).subtracting(seen)
+        while !above.isEmpty {
+            seen.formUnion(above)
+            let found = store.blocksIncludingTrash(ids: above)
+            for (id, block) in found { parents[id] = block.parentID }
+            above = Set(found.values.compactMap(\.parentID)).subtracting(seen)
+        }
+        // One erased since is a line when no history here tracks it as a
+        // task, as none tracks a line.
+        lines = notes.filter { blocks[$0].map { !$0.isTask } ?? !tracked.contains($0) }
+        // The provenance its Trash entry keeps on it, until it's trashed
+        // again or erased.
+        for id in recovered {
+            if let metadata = blocks[id]?.trashMetadata, metadata.recoveryNote != nil { recoveredFrom[id] = metadata.formerLocation }
+        }
+    }
+
+    /// A row of saved history: one event as it was recorded, or one change's,
+    /// named as the log names it.
+    func item(_ row: [NXSavedEvent]) -> NXSavedItem {
+        let lead = row[0]
+        // A list's own event names its tasks' with it, as the log does.
+        guard row.count > 1, lead.fact.takes == nil else { return item(lead) }
+        let counted = NXSavedChanges.counted(row.map { NXSavedTask(id: $0.blockID, rolls: $0.rolls) },
+                                             kind: lead.fact.kind) { parents[$0] }.map { row[$0] }
+        guard counted.count > 1 else { return item(counted.first ?? lead) }
+        let tasks = "\(counted.count) tasks"
+        let after = lead.change?.after
+        let label: String
+        switch lead.kind {
+        case .completed: label = "\(tasks) done"
+        case .created: label = "Added \(tasks)"
+        case .moved: label = after.map { $0.listTitle.isEmpty ? "Moved \(tasks)" : "Moved \(tasks) to \($0.listTitle)" } ?? "Moved \(tasks)"
+        case .scheduled:
+            label = after?.dueDate.map { "\(tasks) → " + NXFormat.dueLabel($0, now: lead.at) } ?? "Scheduled \(tasks)"
+        case .unscheduled: label = "Cleared date on \(tasks)"
+        case .deleted: label = "Moved \(tasks) to Trash"
+        case .labeled: label = "Added #\(lead.detail) · \(tasks)"
+        case .restored: label = lead.restoredList.isEmpty ? "Restored \(tasks)" : "Restored \(tasks) to \(lead.restoredList)"
+        default: label = "\(lead.kind.verb) \(tasks)"
+        }
+        return NXSavedItem(id: "e\(lead.id)", icon: NXChangesSection.icon(lead.kind), tone: NXChangesSection.tone(lead.kind),
+                           label: label, listID: lead.listID, listTitle: lead.listTitle, at: lead.at)
+    }
+
+    func item(_ event: NXSavedEvent) -> NXSavedItem {
+        // A line taken out as it was left empty is an edit, as the log draws it.
+        let change = event.change
+        let removedLine = change?.removedEmptyLine == true
+        let addedLine = event.kind == .noteAdded && event.blockID.map(lines.contains) == true
+        let kind: ActivityKind = removedLine ? .renamed : addedLine ? .created : event.kind
+        // A copy, as the log draws Duplicate's and Use as Template…'s.
+        let icon = change?.copy == nil ? NXChangesSection.icon(kind) : "plus.square.on.square"
+        var item = NXSavedItem(id: "e\(event.id)", icon: icon, tone: NXChangesSection.tone(kind),
+                               label: addedLine ? "Added \(Self.title(event))" : label(event),
+                               detail: ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: change),
+                               listID: event.listID, listTitle: event.listTitle, at: event.at)
+        // "archived list" as the tray says it, of the list as it is now.
+        if event.kind == .restored, event.blockID != nil, !event.restoredList.isEmpty, recovered(event) == nil,
+           let list = change?.after?.listID ?? event.listID {
+            item.archivable = list
+            item.archivedLabel = "Restored \(Self.title(event)) to archived list \(event.restoredList)"
+        }
+        return item
+    }
+
+    private static func title(_ event: NXSavedEvent) -> String {
+        NXFormat.quoted(event.title.isEmpty ? "Untitled" : event.title)
+    }
+
+    /// A saved change worded as the log words it when it's made, so it reads
+    /// the same after a relaunch.
+    private func label(_ event: NXSavedEvent) -> String {
+        let title = Self.title(event)
+        let change = event.change
+        let before = change?.before
+        let after = change?.after
+        switch event.kind {
+        case .completed: return "\(title) done"
+        // A copy's, named as it was made: a list's by the list it copied.
+        case .created where change?.copy != nil, .listCreated where change?.copy != nil:
+            return change?.copy == .template ? "Copied \(title) as a template" : "Duplicated \(title)"
+        case .created: return "Added \(title)"
+        case .moved:
+            if let list = after?.listTitle, !list.isEmpty { return "Moved \(title) to \(list)" }
+            return "Moved \(title)"
+        // The day as it was named when it was set, not as it is today.
+        case .scheduled:
+            if let due = after?.dueDate {
+                return "\(title) → " + NXFormat.dueChange(due, includesTime: after?.includesTime == true, from: before?.dueDate,
+                                                          oldIncludesTime: before?.includesTime == true, now: event.at)
+            }
+            return "Scheduled \(title)"
+        case .unscheduled: return "Cleared date on \(title)"
+        // A task's title is its line's text, which the design edits.
+        case .renamed: return "Edited \(title)"
+        case .deleted where change?.removedEmptyLine == true: return "Removed an empty line"
+        // A list's, like a task's, is in Trash, where it can be restored.
+        case .deleted, .listDeleted: return "Moved \(title) to Trash"
+        case .labeled where !event.detail.isEmpty: return "Added #\(event.detail) · \(title)"
+        case .noteAdded: return "Edited note on \(title)"
+        // A list's own, whose tasks came back with it, where its tray said
+        // it went; history saved before that says only what came back.
+        case .restored where event.blockID == nil: return event.detail.isEmpty ? "Restored \(title)" : "Restored \(title) \(event.detail)"
+        case .restored:
+            let list = event.restoredList
+            guard !list.isEmpty else { return "Restored \(title)" }
+            if let from = recovered(event) { return "Restored \(title) to \(list) — from \(from)" }
+            return "Restored \(title) to \(list)"
+        default: return "\(event.kind.verb) \(title)"
+        }
+    }
+
+    /// Where a task restored to Recovered items, the list the Store makes
+    /// for it, came from, as its tray said.
+    private func recovered(_ event: NXSavedEvent) -> String? {
+        guard event.restoredList == "Recovered items" else { return nil }
+        return event.blockID.flatMap { recoveredFrom[$0] }
+    }
+}
+
 private struct NXChangeItem: Identifiable {
     var id: String
     var icon: String
@@ -347,14 +602,16 @@ private struct NXChangeItem: Identifiable {
 private struct NXChangesSection: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
-    let events: [ActivityEvent]
+    /// Saved history, read as it loaded.
+    let history: NXSavedHistory
+
+    static let earlierRows = 40
 
     var body: some View {
         let workbench = env.workbench
         let _ = workbench.undoRevision
-        let lines = addedLines()
-        let session = sessionItems(lines)
-        let earlier = earlierItems(lines)
+        let session = sessionItems()
+        let earlier = history.earlier.map(item)
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Changes").font(NX.serif(22)).padding(.vertical, NX.serifLeading(22, lineHeight: 1.1)).foregroundStyle(NX.ink)
@@ -382,9 +639,18 @@ private struct NXChangesSection: View {
         }
     }
 
+    /// This session's saved history the log doesn't tell, a row for each
+    /// change: what the log's own changes saved, or their Undo and Redo, is
+    /// already there or was taken back.
+    private func sessionSaved() -> [NXSavedItem] {
+        let workbench = env.workbench
+        let saved = history.session.filter { !workbench.logWrote(at: $0.at, about: [$0.blockID, $0.listID]) }
+        return NXSavedChanges.rows(saved.map(\.fact)).map { history.tasks.item($0.map { saved[$0] }) }
+    }
+
     /// The log, with the saved history it doesn't tell merged in by time:
-    /// edits in the document, over MCP or from another Mac.
-    private func sessionItems(_ lines: Set<UUID>) -> [NXChangeItem] {
+    /// changes made over MCP or on another Mac.
+    private func sessionItems() -> [NXChangeItem] {
         let workbench = env.workbench
         var seen: Set<String> = []
         var items: [NXChangeItem] = []
@@ -397,120 +663,32 @@ private struct NXChangesSection: View {
                                       list: list, listTitle: list?.displayTitle ?? "", at: entry.at,
                                       canUndo: items.isEmpty && entry.batch == workbench.latestBatch && workbench.canUndo))
         }
-        // History the log's own changes saved, or their Undo and Redo, is
-        // already here or was taken back.
-        var saved = events.filter { event in
-            event.timestamp >= workbench.startedAt
-                && !workbench.logWrote(at: event.timestamp, about: [event.blockID, event.listID])
-        }.map { item($0, lines: lines) }[...]
+        var rest = sessionSaved().map(item)[...]
         var merged: [NXChangeItem] = []
         for item in items {
-            while let next = saved.first, next.at > item.at { merged.append(saved.removeFirst()) }
+            while let next = rest.first, next.at > item.at { merged.append(rest.removeFirst()) }
             merged.append(item)
         }
-        return merged + saved
+        return merged + rest
     }
 
-    /// Saved history from before this session.
-    private func earlierItems(_ lines: Set<UUID>) -> [NXChangeItem] {
-        events.filter { $0.timestamp < env.workbench.startedAt }.prefix(40).map { item($0, lines: lines) }
+    /// A saved row with what it shows of the library as it is now.
+    private func item(_ saved: NXSavedItem) -> NXChangeItem {
+        let archived = saved.archivable.map { library.hierarchy.isArchived($0) } == true
+        return NXChangeItem(id: saved.id, icon: saved.icon, tone: saved.tone, label: archived ? saved.archivedLabel : saved.label,
+                            detail: saved.detail, list: library.list(saved.listID), listTitle: saved.listTitle, at: saved.at)
     }
 
     /// Each logged task's list, the task found in the library or in Trash,
     /// which keeps it, so a row about a task still shows its list once it's
     /// trashed, as the design's do. An erased task has none.
     private func loggedLists(_ log: [ChangeEntry]) -> [UUID: TaskList] {
-        let ids = Array(Set(log.compactMap(\.taskID)))
-        guard !ids.isEmpty,
-              let tasks = try? env.store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
-        else { return [:] }
-        return Dictionary(tasks.compactMap { task in library.list(task.listID).map { (task.id, $0) } },
-                          uniquingKeysWith: { first, _ in first })
-    }
-
-    /// The saved notes that are a heading or text line MCP added, which it
-    /// saves as a note: each reads as the line added, as the design's new
-    /// line does. The line is found in the library or in Trash; one erased
-    /// since is a line when no history here tracks it as a task, as none
-    /// tracks a line.
-    private func addedLines() -> Set<UUID> {
-        let ids = Set(events.filter { $0.kind == .noteAdded }.compactMap(\.blockID))
-        guard !ids.isEmpty else { return [] }
-        let wanted = Array(ids)
-        guard let found = try? env.store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { wanted.contains($0.id) }))
-        else { return [] }
-        let tracked = Set(events.filter { $0.changeData != nil }.compactMap(\.blockID))
-        return Set(found.filter { !$0.isTask }.map(\.id))
-            .union(ids.subtracting(found.map(\.id)).subtracting(tracked))
-    }
-
-    private func item(_ event: ActivityEvent, lines: Set<UUID>) -> NXChangeItem {
-        // A line taken out as it was left empty is an edit, as the log draws it.
-        let removedLine = event.change?.removedEmptyLine == true
-        let addedLine = event.kind == .noteAdded && event.blockID.map(lines.contains) == true
-        let kind: ActivityKind = removedLine ? .renamed : addedLine ? .created : event.kind
-        return NXChangeItem(id: "e\(event.id)", icon: Self.icon(kind), tone: Self.tone(kind),
-                            label: addedLine ? "Added \(Self.title(event))" : label(event), detail: event.recordedDetail,
-                            list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
-    }
-
-    private static func title(_ event: ActivityEvent) -> String {
-        NXFormat.quoted(event.title.isEmpty ? "Untitled" : event.title)
-    }
-
-    /// A saved change worded as the log words it when it's made, so it reads
-    /// the same after a relaunch.
-    private func label(_ event: ActivityEvent) -> String {
-        let title = Self.title(event)
-        let before = event.change?.before
-        let after = event.change?.after
-        switch event.kind {
-        case .completed: return "\(title) done"
-        case .created: return "Added \(title)"
-        case .moved:
-            if let list = after?.listTitle, !list.isEmpty { return "Moved \(title) to \(list)" }
-            return "Moved \(title)"
-        // The day as it was named when it was set, not as it is today.
-        case .scheduled:
-            if let due = after?.dueDate {
-                return "\(title) → " + NXFormat.dueChange(due, includesTime: after?.includesTime == true, from: before?.dueDate,
-                                                          oldIncludesTime: before?.includesTime == true, now: event.timestamp)
-            }
-            return "Scheduled \(title)"
-        case .unscheduled: return "Cleared date on \(title)"
-        // A task's title is its line's text, which the design edits.
-        case .renamed: return "Edited \(title)"
-        case .deleted where event.change?.removedEmptyLine == true: return "Removed an empty line"
-        // A list's, like a task's, is in Trash, where it can be restored.
-        case .deleted, .listDeleted: return "Moved \(title) to Trash"
-        case .labeled where !event.detail.isEmpty: return "Added #\(event.detail) · \(title)"
-        case .noteAdded: return "Edited note on \(title)"
-        case .restored:
-            let list = after.flatMap { $0.listTitle.isEmpty ? nil : $0.listTitle } ?? event.listTitle
-            guard !list.isEmpty else { return "Restored \(title)" }
-            if let from = recoveredFrom(event, to: list) { return "Restored \(title) to \(list) — from \(from)" }
-            // "archived list" as the tray says it, of the list as it is now.
-            let archived = (after?.listID ?? event.listID).map { library.hierarchy.isArchived($0) } == true
-            return "Restored \(title) to \(archived ? "archived list " : "")\(list)"
-        default: return "\(event.kind.verb) \(title)"
-        }
-    }
-
-    /// Where a task restored to Recovered items, the list the Store makes
-    /// for it, came from, as its tray said: the provenance its Trash entry
-    /// keeps on it, found in the library or in Trash, until it's trashed
-    /// again or erased.
-    private func recoveredFrom(_ event: ActivityEvent, to list: String) -> String? {
-        guard list == "Recovered items", let id = event.blockID,
-              let block = try? env.store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })).first,
-              let metadata = block.trashMetadata, metadata.recoveryNote != nil
-        else { return nil }
-        return metadata.formerLocation
+        env.store.blocksIncludingTrash(ids: log.compactMap(\.taskID)).compactMapValues { library.list($0.listID) }
     }
 
     /// The glyph the tray and the log give the same change, always outline,
     /// as the design draws every Changes icon.
-    private static func icon(_ kind: ActivityKind) -> String {
+    fileprivate static func icon(_ kind: ActivityKind) -> String {
         switch kind {
         case .created, .listCreated: "plus.circle"
         case .completed: "checkmark.circle"
@@ -531,7 +709,7 @@ private struct NXChangesSection: View {
         icon.hasSuffix(".fill") ? String(icon.dropLast(".fill".count)) : icon
     }
 
-    private static func tone(_ kind: ActivityKind) -> TrayTone {
+    fileprivate static func tone(_ kind: ActivityKind) -> TrayTone {
         switch kind {
         case .completed: .green
         case .deleted, .listDeleted: .red
@@ -551,40 +729,47 @@ private struct NXChangeRow: View {
     var body: some View {
         let (foreground, background) = colors
         HStack(spacing: 11) {
-            Image(systemName: item.icon)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(foreground)
-                .frame(width: 26, height: 26)
-                .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text(item.label)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(NX.ink)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let list = item.list {
-                HStack(spacing: 4) {
-                    NXListGlyph(list: list, size: 11)
-                    Text(list.displayTitle)
-                }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NX.ink(0.4))
-                .lineLimit(1)
-            } else if !item.listTitle.isEmpty {
-                Text(item.listTitle).font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.4)).lineLimit(1)
-            }
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text(NXFormat.relative(item.at, now: context.date))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.34))
+            // One line for VoiceOver, as it reads: the change, its list, when.
+            HStack(spacing: 11) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(foreground)
+                    .frame(width: 26, height: 26)
+                    .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .accessibilityHidden(true)
+                Text(item.label)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(NX.ink)
                     .lineLimit(1)
-                    .frame(width: 64, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let list = item.list {
+                    HStack(spacing: 4) {
+                        NXListGlyph(list: list, size: 11).accessibilityHidden(true)
+                        Text(list.displayTitle)
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NX.ink(0.4))
+                    .lineLimit(1)
+                } else if !item.listTitle.isEmpty {
+                    Text(item.listTitle).font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.4)).lineLimit(1)
+                }
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text(NXFormat.relative(item.at, now: context.date))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NX.ink(0.34))
+                        .lineLimit(1)
+                        .frame(width: 64, alignment: .trailing)
+                }
             }
+            .accessibilityElement(children: .combine)
             if item.canUndo {
                 Button("Undo") { env.workbench.undoLast() }
                     .font(.system(size: 10.5, weight: .semibold))
                     .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.14), rest: NX.ink(0.06), radius: 6,
                                                     padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
                                                     foreground: NX.ink(0.6), hoverForeground: style.accent))
+                    // What it takes back, as the tray says it.
+                    .accessibilityLabel("Undo \(item.label)")
             }
         }
         .padding(.vertical, 8)

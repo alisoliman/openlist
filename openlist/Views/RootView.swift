@@ -236,8 +236,8 @@ struct RootView: View {
 
 /// The window's editor, failure, saving and sync notices. They sit under the
 /// toolbar with the link, label and Trash notices, in line with the screen's
-/// content. A refusal that changed nothing passes in the tray instead; see
-/// `Store.refuse`.
+/// content, which VoiceOver hears as they appear (`NextNotices`). A refusal
+/// that changed nothing passes in the tray instead; see `Store.refuse`.
 struct NXStatusNotices: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -269,17 +269,6 @@ struct NXStatusNotices: View {
                     .nxNoticePlacement()
             }
         }
-        // What the user's own action set off appears without a sound, so
-        // VoiceOver hears it, as it hears the tray; at the tray's priority, so
-        // a failed Undo's tray line and its reason are both heard.
-        .onChange(of: env.store.editorNotice) { _, notice in announce(notice) }
-        .onChange(of: env.store.actionError) { _, error in announce(error) }
-    }
-
-    private func announce(_ message: String?) {
-        guard let message, NSApp.isActive else { return }
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
     private var syncWarning: String? {

@@ -846,11 +846,12 @@ final class Workbench {
         let plain = closes.map(\.id)
         let changes = UndoManager()
         changes.groupsByEvent = false
-        write(rolls, on: changes, at: date)
+        let activity = UUID()
+        write(rolls, on: changes, at: date, activity: activity)
         let label = makeLabel(rolls, closes)
         let icon = !rolls.isEmpty && plain.isEmpty ? "repeat" : "checkmark.circle"
         let completion = CompletionBatch(mark: record(label, icon: icon, tone: .green, ids: rolls.map(\.id) + plain),
-                                         changes: changes, pending: plain, resume: resume, date: date)
+                                         changes: changes, pending: plain, resume: resume, date: date, activity: activity)
         attach(completion: completion, restores: false)
         showTray(label, icon: icon, tone: .green, undoable: true)
         guard !plain.isEmpty else {
@@ -928,15 +929,16 @@ final class Workbench {
         let ids = completion.pending
         completion.pending = []
         for id in ids { closingTasks.removeValue(forKey: id)?.cancel() }
-        write(ids.compactMap { store.block(id: $0) }, on: completion.changes, at: completion.date)
+        write(ids.compactMap { store.block(id: $0) }, on: completion.changes, at: completion.date, activity: completion.activity)
         noteLogWrite(completion.mark)
         withAnimation(style.ease(320)) { for id in ids { closing[id] = nil } }
         undoRevision += 1
     }
 
     /// Completes tasks through the Store as one group on the batch's own undo
-    /// stack, so the window never gets a second entry for them.
-    private func write(_ tasks: [Block], on changes: UndoManager, at date: Date? = nil) {
+    /// stack, so the window never gets a second entry for them, and their
+    /// saved history is one change, the `activity` batch, as the log's is.
+    private func write(_ tasks: [Block], on changes: UndoManager, at date: Date? = nil, activity: UUID = UUID()) {
         let open = tasks.filter { !$0.isCompleted }
         // A parent completes the subtasks written with it, and toggling one of
         // them afterwards would reopen it.
@@ -944,10 +946,12 @@ final class Workbench {
         guard !roots.isEmpty else { return }
         changes.beginUndoGrouping()
         completionUndoTarget = changes
-        for task in roots where !task.isCompleted {
-            let now = date ?? .now
-            if calendar.activeSession?.taskID == task.id { calendar.complete(task: task, now: now) }
-            else { store.toggleCompletion(task, now: now) }
+        store.withActivityBatch(activity) {
+            for task in roots where !task.isCompleted {
+                let now = date ?? .now
+                if calendar.activeSession?.taskID == task.id { calendar.complete(task: task, now: now) }
+                else { store.toggleCompletion(task, now: now) }
+            }
         }
         completionUndoTarget = nil
         changes.endUndoGrouping()
@@ -990,15 +994,24 @@ final class Workbench {
         completion.pending = []
         for id in pending { closingTasks.removeValue(forKey: id)?.cancel() }
         withAnimation(style.ease(260)) { for id in pending { closing[id] = nil } }
-        while completion.changes.canUndo { completion.changes.undo() }
+        // Its saved history is one change, as the batch's Redo's is.
+        store.withActivityBatch(UUID()) {
+            while completion.changes.canUndo { completion.changes.undo() }
+        }
         if let resume = completion.resume { calendar.restoreResume(resume) }
         unlog(completion.mark)
     }
 
     private func reapply(_ completion: CompletionBatch) {
-        while completion.changes.canRedo { completion.changes.redo() }
+        // What it writes again, rows that never settled too, saves as one
+        // change: a batch of its own, as the Undo before it was, so it never
+        // reads as more tasks with the history first written.
+        let activity = UUID()
+        store.withActivityBatch(activity) {
+            while completion.changes.canRedo { completion.changes.redo() }
+        }
         if !completion.cancelled.isEmpty {
-            write(completion.cancelled.compactMap { store.block(id: $0) }, on: completion.changes)
+            write(completion.cancelled.compactMap { store.block(id: $0) }, on: completion.changes, activity: activity)
             completion.cancelled = []
             // The batch is written now, so it's logged now: the Store dates its
             // completion from this write.
@@ -1024,6 +1037,8 @@ final class Workbench {
     /// Undone in flight, nothing is written.
     func beginTrash(_ ids: [UUID], label: String) {
         guard !ids.isEmpty else { return }
+        // As a restore does: a failure saying the same appears, and is heard, anew.
+        store.trashError = nil
         let changes = UndoManager()
         changes.groupsByEvent = false
         let trash = TrashBatch(mark: record(label, icon: "trash", tone: .red, ids: ids), ids: ids, changes: changes)
@@ -1143,6 +1158,9 @@ final class Workbench {
     /// `forgetErasedTrashes`.
     func beginRestore(_ entry: TrashEntry, label: String, destination: TrayDestination?) {
         guard !flying.contains(entry.id) else { return }
+        // The notice is the last attempt's, which this one replaces, as its
+        // write would: so a failure saying the same appears, and is heard, anew.
+        store.trashError = nil
         let restore = RestoreBatch(mark: record(label, icon: "arrow.up.bin", tone: .accent, ids: [entry.id]),
                                    id: entry.id, isList: entry.isList)
         if entry.isList { restore.mark.trashedListID = entry.id }
@@ -1167,9 +1185,9 @@ final class Workbench {
         restore.task?.cancel()
         restore.task = nil
         restoring.removeAll { $0 === restore }
-        let restored = store.restoreTrash(ids: [restore.id])
+        let recoveries = store.restoreTrashRecoveries(ids: [restore.id])
         flying.remove(restore.id)
-        guard restored else {
+        guard let recoveries else {
             log.removeAll { $0.batch == restore.mark.batch }
             undoManager?.removeAllActions(withTarget: restore.mark)
             trashUndos.remove(restore.mark)
@@ -1183,6 +1201,7 @@ final class Workbench {
             undoRevision += 1
             return
         }
+        restore.recoveries = recoveries
         // What came back with it, a task's subtasks or a list's contents, is
         // in the library again, and its saved history is the log's too.
         restore.mark.covers = covered([restore.id])
@@ -1209,9 +1228,12 @@ final class Workbench {
                 let id = restore.id
                 if restores {
                     // Restored from Trash by hand meanwhile, it's back already.
-                    guard !self.store.isInTrash(id) || self.store.restoreTrash(ids: [id]) else {
-                        self.restoreStepFailed(restore, redo: true)
-                        return
+                    if self.store.isInTrash(id) {
+                        guard let recoveries = self.store.restoreTrashRecoveries(ids: [id]) else {
+                            self.restoreStepFailed(restore, redo: true)
+                            return
+                        }
+                        restore.recoveries = recoveries
                     }
                     restore.mark.covers = self.covered([id])
                     self.relog(restore.mark)
@@ -1228,9 +1250,17 @@ final class Workbench {
                             self.restoreStepFailed(restore, redo: false)
                             return
                         }
-                    } else if let block = self.store.block(id: id), !self.store.trashBlocks([block]) {
-                        self.restoreStepFailed(restore, redo: false)
-                        return
+                    } else if let block = self.store.block(id: id) {
+                        // Back to Trash as it was, taking a Recovered items list made for it.
+                        let made = Set(restore.recoveries.filter(\.madeList).map(\.listID))
+                        guard self.store.trashBlocks([block], puttingBack: restore.recoveries) else {
+                            self.restoreStepFailed(restore, redo: false)
+                            return
+                        }
+                        restore.recoveries = []
+                        if let open = self.navigator.route.listID, made.contains(open), self.store.list(id: open) == nil {
+                            self.navigator.replace(with: .today)
+                        }
                     }
                     self.unlog(restore.mark)
                 }
@@ -1312,13 +1342,17 @@ private final class CompletionBatch {
     let resume: WorkTaskReference?
     /// When the completion happened, if not when it's written.
     let date: Date?
+    /// The saved history's batch, shared by the repeats rolled and the rows settled.
+    let activity: UUID
 
-    init(mark: LogMark, changes: UndoManager, pending: [UUID], resume: WorkTaskReference?, date: Date? = nil) {
+    init(mark: LogMark, changes: UndoManager, pending: [UUID], resume: WorkTaskReference?, date: Date? = nil,
+         activity: UUID = UUID()) {
         self.mark = mark
         self.changes = changes
         self.pending = pending
         self.resume = resume
         self.date = date
+        self.activity = activity
     }
 }
 
@@ -1327,6 +1361,8 @@ private final class RestoreBatch {
     let mark: LogMark
     let id: UUID
     let isList: Bool
+    /// Where the restore last written put a task whose place was gone, which its Undo puts back.
+    var recoveries: [TrashRecovery] = []
     /// Writes the restore once the row has flown out; nil once written or stopped.
     var task: Task<Void, Never>?
 

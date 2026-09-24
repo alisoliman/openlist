@@ -15,6 +15,7 @@ struct NextListsGallery: View {
     @Environment(\.nextLibrary) private var library
 
     private struct Shelf: Identifiable {
+        static let otherID = "other"
         static let archivedID = "archived"
         var id: String
         var title: String
@@ -25,17 +26,26 @@ struct NextListsGallery: View {
     /// lists after their parent.
     private var shelves: [Shelf] {
         var shelves = library.sections.map { Shelf(id: $0.id.uuidString, title: $0.displayTitle, lists: nested(library.lists(in: $0))) }
-        shelves.append(Shelf(id: "other", title: "Other lists", lists: nested(library.unsectioned)))
+        shelves.append(Shelf(id: Shelf.otherID, title: "Other lists", lists: nested(library.unsectioned)))
         shelves.append(Shelf(id: Shelf.archivedID, title: "Archived", lists: library.archived))
         return shelves.filter { !$0.lists.isEmpty }
     }
 
     private func nested(_ lists: [TaskList]) -> [TaskList] { library.outline(lists).map { $0.list } }
 
+    /// The design's "N lists in 2 sections", of the sections that hold
+    /// lists. Other lists, which have none, and archived ones say so after.
     private func subtitle(_ shelves: [Shelf]) -> String {
-        let filed = shelves.filter { $0.id != Shelf.archivedID }
-        let count = filed.reduce(0) { $0 + $1.lists.count }
-        var text = "\(count) \(count == 1 ? "list" : "lists") in \(filed.count) \(filed.count == 1 ? "section" : "sections")"
+        func lists(_ count: Int) -> String { "\(count) \(count == 1 ? "list" : "lists")" }
+        let sections = shelves.filter { $0.id != Shelf.otherID && $0.id != Shelf.archivedID }
+        let other = shelves.first { $0.id == Shelf.otherID }?.lists.count ?? 0
+        var text: String
+        if sections.isEmpty {
+            text = lists(other)
+        } else {
+            text = "\(lists(sections.reduce(0) { $0 + $1.lists.count })) in \(sections.count) \(sections.count == 1 ? "section" : "sections")"
+            if other > 0 { text += " · \(other) in Other lists" }
+        }
         if !library.archived.isEmpty { text += " · \(library.archived.count) archived" }
         return text
     }
@@ -175,7 +185,7 @@ private struct NXListCard: View {
             Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") { workbench.setPinned(!list.isPinned, for: list) }
         }
         Button("Duplicate") { workbench.duplicateList(list) }
-        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
+        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
         Button("Export as Markdown…") { workbench.exportMarkdown(list) }
         Button("Move List…") { env.listPendingMove = list }
         Button("New Child List") { workbench.createChildList(in: list) }
@@ -199,6 +209,8 @@ struct NextTrashScreen: View {
     @Query(filter: #Predicate<Block> { $0.trashID != nil }) private var blocks: [Block]
     @Query(filter: #Predicate<TaskList> { $0.trashID != nil }) private var lists: [TaskList]
     @State private var entries: [TrashEntry] = []
+    /// Whether the last read of Trash failed, which rows read before still show.
+    @State private var unreadable = false
 
     var body: some View {
         let workbench = env.workbench
@@ -234,7 +246,10 @@ struct NextTrashScreen: View {
                             .transition(.opacity)
                     }
                 }
-                if rows.isEmpty { NXTrashEmpty() }
+                // Only a read that worked can say it's empty; the notice says why one didn't.
+                if rows.isEmpty {
+                    if unreadable { NXDashedEmpty(text: "Trash could not be read.").padding(.top, 6) } else { NXTrashEmpty() }
+                }
             }
             .padding(.top, 18)
         }
@@ -245,8 +260,13 @@ struct NextTrashScreen: View {
     }
 
     private func reload() {
-        do { entries = try env.store.trashEntries() }
-        catch { env.store.trashError = "Trash could not be read. \(error.localizedDescription)" }
+        do {
+            entries = try env.store.trashEntries()
+            unreadable = false
+        } catch {
+            unreadable = true
+            env.store.trashError = "Trash could not be read. \(error.localizedDescription)"
+        }
     }
 }
 
@@ -285,6 +305,7 @@ private struct NXTrashRow: View {
                 .font(.system(size: 15))
                 .foregroundStyle(NX.ink(0.3))
                 .frame(width: 18)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13.5))
@@ -295,12 +316,16 @@ private struct NXTrashRow: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(NX.ink(0.4))
                         .lineLimit(1)
+                        // The line without its list's glyph, which reads as a symbol's name.
+                        .accessibilityLabel(metaText(now: context.date))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // One element, as it reads; Restore and Hold to erase stay buttons of their own.
+            .accessibilityElement(children: .combine)
             Button { workbench.restore(entry) } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.bin").font(.system(size: 12))
+                    Image(systemName: "arrow.up.bin").font(.system(size: 12)).accessibilityHidden(true)
                     Text("Restore")
                 }
                 .font(.system(size: 11, weight: .semibold))
@@ -326,26 +351,40 @@ private struct NXTrashRow: View {
 
     private var title: String { entry.title.isEmpty ? "Untitled" : entry.title }
 
-    private func meta(now: Date) -> Text {
+    /// The line after the entry's kind and where it was: when it was deleted,
+    /// and what a task's Restore and Hold to erase take with it.
+    private func tail(now: Date) -> String {
         let deleted = entry.metadata.map { "deleted \(NXFormat.relative($0.deletedAt, now: now))" } ?? "deleted"
         if entry.isList {
             let items = entry.blockCount == 1 ? "1 item" : "\(entry.blockCount) items"
-            return Text(verbatim: "List · \(items) · \(deleted)")
+            return "\(items) · \(deleted)"
         }
+        return [deleted, entry.nestedSummary].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// The meta line as VoiceOver reads it.
+    private func metaText(now: Date) -> String {
+        if entry.isList { return "List · \(tail(now: now))" }
+        guard let metadata = entry.metadata else { return tail(now: now).capitalizedFirstLetter }
+        return "From \(metadata.formerLocation) · \(tail(now: now))"
+    }
+
+    private func meta(now: Date) -> Text {
+        if entry.isList { return Text(verbatim: "List · \(tail(now: now))") }
         // One entry holds a task with its subtasks, so the row says what
         // Restore and Hold to erase take with it, after the design's line so
         // a narrow row truncates the summary first.
-        let tail = [deleted, entry.nestedSummary].compactMap { $0 }.joined(separator: " · ")
-        guard let metadata = entry.metadata else { return Text(verbatim: tail.capitalizedFirstLetter) }
+        let rest = tail(now: now)
+        guard let metadata = entry.metadata else { return Text(verbatim: rest.capitalizedFirstLetter) }
         // The icon the list had when this was deleted; older items use the list's current one.
         let icon = metadata.listIcon.map { $0.isEmpty ? "📋" : $0 } ?? list?.glyph ?? ""
-        if icon.isEmpty { return Text(verbatim: "From \(metadata.formerLocation) · \(tail)") }
+        if icon.isEmpty { return Text(verbatim: "From \(metadata.formerLocation) · \(rest)") }
         if NXListGlyph.isSymbolName(icon) {
-            return Text("From \(Image(systemName: icon)) \(metadata.formerLocation) · \(tail)")
+            return Text("From \(Image(systemName: icon)) \(metadata.formerLocation) · \(rest)")
         }
         // The emoji at the size the design's 11px line draws it, not Core Text's larger one.
         let glyph = Text(verbatim: icon).font(.system(size: NXListGlyph.emojiPointSize(11)))
-        return Text("From \(glyph) \(metadata.formerLocation) · \(tail)")
+        return Text("From \(glyph) \(metadata.formerLocation) · \(rest)")
     }
 }
 

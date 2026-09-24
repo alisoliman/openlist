@@ -93,7 +93,7 @@ extension Store {
             let id = try copyBlock(block, mode: .duplicate)
             return self.block(id: id) ?? block
         } catch {
-            editorNotice = "The block was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
+            actionError = "The \(block.isTask ? "task" : "item") was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
             return block
         }
     }
