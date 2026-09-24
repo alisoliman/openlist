@@ -28,7 +28,7 @@ struct NextLibrary {
     private var labelsByID: [UUID: TaskLabel] = [:]
     /// Non-trashed tasks of active and archived lists.
     private var tasksByList: [UUID: [Block]] = [:]
-    private var taskIDs: Set<UUID> = []
+    private var tasksByID: [UUID: Block] = [:]
     private var openByList: [UUID: Int] = [:]
     private var openByLabel: [UUID: Int] = [:]
 
@@ -48,7 +48,7 @@ struct NextLibrary {
         for task in tasks where task.trashID == nil {
             guard let listID = task.listID, listsByID[listID] != nil else { continue }
             tasksByList[listID, default: []].append(task)
-            taskIDs.insert(task.id)
+            tasksByID[task.id] = task
             if !task.isCompleted { openByList[listID, default: 0] += 1 }
             guard activeListIDs.contains(listID) else { continue }
             self.tasks.append(task)
@@ -221,6 +221,20 @@ struct NXListGlyph: View {
         let (a, b) = (table[upper - 1], table[upper])
         return a.native + (size - a.design) / (b.design - a.design) * (b.native - a.native)
     }
+
+    /// A list icon to run inline with text at `size`, as the design's
+    /// `emoji + " " + name` strings: the emoji at the design's size rather
+    /// than Core Text's larger one, or the SF Symbol, in `color` if given.
+    static func text(_ icon: String, size: CGFloat, color: Color? = nil) -> Text {
+        guard isSymbolName(icon) else { return Text(verbatim: icon).font(.system(size: emojiPointSize(size))) }
+        let symbol = Text(Image(systemName: icon)).font(.system(size: size * 0.9, weight: .medium))
+        return color.map { symbol.foregroundStyle($0) } ?? symbol
+    }
+
+    /// A list's glyph inline with text at `size`, a symbol in the list's colour.
+    static func text(_ list: TaskList, size: CGFloat) -> Text {
+        text(list.glyph, size: size, color: list.nxColor)
+    }
 }
 
 // MARK: - Shared queries
@@ -229,14 +243,27 @@ extension NextLibrary {
     /// Whether a task sits under another task rather than at a list's top level.
     func isSubtask(_ task: Block) -> Bool {
         guard let parentID = task.parentID else { return false }
-        return taskIDs.contains(parentID)
+        return tasksByID[parentID] != nil
     }
 
-    /// Inbox tasks waiting for a decision, oldest first.
+    /// Whether an open task sits above this one, through its parent tasks.
+    func isUnderOpenTask(_ task: Block) -> Bool {
+        var seen: Set<UUID> = [task.id]
+        var parentID = task.parentID
+        while let id = parentID, let parent = tasksByID[id], seen.insert(id).inserted {
+            if !parent.isCompleted { return true }
+            parentID = parent.parentID
+        }
+        return false
+    }
+
+    /// Inbox tasks waiting for a decision, oldest first. A subtask goes with
+    /// the open task above it, whose card carries it; one under done tasks
+    /// only is a card of its own, or triage could never reach it.
     @MainActor
     func inboxQueue(_ workbench: Workbench) -> [Block] {
         tasks.filter { isInbox($0) && !$0.isCompleted && !workbench.kept.contains($0.id) && workbench.closing[$0.id] == nil }
-            .filter { !isSubtask($0) }
+            .filter { !isUnderOpenTask($0) }
             .sorted { $0.createdAt < $1.createdAt }
     }
 

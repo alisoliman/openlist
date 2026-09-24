@@ -60,8 +60,9 @@ nonisolated struct SearchProjection: Sendable {
                 if !options.includesCompleted && completed { continue }
                 let list = block.listID.flatMap { listsByID[$0] }
                 let field: SearchField = Self.matches(block.text, needle) ? .text : .note
-                // Where it is, then what state it's in: "🗻 Kyoto › Parent · Completed".
-                let place = [list.map { "\($0.icon) \($0.path)" } ?? "Unavailable list"] + ancestors.reversed().map(\.displayTitle)
+                // Where it is, then what state it's in: "Kyoto › Parent · Completed", after the list's
+                // icon, which the row draws as an emoji or a symbol.
+                let place = [list?.path ?? "Unavailable list"] + ancestors.reversed().map(\.displayTitle)
                 var context = [place.joined(separator: " › ")]
                 if list?.isArchived == true { context.append("Archived") }
                 if completed { context.append("Completed") }
@@ -71,7 +72,8 @@ nonisolated struct SearchProjection: Sendable {
                         ? "" : Self.snippet(field == .note ? block.note : block.text, matching: needle),
                     symbol: block.isTask ? (block.isCompleted ? "checkmark.circle.fill" : "circle") : block.symbol,
                     emoji: nil, accent: list?.accent ?? .graphite, field: field,
-                    dueDate: block.isTask && !completed ? block.dueDate : nil))
+                    dueDate: block.isTask && !completed ? block.dueDate : nil,
+                    listIcon: list.map { $0.icon.isEmpty ? "📋" : $0.icon }))
             }
         }
         try Task.checkCancellation()

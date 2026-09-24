@@ -10,6 +10,21 @@ struct NextInboxScreen: View {
     @Environment(\.nextLibrary) private var library
 
     var body: some View {
+        // The design's 20s clock: the card's "Captured …" age moves on, and
+        // its days and the rows' chips read the day it is.
+        TimelineView(.periodic(from: .now, by: 20)) { context in
+            page(now: context.date)
+        }
+    }
+
+    /// The header's "N to triage · M kept for later", which the Inbox's
+    /// document mode shows too.
+    @MainActor
+    static func subtitle(queue: [Block], kept: [Block], workbench: Workbench) -> String {
+        "\(queue.count) to triage" + (workbench.kept.isEmpty ? "" : " · \(kept.count) kept for later")
+    }
+
+    private func page(now: Date) -> some View {
         let workbench = env.workbench
         let queue = library.inboxQueue(workbench)
         let kept = library.keptInbox(workbench)
@@ -22,11 +37,11 @@ struct NextInboxScreen: View {
             groups.append(NXGroup(id: "kept", title: "Kept for later", icon: "clock.fill", color: NX.ink(0.45), rows: kept,
                                   collapsible: true))
         }
-        let subtitle = "\(queue.count) to triage" + (workbench.kept.isEmpty ? "" : " · \(kept.count) kept for later")
         // Only the rows below are focus targets: the triage card's keys work while nothing is focused.
         let rowIDs = NXGroupsStack.rowIDs(groups, workbench: workbench)
         return NXPage(rowIDs: rowIDs) {
-            NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox", subtitle: subtitle) {
+            NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox",
+                           subtitle: Self.subtitle(queue: queue, kept: kept, workbench: workbench)) {
                 if let inbox = library.inbox {
                     Button { env.navigator.setListViewMode(.document, for: inbox.id) } label: {
                         Image(systemName: "doc.text").font(.system(size: 14, weight: .medium))
@@ -42,13 +57,13 @@ struct NextInboxScreen: View {
                 // One card for the whole session, as in the design: it takes
                 // each task in turn, so the progress dots can slide between them.
                 if let task = queue.first {
-                    NXTriageCard(task: task, remaining: queue.count)
+                    NXTriageCard(task: task, remaining: queue.count, now: now)
                 } else {
                     NXTriageEmpty()
                 }
             }
             .padding(.top, 22)
-            NXGroupsStack(groups: groups, options: NXRowOptions(showList: false), topPadding: 10)
+            NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, now: now), topPadding: 10)
         }
         // A focused row that becomes the card, or leaves the page, gives the keys back to triage.
         .onChange(of: rowIDs) { _, ids in dropStaleFocus(ids) }
@@ -76,7 +91,8 @@ struct NextInboxDocumentScreen: View {
                                                     inDocument: Set(documentRowIDs))
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox",
-                           subtitle: "\(library.inboxQueue(workbench).count) to triage") {
+                           subtitle: NextInboxScreen.subtitle(queue: library.inboxQueue(workbench),
+                                                              kept: library.keptInbox(workbench), workbench: workbench)) {
                 Button { env.navigator.setListViewMode(.tasks, for: inbox.id) } label: {
                     Image(systemName: "rectangle.stack").font(.system(size: 14, weight: .medium))
                 }
@@ -105,6 +121,8 @@ private struct NXTriageCard: View {
     @Environment(\.nextLibrary) private var library
     let task: Block
     let remaining: Int
+    /// The Inbox's clock, which the card's age and days read.
+    let now: Date
     /// The task whose lift-in has played. Each new task starts lowered and
     /// faded, like the design's liftIn, while the dots animate across.
     @State private var liftedID: UUID?
@@ -176,8 +194,8 @@ private struct NXTriageCard: View {
     private var chips: [NXChipModel] {
         var chips: [NXChipModel] = []
         if let due = task.dueDate {
-            chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due), icon: "calendar",
-                                     tone: task.isDueOnOrBeforeToday ? .accent : .neutral))
+            chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due, now: now), icon: "calendar",
+                                     tone: NXFormat.dayOffset(due, now: now) <= 0 ? .accent : .neutral))
         }
         if task.priority != .none {
             chips.append(NXChipModel(id: "prio", label: task.priority == .high ? "High priority" : task.priority.title,
@@ -208,7 +226,7 @@ private struct NXTriageCard: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.42))
             Spacer(minLength: 8)
-            Text("Captured \(NXFormat.relative(task.createdAt))")
+            Text("Captured \(NXFormat.relative(task.createdAt, now: now))")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.4))
         }
@@ -230,13 +248,13 @@ private struct NXTriageCard: View {
     }
 
     private var schedule: some View {
-        let load = Dictionary(grouping: library.open.compactMap { $0.dueDate.map { NXFormat.dayOffset($0) } }, by: { $0 })
+        let load = Dictionary(grouping: library.open.compactMap { $0.dueDate.map { NXFormat.dayOffset($0, now: now) } }, by: { $0 })
             .mapValues(\.count)
         return VStack(alignment: .leading, spacing: 0) {
             caps("Or schedule — stays in Inbox")
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 4), count: 4), spacing: 4) {
                 ForEach(0..<8, id: \.self) { offset in
-                    NXTriageDay(offset: offset, load: load[offset] ?? 0) {
+                    NXTriageDay(offset: offset, load: load[offset] ?? 0, now: now) {
                         env.workbench.triage(task, action: .up, offset: offset)
                     }
                 }
@@ -347,11 +365,12 @@ private struct NXTriageDay: View {
     @Environment(\.nextStyle) private var style
     let offset: Int
     let load: Int
+    let now: Date
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        let date = NXFormat.day(offset: offset)
+        let date = NXFormat.day(offset: offset, now: now)
         VStack(spacing: 4) {
             Text(offset == 0 ? "Today" : offset == 1 ? "Tmrw" : date.formatted(.dateTime.weekday(.abbreviated)))
                 .font(.system(size: 9.5, weight: .semibold))

@@ -470,7 +470,7 @@ enum NXRowChips {
         let done = task.isCompleted
         let now = options.now ?? .now
         if options.showList, task.listID != options.listID, let list = library.list(task.listID) {
-            chips.append(NXChipModel(id: "list", label: "\(list.glyph) \(list.displayTitle)"))
+            chips.append(NXChipModel(id: "list", label: list.displayTitle, glyph: list))
         }
         for id in task.labelIDs {
             if let label = library.label(id) {
@@ -568,29 +568,38 @@ struct NXGroupView: View {
 
     private func head(open: Bool) -> some View {
         HStack(spacing: 7) {
-            if let glyph = group.glyph {
-                NXListGlyph(list: glyph, size: 13)
-            } else if let icon = group.icon {
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(group.color)
+            // VoiceOver reads the title and count as one, a button that folds the group.
+            HStack(spacing: 7) {
+                Group {
+                    if let glyph = group.glyph {
+                        NXListGlyph(list: glyph, size: 13)
+                    } else if let icon = group.icon {
+                        Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(group.color)
+                    }
+                }
+                .accessibilityHidden(true)
+                Text(group.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .fixedSize()
+                if !group.rows.isEmpty {
+                    Text("\(group.rows.count)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NX.ink(0.38))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
+                if group.collapsible {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NX.ink(0.36))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
             }
-            Text(group.title)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(NX.ink)
-                .lineLimit(1)
-                .fixedSize()
-            if !group.rows.isEmpty {
-                Text("\(group.rows.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.38))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-            }
-            if group.collapsible {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(NX.ink(0.36))
-                    .rotationEffect(.degrees(open ? 90 : 0))
-            }
+            .accessibilityElement(children: .combine)
+            .modifier(NXFoldAccessibility(isEnabled: group.collapsible, open: open, toggle: toggle))
             Spacer(minLength: 8)
             if let label = group.actionLabel, let action = group.action {
                 Button(label, action: action)
@@ -603,12 +612,33 @@ struct NXGroupView: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
         .contentShape(Rectangle())
-        .onTapGesture {
-            guard group.collapsible else { return }
-            withAnimation(style.ease(180)) {
-                if env.workbench.collapsedGroups.contains(group.id) { env.workbench.collapsedGroups.remove(group.id) }
-                else { env.workbench.collapsedGroups.insert(group.id) }
-            }
+        .onTapGesture(perform: toggle)
+    }
+
+    private func toggle() {
+        guard group.collapsible else { return }
+        withAnimation(style.ease(180)) {
+            if env.workbench.collapsedGroups.contains(group.id) { env.workbench.collapsedGroups.remove(group.id) }
+            else { env.workbench.collapsedGroups.insert(group.id) }
+        }
+    }
+}
+
+/// A collapsible group head's role for VoiceOver: a button that says
+/// whether the group is open.
+private struct NXFoldAccessibility: ViewModifier {
+    let isEnabled: Bool
+    let open: Bool
+    let toggle: () -> Void
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .accessibilityValue(open ? "Expanded" : "Collapsed")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { toggle() }
+        } else {
+            content
         }
     }
 }
@@ -640,10 +670,16 @@ struct NXAddRow: View {
         .background(hovering ? NX.ink(0.035) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture { env.workbench.openCapture(listID: listID, forToday: forToday) }
+        .onTapGesture(perform: open)
         .pointerStyle(.horizontalText)
         .padding(.top, 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { open() }
     }
+
+    private func open() { env.workbench.openCapture(listID: listID, forToday: forToday) }
 }
 
 /// Right-click actions for a row or the current selection.
@@ -675,7 +711,12 @@ struct NXTaskMenu: View {
         Button("Star", systemImage: "star") { workbench.star(ids) }
         Menu("Move to") {
             ForEach(library.lists, id: \.id) { list in
-                Button("\(list.glyph) \(list.displayTitle)") { workbench.move(ids, to: list.id) }
+                // A list icon that names an SF Symbol shows as the symbol, not its name.
+                if NXListGlyph.isSymbolName(list.glyph) {
+                    Button(list.displayTitle, systemImage: list.glyph) { workbench.move(ids, to: list.id) }
+                } else {
+                    Button("\(list.glyph) \(list.displayTitle)") { workbench.move(ids, to: list.id) }
+                }
             }
         }
         Divider()

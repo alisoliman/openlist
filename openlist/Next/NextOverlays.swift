@@ -762,7 +762,7 @@ private struct NXSearchRow: View {
                         .foregroundStyle(NX.ink(0.7))
                         .lineLimit(2)
                 }
-                Text(hit.context + (hit.dueDate.map { " · " + NXFormat.dueLabel($0) } ?? ""))
+                context
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(NX.ink(0.45))
                     .lineLimit(1)
@@ -775,6 +775,13 @@ private struct NXSearchRow: View {
         .background(isOn ? style.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(isOn ? style.accent.opacity(0.2) : .clear, lineWidth: 1))
         .contentShape(Rectangle())
+    }
+
+    /// Where the hit is, after its list's icon, as the design's `emoji + " " + name`.
+    private var context: Text {
+        let text = hit.context + (hit.dueDate.map { " · " + NXFormat.dueLabel($0) } ?? "")
+        guard let icon = hit.listIcon else { return Text(verbatim: text) }
+        return Text("\(NXListGlyph.text(icon, size: 11)) \(text)")
     }
 
     /// Tints the match with the same folding the search used.

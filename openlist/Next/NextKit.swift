@@ -19,6 +19,8 @@ struct NXChipModel: Identifiable {
     var icon: String?
     var tone: NXTone = .neutral
     var fill = false
+    /// A list chip's list, whose glyph leads the label.
+    var glyph: TaskList?
 }
 
 struct NXChip: View {
@@ -44,8 +46,17 @@ struct NXChip: View {
                 Image(systemName: icon).font(.system(size: 9.5, weight: chip.fill ? .bold : .semibold))
             }
             if !chip.label.isEmpty {
-                Text(quiet && isLabel ? "#" + chip.label : chip.label)
-                    .font(.system(size: quiet ? 11.5 : 11, weight: quiet ? .medium : .semibold))
+                let size: CGFloat = quiet ? 11.5 : 11
+                Group {
+                    if let list = chip.glyph {
+                        // One run, as the design's `emoji + " " + name`, the emoji at the design's size.
+                        Text("\(NXListGlyph.text(list, size: size)) \(chip.label)")
+                            .accessibilityLabel(chip.label)
+                    } else {
+                        Text(quiet && isLabel ? "#" + chip.label : chip.label)
+                    }
+                }
+                .font(.system(size: size, weight: quiet ? .medium : .semibold))
             }
         }
         .lineLimit(1)

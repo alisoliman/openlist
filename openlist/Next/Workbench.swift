@@ -373,11 +373,13 @@ final class Workbench {
         if navigator.openTaskID != nil { navigator.openTask(id) }
     }
 
+    /// As the design's toggleSel, the focus stays where it is: a ⌘-clicked
+    /// row takes the selected tint, not the focused card, and one clicked
+    /// off again leaves the keys nothing of its own to act on.
     func toggleSelection(_ id: UUID) {
         withAnimation(style.ease(180)) {
             if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
         }
-        focusID = id
     }
 
     func selectAllVisible() {

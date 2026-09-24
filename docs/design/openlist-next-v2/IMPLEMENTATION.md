@@ -46,6 +46,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
   heading or task folds it away. Headings and text take no key focus after Escape, as in
   the design; Return writes them again and J/K step to the tasks beside them.
+- Inbox triage skips a subtask while an open task above it waits, as that task's card
+  carries it; one under done tasks only is triaged as its own card.
 
 ## Status checklist
 
