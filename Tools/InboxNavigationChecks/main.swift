@@ -154,19 +154,49 @@ check(navigator.listViewMode(for: listID) == .document && navigator.selection.is
       "Returning to Document clears list Tasks selection before text focus resumes")
 
 check(navigator.scrollOffset(for: .calendar) == nil, "New pages use the native top anchor rather than a raw zero offset")
+navigator.go(to: .today)
 navigator.rememberScrollOffset(-52, for: .today)
 check(navigator.scrollOffset(for: .today) == -52, "The real top retains the toolbar's negative content coordinate")
+navigator.go(to: .tasks)
 navigator.rememberScrollOffset(188, for: .tasks)
 check(navigator.scrollOffset(for: .tasks) == 188, "A middle position retains its exact native coordinate")
-navigator.go(to: .today)
-navigator.go(to: .tasks)
 navigator.goBack()
-check(navigator.scrollOffset(for: .today) == -52, "Back cannot accumulate a toolbar-height offset")
-check(navigator.scrollOffset(for: .tasks) == 188, "Routes retain independent native reading positions")
+check(navigator.scrollOffset(for: .today) == -52 && navigator.takeScrollRestoration(for: .today) == -52,
+      "Back cannot accumulate a toolbar-height offset")
+navigator.goForward()
+check(navigator.scrollOffset(for: .tasks) == 188 && navigator.scrollOffset(for: .today) == -52,
+      "Routes retain independent native reading positions")
 navigator.rememberScrollOffset(.infinity, for: .tasks)
 check(navigator.scrollOffset(for: .tasks) == 188, "Invalid scroll geometry cannot replace a saved position")
 navigator.rememberScrollOffset(0, for: .tasks)
 check(navigator.scrollOffset(for: .tasks) == 0, "A saved raw zero remains distinct from an unvisited page")
+
+// Back and Forward return each page to where it was left; a new visit starts at the top.
+let scrolling = Navigator()
+scrolling.rememberScrollOffset(420, for: .today)
+scrolling.go(to: .tasks)
+check(scrolling.scrollOffset(for: .tasks) == nil && scrolling.takeScrollRestoration(for: .tasks) == nil,
+      "A new visit starts at the top")
+scrolling.rememberScrollOffset(90, for: .tasks)
+scrolling.go(to: .today)
+check(scrolling.takeScrollRestoration(for: .today) == nil, "Going to a page again starts it at the top, wherever it was before")
+scrolling.rememberScrollOffset(30, for: .today)
+scrolling.goBack()
+check(scrolling.takeScrollRestoration(for: .today) == nil && scrolling.takeScrollRestoration(for: .tasks) == 90,
+      "Back returns the page it goes to to where it was left")
+check(scrolling.takeScrollRestoration(for: .tasks) == nil, "Only the page Back returned to scrolls back, once")
+scrolling.goBack()
+check(scrolling.takeScrollRestoration(for: .today) == 420, "Each visit in the history keeps its own place")
+scrolling.goForward()
+check(scrolling.takeScrollRestoration(for: .tasks) == 90, "Forward returns a page to where it was left too")
+scrolling.goForward()
+check(scrolling.takeScrollRestoration(for: .today) == 30, "Forward to a later visit of a page returns to that visit's place")
+scrolling.goBack()
+scrolling.go(to: .calendar)
+check(!scrolling.canGoForward && scrolling.takeScrollRestoration(for: .calendar) == nil, "A new visit from the history starts at the top")
+scrolling.replace(with: .inbox)
+check(scrolling.scrollOffset(for: .inbox) == nil && scrolling.takeScrollRestoration(for: .inbox) == nil,
+      "A page that replaces a deleted one starts at the top")
 
 // The inspector belongs to the window: it stays open across screens and
 // presentations, and closes only when the route is replaced.
