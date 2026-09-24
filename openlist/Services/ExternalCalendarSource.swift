@@ -25,6 +25,9 @@ final class ExternalCalendarSource {
     private(set) var authorizationDescription = "Connect calendars to avoid meetings."
     private(set) var error: String?
     var onChange: (() -> Void)?
+    /// Bumped on every reload, so readers of `busyTimes(in:)` can keep what
+    /// they read until the calendars change.
+    @ObservationIgnored private(set) var revision = 0
 
     init(defaults: UserDefaults = ReviewSession.defaults, fixtureBusyTimes: [FixedBusyTime]? = nil) {
         self.fixtureBusyTimes = fixtureBusyTimes
@@ -69,6 +72,7 @@ final class ExternalCalendarSource {
     }
 
     func disconnect() {
+        revision &+= 1
         isConnected = false
         defaults.set(false, forKey: "calendar.connected")
         calendars = []
@@ -91,6 +95,7 @@ final class ExternalCalendarSource {
     }
 
     private func reload() {
+        revision &+= 1
         if let fixtureBusyTimes {
             busyTimes = fixtureBusyTimes
             authorizationDescription = "Isolated calendar fixture"
@@ -118,13 +123,29 @@ final class ExternalCalendarSource {
             return
         }
         let predicate = eventStore.predicateForEvents(withStart: range.start, end: range.end, calendars: selected)
-        busyTimes = eventStore.events(matching: predicate).compactMap { event in
+        busyTimes = busy(eventStore.events(matching: predicate))
+        onChange?()
+    }
+
+    /// The selected calendars' busy time in `interval`, read without changing
+    /// what the planner uses. The widget's week starts before today, where the
+    /// planner's range doesn't reach.
+    func busyTimes(in interval: DateInterval) -> [FixedBusyTime] {
+        if let fixtureBusyTimes { return fixtureBusyTimes.filter { $0.end > interval.start && $0.start < interval.end } }
+        guard isConnected, EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return [] }
+        let selected = eventStore.calendars(for: .event).filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
+        guard !selected.isEmpty else { return [] }
+        return busy(eventStore.events(matching: eventStore.predicateForEvents(withStart: interval.start, end: interval.end, calendars: selected)))
+    }
+
+    /// Events that hold time: not cancelled, not free, not declined.
+    private func busy(_ events: [EKEvent]) -> [FixedBusyTime] {
+        events.compactMap { event in
             guard event.status != .canceled, event.availability != .free,
                   !(event.attendees?.contains { $0.isCurrentUser && $0.participantStatus == .declined } ?? false),
                   let start = event.startDate, let end = event.endDate, end > start else { return nil }
             return FixedBusyTime(id: "\(event.calendarItemIdentifier)-\(start.timeIntervalSinceReferenceDate)",
                                  title: event.title ?? "Busy", start: start, end: end)
         }.sorted { $0.start < $1.start }
-        onChange?()
     }
 }

@@ -569,8 +569,10 @@ final class Workbench {
     /// it cancels what's pending; undone later it restores what was written.
     /// `resume` is paused work the completion took off the notch, which Undo
     /// offers again. `makeLabel` runs after rolling, so a lone repeat can name
-    /// its next date.
-    func beginClosing(_ tasks: [Block], resuming resume: WorkTaskReference? = nil, label makeLabel: () -> String) {
+    /// its next date. `settleNow` writes every row at once, with no dwell, and
+    /// `date` is when the completion happened, for ticks made outside the window.
+    func beginClosing(_ tasks: [Block], resuming resume: WorkTaskReference? = nil, settleNow: Bool = false,
+                      at date: Date? = nil, label makeLabel: () -> String) {
         // A parent covers the subtasks ticked with it: a repeat resets them for
         // its next date, and the rest complete with their parent as it settles.
         let rolls = uncovered(tasks.filter { $0.recurrence != nil }, by: Set(tasks.map(\.id)))
@@ -578,11 +580,11 @@ final class Workbench {
         let plain = uncovered(tasks.filter { !rolled.contains($0.id) }, by: rolled).map(\.id)
         let changes = UndoManager()
         changes.groupsByEvent = false
-        write(rolls, on: changes)
+        write(rolls, on: changes, at: date)
         let label = makeLabel()
         let icon = !rolls.isEmpty && plain.isEmpty ? "repeat" : "checkmark.circle.fill"
         let completion = CompletionBatch(mark: record(label, icon: icon, tone: .green, ids: tasks.map(\.id)),
-                                         changes: changes, pending: plain, resume: resume)
+                                         changes: changes, pending: plain, resume: resume, date: date)
         attach(completion: completion, restores: false)
         showTray(label, icon: icon, tone: .green, undoable: true)
         guard !plain.isEmpty else {
@@ -590,6 +592,10 @@ final class Workbench {
             return
         }
         completions.append(completion)
+        if settleNow {
+            settle(completion)
+            return
+        }
         let strike = Int(ms(130))
         for (index, id) in plain.enumerated() {
             let stagger = Int(Double(index) * ms(75))
@@ -656,7 +662,7 @@ final class Workbench {
         let ids = completion.pending
         completion.pending = []
         for id in ids { closingTasks.removeValue(forKey: id)?.cancel() }
-        write(ids.compactMap { store.block(id: $0) }, on: completion.changes)
+        write(ids.compactMap { store.block(id: $0) }, on: completion.changes, at: completion.date)
         noteLogWrite(completion.mark)
         withAnimation(style.ease(320)) { for id in ids { closing[id] = nil } }
         undoRevision += 1
@@ -664,7 +670,7 @@ final class Workbench {
 
     /// Completes tasks through the Store as one group on the batch's own undo
     /// stack, so the window never gets a second entry for them.
-    private func write(_ tasks: [Block], on changes: UndoManager) {
+    private func write(_ tasks: [Block], on changes: UndoManager, at date: Date? = nil) {
         let open = tasks.filter { !$0.isCompleted }
         // A parent completes the subtasks written with it, and toggling one of
         // them afterwards would reopen it.
@@ -673,8 +679,9 @@ final class Workbench {
         changes.beginUndoGrouping()
         completionUndoTarget = changes
         for task in roots where !task.isCompleted {
-            if calendar.activeSession?.taskID == task.id { calendar.complete(task: task) }
-            else { store.toggleCompletion(task) }
+            let now = date ?? .now
+            if calendar.activeSession?.taskID == task.id { calendar.complete(task: task, now: now) }
+            else { store.toggleCompletion(task, now: now) }
         }
         completionUndoTarget = nil
         changes.endUndoGrouping()
@@ -904,12 +911,15 @@ private final class CompletionBatch {
     var settleTask: Task<Void, Never>?
     /// Paused work the completion took off the notch; Undo offers it again.
     let resume: WorkTaskReference?
+    /// When the completion happened, if not when it's written.
+    let date: Date?
 
-    init(mark: LogMark, changes: UndoManager, pending: [UUID], resume: WorkTaskReference?) {
+    init(mark: LogMark, changes: UndoManager, pending: [UUID], resume: WorkTaskReference?, date: Date? = nil) {
         self.mark = mark
         self.changes = changes
         self.pending = pending
         self.resume = resume
+        self.date = date
     }
 }
 
