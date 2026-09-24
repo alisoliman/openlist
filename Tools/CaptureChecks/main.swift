@@ -158,6 +158,16 @@ check(chipLabels("Stretch every day") == ["every day"], "A repeat starting today
 check(chipLabels("Standup every monday") == [captureDay(5), "every monday"],
       "A repeat whose first day isn't today shows the day it saves")
 check(chipLabels("Plan friday #work", forToday: true) == [captureDay(2), "work"], "A typed day stands in for Today")
+// Only chips of typed tokens pop in, as the design's `fresh` capture chips: its Today is simply there.
+func chipsTyped(_ text: String, forToday: Bool = false) -> [Bool] {
+    let parse = CaptureParse(text, reference: captureReference)
+    var preview = parse.snapshot()
+    if forToday, preview.date == nil { preview.date = NXFormat.day(offset: 0, now: captureReference) }
+    return parse.chips(for: preview, forToday: forToday, now: captureReference).map(\.typed)
+}
+check(chipsTyped("Call mum 6pm", forToday: true) == [false, true], "Capture for Today's own Today chip isn't typed")
+check(chipsTyped("Call mum today", forToday: true) == [true] && chipsTyped("Call mum 9am") == [true, true],
+      "A typed day, and the day a typed time saves, come from typing")
 
 // Undoing a capture erases the task outright: no Trash entry and no history.
 let undoList = store.createList(title: "Undo target")

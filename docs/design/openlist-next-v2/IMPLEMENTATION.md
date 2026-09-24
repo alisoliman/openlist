@@ -99,6 +99,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   as the design's. A bare time already past, or a repeat whose first day isn't today, shows
   the day it saves (tomorrow, the repeat's first day), where the design saves both today
   and shows no day.
+- Capture opened on a label screen (N or its "Add a task" row), a native extra, also gives
+  the task that label: the card shows it as a chip after the typed ones, and the task lands,
+  fresh, on the label screen, so the tray has no Show. The design's saves it with no label,
+  off the screen, and its tray offers Show.
 - Trash keeps one entry per trashed task or list, not a row per subtask: the subtasks
   restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
   counts entries. A list's Restore names where it goes back, as a task's names its list

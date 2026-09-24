@@ -509,7 +509,8 @@ private struct NXTasksQueryBar: View {
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(NX.ink(0.4))
-                    .transition(.opacity)
+                    // The design's fadeIn, 160ms ease, whatever the field animates; gone at once.
+                    .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(160)), removal: .identity))
                     .accessibilityLabel(count == 1 ? "1 matching task" : "\(count) matching tasks")
                 Button {
                     workbench.tasksQuery = ""
@@ -522,7 +523,8 @@ private struct NXTasksQueryBar: View {
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 5,
                                                 padding: EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2),
                                                 foreground: NX.ink(0.4), hoverForeground: NX.ink))
-                .transition(.opacity)
+                // Shows and goes at once, as the design's.
+                .transition(.identity)
                 .accessibilityLabel("Clear filter")
             }
         }

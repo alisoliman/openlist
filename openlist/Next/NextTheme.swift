@@ -121,6 +121,9 @@ struct NextStyle: Equatable {
     var serifTitles = true
 
     var rowVerticalPadding: CGFloat { compact ? 3 : 5 }
+    /// A filled accent button under the pointer: the accent a shade darker,
+    /// as the design's Planned now Start goes from #7C4DF0 to #6A3BDE.
+    var accentHover: Color { accent.mix(with: .black, by: 0.1) }
     func ms(_ base: Double) -> Double { (base * motion).rounded() }
     func ease(_ base: Double) -> Animation { NX.ease(ms(base)) }
     func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }

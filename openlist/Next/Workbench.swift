@@ -81,6 +81,9 @@ final class Workbench {
     var flying: Set<UUID> = []
     var fresh: Set<UUID> = []
     var restored: Set<UUID> = []
+    /// Every task row takes the restored tint, as the design's Undo marks
+    /// every task it puts back restored, not only those the step changed.
+    var restoredAll = false
     var freshChip: Set<UUID> = []
     var pulseTaskID: UUID?
     var pulseListID: UUID?
@@ -667,7 +670,7 @@ final class Workbench {
     private func unlog(_ mark: LogMark) {
         log.removeAll { $0.batch == mark.batch }
         noteLogWrite(mark)
-        markRestored(mark.entries.compactMap(\.taskID))
+        markAllRestored()
         showTray("Undid — \(mark.label)", icon: "arrow.uturn.backward", tone: .neutral)
         undoRevision += 1
     }
@@ -799,6 +802,16 @@ final class Workbench {
     }
 
     func markRestored(_ ids: [UUID]) { flash(\.restored, ids, for: 900) }
+
+    /// The design's Undo: every task row on show takes the restored tint for
+    /// 900ms, done ones too, and none keeps the fresh one over it.
+    func markAllRestored() {
+        fresh = []
+        restoredAll = true
+        after(900, key: "restoredAll") { workbench in
+            withAnimation(workbench.style.ease(400)) { workbench.restoredAll = false }
+        }
+    }
 
     func pulse(list listID: UUID?) {
         guard let listID else { return }
