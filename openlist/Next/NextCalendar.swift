@@ -62,11 +62,14 @@ private struct NXCalendarStepper: View {
 
     var body: some View {
         let showsToday = dates.contains { calendar.isDate($0, inSameDayAs: now) }
+        // As tall as the range switch beside it, 28pt: each button is 6 + 12 + 6,
+        // its Today in the switch's 500 12/1 box.
         HStack(spacing: 2) {
             step(-1)
             if !showsToday {
                 Button { move(to: nil) } label: {
                     Text("Today").font(.system(size: 12, weight: .medium))
+                        .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
                 }
                 .buttonStyle(buttonStyle(horizontal: 9))
             }
@@ -81,7 +84,7 @@ private struct NXCalendarStepper: View {
         return Button { move(to: CalendarWeek.anchor(stepping: dates, by: direction, now: now, calendar: calendar)) } label: {
             Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
                 .font(.system(size: 11, weight: .semibold))
-                .frame(width: 12, height: 15)
+                .frame(width: 12, height: 12)
         }
         .buttonStyle(buttonStyle(horizontal: 6))
         .help(label)
@@ -102,6 +105,11 @@ private enum NXCal {
     static let hourHeight: CGFloat = 40
     static let gutter: CGFloat = 52
     static let minColumn: CGFloat = 92
+    /// Blocks' and meetings' 10.5/1.25 titles and 9.5/1.3 time and state
+    /// lines over SwiftUI's 13 and 12pt lines: 0.125 and 0.35pt between
+    /// lines, half of it above the first and below the last.
+    static let titleLeading = 10.5 * 1.25 - NX.lineHeight(10.5)
+    static let timeLeading = 9.5 * 1.3 - NX.lineHeight(9.5)
 }
 
 private struct NXCalendarBody: View {
@@ -337,14 +345,14 @@ private struct NXDayHead: View {
                 .textCase(.uppercase)
                 .foregroundStyle(isToday ? style.accent : NX.ink(0.45))
                 .lineLimit(1)
-                .padding(.vertical, (10 - NXStrikeText.glyphLineHeight(10)) / 2)
+                .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
             // The design's grid aligns the date and the load at the foot of their boxes.
             HStack(alignment: .bottom, spacing: 6) {
                 Text("\(cal.component(.day, from: date))")
                     .font(.system(size: 17, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(isToday ? style.accent : weekend ? NX.ink(0.5) : NX.ink)
-                    .padding(.vertical, (17 - NXStrikeText.glyphLineHeight(17)) / 2)
+                    .padding(.vertical, (17 - NX.lineHeight(17)) / 2)
                 Spacer(minLength: 0)
                 if load > 0 {
                     // Whole hours plain, anything else to a tenth, and never 0h
@@ -354,7 +362,7 @@ private struct NXDayHead: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(NX.ink(0.36))
                         .lineLimit(1)
-                        .padding(.vertical, (10 - NXStrikeText.glyphLineHeight(10)) / 2)
+                        .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                 }
             }
             if reservesHold {
@@ -395,16 +403,21 @@ private struct NXHourGutter: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ForEach(Array(range.dropFirst().dropLast()), id: \.self) { hour in
+                // The design's 500 10/1 box (SF Mono has SF's line), so the
+                // label sits where the design's top puts it on its hour line.
                 Text(String(format: "%02d:00", hour))
                     .font(NX.mono(10))
                     .foregroundStyle(NX.ink(0.36))
+                    .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                     .padding(.trailing, 8)
                     .offset(y: CGFloat(hour - range.lowerBound) * NXCal.hourHeight - 6)
             }
             if showsNow, let y = NXDayColumn.offset(of: now, range: range) {
+                // 600 9.5/1 in its 2pt padding: the design's 13.5pt pill.
                 Text(NXFormat.clock(now))
                     .font(NX.mono(9.5, weight: .semibold))
                     .foregroundStyle(.white)
+                    .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
                     .padding(.vertical, 2)
                     .padding(.horizontal, 4)
                     .background(NX.red, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -538,15 +551,23 @@ private struct NXDayColumn: View {
 
     private func eventView(_ event: FixedBusyTime) -> some View {
         VStack(alignment: .leading, spacing: 1) {
+            // The title keeps all its lines, as the design's, whose spans never
+            // shrink; the meeting's edge cuts off the time instead.
             Text(event.title).font(.system(size: 10.5, weight: .semibold))
+                .lineSpacing(NXCal.titleLeading)
+                .padding(.vertical, NXCal.titleLeading / 2)
+                .fixedSize(horizontal: false, vertical: true)
             Text("\(NXFormat.clock(event.start))–\(NXFormat.clock(event.end))")
                 .font(.system(size: 9.5, weight: .medium))
                 .opacity(0.7)
+                .lineSpacing(NXCal.timeLeading)
+                .padding(.vertical, NXCal.timeLeading / 2)
         }
         .foregroundStyle(NX.ink(0.62))
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // No taller than its slot, so what overflows is cut at the bottom.
+        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .help(event.title)
@@ -635,6 +656,8 @@ private struct NXCalendarBlock: View {
                     .foregroundStyle(fg)
                     .lineLimit(height < 30 ? 1 : nil)
                     .truncationMode(.tail)
+                    .lineSpacing(NXCal.titleLeading)
+                    .padding(.vertical, NXCal.titleLeading / 2)
             }
             // The title keeps all its lines, as the design's, whose row never
             // shrinks; the time and state wrap into what's left under it, and
@@ -644,6 +667,8 @@ private struct NXCalendarBlock: View {
                 Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.ink(0.5))
+                    .lineSpacing(NXCal.timeLeading)
+                    .padding(.vertical, NXCal.timeLeading / 2)
                     .padding(.leading, 17)
             }
         }
@@ -765,15 +790,15 @@ private struct NXUnplannedColumn: View {
         let tasks = unplanned
         // The design's 11.5/1.45 hint and 12/1.45 empty state: the extra
         // leading between lines and, halved, above the first and below the last.
-        let hintLeading = 11.5 * 1.45 - NXStrikeText.glyphLineHeight(11.5)
-        let emptyLeading = 12 * 1.45 - NXStrikeText.glyphLineHeight(12)
+        let hintLeading = 11.5 * 1.45 - NX.lineHeight(11.5)
+        let emptyLeading = 12 * 1.45 - NX.lineHeight(12)
         VStack(alignment: .leading, spacing: 8) {
             // 600 12.5/1 and 500 11/1.
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Not planned yet").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(NX.ink)
-                    .padding(.vertical, (12.5 - NXStrikeText.glyphLineHeight(12.5)) / 2)
+                    .padding(.vertical, (12.5 - NX.lineHeight(12.5)) / 2)
                 Text("\(tasks.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.4))
-                    .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
+                    .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
             }
             .padding(EdgeInsets(top: 4, leading: 2, bottom: 2, trailing: 2))
             Text("Due soon or picked for today. Plan finds the next free slot around meetings and your hours.")
@@ -824,8 +849,8 @@ private struct NXUnplannedColumn: View {
         let overdue = task.dueDate.map { NXFormat.dayOffset($0, now: now) < 0 } ?? false
         let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
         // The title's 12.5/1.35, as the hint's; the chip and estimate are 10.5/1.
-        let titleLeading = 12.5 * 1.35 - NXStrikeText.glyphLineHeight(12.5)
-        let chipLine = (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2
+        let titleLeading = 12.5 * 1.35 - NX.lineHeight(12.5)
+        let chipLine = (10.5 - NX.lineHeight(10.5)) / 2
         return VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .top, spacing: 7) {
                 if let list = library.list(task.listID) { NXListGlyph(list: list, size: 12) }

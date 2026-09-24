@@ -29,5 +29,13 @@ xcrun swiftc \
     openlist/Services/RichTextCodec.swift \
     Tools/TextChecks/main.swift
 
+# 3. SwiftUI's text line, which the Next UI's line boxes are fitted over — needs AppKit and SwiftUI.
+xcrun swiftc \
+    -swift-version 6 -O \
+    -o "$OUT/line-height-checks" \
+    openlist/Next/NextTextLine.swift \
+    Tools/LineHeightChecks/main.swift
+
 "$OUT/logic-checks"
 "$OUT/text-checks"
+"$OUT/line-height-checks"
