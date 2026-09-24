@@ -19,8 +19,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   labels, move, trash, restore, keep, schedule, fit) goes through here: mutation via Store,
   undo registered on the window UndoManager (snapshot-based where Store has none, putting
   back only the fields the step changed), change-log entry, tray. So do the native extras
-  that edit the same things: the inspector's Schedule, Repeat, Reminder and label popovers
-  (with tray), its title and note, and a list's title and description (edits: logged, no tray).
+  that edit the same things: the inspector's Schedule, Repeat, Reminder and label popovers,
+  its Defer work and the Clear on its deferral, and the Work panel's Move planned time… (a
+  placement like Plan's, with Show off the Calendar), all with tray; and the inspector's
+  title and note and a list's title and description (edits: logged, no tray).
 - Completion dwell defers the real `store.toggleCompletion` until dwell+300ms; Undo during
   dwell cancels. Pending closings flush on termination.
 - `NextKeyMonitor` — NSEvent local monitor implementing the global key model when not typing.
@@ -111,12 +113,20 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   work that tracks away, stops counting at the next pinned task instead of moving it.
   Resumed work reads "working" until it grows again. Busy holds of 20 h or more (Out of
   office) aren't drawn as meetings but still keep Plan and the planner away, so the day's
-  header names them.
+  header names them. Breaks are set in Settings, where the design has only its lunch: one
+  that takes in any of 12:00–13:00 is named Lunch, as the design's; any other reads as a
+  break. A block's time and state wrap as the design's; too short for all of it, the title
+  keeps its lines and the state ends in an ellipsis rather than the title being clipped.
+  The Work panel's "N tasks rescheduled" and Start notifications come only from blocks the
+  calendar draws, not from the planner's own sessions.
 - Calendar week: the design's week always has today on a Wednesday. Natively, Plan keeps to
   the week around today while it has hours long enough for the task (the design's "No free
   slot this week"), then goes on into the next week, as a deferral past it gets its own. A
   block landing past the days shown moves the Calendar's range there, and the header's
-  ‹ Today › steps the range a day, three days or a week at a time.
+  ‹ Today › steps the range a day, three days or a week at a time; a range moved to on an
+  earlier day follows today again once today reaches it or has passed it. "Not planned yet"
+  takes tasks due from a week back to the end of the week shown, or four days out when that
+  is later: the design's −7…+4, whose +4 is its Sunday.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's

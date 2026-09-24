@@ -117,7 +117,7 @@ struct NXInspectorPlanOptions: View {
                     Image(systemName: "arrow.uturn.forward").font(.system(size: 10.5, weight: .semibold))
                     Text("Deferred until \(NXFormat.dueLabel(deferred))")
                     Spacer(minLength: 6)
-                    NXInspectorLink(title: "Clear") { env.store.deselectForToday(task) }
+                    NXInspectorLink(title: "Clear") { env.workbench.clearDeferral(task.id) }
                         .accessibilityLabel("Clear task deferral")
                 }
                 .font(.system(size: 11, weight: .medium))

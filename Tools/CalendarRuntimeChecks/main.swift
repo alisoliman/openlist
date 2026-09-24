@@ -45,8 +45,8 @@ check(coordinator.activeSession?.taskID == a.id, "exactly the started task is ac
 coordinator.tick(now: date(14, 9, 30), checkClockGap: false)
 check(coordinator.activeSession?.taskID == a.id, "reaching the estimate keeps recording")
 check(coordinator.workExtension?.end == date(14, 9, 45) && coordinator.workExtension?.minutes == 15, "the block grows to the next quarter hour plus 15 minutes")
-check(coordinator.workExtension?.movedTaskIDs.isEmpty == true && coordinator.rescheduleSummary?.taskIDs == [b.id],
-      "the extension moves the flexible task in the plan, and names only placed tasks as moved")
+check(coordinator.workExtension?.movedTaskIDs.isEmpty == true && coordinator.rescheduleSummary == nil,
+      "the extension moves the flexible task in the plan, and reports only placed tasks as moved")
 coordinator.tick(now: date(14, 9, 31), checkClockGap: false)
 let activeForecast = coordinator.plan.blocks.first { $0.isActive }
 check(activeForecast?.end == date(14, 9, 45), "31-minute overrun extends the original estimate to 45 minutes")
@@ -219,9 +219,9 @@ store.deferTask(backlog, to: date(15))
 store.deselectForToday(backlog)
 recovered.replan(now: date())
 check(backlog.deferredUntil == nil && !recovered.plan.assessments.contains { $0.taskID == backlog.id }, "clearing an undated deferral returns work to unscheduled backlog")
-// Manual preferences remain flexible, but an infeasible move must explain why
-// the visible block went elsewhere. A pinned placement, as Plan saves, keeps
-// the requested time.
+// A move from the Work panel is a placement like Plan's, drawn where it's
+// put: its preview names what it would overlap on the calendar, and a pinned
+// placement keeps the requested time, its conflicts shown.
 func checkManualMoveFeedback() throws {
     let moveContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])
     let moveStore = Store(context: moveContainer.mainContext)
@@ -235,21 +235,6 @@ func checkManualMoveFeedback() throws {
     let planner = CalendarCoordinator(store: moveStore, defaults: defaults, externalCalendars: source)
     planner.bootstrap(now: date(), monitorsEnabled: false)
     func currentBlock() -> PlannedBlock { planner.plan.blocks.first { $0.taskID == movedTask.id }! }
-
-    planner.move(block: currentBlock(), to: date(14, 18), now: date())
-    check(planner.notice?.contains("outside work hours") == true, "unavailable preferred move explains why it was not honored")
-    check(moveStore.placements(taskID: movedTask.id).contains { $0.start == date(14, 18) && !$0.isPinned }, "unavailable move still saves a preference without silently pinning")
-    check(currentBlock().start != date(14, 18), "unavailable preferred time does not contaminate the feasible schedule")
-
-    planner.move(block: currentBlock(), to: date(14, 13), now: date())
-    check(currentBlock().start == date(14, 13) && currentBlock().placementID != nil, "feasible move is actually represented by its saved placement")
-    check(planner.notice == nil, "honored move clears a previous rejection notice")
-
-    planner.move(block: currentBlock(), to: date(14, 10), now: date())
-    check(planner.notice?.contains("Fixture meeting") == true, "busy-time rejection names the conflicting external event")
-    check(currentBlock().start != date(14, 10), "preferred move cannot overlap fixed busy time")
-    check(planner.notice?.contains("Find a Slot") == true && planner.notice?.contains("Pin time") == false,
-          "an unhonored move points to Find a Slot, not to a pin control the app lacks")
 
     // Plan's path: a pinned placement for the occurrence, then a replan.
     func pin(at start: Date) {
@@ -272,23 +257,27 @@ func checkManualMoveFeedback() throws {
     pin(at: date(14, 13))
     check(currentBlock().isPinned && currentBlock().start == date(14, 13) && currentBlock().conflicts.isEmpty,
           "a pin moved into free hours clears its previous conflict")
-    planner.move(block: currentBlock(), to: date(14, 16, 30), now: date())
-    check(planner.notice?.contains("after the task’s deadline") == true, "after-deadline preferred move has a specific explanation")
 
-    let distant = calendar.date(byAdding: .day, value: 40, to: date())!
-    planner.move(block: currentBlock(), to: distant, now: date())
-    check(planner.notice?.contains("four-week planning horizon") == true, "outside-horizon preferred move explains its planning boundary")
-
-    let tomorrowTask = Block(kind: .task, text: "Selected today, preferred tomorrow", listID: moveStore.inboxList()!.id)
-    tomorrowTask.selectedForDay = date()
-    tomorrowTask.schedulingEstimateMinutes = 30
-    moveStore.context.insert(tomorrowTask)
+    let neighbour = Block(kind: .task, text: "Drawn neighbour", listID: moveStore.inboxList()!.id)
+    neighbour.schedulingEstimateMinutes = 30
+    moveStore.context.insert(neighbour)
+    moveStore.setPlacement(for: neighbour, start: date(14, 13, 30), end: date(14, 14), isPinned: true)
+    let flexible = Block(kind: .task, text: "Flexible neighbour", listID: moveStore.inboxList()!.id)
+    flexible.schedulingEstimateMinutes = 30
+    flexible.selectedForDay = date()
+    moveStore.context.insert(flexible)
     moveStore.save()
     planner.replan(now: date())
-    let tomorrowBlock = planner.plan.blocks.first { $0.taskID == tomorrowTask.id }!
-    planner.move(block: tomorrowBlock, to: date(15, 13), now: date())
-    check(planner.plan.blocks.contains { $0.taskID == tomorrowTask.id && $0.start == date(15, 13) && $0.placementID != nil }, "a feasible next-day preference is honored for a task selected today")
-    check(planner.notice == nil, "honored next-day placement produces no false rejection notice")
+    let drawn = planner.visibleBlocks.first { $0.taskID == movedTask.id }!
+    check(drawn.start == date(14, 13) && drawn.placementID != nil, "the pinned placement is what the calendar draws")
+    check(planner.moveOverlaps(drawn, to: date(14, 10, 15)).map(\.title) == ["Fixture meeting"], "a move into a meeting names the meeting it would overlap")
+    check(planner.moveOverlaps(drawn, to: date(14, 13, 15)).map(\.title) == ["Drawn neighbour"], "and the other blocks the calendar draws there")
+    check(planner.moveOverlaps(drawn, to: date(14, 15)).isEmpty, "a free time overlaps nothing, and never the block itself")
+    let flexibleSlot = planner.plan.blocks.first { $0.taskID == flexible.id }!
+    check(!flexibleSlot.isPinned && planner.moveOverlaps(drawn, to: flexibleSlot.start).allSatisfy { $0.title != "Flexible neighbour" },
+          "work the calendar doesn't draw is never named as overlapped")
+    check(moveStore.placements(taskID: movedTask.id).count == 1 && planner.visibleBlocks.first { $0.taskID == movedTask.id }?.start == date(14, 13),
+          "a preview saves nothing")
 }
 // These clocks operate on the same production coordinator as the app; no timer
 // sleeps or automatic task starts are involved.
@@ -325,8 +314,7 @@ func checkSchedulingNudges() throws {
         var nudgeChanges = 0
         planner.onNudgesChanged = { nudgeChanges += 1 }
         planner.tick(now: date())
-        check(planner.startNudge?.taskID == first.id && planner.startNudge?.scheduledStart == date(), "scheduled start offers an explicit Start nudge")
-        check(planner.startNudge?.graceEndsAt == date(14, 9, 5), "nudge has a five-minute grace period")
+        check(planner.startNudge == nil, "flexible work, which the calendar doesn't draw, offers no Start nudge")
         planner.tick(now: date(14, 9, 4).addingTimeInterval(59))
         check(planner.plan.blocks.map(\.start) == original.map(\.start), "timer ticks preserve every placement throughout the grace period")
         check(fixtureStore.workSessions().isEmpty, "a visible or ignored start nudge never records work")
@@ -336,8 +324,8 @@ func checkSchedulingNudges() throws {
         check(planner.plan.blocks.filter { $0.taskID == second.id || $0.taskID == third.id }.allSatisfy { anchor[$0.taskID] == $0.start }, "missing a start never shifts the other promised tasks")
         let risk = planner.plan.assessments.first { $0.taskID == first.id }!
         check(risk.status == .cannotFitBeforeDeadline && risk.beforeDeadlineMinutes == 0, "lost deadline coverage is flagged after the missed start")
-        check(planner.rescheduleSummary?.taskIDs == [first.id] && planner.rescheduleSummary?.movedTaskCount == 1, "reschedule feedback identifies only the task actually moved")
-        check(planner.startNudge == nil && nudgeChanges == 2, "start nudge clears once moved and does not repeat on unchanged ticks")
+        check(planner.rescheduleSummary == nil, "a missed flexible start moves nothing the calendar draws, so nothing is reported as rescheduled")
+        check(planner.startNudge == nil && nudgeChanges == 0, "no Start nudge comes or goes for flexible work")
         planner.tick(now: date(14, 9, 6))
         check(planner.plan.blocks.first { $0.taskID == first.id }?.start == date(14, 10, 30), "subsequent timer ticks retain the replacement gap")
         check(planner.visibleBlocks.isEmpty && fixtureStore.calendarPlannedBlocks.isEmpty, "automatically planned work stays off the calendar, and out of completion snapshots, until it is placed")
@@ -345,7 +333,7 @@ func checkSchedulingNudges() throws {
         fixtureStore.save()
         planner.storeDidChange(now: date(14, 9, 10))
         check(planner.plan.blocks.first { $0.taskID == second.id }?.start == anchor[second.id], "an unrelated title save cannot drift the established schedule")
-        check(planner.rescheduleSummary?.message == "1 task rescheduled.", "reschedule feedback leads with the number of affected tasks")
+        check(planner.rescheduleSummary == nil, "an unrelated save reports nothing as rescheduled")
     }
     do {
         let (fixtureStore, planner, lifetime) = try fixture()
@@ -361,7 +349,8 @@ func checkSchedulingNudges() throws {
         check(planner.activeSession != nil && planner.plan.blocks.first { $0.isActive }?.end == date(14, 9, 45), "a minute before the estimate the block grows to the next quarter hour plus 15 minutes")
         let nextAnchor = planner.plan.blocks.first { $0.taskID == next.id }!
         check(nextAnchor.start == date(14, 9, 45), "the extension moves the following flexible task")
-        check(planner.workExtension?.movedTaskIDs.isEmpty == true && planner.rescheduleSummary?.taskIDs == [next.id], "extension summary names displaced work")
+        check(planner.workExtension?.movedTaskIDs.isEmpty == true && planner.rescheduleSummary == nil,
+              "moving only flexible work, the extension reports nothing as rescheduled")
         check(planner.overrunNudge == nil, "heads-up clears after the extension")
         planner.tick(now: date(14, 9, 40), checkClockGap: false)
         check(planner.overrunNudge == nil && planner.workExtension?.minutes == 15 && planner.plan.blocks.first { $0.taskID == next.id }?.start == nextAnchor.start, "routine ticks do not extend again or drift the next task")
@@ -397,7 +386,7 @@ func checkSchedulingNudges() throws {
         planner.storeDidChange(now: date(14, 9, 31))
         check(planner.plan.blocks.first { $0.isActive }?.end == date(14, 10), "a material estimate edit updates active runway to the revised estimate")
         check(planner.plan.blocks.first { $0.taskID == second.id }?.start == date(14, 10), "a changed active estimate reflows the following task")
-        check(planner.rescheduleSummary?.taskIDs == [second.id], "material replan feedback identifies the other task that moved")
+        check(planner.rescheduleSummary == nil, "a replan that moves only flexible work reports nothing as rescheduled")
         check(planner.workExtension == nil, "the revised estimate replaces the time given past the old one")
         planner.tick(now: date(14, 10), checkClockGap: false)
         check(planner.activeSession != nil && planner.workExtension?.end == date(14, 10, 15) && planner.workExtension?.minutes == 15, "the revised estimate is extended like the original one")
@@ -411,7 +400,7 @@ func checkSchedulingNudges() throws {
         planner.bootstrap(now: date(), monitorsEnabled: false)
         planner.complete(task: first, now: date(14, 9, 10))
         check(planner.plan.blocks.first { $0.taskID == second.id }?.start == date(14, 9, 10), "early completion releases time through a material replan")
-        check(planner.rescheduleSummary?.taskIDs == [second.id], "completion summary excludes the completed task itself")
+        check(planner.rescheduleSummary == nil, "a completion that frees time for flexible work reports nothing as rescheduled")
         check(planner.completedBlocks.first { $0.taskID == first.id }?.isTimeTracked == false, "untracked completion uses planned history without fabricating a work session")
     }
     do {
@@ -470,8 +459,8 @@ func checkSchedulingNudges() throws {
         check(planner.visibleBlocks.first { $0.isActive }?.end == date(14, 9, 40), "work without a slot stops short of the next task placed after it")
         planner.tick(now: date(14, 9, 39), checkClockGap: false)
         check(planner.workExtension?.end == date(14, 10) && planner.workConflict == nil, "an extension grows past another task's pinned time")
-        check(pin.start == date(14, 10) && pin.end == date(14, 10, 30) && planner.workExtension?.movedTaskIDs == [pinned.id],
-              "the pinned task moves out of the running work's way, and is named as moved")
+        check(pin.start == date(14, 10) && pin.end == date(14, 10, 30) && planner.workExtension?.movedTaskIDs == [pinned.id]
+                && planner.rescheduleSummary?.taskIDs == [pinned.id], "the pinned task moves out of the running work's way, and is named as moved")
         check(planner.plan.blocks.first { $0.taskID == pinned.id }?.start == date(14, 10)
                 && planner.visibleBlocks.first { $0.taskID == pinned.id }?.start == date(14, 10), "the plan and the calendar follow the moved pin")
     }
@@ -503,6 +492,8 @@ func checkSchedulingNudges() throws {
         check(next.start == date(14, 13) && next.end == date(14, 13, 20), "the next task moves past lunch to the first free quarter")
         check(later.start == date(14, 13, 30) && later.end == date(14, 14), "the task after it moves on in turn, clear of the meeting")
         check(planner.workExtension?.movedTaskIDs == [feedback.id, scorecard.id], "the extension names the tasks it moved, in time order")
+        check(planner.rescheduleSummary?.taskIDs == [feedback.id, scorecard.id] && planner.rescheduleSummary?.message == "2 tasks rescheduled.",
+              "the Work panel reports the placements moved, leading with how many")
         check(drawn(feedback)?.start == date(14, 13) && drawn(scorecard)?.start == date(14, 13, 30), "the calendar draws the moved tasks at their new times")
         let grant = planner.workExtension!
         check(planner.undoExtension(grant, now: date(14, 11, 31)), "Undo takes the design's extension back")
@@ -516,6 +507,7 @@ func checkSchedulingNudges() throws {
         planner.tick(now: date(14, 11, 59), checkClockGap: false)
         check(planner.activeSession != nil && planner.workConflict?.kind == .breakTime && planner.workConflict?.start == date(14, 12),
               "at lunch the work runs into the break and keeps recording")
+        check(planner.workConflict?.title == "Lunch", "the midday break is named Lunch, as the design's")
         planner.tick(now: date(14, 12, 3), checkClockGap: false)
         check(drawn(okrs)?.isActive == true && drawn(okrs)?.end == date(14, 12), "the working block holds at the break it runs into")
         planner.pause(now: date(14, 12, 5))
@@ -523,8 +515,11 @@ func checkSchedulingNudges() throws {
                 && drawn(okrs)?.end == date(14, 12) && drawn(okrs)?.isActive == false, "paused work keeps its grown slot, drawn as the work")
         check(planner.pausedWorkNote?.conflict?.kind == .breakTime && planner.pausedWorkNote?.extended == true,
               "paused work still runs into the break it ran into, and was extended, as the design's reads")
+        check(planner.workConflict == nil && planner.workExtension == nil && planner.displayedWorkConflict?.title == "Lunch"
+                && planner.displayedWorkExtension?.minutes == 30, "paused, the notch keeps what the work ran into and its extra time, as its block does")
         planner.dismissResume()
         check(planner.pausedBlockID == nil && planner.pausedWorkNote == nil && drawn(okrs)?.end == date(14, 12), "stopped work leaves an ordinary slot where it ran")
+        check(planner.displayedWorkConflict == nil && planner.displayedWorkExtension == nil, "stopped work leaves the notch nothing to show")
     }
     do {
         // Once the work pauses, Undo still puts back what its extension moved,
@@ -544,15 +539,16 @@ func checkSchedulingNudges() throws {
         planner.pause(now: date(14, 11, 35))
         check(planner.workExtension == nil && planner.pausedWorkNote?.extended == true && planner.pausedWorkNote?.conflict == nil,
               "paused work reads extended, as it did while it ran")
+        check(planner.displayedWorkExtension?.minutes == 15 && planner.displayedWorkConflict == nil, "the paused notch keeps its +15m")
         check(planner.canUndoExtension(grant) && !planner.canRedoExtension(grant), "after a pause, Undo still offers the extension's moves")
         check(planner.undoExtension(grant, now: date(14, 11, 36)), "Undo after a pause takes the extension's moves back")
         check(slot.end == date(14, 11, 30) && next.start == date(14, 11, 30) && next.end == date(14, 11, 50)
                 && drawn(feedback)?.start == date(14, 11, 30), "Undo after a pause puts the slot and the moved task back")
-        check(planner.pausedBlockID == drawn(okrs)?.id && planner.pausedWorkNote?.extended == false,
-              "with its extension undone, paused work keeps its block and reads working again")
+        check(planner.pausedBlockID == drawn(okrs)?.id && planner.pausedWorkNote?.extended == false && planner.displayedWorkExtension == nil,
+              "with its extension undone, paused work keeps its block and reads working again, and the notch drops its +15m")
         check(!planner.canUndoExtension(grant) && planner.canRedoExtension(grant), "an undone extension's moves can be redone")
         check(planner.redoExtension(grant, now: date(14, 11, 37)) && slot.end == date(14, 11, 45) && next.start == date(14, 13)
-                && planner.pausedWorkNote?.extended == true, "Redo after a pause moves them again")
+                && planner.pausedWorkNote?.extended == true && planner.displayedWorkExtension?.minutes == 15, "Redo after a pause moves them again")
         // Another move since keeps the task where it now is.
         next.start = date(14, 15)
         next.end = date(14, 15, 20)
@@ -621,6 +617,25 @@ func checkSchedulingNudges() throws {
         check(planner.activeSession != nil && planner.workConflict == nil && planner.workExtension == nil,
               "the end of the newly established hours only stops the block growing: no conflict, and recording carries on")
         planner.updatePreferences(originalPreferences, now: date(14, 10, 20))
+    }
+    do {
+        // Only the midday break is Lunch; any other reads as a break.
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let late = add("Run into the afternoon break", to: fixtureStore, minutes: 15)
+        planner.bootstrap(now: date(14, 14, 30), monitorsEnabled: false)
+        let original = planner.preferences
+        var hours = original
+        hours.work.breaks = Dictionary(uniqueKeysWithValues: (2...6).map {
+            ($0, [AvailabilityWindow(startMinute: 12 * 60, endMinute: 13 * 60), AvailabilityWindow(startMinute: 15 * 60, endMinute: 15 * 60 + 15)])
+        })
+        planner.updatePreferences(hours, now: date(14, 14, 30))
+        check(planner.start(task: late, now: date(14, 14, 30)), "afternoon break fixture starts")
+        planner.tick(now: date(14, 14, 44), checkClockGap: false)
+        planner.tick(now: date(14, 14, 59), checkClockGap: false)
+        check(planner.workConflict?.kind == .breakTime && planner.workConflict?.start == date(14, 15) && planner.workConflict?.title == "",
+              "an afternoon break is no lunch")
+        planner.updatePreferences(original, now: date(14, 15))
     }
     do {
         // Undo only offers what it can still take back.
@@ -758,6 +773,7 @@ func checkSchedulingNudges() throws {
               "the Work panel's planned time is the drawn slot, and flexible work has none")
         planner.tick(now: date(14, 9, 20), checkClockGap: false)
         check(planner.plan.blocks.contains { $0.placementID == placement.id } && planner.startNudge?.taskID == pinned.id, "an unstarted pinned block keeps its slot and its Start nudge while the slot runs")
+        check(planner.startNudge?.scheduledStart == date() && planner.startNudge?.graceEndsAt == date(14, 9, 5), "the nudge names the slot's start and has a five-minute grace period")
         planner.tick(now: date(14, 9, 31), checkClockGap: false)
         check(planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0.contains("Pinned time was missed") } == true, "ignoring a pinned slot preserves an explicit missed-pin conflict")
         check(planner.plan.blocks.first { $0.taskID == other.id }?.start == neighbor.start && fixtureStore.workSessions().isEmpty, "missed pins move their remaining work without moving neighbors or inventing activity")

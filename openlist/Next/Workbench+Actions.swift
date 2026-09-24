@@ -853,10 +853,16 @@ extension Workbench {
         }
     }
 
+    /// The day the Calendar builds its range from at `now`: the anchor while
+    /// it holds, else today.
+    func calendarStart(now: Date) -> Date {
+        CalendarWeek.start(anchor: calendarAnchor, setAt: calendarAnchorSetAt, count: calendarDays, now: now, calendar: settings.calendar)
+    }
+
     /// Moves the Calendar's range to one that shows `day`, unless it does already.
     func revealOnCalendar(_ day: Date, now: Date = .now) {
         let cal = settings.calendar
-        let shown = CalendarWeek.days(count: calendarDays, from: calendarAnchor ?? now, calendar: cal)
+        let shown = CalendarWeek.days(count: calendarDays, from: calendarStart(now: now), calendar: cal)
         guard !shown.contains(where: { cal.isDate($0, inSameDayAs: day) }) else { return }
         calendarAnchor = CalendarWeek.anchor(showing: day, count: calendarDays, now: now, calendar: cal)
     }
@@ -869,16 +875,39 @@ extension Workbench {
 
     private func place(_ task: Block, start: Date, end: Date, dayOffset: Int) {
         guard task.isTask, !task.isCompleted, end > start else { return }
+        let label = "Planned \(NXFormat.quoted(task.displayTitle)) · \(dayOffset == 0 ? "Today" : NXFormat.dueLabel(start)) \(NXFormat.clock(start))"
+        replacePlacements(of: task, with: [PlacementSpan(start: start, end: end, isPinned: true)], label: label,
+                          icon: "sparkles", showing: start)
+    }
+
+    /// The Work panel's Move planned time…: the block's slot, as long as it
+    /// was, at `start`, one step with the tray and Undo as Plan's is. The
+    /// occurrence's other slots stay where they are.
+    func movePlacement(_ block: PlannedBlock, to start: Date) {
+        guard let placementID = block.placementID, !block.isActive, let task = store.block(id: block.taskID),
+              task.isTask, !task.isCompleted, task.occurrenceID == block.occurrenceID else { return }
+        let placements = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+        guard let moved = placements.first(where: { $0.id == placementID }), moved.start != start else { return }
+        let end = start.addingTimeInterval(moved.end.timeIntervalSince(moved.start))
+        let spans = placements.map { placement in
+            placement.id == placementID ? PlacementSpan(start: start, end: end, isPinned: true)
+                : PlacementSpan(start: placement.start, end: placement.end, isPinned: placement.isPinned)
+        }
+        let label = "Moved \(NXFormat.quoted(task.displayTitle)) · \(NXFormat.dueLabel(start)) \(NXFormat.clock(start))"
+        replacePlacements(of: task, with: spans, label: label, icon: "calendar", showing: start)
+    }
+
+    /// Puts the occurrence's placements at `spans` as one step, announced as
+    /// `label` with Show off the Calendar, whose range moves to `start`.
+    private func replacePlacements(of task: Block, with spans: [PlacementSpan], label: String, icon: String, showing start: Date) {
         let id = task.id
         let occurrenceID = task.occurrenceID
         let fields = [TaskFields(task)]
         let previous = store.placements(taskID: id).filter { $0.occurrenceID == occurrenceID }
             .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
-        let planned = [PlacementSpan(start: start, end: end, isPinned: true)]
-        setPlacements(of: id, occurrenceID: occurrenceID, to: planned)
+        setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
         // Planning also selects the task for its day when no day is; Undo puts back only what it changed.
         let placed = store.block(id: id).map { [TaskFields($0)] } ?? fields
-        let label = "Planned \(NXFormat.quoted(task.displayTitle)) · \(dayOffset == 0 ? "Today" : NXFormat.dueLabel(start)) \(NXFormat.clock(start))"
         // Both directions rebuild the occurrence's whole placement set, so any
         // number of Undo and Redo steps leaves exactly one set.
         registerUndo(label, undo: { workbench in
@@ -886,16 +915,48 @@ extension Workbench {
             workbench.restore(fields, over: placed)
             workbench.calendar.replan()
         }, redo: { workbench in
-            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: planned)
+            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
             workbench.calendar.replan()
         })
-        snap(label, icon: "sparkles", tone: .accent, ids: [id],
+        snap(label, icon: icon, tone: .accent, ids: [id],
              destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
         // A block past the days the Calendar shows, next week or after a
         // deferral, moves its range there, so the block is never out of sight.
         revealOnCalendar(start)
         flashBlock(id)
         calendar.replan()
+    }
+
+    /// The inspector's Defer work: the task's remaining work waits for `day`
+    /// and its slots come off the calendar, one step with the tray and Undo.
+    /// Undo puts the slots and the task's day back; work it paused stays paused.
+    func deferWork(_ id: UUID, to day: Date) {
+        guard let task = store.block(id: id), task.isTask, !task.isCompleted else { return }
+        let occurrenceID = task.occurrenceID
+        let fields = [TaskFields(task)]
+        let previous = store.placements(taskID: id).filter { $0.occurrenceID == occurrenceID }
+            .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+        calendar.deferTask(task: task, to: day)
+        guard let deferred = store.block(id: id), deferred.deferredUntil != nil else { return }
+        let after = [TaskFields(deferred)]
+        let label = "Deferred \(NXFormat.quoted(task.displayTitle)) until \(NXFormat.dueLabel(day))"
+        registerUndo(label, undo: { workbench in
+            workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: previous)
+            workbench.restore(fields, over: after)
+            workbench.calendar.replan()
+        }, redo: { workbench in
+            guard let task = workbench.store.block(id: id), task.occurrenceID == occurrenceID else { return }
+            workbench.calendar.deferTask(task: task, to: day)
+        })
+        snap(label, icon: "arrow.uturn.forward", tone: .accent, ids: [id])
+    }
+
+    /// The inspector's Clear on "Deferred until …", with the tray and Undo.
+    func clearDeferral(_ id: UUID) {
+        guard let task = store.block(id: id), task.deferredUntil != nil else { return }
+        edit([task], label: "Cleared deferral on \(describe([task]))", icon: "arrow.uturn.forward", tone: .accent) { task in
+            store.deselectForToday(task)
+        }
     }
 
     /// Replaces the occurrence's placements with `spans`, in one save.
@@ -1177,11 +1238,11 @@ extension Workbench {
     }
 
     /// What running work ran into, for the working block's "runs into". As in
-    /// the design, a meeting is named bare.
+    /// the design, a meeting is named bare, and so is the midday break, Lunch.
     func conflictName(_ conflict: CalendarWorkConflict, inSentence: Bool = false) -> String {
         switch conflict.kind {
         case .event: conflict.title.isEmpty ? (inSentence ? "busy time" : "Busy time") : conflict.title
-        case .breakTime: inSentence ? "a break" : "Break"
+        case .breakTime: conflict.title.isEmpty ? (inSentence ? "a break" : "Break") : conflict.title
         }
     }
 }

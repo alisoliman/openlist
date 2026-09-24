@@ -1,12 +1,14 @@
 import SwiftUI
 
+/// The Work panel's Move planned time…: the block's slot at another time,
+/// saved as Plan saves one, with the tray and Undo.
 struct WorkMovePicker: View {
     let block: PlannedBlock
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.dismiss) private var dismiss
     @State private var date = Date.now
-    @State private var changes: [WorkPlanChange] = []
+    @State private var overlaps: [WorkMoveOverlap] = []
     @State private var feedback: String?
     /// A start time still being typed as Custom…, which Move sets first.
     @State private var typedTime: NXPendingCustomValue?
@@ -38,11 +40,12 @@ struct WorkMovePicker: View {
                     }
                 }
             }
-            Text("This changes your preferred work time, not your deadline.")
+            Text("The block moves on your calendar, as long as it is. The due date stays the same.")
                 .font(.system(size: 12)).foregroundStyle(NX.ink(0.5))
-            if !changes.isEmpty {
-                Text("Other planned work would move:").font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.72))
-                ScrollView { WorkPlanChangesView(changes: changes) }
+                .fixedSize(horizontal: false, vertical: true)
+            if !overlaps.isEmpty {
+                Text("It would overlap:").font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.72))
+                ScrollView { WorkMoveOverlapsView(overlaps: overlaps) }
                     .frame(maxHeight: 200)
             }
             if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(NX.ink(0.72)) }
@@ -50,7 +53,7 @@ struct WorkMovePicker: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
-                Button(changes.isEmpty ? "Move" : "Move and update plan", action: confirm)
+                Button(overlaps.isEmpty ? "Move" : "Move anyway", action: confirm)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(NXPanelButtonStyle(kind: .primary))
             }
@@ -62,7 +65,7 @@ struct WorkMovePicker: View {
         .onChange(of: date) { _, _ in refresh() }
         .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
     }
-    private func refresh() { changes = env.calendar.previewMove(block, to: date); feedback = nil }
+    private func refresh() { overlaps = env.calendar.moveOverlaps(block, to: date); feedback = nil }
     private func confirm() {
         // Return in the time field, or a click here while typing, moves the
         // work to the time typed, not the one before it.
@@ -70,9 +73,9 @@ struct WorkMovePicker: View {
             guard typedTime.commit() else { NSSound.beep(); return }
             self.typedTime = nil
         }
-        let current = env.calendar.previewMove(block, to: date)
-        guard current == changes else { changes = current; feedback = "The plan changed. Review these times before moving."; return }
-        env.calendar.move(block: block, to: date)
+        let current = env.calendar.moveOverlaps(block, to: date)
+        guard current == overlaps else { overlaps = current; feedback = "The calendar changed. Review what this time overlaps before moving."; return }
+        env.workbench.movePlacement(block, to: date)
         if env.store.persistenceError == nil { dismiss() }
         else { feedback = env.store.persistenceError }
     }

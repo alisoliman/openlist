@@ -37,6 +37,29 @@ enum CalendarWeek {
         return current.contains { calendar.isDate($0, inSameDayAs: day) } ? nil : calendar.startOfDay(for: day)
     }
 
+    /// The day the Calendar builds its range from: `anchor`, the day stepped
+    /// to or planned on, else today. An anchor set on an earlier day lapses
+    /// once today reaches the range it shows, or has passed it, so the
+    /// Calendar follows today again rather than staying on a day gone by.
+    static func start(anchor: Date?, setAt: Date, count: Int, now: Date, calendar: Calendar) -> Date {
+        guard let anchor else { return now }
+        let today = calendar.startOfDay(for: now)
+        guard calendar.startOfDay(for: setAt) < today,
+              let first = days(count: count, from: anchor, calendar: calendar).first, first <= today else { return anchor }
+        return now
+    }
+
+    /// Whether a task due at `due` is due soon for "Not planned yet": from a
+    /// week back to the end of the week around today, which the Week view
+    /// shows and Plan searches, or four days out when that's later. In the
+    /// design, whose today is a Wednesday, both end on its Sunday.
+    static func isDueSoon(_ due: Date, now: Date, calendar: Calendar) -> Bool {
+        let today = calendar.startOfDay(for: now)
+        guard let from = calendar.date(byAdding: .day, value: -7, to: today),
+              let soon = calendar.date(byAdding: .day, value: 5, to: today) else { return false }
+        return due >= from && due < max(span(from: now, calendar: calendar).end, soon)
+    }
+
     /// Where Plan puts a task of `duration`: the first free quarter hour in
     /// its list's hours, clear of `busy`, from now or its deferral. As the
     /// design's Plan, it looks no further than the week around today while
