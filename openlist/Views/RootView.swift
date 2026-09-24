@@ -78,6 +78,10 @@ struct RootView: View {
             env.isMainWindowKey = false
             env.reminderNavigation.windowReady(false)
             env.localLinks.windowReady(false)
+            // The Work panel goes with the window, and so does a Show Work
+            // asked for while it was open.
+            env.calendar.isWorkPanelPresented = false
+            env.showsWorkPanelOnOpen = false
         }
         .onChange(of: env.navigator.route) { _, route in
             focusClearedFor = nil

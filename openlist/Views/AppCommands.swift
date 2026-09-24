@@ -22,7 +22,8 @@ struct AppCommands: Commands {
         let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
 
         CommandMenu("Work") {
-            Button("Show Work") { inMainWindow { env.calendar.showWork() } }
+            // With the window closed, its toolbar shows the panel once it's up.
+            Button("Show Work") { inMainWindow { env.calendar.showWork(); env.showsWorkPanelOnOpen = true } }
             // As Task ▸ Start Working, the palette's and the row menu's: the
             // notch shows the work, and a failure the tray.
             Button("Start Selected Task") { act { env.workbench.startWork($0[0]) } }

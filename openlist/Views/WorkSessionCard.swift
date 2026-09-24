@@ -156,13 +156,19 @@ struct WorkSessionCard: View {
 
     private func minutes(_ value: Double) -> String { "\(value.formatted(.number.precision(.fractionLength(0)))) min" }
 
-    /// Why the work paused, in a sentence: plain for a Pause, else what paused it.
+    /// Why the work paused, in a sentence: plain for a Pause, and for work a
+    /// completion's Undo, or its cancelled dwell, gives back paused; else what
+    /// paused it.
     private static func pausedDetail(_ reason: String?) -> String {
         let why: String = switch reason {
-        case nil, "Paused": "Paused."
+        case nil, "Paused", "Completed": "Paused."
         case "Switched task": "Paused when you switched tasks."
+        case "Stopped working": "Paused when you stopped working."
+        case "Mac slept": "Paused while the Mac was asleep."
+        case "Screen slept": "Paused while the screen was asleep."
+        case "Mac locked": "Paused while the Mac was locked."
         case "Mac was unavailable": "Paused while the Mac was away."
-        case "Openlist closed", "Openlist restarted": "Paused when Openlist closed."
+        case "Openlist closed", "Openlist restarted", "Recovered before starting": "Paused when Openlist closed."
         case "Deferred": "Paused when the task was deferred."
         case "List unavailable": "Paused while its list was unavailable."
         case let reason? where reason.hasPrefix("Library restored"): "Paused when the library was restored."

@@ -69,7 +69,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
   bars and the overlay cards in rather than sliding them, as its hint says, where the design
-  only shortens the slides.
+  shortens the inspector's slide and plays the others' unchanged. Each fade takes as long as
+  that slide.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
 - Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking

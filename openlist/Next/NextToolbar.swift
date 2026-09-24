@@ -112,11 +112,15 @@ struct NextToolbar: View {
             WorkPopover().environment(env).environment(\.nextStyle, style)
         }
         // Asked for as the window opened, as Work ▸ Show Work does with it
-        // closed, the panel shows once the bar it hangs from is up.
+        // closed, the panel shows once the bar it hangs from is up. Any other
+        // ask with no window to show it in, as a notification's Start makes,
+        // has lapsed: the window doesn't open onto it hours later.
         .onAppear {
+            let asked = env.showsWorkPanelOnOpen
+            env.showsWorkPanelOnOpen = false
             guard calendar.isWorkPanelPresented else { return }
             calendar.isWorkPanelPresented = false
-            DispatchQueue.main.async { calendar.isWorkPanelPresented = true }
+            if asked { DispatchQueue.main.async { calendar.isWorkPanelPresented = true } }
         }
         .onChange(of: recordingAnnouncement) { _, announcement in
             guard let announcement else { return }
