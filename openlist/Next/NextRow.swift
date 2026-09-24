@@ -206,8 +206,8 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
 }
 
 extension NXTaskRowChrome where Buttons == EmptyView {
-    init(task: Block, options: NXRowOptions = NXRowOptions(), indent: CGFloat = 0, @ViewBuilder title: @escaping () -> Title) {
-        self.init(task: task, options: options, indent: indent, title: title) { EmptyView() }
+    init(task: Block, options: NXRowOptions = NXRowOptions(), @ViewBuilder title: @escaping () -> Title) {
+        self.init(task: task, options: options, title: title) { EmptyView() }
     }
 }
 

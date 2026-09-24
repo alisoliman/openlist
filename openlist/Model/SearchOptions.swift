@@ -1,17 +1,8 @@
 import Foundation
 
 nonisolated struct SearchOptions: Equatable, Sendable {
-    enum Scope: String, CaseIterable, Identifiable, Sendable {
+    enum Scope: String, Sendable {
         case everything, tasks, notes, lists
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .everything: "All"
-            case .tasks: "Tasks"
-            case .notes: "Notes"
-            case .lists: "Lists"
-            }
-        }
     }
 
     var query = ""
