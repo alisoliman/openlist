@@ -186,6 +186,10 @@ check(coordinator.signature == BlockTextView.ContentSignature(attributedText: ty
 check(BlockNSTextView.linkURL(from: " example.com\n") == URL(string: "https://example.com")
     && BlockNSTextView.linkURL(from: "http://example.com") == URL(string: "http://example.com")
     && BlockNSTextView.linkURL(from: "  ") == nil, "A typed link is trimmed, with https:// when it names no scheme")
+check(BlockNSTextView.linkURL(from: "https://") == nil && BlockNSTextView.linkURL(from: " http:// ") == nil
+    && BlockNSTextView.linkURL(from: "https:///path") == nil
+    && BlockNSTextView.linkURL(from: "openlist://item/x") == URL(string: "openlist://item/x"),
+      "Add Link's prefilled https:// alone, or any web address with no host, applies nothing")
 var linkPrompt: LinkPrompt?
 native.setSelectedRange(NSRange(location: 0, length: 6))
 BlockNSTextView.linkPrompter = { linkPrompt = $0 }

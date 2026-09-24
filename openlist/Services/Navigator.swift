@@ -171,13 +171,18 @@ final class Navigator {
         // Revealing a target is an editing action, including in the same list.
         clearSelection()
         go(to: route(showing: request.listID))
-        // Exact-content navigation must reveal notes and collapsed hierarchy,
+        // Exact-content navigation must reveal prose and collapsed hierarchy,
         // including when this list was last viewed as a task-only queue. The
         // document is for this visit: the list's saved presentation stays.
-        // The Inbox shows as this Mac shows it for a task, which opens in the
-        // inspector, or for the Inbox itself; only a line needs its document.
+        // A task, which opens in the inspector, and a list itself land on the
+        // list as this Mac shows it, as a search hit does; only a line, its
+        // note or a list's description needs the document. The Inbox's
+        // document draws no description, so only a line opens it. A document
+        // this visit already opened stays, as a search hit leaves it; a new
+        // route has ended it already.
         let revealsLine = request.blockID != nil && request.taskID == nil
-        revealedDocumentListID = request.listID != inboxListID || revealsLine ? request.listID : nil
+        let revealsSummary = request.listID != inboxListID && request.revealsSummary(for: request.listID)
+        if revealsLine || revealsSummary { revealedDocumentListID = request.listID }
         openTaskID = request.taskID
         // Only a line is selected; a task lands on the workbench's focus, as
         // a search hit does, so the targets follow the focus from there.

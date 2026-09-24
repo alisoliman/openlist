@@ -23,7 +23,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   its Defer work and the Clear on its deferral (a deferral's Undo puts back the calendar
   slots it took), and the Work panel's Move planned time… (a placement like Plan's, with
   Show off the Calendar), all with tray; and the inspector's title and note and a list's
-  title and description (edits: logged, no tray).
+  title and description (edits: logged, no tray). Move leaves a task already in the list
+  where it is, as the design's move only sets the list (natively a move lands at the end of
+  the list's top level); deviation: moved nowhere, its tray shows with no Undo and no log,
+  and partly moved, its tray names every task, as the design's does, but only the tasks
+  that moved log it.
 - Completion dwell defers the real `store.toggleCompletion` until dwell+300ms; Undo during
   dwell cancels. Pending closings flush on termination.
 - `NextKeyMonitor` — NSEvent local monitor implementing the global key model when not typing.
@@ -46,7 +50,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Complete run `workbench.startWork`, `stopWork`, `toggleWorkPause` and `finishWork`, as
   Task ▸ Start Working and the notch's buttons do. Items that show something in the main
   window (Show Work, New Task…, New List, New Section, Search, Actions…, the View screens,
-  Keyboard Shortcuts, Settings…) open it first when it was closed. Format ▸'s inline styles
+  Back, Forward, Hide Sidebar, Keyboard Shortcuts, Settings…) open it first when it was
+  closed; Export List as Markdown…, Format ▸ Indent, Outdent, Move Up and Move Down, and
+  View ▸ Expand All and Collapse All are on only while it is key. Format ▸'s inline styles
   are on only while a line in the main window has text selected, and Task ▸ Open Details
   (⌘↩) is off while a note is being written, where ⌘↩ finishes the note as the design's
   does. View ▸ Collapse All folds only what the
@@ -147,11 +153,16 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Set reminder sets: Done keeps the reminder there was, over a day or time picked there, or
   still being typed. The label picker (⇧⌘L) lists the name typed first, then labels starting
   with it, and Create last, only for a name no label has; Return picks the highlighted row,
-  the best match, which ↑/↓ and the pointer move.
+  the best match, which ↑/↓ and the pointer move. Move List…'s parent search does the same:
+  typing chooses the first match and ↑/↓ step through the rows, so Return moves under one
+  on show.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists and the
-  Inbox, which drag on a private type of their own that no line takes), and search
+  Inbox, which drag on a private type of their own that no line takes, and move any line
+  there, a heading or text too, with the move's tray and Undo; a screen row, like a grip,
+  drags the rows selected with it, and rows all in that list already are refused, as is any
+  line but a task on the Inbox while it shows as triage, which draws only tasks), and search
   reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
   puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
   says "Copied “List” as Markdown" in the tray, as Export says "Exported “List” as Markdown"

@@ -51,7 +51,10 @@ struct WorkMovePicker: View {
             if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(NX.ink(0.72)) }
             HStack(spacing: 8) {
                 Spacer()
+                // Esc while a custom start time is typed puts the pill back,
+                // as the field's own Escape does, and leaves the sheet open.
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(typedTime == nil ? .cancelAction : nil)
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 Button(overlaps.isEmpty ? "Move" : "Move anyway", action: confirm)
                     .keyboardShortcut(.defaultAction)

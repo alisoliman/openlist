@@ -10,7 +10,8 @@ While rows are selected, the selection bar at the bottom of the window offers
 **Done** (E), **Today** (T), **Tomorrow** (M), **Plan** (P), **Star** (F) and
 **Trash** (D). Each acts on the whole selection as one change, reported in the
 tray with Undo. A row drags onto a list in the sidebar, or onto a line of a list
-document, to move there.
+document, to move there; a selected row takes the rows selected alongside it, in
+screen order.
 
 In a list document the line being written is the document's own selection,
 scoped to that document, which its menu commands act on. A line's grip drags it

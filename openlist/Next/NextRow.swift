@@ -222,6 +222,8 @@ extension NXTaskRowChrome where Buttons == EmptyView {
 
 /// Drags a whole row to a list in the sidebar, or to a line of the list
 /// document, in this library's own payload: never text a line could take in.
+/// A selected row takes the rows selected alongside it, in screen order, as
+/// a line's grip does and as every other action acts on the selection.
 private struct NXRowDrag: ViewModifier {
     @Environment(AppEnvironment.self) private var env
     let id: UUID
@@ -229,10 +231,17 @@ private struct NXRowDrag: ViewModifier {
 
     func body(content: Content) -> some View {
         if isEnabled {
-            content.onDrag { NXBlockDrag.provider(for: [id], session: env.navigator.blockDragSessionID) }
+            content.onDrag { NXBlockDrag.provider(for: draggedIDs, session: env.navigator.blockDragSessionID) }
         } else {
             content
         }
+    }
+
+    private var draggedIDs: [UUID] {
+        let workbench = env.workbench
+        guard workbench.selection.contains(id) else { return [id] }
+        let selected = workbench.selectedVisibleIDs
+        return selected.contains(id) ? selected : [id]
     }
 }
 

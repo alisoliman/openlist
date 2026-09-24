@@ -115,7 +115,7 @@ struct NextSettingsScreen: View {
                 NXSettingsGroup(title: "General") {
                     NXSettingToggle(label: "Show in the menu bar", hint: "Capture a task and see what’s due from the menu bar",
                                     isOn: $settings.showsMenuBarExtra)
-                    NXSettingToggle(label: "Dock badge", hint: "Shows the unfinished count on the Dock icon",
+                    NXSettingToggle(label: "Dock badge", hint: "Shows Today’s count on the Dock icon",
                                     isOn: $settings.showsDockBadge)
                     NXSettingToggle(label: "Confirm before deleting a list", hint: "Asks before a list and everything in it is deleted",
                                     isOn: $settings.confirmsBeforeDeletingLists)

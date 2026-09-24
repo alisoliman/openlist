@@ -325,8 +325,10 @@ and ⌘N on a list start capture in that list and place the new task at the end 
 its document, then show it at its sorted position. You can choose another
 destination in capture. Turning Tasks Only off restores the original prose and
 hierarchy; the sort orders only adjacent root tasks, carrying each subtree, and
-neither presentation rewrites stored order. Search and reminder links to exact
-content show the document for that visit so hidden prose can be revealed.
+neither presentation rewrites stored order. A search hit or link on a line, a
+line's note or the list's description shows the document for that visit so
+hidden prose can be revealed; one on a task or the list itself keeps the list
+as it is shown.
 
 The [list Tasks guide](docs/LIST_TASKS.md) covers the presentation and its checks.
 
@@ -359,8 +361,8 @@ schedules, plans, stars or trashes them together; a task's round checkbox still
 means completion. See [row selection](docs/BLOCK_SELECTION.md).
 
 Search (⌘F) finds tasks, notes, headings and lists, archived content included,
-and lists the first 30 results with an honest total; keep typing to narrow the
-rest. **Include completed** adds finished tasks. Matching ignores case, accents
+and lists the first 12 results, as the design does; keep typing to narrow them.
+**Include completed** adds finished tasks. Matching ignores case, accents
 and character width, and results include their list, ancestor path and a
 matching passage when needed.
 

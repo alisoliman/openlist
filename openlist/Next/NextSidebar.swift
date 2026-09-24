@@ -356,7 +356,7 @@ struct NextSidebar: View {
 
     // MARK: Drag and drop
 
-    /// Tasks dropped on a list move into it. A list dropped on a top-level
+    /// Rows dropped on a list move into it. A list dropped on a top-level
     /// list moves above it, in its section.
     private func drop(_ items: [String], on list: TaskList, nested: Bool) -> Bool {
         if items.contains(where: { DragPayload.list.decode($0) != nil }) {
@@ -369,15 +369,23 @@ struct NextSidebar: View {
     }
 
     /// Rows move only in this library's session payload. A bare row ID,
-    /// from another app or library, is not one.
+    /// from another app or library, is not one. Any line a document's grip
+    /// drags moves, a heading or text too. Rows already all in the list are
+    /// refused, as they'd go nowhere, and so is any line but a task on the
+    /// Inbox while it shows as triage, which draws only tasks.
     private func dropRows(_ items: [String], on listID: UUID) -> Bool {
         let session = env.navigator.blockDragSessionID
         let ids = items.flatMap { item -> [UUID] in
             guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session) else { return [] }
             return ids
         }
-        guard !ids.isEmpty else { return false }
-        workbench.move(ids, to: listID)
+        guard ids.contains(where: { env.store.block(id: $0).map { $0.listID != listID } ?? false }) else { return false }
+        if listID == library.inbox?.id, env.navigator.listViewMode(for: listID) != .document,
+           ids.contains(where: { env.store.block(id: $0).map { !$0.isTask } ?? false }) {
+            env.store.refuse("Only tasks go to the Inbox while it shows as triage.")
+            return false
+        }
+        workbench.move(ids, to: listID, lines: true)
         return true
     }
 

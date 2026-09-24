@@ -26,6 +26,16 @@ struct CalendarHistoryView: View {
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(NXPanelButtonStyle(kind: .primary))
+                    // Esc closes it too, as it does every Next sheet, while
+                    // Done keeps Return.
+                    .background {
+                        Button("Close") { dismiss() }
+                            .keyboardShortcut(.cancelAction)
+                            .opacity(0)
+                            .frame(width: 0, height: 0)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
             }
             NXSegmented(options: [(0, "Work sessions"), (1, "Completions")], selection: tab) { tab = $0 }
                 .accessibilityRepresentation {

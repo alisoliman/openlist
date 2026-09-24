@@ -938,12 +938,15 @@ final class BlockNSTextView: NSTextView {
     }
 
     /// The URL typed for a link, trimmed, with `https://` in front when it
-    /// names no scheme. `nil` for an empty entry or one that isn't a URL.
+    /// names no scheme. `nil` for an empty entry, one that isn't a URL, or a
+    /// web address with no host, as the sheet's "https://" alone is.
     static func linkURL(from entry: String) -> URL? {
         var text = entry.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if !text.contains("://") { text = "https://" + text }
-        return URL(string: text)
+        guard let url = URL(string: text) else { return nil }
+        if ["http", "https"].contains(url.scheme?.lowercased()), url.host()?.isEmpty != false { return nil }
+        return url
     }
 
     /// Whether a sheet is over this line's window, as Add Link…'s is. The
@@ -970,6 +973,9 @@ final class BlockNSTextView: NSTextView {
         invalidateIntrinsicContentSize()
     }
 
+    /// The Format styles in a writing line's right-click menu, which act on
+    /// its selection: only while it has one, and not under a sheet. The menu
+    /// bar's Format items take their state from `InlineFormatting` instead.
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(toggleBold(_:)),

@@ -264,4 +264,37 @@ check(revealing.route == .list(otherList.id) && revealing.listViewMode(for: othe
       && revealing.shows(otherList.id) && !revealing.shows(revealInbox.id),
       "Any other list's content reveals on its own page")
 
+// A task or a list lands on a list kept on Tasks as this Mac shows it, from
+// a reminder, a link or search alike; only prose opens the document.
+let otherTask = Block(kind: .task, text: "Call back", listID: otherList.id)
+otherList.summary = "Weekly calls"
+let otherBlocks = [otherLine, otherTask]
+revealing.go(to: .today)
+revealing.reveal(try ContentReveal.resolve(.block(otherTask.id), blocks: otherBlocks, lists: [otherList]))
+check(revealing.route == .list(otherList.id) && revealing.listViewMode(for: otherList.id) == .tasks
+      && revealing.openTaskID == otherTask.id,
+      "A task reveal keeps its list's Tasks presentation and opens the task in the inspector")
+revealing.go(to: .today)
+revealing.reveal(try ContentReveal.resolve(.list(otherList.id), blocks: otherBlocks, lists: [otherList]))
+check(revealing.route == .list(otherList.id) && revealing.listViewMode(for: otherList.id) == .tasks,
+      "A list link keeps the list's Tasks presentation")
+revealing.go(to: .today)
+revealing.reveal(try ContentReveal.resolve(.list(otherList.id), field: .summary, query: "weekly",
+                                           blocks: otherBlocks, lists: [otherList]))
+check(revealing.listViewMode(for: otherList.id) == .document,
+      "A hit in a list's description opens its document for the visit")
+revealing.reveal(try ContentReveal.resolve(.block(otherTask.id), blocks: otherBlocks, lists: [otherList]))
+check(revealing.listViewMode(for: otherList.id) == .document && revealing.openTaskID == otherTask.id,
+      "A task reveal in the same visit keeps the document a line or description opened, as a search hit does")
+revealing.go(to: .today)
+check(revealing.listViewMode(for: otherList.id) == .tasks, "Leaving the list ends the visit's document")
+revealing.go(to: .today)
+revealing.reveal(lineReveal)
+revealing.reveal(taskReveal)
+check(revealing.route == .inbox && revealing.listViewMode(for: revealInbox.id) == .document
+      && revealing.openTaskID == inboxTask.id,
+      "An Inbox task reveal keeps the Inbox document a line reveal opened for the visit")
+revealing.go(to: .today)
+check(revealing.listViewMode(for: revealInbox.id) == .tasks, "Leaving the Inbox ends the visit's document")
+
 print("\(checks) Inbox navigation checks passed")
