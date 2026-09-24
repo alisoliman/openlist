@@ -98,10 +98,8 @@ struct TaskReminderStatus: View {
                     ReminderRecoveryActions(taskID: block.id, status: status)
                 }
             }
-            .font(.system(size: 11, weight: .semibold))
-            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                            padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                            foreground: NX.ink(0.6), hoverForeground: NX.ink))
+            // The inspector's quiet text buttons.
+            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
             .padding(.leading, -5)
         }
         .fixedSize(horizontal: false, vertical: true)

@@ -11,7 +11,6 @@ enum AdaptiveScheduler {
     /// What a planned slot left unworked adds to its task's assessment, as the
     /// calendar draws it: carried forward, until Plan finds it a new slot.
     static let missedPlacementConflict = "Planned time was missed and is carried forward."
-    static let missedPlacementReason = " Planned time was missed; ⌘K › Find a slot plans it again."
 
     static func plan(
         tasks: [ScheduleTask], preferences: CalendarPreferences,
@@ -202,7 +201,7 @@ enum AdaptiveScheduler {
             }
             let required = requiredMinutes(task)
             let status: TaskScheduleStatus
-            var reason: String
+            let reason: String
             if !isCandidate {
                 status = .outsidePlanningHorizon
                 reason = "Deadline is beyond the rolling four-week plan. Select for today to schedule sooner."
@@ -227,7 +226,6 @@ enum AdaptiveScheduler {
                 $0.isPinned && $0.taskID == task.taskID && $0.occurrenceID == task.occurrenceID && $0.end <= now && $0.end > $0.start
             }
             let conflicts = Array(Set(taskBlocks.flatMap(\.conflicts) + outsidePinConflicts[task.occurrenceID, default: []] + (missedPins.isEmpty ? [] : [missedPlacementConflict]))).sorted()
-            if !missedPins.isEmpty { reason += missedPlacementReason }
             assessments.append(TaskScheduleAssessment(taskID: task.taskID, occurrenceID: task.occurrenceID,
                 status: status, requiredMinutes: required, scheduledMinutes: scheduled,
                 beforeDeadlineMinutes: beforeDeadline, reason: reason, conflicts: conflicts))

@@ -280,23 +280,27 @@ struct NextInspector: View {
 
     private var titleRow: some View {
         let closing = workbench.closing[task.id]
+        // The design's 600 18/1.3: the extra leading goes between lines and,
+        // halved, above the first and below the last, as CSS places it.
+        let leading = 18 * 1.3 - NXStrikeText.glyphLineHeight(18)
         return HStack(alignment: .top, spacing: 10) {
+            // As the design's, it only fills: the list row keeps the pop.
             NXCheckbox(filled: task.isCompleted || closing != nil, closing: closing, priority: task.priority,
-                       title: task.displayTitle, size: 18) {
+                       title: task.displayTitle, size: 18, pops: false) {
                 workbench.toggle(task.id)
             }
             .padding(.top, 3)
             TextField("Task", text: $title.value, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 18, weight: .semibold))
-                // The design's 1.3 line height, over the system font's own.
-                .lineSpacing(2)
+                .lineSpacing(leading)
                 .foregroundStyle(task.isCompleted ? NX.ink(0.45) : NX.ink)
                 .strikethrough(task.isCompleted, color: NX.ink(0.45))
                 .focused($focus, equals: .title)
                 .onSubmit { focus = nil }
                 // Esc saves and stops editing; the next Esc closes the panel.
                 .onExitCommand { focus = nil }
+                .padding(.vertical, leading / 2)
         }
     }
 
@@ -506,6 +510,8 @@ struct NextInspector: View {
     private var planCard: some View {
         let planned = workbench.isPlanned(task)
         let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
+        // The slot line's 500 11/1.4.
+        let slotLeading = 11 * 1.4 - NXStrikeText.glyphLineHeight(11)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 // The switch speaks for the row.
@@ -539,8 +545,10 @@ struct NextInspector: View {
             .padding(.top, 11)
             Text(slotText)
                 .font(.system(size: 11, weight: .medium))
+                .lineSpacing(slotLeading)
                 .foregroundStyle(NX.ink(0.45))
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, slotLeading / 2)
                 .padding(.top, 9)
             // Its popover, sheet and expansion belong to one task.
             NXInspectorPlanOptions(task: task)
@@ -577,11 +585,13 @@ struct NextInspector: View {
     }
 
     private var noteBox: some View {
-        TextField("Add a note", text: $note.value, axis: .vertical)
+        // The design's 400 13/1.55: the extra leading goes between lines and,
+        // halved, inside the 10pt padding.
+        let leading = 13 * 1.55 - NXStrikeText.glyphLineHeight(13)
+        return TextField("Add a note…", text: $note.value, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 13))
-            // The design's 1.55 line height, over the system font's own.
-            .lineSpacing(4.5)
+            .lineSpacing(leading)
             .foregroundStyle(NX.ink(0.7))
             .focused($focus, equals: .note)
             .onExitCommand { focus = nil }
@@ -589,7 +599,7 @@ struct NextInspector: View {
                 // Opened by "Add a note": once the field is on screen, or the focus can miss it.
                 if addingNote { DispatchQueue.main.async { focus = .note } }
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, 10 + leading / 2)
             .padding(.horizontal, 12)
             .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
@@ -599,11 +609,7 @@ struct NextInspector: View {
         // Newest first, like the log, with the capture always last.
         let entries = workbench.entries(for: task.id)
         return VStack(alignment: .leading, spacing: 0) {
-            Text("Activity")
-                .font(.system(size: 10.5, weight: .semibold))
-                .kerning(0.74)
-                .textCase(.uppercase)
-                .foregroundStyle(NX.ink(0.36))
+            NXInspectorHeading(title: "Activity") { EmptyView() }
                 .padding(.bottom, 8)
             ForEach(entries) { entry in
                 activityRow(icon: entry.icon, text: entry.label, date: entry.at)
@@ -618,9 +624,13 @@ struct NextInspector: View {
     }
 
     private func activityRow(icon: String, text: String, date: Date) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 9) {
+        // 400 12/1.4, which sets the row's height, as in the design.
+        let leading = 12 * 1.4 - NXStrikeText.glyphLineHeight(12)
+        return HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: icon).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
-            Text(text).font(.system(size: 12)).foregroundStyle(NX.ink(0.66)).frame(maxWidth: .infinity, alignment: .leading)
+            Text(text).font(.system(size: 12)).lineSpacing(leading).foregroundStyle(NX.ink(0.66))
+                .padding(.vertical, leading / 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
             // "just now" moves on while the panel stays open.
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(NXFormat.relative(date, now: context.date)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.36))
@@ -652,13 +662,13 @@ struct NextInspector: View {
 }
 
 /// The inspector's small toggle pills: accent when on, faint grey when off.
+/// As the design's, they have no hover; only choosing one changes its fill.
 struct NXInspectorPill<Label: View>: View {
     @Environment(\.nextStyle) private var style
     let isOn: Bool
     var padding = EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
     let action: () -> Void
     @ViewBuilder var label: () -> Label
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -667,12 +677,10 @@ struct NXInspectorPill<Label: View>: View {
                 .lineLimit(1)
                 .foregroundStyle(isOn ? .white : NX.ink(0.66))
                 .padding(padding)
-                .background(isOn ? style.accent : hovering ? NX.ink(0.09) : NX.ink(0.05),
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.14), value: isOn)
     }
 }

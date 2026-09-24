@@ -85,8 +85,8 @@ A slot that goes by without it stays where it was drawn, marked **carried
 forward**, and nothing else on the calendar moves; the task is listed under **Not
 planned yet** again once that week is over. Missed time is never logged as work.
 The rolling plan moves only the missed task’s remaining work into its next free
-gap, for the Work panel’s suggestion, and any resulting deadline risk remains
-visible in coverage.
+gap, for the Work panel’s suggestion, and rates any resulting deadline risk only
+inside the planner (see [deadline coverage](#understand-deadline-coverage)).
 
 Recording continues past the estimate. A minute before the working block ends,
 it grows to the next quarter hour plus **15 minutes**, clipped to the next fixed
@@ -136,14 +136,13 @@ lists what the new time would overlap on the calendar (**Move anyway** keeps the
 overlap), and the move is pinned the same way, one change with Undo in the tray.
 None of these changes the task’s due date.
 
-Pinned conflicts are shown in deadline coverage. Pins can conflict
-with meetings, other pins, active work, availability, breaks, deadlines, or the
-**Keep task together** choice. A conflicting pin does not count as safe deadline
-coverage. A missed pin is reported and stays drawn as carried forward, and the task’s details show where the calendar
-has it, while the
-rolling plan replans the unfinished work; it is never retrospectively treated as
-an active session. Active sessions cannot be moved or
-pinned while running.
+Pins can conflict with meetings, other pins, active work, availability, breaks,
+deadlines, or the **Keep task together** choice. A conflicting pin does not count
+as safe deadline coverage, which the planner rates without showing. A missed pin
+stays on the calendar as **carried forward**, and the task’s details show where
+the calendar has it, while the rolling plan replans the unfinished work; it is
+never retrospectively treated as an active session. Active sessions cannot be
+moved or pinned while running.
 
 Pins beyond the four-week horizon remain fixed and are rated outside the
 plan. A pin crossing the horizon contributes only its in-horizon portion to

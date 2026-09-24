@@ -344,6 +344,10 @@ struct NXCheckbox: View {
     var title = ""
     var ringing = false
     var size: CGFloat = 16
+    /// The list row's pop: the box grows at the dwell's start and the tick
+    /// springs in. Without it, as the design's inspector boxes, only the fill
+    /// fades and the tick shows at once.
+    var pops = true
     var action: () -> Void
 
     var body: some View {
@@ -357,14 +361,14 @@ struct NXCheckbox: View {
                     .font(.system(size: size * 0.6, weight: .heavy))
                     .foregroundStyle(.white)
                     .opacity(filled ? 1 : 0)
-                    .scaleEffect(filled ? 1 : 0.3)
-                    .animation(style.spring(200), value: filled)
+                    .scaleEffect(filled || !pops ? 1 : 0.3)
+                    .animation(pops ? style.spring(200) : nil, value: filled)
                     .accessibilityHidden(true)
                 if ringing { NXRing(color: style.accent, size: size) }
             }
             .frame(width: size, height: size)
-            .scaleEffect(style.lively && closing == false ? 1.18 : 1)
-            .animation(style.spring(240), value: closing)
+            .scaleEffect(pops && style.lively && closing == false ? 1.18 : 1)
+            .animation(pops ? style.spring(240) : style.ease(200), value: closing)
             .animation(style.ease(200), value: filled)
             .contentShape(Rectangle().inset(by: -5))
         }
