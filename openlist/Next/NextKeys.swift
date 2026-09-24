@@ -365,9 +365,13 @@ final class NextKeyHandler {
             return true
         case Key.space:
             // Notes open in place, in the document's own rows. Elsewhere
-            // there's no note to show, and Space does nothing.
-            if let id = workbench.focusID, workbench.document?.shows(id) == true { workbench.toggleNote(id) }
-            return true
+            // there's no note to show, and Space does nothing, unless Full
+            // Keyboard Access has it press the control that has focus.
+            if let id = workbench.focusID, workbench.document?.shows(id) == true {
+                workbench.toggleNote(id)
+                return true
+            }
+            return !NSApp.isFullKeyboardAccessEnabled
         case Key.escape:
             if navigator.openTaskID != nil { navigator.closeTask() }
             else if !workbench.selection.isEmpty { workbench.clearSelection() }
