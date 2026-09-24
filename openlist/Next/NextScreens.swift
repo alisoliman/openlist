@@ -146,17 +146,22 @@ struct NextTodayScreen: View {
     }
 }
 
-/// The design's liftIn entrance: y 10, scale .985, fade.
+/// The design's liftIn entrance: y 10, scale .985, fade, at its own speed
+/// whatever the Motion setting: 320ms on the house ease for Today's and the
+/// Inbox's cards, or what the card's own liftIn takes.
 struct NXLiftIn: ViewModifier {
     @Environment(\.nextStyle) private var style
+    var animation: Animation = NX.ease(320)
     @State private var shown = false
 
     func body(content: Content) -> some View {
+        // With Reduce Motion it only fades, as the overlay cards do.
+        let risen = shown || !style.slides
         content
-            .offset(y: shown ? 0 : 10)
-            .scaleEffect(shown ? 1 : 0.985)
+            .offset(y: risen ? 0 : 10)
+            .scaleEffect(risen ? 1 : 0.985)
             .opacity(shown ? 1 : 0)
-            .onAppear { withAnimation(style.ease(320)) { shown = true } }
+            .onAppear { withAnimation(animation) { shown = true } }
     }
 }
 

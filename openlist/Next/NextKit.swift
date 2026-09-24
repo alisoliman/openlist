@@ -21,6 +21,9 @@ struct NXChipModel: Identifiable {
     var fill = false
     /// A list chip's list, whose glyph leads the label.
     var glyph: TaskList?
+    /// Plays chipIn with a fresh row, as most of the design's row chips do.
+    /// Its list and star chips arrive with the row and pop only when changed.
+    var popsWithRow = true
 }
 
 struct NXChip: View {
@@ -69,8 +72,9 @@ struct NXChip: View {
             $0.background(quiet ? Color.clear : bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .fixedSize()
-        .scaleEffect(appeared ? 1 : 0.85)
-        .offset(y: appeared ? 0 : 3)
+        // With Reduce Motion chipIn only fades, as the overlay cards do.
+        .scaleEffect(appeared || !style.slides ? 1 : 0.85)
+        .offset(y: appeared || !style.slides ? 0 : 3)
         .opacity(appeared ? 1 : 0)
         .onChange(of: fresh, initial: true) { _, isFresh in if isFresh, !quiet { pop() } }
     }
@@ -85,11 +89,11 @@ struct NXChip: View {
     }
 
     private func pop() {
-        guard style.lively else { appeared = true; return }
         withTransaction(\.disablesAnimations, true) { appeared = false }
         // Showing again on the next update keeps the two changes from
-        // merging into none, which would skip chipIn.
-        Task { @MainActor in withAnimation(style.ease(280)) { appeared = true } }
+        // merging into none, which would skip chipIn. It plays at the
+        // design's own speed whatever the Motion setting.
+        Task { @MainActor in withAnimation(NX.ease(280)) { appeared = true } }
     }
 
     private var colors: (Color, Color) {
@@ -125,28 +129,38 @@ struct NXKey: View {
 
 /// The design's 34×20 switch.
 struct NXToggle: View {
-    @Environment(\.nextStyle) private var style
     let isOn: Bool
     /// What VoiceOver announces; the visible label sits beside the switch.
     var label: String = ""
     var action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule().fill(isOn ? style.accent : NX.ink(0.16))
-                Circle().fill(.white)
-                    .frame(width: 16, height: 16)
-                    .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
-                    .padding(2)
-            }
-            .frame(width: 34, height: 20)
-            .animation(style.spring(200), value: isOn)
-        }
+        Button(action: action) { NXSwitch(isOn: isOn) }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
+    }
+}
+
+/// The switch itself, as the inspector's and Settings' draw it: the design's
+/// `background 180ms ease` on the track and 200ms spring on the knob, at
+/// those speeds whatever the Motion setting.
+struct NXSwitch: View {
+    @Environment(\.nextStyle) private var style
+    let isOn: Bool
+
+    var body: some View {
+        Capsule()
+            .animation(NX.cssEase(180)) { $0.foregroundStyle(isOn ? style.accent : NX.ink(0.16)) }
+            .frame(width: 34, height: 20)
+            .overlay(alignment: .leading) {
+                Circle().fill(.white)
+                    .frame(width: 16, height: 16)
+                    .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
+                    .offset(x: isOn ? 16 : 2)
+                    .animation(style.bounce(200), value: isOn)
+            }
     }
 }
 

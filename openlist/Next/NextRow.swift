@@ -100,7 +100,7 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         let fresh = workbench.fresh.contains(id)
         let entering = fresh && !entered && entrance != nil
         let restored = workbench.restored.contains(id)
-        let chipFresh = workbench.freshChip.contains(id) || fresh
+        let freshChip = workbench.freshChip.contains(id)
 
         HStack(alignment: .top, spacing: 0) {
             if indent > 0 {
@@ -127,7 +127,8 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
             // where the design would squeeze it to nothing.
             NXChipFlow(spacing: 6, titleRoom: min(96, NXStrikeText.lineWidth(task.displayTitle))) {
                 ForEach(leadingChips + NXRowChips.chips(for: task, options: options, library: library, workbench: workbench)) { chip in
-                    NXChip(chip: chip, fresh: chipFresh, quiet: options.quiet)
+                    // A change pops every chip; a new row pops all but its list and star.
+                    NXChip(chip: chip, fresh: freshChip || fresh && chip.popsWithRow, quiet: options.quiet)
                 }
                 if selected { NXSelectionMark() }
                 buttons()
@@ -275,16 +276,19 @@ struct NXSelectionMark: View {
     @State private var shown = false
 
     var body: some View {
+        // With Reduce Motion it only fades, as the chips do.
+        let risen = shown || !style.slides
         RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(style.accent)
             .frame(width: 16, height: 16)
             .overlay(Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white))
-            .scaleEffect(shown ? 1 : 0.85)
-            .offset(y: shown ? 0 : 3)
+            .scaleEffect(risen ? 1 : 0.85)
+            .offset(y: risen ? 0 : 3)
             .opacity(shown ? 1 : 0)
             .onAppear {
-                // Plays on insertion whether or not the selection change was animated.
-                if style.lively { withAnimation(.easeOut(duration: 0.18)) { shown = true } } else { shown = true }
+                // Plays on insertion whether or not the selection change was
+                // animated, at the design's 180ms whatever the Motion setting.
+                withAnimation(NX.cssEase(180)) { shown = true }
             }
     }
 }
@@ -353,12 +357,13 @@ struct NXCheckbox: View {
                     .fill(filled ? (closing != nil ? style.accent : NX.green) : .clear)
                 Circle()
                     .strokeBorder(filled ? .clear : (NX.priorityStroke(priority) ?? NX.ink(0.3)), lineWidth: 1.5)
+                // The design's tick: a 140ms fade and a 200ms spring, at
+                // those speeds whatever the Motion setting.
                 Image(systemName: "checkmark")
                     .font(.system(size: size * 0.6, weight: .heavy))
                     .foregroundStyle(.white)
-                    .opacity(filled ? 1 : 0)
-                    .scaleEffect(filled ? 1 : 0.3)
-                    .animation(style.spring(200), value: filled)
+                    .animation(NX.cssEase(140)) { $0.opacity(filled ? 1 : 0) }
+                    .animation(style.bounce(200)) { $0.scaleEffect(filled ? 1 : 0.3) }
                     .accessibilityHidden(true)
                 if ringing { NXRing(color: style.accent, size: size) }
             }
@@ -475,7 +480,7 @@ enum NXRowChips {
         let done = task.isCompleted
         let now = options.now ?? .now
         if options.showList, task.listID != options.listID, let list = library.list(task.listID) {
-            chips.append(NXChipModel(id: "list", label: list.displayTitle, glyph: list))
+            chips.append(NXChipModel(id: "list", label: list.displayTitle, glyph: list, popsWithRow: false))
         }
         for id in task.labelIDs {
             if let label = library.label(id) {
@@ -502,7 +507,7 @@ enum NXRowChips {
                                      tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0))
         }
         if task.isStarred {
-            chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true))
+            chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true, popsWithRow: false))
         }
         if done, let at = task.completedAt {
             chips.append(NXChipModel(id: "done", label: NXFormat.relative(at, now: now)))
@@ -647,7 +652,8 @@ struct NXGroupView: View {
     }
 
     private func toggle() {
-        withAnimation(style.ease(180)) { group.toggle(in: env.workbench) }
+        // The design's chevron turns in 180ms whatever the Motion setting.
+        withAnimation(NX.cssEase(180)) { group.toggle(in: env.workbench) }
     }
 }
 

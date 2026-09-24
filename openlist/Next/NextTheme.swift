@@ -105,12 +105,16 @@ enum NX {
 /// Per-window style resolved from settings and the system reduce-motion flag.
 struct NextStyle: Equatable {
     var accent: Color = NextAccent.violet.color
-    /// Multiplies animation durations: 0.6 restrained, 1 expressive, 1.2 playful, 0.4 reduced.
+    /// Multiplies the durations the design paces with ms() (rows, screens,
+    /// triage, the inspector): 0.6 restrained, 1 expressive, 1.2 playful, 0.4
+    /// reduced. Its fixed timings go through `NX` instead.
     var motion: Double = 1
-    /// Whether bounces, rings and pops play.
+    /// Whether the checkbox's bounce and ring play, as the design's lively().
     var lively = true
-    /// Whether the inspector, notch, bottom bars and overlay cards slide in.
-    /// Reduce Motion fades them instead, as its hint promises.
+    /// Whether the inspector, notch, bottom bars and overlay cards slide in,
+    /// chips, the selection check and lifted cards rise into place, and the
+    /// tick and switch knob overshoot. Reduce Motion fades and eases them
+    /// instead, as its hint promises.
     var slides = true
     var dwell: Double = 5
     var compact = false
@@ -122,6 +126,9 @@ struct NextStyle: Equatable {
     func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }
     func standard(_ base: Double) -> Animation { NX.standard(ms(base)) }
     func cssEase(_ base: Double) -> Animation { NX.cssEase(ms(base)) }
+    /// The design's fixed overshooting spring, like its tick's and switch
+    /// knob's, whatever the Motion setting. Reduce Motion eases instead.
+    func bounce(_ ms: Double) -> Animation { slides ? NX.spring(ms) : NX.ease(ms) }
     /// `transition`, or a fade where the style doesn't slide.
     func slide(_ transition: AnyTransition) -> AnyTransition { slides ? transition : .opacity }
 }

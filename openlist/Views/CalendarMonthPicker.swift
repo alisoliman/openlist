@@ -138,15 +138,13 @@ struct NXDatePill: View {
     let date: Date
     let isOpen: Bool
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             NXValuePill(text: date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)),
-                        isExpanded: isOpen, hovering: hovering)
+                        isExpanded: isOpen)
         }
         .buttonStyle(NXBareButtonStyle())
-        .onHover { hovering = $0 }
         .fixedSize()
         .accessibilityLabel(label)
         .accessibilityValue(date.formatted(date: .complete, time: .omitted))

@@ -29,7 +29,8 @@ struct NextToolbar: View {
                     Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
                         .frame(width: 17, height: 17)
                 }
-                .buttonStyle(NXHoverButtonStyle(hover: env.navigator.canGoBack ? NX.ink(0.06) : .clear, radius: 6,
+                // No hover fill, as the design's: only its colour says whether it can go back.
+                .buttonStyle(NXHoverButtonStyle(hover: .clear, radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: env.navigator.canGoBack ? NX.ink(0.6) : NX.ink(0.2)))
                 .disabled(!env.navigator.canGoBack)

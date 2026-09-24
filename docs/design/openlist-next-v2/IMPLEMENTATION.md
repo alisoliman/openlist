@@ -71,9 +71,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
-  bars and the overlay cards in rather than sliding them, as its hint says, where the design
-  shortens the inspector's slide and plays the others' unchanged. Each fade takes as long as
-  that slide.
+  bars and the overlay cards in rather than sliding them, and chips, the selection check and
+  the cards that lift in (Today is clear, the Inbox's done card, Planned now, Not planned
+  yet) rather than raising them, and eases the tick and switch knobs without their
+  overshoot, as its hint says, where the design shortens the inspector's slide and plays the
+  others unchanged. Each fade takes as long as that slide or rise.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last

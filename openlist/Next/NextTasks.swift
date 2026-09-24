@@ -376,7 +376,9 @@ private struct NXTasksQueryBar: View {
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { barWidth = $0 }
         .padding(.top, 22)
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
-        .animation(style.ease(170), value: focused)
+        // The popover's popIn plays at the design's 170ms whatever the Motion
+        // setting, as the tabs' and field's 280ms do.
+        .animation(NX.ease(170), value: focused)
         .onChange(of: fieldFocused) { _, value in
             if value { workbench.tasksQueryFocused = true } else {
                 // Leave room for a click on a pill before the popover goes.
@@ -437,7 +439,7 @@ private struct NXTasksQueryBar: View {
                             .frame(height: 2)
                             .scaleEffect(x: on ? 1 : 0, anchor: .center)
                             .offset(y: 0.5)
-                            .animation(style.ease(280), value: on)
+                            .animation(NX.ease(280), value: on)
                     }
                     .contentShape(Rectangle())
                 }
@@ -530,8 +532,9 @@ private struct NXTasksQueryBar: View {
         .frame(minWidth: 0, idealWidth: width, maxWidth: width, alignment: .leading)
         .clipped()
         .overlay(alignment: .bottom) {
+            // It grows over the field's 280ms and darkens over the design's 180ms.
             RoundedRectangle(cornerRadius: 2)
-                .fill(focused ? NX.ink : NX.ink(0.22))
+                .animation(NX.cssEase(180)) { $0.foregroundStyle(focused ? NX.ink : NX.ink(0.22)) }
                 .frame(height: 2)
                 .scaleEffect(x: focused || hasQuery ? 1 : 0, anchor: .leading)
                 .offset(y: 0.5)
@@ -539,8 +542,8 @@ private struct NXTasksQueryBar: View {
         .contentShape(Rectangle())
         .onTapGesture { fieldFocused = true }
         .nxClickRegion("field", in: clicks)
-        .animation(style.ease(280), value: focused)
-        .animation(style.ease(280), value: hasQuery)
+        .animation(NX.ease(280), value: focused)
+        .animation(NX.ease(280), value: hasQuery)
     }
 
     @ViewBuilder
@@ -622,7 +625,6 @@ private struct NXQueryPill: View {
     let color: Color
     let isOn: Bool
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 5) {
@@ -632,10 +634,10 @@ private struct NXQueryPill: View {
         .foregroundStyle(isOn ? .white : NX.ink(0.7))
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(isOn ? color : hovering ? NX.ink(0.04) : .clear, in: Capsule())
+        // Filled only when on: the design's pills have no hover.
+        .background(isOn ? color : .clear, in: Capsule())
         .overlay(Capsule().strokeBorder(isOn ? color : NX.ink(0.12), lineWidth: 1))
         .contentShape(Capsule())
-        .onHover { hovering = $0 }
         .onTapGesture(perform: action)
         .animation(.easeOut(duration: 0.14), value: isOn)
         .accessibilityElement(children: .ignore)
@@ -865,7 +867,6 @@ enum NXTasksMenu { case status, lists, group }
 
 private struct NXTasksSentenceBar: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let count: Int
     @FocusState private var titleFocused: Bool
@@ -951,8 +952,9 @@ private struct NXTasksSentenceBar: View {
         .padding(.top, 18)
         .padding(.bottom, 4)
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
-        .animation(style.ease(160), value: isDirty)
-        .animation(style.ease(160), value: menu)
+        // The design's Reset fadeIn and menu popIn, whatever the Motion setting.
+        .animation(NX.cssEase(160), value: isDirty)
+        .animation(NX.ease(160), value: menu)
         .onChange(of: env.navigator.route) { _, _ in menu = nil }
         .onAppear {
             clicks.install { clicks, event in
