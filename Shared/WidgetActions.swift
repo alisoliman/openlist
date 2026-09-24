@@ -22,6 +22,25 @@ nonisolated struct WidgetAction: Codable, Equatable, Identifiable, Sendable {
     /// The occurrence the widget showed. A repeat that rolled on since is left alone.
     var occurrenceID: UUID?
     var createdAt: Date = .now
+
+    /// Where `actions` takes back the tick or untick at `index`: the next
+    /// action on the same task, when it's the opposite one on the same
+    /// occurrence. The app skips such a pair while the task is still as the
+    /// first found it, and the widget lays neither over the snapshot, so a task
+    /// ticked and unticked while Openlist was quit keeps its place, its slot
+    /// and its history, as if neither had been made.
+    static func takingBack(_ index: Int, in actions: [WidgetAction]) -> Int? {
+        let action = actions[index]
+        let opposite: Kind
+        switch action.kind {
+        case .complete: opposite = .reopen
+        case .reopen: opposite = .complete
+        case .startWork, .pauseWork, .resumeWork, .finishWork: return nil
+        }
+        guard let next = actions[(index + 1)...].firstIndex(where: { $0.taskID == action.taskID }),
+              actions[next].kind == opposite, actions[next].occurrenceID == action.occurrenceID else { return nil }
+        return next
+    }
 }
 
 /// Runs widget actions wherever the intent happens to run.

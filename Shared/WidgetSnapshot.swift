@@ -54,6 +54,11 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         var count: Int
     }
 
+    /// Inbox rows the snapshot carries: the 4 medium Quick Add lists, as the
+    /// design's, and spares, so ticks queued in the widget while the app is
+    /// quit still leave all 4, the next ones moving up.
+    static let inboxRows = 8
+
     struct InboxItem: Codable, Equatable, Identifiable, Sendable {
         var id: UUID
         var title: String
@@ -155,7 +160,7 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// The day `completedTodayCount` belongs to.
     var completedTodayDay: Date?
     var inboxCount = 0
-    /// The newest open Inbox tasks.
+    /// The newest `inboxRows` open Inbox tasks, newest first.
     var inboxItems: [InboxItem] = []
     var totalOpenCount = 0
     /// Active lists other than Inbox, in sidebar order.

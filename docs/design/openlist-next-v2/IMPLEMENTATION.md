@@ -246,9 +246,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   while the tick's intent runs the system dims the rows beside their circles
   (`invalidatableContent`) in place of the design's faded, struck-through row. A tick made
   while Openlist is quit shows done straight away, from the rows the app last published: a
-  list's first 12 open tasks, and Today's first 10 overdue and 15 a day, so past that many
-  queued ticks the rows thin out, the counts still right, until the app opens again, where
-  the design always moves the next open tasks up. In medium and
+  list's first 12 open tasks, Today's first 10 overdue and 15 a day, and Inbox's newest 8,
+  so past that many queued ticks the rows thin out, the counts still right, until the app
+  opens again, where the design always moves the next open tasks up. A tick and its untick
+  made while it's quit cancel out, so the task keeps its place, its slot and any paused
+  work (the design's tick ends the work); a task the app published done, reopened in the
+  widget, goes after the list's open rows until the app opens again, where the design's
+  goes back to its place. In medium and
   large a row's title and list line open the task; a small widget takes only its own link,
   so small Today's titles open Today. Quick Add's Triage link shows the Inbox as triage for
   that visit even where this Mac shows it as a document; its Inbox link follows this Mac's

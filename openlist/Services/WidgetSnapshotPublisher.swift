@@ -185,7 +185,7 @@ final class WidgetSnapshotPublisher {
             + dueTomorrow.prefix(Self.todayRows.perDay)).map(item)
 
         snapshot.inboxCount = inboxOpen.count
-        snapshot.inboxItems = inboxOpen.sorted { $0.createdAt > $1.createdAt }.prefix(4).map {
+        snapshot.inboxItems = inboxOpen.sorted { $0.createdAt > $1.createdAt }.prefix(WidgetSnapshot.inboxRows).map {
             WidgetSnapshot.InboxItem(id: $0.id, title: $0.displayTitle, createdAt: $0.createdAt)
         }
 

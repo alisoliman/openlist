@@ -14,7 +14,16 @@ import Foundation
 enum SnapshotOverlay {
     static func apply(_ actions: [WidgetAction], to snapshot: WidgetSnapshot, calendar: Calendar = .current) -> WidgetSnapshot {
         var snapshot = snapshot
-        for action in actions {
+        var takenBack: Set<Int> = []
+        for (index, action) in actions.enumerated() where !takenBack.contains(index) {
+            // A tick and its untick, either way round, which the app skips
+            // together: the snapshot already shows the task as it was, in its
+            // place and its slot, as the design's untick leaves it.
+            if let undo = WidgetAction.takingBack(index, in: actions),
+               action.kind == .complete ? showsOpen(action, in: snapshot) : showsDone(action, in: snapshot) {
+                takenBack.insert(undo)
+                continue
+            }
             switch action.kind {
             case .complete: complete(action, in: &snapshot, calendar: calendar)
             case .reopen: reopen(action, in: &snapshot, calendar: calendar)
@@ -30,13 +39,24 @@ enum SnapshotOverlay {
         id == action.taskID && (action.occurrenceID == nil || occurrence == nil || occurrence == action.occurrenceID)
     }
 
+    /// Whether the snapshot still shows the task open, for the occurrence the
+    /// widget showed.
+    private static func showsOpen(_ action: WidgetAction, in snapshot: WidgetSnapshot) -> Bool {
+        snapshot.lists.contains { $0.openItems.contains { matches($0.id, $0.occurrenceID, action) } }
+            || snapshot.todayItems.contains { matches($0.id, $0.occurrenceID, action) && !$0.isCompleted }
+    }
+
+    /// Whether the snapshot shows the task among a list's latest done.
+    private static func showsDone(_ action: WidgetAction, in snapshot: WidgetSnapshot) -> Bool {
+        snapshot.lists.contains { $0.doneItems.contains { matches($0.id, $0.occurrenceID, action) } }
+    }
+
     private static func complete(_ action: WidgetAction, in snapshot: inout WidgetSnapshot, calendar: Calendar) {
         // Only an open row the snapshot still shows counts, for the occurrence
         // the widget showed: once the app has published the completion, or a
         // repeat has rolled on, the file lingering changes nothing.
+        guard showsOpen(action, in: snapshot) else { return }
         let listed = snapshot.lists.contains { $0.openItems.contains { matches($0.id, $0.occurrenceID, action) } }
-        let shown = listed || snapshot.todayItems.contains { matches($0.id, $0.occurrenceID, action) && !$0.isCompleted }
-        guard shown else { return }
         let row = snapshot.todayItems.first { matches($0.id, $0.occurrenceID, action) }
             ?? snapshot.lists.lazy.compactMap { $0.openItems.first { matches($0.id, $0.occurrenceID, action) } }.first
         if let due = row?.dueDate { snapshot.countDue(on: due, by: -1, calendar: calendar) }
@@ -88,6 +108,8 @@ enum SnapshotOverlay {
             let completedAt = item.completedAt
             item.isCompleted = false
             item.completedAt = nil
+            // A done row carries no place among the open ones: it goes after
+            // them until the app publishes the list's own order.
             snapshot.lists[index].openItems.append(item)
             snapshot.lists[index].openCount += 1
             snapshot.lists[index].doneCount = max(0, snapshot.lists[index].doneCount - 1)
@@ -100,6 +122,14 @@ enum SnapshotOverlay {
         }
         guard let item = reopened else { return }
         snapshot.totalOpenCount += 1
+        // Open everywhere, as the design's: its Agenda block tinted again,
+        // and Up Next offering it.
+        for day in snapshot.agenda.indices {
+            for index in snapshot.agenda[day].items.indices
+            where snapshot.agenda[day].items[index].taskID.map({ matches($0, snapshot.agenda[day].items[index].occurrenceID, action) }) == true {
+                snapshot.agenda[day].items[index].isCompleted = false
+            }
+        }
         if let due = item.dueDate {
             snapshot.countDue(on: due, by: 1, calendar: calendar)
             let tomorrowEnd = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: action.createdAt)) ?? due
