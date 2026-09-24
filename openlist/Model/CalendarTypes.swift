@@ -144,6 +144,10 @@ struct PlannedBlock: Identifiable, Sendable {
     var completionID: UUID? = nil
     var titleSnapshot: String? = nil
     var isTimeTracked: Bool = false
+    /// A done block drawn at the slot it was planned in, stretched to any
+    /// work past its ends, as the design's done placement, rather than where
+    /// recorded work happened.
+    var keepsSlot: Bool = false
     var isCompleted: Bool { completionID != nil }
     var durationMinutes: Double { max(0, end.timeIntervalSince(start) / 60) }
 }

@@ -11,16 +11,36 @@ enum CalendarOverlapLayout {
         let top: Double
         let height: Double
         /// Where the item stops colliding with the ones after it: the end of
-        /// its time, which may fall short of its drawn bottom. Its drawn bottom
-        /// when none is given, and for an item with no time of its own.
+        /// its time, which may fall short of its drawn bottom, or be its top
+        /// for an item with no length. Its drawn bottom when none is given.
         let end: Double
+        /// A meeting, which goes before a block with the same times, as the
+        /// design's list of meetings then blocks does.
+        let isEvent: Bool
         var bottom: Double { top + height }
 
-        init(id: String, top: Double, height: Double, end: Double? = nil) {
+        init(id: String, top: Double, height: Double, end: Double? = nil, isEvent: Bool = false) {
             self.id = id
             self.top = top
             self.height = height
-            self.end = end.flatMap { $0 > top ? $0 : nil } ?? top + height
+            self.end = end.flatMap { $0 >= top ? $0 : nil } ?? top + height
+            self.isEvent = isEvent
+        }
+
+        /// A meeting, drawn at least 16pt tall, over its time.
+        static func event(_ event: FixedBusyTime, y: (Date) -> Double) -> Item {
+            Item(id: event.id, top: y(event.start) + 1, height: max(16, y(event.end) - y(event.start) - 2),
+                 end: y(event.end) + 1, isEvent: true)
+        }
+
+        /// A block, drawn at least 18pt tall. One on a slot, planned, running
+        /// there or done in it, collides over its time, as the design's
+        /// placements do. Recorded work the design never draws, time tracked
+        /// outside any slot or work running or paused with none, keeps its
+        /// whole box, so a few minutes of it don't go under the next block.
+        static func block(_ block: PlannedBlock, y: (Date) -> Double) -> Item {
+            Item(id: block.id, top: y(block.start) + 1, height: max(18, y(block.end) - y(block.start) - 2),
+                 end: block.placementID != nil || block.keepsSlot ? y(block.end) + 1 : nil)
         }
     }
 
@@ -37,6 +57,7 @@ enum CalendarOverlapLayout {
             .sorted {
                 if $0.top != $1.top { return $0.top < $1.top }
                 if $0.end != $1.end { return $0.end > $1.end }
+                if $0.isEvent != $1.isEvent { return $0.isEvent }
                 if $0.height != $1.height { return $0.height > $1.height }
                 return $0.id < $1.id
             }

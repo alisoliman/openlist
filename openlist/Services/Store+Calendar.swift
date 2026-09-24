@@ -322,7 +322,7 @@ extension Store {
         return completionRecords().flatMap { record -> [PlannedBlock] in
             let actual = (sessions[record.occurrenceID] ?? []).filter { $0.taskID == record.taskID }.sorted { $0.startedAt < $1.startedAt }
             let tracked = !actual.isEmpty
-            let intervals: [CompletionCalendarInterval]
+            let intervals: [(span: CompletionCalendarInterval, keepsSlot: Bool)]
             if tracked {
                 var spans = actual.map { session in
                     let seconds = session.durationMinutes() * 60
@@ -339,17 +339,21 @@ extension Store {
                     spans.removeAll { $0.start < slot.end && $0.end > slot.start }
                     spans.append(CompletionCalendarInterval(start: min(slot.start, start), end: max(slot.end, end)))
                 }
-                intervals = spans.sorted { $0.start < $1.start }
+                // Only what was merged into a slot still meets one.
+                intervals = spans.sorted { $0.start < $1.start }.map { span in
+                    (span, record.plannedIntervals.contains { $0.start < span.end && $0.end > span.start })
+                }
             } else if !record.plannedIntervals.isEmpty {
-                intervals = record.plannedIntervals
+                intervals = record.plannedIntervals.map { ($0, true) }
             } else {
-                intervals = [CompletionCalendarInterval(start: record.completedAt, end: record.completedAt)]
+                intervals = [(CompletionCalendarInterval(start: record.completedAt, end: record.completedAt), false)]
             }
             return intervals.enumerated().map { index, interval in
                 PlannedBlock(id: "completed-\(record.id.uuidString)-\(index)", taskID: record.taskID,
-                             occurrenceID: record.occurrenceID, start: interval.start, end: interval.end,
+                             occurrenceID: record.occurrenceID, start: interval.span.start, end: interval.span.end,
                              isPinned: false, placementID: nil, conflicts: [],
-                             completionID: record.id, titleSnapshot: record.title, isTimeTracked: tracked)
+                             completionID: record.id, titleSnapshot: record.title, isTimeTracked: tracked,
+                             keepsSlot: interval.keepsSlot)
             }
         }.sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
     }
