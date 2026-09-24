@@ -229,8 +229,6 @@ struct NXScreenHeader<Trailing: View>: View {
     let title: String
     let subtitle: String
     var progress: (done: Int, total: Int)?
-    /// Sits after the subtitle, like the list header's hours menu.
-    var accessory: AnyView?
     /// Makes the title editable in place.
     var rename: NXTitleRename?
     @ViewBuilder var trailing: () -> Trailing
@@ -256,15 +254,11 @@ struct NXScreenHeader<Trailing: View>: View {
                 } else {
                     NXHeaderTitle(text: title)
                 }
-                // The accessory's hover padding stands in for the space after the subtitle.
-                HStack(spacing: -1) {
-                    Text(subtitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(NX.ink(0.48))
-                        .lineLimit(1)
-                        .contentTransition(.numericText())
-                    accessory
-                }
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(NX.ink(0.48))
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
             }
             .layoutPriority(1)
             Spacer(minLength: 12)
@@ -358,9 +352,8 @@ private struct NXHeaderTitleField: View {
 }
 
 extension NXScreenHeader where Trailing == EmptyView {
-    init(tile: Tile, color: Color, title: String, subtitle: String, progress: (done: Int, total: Int)? = nil,
-         accessory: AnyView? = nil) {
-        self.init(tile: tile, color: color, title: title, subtitle: subtitle, progress: progress, accessory: accessory) { EmptyView() }
+    init(tile: Tile, color: Color, title: String, subtitle: String, progress: (done: Int, total: Int)? = nil) {
+        self.init(tile: tile, color: color, title: title, subtitle: subtitle, progress: progress) { EmptyView() }
     }
 }
 

@@ -92,4 +92,32 @@ do {
     check(ActiveTaskPolicy(lists: lists).tasks(in: tasks).contains { $0.parentID == task.id }, "unarchiving restores subtasks too")
 }
 
+// The Completed groups fold as one, whatever each screen's default: the
+// design's single completedOpen, not a flip of each screen's own default.
+do {
+    let shown = TaskList(title: "Shown")
+    shown.completedVisibility = .show
+    let inherits = TaskList(title: "Inherits")
+    let setting = false
+    func open(_ fold: NXCompletedFold?, _ screenDefault: Bool, setting: Bool = setting) -> Bool {
+        NXCompletedFold.isOpen(fold, default: screenDefault, showsCompleted: setting)
+    }
+    check(open(nil, shown.showsCompleted(default: setting)) && !open(nil, inherits.showsCompleted(default: setting)),
+          "until a fold, each screen opens Completed as its own setting says")
+    // Folded closed on the shown list: closed there, on a label screen and on an inheriting list.
+    var fold = NXCompletedFold(open: false, showsCompleted: setting)
+    check(!open(fold, shown.showsCompleted(default: setting)), "a fold closed stays closed where it was made")
+    check(!open(fold, setting) && !open(fold, inherits.showsCompleted(default: setting)),
+          "a fold closed on a shown list doesn't open Completed on labels or other lists")
+    // Folded open on a label screen: open there and on the shown list too.
+    fold = NXCompletedFold(open: !open(fold, setting), showsCompleted: setting)
+    check(open(fold, setting) && open(fold, shown.showsCompleted(default: setting)),
+          "a fold opened on a label opens Completed on the lists too")
+    let hidden = TaskList(title: "Hidden")
+    hidden.completedVisibility = .hide
+    check(open(fold, hidden.showsCompleted(default: true), setting: false), "the last fold holds over a list set to hide")
+    check(!open(fold, hidden.showsCompleted(default: true), setting: true) && open(fold, true, setting: true),
+          "changing Show completed tasks lapses the fold, so each screen's default shows")
+}
+
 print("✅ \(checks) visibility and persistence checks passed")

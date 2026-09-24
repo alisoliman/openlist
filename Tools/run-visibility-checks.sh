@@ -14,6 +14,7 @@ xcrun swiftc \
     openlist/Model/ListCover.swift openlist/Model/TaskList.swift openlist/Model/ListHierarchy.swift \
     Shared/ListAccent.swift \
     openlist/Services/ActiveTaskPolicy.swift \
+    openlist/Next/NextCompletedFold.swift \
     Tools/VisibilityChecks/main.swift
 
 "$OUT/visibility-checks"

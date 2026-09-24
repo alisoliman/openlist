@@ -367,6 +367,18 @@ check(
 )
 
 do {
+    // One weekday in full, as the design's "Every Wednesday"; several stay short.
+    let wednesday = Calendar.current.weekdaySymbols[3]
+    let single = Recurrence(frequency: .weekly, weekdays: [4]).displayText
+    check(single == "Every \(wednesday)", "one weekday reads in full", single)
+    let captured = DateParser.parse("water the planters every wednesday").recurrence?.displayText
+    check(captured == "Every \(wednesday)", "captured weekday reads in full", captured ?? "nil")
+    let short = Calendar.current.shortWeekdaySymbols
+    let pair = Recurrence(frequency: .weekly, weekdays: [5, 2]).displayText
+    check(pair == "Every \([short[1], short[4]].formatted(.list(type: .and)))", "several weekdays stay short", pair)
+}
+
+do {
     let encoded = Recurrence.weekdaysOnly.jsonData
     let decoded = Recurrence.decode(encoded)
     check(decoded == Recurrence.weekdaysOnly, "round-trips through JSON")

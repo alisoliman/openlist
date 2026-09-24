@@ -27,8 +27,7 @@ struct NXGroupsStack: View {
     @MainActor
     static func rowIDs(_ groups: [NXGroup], workbench: Workbench) -> [UUID] {
         groups.flatMap { group -> [UUID] in
-            let open = !group.collapsible || group.defaultOpen != workbench.collapsedGroups.contains(group.id)
-            return open ? group.rows.map(\.id) : []
+            group.isOpen(in: workbench) ? group.rows.map(\.id) : []
         }
     }
 }
@@ -53,8 +52,8 @@ struct NextTodayScreen: View {
     @Environment(\.nextLibrary) private var library
 
     var body: some View {
-        // The design's 20s clock: done-ago chips, late times, the date and the
-        // buckets all move on with it, midnight included.
+        // The design's 20s clock: done-ago chips, the date and the buckets
+        // all move on with it, midnight included.
         TimelineView(.periodic(from: .now, by: 20)) { context in
             let now = context.date
             let workbench = env.workbench
@@ -84,8 +83,8 @@ struct NextTodayScreen: View {
                       isUnplaced: @escaping (UUID) -> Bool) -> Model {
         let visible = library.tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
         func offset(_ task: Block) -> Int? { task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
-        // By day, as the design: Overdue is earlier days only. A timed task
-        // whose time has passed stays in Due today, its time chip turned red.
+        // By day, as the design: Overdue is earlier days only, so a timed
+        // task whose time has passed stays in Due today.
         let overdue = visible.filter { (offset($0) ?? 0) < 0 }.sorted(by: NXSort.byDue)
         let due = visible.filter { offset($0) == 0 }.sorted(by: NXSort.byDue)
         let planned = visible.filter { workbench.isPlanned($0) && (offset($0) ?? 1) > 0 }.sorted(by: NXSort.byDue)
@@ -115,7 +114,7 @@ struct NextTodayScreen: View {
         }
         if !doneToday.isEmpty {
             groups.append(NXGroup(id: "done", title: "Completed today", icon: "checkmark.circle.fill", color: NX.green,
-                                  rows: doneToday, collapsible: true, defaultOpen: showsCompleted))
+                                  rows: doneToday, collapsible: true, defaultOpen: showsCompleted, completed: true))
         }
         let open = overdue.count + due.count + planned.count + starred.count
         return Model(groups: groups, progress: (doneToday.count, doneToday.count + open), clear: open == 0)
@@ -163,42 +162,6 @@ struct NXLiftIn: ViewModifier {
 
 // MARK: - List & label
 
-/// The list header's switch between Work and Personal hours.
-struct NXHoursMenu: View {
-    @Environment(AppEnvironment.self) private var env
-    let list: TaskList
-
-    var body: some View {
-        let workbench = env.workbench
-        let current = workbench.hours(for: list)
-        Menu {
-            Picker("Plan and Start working use", selection: Binding(get: { current },
-                                                                    set: { workbench.setHours($0, for: list.id) })) {
-                ForEach(AvailabilityCategory.allCases) { category in
-                    let summary = NXHours.summary(env.calendar.preferences.profile(for: category), calendar: env.settings.calendar)
-                    Text("\(category.title) Hours · \(summary)").tag(category)
-                }
-            }
-            .pickerStyle(.inline)
-            Divider()
-            Button("Edit Hours in Settings…") { workbench.go(.settings) }
-        } label: {
-            HStack(spacing: 4) {
-                Text("\(current.title) hours").font(.system(size: 12, weight: .medium))
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-            }
-        }
-        .menuStyle(.button)
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
-                                        padding: EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4),
-                                        foreground: NX.ink(0.48), hoverForeground: NX.ink))
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Which hours Plan and Start working use for this list")
-        .accessibilityLabel("Hours: \(current.title)")
-    }
-}
-
 /// A list: its cover and header, its description and nested lists, then the
 /// list itself as the design's document, then the tasks done at its top
 /// level, which leave the document once settled.
@@ -229,9 +192,8 @@ struct NextListScreen: View {
             NXListCover(list: list)
             NXScreenHeader(tile: .list(list), color: list.nxColor, title: list.displayTitle,
                            subtitle: "\(open.count) open" + (section.isEmpty ? "" : " · \(section)")
-                               + (archived ? " · Archived" : "") + " ·",
+                               + (archived ? " · Archived" : ""),
                            progress: (tasks.filter(\.isCompleted).count, tasks.count),
-                           accessory: AnyView(NXHoursMenu(list: list)),
                            rename: list.isSystemInbox ? nil : NXTitleRename(isEditing: $renaming,
                                                                            value: naming ? "" : list.title,
                                                                            placeholder: "Untitled list") { name in
@@ -286,14 +248,14 @@ struct NextListScreen: View {
             .sorted(by: Block.byCompletionDate)
         guard !done.isEmpty else { return [] }
         return [NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green, rows: done,
-                        collapsible: true, defaultOpen: showsCompleted)]
+                        collapsible: true, defaultOpen: showsCompleted, completed: true)]
     }
 
     static func groups(open: [Block], done: [Block], showsCompleted: Bool) -> [NXGroup] {
         var groups = [NXGroup(id: "open", rows: open, showHead: false, emptyText: "No open tasks. Press N to capture one.")]
         if !done.isEmpty {
             groups.append(NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green,
-                                  rows: done, collapsible: true, defaultOpen: showsCompleted))
+                                  rows: done, collapsible: true, defaultOpen: showsCompleted, completed: true))
         }
         return groups
     }
@@ -334,7 +296,7 @@ private struct NXListCover: View {
 }
 
 /// The list header's options, the native extras the design has no place
-/// for: the Tasks presentation, order, completed tasks, appearance,
+/// for: the Tasks presentation, order, completed tasks, hours, appearance,
 /// description, cover, nesting, moving, linking and exporting.
 private struct NXListOptions: View {
     @Environment(AppEnvironment.self) private var env
@@ -352,10 +314,15 @@ private struct NXListOptions: View {
             Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.store.setSorting($0, for: list) })) {
                 ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
             }
-            Picker("Completed Tasks", selection: Binding(get: { list.completedVisibility },
-                                                         set: { env.store.setCompletedVisibility($0, for: list) })) {
+            Picker("Completed Tasks", selection: Binding(get: { list.completedVisibility }, set: { visibility in
+                // The list's new choice shows at once, over the Completed groups' last fold.
+                env.workbench.completedFold = nil
+                env.store.setCompletedVisibility(visibility, for: list)
+            })) {
                 ForEach(TaskList.CompletedVisibility.allCases) { Text($0.title).tag($0) }
             }
+            Menu("Hours") { hoursItems }
+                .accessibilityLabel("Hours: \(env.workbench.hours(for: list).title)")
             Divider()
             Button("Icon & Colour…") { appearanceOpen = true }
             Button(list.summary.isEmpty ? "Add Description" : "Edit Description", action: describe)
@@ -390,6 +357,22 @@ private struct NXListOptions: View {
         } message: {
             Text(coverError ?? "")
         }
+    }
+
+    /// Which hours Plan and Start working use for this list, and where they're set.
+    @ViewBuilder
+    private var hoursItems: some View {
+        let workbench = env.workbench
+        Picker("Plan and Start working use", selection: Binding(get: { workbench.hours(for: list) },
+                                                                set: { workbench.setHours($0, for: list.id) })) {
+            ForEach(AvailabilityCategory.allCases) { category in
+                let summary = NXHours.summary(env.calendar.preferences.profile(for: category), calendar: env.settings.calendar)
+                Text("\(category.title) Hours · \(summary)").tag(category)
+            }
+        }
+        .pickerStyle(.inline)
+        Divider()
+        Button("Edit Hours in Settings…") { workbench.go(.settings) }
     }
 
     /// The cover's own choices: a local image, how it shows, and removing it.
