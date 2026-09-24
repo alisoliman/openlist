@@ -154,6 +154,10 @@ struct AppCommands: Commands {
                 .disabled(targets.isEmpty)
             Button("Start Working") { act { env.workbench.startWork($0[0]) } }
                 .disabled(workTask(single) == nil)
+            // As the row menu's, for the inspected task too, whose row may be
+            // on no screen: the keyboard's way to it with no pointer.
+            Button("Copy Link") { act { env.copyLink(to: .task($0[0])) } }
+                .disabled(single == nil)
 
             Divider()
 

@@ -10,7 +10,8 @@ struct TaskSchedulePicker: View {
     @State private var section: DetailPicker
     /// The section's height as last laid out; nil until it first is.
     @State private var contentHeight: CGFloat?
-    /// A time still being typed as Custom…, like the due time, which Done sets first.
+    /// A due time still being typed as Custom…, which Done sets first. The
+    /// reminder's keeps to its section, where only Set reminder sets it.
     @State private var typedValue: NXPendingCustomValue?
     private static let maximumHeight: CGFloat = 510
     @Environment(AppEnvironment.self) private var env

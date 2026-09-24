@@ -214,7 +214,8 @@ retention, and export behavior.
 The inspector keeps the title and active metadata above notes and subtasks.
 Empty notes and files use add actions rather than empty forms; removing a file
 can be undone. Its footer has **Trash** and **Start**; **Copy Link** is in the
-task's menu. Priority and label controls remain named for accessibility.
+task's menu and in Task ▸ **Copy Link**. Priority and label controls remain
+named for accessibility.
 **Add subtask** goes to the task's list document, opening it if needed, unfolds
 the task and writes a new subtask line at the end of its subtasks, as one Undo
 step.
@@ -347,11 +348,12 @@ to the exact result and temporarily expose collapsed/completed ancestors.
 collapse, archive or completion settings. Missing results show an unavailable message.
 Escape closes search. No index or query history is persisted.
 
-**Copy Link** in task and list menus copies a stable reference to that item in
-this Mac's library. Links survive renaming and moving tasks, and can open
-Openlist from another app. Archived content is clearly identified and stays
-archived; missing or wrong-library targets show an explanation. Openlist Dev
-uses a separate URL scheme. See the [local link and backup/restore contract](docs/local-item-links.md).
+**Copy Link** in task and list menus, or Task ▸ **Copy Link** for the selected
+or open task, copies a stable reference to that item in this Mac's library.
+Links survive renaming and moving tasks, and can open Openlist from another app.
+Archived content is clearly identified and stays archived; missing or
+wrong-library targets show an explanation. Openlist Dev uses a separate URL
+scheme. See the [local link and backup/restore contract](docs/local-item-links.md).
 
 ### Widgets
 

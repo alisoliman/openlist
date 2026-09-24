@@ -75,9 +75,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   options" disclosure (estimate hints, how sessions run, the list's hours, Defer…, time
   recorded and Work history), and Activity with "Full history", the task's saved activity;
   both start closed. The footer is the design's Trash and Start working; Copy Link is in
-  the task menu. The Schedule popover fits its section, up to 510pt, and its date and time
-  controls are Next pills; Done, or Set reminder, first sets a time still being typed as
-  Custom….
+  the task's row menu and in Task ▸, which reaches the inspected task from the keyboard
+  too, each saying "Link copied" in the tray. The Schedule popover fits its section, up to
+  510pt, and its date and time controls are Next pills; Done first sets a due time still
+  being typed as Custom…, and Set reminder a reminder time. "Remind me at" is a draft only
+  Set reminder sets: Done keeps the reminder there was, over a day or time picked there, or
+  still being typed.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and search

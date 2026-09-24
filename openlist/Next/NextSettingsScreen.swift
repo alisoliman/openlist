@@ -705,6 +705,7 @@ private struct NXCustomValueField: View {
 /// One line in a setting's pop-up menu.
 enum NXMenuEntry {
     /// A value to pick; the current one is checked and opens over the pill.
+    /// A `swatch` is a label colour, drawn as the label's mark.
     case choice(String, isSelected: Bool, swatch: Color? = nil, action: () -> Void)
     case command(String, isEnabled: Bool = true, action: () -> Void)
     case divider
@@ -862,11 +863,12 @@ final class NXMenuAnchor: NSObject {
         cell.performClick(withFrame: frame, in: view)
     }
 
-    /// A colour dot for a menu item, like a label's colour.
+    /// A label colour for a menu item, as the label's own mark: the design's
+    /// 8pt rounded square.
     private static func swatchImage(_ color: NSColor) -> NSImage {
         let image = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
             color.setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3).fill()
             return true
         }
         return image

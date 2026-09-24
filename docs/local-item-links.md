@@ -1,10 +1,11 @@
 # Local item links
 
-Copy Link in a task menu, a list menu, gallery card, or sidebar
-copies a URL for that identity. Openlist resolves the current task/list when
-the link is opened, so renaming a task or moving it to another list does not
-change its link. Duplicating a task/list gives the copy fresh item IDs; old
-links continue to open the original.
+Copy Link in a task menu (a row's, or Task ▸ Copy Link for the selected or
+inspected task), a list menu, gallery card, or sidebar copies a URL for that
+identity and says "Link copied" in the tray. Openlist resolves the current
+task/list when the link is opened, so renaming a task or moving it to another
+list does not change its link. Duplicating a task/list gives the copy fresh item
+IDs; old links continue to open the original.
 
 Links work on the same Mac and in the same local library. They do not share
 content, grant access, contact a server, or locate a library on another Mac.
