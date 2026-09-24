@@ -14,15 +14,10 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-ch
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   openlist/Views/LabelPicker.swift openlist/Views/AttachmentRow.swift \
-  openlist/Editor/TaskMetadataChips.swift openlist/Editor/MetadataFlowLayout.swift \
-  openlist/Views/InboxRowActions.swift openlist/Editor/BlockRowView.swift openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
-  openlist/Editor/SlashMenuLayout.swift openlist/Views/TaskDetailButton.swift openlist/Views/CopyItemLinkButton.swift \
-  openlist/Views/FragmentMenu.swift openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift \
+  openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
+  openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift \
   openlist/Services/FragmentMarkdown.swift openlist/Services/InlineMarkdown.swift openlist/Services/Store+Fragments.swift \
-  openlist/Editor/DocumentView.swift openlist/Editor/OutlineEditor.swift openlist/Editor/BlockDragAndDrop.swift openlist/Editor/SlashMenuView.swift openlist/Editor/SlashMenuDismissal.swift \
-  openlist/Services/Navigator.swift openlist/Services/SelectionCommandPolicy.swift openlist/Services/DragPayload.swift openlist/Services/SearchProjection.swift \
-  openlist/Views/RowSelectionContext.swift openlist/Views/RowSelectionGutter.swift openlist/Views/RowSelectionControl.swift \
-  openlist/Views/ContentRevealNotice.swift openlist/Views/ContentRevealNote.swift \
+  openlist/Services/Navigator.swift openlist/Services/DragPayload.swift \
   openlist/Next/NextTheme.swift openlist/Next/NextPanels.swift openlist/Next/Workbench+TaskFields.swift openlist/Services/AppSettings.swift \
   Tools/EditorChecks/Support.swift Tools/InspectorLifetimeChecks/LifetimeSupport.swift Tools/InspectorLifetimeChecks/main.swift
 "$OUT/inspector-checks"

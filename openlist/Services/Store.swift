@@ -7,11 +7,11 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-/// Identifies the document currently being edited: either a list, or a task's
-/// detail page, which behaves like a miniature list rooted at that task.
+/// Identifies a document: a list, or the subtree under one of its tasks,
+/// which behaves like a miniature list rooted at that task.
 struct DocumentContext: Hashable {
     var listID: UUID
-    /// `nil` when editing the list itself; a task id when editing its details.
+    /// `nil` for the list itself; a task id for the subtree under it.
     var rootBlockID: UUID?
 
     init(listID: UUID, rootBlockID: UUID? = nil) {

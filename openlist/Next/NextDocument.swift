@@ -3,7 +3,7 @@
 //  openlist
 //
 //  The list as the design's document: every line of it written in place,
-//  over the outline engine the legacy editor shares.
+//  over the outline engine, OutlineEditor.
 //
 
 import AppKit
@@ -46,14 +46,13 @@ private struct NXDocumentLines: View {
         let document = DocumentContext(listID: list.id)
         // SwiftUI keeps the first editor for the view's lifetime and drops the
         // one built on each later init. Building one only assigns its inputs.
-        _editor = State(initialValue: OutlineEditor(env: env, document: document, sorting: list.sorting,
-                                                    policy: .nextDocument))
+        _editor = State(initialValue: OutlineEditor(env: env, document: document, sorting: list.sorting))
         _fetched = OutlineEditor.blocksQuery(for: document)
     }
 
     var body: some View {
         let document = DocumentContext(listID: list.id)
-        editor.configure(document: document, showsCompleted: true, sorting: list.sorting, hooks: hooks)
+        editor.configure(document: document, sorting: list.sorting, hooks: hooks)
         editor.tasksOnly = tasksOnly
         let blocks = fetched.filter { $0.modelContext != nil && !$0.isDeleted }
         let rows = editor.rowsToDraw(in: blocks)
@@ -121,14 +120,13 @@ private struct NXDocumentLines: View {
         .onChange(of: blocks.map(\.id)) { _, ids in contents.retain(Set(ids)) }
     }
 
-    /// Where the design's document defers to the workbench: completion with
-    /// its dwell, the inspector, focus and selection, Task-menu commands, and
-    /// the change log with its names.
+    /// Where the design's document defers to the workbench: the inspector,
+    /// focus and selection, Task-menu commands, and the change log with its
+    /// names.
     private var hooks: OutlineHooks {
         let workbench = env.workbench
         let store = env.store
         var hooks = OutlineHooks()
-        hooks.toggleCompletion = { workbench.toggle($0) }
         hooks.openDetails = { workbench.inspect($0) }
         hooks.didFocus = { id in
             guard let block = store.block(id: id) else { return }
@@ -143,10 +141,9 @@ private struct NXDocumentLines: View {
         }
         // The caret leaves; a task stays focused for the keys. A heading or
         // text line takes no focus, as in the design, and the keys go back
-        // to it from where Escape left it.
+        // to it from where Escape left it: Return and the arrows are the
+        // Next keys' once the caret has left.
         hooks.didEscape = { id in workbench.focusID = store.block(id: id)?.isTask == true ? id : nil }
-        // Return and the arrows are the Next keys' once the caret has left.
-        hooks.resumesAfterEscape = false
         hooks.taskCommand = { command, ids in
             env.performTaskCommand(command, on: ids.filter { store.block(id: $0)?.isTask == true })
         }

@@ -80,33 +80,6 @@ enum BlockTree {
         return result.flatMap { $0 }
     }
 
-    /// A display projection: completed tasks settle below pending siblings,
-    /// carrying their entire subtree. Stored manual order is untouched, so
-    /// reopening a task restores its position and exports keep document order.
-    static func prioritizingPendingTasks(in rows: [BlockRow]) -> [BlockRow] {
-        var index = 0
-        func siblings(at depth: Int) -> [BlockRow] {
-            var pending: [[BlockRow]] = []
-            var completed: [[BlockRow]] = []
-            while index < rows.count, rows[index].depth == depth {
-                let row = rows[index]
-                index += 1
-                var branch = [row]
-                if index < rows.count, rows[index].depth > depth {
-                    branch += siblings(at: rows[index].depth)
-                }
-                if row.block.isTask && row.block.isCompleted {
-                    completed.append(branch)
-                } else {
-                    pending.append(branch)
-                }
-            }
-            return (pending + completed).flatMap { $0 }
-        }
-        guard let first = rows.first else { return [] }
-        return siblings(at: first.depth)
-    }
-
     /// Children of `parentID`, ordered by `sortIndex`.
     static func children(of parentID: UUID?, in blocks: [Block]) -> [Block] {
         childIndex(of: blocks, root: parentID)[parentID] ?? []
@@ -117,7 +90,7 @@ enum BlockTree {
     /// - Parameters:
     ///   - blocks: every block in the container, at any depth.
     ///   - root: the parent to start from — `nil` for a list document, or a
-    ///     task's id when rendering its detail page.
+    ///     task's id for the subtree under it.
     ///   - respectCollapse: when `true`, subtrees of collapsed blocks are skipped.
     static func flatten(
         _ blocks: [Block],

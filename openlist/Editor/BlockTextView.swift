@@ -6,10 +6,10 @@
 import AppKit
 import SwiftUI
 
-/// Which way an arrow key was heading when it ran off the end of a block:
-/// ↑ or ↓ off its first or last visual line, or ← or → off its start or end.
+/// Which way an arrow key was heading when it ran off a block: ↑ off its
+/// first visual line, or ↓ off its last.
 enum EditorArrow {
-    case up, down, left, right
+    case up, down
 }
 
 /// Everything the outline needs to hear about from one block's text view.
@@ -18,14 +18,12 @@ enum EditorArrow {
 /// case the text view suppresses its own default behaviour.
 struct BlockEditorCallbacks {
     var onChange: (NSAttributedString) -> Void = { _ in }
-    /// Return pressed. Receives the caret offset so the outline can split.
+    /// Return pressed, with the caret offset and the block's content.
     var onReturn: (Int, NSAttributedString) -> Bool = { _, _ in false }
     /// Tab (or Shift-Tab) pressed.
     var onTab: (_ isBacktab: Bool, _ caret: Int) -> Bool = { _, _ in false }
     /// Backspace with the caret at offset zero and nothing selected.
     var onBackspaceAtStart: (NSAttributedString) -> Bool = { _ in false }
-    /// Forward-delete with the caret at the very end.
-    var onDeleteAtEnd: () -> Bool = { false }
     /// Arrow key that would leave this block.
     var onArrowOut: (_ direction: EditorArrow, _ caret: Int) -> Bool = { _, _ in false }
     var onFocus: () -> Void = {}
@@ -66,8 +64,9 @@ struct BlockEditorCallbacks {
 /// A single editable line of a document, backed by `NSTextView`.
 ///
 /// SwiftUI's `TextEditor` cannot express the key handling an outliner needs —
-/// Return that splits a block, Tab that re-parents it, Backspace that merges
-/// upwards — so each block hosts a bare `NSTextView` and the outline arbitrates.
+/// Return that finishes a line and opens the next, Tab that nests it,
+/// Backspace that steps it out or turns it into text — so each block hosts a
+/// bare `NSTextView` and the outline arbitrates.
 struct BlockTextView: NSViewRepresentable {
     @Environment(\.openURL) private var openURL
     let blockID: UUID
@@ -444,8 +443,9 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.confirm)
                     return true
                 }
-                // Return replaces a selection before splitting, just as native
-                // text editing does. Persist the deletion before outline logic.
+                // Return replaces a selection first, just as native text
+                // editing does, unless the outline finishes the whole line.
+                // Persist the deletion before outline logic.
                 if selection.length > 0, !parent.returnKeepsSelection {
                     view.insertText("", replacementRange: selection)
                 }
@@ -475,10 +475,6 @@ struct BlockTextView: NSViewRepresentable {
                 guard selection.location == 0, selection.length == 0 else { return false }
                 return parent.callbacks.onBackspaceAtStart(content)
 
-            case #selector(NSResponder.deleteForward(_:)):
-                guard selection.location == storage.length, selection.length == 0 else { return false }
-                return parent.callbacks.onDeleteAtEnd()
-
             case #selector(NSResponder.moveUp(_:)):
                 if view.isSlashMenuOpen {
                     view.slashMenuCommand?(.previous)
@@ -494,14 +490,6 @@ struct BlockTextView: NSViewRepresentable {
                 }
                 guard selection.length == 0, view.isOnLastLine(selection.location) else { return false }
                 return parent.callbacks.onArrowOut(.down, selection.location)
-
-            case #selector(NSResponder.moveLeft(_:)):
-                guard selection.location == 0, selection.length == 0 else { return false }
-                return parent.callbacks.onArrowOut(.left, -1)
-
-            case #selector(NSResponder.moveRight(_:)):
-                guard selection.location == storage.length, selection.length == 0 else { return false }
-                return parent.callbacks.onArrowOut(.right, 0)
 
             case #selector(NSResponder.cancelOperation(_:)):
                 if view.isSlashMenuOpen {

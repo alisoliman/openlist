@@ -66,7 +66,7 @@ extension Store {
         return block
     }
 
-    /// Appends a block to the end of a document or a task's detail page.
+    /// Appends a block to the end of a document, or of the subtree it is rooted at.
     @discardableResult
     func appendBlock(
         kind: BlockKind = .task,

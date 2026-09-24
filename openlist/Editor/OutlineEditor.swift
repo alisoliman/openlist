@@ -41,7 +41,6 @@ struct SlashState: Equatable {
     var caretRect: CGRect
     var viewport: CGRect
     var selectedIndex: Int = 0
-    var contentHeight: CGFloat = 264
 }
 
 /// Callbacks a row hands back to the document that owns it.
@@ -50,7 +49,6 @@ struct BlockRowActions {
     var onReturn: (Int, NSAttributedString) -> Bool = { _, _ in false }
     var onTab: (Bool, Int) -> Bool = { _, _ in false }
     var onBackspaceAtStart: (NSAttributedString) -> Bool = { _ in false }
-    var onDeleteAtEnd: () -> Bool = { false }
     var onArrowOut: (EditorArrow, Int) -> Bool = { _, _ in false }
     var onFocus: () -> Void = {}
     var onFocusApplied: (Int) -> Void = { _ in }
@@ -61,12 +59,7 @@ struct BlockRowActions {
     var onPasteFragment: () -> Bool = { false }
     var onEndEditing: (NSTextStorage) -> Void = { _ in }
     var onLineBreak: () -> Bool = { false }
-    var onSetCaption: (String) -> Void = { _ in }
-    var onCommitCaption: () -> Void = {}
     var onToggleCollapse: () -> Void = {}
-    var onToggleCompletion: () -> Void = {}
-    var onOpenDetails: () -> Void = {}
-    var onSelect: () -> Void = {}
 }
 
 extension BlockRowActions {
@@ -77,7 +70,6 @@ extension BlockRowActions {
             onReturn: onReturn,
             onTab: onTab,
             onBackspaceAtStart: onBackspaceAtStart,
-            onDeleteAtEnd: onDeleteAtEnd,
             onArrowOut: onArrowOut,
             onFocus: onFocus,
             onFocusApplied: onFocusApplied,
@@ -92,29 +84,22 @@ extension BlockRowActions {
     }
 }
 
-/// The editing rules an outline follows.
+/// The editing rules an outline follows, the list document's from the
+/// design. Only tasks and list items nest, two levels deep at most, and never
+/// under a heading or text; Return and Backspace step a line out or convert
+/// it instead of merging; `> ` makes text; done top-level tasks leave the
+/// document; and a line's whole edit, from the caret arriving to it leaving,
+/// is one undo step. A line left empty is removed.
 enum OutlinePolicy {
-    /// The legacy document's: anything nests under anything, Return and
-    /// Backspace split and merge lines, and each structural change is its own
-    /// undo step.
-    case legacy
-    /// The Next list document's, from the design. Only tasks and list items
-    /// nest, two levels deep at most, and never under a heading or text;
-    /// Return and Backspace step a line out or convert it instead of merging;
-    /// `> ` makes text; done top-level tasks leave the document; and a line's
-    /// whole edit, from the caret arriving to it leaving, is one undo step.
-    /// A line left empty is removed.
-    case nextDocument
-
-    /// Kinds that nest under a line of their own family in the Next document.
+    /// Kinds that nest under a line of their own family.
     static func nests(_ kind: BlockKind) -> Bool {
         kind == .task || kind == .bullet || kind == .numbered
     }
 
-    /// The deepest a Next document line can be indented.
+    /// The deepest a line can be indented.
     static let maximumDepth = 2
 
-    /// Whether a Next document line takes lines dropped into it.
+    /// Whether a line takes lines dropped into it.
     static func holdsDrops(_ row: BlockRow) -> Bool {
         nests(row.block.kind) && row.depth < maximumDepth
     }
@@ -151,7 +136,7 @@ enum OutlineEdit: Equatable {
     }
 }
 
-/// One `/` menu entry in the Next document: the design's five kinds, then
+/// One `/` menu entry: the design's five kinds, then
 /// the editor's other kinds, which only a query for them brings up.
 struct OutlineSlashOption: Identifiable, Equatable {
     let kind: BlockKind
@@ -194,24 +179,18 @@ struct OutlineSlashOption: Identifiable, Equatable {
     }
 }
 
-/// Host policy an outline defers to. Every default is the legacy document
-/// editor's, so a renderer overrides only what it does differently.
+/// Host policy an outline defers to. Each default leaves the outline, the
+/// store or the navigator to act, so a host sets only what it does itself.
 struct OutlineHooks {
-    /// Completes or reopens a task. `nil` writes the change straight to the store.
-    var toggleCompletion: ((UUID) -> Void)?
     /// Shows a task's details, once any date or label typed into its title
     /// has been committed. `nil` opens the navigator's detail panel.
     var openDetails: ((UUID) -> Void)?
     /// A block took the caret. It can fire more than once for one click.
     var didFocus: (UUID) -> Void = { _ in }
     /// Escape left a block. The text view has already resigned first
-    /// responder and the outline has let go of the caret.
+    /// responder and the outline has let go of the caret, which the host's
+    /// keys can put back with ``OutlineEditor/resumeEditing()``.
     var didEscape: (UUID) -> Void = { _ in }
-    /// Whether Return or ↑/↓, pressed while the window itself holds the
-    /// keyboard, takes the caret back to the block Escape left. A host with
-    /// its own meaning for those keys turns this off and can call
-    /// ``OutlineEditor/resumeEditing()`` when it wants.
-    var resumesAfterEscape = true
     /// Offered each menu command and its targets before the store's shared
     /// task commands and the outline's own. Return `true` to claim it.
     var taskCommand: (EditorCommand, [UUID]) -> Bool = { _, _ in false }
@@ -226,41 +205,40 @@ struct OutlineHooks {
     var didRecordEdit: (OutlineEdit, _ name: String) -> Void = { _, _ in }
     /// A new line took the caret.
     var didAddLine: (UUID) -> Void = { _ in }
-    /// Shift-Return on a Next document task, for a host that edits notes in
-    /// place. `nil` leaves the key doing nothing there, as on the other lines.
+    /// Shift-Return on a task, for a host that edits notes in place. `nil`
+    /// leaves the key doing nothing there, as on the other lines.
     var editNote: ((UUID) -> Void)?
 }
 
-/// The editing half of a document — a list, or a task's page of subtasks.
+/// The editing half of the list document, under ``OutlinePolicy``'s rules.
 ///
 /// It owns the caret, the `/` menu, the row projection and every key, paste,
-/// drop and menu command, and knows nothing about how rows look, so the
-/// legacy ``DocumentView`` and a Next-styled renderer can share it. A renderer
-/// fetches with ``blocksQuery(for:)``, calls ``configure(document:showsCompleted:sorting:hooks:)``
-/// and draws ``rowsToDraw(in:)`` in `body`, gives each row ``actions(for:)``,
-/// and attaches ``OutlineEditorLifecycle`` and ``OutlineSlashMenu``.
+/// drop and menu command, and knows nothing about how rows look. The
+/// renderer, `NXDocumentOutline`, fetches with ``blocksQuery(for:)``, calls
+/// ``configure(document:sorting:hooks:)`` and draws ``rowsToDraw(in:)`` in
+/// `body`, gives each row ``actions(for:)``, and attaches
+/// ``OutlineEditorLifecycle``.
 ///
 /// One editor serves one document. Key the view that owns it on the document,
-/// as every `DocumentView` call site does with `.id(...)`, so another list or
-/// inspected task gets a fresh editor; ``documentDidChange()`` only resets the
-/// caret, menu, drafts and kept-visible tasks if a document changes in place.
+/// as `NXDocumentOutline` does with `.id(...)`, so another list gets a fresh
+/// editor; ``documentDidChange()`` only resets the caret, menu, drafts and
+/// kept-visible tasks if a document changes in place. A document rooted at a
+/// task, ``DocumentContext/rootBlockID``, is the subtree under it.
 @MainActor
 @Observable
 final class OutlineEditor {
     let env: AppEnvironment
-    let policy: OutlinePolicy
     @ObservationIgnored var hooks: OutlineHooks
-    /// The list or task page being edited.
+    /// The document being edited.
     @ObservationIgnored private(set) var document: DocumentContext { didSet { drawnRows = nil } }
-    /// Hides done tasks, and everything nested under them, when `false`.
-    @ObservationIgnored var showsCompleted: Bool { didSet { drawnRows = nil } }
-    /// Completed tasks the host keeps on screen while `showsCompleted` is off.
+    /// Done top-level tasks the host keeps on screen, which the document
+    /// otherwise leaves for the host to list apart.
     @ObservationIgnored var completedTasksKeptVisible: Set<UUID> = [] { didSet { drawnRows = nil } }
     /// Order applied to top-level task runs. `.manual` keeps the stored order
     /// and is the only mode that allows rearranging.
     @ObservationIgnored var sorting: ListSorting { didSet { drawnRows = nil } }
     /// Draws only the document's tasks, each indented under the tasks above
-    /// it. Only the Next document offers this.
+    /// it, as the list's Tasks presentation.
     @ObservationIgnored var tasksOnly = false { didSet { if tasksOnly != oldValue { drawnRows = nil } } }
     /// The rows last drawn, for handlers that run before the next render.
     /// Cleared by any edit made here, or a change to what the rows depend on.
@@ -272,18 +250,15 @@ final class OutlineEditor {
     let selectionScopeID = UUID()
     @ObservationIgnored private var inlineMetadataEdits = InlineMetadataEdits()
 
-    init(env: AppEnvironment, document: DocumentContext, showsCompleted: Bool = true,
-         sorting: ListSorting = .manual, hooks: OutlineHooks = OutlineHooks(), policy: OutlinePolicy = .legacy) {
+    init(env: AppEnvironment, document: DocumentContext, sorting: ListSorting = .manual,
+         hooks: OutlineHooks = OutlineHooks()) {
         self.env = env
-        self.policy = policy
         self.document = document
-        self.showsCompleted = showsCompleted
         self.sorting = sorting
         self.hooks = hooks
     }
 
     isolated deinit {
-        if let resumeMonitor { NSEvent.removeMonitor(resumeMonitor) }
         for observer in undoObservers { NotificationCenter.default.removeObserver(observer) }
     }
 
@@ -291,9 +266,8 @@ final class OutlineEditor {
     /// untracked state, so the rows drawn in the same pass see the new values
     /// without invalidating the view. A new document's caret and menu reset in
     /// ``documentDidChange()``.
-    func configure(document: DocumentContext, showsCompleted: Bool, sorting: ListSorting, hooks: OutlineHooks) {
+    func configure(document: DocumentContext, sorting: ListSorting, hooks: OutlineHooks) {
         self.document = document
-        self.showsCompleted = showsCompleted
         self.sorting = sorting
         self.hooks = hooks
     }
@@ -321,50 +295,37 @@ final class OutlineEditor {
     /// The reveal to act on, once search has stepped aside.
     var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
 
-    /// Every row in display order, before completed tasks are hidden.
+    /// Every row in display order, done tasks included.
     func allRows(in blocks: [Block]) -> [BlockRow] {
         projectedRows(of: blocks.filter { $0.modelContext != nil && !$0.isDeleted })
     }
 
-    /// ``allRows(in:)`` of live blocks, showing what `expanding` folds away too.
+    /// ``allRows(in:)`` of live blocks, showing what `expanding` folds away
+    /// too. Done subtasks stay where they were ticked, as in the design.
     private func projectedRows(of live: [Block], expanding: Set<UUID> = []) -> [BlockRow] {
-        let rows = BlockTree.sortingTaskRuns(in: BlockTree.flatten(live,
+        BlockTree.sortingTaskRuns(in: BlockTree.flatten(live,
             root: document.rootBlockID, expanding: expanding.union(reveal?.ancestorIDs ?? [])), by: sorting)
-        switch policy {
-        case .legacy: return BlockTree.prioritizingPendingTasks(in: rows)
-        // The design keeps done subtasks where they were ticked.
-        case .nextDocument: return rows
-        }
     }
 
-    /// The rows to draw: ``allRows(in:)`` after hiding completed tasks, and
-    /// everything nested under them, unless the document shows them. The
-    /// Next document always hides its done top-level tasks, which its host
-    /// lists apart, unless a task under one is still open, keeps done
-    /// subtasks in place, and hides the sections of collapsed headings.
+    /// The rows to draw: ``allRows(in:)`` without the done top-level tasks,
+    /// which the host lists apart, unless a task under one is still open, and
+    /// without the sections of collapsed headings. Done subtasks stay in place.
     func visibleRows(in blocks: [Block]) -> [BlockRow] {
         let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
-        let revealing = (reveal?.visiblePath ?? []).union(completedTasksKeptVisible)
-        switch policy {
-        case .legacy:
-            let rows = projectedRows(of: live)
-            guard !showsCompleted else { return rows }
-            return BlockTree.hidingCompletedTasks(in: rows, revealing: revealing)
-        case .nextDocument:
-            let kept = revealing.union(BlockTree.completedTasksHoldingOpenTasks(in: live, root: document.rootBlockID))
-            if tasksOnly {
-                // Only tasks fold here: what a heading, list item or text
-                // line folds away still shows, as tasks under the tasks above.
-                let folding = Set(live.lazy.filter { !$0.isTask && $0.isCollapsed }.map(\.id))
-                let rows = projectedRows(of: live, expanding: folding)
-                return Self.taskOutline(BlockTree.hidingCompletedTasks(in: rows, revealing: kept, topLevelOnly: true))
-            }
-            let rows = projectedRows(of: live)
-            // A revealed line shows through the headings folding it away.
-            let unfolded = reveal?.blockID.map { Set(BlockTree.enclosingSections(of: $0, in: rows)) } ?? []
-            return BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
-                                                  revealing: kept, topLevelOnly: true)
+        let kept = (reveal?.visiblePath ?? []).union(completedTasksKeptVisible)
+            .union(BlockTree.completedTasksHoldingOpenTasks(in: live, root: document.rootBlockID))
+        if tasksOnly {
+            // Only tasks fold here: what a heading, list item or text line
+            // folds away still shows, as tasks under the tasks above.
+            let folding = Set(live.lazy.filter { !$0.isTask && $0.isCollapsed }.map(\.id))
+            let rows = projectedRows(of: live, expanding: folding)
+            return Self.taskOutline(BlockTree.hidingCompletedTasks(in: rows, revealing: kept, topLevelOnly: true))
         }
+        let rows = projectedRows(of: live)
+        // A revealed line shows through the headings folding it away.
+        let unfolded = reveal?.blockID.map { Set(BlockTree.enclosingSections(of: $0, in: rows)) } ?? []
+        return BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
+                                              revealing: kept, topLevelOnly: true)
     }
 
     /// Only the tasks among `rows`, each as deep as the tasks above it.
@@ -416,20 +377,6 @@ final class OutlineEditor {
     /// Caret offset for the row's next programmatic focus pass.
     func pendingCaret(for id: UUID) -> Int? { focus.blockID == id ? focus.caret : nil }
 
-    func isSlashMenuOpen(on id: UUID) -> Bool { slash?.blockID == id }
-
-    /// Whether the row is in the navigator's row selection for this document.
-    func isSelected(_ id: UUID) -> Bool {
-        env.navigator.selection.contains(id)
-            && (env.navigator.rowSelection.scopeID == nil || env.navigator.rowSelection.scopeID == selectionScopeID)
-    }
-
-    /// The empty-row hint shows on the caret's row, or on a document's only row.
-    func showsPlaceholder(for row: BlockRow, rowCount: Int) -> Bool {
-        guard row.block.text.isEmpty else { return false }
-        return focus.blockID == row.id || rowCount == 1
-    }
-
     /// Moves the caret programmatically. `caret == -1` means end of text.
     func requestFocus(_ id: UUID?, caret: Int? = nil) {
         focus.request(id, caret: caret)
@@ -468,10 +415,7 @@ final class OutlineEditor {
 
     /// The kinds the `/` menu offers for `query`, in its order.
     func slashKinds(matching query: String) -> [BlockKind] {
-        switch policy {
-        case .legacy: SlashMenuView.matches(query: query)
-        case .nextDocument: OutlineSlashOption.matching(query).map(\.kind)
-        }
+        OutlineSlashOption.matching(query).map(\.kind)
     }
 
     func highlightSlashResult(_ index: Int) {
@@ -480,11 +424,6 @@ final class OutlineEditor {
 
     func dismissSlashMenu() {
         slash = nil
-    }
-
-    /// The menu's measured height, for a menu still open on `blockID`.
-    func setSlashContentHeight(_ height: CGFloat, for blockID: UUID) {
-        if slash?.blockID == blockID { slash?.contentHeight = height }
     }
 
     private func applySlashSelectionContents(_ kind: BlockKind) {
@@ -573,31 +512,22 @@ final class OutlineEditor {
                 // would stay stale until some other action saved.
                 env.store.scheduleSave(after: .seconds(1))
             },
-            onReturn: { [self] caret, content in
-                if policy == .nextDocument { return nextReturn(block: block, content: content) }
-                return editorEdit("Split block") { handleReturn(block: block, caret: caret, content: content) }
+            onReturn: { [self] _, content in
+                handleReturn(block: block, content: content)
             },
             onTab: { [self] isBacktab, caret in
-                if policy == .nextDocument { return nextTab(block: block, isBacktab: isBacktab, caret: caret) }
-                return editorEdit(isBacktab ? "Outdent block" : "Indent block") { handleTab(block: block, isBacktab: isBacktab, caret: caret) }
+                handleTab(block: block, isBacktab: isBacktab, caret: caret)
             },
             onBackspaceAtStart: { [self] content in
-                if policy == .nextDocument { return nextBackspace(block: block, content: content) }
-                return editorEdit("Merge blocks") { handleBackspace(block: block, content: content) }
+                handleBackspace(block: block, content: content)
             },
-            onDeleteAtEnd: { [self] in
-                // The design's lines never merge.
-                guard policy == .legacy else { return false }
-                return editorEdit("Merge blocks") { handleForwardDelete(block: block) }
-            },
-            onArrowOut: { [self] direction, caret in
-                handleArrow(from: block, direction: direction, caret: caret)
+            onArrowOut: { [self] direction, _ in
+                handleArrow(from: block, direction: direction)
             },
             onFocus: { [self] in
                 guard block.modelContext != nil, !block.isDeleted else { return }
-                guard !(NSApp?.keyWindow?.firstResponder is RowSelectionNSControl) else { return }
                 if slash?.blockID != blockID { slash = nil }
-                stopWaitingToResume()
+                escapedBlockID = nil
                 // A click into another line ends any caret move on its way.
                 if focus.blockID != blockID { appliedFocusToken = focus.token }
                 focus.adopt(blockID)
@@ -617,7 +547,7 @@ final class OutlineEditor {
                 slash = nil
                 focus.request(nil)
                 env.navigator.clearSelection()
-                waitToResume(blockID)
+                escapedBlockID = blockID
                 hooks.didEscape(blockID)
             },
             onSlashQuery: { [self] query, range, caretRect, viewport in
@@ -654,7 +584,7 @@ final class OutlineEditor {
             },
             onEndEditing: { [self] storage in
                 // The text view a kind change replaced, not the line being left.
-                guard policy == .nextDocument, redrawnLineID != blockID else { return }
+                guard redrawnLineID != blockID else { return }
                 if line?.blockID == blockID { commitLine(undoTarget: storage) }
                 // Clicking away lets the caret go, so the host's keys and
                 // targets work again. A caret moving to another row has
@@ -667,7 +597,6 @@ final class OutlineEditor {
                 }
             },
             onLineBreak: { [self] in
-                guard policy == .nextDocument else { return false }
                 // The design's Turn into card takes ⇧↩ as it takes Return.
                 if slash?.blockID == blockID {
                     handleSlashCommand(.confirm)
@@ -684,32 +613,11 @@ final class OutlineEditor {
                 if env.store.block(id: blockID) != nil { editNote(blockID) }
                 return true
             },
-            onSetCaption: { [self] caption in
-                block.mediaCaption = caption
-                block.touch()
-                env.store.scheduleSave()
-            },
-            onCommitCaption: { [self] in
-                env.store.save()
-            },
             onToggleCollapse: { [self] in
                 if reveal?.ancestorIDs.contains(block.id) == true, block.isCollapsed {
                     env.navigator.finishReveal()
                 } else { env.store.toggleCollapse(block) }
                 drawnRows = nil
-            },
-            onToggleCompletion: { [self] in
-                if let toggle = hooks.toggleCompletion { toggle(blockID) } else { env.store.toggleCompletion(block) }
-                drawnRows = nil
-            },
-            onOpenDetails: { [self] in
-                openDetails(block)
-            },
-            onSelect: { [self] in
-                env.navigator.selectRow(block.id, gesture: .replace, scope: selectionScopeID, visible: rows.map(\.id))
-                env.activeDocument = document
-                stopWaitingToResume()
-                focus.request(nil)
             }
         )
     }
@@ -721,126 +629,17 @@ final class OutlineEditor {
 
     // MARK: - Key handling
 
-    /// A task page's own children are its floor. Outdenting one would move it
-    /// out of the page, where the page could no longer show it.
+    /// The document's root is its floor: a line at its top level can't step
+    /// out of it, nor one under the task a document is rooted at.
     private func canOutdent(_ block: Block) -> Bool {
         block.parentID != document.rootBlockID
     }
 
-    private func handleReturn(block: Block, caret: Int, content: NSAttributedString) -> Bool {
-        // An empty continuation block ends the run: outdent, or fall back to text.
-        if content.length == 0, block.kind.continuesOnReturn {
-            if canOutdent(block), env.store.outdent(block) {
-                env.store.save()
-                focus.request(block.id, caret: 0)
-                return true
-            }
-            if block.kind != .paragraph {
-                env.store.changeKind(block, to: .paragraph)
-                env.store.save()
-                focus.request(block.id, caret: 0)
-                return true
-            }
-        }
-
-        // Return at the end of a line commits any date or label the user typed.
-        if caret >= content.length {
-            commitInlineMetadata(block)
-
-            let newKind: BlockKind = block.kind.continuesOnReturn ? block.kind : .paragraph
-            let created: Block
-            let hasVisibleChildren = !env.store.children(of: block.id, listID: document.listID).isEmpty
-                && !block.isCollapsed
-            if hasVisibleChildren {
-                created = env.store.insertChild(kind: newKind, of: block)
-            } else {
-                created = env.store.insertBlock(kind: newKind, after: block)
-            }
-            env.store.save()
-            focus.request(created.id, caret: 0)
-            return true
-        }
-
-        let created = env.store.splitBlock(block, at: caret, content: content)
-        env.store.save()
-        focus.request(created.id, caret: 0)
-        return true
-    }
-
-    private func handleTab(block: Block, isBacktab: Bool, caret: Int) -> Bool {
-        let moved = isBacktab ? canOutdent(block) && env.store.outdent(block) : env.store.indent(block)
-        if moved {
-            env.store.save()
-            focus.request(block.id, caret: caret)
-        }
-        // Consume Tab either way so it never inserts a literal tab character.
-        return true
-    }
-
-    private func handleBackspace(block: Block, content: NSAttributedString) -> Bool {
-        // A styled block first reverts to plain text, matching editors where
-        // Backspace peels off the formatting before deleting anything.
-        if content.length == 0, block.kind != .paragraph, block.kind != .task {
-            env.store.changeKind(block, to: .paragraph)
-            env.store.save()
-            focus.request(block.id, caret: 0)
-            return true
-        }
-
-        let outcome = env.store.backspaceAtStart(
-            block,
-            content: content,
-            in: document,
-            visibleIDs: showsCompleted ? nil : Set(rows.map(\.id))
-        )
-        env.store.save()
-
-        switch outcome {
-        case .outdented:
-            focus.request(block.id, caret: 0)
-            return true
-        case let .merged(target, caret):
-            focus.request(target.id, caret: caret)
-            return true
-        case let .removed(target):
-            focus.request(target?.id, caret: -1)
-            return true
-        case .noop:
-            return false
-        }
-    }
-
-    private func handleForwardDelete(block: Block) -> Bool {
-        // Visible rows, not all rows: pulling up a row the user cannot see
-        // would make text appear from nowhere.
-        let currentRows = rows
-        guard
-            let index = currentRows.firstIndex(where: { $0.id == block.id }),
-            index + 1 < currentRows.count
-        else { return false }
-
-        // Pulling the next block up is the same operation as it backspacing
-        // into this one, so reuse that path.
-        let next = currentRows[index + 1].block
-        let outcome = env.store.backspaceAtStart(
-            next,
-            content: env.store.attributedContent(of: next),
-            in: document,
-            visibleIDs: showsCompleted ? nil : Set(currentRows.map(\.id))
-        )
-        env.store.save()
-
-        if case let .merged(target, caret) = outcome {
-            focus.request(target.id, caret: caret)
-            return true
-        }
-        return true
-    }
-
-    private func handleArrow(from block: Block, direction: EditorArrow, caret: Int) -> Bool {
-        // The design's lines are single inputs, which ← and → never leave.
-        if policy == .nextDocument, direction == .left || direction == .right { return false }
-        let backward = direction == .up || direction == .left
+    /// ↑ off a line's first visual line, or ↓ off its last, takes the caret
+    /// to the line above or below. ← and → never leave a line, as the
+    /// design's lines are single inputs.
+    private func handleArrow(from block: Block, direction: EditorArrow) -> Bool {
+        let backward = direction == .up
         let currentRows = rows
         guard let index = currentRows.firstIndex(where: { $0.id == block.id }) else { return false }
 
@@ -855,13 +654,13 @@ final class OutlineEditor {
         commitInlineMetadata(block)
         commitLine()
         // The design's startEdit puts the caret at the end of the line either way.
-        focus.request(target.id, caret: backward || policy == .nextDocument ? -1 : 0)
+        focus.request(target.id, caret: -1)
         return true
     }
 
     private func applyMarkdownPrefix(_ kind: BlockKind, to block: Block) {
-        // `> ` makes text in the Next document, as it does in the design.
-        let kind = policy == .nextDocument && kind == .quote ? .paragraph : kind
+        // `> ` makes text, as it does in the design.
+        let kind = kind == .quote ? .paragraph : kind
         if kind == .divider {
             env.store.changeKind(block, to: .divider)
             let paragraph = env.store.insertBlock(kind: .paragraph, after: block)
@@ -869,25 +668,23 @@ final class OutlineEditor {
             focus.request(paragraph.id, caret: 0)
             return
         }
-        // Deliberately no focus request: the block already holds the caret, and
-        // the text view has just placed it at 0 after deleting the prefix. A
-        // programmatic request resolves a runloop later and would drag the
-        // caret back to the start of whatever the user typed next.
         convert(block, to: kind)
         env.store.save()
-        // The Next document draws a task, or code, in a text view of its own,
-        // so a line turning into one or from one needs the keyboard handed
-        // over. A request without a caret leaves a text view that stayed alone.
-        if policy == .nextDocument { focus.request(block.id) }
+        // The document draws a task, or code, in a text view of its own, so a
+        // line turning into one or from one needs the keyboard handed over.
+        // The request carries no caret: the text view has just put it at 0
+        // after deleting the prefix, and a caret resolved a runloop later
+        // would drag it back from whatever the user typed next. A text view
+        // that stayed alone keeps it where it is.
+        focus.request(block.id)
     }
 
-    /// Changes a line's kind. In the Next document a kind that doesn't nest
-    /// comes out to the top level where it stands, as the design's convert
-    /// resets its depth, and the lines under it follow it there, since
-    /// nothing goes under a heading or text.
+    /// Changes a line's kind. A kind that doesn't nest comes out to the top
+    /// level where it stands, as the design's convert resets its depth, and
+    /// the lines under it follow it there, since nothing goes under a heading
+    /// or text.
     private func convert(_ block: Block, to kind: BlockKind) {
         env.store.changeKind(block, to: kind)
-        guard policy == .nextDocument else { return }
         // The renderer may draw the new kind in a new text view. The one it
         // replaces gives up the keyboard, which isn't the line being left.
         let id = block.id
@@ -917,7 +714,7 @@ final class OutlineEditor {
     /// A line whose text view a kind change may be replacing.
     @ObservationIgnored private var redrawnLineID: UUID?
 
-    // MARK: - The Next document's rules
+    // MARK: - The design's keys
 
     private func depth(of block: Block) -> Int {
         rows.first { $0.id == block.id }?.depth ?? 0
@@ -928,7 +725,7 @@ final class OutlineEditor {
     /// the caret is, and a new empty one opens below: a heading is followed
     /// by a task, text by text, anything else by its own kind, and a task
     /// whose subtree shows takes it as its first child.
-    private func nextReturn(block: Block, content: NSAttributedString) -> Bool {
+    private func handleReturn(block: Block, content: NSAttributedString) -> Bool {
         if content.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let changed = editorEdit("Edit line") { () -> Bool in
                 if depth(of: block) > 0, canOutdent(block) { return env.store.outdent(block) }
@@ -947,11 +744,11 @@ final class OutlineEditor {
         commitInlineMetadata(block)
         commitLine()
         guard block.modelContext != nil, !block.isDeleted else { return true }
-        addLine(covering: [block.id]) { nextLine(after: block, row: row) }
+        addLine(covering: [block.id]) { line(after: block, row: row) }
         return true
     }
 
-    private func nextLine(after block: Block, row: BlockRow?) -> Block {
+    private func line(after block: Block, row: BlockRow?) -> Block {
         let kind: BlockKind = switch block.kind {
         case .heading1, .heading2, .heading3: .task
         case .quote, .divider, .image: .paragraph
@@ -962,10 +759,10 @@ final class OutlineEditor {
             : env.store.insertBlock(kind: kind, after: block)
     }
 
-    private func nextTab(block: Block, isBacktab: Bool, caret: Int) -> Bool {
+    private func handleTab(block: Block, isBacktab: Bool, caret: Int) -> Bool {
         let moved = editorEdit(isBacktab ? "Outdent" : "Indent",
                                edit: isBacktab ? .outdented([block.id]) : .indented([block.id])) {
-            isBacktab ? nextOutdent(block) : nextIndent(block)
+            isBacktab ? outdentLine(block) : indentLine(block)
         }
         if moved {
             env.store.save()
@@ -979,7 +776,7 @@ final class OutlineEditor {
     /// the nearest line above at its own depth, when that line and the one
     /// right above are tasks or list items too, and never past two levels.
     /// Headings and text stay at the top.
-    private func nextIndent(_ block: Block) -> Bool {
+    private func indentLine(_ block: Block) -> Bool {
         guard OutlinePolicy.nests(block.kind) else { return false }
         let current = rows
         guard let index = current.firstIndex(where: { $0.id == block.id }), index > 0 else { return false }
@@ -995,7 +792,7 @@ final class OutlineEditor {
         return true
     }
 
-    private func nextOutdent(_ block: Block) -> Bool {
+    private func outdentLine(_ block: Block) -> Bool {
         guard canOutdent(block), env.store.outdent(block) else { return false }
         drawnRows = nil
         return true
@@ -1005,7 +802,7 @@ final class OutlineEditor {
     /// the caret ends the line above, or starts the one below at the top;
     /// a heading or list item turns into text; a nested line steps out.
     /// Lines never merge.
-    private func nextBackspace(block: Block, content: NSAttributedString) -> Bool {
+    private func handleBackspace(block: Block, content: NSAttributedString) -> Bool {
         if content.length == 0 {
             let current = rows
             let index = current.firstIndex { $0.id == block.id } ?? current.endIndex
@@ -1024,7 +821,7 @@ final class OutlineEditor {
                 convert(block, to: .paragraph)
                 return true
             }
-            return depth(of: block) > 0 && nextOutdent(block)
+            return depth(of: block) > 0 && outdentLine(block)
         }
         if changed {
             env.store.save()
@@ -1052,11 +849,11 @@ final class OutlineEditor {
     /// does for the line holding the caret.
     func indent(_ ids: [UUID], outdent: Bool) {
         let targets = topmost(ids.compactMap { env.store.block(id: $0) }.filter { $0.listID == document.listID })
-        guard policy == .nextDocument, !targets.isEmpty else { return }
+        guard !targets.isEmpty else { return }
         editorEdit(outdent ? "Outdent" : "Indent", edit: outdent ? .outdented(ids) : .indented(ids)) {
             env.store.batch {
                 for block in outdent ? targets.reversed() : targets {
-                    _ = outdent ? nextOutdent(block) : nextIndent(block)
+                    _ = outdent ? outdentLine(block) : indentLine(block)
                 }
             }
         }
@@ -1064,7 +861,7 @@ final class OutlineEditor {
 
     /// Puts the caret in `id`, at the end unless `caret` says otherwise.
     func edit(_ id: UUID, caret: Int? = -1) {
-        stopWaitingToResume()
+        escapedBlockID = nil
         env.activeDocument = document
         focus.request(id, caret: caret)
     }
@@ -1084,7 +881,7 @@ final class OutlineEditor {
     /// Turns a line that isn't being written into `kind`, as the `/` menu
     /// turns the line holding the caret, in a step of its own.
     func turn(_ id: UUID, into kind: BlockKind) {
-        guard policy == .nextDocument, let block = env.store.block(id: id), block.listID == document.listID,
+        guard let block = env.store.block(id: id), block.listID == document.listID,
               !block.kind.isVoid, !kind.isVoid, block.kind != kind else { return }
         commitLine()
         editorEdit("Change block type", edit: .edited(id), joiningLine: false) {
@@ -1095,7 +892,7 @@ final class OutlineEditor {
 
     /// Deletes a line, keeping what's under it where it shows, in a step of its own.
     func deleteLine(_ id: UUID) {
-        guard policy == .nextDocument, let block = env.store.block(id: id), block.listID == document.listID else { return }
+        guard let block = env.store.block(id: id), block.listID == document.listID else { return }
         commitLine()
         if focus.blockID == id { focus.request(nil) }
         editorEdit("Delete", edit: .deleted(id), joiningLine: false) {
@@ -1115,7 +912,7 @@ final class OutlineEditor {
     /// within two levels, and under a task or list item.
     func appendSubtask(to taskID: UUID) {
         let current = blocks
-        guard policy == .nextDocument, let task = current.first(where: { $0.id == taskID }), task.isTask else { return }
+        guard let task = current.first(where: { $0.id == taskID }), task.isTask else { return }
         let depth = BlockTree.ancestors(of: task, in: current).count
         guard depth < OutlinePolicy.maximumDepth else { return }
         unfold(toShow: taskID)
@@ -1166,8 +963,8 @@ final class OutlineEditor {
 
     // MARK: - Line edits
 
-    /// The Next document's edit of one line, from the caret arriving to it
-    /// leaving, undone as one step.
+    /// The edit of one line, from the caret arriving to it leaving, undone
+    /// as one step.
     private final class LineEdit {
         let blockID: UUID
         /// Added by this edit, so taking it out again leaves nothing to undo.
@@ -1198,11 +995,10 @@ final class OutlineEditor {
     @ObservationIgnored private var isUndoing = false
     @ObservationIgnored private var undoTypedInLine = false
 
-    /// The edit of `id`, finishing any other line's first. `nil` outside the
-    /// Next document.
+    /// The edit of `id`, finishing any other line's first.
     @discardableResult
     private func openLine(for id: UUID?) -> LineEdit? {
-        guard policy == .nextDocument, let id else { return nil }
+        guard let id else { return nil }
         if let line, line.blockID == id { return line }
         commitLine()
         guard let block = env.store.block(id: id) else { return nil }
@@ -1391,51 +1187,19 @@ final class OutlineEditor {
 
     // MARK: - Structure changes
 
+    /// The design's docAdd: a task line at the end of the document, which
+    /// takes the caret.
     func appendTask() {
-        if policy == .nextDocument {
-            addLine(covering: []) { env.store.appendBlock(kind: .task, to: document) }
-            return
-        }
-        editorEdit("New task") {
-            let created = env.store.appendBlock(kind: .task, to: document)
-            env.store.save()
-            focus.request(created.id, caret: 0)
-        }
-    }
-
-    /// A click below the last row: back into a trailing empty task, the way
-    /// clicking below a note's last line starts a new line, or a new one.
-    func focusOrAppendTrailingTask() {
-        if let last = rows.last?.block, last.text.isEmpty, last.kind == .task {
-            focus.request(last.id, caret: -1)
-        } else {
-            appendTask()
-        }
-    }
-
-    /// Takes the caret to the first of `ids`, just pasted from a menu.
-    func didPasteFragment(_ ids: [UUID]) {
-        drawnRows = nil
-        env.activeDocument = document
-        focus.request(ids.first, caret: 0)
-    }
-
-    /// The gutter started a row selection, so the caret steps aside.
-    func beginRowSelection() {
-        env.activeDocument = document
-        stopWaitingToResume()
-        focus.request(nil)
-        slash = nil
+        addLine(covering: []) { env.store.appendBlock(kind: .task, to: document) }
     }
 
     func dropText(_ text: String, after block: Block) {
         editorEdit("Drop text") { insertPastedText(text, after: block) }
     }
 
-    /// Runs a structural change as one undo step. In the Next document the
-    /// change joins the edit of the line holding the caret, when one does
-    /// and `joiningLine`, and otherwise is named for `edit` and reported to
-    /// the host.
+    /// Runs a structural change as one undo step. The change joins the edit
+    /// of the line holding the caret, when one does and `joiningLine`, and
+    /// otherwise is named for `edit` and reported to the host.
     @discardableResult
     private func editorEdit<T>(_ name: String, edit: OutlineEdit? = nil, joiningLine: Bool = true, _ body: () -> T) -> T {
         defer { drawnRows = nil }
@@ -1461,15 +1225,11 @@ final class OutlineEditor {
             return
         }
         defer { drawnRows = nil }
-        var position = position
-        if policy == .nextDocument {
-            // The move is a step of its own, after the line being written.
-            commitLine()
-            guard let placed = nextDropPosition(for: draggedIDs, relativeTo: target.block, position: position) else {
-                env.store.refuse("Only tasks and list items go under another line, two levels deep at most.")
-                return
-            }
-            position = placed
+        // The move is a step of its own, after the line being written.
+        commitLine()
+        guard let position = dropPosition(for: draggedIDs, relativeTo: target.block, position: position) else {
+            env.store.refuse("Only tasks and list items go under another line, two levels deep at most.")
+            return
         }
         NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
         let parentID: UUID?
@@ -1493,13 +1253,13 @@ final class OutlineEditor {
             aboveID = env.store.children(of: target.id, listID: document.listID)
                 .first { !draggedIDs.contains($0.id) }?.id
         }
-        let shape = policy == .nextDocument ? outlineShape() : []
+        let shape = outlineShape()
         do {
             let moved = try env.store.moveSelection(draggedIDs, to: document.listID,
                 parentID: parentID, above: aboveID, expandsParent: position == .inside,
                 undoManager: NSApp?.keyWindow?.undoManager)
-            // Named and logged in the Next document, when anything moved.
-            guard policy == .nextDocument, !moved.isEmpty, outlineShape() != shape else { return }
+            // Named and logged, when anything moved.
+            guard !moved.isEmpty, outlineShape() != shape else { return }
             let edit = OutlineEdit.dragged(moved)
             let name = hooks.nameEdit(edit) ?? edit.defaultName
             undoManager?.setActionName(name)
@@ -1511,7 +1271,7 @@ final class OutlineEditor {
     /// items go under a line, and only under a task or list item, two levels
     /// deep at most. A drop into a line that can't hold it lands after it;
     /// `nil` when the lines can't go beside it either.
-    private func nextDropPosition(for ids: [UUID], relativeTo target: Block, position: DropPosition) -> DropPosition? {
+    private func dropPosition(for ids: [UUID], relativeTo target: Block, position: DropPosition) -> DropPosition? {
         let current = blocks
         let index = BlockTree.childIndex(of: current)
         let dragged = topmost(ids.compactMap { id in current.first { $0.id == id } })
@@ -1589,19 +1349,19 @@ final class OutlineEditor {
         // otherwise ⌘N would fire in both the list and the open task panel.
         guard env.activeDocument == document else { return }
         defer { drawnRows = nil }
-        let structural: [EditorCommand] = [.newTask, .indent, .outdent, .moveUp, .moveDown]
+        let structural: [EditorCommand] = [.indent, .outdent, .moveUp, .moveDown]
         if let command = env.pendingCommand, structural.contains(command) {
             editorEdit("Edit outline", edit: outlineEdit(for: command, on: commandTargets.map(\.id))) { handleCommand() }
         } else {
             // A task command comes after the line being written, as it would
             // after a click away from it, so neither step takes in the other.
-            if policy == .nextDocument, env.pendingCommand != nil { commitLine() }
+            if env.pendingCommand != nil { commitLine() }
             handleCommand()
         }
     }
 
     private func outlineEdit(for command: EditorCommand, on ids: [UUID]) -> OutlineEdit? {
-        guard policy == .nextDocument, let first = ids.first else { return nil }
+        guard let first = ids.first else { return nil }
         switch command {
         case .indent: return .indented(ids)
         case .outdent: return .outdented(ids)
@@ -1650,11 +1410,6 @@ final class OutlineEditor {
         }
 
         switch command {
-        case .newTask:
-            let created = env.store.prependTask(to: document)
-            env.store.save()
-            focus.request(created.id, caret: 0)
-
         case .openDetails:
             if let first = targets.first(where: \.isTask) {
                 openDetails(first)
@@ -1670,17 +1425,11 @@ final class OutlineEditor {
                 env.openTask(first.id, showing: .labels)
             }
 
-        case .indent where policy == .nextDocument:
-            env.store.batch { for block in topmost(targets) { _ = nextIndent(block) } }
-
-        case .outdent where policy == .nextDocument:
-            env.store.batch { for block in topmost(targets).reversed() { _ = nextOutdent(block) } }
-
         case .indent:
-            env.store.batch { for block in targets { _ = env.store.indent(block) } }
+            env.store.batch { for block in topmost(targets) { _ = indentLine(block) } }
 
         case .outdent:
-            env.store.batch { for block in targets.reversed() where canOutdent(block) { _ = env.store.outdent(block) } }
+            env.store.batch { for block in topmost(targets).reversed() { _ = outdentLine(block) } }
 
         case .moveUp:
             if let first = targets.first {
@@ -1696,8 +1445,8 @@ final class OutlineEditor {
 
         case .expandAll, .collapseAll:
             let all = allRows(in: blocks)
-            // The Next document's headings fold their sections too.
-            let sections = policy == .nextDocument ? BlockTree.sections(in: all) : [:]
+            // Headings fold their sections too.
+            let sections = BlockTree.sections(in: all)
             env.store.batch {
                 for row in all where row.hasChildren || sections[row.id]?.isEmpty == false {
                     env.store.setCollapsed(command == .collapseAll, for: row.block)
@@ -1711,53 +1460,13 @@ final class OutlineEditor {
 
     // MARK: - Resuming after Escape
 
-    /// The block Escape left, until a row takes the caret again.
+    /// The block Escape left, until a row takes the caret again or the
+    /// host's keys move on.
     @ObservationIgnored private(set) var escapedBlockID: UUID?
-    /// The window Escape left holding the keyboard. A sheet or popover over it
-    /// keeps its own Return. `nil` only off screen, as in the checks.
-    @ObservationIgnored private weak var escapeWindow: NSWindow?
-    @ObservationIgnored private var resumeMonitor: Any?
-
-    private func waitToResume(_ id: UUID) {
-        escapedBlockID = id
-        escapeWindow = NSApp?.keyWindow
-        // Escape leaves the window holding the keyboard, where a legacy
-        // document screen has no keys of its own. Listen for the one that
-        // should take the caret back, until a row takes it some other way.
-        guard hooks.resumesAfterEscape, resumeMonitor == nil else { return }
-        resumeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            let resumed = MainActor.assumeIsolated {
-                self.resumeEditing(onKey: event.keyCode, modifiers: event.modifierFlags, in: event.window)
-            }
-            return resumed ? nil : event
-        }
-    }
 
     /// Forgets the block Escape left, once the host's keys have moved on.
     func forgetEscape() {
-        if escapedBlockID != nil { stopWaitingToResume() }
-    }
-
-    private func stopWaitingToResume() {
         escapedBlockID = nil
-        escapeWindow = nil
-        if let resumeMonitor { NSEvent.removeMonitor(resumeMonitor) }
-        resumeMonitor = nil
-    }
-
-    /// Resumes editing for a key pressed while `window` itself holds the
-    /// keyboard, if it is the window Escape was pressed in. Only Return,
-    /// Enter, ↑ and ↓ without modifiers resume, and only while this document
-    /// takes menu commands. Returns `true` when the key was spent putting the
-    /// caret back.
-    func resumeEditing(onKey keyCode: UInt16, modifiers: NSEvent.ModifierFlags, in window: NSWindow?) -> Bool {
-        // Return, keypad Enter, ↓ and ↑.
-        guard [36, 76, 125, 126].contains(keyCode),
-              modifiers.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function, .capsLock]).isEmpty,
-              let window, window.firstResponder === window, escapeWindow.map({ $0 === window }) ?? true,
-              env.activeDocument == document else { return false }
-        return resumeEditing()
     }
 
     /// Puts the caret back in the block Escape left, wherever the text view
@@ -1765,7 +1474,7 @@ final class OutlineEditor {
     @discardableResult
     func resumeEditing() -> Bool {
         guard let id = escapedBlockID else { return false }
-        stopWaitingToResume()
+        escapedBlockID = nil
         guard rows.contains(where: { $0.id == id && !$0.block.kind.isVoid }) else { return false }
         env.activeDocument = document
         focus.request(id)
@@ -1774,15 +1483,15 @@ final class OutlineEditor {
 
     // MARK: - Lifecycle
 
-    /// A list document claims menu commands on appear; a task's page waits
-    /// until the user actually edits inside it.
+    /// A list's document claims menu commands on appear; one rooted at a
+    /// task waits until the user edits inside it.
     func didAppear() {
         if document.rootBlockID == nil { env.activeDocument = document }
     }
 
     func didDisappear() {
         commitLine()
-        stopWaitingToResume()
+        escapedBlockID = nil
         if env.navigator.rowSelection.scopeID == selectionScopeID { env.navigator.clearSelection() }
     }
 
@@ -1792,7 +1501,7 @@ final class OutlineEditor {
         focus = EditorFocus()
         slash = nil
         completedTasksKeptVisible = []
-        stopWaitingToResume()
+        escapedBlockID = nil
         drawnRows = nil
         if document.rootBlockID == nil { env.activeDocument = document }
     }
@@ -1802,7 +1511,7 @@ final class OutlineEditor {
     }
 
     func openTaskDidChange(_ openTaskID: UUID?) {
-        // Closing the detail panel hands control back to the list.
+        // Closing the inspector hands control back to the list.
         if openTaskID == nil, document.rootBlockID == nil {
             env.activeDocument = document
         }
@@ -1811,11 +1520,11 @@ final class OutlineEditor {
     /// The rows on show changed from `old` to `ids`.
     func visibleRowsDidChange(_ ids: [UUID], from old: [UUID] = []) {
         env.navigator.reconcileSelection(scope: selectionScopeID, visible: ids)
-        // A Next line that stops showing while it holds the caret, folded
-        // away or settled into Completed, is left, as a click away leaves it.
-        // Nothing could take the caret there. A line just added, not drawn
-        // yet, keeps it.
-        guard policy == .nextDocument, let id = focus.blockID, old.contains(id), !ids.contains(id) else { return }
+        // A line that stops showing while it holds the caret, folded away or
+        // settled into Completed, is left, as a click away leaves it. Nothing
+        // could take the caret there. A line just added, not drawn yet,
+        // keeps it.
+        guard let id = focus.blockID, old.contains(id), !ids.contains(id) else { return }
         if line?.blockID == id { commitLine() }
         focus.request(nil)
     }
@@ -1828,10 +1537,9 @@ final class OutlineEditor {
             line = nil
             edit.undoTargets.allObjects.forEach(discardTyping)
         }
-        if !env.navigator.isSelectingRows, let focused = focus.blockID, !ids.contains(focused) {
-            // The Next document lets the caret go; its host keeps the focus.
-            let next = policy == .nextDocument ? nil : rows.first(where: { !$0.block.kind.isVoid })?.id
-            focus.request(next, caret: -1)
+        if let focused = focus.blockID, !ids.contains(focused) {
+            // The caret goes; the host keeps the focus.
+            focus.request(nil)
         }
     }
 
@@ -1858,7 +1566,7 @@ final class OutlineEditor {
     }
 }
 
-/// The part of an outline's lifecycle every renderer shares: menu commands,
+/// The part of an outline's lifecycle its renderer attaches: menu commands,
 /// reveal focus, row-selection reconciliation and draft commits.
 struct OutlineEditorLifecycle: ViewModifier {
     let editor: OutlineEditor
@@ -1882,40 +1590,5 @@ struct OutlineEditorLifecycle: ViewModifier {
             .onChange(of: document) { _, _ in editor.documentDidChange() }
             .onChange(of: env.navigator.openTaskID) { _, id in editor.openTaskDidChange(id) }
             .onChange(of: blockIDs) { _, ids in editor.blocksDidChange(ids) }
-    }
-}
-
-/// The `/` menu, placed at the caret of the row that summoned it. Attach with
-/// `overlayPreferenceValue(EditorTextBoundsKey.self)`.
-struct OutlineSlashMenu: View {
-    let editor: OutlineEditor
-    let anchors: [UUID: Anchor<CGRect>]
-
-    var body: some View {
-        if let slash = editor.slash, let anchor = anchors[slash.blockID] {
-            GeometryReader { proxy in
-                let frame = proxy[anchor]
-                let count = SlashMenuView.matches(query: slash.query).count
-                if let menuFrame = SlashMenuLayout.frame(
-                    caret: slash.caretRect,
-                    viewport: slash.viewport.intersection(CGRect(
-                        x: -frame.minX, y: slash.viewport.minY,
-                        width: proxy.size.width, height: slash.viewport.height
-                    )),
-                    preferredHeight: count == 0 ? 44 : min(264, slash.contentHeight)
-                ) {
-                    SlashMenuView(
-                        query: slash.query,
-                        selectedIndex: slash.selectedIndex,
-                        menuSize: menuFrame.size,
-                        onSelect: { kind in editor.applySlashSelection(kind) },
-                        onHover: { index in editor.highlightSlashResult(index) },
-                        onDismiss: { editor.dismissSlashMenu() },
-                        onContentHeight: { height in editor.setSlashContentHeight(height, for: slash.blockID) }
-                    )
-                    .offset(x: frame.minX + menuFrame.minX, y: frame.minY + menuFrame.minY)
-                }
-            }
-        }
     }
 }

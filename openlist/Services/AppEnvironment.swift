@@ -81,9 +81,9 @@ final class AppEnvironment {
     /// Which picker the task detail panel should pop open, set by ⌃D / ⌃L.
     var requestedPicker: DetailPicker?
 
-    /// The document menu commands apply to. Several `DocumentView`s can be on
-    /// screen at once — a list plus an open task's detail page — so exactly one
-    /// of them claims each command.
+    /// The document menu commands apply to: the list document on show, which
+    /// claims it, or `nil` on the other screens, whose targets are the
+    /// workbench's.
     var activeDocument: DocumentContext?
 
     /// Whether the main window is key. The Task menu acts on that window's

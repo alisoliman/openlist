@@ -9,62 +9,6 @@ func check(_ value: Bool, _ message: String) {
 }
 let app = NSApplication.shared
 
-for event: NSEvent.EventType? in [nil, .keyDown, .keyUp, .flagsChanged, .mouseMoved, .scrollWheel, .applicationDefined] {
-    check(!Theme.Motion.allowsAnimation(reduceMotion: false, eventType: event),
-        "Keyboard, scrolling, hovering and background updates never opt into motion")
-}
-for event: NSEvent.EventType in [.leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp] {
-    check(Theme.Motion.allowsAnimation(reduceMotion: false, eventType: event), "Pointer actions allow brief feedback")
-    check(!Theme.Motion.allowsAnimation(reduceMotion: true, eventType: event), "Reduce Motion removes pointer movement too")
-}
-check(Theme.Motion.feedbackDuration >= 0.1 && Theme.Motion.feedbackDuration <= 0.16,
-    "Press feedback stays within 100-160 milliseconds")
-check(Theme.Motion.rearrangementDuration <= 0.25, "Task movement is brief and has no added delay")
-
-var selectionPresses = 0
-var lastSelectionStep: (Int, Bool)?
-func selectionConfiguration(revealed: Bool = false, selected: Bool = false, focused: Bool = false) -> RowSelectionControl {
-    RowSelectionControl(title: "Selection fixture", isSelected: selected, isSelectionFocus: focused,
-        requestsKeyboardFocus: false, defersPlainClick: false, isRevealed: revealed,
-        onSelect: { if case .toggle = $0 { selectionPresses += 1 } },
-        onStep: { lastSelectionStep = ($0, $1) }, onClear: {}, onFocusRequestHandled: {},
-        onDrag: { "" }, onDragEnd: {})
-}
-let selectionControl = RowSelectionNSControl(frame: NSRect(x: 0, y: 0, width: 22, height: 26))
-selectionControl.appearance = NSAppearance(named: .aqua)
-func selectionImage() -> Data {
-    let image = NSImage(size: selectionControl.bounds.size)
-    image.lockFocus()
-    NSColor.clear.setFill()
-    selectionControl.bounds.fill(using: .copy)
-    selectionControl.draw(selectionControl.bounds)
-    image.unlockFocus()
-    return image.tiffRepresentation!
-}
-selectionControl.configuration = selectionConfiguration()
-let quietGutter = selectionImage()
-selectionControl.configuration = selectionConfiguration(revealed: true)
-check(selectionImage() != quietGutter, "Hover reveals the native selection glyph without replacing the control")
-selectionControl.configuration = selectionConfiguration(selected: true)
-check(selectionImage() != quietGutter, "Selected rows retain a visible native selection glyph")
-selectionControl.configuration = selectionConfiguration(focused: true)
-check(selectionImage() != quietGutter, "Keyboard row focus retains the visible selection ring")
-selectionControl.configuration = selectionConfiguration()
-check(selectionImage() == quietGutter, "An idle, unselected gutter returns to its quiet appearance")
-check(selectionControl.bounds.size == CGSize(width: 22, height: 26), "Gutter hit target never shrinks or shifts")
-check(selectionControl.isAccessibilityElement() && selectionControl.acceptsFirstResponder,
-    "Quiet glyphs remain in accessibility and keyboard navigation")
-check(selectionControl.accessibilityPerformPress() && selectionPresses == 1,
-    "Accessibility can activate an idle selection handle")
-let space = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-    windowNumber: 0, context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49)!
-selectionControl.keyDown(with: space)
-check(selectionPresses == 2, "Space still toggles an idle selection handle")
-let down = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift, timestamp: 0,
-    windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 125)!
-selectionControl.keyDown(with: down)
-check(lastSelectionStep?.0 == 1 && lastSelectionStep?.1 == true, "Shift-arrow still extends row selection")
-
 let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self,
     ActivityEvent.self, WorkSession.self, CompletionRecord.self, SchedulePlacement.self])
 let fixtureDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("OpenlistInspectorLifetime-\(UUID())")
@@ -92,20 +36,10 @@ try store.persistChanges()
 struct RetainedInspector: View {
     let block: Block
     let attachment: Attachment
-    let child: Block
     var body: some View {
         VStack {
-            InboxRowActions(block: block, isRevealed: true, actions: BlockRowActions())
-            DueDateChip(block: block)
-            TaskMetadataChips(block: block, labels: [], progress: nil)
             LabelPicker(block: block)
             AttachmentRow(attachment: attachment, onDelete: {})
-            BlockRowView(row: BlockRow(block: child, depth: 0, ordinal: 0, hasChildren: false, isCollapsed: false),
-                listAccent: .blue, labels: [], progress: nil, isFocused: false, isSelected: false,
-                pendingCaret: nil, focusToken: 0, isSlashMenuOpen: false, onSlashCommand: { _ in },
-                attributedText: NSAttributedString(string: "Nested task"), placeholder: "", showsPlaceholder: false,
-                actions: BlockRowActions())
-            BlockContextMenu(block: child, actions: BlockRowActions())
         }
     }
 }
@@ -130,13 +64,13 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     let retainedChild = descendants.first!
     let ids = Set([id] + descendants.map(\.id))
     let env = AppEnvironment(store: store)
-    let host = NSHostingView(rootView: RetainedInspector(block: retained, attachment: retainedAttachment, child: retainedChild).environment(env))
+    let host = NSHostingView(rootView: RetainedInspector(block: retained, attachment: retainedAttachment).environment(env))
     let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 380, height: 600),
                           styleMask: .borderless, backing: .buffered, defer: false)
     // Never order/activate this window or alter the coordinating native app.
     window.contentView = host
     host.layoutSubtreeIfNeeded()
-    check(host.fittingSize.height > 30, "Copied task's actual metadata, file and nested row render before Undo")
+    check(host.fittingSize.height > 30, "Copied task's actual labels and file render before Undo")
     var removed: Set<UUID> = []
     store.onEditorBlocksRemoved = { values in
         removed = values
@@ -157,20 +91,18 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     check(retainedAttachment.modelContext == nil || retainedAttachment.isDeleted, "Undo invalidates the retained copied attachment")
     check(retained.modelContext == nil || retained.isDeleted, "Retained inspector model is invalidated by the saved deletion")
     check(store.labels(for: retained).isEmpty, "Late label lookup does not fault an invalidated model")
-    // Force a retained child to render independently after the parent would
-    // normally disappear. Deleted models must neither fault nor show stale controls.
-    host.rootView = RetainedInspector(block: retained, attachment: retainedAttachment, child: retainedChild).environment(env)
+    // Force the retained views to render after the inspector would normally
+    // disappear. Deleted models must neither fault nor show stale controls.
+    host.rootView = RetainedInspector(block: retained, attachment: retainedAttachment).environment(env)
     host.layoutSubtreeIfNeeded()
     await Task.yield()
     host.layoutSubtreeIfNeeded()
     // A fresh host also evaluates every retained view after invalidation;
     // its intrinsic size is independent of the old window's fixed height.
-    let invalidHost = NSHostingView(rootView: RetainedInspector(block: retained, attachment: retainedAttachment, child: retainedChild).environment(env))
-    check(invalidHost.fittingSize.height < 30, "Deleted chips, label picker, attachment, nested row and menu render empty")
+    let invalidHost = NSHostingView(rootView: RetainedInspector(block: retained, attachment: retainedAttachment).environment(env))
+    check(invalidHost.fittingSize.height < 30, "Deleted label picker and attachment render empty")
     let attachmentHost = NSHostingView(rootView: AttachmentRow(attachment: retainedAttachment, onDelete: {}))
     check(attachmentHost.fittingSize.height == 0, "Retained attachment renders empty independently")
-    let menuHost = NSHostingView(rootView: BlockContextMenu(block: retainedChild, actions: BlockRowActions()).environment(env))
-    check(menuHost.fittingSize.height == 0, "Retained nested task menu renders empty independently")
     check(undo.canRedo, "Inspector invalidation leaves Redo available")
     undo.redo()
     let restored = store.block(id: id)!
@@ -179,7 +111,7 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     if case .template = mode {
         check(restored.dueDate == nil && restored.recurrence == nil, "Opening restored template preserves its fresh schedule defaults")
     }
-    host.rootView = RetainedInspector(block: restored, attachment: store.attachments(for: id).first!, child: BlockTree.descendants(of: id, in: store.blocks(inList: list.id)).first!).environment(env)
+    host.rootView = RetainedInspector(block: restored, attachment: store.attachments(for: id).first!).environment(env)
     host.layoutSubtreeIfNeeded()
     check(host.fittingSize.height > 30, "Redo's freshly resolved model renders in the inspector again")
     check(MediaStore.shared.fileContents(filename: copiedFilename) == attachment.contentData, "Redo restores independent copied media")
@@ -190,63 +122,6 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     store.onEditorBlocksRemoved = nil
     window.contentView = nil
 }
-// Keep the actual outer DocumentView/@Query/ForEach alive while its inserted
-// models are invalidated. The row's own liveness guard cannot protect label
-// lookup and rich-content reads performed by this parent builder.
-let destination = store.createList(title: "Retained pasted document")
-let fragment = try FragmentContent.capture([source.id], store: store)
-let documentEnvironment = AppEnvironment(store: store)
-func documentFixture(_ identity: Int) -> some View {
-    DocumentView(document: .init(listID: destination.id))
-        .frame(width: 540, height: 600, alignment: .top)
-        .environment(documentEnvironment).modelContainer(container)
-        .environment(\.modelContext, store.context).id(identity)
-}
-let documentHost = NSHostingView(rootView: documentFixture(0))
-let documentWindow = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 540, height: 600),
-    styleMask: .borderless, backing: .buffered, defer: false)
-documentWindow.contentView = documentHost
-documentHost.layoutSubtreeIfNeeded()
-for iteration in 0..<3 {
-    let undo = UndoManager(); undo.groupsByEvent = false
-    undo.beginUndoGrouping()
-    let rootID = store.undoableEditorEdit(in: destination.id, name: "Paste content", undoManager: undo, includingNewLabels: true) {
-        try! store.pasteFragment(fragment, in: .init(listID: destination.id), after: nil)[0]
-    }
-    undo.endUndoGrouping()
-    // A hidden window has no display-link driven lazy materialization. Mount
-    // the actual query after insertion, then retain it throughout invalidation.
-    documentHost.rootView = documentFixture(iteration + 1)
-    try await Task.sleep(for: .milliseconds(100))
-    _ = documentHost.fittingSize
-    documentHost.layoutSubtreeIfNeeded()
-    _ = documentHost.accessibilityChildren()
-    func nativeTextViews(in view: NSView) -> [BlockNSTextView] {
-        (view as? BlockNSTextView).map { [$0] } ?? view.subviews.flatMap { nativeTextViews(in: $0) }
-    }
-    // NSView's subview order is not the document's reading order.
-    check(nativeTextViews(in: documentHost).contains { $0.string == fragment.blocks[0].text },
-        "Actual DocumentView materializes the pasted row before invalidation")
-    let retained = store.block(id: rootID)!
-    let row = BlockRow(block: retained, depth: 0, ordinal: 0, hasChildren: true, isCollapsed: false)
-    documentEnvironment.navigator.openTask(rootID)
-    undo.undo()
-    documentHost.layoutSubtreeIfNeeded()
-    _ = documentHost.accessibilityChildren()
-    await Task.yield()
-    documentHost.layoutSubtreeIfNeeded()
-    check(store.block(id: rootID) == nil, "Actual retained DocumentView survives pasted subtree Undo and accessibility layout")
-    check(row.id == rootID && Set([row]).contains(row), "Retained row identity and hashing require no deleted model reads")
-    undo.redo()
-    await Task.yield()
-    documentHost.layoutSubtreeIfNeeded()
-    _ = documentHost.accessibilityChildren()
-    check(store.block(id: rootID) != nil && store.attachments(for: rootID).count == 1,
-        "Retained document renders Redo's fresh model and attachment")
-    undo.undo()
-    await Task.yield()
-}
-documentWindow.contentView = nil
 // Exercise the actual native editor callbacks for typed and single-line pasted
 // capture. A private pasteboard avoids changing the user's clipboard.
 func nativeTextView(in view: NSView) -> BlockNSTextView? {

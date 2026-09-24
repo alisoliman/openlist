@@ -24,7 +24,7 @@ struct ShortcutsSheet: View {
     }
 
     /// The keys the app handles today: the Next key map (NextKeys), the list
-    /// document's line keys (OutlineEditor under `.nextDocument`), and the menus.
+    /// document's line keys (OutlineEditor), and the menus.
     private let groups: [Group] = [
         Group(title: "Everywhere", shortcuts: [
             Shortcut(keys: "N", action: "New task"),

@@ -6,7 +6,7 @@
 import Foundation
 import SwiftData
 
-/// A single line of content inside a list document or a task's detail page.
+/// A single line of content inside a list document.
 ///
 /// Blocks form an arbitrarily deep tree. Parentage is expressed with
 /// `parentID` rather than a SwiftData relationship so that reordering,
@@ -62,7 +62,7 @@ final class Block {
     /// JSON-encoded `Recurrence`.
     var recurrenceData: Data?
     var labelIDs: [UUID] = []
-    /// Free-form note shown under the title in the task detail page.
+    /// Free-form note shown under the title in the list document and the inspector.
     var note: String = ""
 
     /// Inert legacy queue payload, retained for CloudKit and backup compatibility.
