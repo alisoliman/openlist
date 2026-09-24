@@ -47,6 +47,21 @@ nonisolated struct AvailabilityProfile: Codable, Equatable, Sendable {
             ($0, [AvailabilityWindow(startMinute: 18 * 60, endMinute: 21 * 60)])
         }))
     }
+
+    /// The date's own hours, when an override sets them; the latest one wins.
+    func override(on day: Date, calendar: Calendar) -> AvailabilityOverride? {
+        overrides.last { calendar.isDate($0.date, inSameDayAs: day) }
+    }
+
+    /// The hours available on `day`: its override's, else its weekday's.
+    func windows(on day: Date, calendar: Calendar) -> [AvailabilityWindow] {
+        override(on: day, calendar: calendar)?.windows ?? weekly[calendar.component(.weekday, from: day), default: []]
+    }
+
+    /// The breaks on `day`: its override's, else its weekday's.
+    func breaks(on day: Date, calendar: Calendar) -> [AvailabilityWindow] {
+        override(on: day, calendar: calendar)?.breaks ?? breaks[calendar.component(.weekday, from: day), default: []]
+    }
 }
 
 nonisolated struct CalendarPreferences: Codable, Equatable, Sendable {

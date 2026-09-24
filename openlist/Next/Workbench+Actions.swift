@@ -578,42 +578,45 @@ extension Workbench {
 
     // MARK: Calendar
 
-    /// The earliest free slot inside the list's hours in the week from now, or
-    /// from the task's deferral, avoiding busy time.
+    /// The earliest free slot inside the list's hours, avoiding busy time: in
+    /// the week around today, or the next once this one has no hours left
+    /// long enough, or in the week from a deferral past it.
     func fit(_ id: UUID) {
         guard let task = store.block(id: id), !task.isCompleted else { return }
         let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
-        let duration = TimeInterval(minutes * 60)
-        let cal = settings.calendar
         let now = Date.now
         let category = store.list(id: task.listID).map { hours(for: $0) } ?? .work
         // Around meetings and whatever the calendar shows for other tasks:
         // their placements, running work and done blocks.
-        var busy: [(Date, Date)] = calendar.externalCalendars.busyTimes.map { ($0.start, $0.end) }
-        busy += calendar.visibleBlocks.filter { $0.taskID != id }.map { ($0.start, $0.end) }
-        let quarter = TimeInterval(15 * 60)
-        // On a quarter hour, not before a deferral, and only inside the list's hours:
-        // the scheduler's windows already leave out breaks, overrides and days off,
-        // and follow the wall clock across DST.
-        let from = max(now, task.deferredUntil ?? now)
-        let earliest = Date(timeIntervalSinceReferenceDate: (from.timeIntervalSinceReferenceDate / quarter).rounded(.up) * quarter)
-        // A week of searching, counted from when the task may start.
-        let weekEnd = cal.date(byAdding: .day, value: 7, to: cal.startOfDay(for: earliest)) ?? earliest
-        let windows = AdaptiveScheduler.availabilityIntervals(for: category, preferences: calendar.preferences,
-                                                              from: earliest, to: weekEnd, calendar: cal)
-        for window in windows {
-            var start = window.start
-            while start.addingTimeInterval(duration) <= window.end {
-                let end = start.addingTimeInterval(duration)
-                if !busy.contains(where: { start < $0.1 && $0.0 < end }) {
-                    place(task, start: start, end: end, dayOffset: NXFormat.dayOffset(start, now: now))
-                    return
-                }
-                start = start.addingTimeInterval(quarter)
+        let busy = calendar.externalCalendars.busyTimes.map { DateInterval(start: $0.start, end: $0.end) }
+            + calendar.visibleBlocks.filter { $0.taskID != id && $0.end > $0.start }.map { DateInterval(start: $0.start, end: $0.end) }
+        let slot = CalendarWeek.slot(duration: TimeInterval(minutes * 60), deferredUntil: task.deferredUntil, category: category,
+                                     preferences: calendar.preferences, busy: busy, now: now, calendar: settings.calendar)
+        switch slot {
+        case let .found(slot):
+            place(task, start: slot.start, end: slot.end, dayOffset: NXFormat.dayOffset(slot.start, now: now))
+        case let .none(reach):
+            let week = switch reach {
+            case .thisWeek: "this week"
+            case .nextWeek: "this week or next"
+            case let .weekFrom(day): "in the week from \(NXFormat.dueLabel(day))"
             }
+            showTray("No free slot \(week) — try a shorter estimate", icon: "calendar.badge.exclamationmark", tone: .neutral)
         }
-        let week = from > now ? "in the week from \(NXFormat.dueLabel(from))" : "this week"
-        showTray("No free slot \(week) — try a shorter estimate", icon: "calendar.badge.exclamationmark", tone: .neutral)
+    }
+
+    /// Moves the Calendar's range to one that shows `day`, unless it does already.
+    func revealOnCalendar(_ day: Date, now: Date = .now) {
+        let cal = settings.calendar
+        let shown = CalendarWeek.days(count: calendarDays, from: calendarAnchor ?? now, calendar: cal)
+        guard !shown.contains(where: { cal.isDate($0, inSameDayAs: day) }) else { return }
+        calendarAnchor = CalendarWeek.anchor(showing: day, count: calendarDays, now: now, calendar: cal)
+    }
+
+    /// The tasks the Calendar gives a block, which "Not planned yet" and
+    /// Today's Fit into calendar leave out.
+    func placedTaskIDs(now: Date = .now) -> Set<UUID> {
+        CalendarWeek.placedTaskIDs(calendar.visibleBlocks, now: now, calendar: settings.calendar)
     }
 
     private func place(_ task: Block, start: Date, end: Date, dayOffset: Int) {
@@ -638,6 +641,9 @@ extension Workbench {
         })
         snap(label, icon: "sparkles", tone: .accent, ids: [id],
              destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
+        // A block past the days the Calendar shows, next week or after a
+        // deferral, moves its range there, so the block is never out of sight.
+        revealOnCalendar(start)
         flashBlock(id)
         calendar.replan()
     }
@@ -861,21 +867,24 @@ extension Workbench {
 
     /// Reports extra time the calendar gave the running work. Undo puts back the
     /// block it had and those of the tasks moved for it; work keeps recording.
-    /// The entry lasts while that session runs and keeps the extension.
+    /// The entry lasts while that session runs and keeps the extension, and
+    /// once the work stops, while the slot or tasks it moved are still where
+    /// it left them.
     private func announceExtension(_ grant: CalendarWorkExtension) {
         guard let task = store.block(id: grant.taskID) else { return }
         let moved = grant.movedTaskIDs.count
         let label = "Extended \(NXFormat.quoted(task.displayTitle)) to \(NXFormat.clock(grant.end))"
             + (moved == 0 ? "" : " · moved \(moved) \(moved == 1 ? "task" : "tasks")")
         let entry = WorkUndo { $0.calendar.canUndoExtension(grant) }
-        // Either way the watch already knows the extension it lands on.
+        // Either way the watch already knows the extension it lands on: this
+        // one, the one before it, or, once the work has stopped, whatever runs now.
         registerUndo(label, owner: entry, undo: { workbench in
             guard workbench.calendar.undoExtension(grant) else { workbench.dropStale(entry); return }
             workbench.workWatch.grant = workbench.calendar.workExtension
             entry.applies = { $0.calendar.canRedoExtension(grant) }
         }, redo: { workbench in
             guard workbench.calendar.redoExtension(grant) else { workbench.dropStale(entry); return }
-            workbench.workWatch.grant = grant
+            workbench.workWatch.grant = workbench.calendar.workExtension
             entry.applies = { $0.calendar.canUndoExtension(grant) }
         })
         snap(label, icon: "calendar.badge.plus", tone: .amber, ids: [grant.taskID] + grant.movedTaskIDs,
@@ -902,7 +911,7 @@ extension Workbench {
         Task { @MainActor [weak self] in self?.pruneWorkUndos() }
     }
 
-    /// Reports the fixed event the running work ran into. It keeps recording.
+    /// Reports the meeting or break the running work ran into. It keeps recording.
     private func announceConflict(_ conflict: CalendarWorkConflict) {
         guard let task = store.block(id: conflict.taskID) else { return }
         showTray("\(NXFormat.quoted(task.displayTitle)) is running into \(conflictLabel(conflict, inSentence: true))",
@@ -917,11 +926,10 @@ extension Workbench {
     }
 
     /// What running work ran into, for the working block's "runs into". As in
-    /// the design, a meeting is named bare and a task in quotes.
+    /// the design, a meeting is named bare.
     func conflictName(_ conflict: CalendarWorkConflict, inSentence: Bool = false) -> String {
         switch conflict.kind {
         case .event: conflict.title.isEmpty ? (inSentence ? "busy time" : "Busy time") : conflict.title
-        case .task: NXFormat.quoted(conflict.title)
         case .breakTime: inSentence ? "a break" : "Break"
         }
     }

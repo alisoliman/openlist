@@ -110,6 +110,9 @@ final class Workbench {
 
     var collapsedGroups: Set<String> = []
     var calendarDays = 7
+    /// A day the Calendar shows its range from instead of today: stepped to,
+    /// or where Plan put a task. Nil follows today.
+    var calendarAnchor: Date?
     var tasksStatus: TasksStatusFilter = .open
     var tasksGrouping: TasksGroupingMode = .list
     var tasksQuery = ""

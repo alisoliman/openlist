@@ -291,10 +291,8 @@ enum AdaptiveScheduler {
         var day = calendar.startOfDay(for: start)
         while day < end {
             let next = calendar.date(byAdding: .day, value: 1, to: day)!
-            let weekday = calendar.component(.weekday, from: day)
-            let override = profile.overrides.last { calendar.isDate($0.date, inSameDayAs: day) }
-            let windows = override?.windows ?? profile.weekly[weekday, default: []]
-            let breaks = override?.breaks ?? profile.breaks[weekday, default: []]
+            let windows = profile.windows(on: day, calendar: calendar)
+            let breaks = profile.breaks(on: day, calendar: calendar)
             func spans(_ windows: [AvailabilityWindow]) -> [Span] {
                 windows.compactMap { window in
                     guard window.startMinute >= 0, window.endMinute <= 1440,
