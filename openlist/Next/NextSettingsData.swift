@@ -81,7 +81,8 @@ struct NXICloudDetails: View {
 struct NXDataSettings: View {
     @Environment(AppEnvironment.self) private var env
 
-    @Query private var blocks: [Block]
+    /// Nothing in Trash counts, a trashed list's blocks included, as with the lists.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
     @Query(filter: TaskList.availablePredicate) private var lists: [TaskList]
 
     @State private var isConfirmingReset = false
@@ -101,7 +102,7 @@ struct NXDataSettings: View {
                 NXLibraryBackupRows(library: library)
             }
             NXSettingRow(label: "Activity history",
-                         hint: "Clears all Updates, per-task Activity entries, and the completion heatmap on this Mac and, when connected, in iCloud. Tasks are kept.") {
+                         hint: "Clears Activity’s Changes and completion heatmap, and each task’s history, on this Mac and, when connected, in iCloud. Tasks are kept.") {
                 Button("Clear all activity history…", role: .destructive) {
                     isConfirmingClearHistory = true
                 }
@@ -115,9 +116,9 @@ struct NXDataSettings: View {
         }
         .alert("Clear all activity history?", isPresented: $isConfirmingClearHistory) {
             Button("Cancel", role: .cancel) {}
-            Button("Clear History", role: .destructive) { env.store.clearActivity() }
+            Button("Clear History", role: .destructive) { env.workbench.clearActivityHistory() }
         } message: {
-            Text("This removes all Updates and task Activity entries, including the completion heatmap and older events, on synced devices. Your tasks are kept.")
+            Text("This removes every change in Activity, the completion heatmap and each task’s history, including older events, on synced devices. Your tasks are kept.")
         }
         .alert("Delete everything?", isPresented: $isConfirmingReset) {
             Button("Cancel", role: .cancel) {}

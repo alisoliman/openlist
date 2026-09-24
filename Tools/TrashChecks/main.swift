@@ -57,6 +57,15 @@ if phase == "delete" {
     try check(store.trashNotice == nil, "A new deletion clears stale restoration feedback")
     try check(closed == Set(expected.blocks.map(\.id)), "Deletion closes every descendant inspector and command owner")
     try check(store.trashEntries().count == 1, "Selected descendants are owned by selected ancestor")
+    let entry = try store.trashEntries()[0]
+    try check(entry.blockCount == 4 && entry.subtaskCount == 1 && entry.nestedSummary == "with 1 subtask and 2 more items",
+              "A task's entry says what restores and erases with it")
+    func summary(_ blocks: Int, subtasks: Int, isList: Bool = false) -> String? {
+        TrashEntry(id: UUID(), title: "", isList: isList, blockCount: blocks, byteCount: 0, subtaskCount: subtasks).nestedSummary
+    }
+    try check(summary(1, subtasks: 0) == nil && summary(3, subtasks: 2) == "with 2 subtasks"
+              && summary(2, subtasks: 0) == "with 1 nested item" && summary(5, subtasks: 0, isList: true) == nil,
+              "Only a block holding others names them; a list counts its items")
     try check(store.block(id: root.id) == nil && store.blocks(inList: list.id).isEmpty, "Active lookup and outline exclude retained content")
     try check(ActiveTaskPolicy(lists: [list]).tasks(in: [root, child]).isEmpty, "Active policy excludes all retained tasks")
     try check([root, child].allSatisfy { !InboxPolicy(lists: [list]).includes($0) }, "Inbox excludes retained tasks")
@@ -105,6 +114,8 @@ if phase == "delete" {
     var closed = Set<UUID>()
     store.onEditorBlocksRemoved = { closed.formUnion($0) }
     try check(store.deleteList(list), "List deleted after child")
+    try check(context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil })).allSatisfy { $0.listID != oldListID },
+              "A trashed list's blocks leave live counts, as Settings' Your data takes them")
     try check(closed.contains(parent.id) && !closed.contains(childID), "List deletion closes its members and preserves independently retained ownership")
     try check(store.trashEntries().count == 2, "List deletion preserves independent child group")
     try check(store.allLists(includeArchived: true).allSatisfy { $0.id != oldListID }, "Retained list excluded even when including archives")

@@ -143,8 +143,6 @@ private struct NXListCard: View {
                         }
                     }
                 }
-                // Room for three peek rows, whatever the card previews.
-                .frame(minHeight: 3 * 16 + 8, alignment: .top)
                 .padding(.top, 2)
             }
             .padding(EdgeInsets(top: 20, leading: 16, bottom: 14, trailing: 16))
@@ -204,10 +202,15 @@ struct NextTrashScreen: View {
     var body: some View {
         let workbench = env.workbench
         let listIDs = Dictionary(blocks.map { ($0.id, $0.listID) }, uniquingKeysWith: { first, _ in first })
+        // An entry leaves as the store writes its restore or erase, as in the
+        // design, not one reload later: a restored row that had flown out
+        // never shows again, and an erased one just goes.
+        let held = Set(blocks.compactMap(\.trashID)).union(lists.compactMap(\.trashID))
+        let rows = entries.filter { held.contains($0.id) }
         NXPage {
             NXScreenHeader(tile: .icon("trash.fill"), color: NX.grey, title: "Trash", subtitle: "Stays here until you erase it")
             VStack(alignment: .leading, spacing: 0) {
-                if !entries.isEmpty {
+                if !rows.isEmpty {
                     HStack(spacing: 10) {
                         Text("Restoring puts a task back in its list, in its old position. Erasing can’t be undone — press and hold.")
                             .font(.system(size: 12.5))
@@ -218,29 +221,19 @@ struct NextTrashScreen: View {
                                      size: 11.5, padding: EdgeInsets(top: 7, leading: 11, bottom: 7, trailing: 11),
                                      radius: 8, rest: 0.1, confirmation: "Erase everything in Trash?",
                                      confirmLabel: "Empty Trash") {
-                            workbench.erase(entries.map(\.id))
+                            workbench.erase(rows.map(\.id))
                         }
                     }
                     .padding(.horizontal, 4)
                     .padding(.bottom, 10)
                 }
                 VStack(spacing: 2) {
-                    ForEach(entries) { entry in
+                    ForEach(rows) { entry in
                         NXTrashRow(entry: entry, list: listIDs[entry.id].flatMap { library.list($0) })
-                            .transition(.opacity.combined(with: .offset(x: -56)))
+                            .transition(.opacity)
                     }
                 }
-                if entries.isEmpty {
-                    Text("Trash is empty.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(NX.ink(0.45))
-                        .frame(maxWidth: .infinity)
-                        .padding(34)
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(NX.ink(0.14), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                        .padding(.top, 6)
-                        .transition(.opacity)
-                }
+                if rows.isEmpty { NXTrashEmpty() }
             }
             .padding(.top, 18)
         }
@@ -253,6 +246,25 @@ struct NextTrashScreen: View {
     private func reload() {
         do { entries = try env.store.trashEntries() }
         catch { env.store.trashError = "Trash could not be read. \(error.localizedDescription)" }
+    }
+}
+
+/// "Trash is empty.", fading in whenever it appears, as the design's does.
+private struct NXTrashEmpty: View {
+    @Environment(\.nextStyle) private var style
+    @State private var shown = false
+
+    var body: some View {
+        Text("Trash is empty.")
+            .font(.system(size: 13))
+            .foregroundStyle(NX.ink(0.45))
+            .frame(maxWidth: .infinity)
+            .padding(34)
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(NX.ink(0.14), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .padding(.top, 6)
+            .opacity(shown ? 1 : 0)
+            .onAppear { withAnimation(style.cssEase(240)) { shown = true } }
     }
 }
 
@@ -319,16 +331,19 @@ private struct NXTrashRow: View {
             let items = entry.blockCount == 1 ? "1 item" : "\(entry.blockCount) items"
             return Text(verbatim: "List · \(items) · \(deleted)")
         }
-        guard let metadata = entry.metadata else { return Text(verbatim: deleted.capitalizedFirstLetter) }
+        // One entry holds a task with its subtasks, so the row says what
+        // Restore and Hold to erase take with it.
+        let tail = [entry.nestedSummary, deleted].compactMap { $0 }.joined(separator: " · ")
+        guard let metadata = entry.metadata else { return Text(verbatim: tail.capitalizedFirstLetter) }
         // The icon the list had when this was deleted; older items use the list's current one.
         let icon = metadata.listIcon.map { $0.isEmpty ? "📋" : $0 } ?? list?.glyph ?? ""
-        if icon.isEmpty { return Text(verbatim: "From \(metadata.formerLocation) · \(deleted)") }
+        if icon.isEmpty { return Text(verbatim: "From \(metadata.formerLocation) · \(tail)") }
         if NXListGlyph.isSymbolName(icon) {
-            return Text("From \(Image(systemName: icon)) \(metadata.formerLocation) · \(deleted)")
+            return Text("From \(Image(systemName: icon)) \(metadata.formerLocation) · \(tail)")
         }
         // The emoji at the size the design's 11px line draws it, not Core Text's larger one.
         let glyph = Text(verbatim: icon).font(.system(size: NXListGlyph.emojiPointSize(11)))
-        return Text("From \(glyph) \(metadata.formerLocation) · \(deleted)")
+        return Text("From \(glyph) \(metadata.formerLocation) · \(tail)")
     }
 }
 

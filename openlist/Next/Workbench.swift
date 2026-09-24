@@ -448,6 +448,16 @@ final class Workbench {
 
     func entries(for taskID: UUID) -> [ChangeEntry] { log.filter { $0.taskID == taskID } }
 
+    /// Settings' Clear all activity history: the saved history, then, once it's
+    /// gone, the log, so Changes and each task's Activity start over. The undo
+    /// stack keeps its steps.
+    func clearActivityHistory() {
+        store.clearActivity()
+        guard store.persistenceError == nil else { return }
+        log.removeAll()
+        undoRevision += 1
+    }
+
     private func record(_ label: String, icon: String, tone: TrayTone, ids: [UUID]) -> LogMark {
         batchCounter += 1
         let now = Date.now
