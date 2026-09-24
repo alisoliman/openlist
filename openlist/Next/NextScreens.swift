@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Renders a screen's groups and returns nothing else; screens compose it
 /// under their header.
@@ -389,11 +390,11 @@ private struct NXListOptions: View {
         }
     }
 
-    /// The cover's own choices, as the legacy list header's cover menu has them.
+    /// The cover's own choices: a local image, how it shows, and removing it.
     @ViewBuilder
     private var coverItems: some View {
         Button(list.coverFilename == nil ? "Add Cover from File…" : "Replace Cover from File…") {
-            guard let source = ListCoverMenu.chooseImage(for: list) else { return }
+            guard let source = Self.chooseCoverImage(for: list) else { return }
             perform { try env.store.setListCover(list, from: source) }
         }
         if list.coverFilename != nil {
@@ -410,6 +411,19 @@ private struct NXListOptions: View {
 
     private func perform(_ operation: () throws -> Void) {
         do { try operation() } catch { coverError = error.localizedDescription }
+    }
+
+    /// Asks for the image a list's cover should show.
+    private static func chooseCoverImage(for list: TaskList) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = list.coverFilename == nil ? "Add list cover" : "Replace list cover"
+        panel.prompt = "Choose image"
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose an image up to 20 MB and 40 megapixels. Openlist keeps its own copy."
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 }
 
