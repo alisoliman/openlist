@@ -61,7 +61,7 @@ struct AppCommands: Commands {
             Button("New List") { newList() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
 
-            Button("New Section") { _ = env.store.createSection() }
+            Button("New Section") { env.workbench.createSection() }
                 .keyboardShortcut("n", modifiers: [.command, .option])
 
             Divider()

@@ -47,7 +47,8 @@ struct MoveListSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 Button("Move") {
-                    if env.store.moveList(list, under: parentID) { dismiss() }
+                    // One change with Undo in the tray.
+                    if env.workbench.moveList(list, under: parentID) { dismiss() }
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(NXPanelButtonStyle(kind: .primary))

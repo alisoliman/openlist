@@ -60,10 +60,19 @@ if phase == "write" {
     try check(MarkdownExporter.markdown(for: copy, store: store).contains("file://"), "Clipboard export points at materialized cover")
     try store.setListCover(list, from: replacement)
     try check(!files().contains(originalName) && media.readFile(filename: copyName) == bytes, "Replacement cleans only the old unreferenced import")
+    let replaced = store.listCoverState(list)
+    let replacedName = list.coverFilename!
     try store.removeListCover(list)
     try check(list.coverFilename == nil && list.coverData == nil && list.coverMetadataData == nil && list.coverPresentationRaw == nil,
         "Remove clears cover payload and resets compact default")
     try check(media.readFile(filename: copyName) == bytes, "Removing source cover leaves copied cover intact")
+    // Undo of Remove Cover: the state read before it, bytes included, puts
+    // the image back even though the removal let its cache go.
+    try check(media.fileContents(filename: replacedName) == nil && replaced.data != nil, "The removed cover's cache is gone, its bytes kept for Undo")
+    try store.restoreListCover(list, to: replaced)
+    try check(store.listCoverState(list) == replaced && media.fileContents(filename: replacedName) == replaced.data,
+        "Restoring the cover state brings back its payload and its file")
+    try store.removeListCover(list)
 
     let corrupt = root.appendingPathComponent("broken.png")
     try Data("not an image".utf8).write(to: corrupt)

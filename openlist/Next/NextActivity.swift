@@ -31,7 +31,13 @@ struct NextActivityScreen: View {
                             NXActivityDayPanel(heatmap: heatmap).frame(minWidth: 260, idealWidth: 260, maxWidth: .infinity)
                         }
                         VStack(alignment: .leading, spacing: 22) {
-                            NXHeatmapCard(heatmap: heatmap)
+                            // Narrower than the card, it scrolls sideways, as the
+                            // design's page does, opened at today's end.
+                            ScrollView(.horizontal) { NXHeatmapCard(heatmap: heatmap) }
+                                .defaultScrollAnchor(.trailing, for: .initialOffset)
+                                .defaultScrollAnchor(.leading, for: .alignment)
+                                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                                .fixedSize(horizontal: false, vertical: true)
                             NXActivityDayPanel(heatmap: heatmap).frame(maxWidth: .infinity)
                         }
                     }
@@ -228,6 +234,7 @@ private struct NXActivityDayPanel: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let heatmap: ActivityHeatmap
+    @State private var shown = false
 
     var body: some View {
         let calendar = heatmap.calendar
@@ -269,14 +276,15 @@ private struct NXActivityDayPanel: View {
                 }
             }
         }
-        .id(selected)
-        .transition(.opacity)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.vertical, 16)
         .padding(.horizontal, 18)
         .background(NX.inspector, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.08), lineWidth: 0.5))
-        .animation(style.ease(200), value: selected)
+        // The design's fadeIn plays once, as the screen opens; a day picked
+        // after that changes the panel in place.
+        .opacity(shown ? 1 : 0)
+        .onAppear { withAnimation(style.cssEase(200)) { shown = true } }
     }
 }
 
@@ -341,7 +349,7 @@ private struct NXChangesSection: View {
             let key = "\(entry.batch)\(entry.label)"
             guard seen.insert(key).inserted else { continue }
             let list = entry.taskID.flatMap { env.store.block(id: $0) }.flatMap { library.list($0.listID) }
-            items.append(NXChangeItem(id: "s\(entry.id)", icon: entry.icon, tone: entry.tone, label: entry.label,
+            items.append(NXChangeItem(id: "s\(entry.id)", icon: Self.outline(entry.icon), tone: entry.tone, label: entry.label,
                                       list: list, listTitle: list?.displayTitle ?? "", at: entry.at,
                                       canUndo: items.isEmpty && entry.batch == workbench.latestBatch && workbench.canUndo))
         }
@@ -365,9 +373,12 @@ private struct NXChangesSection: View {
     }
 
     private func item(_ event: ActivityEvent) -> NXChangeItem {
-        NXChangeItem(id: "e\(event.id)", icon: Self.icon(event.kind), tone: Self.tone(event.kind),
-                     label: Self.label(event), detail: event.recordedDetail,
-                     list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
+        // A line taken out as it was left empty is an edit, as the log draws it.
+        let removedLine = event.change?.removedEmptyLine == true
+        return NXChangeItem(id: "e\(event.id)", icon: removedLine ? "pencil" : Self.icon(event.kind),
+                            tone: removedLine ? .neutral : Self.tone(event.kind),
+                            label: Self.label(event), detail: event.recordedDetail,
+                            list: library.list(event.listID), listTitle: event.listTitle, at: event.timestamp)
     }
 
     private static func label(_ event: ActivityEvent) -> String {
@@ -382,29 +393,38 @@ private struct NXChangesSection: View {
         case .scheduled:
             if let due = after?.dueDate { return "\(title) → \(NXFormat.dueLabel(due))" }
             return "Scheduled \(title)"
-        case .unscheduled: return "Cleared the date on \(title)"
-        case .deleted: return "Moved \(title) to Trash"
+        case .unscheduled: return "Cleared date on \(title)"
+        // A task's title is its line's text, which the design edits.
+        case .renamed: return "Edited \(title)"
+        case .deleted where event.change?.removedEmptyLine == true: return "Removed an empty line"
+        // A list's, like a task's, is in Trash, where it can be restored.
+        case .deleted, .listDeleted: return "Moved \(title) to Trash"
         default: return "\(event.kind.verb) \(title)"
         }
     }
 
+    /// The glyph the tray and the log give the same change, always outline,
+    /// as the design draws every Changes icon.
     private static func icon(_ kind: ActivityKind) -> String {
         switch kind {
-        case .created: "plus.circle"
+        case .created, .listCreated: "plus.circle"
         case .completed: "checkmark.circle"
         case .reopened, .completionUndone: "arrow.uturn.backward"
-        case .scheduled: "calendar"
-        case .unscheduled: "calendar.badge.minus"
+        case .scheduled, .unscheduled: "calendar"
         case .moved: "folder"
-        case .deleted: "trash"
+        case .deleted, .listDeleted: "trash"
         case .labeled: "tag"
         case .starred: "star"
-        case .listCreated: "folder.badge.plus"
-        case .listDeleted: "folder.badge.minus"
         case .noteAdded: "text.bubble"
         case .renamed: "pencil"
         case .restored: "arrow.up.bin"
         }
+    }
+
+    /// A snap's glyph as Changes draws it, unfilled as the design's are, so
+    /// the same change looks the same this session and after a relaunch.
+    private static func outline(_ icon: String) -> String {
+        icon.hasSuffix(".fill") ? String(icon.dropLast(".fill".count)) : icon
     }
 
     private static func tone(_ kind: ActivityKind) -> TrayTone {

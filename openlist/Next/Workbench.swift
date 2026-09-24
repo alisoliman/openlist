@@ -94,9 +94,8 @@ final class Workbench {
     /// When this session began. Changes counts saved history from then on as
     /// this session's.
     let startedAt = Date.now
-    /// Each moment the log's changes were written, undone or redone, in time
-    /// order, with the tasks and lists they covered.
-    @ObservationIgnored private var logWrites: [(at: Date, ids: Set<UUID>)] = []
+    /// When the log's changes, and the list document's lines, were written.
+    @ObservationIgnored private var logWrites = NXLogWrites()
     /// Bumped whenever the undo stack may have changed so labels re-read it.
     private(set) var undoRevision = 0
 
@@ -181,6 +180,8 @@ final class Workbench {
     @ObservationIgnored private(set) var subtaskRequestedAt: Date?
     /// A list just made, whose title takes the keyboard once its page shows.
     @ObservationIgnored var namingListID: UUID?
+    /// A section just made, whose name field the sidebar opens.
+    var namingSectionID: UUID?
     @ObservationIgnored private let defaults: UserDefaults?
     private static let openNotesKey = "nextOpenNotes"
 
@@ -275,6 +276,8 @@ final class Workbench {
     @ObservationIgnored private var completions: [CompletionBatch] = []
     /// Trashes whose rows are still flying out.
     @ObservationIgnored private var trashes: [TrashBatch] = []
+    /// Restores whose rows are still flying out of Trash.
+    @ObservationIgnored private var restoring: [RestoreBatch] = []
     /// Every change whose window entry only moves tasks into or out of Trash,
     /// by its log mark; each entry keeps its mark alive.
     @ObservationIgnored private let trashUndos = NSHashTable<LogMark>.weakObjects()
@@ -495,9 +498,12 @@ final class Workbench {
 
     /// Logs an edit the list document has just put on the undo stack, in the
     /// same step, so it shows in Changes and names the toolbar's Undo. As in
-    /// the design, an edit shows no tray.
+    /// the design, an edit shows no tray; one still showing an earlier change,
+    /// like the new section whose name this is, loses its Undo, which would
+    /// now take back the edit instead.
     func logEdit(_ label: String, ids: [UUID]) {
         attach(record(label, icon: "pencil", tone: .neutral, ids: ids), restores: false)
+        if tray?.undoable == true { withAnimation(style.ease(200)) { tray?.undoable = false } }
     }
 
     var latestBatch: Int? { log.first?.batch }
@@ -513,6 +519,40 @@ final class Workbench {
         log.removeAll()
         clearedBatch = batchCounter
         undoRevision += 1
+    }
+
+    /// Settings' Delete everything. Once the Store has erased the library,
+    /// the session's changes go with it: every step on the window's undo
+    /// stack, which has nothing left to act on, the log, rows mid-change and
+    /// the tray, as the saved history already has. False, and nothing of the
+    /// session touched, when the Store couldn't finish.
+    @discardableResult
+    func resetLibrary() -> Bool {
+        document?.commitLine()
+        guard store.permanentlyResetLibrary() else { return false }
+        for completion in completions { completion.settleTask?.cancel() }
+        completions = []
+        for trash in trashes { trash.task?.cancel() }
+        trashes = []
+        for restore in restoring { restore.task?.cancel() }
+        restoring = []
+        for task in closingTasks.values { task.cancel() }
+        closingTasks = [:]
+        closing = [:]
+        flying = []
+        undoManager?.removeAllActions()
+        trashUndos.removeAllObjects()
+        workUndos = []
+        outsideCompletionBatches = []
+        log.removeAll()
+        clearedBatch = batchCounter
+        kept = []
+        reviewed = 0
+        selection = []
+        focusID = nil
+        showTray("Deleted everything for good", icon: "trash.slash", tone: .red)
+        undoRevision += 1
+        return true
     }
 
     private func record(_ label: String, icon: String, tone: TrayTone, ids: [UUID]) -> LogMark {
@@ -548,25 +588,25 @@ final class Workbench {
     }
 
     private func noteLogWrite(_ mark: LogMark) {
-        logWrites.append((.now, mark.covers))
-        if logWrites.count > 1000 { logWrites.removeFirst(logWrites.count - 1000) }
+        logWrites.note(mark.covers)
+    }
+
+    /// A list document line's edit ended, and the one entry saved history
+    /// takes for what it saved to `ids`, if any, is the log's, which records
+    /// the line once, with the design's name, or not at all when a new line
+    /// left empty goes, as in the design.
+    func noteLineWrites(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        logWrites.note(ids)
+        // Changes reads the log's writes as it draws, so it draws again.
+        undoRevision += 1
     }
 
     /// Whether saved history from `date` about a task or list came from one of
-    /// the log's own writes — a change, its Undo or Redo — so it's already in
-    /// the log or was taken back. A write accounts for what it covered, saved
-    /// from 2 s before it to 3 s after; one that covered nothing, for all of it.
+    /// the log's own writes — a change, its Undo or Redo, or a list document
+    /// line — so it's already in the log, was taken back or never counted.
     func logWrote(at date: Date, about ids: [UUID?]) -> Bool {
-        let from = date.addingTimeInterval(-3), to = date.addingTimeInterval(2)
-        // Writes are in time order; start at the first one late enough.
-        var low = 0, high = logWrites.count
-        while low < high {
-            let mid = (low + high) / 2
-            if logWrites[mid].at < from { low = mid + 1 } else { high = mid }
-        }
-        return logWrites[low...].prefix { $0.at <= to }.contains { write in
-            write.ids.isEmpty || ids.contains { $0.map(write.ids.contains) == true }
-        }
+        logWrites.wrote(at: date, about: ids)
     }
 
     /// Puts entries back in batch order, so Redo returns a batch to where it was.
@@ -787,7 +827,7 @@ final class Workbench {
         changes.groupsByEvent = false
         write(rolls, on: changes, at: date)
         let label = makeLabel(rolls, closes)
-        let icon = !rolls.isEmpty && plain.isEmpty ? "repeat" : "checkmark.circle.fill"
+        let icon = !rolls.isEmpty && plain.isEmpty ? "repeat" : "checkmark.circle"
         let completion = CompletionBatch(mark: record(label, icon: icon, tone: .green, ids: rolls.map(\.id) + plain),
                                          changes: changes, pending: plain, resume: resume, date: date)
         attach(completion: completion, restores: false)
@@ -948,11 +988,12 @@ final class Workbench {
         relog(completion.mark)
     }
 
-    /// Settles every pending completion and trash now. Runs before quitting,
-    /// so a row that showed as done or deleted is saved that way.
+    /// Settles every pending completion, trash and restore now. Runs before
+    /// quitting, so a row that showed as done, deleted or restored is saved that way.
     func flushClosings() {
         for completion in completions { settle(completion) }
         for trash in trashes { land(trash) }
+        for restore in restoring { land(restore) }
     }
 
     // MARK: Trash
@@ -1073,34 +1114,110 @@ final class Workbench {
         return true
     }
 
-    /// Logs a task's restore from Trash with its one window entry: Undo moves
-    /// it back to Trash, Redo restores it again. Erased from Trash meanwhile,
-    /// it leaves the stack instead; see `forgetErasedTrashes`.
-    func snapRestore(_ label: String, id: UUID, icon: String, tone: TrayTone, destination: TrayDestination?) {
-        let mark = record(label, icon: icon, tone: tone, ids: [id])
-        attach(restore: mark, id: id, restores: false)
-        trashUndos.add(mark)
-        showTray(label, icon: icon, tone: tone, undoable: true, destination: destination)
+    /// Restores a Trash entry as one change, as the design's restore does:
+    /// the log, the window's Undo and the tray, saying where it goes back
+    /// to, get it now; the row flies out and is written once it has gone.
+    /// Undone in flight, nothing is written; undone later, it goes back to
+    /// Trash. Erased from Trash meanwhile, it leaves the stack instead; see
+    /// `forgetErasedTrashes`.
+    func beginRestore(_ entry: TrashEntry, label: String, destination: TrayDestination?) {
+        guard !flying.contains(entry.id) else { return }
+        let restore = RestoreBatch(mark: record(label, icon: "arrow.up.bin", tone: .accent, ids: [entry.id]),
+                                   id: entry.id, isList: entry.isList)
+        if entry.isList { restore.mark.trashedListID = entry.id }
+        attach(restore: restore, restores: false)
+        trashUndos.add(restore.mark)
+        showTray(label, icon: "arrow.up.bin", tone: .accent, undoable: true, destination: destination)
+        restoring.append(restore)
+        withAnimation(style.ease(300)) { _ = flying.insert(entry.id) }
+        let delay = ms(300)
+        restore.task = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int(delay)))
+            guard !Task.isCancelled, let self else { return }
+            self.land(restore)
+        }
     }
 
-    private func attach(restore mark: LogMark, id: UUID, restores: Bool) {
+    /// Writes a restore whose row has flown out. Written first, as a trash
+    /// lands: the row leaves Trash as it stops flying, and one that stays
+    /// comes back. One the Store couldn't write leaves the log and the undo
+    /// stack, and the tray says why.
+    private func land(_ restore: RestoreBatch) {
+        restore.task?.cancel()
+        restore.task = nil
+        restoring.removeAll { $0 === restore }
+        let restored = store.restoreTrash(ids: [restore.id])
+        flying.remove(restore.id)
+        guard restored else {
+            log.removeAll { $0.batch == restore.mark.batch }
+            undoManager?.removeAllActions(withTarget: restore.mark)
+            trashUndos.remove(restore.mark)
+            showTray(store.trashError ?? "This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
+            undoRevision += 1
+            return
+        }
+        // What came back with it, a task's subtasks or a list's contents, is
+        // in the library again, and its saved history is the log's too.
+        restore.mark.covers = covered([restore.id])
+        noteLogWrite(restore.mark)
+        // A task going to Recovered items, whose list the tray couldn't open
+        // before it was made, can be opened now.
+        if !restore.isList, tray?.text == restore.mark.label, tray?.destination == nil,
+           let list = store.block(id: restore.id).flatMap({ store.list(id: $0.listID) }) {
+            tray?.destination = TrayDestination(label: "Open \(list.displayTitle)", route: route(for: list))
+        }
+        markRestored([restore.id])
+    }
+
+    /// The restore's one window entry. Undo stops a restore still in flight,
+    /// or moves what it restored back to Trash; Redo restores it again. One
+    /// the Store couldn't write changed nothing: as a label's does, the log
+    /// stays as it was, the tray says so and the entry leaves the stack.
+    private func attach(restore: RestoreBatch, restores: Bool) {
         guard let undoManager else { return }
-        // The manager holds its target weakly; the handler keeps the mark alive.
-        undoManager.registerUndo(withTarget: mark) { [weak self, mark] _ in
+        // The manager holds its target weakly; the handler keeps the batch alive.
+        undoManager.registerUndo(withTarget: restore.mark) { [weak self, restore] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                let id = restore.id
                 if restores {
-                    self.store.restoreTrash(ids: [id])
-                    self.relog(mark)
+                    // Restored from Trash by hand meanwhile, it's back already.
+                    guard !self.store.isInTrash(id) || self.store.restoreTrash(ids: [id]) else {
+                        self.restoreStepFailed(restore, redo: true)
+                        return
+                    }
+                    restore.mark.covers = self.covered([id])
+                    self.relog(restore.mark)
                 } else {
-                    // The handler keeps the id, never the model, which Trash may erase.
-                    if let block = self.store.block(id: id) { self.store.trashBlocks([block]) }
-                    self.unlog(mark)
+                    if let task = restore.task {
+                        task.cancel()
+                        restore.task = nil
+                        self.restoring.removeAll { $0 === restore }
+                        withAnimation(self.style.ease(260)) { _ = self.flying.remove(id) }
+                    } else if restore.isList {
+                        // The handler keeps the id, never the model, which Trash may erase.
+                        // Out of the library, it's in Trash already or erased.
+                        if let list = self.store.list(id: id), !self.moveToTrash(list) {
+                            self.restoreStepFailed(restore, redo: false)
+                            return
+                        }
+                    } else if let block = self.store.block(id: id), !self.store.trashBlocks([block]) {
+                        self.restoreStepFailed(restore, redo: false)
+                        return
+                    }
+                    self.unlog(restore.mark)
                 }
-                self.attach(restore: mark, id: id, restores: !restores)
+                self.attach(restore: restore, restores: !restores)
             }
         }
-        undoManager.setActionName(mark.label)
+        undoManager.setActionName(restore.mark.label)
+    }
+
+    /// An Undo or Redo of a restore the Store refused, whose notice says why.
+    private func restoreStepFailed(_ restore: RestoreBatch, redo: Bool) {
+        trashUndos.remove(restore.mark)
+        showTray("Could not \(redo ? "redo" : "undo") — \(restore.mark.label)", icon: "exclamationmark.triangle", tone: .red)
+        undoRevision += 1
     }
 
     /// Takes Undo off every trash or restore whose tasks have all been erased
@@ -1139,8 +1256,9 @@ private final class LogMark {
     var owner: AnyObject?
     /// The list a list trash moved to Trash, which Undo restores.
     var trashedListID: UUID?
-    /// The tasks and lists whose saved history the change, its Undo and Redo write.
-    let covers: Set<UUID>
+    /// The tasks and lists whose saved history the change, its Undo and Redo
+    /// write. A restore learns what came back with it once it's written.
+    var covers: Set<UUID>
 
     init(batch: Int, label: String, entries: [ChangeEntry], covers: Set<UUID>) {
         self.batch = batch
@@ -1174,6 +1292,21 @@ private final class CompletionBatch {
         self.pending = pending
         self.resume = resume
         self.date = date
+    }
+}
+
+/// A Trash entry restored, whose row flies out before the Store writes it.
+private final class RestoreBatch {
+    let mark: LogMark
+    let id: UUID
+    let isList: Bool
+    /// Writes the restore once the row has flown out; nil once written or stopped.
+    var task: Task<Void, Never>?
+
+    init(mark: LogMark, id: UUID, isList: Bool) {
+        self.mark = mark
+        self.id = id
+        self.isList = isList
     }
 }
 

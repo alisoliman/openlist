@@ -1,5 +1,6 @@
-// Headless checks for the pure-logic layer: natural-language date parsing and
-// the recurrence engine. Compiled and run by Tools/run-logic-checks.sh.
+// Headless checks for the pure-logic layer: natural-language date parsing,
+// the recurrence engine and when the change log's writes reached saved
+// history. Compiled and run by Tools/run-logic-checks.sh.
 
 import Foundation
 
@@ -382,6 +383,34 @@ do {
     let encoded = Recurrence.weekdaysOnly.jsonData
     let decoded = Recurrence.decode(encoded)
     check(decoded == Recurrence.weekdaysOnly, "round-trips through JSON")
+}
+
+// MARK: - Change log writes
+
+print("── Change log writes ──")
+
+do {
+    // A list document line written from 0 s to 12 s saves its one entry as
+    // it ends, and the log records "Added" then. Its saved history is the
+    // log's; what else saved about it meanwhile, over MCP, still shows.
+    let line = UUID(), other = UUID(), list = UUID()
+    let start = reference
+    var writes = NXLogWrites()
+    writes.note([line], at: start.addingTimeInterval(12))
+    check(writes.wrote(at: start.addingTimeInterval(12), about: [line, list]), "a line's entry saved as it ends is the log's")
+    check(!writes.wrote(at: start.addingTimeInterval(4), about: [line, list]),
+          "the line's task changed elsewhere while it was written still shows")
+    check(!writes.wrote(at: start.addingTimeInterval(12), about: [other, list]), "another task's history saved then still shows")
+    check(!writes.wrote(at: start.addingTimeInterval(16), about: [line, list]), "the line's history saved well after it ended shows")
+
+    // A change the log recorded covers what it covered around its moment;
+    // one that covered nothing, everything then.
+    writes.note([other], at: start.addingTimeInterval(100))
+    check(writes.wrote(at: start.addingTimeInterval(102), about: [nil, other]), "a change covers its tasks just after it")
+    check(!writes.wrote(at: start.addingTimeInterval(105), about: [other]), "but not 5 s after it")
+    check(!writes.wrote(at: start.addingTimeInterval(101), about: [line]), "nor another task")
+    writes.note([], at: start.addingTimeInterval(200))
+    check(writes.wrote(at: start.addingTimeInterval(199), about: [line]), "a change that covered nothing covers everything then")
 }
 
 // MARK: - Summary

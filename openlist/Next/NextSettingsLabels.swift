@@ -72,10 +72,7 @@ struct NXLabelSettings: View {
     }
 
     private func create() {
-        guard let label = env.store.findOrCreateLabel(named: newLabelName) else { return }
-        _ = label
-        env.store.save()
-        newLabelName = ""
+        if env.workbench.createLabel(named: newLabelName) { newLabelName = "" }
     }
 }
 
@@ -152,7 +149,7 @@ private struct NXLabelSettingsRow: View {
             return
         }
         do {
-            try env.store.renameLabel(label, to: trimmed)
+            try env.workbench.renameLabel(label, to: trimmed)
         } catch {
             env.store.labelMaintenanceError = "The label was not renamed. \(error.localizedDescription)"
         }
@@ -191,7 +188,7 @@ private struct NXLabelSwatch: View {
     private func choose() {
         let entries: [NXMenuEntry] = ListAccent.allCases.map { accent in
             .choice(accent.title, isSelected: label.accent == accent, swatch: accent.color) {
-                env.store.setAccent(accent, for: label)
+                env.workbench.setLabelAccent(accent, for: label)
             }
         }
         menu.popUp(entries, titleInset: 0, dropsDown: true)

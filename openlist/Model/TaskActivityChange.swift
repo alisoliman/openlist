@@ -28,6 +28,10 @@ nonisolated struct TaskActivityChange: Codable, Equatable, Sendable {
     /// A recurring ancestor's cycle is stable when a child is reopened.
     /// For a task with its own rule this is its completed occurrence UUID.
     var completionCycleID: UUID?
+    /// A list document line left empty and taken out as its edit ended, which
+    /// the design logs as "Removed an empty line", not as a task moved to
+    /// Trash. Optional for compatibility with existing history.
+    var removedEmptyLine: Bool?
 }
 
 /// A staged legacy event retains its action time across retries. Each attempt

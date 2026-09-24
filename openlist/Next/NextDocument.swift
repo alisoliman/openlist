@@ -150,6 +150,10 @@ private struct NXDocumentLines: View {
         hooks.commandTargets = { workbench.targetIDs }
         hooks.nameEdit = { Self.name(of: $0, store: store) }
         hooks.didRecordEdit = { edit, name in workbench.logEdit(name, ids: Self.ids(of: edit)) }
+        // What a line saved as it was written, the new task before it had
+        // text, its title as typed, and the line itself if it went, is the
+        // one entry the design logs for it, or none.
+        hooks.didEndLine = { ids in workbench.noteLineWrites(ids) }
         hooks.didAddLine = { id in
             workbench.flash(\.fresh, [id], for: 1100)
             // A new task takes the focus, so the page brings it into view.

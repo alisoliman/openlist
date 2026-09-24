@@ -1452,6 +1452,109 @@ fixEditor.commitLine()
 check(dated.text == "Call mum tomorrow every monday" && dated.dueDate == nil && dated.recurrence == nil,
     "A task line finished with Return keeps its date and repeat words as written")
 
+// Every line's edit says what it touched as it ends, a new line left empty
+// too, which records nothing, so the change log owns what the line saved.
+// Saved history takes what the line saved as it was written, the new task at
+// Return, its title as typed, the line itself when it goes, as the design's
+// one entry for it, or none, as the line ends.
+var endedLines: [Set<UUID>] = []
+fixEditor.hooks.didEndLine = { endedLines.append($0) }
+func history(_ id: UUID) -> [ActivityEvent] { store.recentActivity().filter { $0.blockID == id } }
+fixRecorded.removeAll()
+fixEditor.appendTask()
+let dropped = fixEditor.focus.blockID!
+fixEditor.commitLine()
+store.save()
+check(store.block(id: dropped) == nil && fixRecorded.isEmpty && endedLines.count == 1 && endedLines[0].contains(dropped),
+    "A new line left empty goes with no entry, and still says which line it was")
+check(history(dropped).isEmpty, "A new line left empty leaves no saved history")
+fixEditor.appendTask()
+let writtenLine = store.block(id: fixEditor.focus.blockID!)!
+fixActions(writtenLine).onChange(NSAttributedString(string: "Pack"))
+store.save()
+fixActions(writtenLine).onChange(NSAttributedString(string: "Pack the camera"))
+check(history(writtenLine.id).isEmpty, "What a line saves as it's written waits for it to end")
+let writtenEnd = Date.now
+fixEditor.commitLine()
+store.save()
+check(fixRecorded.last == .added(writtenLine.id) && endedLines.count == 2 && endedLines[1].contains(writtenLine.id),
+    "A line written and left records Added and says it touched its block")
+check(history(writtenLine.id).map(\.kind) == [.created] && history(writtenLine.id).first?.title == "Pack the camera"
+    && history(writtenLine.id).first?.change?.before == nil && history(writtenLine.id)[0].timestamp >= writtenEnd,
+    "Its saved history is one creation, with the title as written, dated as the line ended")
+fixEditor.commitLine()
+check(endedLines.count == 2, "With no line open, nothing ends")
+fixActions(writtenLine).onFocus()
+fixActions(writtenLine).onChange(NSAttributedString(string: "Pack the"))
+store.save()
+fixActions(writtenLine).onChange(NSAttributedString(string: "Pack the big camera"))
+fixEditor.commitLine()
+store.save()
+let edited = history(writtenLine.id).filter { $0.kind == .renamed }
+check(edited.count == 1 && edited[0].change?.before?.title == "Pack the camera" && edited[0].change?.after?.title == "Pack the big camera",
+    "A line edited is one retitling, from the title before it to the one it left")
+let doneMeanwhile = store.appendBlock(kind: .task, text: "Charge", to: fixDocument)
+store.save()
+fixActions(doneMeanwhile).onFocus()
+fixActions(doneMeanwhile).onChange(NSAttributedString(string: "Charge the batteries"))
+store.toggleCompletion(doneMeanwhile)
+store.save()
+let savedMeanwhile = history(doneMeanwhile.id).filter { $0.kind != .created }
+check(savedMeanwhile.map(\.kind) == [.completed] && savedMeanwhile[0].change?.after?.isCompleted == true,
+    "A task completed while its line is written keeps its completion, not the typing it saved with")
+fixEditor.commitLine()
+store.save()
+check(history(doneMeanwhile.id).filter { $0.kind == .renamed }.count == 1, "and the line's edit is its one retitling")
+let emptiedLine = store.appendBlock(kind: .task, text: "Buy film", to: fixDocument)
+let emptiedID = emptiedLine.id
+store.save()
+fixActions(emptiedLine).onFocus()
+fixActions(emptiedLine).onChange(NSAttributedString())
+store.save()
+check(history(emptiedID).map(\.kind) == [.created], "The emptied title waits for the line to end")
+fixActions(emptiedLine).onEndEditing(NSTextStorage())
+store.save()
+let removedLine = history(emptiedID).filter { $0.kind != .created }
+check(store.block(id: emptiedID) == nil && removedLine.count == 1 && removedLine[0].kind == .deleted
+    && removedLine[0].change?.removedEmptyLine == true && removedLine[0].change?.before?.title == "Buy film",
+    "A line emptied and left goes as one removed empty line, not a rename and a trash")
+// A new line turned into a heading has no task history, left empty or written.
+fixEditor.appendTask()
+let headedID = fixEditor.focus.blockID!
+fixActions(store.block(id: headedID)!).onMarkdownPrefix(.heading2)
+fixEditor.commitLine()
+store.save()
+check(store.block(id: headedID) == nil && history(headedID).isEmpty, "A new line made a heading and left empty leaves no saved history")
+fixEditor.appendTask()
+let headingLine = store.block(id: fixEditor.focus.blockID!)!
+fixActions(headingLine).onMarkdownPrefix(.heading1)
+fixActions(headingLine).onChange(NSAttributedString(string: "Day two"))
+fixEditor.commitLine()
+store.save()
+check(headingLine.kind == .heading1 && history(headingLine.id).isEmpty, "nor does one made a heading and written")
+// Something else taking the line's task, as another Mac might, ends the
+// line: its history is saved and the host hears it ended.
+fixEditor.appendTask()
+let takenLine = store.block(id: fixEditor.focus.blockID!)!
+let takenID = takenLine.id
+fixActions(takenLine).onChange(NSAttributedString(string: "Print the tickets"))
+store.save()
+let endedBefore = endedLines.count
+store.deleteBlock(takenLine)
+store.save()
+fixEditor.blocksDidChange(store.blocks(inList: fixList.id).map(\.id))
+store.save()
+check(endedLines.count == endedBefore + 1 && endedLines.last?.contains(takenID) == true,
+    "A line whose block goes from elsewhere ends once, saying what it touched")
+let takenHistory = history(takenID)
+check(takenHistory.count == 2 && Set(takenHistory.map(\.kind)) == [.created, .deleted]
+    && takenHistory.first { $0.kind == .created }?.title == "Print the tickets"
+    && takenHistory.first { $0.kind == .deleted }?.change?.removedEmptyLine == nil,
+    "Its task was added as written, and deleted elsewhere")
+fixEditor.commitLine()
+check(endedLines.count == endedBefore + 1, "and it doesn't end again")
+fixEditor.hooks.didEndLine = { _ in }
+
 // Taken out, a line's lines go where they show: not under a done task the document lists apart.
 let doneAbove = store.appendBlock(kind: .task, text: "Done already", to: fixDocument)
 let emptiedParent = store.appendBlock(kind: .task, text: "", to: fixDocument)

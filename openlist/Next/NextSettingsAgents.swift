@@ -85,10 +85,10 @@ struct NXAgentSettings: View {
         }
         .onAppear { port = String(settings.mcpPort) }
         .onChange(of: settings.mcpPort) { _, value in port = String(value) }
-        .confirmationDialog("Reset the MCP access token?", isPresented: $confirmsTokenReset) {
-            Button("Reset access token", role: .destructive) { mcp.restart(rotatingToken: true) }
-        } message: {
-            Text("Existing client configurations will stop working. Copy a new configuration for every client you still want to allow.")
+        .sheet(isPresented: $confirmsTokenReset) {
+            NXConfirmationSheet(title: "Reset the MCP access token?",
+                                message: "Existing client configurations will stop working. Copy a new configuration for every client you still want to allow.",
+                                confirm: "Reset access token") { mcp.restart(rotatingToken: true) }
         }
     }
 

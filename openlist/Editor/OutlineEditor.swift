@@ -212,6 +212,11 @@ struct OutlineHooks {
     /// changes. Anything it registers on the window's undo manager now lands
     /// in the same step.
     var didRecordEdit: (OutlineEdit, _ name: String) -> Void = { _, _ in }
+    /// A line's edit ended, recorded or not, as a new line left empty isn't,
+    /// and its blocks' saved history has just taken the line's one entry, or
+    /// none: the blocks it touched, for a host that tells that history apart
+    /// from changes made elsewhere.
+    var didEndLine: (_ ids: Set<UUID>) -> Void = { _ in }
     /// A new line took the caret.
     var didAddLine: (UUID) -> Void = { _ in }
     /// Shift-Return on a task, for a host that edits notes in place. `nil`
@@ -1118,7 +1123,10 @@ final class OutlineEditor {
             return
         }
         line = nil
-        defer { drawnRows = nil }
+        defer {
+            drawnRows = nil
+            endLine(edit)
+        }
         for storage in [undoTarget, textStorage(editing: edit.blockID)].compactMap({ $0 }) { edit.undoTargets.add(storage) }
         let targets = edit.undoTargets.allObjects
         guard let block = env.store.block(id: edit.blockID) else {
@@ -1167,6 +1175,14 @@ final class OutlineEditor {
     private func trimWritten(_ block: Block) {
         trimEnds(of: block)
         env.store.scheduleSave(after: .seconds(1))
+    }
+
+    /// A line's edit is over, committed or not: what it saved to its tasks
+    /// as it was written reaches saved history as its one entry, and the
+    /// host hears which blocks it touched.
+    private func endLine(_ edit: LineEdit) {
+        env.store.endEditorSession(edit.session)
+        hooks.didEndLine(edit.session.touchedIDs)
     }
 
     /// Whether an empty line goes as its edit ends. A new one always does.
@@ -1613,6 +1629,7 @@ final class OutlineEditor {
         if let edit = line, !ids.contains(edit.blockID) {
             line = nil
             edit.undoTargets.allObjects.forEach(discardTyping)
+            endLine(edit)
         }
         if let pending = untrimmed, !ids.contains(pending.blockID) { untrimmed = nil }
         if let focused = focus.blockID, !ids.contains(focused) {

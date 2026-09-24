@@ -94,6 +94,12 @@ extension Store {
             let after = task.isDeleted || task.isTrashed ? nil : TaskActivityState(task, list: list(id: task.listID))
             func append(_ kind: ActivityKind, completion: CompletionRecord? = nil, undone: CompletionRecord? = nil) {
                 guard let subject = after ?? before else { return }
+                // What a list document line saves to its own task as it's
+                // written is the line's one entry, recorded as it ends.
+                if let line = line(saving: kind, to: task) {
+                    line.hold(kind, of: task.id, from: before, to: after)
+                    return
+                }
                 let event = ActivityEvent(kind: kind, title: subject.title.isEmpty ? "Untitled task" : subject.title,
                     blockID: task.id, listID: subject.listID, listTitle: subject.listTitle, listIcon: subject.listIcon)
                 let record = completion ?? undone ?? (kind == .completed ? savedCompletions.first {

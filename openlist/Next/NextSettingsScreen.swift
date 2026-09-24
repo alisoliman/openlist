@@ -522,59 +522,6 @@ struct NXSettingButtonStyle: ButtonStyle {
     }
 }
 
-/// The design's dialog buttons: `600 12px/1`, `8px 12px`, radius 8. Primary
-/// is the triage card's dark "Keep for later", secondary its grey "Review
-/// kept tasks", destructive the Trash's red.
-struct NXDialogButtonStyle: ButtonStyle {
-    enum Kind { case primary, secondary, destructive }
-    var kind: Kind = .secondary
-
-    func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration, kind: kind)
-    }
-
-    private struct Chrome: View {
-        @Environment(\.isEnabled) private var isEnabled
-        let configuration: Configuration
-        let kind: Kind
-        @State private var hovering = false
-
-        var body: some View {
-            let active = hovering && isEnabled
-            configuration.label
-                // The design's `12px/1` line box, so the button is 28pt tall.
-                .frame(height: 12)
-                .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
-                .foregroundStyle(foreground)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(fill(active), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .opacity(isEnabled ? configuration.isPressed ? 0.8 : 1 : 0.45)
-                .fixedSize()
-                .contentShape(Rectangle())
-                .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.14), value: hovering)
-        }
-
-        private var foreground: Color {
-            switch kind {
-            case .primary: .white
-            case .secondary: NX.ink(0.7)
-            case .destructive: NX.redText
-            }
-        }
-
-        private func fill(_ active: Bool) -> Color {
-            switch kind {
-            case .primary: active ? NX.primaryButtonHover : NX.primaryButton
-            case .secondary: NX.ink(active ? 0.1 : 0.06)
-            case .destructive: NX.red.opacity(active ? 0.18 : 0.1)
-            }
-        }
-    }
-}
-
 /// A control drawn only as its label, like a switch or a value pill, which
 /// shows its own hover and disabled look. As a button, Tab reaches it with
 /// keyboard navigation on and Space presses it; its focus ring follows `radius`.
