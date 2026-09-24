@@ -1348,8 +1348,10 @@ final class OutlineEditor {
             undoManager?.setActionName(name)
             hooks.didRecordEdit(edit, name)
         } catch {
-            // The red card, as for a move from the menu.
-            env.store.actionError = error.localizedDescription
+            // As for a move from the menu: a refusal that changed nothing
+            // passes in the tray, a move that failed to save is the red card.
+            if error is BulkActionError { env.store.refuse(error.localizedDescription) }
+            else { env.store.actionError = error.localizedDescription }
         }
     }
 

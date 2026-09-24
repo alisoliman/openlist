@@ -23,6 +23,13 @@ struct NXSavedFact {
     var takes: String?
 }
 
+/// A task's event in one change's row, as the row counts it.
+struct NXSavedTask {
+    var id: UUID?
+    /// A repeat that rolled on to its next date, resetting its subtasks.
+    var rolls = false
+}
+
 enum NXSavedChanges {
     /// `facts`, newest first, as rows of their indexes, newest first by the
     /// newest event each holds. A row starts with the event that names it:
@@ -61,5 +68,33 @@ enum NXSavedChanges {
             }
         }
         return rows
+    }
+
+    /// The events of one change's row the log counts, as their indexes, the
+    /// log's way: a move, a restore or an add counts the tasks it was about,
+    /// not the subtasks that went with them; a completion every task that
+    /// closed, subtasks too, but those a repeat reset as it rolled on, as the
+    /// log counts a repeat and the rest that close; anything else, each task.
+    /// `parent` gives a task's parent.
+    static func counted(_ tasks: [NXSavedTask], kind: String, parent: (UUID) -> UUID?) -> [Int] {
+        switch kind {
+        case "moved", "restored", "created":
+            let ids = Set(tasks.compactMap(\.id))
+            return tasks.indices.filter { tasks[$0].id.flatMap(parent).map(ids.contains) != true }
+        case "completed":
+            let rolled = Set(tasks.filter(\.rolls).compactMap(\.id))
+            guard !rolled.isEmpty else { return Array(tasks.indices) }
+            return tasks.indices.filter { index in
+                var next = tasks[index].id.flatMap(parent)
+                var visited: Set<UUID> = []
+                while let id = next, visited.insert(id).inserted {
+                    if rolled.contains(id) { return false }
+                    next = parent(id)
+                }
+                return true
+            }
+        default:
+            return Array(tasks.indices)
+        }
     }
 }

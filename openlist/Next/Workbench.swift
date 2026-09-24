@@ -994,15 +994,24 @@ final class Workbench {
         completion.pending = []
         for id in pending { closingTasks.removeValue(forKey: id)?.cancel() }
         withAnimation(style.ease(260)) { for id in pending { closing[id] = nil } }
-        while completion.changes.canUndo { completion.changes.undo() }
+        // Its saved history is one change, as the batch's Redo's is.
+        store.withActivityBatch(UUID()) {
+            while completion.changes.canUndo { completion.changes.undo() }
+        }
         if let resume = completion.resume { calendar.restoreResume(resume) }
         unlog(completion.mark)
     }
 
     private func reapply(_ completion: CompletionBatch) {
-        while completion.changes.canRedo { completion.changes.redo() }
+        // What it writes again, rows that never settled too, saves as one
+        // change: a batch of its own, as the Undo before it was, so it never
+        // reads as more tasks with the history first written.
+        let activity = UUID()
+        store.withActivityBatch(activity) {
+            while completion.changes.canRedo { completion.changes.redo() }
+        }
         if !completion.cancelled.isEmpty {
-            write(completion.cancelled.compactMap { store.block(id: $0) }, on: completion.changes)
+            write(completion.cancelled.compactMap { store.block(id: $0) }, on: completion.changes, activity: activity)
             completion.cancelled = []
             // The batch is written now, so it's logged now: the Store dates its
             // completion from this write.

@@ -268,6 +268,18 @@ extension Store {
         return lists.contains { $0.trashID == id } || blockIncludingTrash(id: id)?.trashID == id
     }
 
+    /// Where a list's restore puts it, as its tray and its saved history say:
+    /// under its parent, or at the top level once `parentGone`, and
+    /// "(archived)" when it or that parent is; empty at the top level.
+    func restoredPlace(of list: TaskList, parentGone: Bool) -> String {
+        let parent = parentGone ? nil : list.parentListID.flatMap { self.list(id: $0) }
+        var place = ""
+        if let parent { place = "to \(listHierarchy().path(for: parent.id))" }
+        else if parentGone { place = "to the top level — its parent list is unavailable" }
+        if list.isArchived || parent?.isEffectivelyArchived == true { place += place.isEmpty ? "(archived)" : " (archived)" }
+        return place
+    }
+
     /// The blocks with these ids, by id, found in the library or in Trash,
     /// which keeps them until they're erased; `block(id:)` finds only the
     /// library's.
@@ -313,9 +325,11 @@ extension Store {
                 if let retainedList {
                     let retainedLists = allLists.filter { $0.trashID == id }
                     let unitIDs = Set(retainedLists.map(\.id))
+                    var parentGone = false
                     if let parentID = retainedList.parentListID, !unitIDs.contains(parentID),
                        !allLists.contains(where: { $0.id == parentID && ($0.trashID == nil || ids.contains($0.trashID!)) }) {
                         retainedList.parentListID = nil
+                        parentGone = true
                         metadata.recoveryNote = "Restored from \(metadata.formerLocation). Its parent list is unavailable; the list is now at top level."
                     }
                     for child in retainedLists {
@@ -331,8 +345,10 @@ extension Store {
                         }
                         child.trashID = nil
                     }
-                    // The list's own entry, which its tasks' restores read as one with.
-                    log(.restored, title: retainedList.displayTitle, list: retainedList)
+                    // The list's own entry, which its tasks' restores read as one with,
+                    // saying where it went back to as its tray did.
+                    log(.restored, title: retainedList.displayTitle,
+                        detail: restoredPlace(of: retainedList, parentGone: parentGone), list: retainedList)
                 } else if let root {
                     let owner = list(id: root.listID)
                     let parent = block(id: root.parentID)

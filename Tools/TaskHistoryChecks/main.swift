@@ -380,4 +380,49 @@ batching.withActivityBatch(shared) {
 }
 check(try events(batching).filter { $0.kind == .completed && $0.batchID == shared }.count == 2,
       "a change saved more than once, like tasks completed together, keeps one batch")
+// A parent done with its open subtasks saves a completion each, and its row
+// counts them all, as the log does; a repeat resets its subtasks as it rolls
+// on, so its row counts the repeat alone, again as the log does.
+func completions(_ batch: UUID) throws -> [ActivityEvent] {
+    try events(batching).filter { $0.kind == .completed && $0.batchID == batch }
+}
+func counted(_ batch: UUID) throws -> Int {
+    NXSavedChanges.counted(try completions(batch).map { NXSavedTask(id: $0.blockID, rolls: $0.change?.advancesOccurrence == true) },
+                           kind: ActivityKind.completed.rawValue) { batching.blockIncludingTrash(id: $0)?.parentID }.count
+}
+let doneParent = batching.appendBlock(kind: .task, text: "Done parent", to: .init(listID: batchList.id))
+for title in ["Open one", "Open two"] { _ = batching.insertChild(kind: .task, text: title, of: doneParent) }
+let secondParent = batching.appendBlock(kind: .task, text: "Second parent", to: .init(listID: batchList.id))
+for title in ["Open three", "Open four"] { _ = batching.insertChild(kind: .task, text: title, of: secondParent) }
+let doneBeside = batching.appendBlock(kind: .task, text: "Done beside", to: .init(listID: batchList.id))
+let rolling = batching.appendBlock(kind: .task, text: "Rolling", to: .init(listID: batchList.id))
+rolling.dueDate = .now
+rolling.recurrence = .weekly
+for title in ["Reset one", "Reset two"] { _ = batching.insertChild(kind: .task, text: title, of: rolling) }
+let closesBeside = batching.appendBlock(kind: .task, text: "Closes beside", to: .init(listID: batchList.id))
+try batching.persistChanges()
+let parentDone = UUID()
+batching.withActivityBatch(parentDone) { batching.toggleCompletion(doneParent) }
+check(try completions(parentDone).count == 3 && counted(parentDone) == 3, "a parent done with two open subtasks counts three tasks")
+let withBeside = UUID()
+batching.withActivityBatch(withBeside) { for task in [secondParent, doneBeside] { batching.toggleCompletion(task) } }
+check(try completions(withBeside).count == 4 && counted(withBeside) == 4, "such a parent done with another task counts four")
+let rolled = UUID()
+batching.withActivityBatch(rolled) { for task in [rolling, closesBeside] { batching.toggleCompletion(task) } }
+check(try completions(rolled).count == 4 && counted(rolled) == 2,
+      "a repeat done with its open subtasks and another task counts two, the subtasks it reset left out")
+// A list's restore saves where it went back to, as its tray says it.
+let placeParent = batching.createList(title: "Place parent")
+let placeChild = batching.createChildList(in: placeParent)!
+try batching.persistChanges()
+func restoredPlaces(_ list: TaskList) throws -> Set<String> {
+    Set(try events(batching).filter { $0.kind == .restored && $0.blockID == nil && $0.listID == list.id }.map(\.detail))
+}
+check(try restoredPlaces(batchList) == [""], "a list restored at the top level saves no place")
+check(batching.trashList(placeChild) && batching.restoreTrash(ids: [placeChild.id]), "a nested list restores")
+check(try restoredPlaces(placeChild) == ["to Place parent"], "a list restored under its parent saves that it went back there")
+check(batching.trashList(placeChild) && batching.trashList(placeParent) && batching.permanentlyEraseTrash(ids: [placeParent.id])
+          && batching.restoreTrash(ids: [placeChild.id]), "a nested list restores once its parent is erased")
+check(try restoredPlaces(placeChild) == ["to Place parent", "to the top level — its parent list is unavailable"],
+      "a list restored with its parent gone saves that it went to the top level")
 print("✅ \(checks) task history checks passed (commits, recurrence, undo, failure, paging, coalescing, batches)")

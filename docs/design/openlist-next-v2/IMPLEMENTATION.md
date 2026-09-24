@@ -93,10 +93,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (under its parent, or at the top level once the parent is gone), and Undo takes it back
   to Trash as a task's does. A task whose list, or the task it was under, is gone goes back
   to a pinned Recovered items list, a native extra, the one there is or, with none, a new one;
-  its tray and log entry, Earlier's too, add where it came from ("… to Recovered items — from
-  Work › Launch"). Its Undo puts it back in Trash as it was, from its old place, and takes a
-  Recovered items list it made, left empty, with it; Redo makes it again. When Trash can't be
-  read, the page says so under the notice, never "Trash is empty.".
+  one renamed or given another description is the user's own, and the next such restore makes
+  a new one. Its tray and log entry, Earlier's too, add where it came from ("… to Recovered
+  items — from Work › Launch"). Its Undo puts it back in Trash as it was, from its old place,
+  and takes a Recovered items list it made, left empty, with it, a window on that list going
+  to Today; Redo makes it again. When Trash can't be read, the page says so under the notice,
+  never "Trash is empty.".
 - The Lists gallery's subtitle is the design's "N lists in 2 sections", counting the sections
   that hold lists; lists in no section (the "Other lists" shelf, a native extra) and archived
   ones follow it ("· 1 in Other lists · 2 archived").
@@ -242,9 +244,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   notice card, all of them in one place under the toolbar. So does an export, Copy as
   Markdown, cover change or image that fails, and a file that can't be attached or opened,
   where system alerts were: a red card (`Store.actionError`), one for files that fail
-  together; and a Duplicate, a move (from the menu, the sidebar or a drag), Copy Content and
-  Subtasks or its paste that fails. VoiceOver hears each card as it appears (`NextNotices`),
-  but sync's warnings, which no action set off.
+  together; and a Duplicate, a move that couldn't be saved (from the menu, the sidebar or a
+  drag), Copy Content and Subtasks or its paste that fails. A move refused, which changed
+  nothing (another editor operation running, a destination gone), passes in the tray.
+  VoiceOver hears each card as it appears (`NextNotices`), but sync's warnings, which no
+  action set off.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
   (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), a list's Duplicate, Use as
   Template… (the copy opens; Undo takes it to Trash) and Move List…, a list dragged in the
@@ -279,8 +283,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   restore and a date, which Earlier names as of when it was set. The history one change
   saves, a task each, shares a batch, so Earlier (and This session's saved history) shows it
   as the log's one row: "Moved 3 tasks to Trash", "3 tasks → Tomorrow", "Moved “Trip” to Work"
-  for a task moved with its subtasks, a list trashed, restored, duplicated or copied as a
-  template as its own row, and its 40 rows are changes, not events. A date names its time only
+  for a task moved with its subtasks, "3 tasks done" for one done with two open subtasks (but
+  those a repeat resets as it rolls on), a list trashed, restored (where to, as its tray said),
+  duplicated or copied as a template as its own row, and its 40 rows are changes, not events;
+  a completion's Undo and its Redo are a change each. A date names its time only
   when the change set it, so a timed task moved by a date pill reads "→ Fri 25", as the
   design's pills do. Deviations: tasks pasted into a line keep an "Added" each there, and a
   heading or text line, which has no saved history, shows in This session only (one MCP

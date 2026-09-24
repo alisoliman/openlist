@@ -455,6 +455,25 @@ do {
           "a change's rows hold only its own history")
 }
 
+do {
+    // A row's tasks as the log counts them.
+    let parent = UUID(), sub = UUID(), deep = UUID(), beside = UUID(), repeatID = UUID(), reset = UUID(), resetDeep = UUID()
+    let parents = [sub: parent, deep: sub, reset: repeatID, resetDeep: reset]
+    let lookup: (UUID) -> UUID? = { parents[$0] }
+    let tree = [parent, sub, deep, beside].map { NXSavedTask(id: $0) }
+    check(NXSavedChanges.counted(tree, kind: "moved", parent: lookup) == [0, 3], "a move counts the tasks it was about, not their subtasks")
+    check(NXSavedChanges.counted(tree, kind: "completed", parent: lookup) == [0, 1, 2, 3],
+          "a completion counts every task that closed, subtasks too")
+    check(NXSavedChanges.counted(tree, kind: "deleted", parent: lookup).count == 4, "a trash counts every task")
+    let rolled = [NXSavedTask(id: repeatID, rolls: true), NXSavedTask(id: reset, rolls: true),
+                  NXSavedTask(id: resetDeep, rolls: true), NXSavedTask(id: beside)]
+    check(NXSavedChanges.counted(rolled, kind: "completed", parent: lookup) == [0, 3],
+          "a repeat counts once, its subtasks it reset at any depth left out")
+    // A subtask whose parent's event isn't in the row is still one under the repeat.
+    check(NXSavedChanges.counted([rolled[0], rolled[2]], kind: "completed", parent: lookup) == [0],
+          "a repeat's deeper subtask stays left out past a parent the row doesn't hold")
+}
+
 // MARK: - Summary
 
 print("")

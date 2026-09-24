@@ -428,8 +428,10 @@ extension Workbench {
         do {
             _ = try store.moveSelection(tasks.map(\.id), to: listID, undoManager: undoManager)
         } catch {
-            // The red card, as for a move dragged in a list document.
-            store.actionError = error.localizedDescription
+            // A refusal that changed nothing passes in the tray; a move that
+            // failed to save is the red card, as for one dragged in a list.
+            if error is BulkActionError { store.refuse(error.localizedDescription) }
+            else { store.actionError = error.localizedDescription }
             return
         }
         undoManager?.setActionName(label)
@@ -571,12 +573,9 @@ extension Workbench {
         if entry.isList {
             guard let list = try? store.context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id })).first
             else { return ("Restored \(title)", nil) }
-            let parent = list.parentListID.flatMap { store.list(id: $0) }
-            var text = "Restored \(title)"
-            if let parent { text += " to \(store.listHierarchy().path(for: parent.id))" }
-            else if list.parentListID != nil { text += " to the top level — its parent list is unavailable" }
-            if list.isArchived || parent?.isEffectivelyArchived == true { text += " (archived)" }
-            return (text, TrayDestination(label: "Open \(list.displayTitle)", route: .list(id)))
+            let place = store.restoredPlace(of: list, parentGone: list.parentListID.map { store.list(id: $0) == nil } ?? false)
+            return (place.isEmpty ? "Restored \(title)" : "Restored \(title) \(place)",
+                    TrayDestination(label: "Open \(list.displayTitle)", route: .list(id)))
         }
         guard let root = store.blockIncludingTrash(id: id) else {
             return ("Restored \(title) to \(entry.metadata?.listTitle ?? "its list")", nil)
