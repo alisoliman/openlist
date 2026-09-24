@@ -245,6 +245,29 @@ final class Store {
         undoableEditorEdit(in: listID, name: name, undoManager: undoManager, didRegister: didRegister, remove)
     }
 
+    /// Keeps `files`, already copied in, with `owner`, in order after its
+    /// other files, as one Undo step on `undoManager`, named `name`: Undo
+    /// takes them off again, and Redo puts them back, bytes and all.
+    /// `didRegister` runs once the step is on the stack. With no undo
+    /// manager, or a task in no list, the files are just kept.
+    func addAttachments(_ files: [ImportedMedia], to owner: Block, name: String, undoManager: UndoManager?,
+                        didRegister: (() -> Void)? = nil) {
+        guard !files.isEmpty, owner.modelContext != nil, !owner.isDeleted else { return }
+        let ownerID = owner.id
+        let add = {
+            var sortIndex = self.attachments(for: ownerID).last?.sortIndex ?? 0
+            for media in files {
+                sortIndex += BlockTree.indexStep
+                self.context.insert(Attachment(blockID: ownerID, filename: media.filename, displayName: media.displayName,
+                                               contentType: media.contentType, byteCount: media.byteCount,
+                                               sortIndex: sortIndex, contentData: media.data))
+            }
+            self.save()
+        }
+        guard let listID = owner.listID else { return add() }
+        undoableEditorEdit(in: listID, name: name, undoManager: undoManager, didRegister: didRegister, add)
+    }
+
     // MARK: - Bootstrap
 
     /// Creates the Inbox and the default sidebar section on first launch.

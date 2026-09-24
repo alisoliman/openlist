@@ -47,13 +47,14 @@ struct TaskSchedulePicker: View {
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
             }
 
-            NXSegmented(options: [(DetailPicker.due, "Date & time"), (.reminder, "Reminder"), (.repeatRule, "Repeat")],
+            // The inspector rows' words, in their order.
+            NXSegmented(options: [(DetailPicker.due, "Due"), (.repeatRule, "Repeat"), (.reminder, "Reminder")],
                         selection: section) { section = $0 }
                 .accessibilityRepresentation {
                     Picker("Schedule section", selection: $section) {
-                        Text("Date & time").tag(DetailPicker.due)
-                        Text("Reminder").tag(DetailPicker.reminder)
+                        Text("Due").tag(DetailPicker.due)
                         Text("Repeat").tag(DetailPicker.repeatRule)
+                        Text("Reminder").tag(DetailPicker.reminder)
                     }
                     .pickerStyle(.segmented)
                 }

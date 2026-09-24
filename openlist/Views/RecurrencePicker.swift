@@ -99,7 +99,7 @@ struct RecurrencePicker: View {
                     section("Next occurrences") {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(RecurrenceEngine.upcoming(rule: rule, from: block.dueDate), id: \.self) { date in
-                                Text(date.formatted(date: .complete, time: .omitted))
+                                Text(NXFormat.dayLabel(date))
                                     .font(.system(size: 12))
                                     .foregroundStyle(NX.ink(0.62))
                             }

@@ -404,6 +404,28 @@ extension Workbench {
 
     // MARK: Files
 
+    /// Files kept with a task in the inspector's Files, a native extra, as
+    /// one change the tray can undo, as taking one off is: Undo takes them
+    /// off again. Those that can't be read are named in one red card,
+    /// however many, and only the files kept are counted; with none kept,
+    /// nothing changes.
+    func attachFiles(_ urls: [URL], to taskID: UUID) {
+        guard !urls.isEmpty else { return }
+        document?.commitLine()
+        guard let task = store.block(id: taskID) else { return }
+        var kept: [ImportedMedia] = []
+        var failures: [(name: String, error: Error)] = []
+        for url in urls {
+            do { kept.append(try MediaStore.shared.importFile(at: url)) } catch { failures.append((url.lastPathComponent, error)) }
+        }
+        if let notice = NXFormat.attachFailures(failures) { store.actionError = notice }
+        guard !kept.isEmpty else { return }
+        let label = NXFormat.attached(kept.map(\.displayName), to: describe([task]))
+        store.addAttachments(kept, to: task, name: label, undoManager: undoManager) {
+            self.snap(label, icon: "paperclip", tone: .accent, ids: [taskID])
+        }
+    }
+
     /// A file taken off its task in the inspector's Files, a native extra, as
     /// one change the tray can undo, so nothing is lost there for good: Undo
     /// puts the file back, its bytes and all.
