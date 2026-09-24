@@ -154,7 +154,7 @@ enum WidgetSampleData {
             let done = owned.filter(isDone).sorted { completed.contains($0.key) && !completed.contains($1.key) }
             return WidgetSnapshot.ListSummary(id: id(owner.key), title: owner.title, icon: owner.icon, accent: owner.accent,
                                               openCount: owned.count - done.count, doneCount: done.count,
-                                              openItems: owned.filter { !isDone($0) }.prefix(7).map(item),
+                                              openItems: owned.filter { !isDone($0) }.prefix(WidgetSnapshot.ListSummary.openRows).map(item),
                                               doneItems: done.prefix(6).map(item))
         }
 

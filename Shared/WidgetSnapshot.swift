@@ -61,13 +61,18 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     }
 
     struct ListSummary: Codable, Equatable, Identifiable, Sendable {
+        /// Open rows each list carries: the 6 large List draws, as the
+        /// design's, and spares, so ticks queued in the widget while the app
+        /// is quit still leave all 6, the next open tasks moving up.
+        static let openRows = 12
+
         var id: UUID
         var title: String
         var icon: String
         var accent: String
         var openCount: Int
         var doneCount: Int
-        /// The first open tasks in the list's own order.
+        /// The first `openRows` open tasks in the list's own order.
         var openItems: [Item] = []
         /// The latest completions, newest first.
         var doneItems: [Item] = []

@@ -152,6 +152,16 @@ check(DueCounts(SnapshotOverlay.apply([reopen], to: ticked), clock: clock) == Du
       "A queued reopen of an undated task counts nothing due")
 let kyotoDue = WidgetAction(kind: .complete, taskID: id("k5"), occurrenceID: id("k5"))
 check(SnapshotOverlay.apply([kyotoDue], to: design).dueDays.reduce(0) { $0 + $1.count } == 12, "A list row's tick counts one fewer due")
+// A Today tick on a task past the open rows its list carries: the list still
+// counts it done and shows it among its latest, as when it carries the row.
+var uncarried = design
+let kyotoIndex = uncarried.lists.firstIndex { $0.id == id("kyoto") }!
+uncarried.lists[kyotoIndex].openItems.removeAll { $0.id == id("k3") }
+check(SnapshotOverlay.apply([tick], to: uncarried) == ticked, "A Today tick past its list's rows still counts in the list")
+check(SnapshotOverlay.apply([tick, tick], to: uncarried) == ticked, "and counts once")
+let backAgain = SnapshotOverlay.apply([tick, WidgetAction(kind: .reopen, taskID: id("k3"), occurrenceID: id("k3"))], to: uncarried)
+check(backAgain.lists[kyotoIndex].openCount == 5 && backAgain.lists[kyotoIndex].doneCount == 1
+      && backAgain.todayItems.contains { $0.id == id("k3") }, "and a reopen after it counts it open again")
 check([WidgetAction.Kind.startWork, .pauseWork, .resumeWork, .finishWork].allSatisfy(\.isWork)
       && ![WidgetAction.Kind.complete, .reopen].contains(where: \.isWork), "Only the timer's buttons are work")
 
@@ -164,6 +174,28 @@ check(abs(list.progress - 1.0 / 6) < 0.0001, "The bar shows the list's progress"
 let withDone = ListModel(design.lists.first { $0.id == id("kyoto") }!, showsCompleted: true, clock: clock)
 check(withDone.rows.count == 6 && withDone.rows.last?.dueText == "Done", "Show completed adds done rows last")
 check(design.lists.map(\.title) == ["Weekend in Kyoto", "Home", "Reading", "Q3 planning", "Hiring loop"], "Every list but Inbox, in order")
+
+// Ticks queued while the app is quit still leave large List 6 open rows, the
+// next ones moving up ahead of the done ones, as the design's: a list carries
+// spare open rows, as the publisher writes them.
+var long = design.lists.first { $0.id == id("kyoto") }!
+long.openCount = 20
+long.openItems = (0..<WidgetSnapshot.ListSummary.openRows).map { number in
+    var item = long.openItems[0]
+    item.id = id("long-\(number)")
+    item.occurrenceID = item.id
+    item.title = "Task \(number)"
+    item.dueDate = nil
+    return item
+}
+var longSnapshot = design
+longSnapshot.lists = [long]
+for ticks in [2, WidgetSnapshot.ListSummary.openRows - 6] {
+    let queued = (0..<ticks).map { WidgetAction(kind: .complete, taskID: id("long-\($0)"), occurrenceID: id("long-\($0)")) }
+    let ticked = ListModel(SnapshotOverlay.apply(queued, to: longSnapshot).lists[0], showsCompleted: true, clock: clock)
+    check(ticked.rows.prefix(6).map(\.title) == (ticks..<ticks + 6).map { "Task \($0)" }, "\(ticks) queued ticks leave large List 6 open rows")
+    check(ticked.rowCount - 6 == (20 - ticks) + (1 + ticks) - 6, "and +N more counts the rest, done ones too")
+}
 
 // MARK: Up Next
 
@@ -270,6 +302,20 @@ check(frame.top == 30 && frame.height == 41.5 && draft.timeText == "10:00–11:3
 check(abs(AgendaModel.nowOffset(agenda.nowHour, pxh: 29)! - 48.333) < 0.01, "The now line at 10:40")
 check(AgendaModel.nowOffset(20, pxh: 29) == nil && AgendaModel.nowOffset(8.5, pxh: 29) == nil, "No now line outside the grid's hours")
 check(AgendaModel.frame(start: 16.5, end: 16.6667, pxh: 29).height == 13, "Short slots keep their minimum height")
+// A meeting starting inside a pinned slot: the day reads in start order, and
+// the slot draws over the meeting, as the design draws its meetings first.
+var overlapping = design
+let pinned = clock.today.addingTimeInterval(13.5 * 3_600)
+overlapping.agenda = [WidgetSnapshot.AgendaDay(day: clock.today, items: [
+    WidgetSnapshot.AgendaItem(id: "p-pinned", kind: .task, title: "Pinned slot", start: pinned, end: pinned.addingTimeInterval(3_600),
+                              taskID: id("pinned"), occurrenceID: id("pinned"), accent: "blue",
+                              isCompleted: false, isActive: false, isFlexible: false),
+    WidgetSnapshot.AgendaItem(id: "m-later", kind: .meeting, title: "Later meeting", start: pinned.addingTimeInterval(1_800),
+                              end: pinned.addingTimeInterval(5_400), isCompleted: false, isActive: false, isFlexible: false),
+])]
+let overlap = AgendaModel(overlapping, clock: clock).today.items
+check(overlap.map(\.title) == ["Pinned slot", "Later meeting"] && overlap[0].layer > overlap[1].layer,
+      "A planned block draws over a meeting that starts inside it")
 check(AgendaModel(session, clock: clock).week[1].items.first { $0.title == "Close out Q2 retro actions" }?.isDone == true,
       "A done slot shows done")
 let across = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(6 * 86_400))
