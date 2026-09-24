@@ -223,7 +223,8 @@ check(activity.todayIndex == 2 && activity.weeks[20][2] == 2 && activity.weeks[2
 check(activity.streak == 1 && activity.today == 2 && activity.week == 2 && activity.month == 49, "1-day streak; 2 today, 2 this week, 49 in September")
 check(activity.monthName == "September", "The month is named")
 check(ActivityModel(design, clock: clock, weeks: 10).weeks.count == 10, "Small shows 10 weeks")
-check([0, 1, 3, 6, 7].map(ActivityModel.opacity) == [0, 0.28, 0.5, 0.75, 1], "The heatmap's steps")
+check([0, 1, 2, 3, 4, 6, 7].map(ActivityModel.opacity) == [0, 0.28, 0.5, 0.5, 0.75, 0.75, 1],
+      "The heatmap's steps change at the legend's 1, 2–3, 4–6 and 7+ bands")
 
 // MARK: Agenda
 

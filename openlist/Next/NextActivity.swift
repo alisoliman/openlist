@@ -80,11 +80,11 @@ private enum NXHeat {
 
     @MainActor static func band(_ count: Int?, accent: Color) -> Color {
         guard let count else { return .clear }
-        switch count {
+        switch ActivityBand.level(count) {
         case 0: return NX.ink(0.05)
         case 1: return accent.opacity(0.2)
-        case 2...3: return accent.opacity(0.4)
-        case 4...6: return accent.opacity(0.65)
+        case 2: return accent.opacity(0.4)
+        case 3: return accent.opacity(0.65)
         default: return accent
         }
     }

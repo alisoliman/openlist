@@ -9,7 +9,8 @@ conflicting counting details. Clicking a day shows its saved completion titles,
 lists and local times, and a title opens that task's details. Numbers remain
 visible in every colored cell, so color is never the only way to read the grid.
 The legend uses fixed bands: 1, 2–3, 4–6, and 7 or more recorded completions,
-and the card sums the range with the current streak. **Changes**, below, is the
+defined once in `Shared/ActivityBand.swift` so the Activity widget shades a day
+the same way, and the card sums the range with the current streak. **Changes**, below, is the
 log of recent edits.
 
 ## What counts
@@ -71,7 +72,7 @@ Multi-selection completion and reopening use the same cycle facts, including
 their multi-root Undo/Redo. A failed atomic bulk action rolls back its pending
 cycle metadata along with its task changes.
 
-Run `./Tools/run-activity-heatmap-checks.sh` for date boundaries, DST/time-zone
-grouping, repeated toggles, recurring children, Undo/Redo, committed reads,
+Run `./Tools/run-activity-heatmap-checks.sh` for legend bands, date boundaries,
+DST/time-zone grouping, repeated toggles, recurring children, Undo/Redo, committed reads,
 failed writes/clear, old payload decoding, backup roundtrip, Trash retention,
 and process relaunch coverage.
