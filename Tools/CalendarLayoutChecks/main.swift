@@ -215,4 +215,31 @@ expect(calendar.isDate(skipped, inSameDayAs: springForward) && CalendarMonthGrid
 let fallBack = calendar.date(from: DateComponents(year: 2026, month: 10, day: 25))!
 expect(CalendarMonthGrid.minute(of: CalendarMonthGrid.date(fallBack, atMinute: 23 * 60 + 45, calendar: calendar), calendar: calendar) == 1425,
        "A late time on the long day stays on the wall clock")
+// The day column reads times on the clock, as its hour labels and now line do:
+// on the days Amsterdam changes clocks 10:00 is 9 or 11 hours after midnight,
+// yet a meeting then still draws on the 10:00 row, and lunch on the 12:00 one.
+@MainActor func clockHours(_ time: Date, on day: Date) -> Double { CalendarOverlapLayout.hours(time, on: day, calendar: calendar) }
+for day in [springForward, fallBack] {
+    let ten = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: day)!
+    let eleven = calendar.date(bySettingHour: 11, minute: 0, second: 0, of: day)!
+    expect(ten.timeIntervalSince(calendar.startOfDay(for: day)) != 10 * 3_600, "The day changes clocks before 10:00")
+    expect(clockHours(ten, on: day) == 10, "10:00 reads 10 on a day the clocks change")
+    let late = calendar.date(bySettingHour: 10, minute: 40, second: 30, of: day)!
+    expect(abs(clockHours(late, on: day) - (10 + 40.0 / 60 + 30.0 / 3_600)) < 1e-9, "Minutes and seconds count on the clock too")
+    let meeting = Item.event(FixedBusyTime(id: "meeting", title: "meeting", start: ten, end: eleven)) {
+        (clockHours($0, on: day) - 8) * 40
+    }
+    expect(meeting.top == 81 && meeting.height == 38, "A meeting at 10:00 draws on the 10:00 row, an hour tall")
+    let noon = CalendarOverlapLayout.time(minute: 12 * 60, on: day, calendar: calendar)
+    let one = CalendarOverlapLayout.time(minute: 13 * 60, on: day, calendar: calendar)
+    expect(clockHours(noon, on: day) == 12 && clockHours(one, on: day) == 13, "Lunch stays on 12:00–13:00 by the clock")
+    expect(one.timeIntervalSince(noon) == 3_600, "Lunch is an hour long")
+    let midnight = CalendarOverlapLayout.time(minute: 1_440, on: day, calendar: calendar)
+    expect(midnight == calendar.date(byAdding: .day, value: 1, to: day) && clockHours(midnight, on: day) == 24,
+           "A break to 24:00 ends at the next midnight, the day's last row")
+}
+expect(clockHours(CalendarOverlapLayout.time(minute: 2 * 60 + 30, on: springForward, calendar: calendar), on: springForward) == 3,
+       "A break from a time the clocks skip starts at the next one there is")
+let halfPastOne = calendar.date(byAdding: .minute, value: 90, to: calendar.date(byAdding: .day, value: 1, to: fallBack)!)!
+expect(clockHours(halfPastOne, on: fallBack) == 25.5, "Past midnight the hours go on counting")
 print("Calendar layout: \(checks) checks passed")

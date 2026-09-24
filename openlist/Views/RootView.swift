@@ -74,6 +74,7 @@ struct RootView: View {
         .onAppear {
             updateDockBadge()
             env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
+            env.calendarNotifications.openMainWindow = { openWindow(id: WindowID.main) }
             // ⌘L in a list document line asks in this window's link sheet.
             BlockNSTextView.linkPrompter = { env.linkPrompt = $0 }
         }

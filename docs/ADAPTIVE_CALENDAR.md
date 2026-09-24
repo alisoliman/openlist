@@ -94,14 +94,17 @@ boundary, and the later placements that day move out of its way, each to the nex
 free quarter hour in its list’s hours. The tray reports each
 extension with Undo, which puts the previous blocks back (or, once another change
 has replaced them, plans them afresh); work keeps recording, and the block is not
-grown again until Redo or the next start. Undo is offered only while that work is
-still running. An optional
+grown again until Redo or the next start. Once the work stops (Pause, Stop or
+Done), Undo still puts the slot it grew and the placements it moved back, each
+one that is still where the extension left it. An optional
 background notification offers **Complete task** near the estimated finish.
 Reaching an estimate never marks a task complete.
 
 Routine moves animate quietly. Background calendar nudges use silent macOS notifications
 when notification permission is available; the in-app work notch remains
-available without that permission.
+available without that permission. Clicking a nudge, or its **Open plan**, opens the
+main window on the Calendar, again if it was closed, on the slot's day, whichever range
+it was stepped to, with the task in the inspector.
 
 When a meeting or a break leaves the working block no more room, work keeps
 recording and the work notch names what it is running into. The end of available

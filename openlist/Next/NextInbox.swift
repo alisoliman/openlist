@@ -199,7 +199,7 @@ private struct NXTriageCard: View {
         }
         if task.priority != .none {
             chips.append(NXChipModel(id: "prio", label: task.priority == .high ? "High priority" : task.priority.title,
-                                     icon: "flag.fill", tone: .over))
+                                     icon: "flag", tone: .over))
         }
         return chips
     }
@@ -279,7 +279,8 @@ private struct NXTriageCard: View {
                 workbench.triage(task, action: .down)
             }
             // Opens the inspector without focusing the card, so triage keys still apply once it closes.
-            footerButton("Details", icon: "sidebar.right", key: "↩", hover: NX.ink(0.06), hoverText: NX.ink) {
+            // Only its fill changes on hover, as the design's.
+            footerButton("Details", icon: "sidebar.right", key: "↩", hover: NX.ink(0.06)) {
                 env.navigator.openTask(task.id)
             }
             Spacer(minLength: 8)
@@ -311,7 +312,7 @@ private struct NXTriageCard: View {
             .padding(.bottom, 8)
     }
 
-    private func footerButton(_ title: String, icon: String, key: String, hover: Color, hoverText: Color,
+    private func footerButton(_ title: String, icon: String, key: String, hover: Color, hoverText: Color? = nil,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {

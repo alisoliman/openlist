@@ -428,9 +428,10 @@ private struct NXDayColumn: View {
         return CGFloat(hours - Double(range.lowerBound)) * NXCal.hourHeight
     }
 
+    /// Where `time` falls, by the clock as the hour labels and the now line
+    /// are, so nothing drifts an hour off them on a day the clocks change.
     private func top(_ time: Date) -> CGFloat {
-        let start = Calendar.current.startOfDay(for: date)
-        let hours = time.timeIntervalSince(start) / 3600
+        let hours = CalendarOverlapLayout.hours(time, on: date, calendar: .current)
         return CGFloat(min(max(hours, Double(range.lowerBound)), Double(range.upperBound)) - Double(range.lowerBound)) * NXCal.hourHeight
     }
 
@@ -516,11 +517,14 @@ private struct NXDayColumn: View {
     }
 
     /// Break windows (lunch) from the work hours, where the planner has them:
-    /// a date override's when it sets them, else the weekday's.
+    /// a date override's when it sets them, else the weekday's. On the clock,
+    /// as the planner keeps clear of them.
     private var breaks: [(start: Date, end: Date)] {
-        let day = Calendar.current.startOfDay(for: date)
-        return env.calendar.preferences.profile(for: .work).breaks(on: day, calendar: .current).map {
-            (day.addingTimeInterval(TimeInterval($0.startMinute * 60)), day.addingTimeInterval(TimeInterval($0.endMinute * 60)))
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: date)
+        return env.calendar.preferences.profile(for: .work).breaks(on: day, calendar: cal).map {
+            (CalendarOverlapLayout.time(minute: $0.startMinute, on: day, calendar: cal),
+             CalendarOverlapLayout.time(minute: $0.endMinute, on: day, calendar: cal))
         }
     }
 
