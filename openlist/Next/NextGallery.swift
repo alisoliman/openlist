@@ -122,8 +122,10 @@ private struct NXListCard: View {
             VStack(alignment: .leading, spacing: 9) {
                 // Long names and paths wrap, as in the design; every card in
                 // the row grows to match. The design's 600 14.5/1.2 is 0.6pt
-                // under SwiftUI's 18pt line, which lines can't be set closer
-                // than, so half of that comes off above and below the name.
+                // under SwiftUI's 18pt line, which lineSpacing can't close up
+                // (lineHeight(.exact) rounds to the screen's pixels and sets
+                // the name half a point low), so half of it comes off above
+                // and below.
                 Text(list.displayTitle)
                     .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(NX.ink)

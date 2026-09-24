@@ -131,8 +131,8 @@ struct CalendarMonthPicker: View {
     }
 }
 
-/// A date as a value pill, for a popover with no room to keep a month open:
-/// it opens the month under its row, as its chevron shows.
+/// A date as a value pill that opens a month, as its chevron shows: under its
+/// row in a popover with no room to keep one open, or in a popover of its own.
 struct NXDatePill: View {
     let label: String
     let date: Date
