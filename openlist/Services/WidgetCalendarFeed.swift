@@ -51,8 +51,8 @@ final class WidgetCalendarFeed {
     private func work(_ task: Block, isRunning: Bool, anchor: Date, elapsed: Double, slot: (Date, Date)?) -> WidgetSnapshot.Work {
         let list = store.list(id: task.listID)
         return WidgetSnapshot.Work(taskID: task.id, occurrenceID: task.occurrenceID, title: task.displayTitle,
-                                   listName: list?.displayTitle ?? "", listIcon: list?.icon ?? "",
-                                   accent: (list?.accent ?? .graphite).rawValue, isRunning: isRunning,
+                                   listName: list?.displayTitle ?? "", listIcon: list?.glyph ?? "",
+                                   accent: list?.widgetAccent ?? ListAccent.graphite.rawValue, isRunning: isRunning,
                                    elapsedAnchor: anchor, pausedElapsed: elapsed, slotStart: slot?.0, slotEnd: slot?.1,
                                    estimateMinutes: calendar.estimatedMinutes(for: task))
     }
@@ -106,8 +106,8 @@ final class WidgetCalendarFeed {
         // with every heartbeat: rounded, as the timer's slot is.
         let end = block.isActive ? Self.quarter(after: max(block.end, now)) : block.end
         return WidgetSnapshot.AgendaItem(id: block.id, kind: .task, title: title, start: block.start, end: end,
-                                         taskID: block.taskID, occurrenceID: block.occurrenceID, listIcon: list?.icon,
-                                         listName: list?.displayTitle, accent: (list?.accent ?? .graphite).rawValue,
+                                         taskID: block.taskID, occurrenceID: block.occurrenceID, listIcon: list?.glyph,
+                                         listName: list?.displayTitle, accent: list?.widgetAccent ?? ListAccent.graphite.rawValue,
                                          isCompleted: block.isCompleted, isActive: block.isActive, isFlexible: isFlexible)
     }
 

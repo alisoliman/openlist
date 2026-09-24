@@ -256,13 +256,9 @@ protocol NXCaptureDraft: AnyObject, Observable {
     var captureForToday: Bool { get }
     /// The label screen capture opened on; the new task gets that label.
     var captureLabelID: UUID? { get }
-    /// Whether the new task is planned for today rather than given a due date.
-    var capturePlansForToday: Bool { get }
 }
 
 extension NXCaptureDraft {
-    var capturePlansForToday: Bool { false }
-
     /// The capture text read as the card tints it and Return saves it, with
     /// dates only while Settings reads them from typed text.
     func captureParse() -> CaptureParse {
@@ -281,7 +277,7 @@ extension NXCaptureDraft {
     /// date, repeat, labels and plan, then the priority and estimate its tokens name.
     func saveCapture(_ parse: CaptureParse, appendToRoot: Bool = false) throws -> Block {
         let block = try store.saveCapture(capturePreview(parse), destinationID: captureListID ?? store.inboxList()?.id,
-                                          selectedForDay: capturePlansForToday ? .now : nil, appendToRoot: appendToRoot)
+                                          appendToRoot: appendToRoot)
         if let priority = parse.priority { store.setPriority(priority, for: block) }
         if let minutes = parse.estimateMinutes, minutes > 0 { store.setTaskEstimate(minutes, for: block) }
         return block
@@ -452,9 +448,6 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
         let preview = draft.capturePreview(parse)
         var chips: [NXChipModel] = []
-        if draft.capturePlansForToday {
-            chips.append(NXChipModel(id: "planned", label: "Planned today", icon: "calendar.badge.clock", tone: .accent))
-        }
         if let date = preview.date {
             let due = NXFormat.dueLabel(date)
             let relative = NXFormat.relativeDay(date)

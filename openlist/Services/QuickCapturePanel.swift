@@ -8,13 +8,13 @@ import SwiftData
 import SwiftUI
 
 /// What opened Quick Add asks of it. The hot key, the menu bar and File ▸
-/// Quick Add ask nothing; a widget can name a list, or plan for today.
+/// Quick Add ask nothing; a widget can name a list, or ask for today.
 struct QuickCaptureRequest: Equatable {
     /// The list the card starts on; Inbox when nil.
     var listID: UUID?
-    /// Plans the task for today, as the calendar does, instead of giving it a
-    /// due date.
-    var plansForToday = false
+    /// Makes a task with no date of its own due today, as Today's add row
+    /// does, so it shows in the Today widget that asked.
+    var dueToday = false
     /// Adds the task at the end of `listID`'s document, where that list's
     /// Tasks view has its add row, while that list is still the destination.
     var appendsToList = false
@@ -113,8 +113,8 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
     }
 
     /// Opens the card, resuming a draft put aside by a click away. A request
-    /// with a list or plan re-aims the card, an open one included; one that
-    /// asks nothing leaves the card as it was.
+    /// with a list or for today re-aims the card, an open one included; one
+    /// that asks nothing leaves the card as it was.
     func show(_ request: QuickCaptureRequest = QuickCaptureRequest()) {
         guard let env, let container else { return }
         let panel = panel ?? makePanel()

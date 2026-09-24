@@ -313,19 +313,26 @@ struct TaskRowView: View {
     /// The list, or in small Today the due text when there is one.
     private var meta: Text {
         if compact && !row.dueText.isEmpty { return Text(row.dueText) }
-        return Text(listIcon: palette.isDimmed ? "" : row.listIcon, name: row.listName, size: 10)
+        return Text(listIcon: palette.isDimmed ? "" : row.listIcon, name: row.listName, size: 10, color: palette.col(row.accent))
     }
 }
 
 extension Text {
     /// "🗻 Weekend in Kyoto" on a line set at `size`: the emoji as large as the
-    /// design draws it there, not Core Text's larger one (`EmojiSize`).
-    init(listIcon icon: String, name: String, size: CGFloat) {
+    /// design draws it there, not Core Text's larger one (`EmojiSize`), or an
+    /// SF Symbol in `color` rather than its name, as the app draws it.
+    init(listIcon icon: String, name: String, size: CGFloat, color: Color? = nil) {
         guard !icon.isEmpty else {
             self.init(verbatim: name)
             return
         }
-        let glyph = Text(verbatim: icon).font(.system(size: EmojiSize.points(forDesign: size)))
+        let glyph: Text
+        if ListIcon.isSymbolName(icon) {
+            let symbol = Text(Image(systemName: icon)).font(.system(size: size * 0.9, weight: .medium))
+            glyph = color.map { symbol.foregroundStyle($0) } ?? symbol
+        } else {
+            glyph = Text(verbatim: icon).font(.system(size: EmojiSize.points(forDesign: size)))
+        }
         self.init("\(glyph) \(name)")
     }
 }
@@ -360,6 +367,26 @@ struct AllClearView: View {
                 .css(.serif(21), line: 1)
                 .foregroundStyle(palette.ink)
             Text(subtitle)
+                .multilineTextAlignment(.center)
+                .css(.sans(10.5, .medium), line: 1.3)
+                .foregroundStyle(palette.sub)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The List widget with no list to show: none made besides Inbox, or every
+/// other one archived. The empty state's title and line, without All clear's
+/// check, as nothing here is done.
+struct NoListsView: View {
+    @Environment(\.widgetPalette) private var palette
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("No lists")
+                .css(.serif(21), line: 1)
+                .foregroundStyle(palette.ink)
+            Text("Make one in Openlist to show it here")
                 .multilineTextAlignment(.center)
                 .css(.sans(10.5, .medium), line: 1.3)
                 .foregroundStyle(palette.sub)

@@ -81,10 +81,11 @@ struct OpenlistWidgetContent: View {
 
     private var clock: WidgetClock { SnapshotSource.clock(entry.snapshot, at: entry.date) }
 
+    /// The chosen list, or the first, as for a widget nobody chose one for,
+    /// once the chosen one is gone: deleted, archived or merged away.
     private var list: WidgetSnapshot.ListSummary? {
         guard let lists = entry.snapshot?.lists else { return nil }
-        guard let id = entry.listID else { return lists.first }
-        return lists.first { $0.id == id }
+        return entry.listID.flatMap { id in lists.first { $0.id == id } } ?? lists.first
     }
 
     @ViewBuilder private var content: some View {
@@ -99,7 +100,7 @@ struct OpenlistWidgetContent: View {
                     ListWidgetView(model: ListModel(list, showsCompleted: entry.showsCompleted, clock: clock), size: size,
                                    libraryID: snapshot.libraryID)
                 } else {
-                    OpenOpenlistView()
+                    NoListsView()
                 }
             case .agenda: AgendaWidgetView(model: AgendaModel(snapshot, clock: clock), size: size)
             case .summary: SummaryWidgetView(model: SummaryModel(snapshot, clock: clock), size: size)
@@ -116,7 +117,7 @@ struct OpenlistWidgetContent: View {
         case .upNext, .agenda: WidgetRoute.calendar.url
         case .activity: WidgetRoute.activity.url
         case .capture: size == .small ? WidgetRoute.capture(listID: nil, forToday: false).url : WidgetRoute.inbox.url
-        case .list: list.map { WidgetRoute.listURL(libraryID: entry.snapshot?.libraryID, listID: $0.id) } ?? WidgetRoute.today.url
+        case .list: list.map { WidgetRoute.listURL(libraryID: entry.snapshot?.libraryID, listID: $0.id) } ?? WidgetRoute.lists.url
         }
     }
 }

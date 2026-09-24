@@ -85,7 +85,7 @@ struct UpNextWidgetView: View {
     }
 
     private var listLine: Text {
-        Text(listIcon: palette.isDimmed ? "" : model.listIcon, name: model.listName, size: 10.5)
+        Text(listIcon: palette.isDimmed ? "" : model.listIcon, name: model.listName, size: 10.5, color: palette.col(model.accent))
     }
 
     @ViewBuilder private var elapsed: some View {

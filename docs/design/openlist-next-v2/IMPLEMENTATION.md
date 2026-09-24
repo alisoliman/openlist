@@ -99,7 +99,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   that visit even where this Mac shows it as a document; its Inbox link follows this Mac's
   choice. macOS may make Openlist active as it opens a widget's link, bringing its window
   forward behind Quick Add's card; the card then gives focus back to the app you were in,
-  and hides Openlist again if it was hidden, when it closes.
+  and hides Openlist again if it was hidden, when it closes. Large Today's New task opens
+  Quick Add as Today's own add row does, an undated task due today, so it shows in the
+  widget; the design's footer is plain Quick Add. A List widget whose chosen list is gone
+  shows the first list, as an unconfigured one does; with no list besides Inbox it reads
+  "No lists" and opens Lists, where the design always has a list.
 - Calendar: running work past its slot follows the design's overrun (the slot grows to the
   next quarter plus 15 min, later placements that day move out of its way, saved and
   undoable, stopping only at meetings and breaks; Undo still moves them back after Pause,

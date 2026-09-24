@@ -121,7 +121,7 @@ struct RootView: View {
         switch route {
         case let .capture(listID, forToday):
             // The Quick Add panel floats over the app in front without activating Openlist.
-            QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, plansForToday: forToday,
+            QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, dueToday: forToday,
                                                                         appendsToList: listID != nil))
             return
         // This Mac's choice for the Inbox, even straight after a triage visit.
@@ -135,6 +135,7 @@ struct RootView: View {
         case .today: env.workbench.go(.today)
         case .calendar: env.workbench.go(.calendar)
         case .activity: env.workbench.go(.activity)
+        case .lists: env.workbench.go(.lists)
         }
         NSApp.activate(ignoringOtherApps: true)
     }

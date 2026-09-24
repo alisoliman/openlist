@@ -152,6 +152,13 @@ extension TaskList {
         return trimmed.isEmpty ? "Untitled list" : trimmed
     }
 
+    /// The emoji shown for a list, which the widgets draw too; Inbox has a
+    /// fixed one.
+    var glyph: String {
+        if isSystemInbox { return "📥" }
+        return icon.isEmpty ? "📋" : icon
+    }
+
     func touch() { updatedAt = .now }
 }
 

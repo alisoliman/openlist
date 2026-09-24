@@ -19,6 +19,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   -enable-upcoming-feature NonisolatedNonsendingByDefault -target arm64-apple-macos26.5 \
   -o "$BUILD/widget-previews" \
   Shared/WidgetSnapshot.swift Shared/WidgetActions.swift Shared/WidgetIntents.swift Shared/WidgetRoute.swift \
-  Shared/ListAccent.swift Shared/AppGroup.swift Shared/ReviewSession.swift Shared/EmojiSize.swift Shared/ActivityBand.swift \
+  Shared/ListAccent.swift Shared/AppGroup.swift Shared/ReviewSession.swift Shared/EmojiSize.swift Shared/ListIcon.swift Shared/ActivityBand.swift \
   "${WIDGET_SOURCES[@]}" Tools/WidgetPreviews/main.swift
 "$BUILD/widget-previews" --font Shared/Fonts/InstrumentSerif-Regular.ttf "$@"
