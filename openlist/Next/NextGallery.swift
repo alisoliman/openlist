@@ -332,8 +332,9 @@ private struct NXTrashRow: View {
             return Text(verbatim: "List · \(items) · \(deleted)")
         }
         // One entry holds a task with its subtasks, so the row says what
-        // Restore and Hold to erase take with it.
-        let tail = [entry.nestedSummary, deleted].compactMap { $0 }.joined(separator: " · ")
+        // Restore and Hold to erase take with it, after the design's line so
+        // a narrow row truncates the summary first.
+        let tail = [deleted, entry.nestedSummary].compactMap { $0 }.joined(separator: " · ")
         guard let metadata = entry.metadata else { return Text(verbatim: tail.capitalizedFirstLetter) }
         // The icon the list had when this was deleted; older items use the list's current one.
         let icon = metadata.listIcon.map { $0.isEmpty ? "📋" : $0 } ?? list?.glyph ?? ""

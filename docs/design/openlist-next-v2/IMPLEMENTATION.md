@@ -29,7 +29,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   space in every text field, so a global hot key on it would take that from every app. The
   Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space.
 - Trash keeps one entry per trashed task or list, not a row per subtask: the subtasks
-  restore and erase with their task, whose row says "with N subtasks", and the sidebar
+  restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
   counts entries.
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
   `OutlineEditor` engine under its `.nextDocument` policy, tasks on `NXTaskRowChrome` (the
