@@ -301,8 +301,11 @@ struct AppCommands: Commands {
         return !env.workbench.targetIDs.isEmpty
     }
 
+    /// A list document on show in the main window, only while it is key, as
+    /// Task and Format's styles are: closed, no document is left to take the
+    /// command, though it stays the active one.
     private var hasDocumentContext: Bool {
-        env.activeDocument != nil && env.navigator.documentOwnsEditorCommands
+        env.isMainWindowKey && env.activeDocument != nil && env.navigator.documentOwnsEditorCommands
     }
 
     // MARK: - Actions

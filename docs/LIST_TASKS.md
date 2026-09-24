@@ -22,7 +22,8 @@ Lines edit and complete their original blocks, and details open the same task.
 A search hit or link on a line, a line's note or the list's description shows
 the list as its document for that visit, so hidden prose can be revealed,
 without changing the saved choice. A reminder, link or search hit on a task, or
-on the list itself, keeps the list as this Mac shows it.
+on the list itself, keeps the list as this Mac shows it, or as the document that
+visit already opened.
 
 Capture places the new task at the end of its list's document, as the design's
 does, wherever it was captured from and in either presentation, opening the

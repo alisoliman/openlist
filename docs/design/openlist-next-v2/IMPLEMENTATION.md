@@ -25,7 +25,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Show off the Calendar), all with tray; and the inspector's title and note and a list's
   title and description (edits: logged, no tray). Move leaves a task already in the list
   where it is, as the design's move only sets the list (natively a move lands at the end of
-  the list's top level); deviation: moved nowhere, its tray shows with no Undo and no log.
+  the list's top level); deviation: moved nowhere, its tray shows with no Undo and no log,
+  and partly moved, its tray names every task, as the design's does, but only the tasks
+  that moved log it.
 - Completion dwell defers the real `store.toggleCompletion` until dwell+300ms; Undo during
   dwell cancels. Pending closings flush on termination.
 - `NextKeyMonitor` — NSEvent local monitor implementing the global key model when not typing.
@@ -49,7 +51,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Task ▸ Start Working and the notch's buttons do. Items that show something in the main
   window (Show Work, New Task…, New List, New Section, Search, Actions…, the View screens,
   Back, Forward, Hide Sidebar, Keyboard Shortcuts, Settings…) open it first when it was
-  closed; Export List as Markdown… is on only while it is key. Format ▸'s inline styles
+  closed; Export List as Markdown…, Format ▸ Indent, Outdent, Move Up and Move Down, and
+  View ▸ Expand All and Collapse All are on only while it is key. Format ▸'s inline styles
   are on only while a line in the main window has text selected, and Task ▸ Open Details
   (⌘↩) is off while a note is being written, where ⌘↩ finishes the note as the design's
   does. View ▸ Collapse All folds only what the
@@ -141,7 +144,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists and the
   Inbox, which drag on a private type of their own that no line takes, and move any line
   there, a heading or text too, with the move's tray and Undo; a screen row, like a grip,
-  drags the rows selected with it, and rows all in that list already are refused), and search
+  drags the rows selected with it, and rows all in that list already are refused, as is any
+  line but a task on the Inbox while it shows as triage, which draws only tasks), and search
   reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
   puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
   says "Copied “List” as Markdown" in the tray, as Export says "Exported “List” as Markdown"

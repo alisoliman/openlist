@@ -177,10 +177,12 @@ final class Navigator {
         // A task, which opens in the inspector, and a list itself land on the
         // list as this Mac shows it, as a search hit does; only a line, its
         // note or a list's description needs the document. The Inbox's
-        // document draws no description, so only a line opens it.
+        // document draws no description, so only a line opens it. A document
+        // this visit already opened stays, as a search hit leaves it; a new
+        // route has ended it already.
         let revealsLine = request.blockID != nil && request.taskID == nil
         let revealsSummary = request.listID != inboxListID && request.revealsSummary(for: request.listID)
-        revealedDocumentListID = revealsLine || revealsSummary ? request.listID : nil
+        if revealsLine || revealsSummary { revealedDocumentListID = request.listID }
         openTaskID = request.taskID
         // Only a line is selected; a task lands on the workbench's focus, as
         // a search hit does, so the targets follow the focus from there.

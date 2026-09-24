@@ -424,13 +424,15 @@ extension Workbench {
     /// under it. `lines` takes any line, as a list document's grip drags one
     /// onto the sidebar, a heading or text too. As the design's move only
     /// sets the list, what's already in it stays where it is; with nothing
-    /// left to move, only the design's tray shows, with no Undo to take.
+    /// left to move, only the design's tray shows, with no Undo to take. The
+    /// tray names every row, as the design's does; only the rows that moved
+    /// log it.
     func move(_ ids: [UUID], to listID: UUID, quiet: Bool = false, lines: Bool = false) {
         document?.commitLine()
         let blocks = lines ? ids.compactMap { store.block(id: $0) } : tasks(ids)
         guard !blocks.isEmpty, let list = store.list(id: listID) else { return }
         let moving = blocks.filter { $0.listID != listID }
-        let label = "Moved \(describeMoved(moving.isEmpty ? blocks : moving)) to \(list.displayTitle)"
+        let label = "Moved \(describeMoved(blocks)) to \(list.displayTitle)"
         let destination = quiet ? nil : TrayDestination(label: "Open \(list.displayTitle)", route: route(for: list))
         if !moving.isEmpty {
             do {

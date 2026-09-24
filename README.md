@@ -321,7 +321,8 @@ destination in capture. Turning Tasks Only off restores the original prose and
 hierarchy; the sort orders only adjacent root tasks, carrying each subtree, and
 neither presentation rewrites stored order. A search hit or link on a line, a
 line's note or the list's description shows the document for that visit so
-hidden prose can be revealed; one on a task or the list itself keeps Tasks.
+hidden prose can be revealed; one on a task or the list itself keeps the list
+as it is shown.
 
 The [list Tasks guide](docs/LIST_TASKS.md) covers the presentation and its checks.
 
