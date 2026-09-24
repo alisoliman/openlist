@@ -28,6 +28,9 @@ struct BlockEditorCallbacks {
     /// Arrow key that would leave this block.
     var onArrowOut: (_ direction: EditorArrow, _ caret: Int) -> Bool = { _, _ in false }
     var onFocus: () -> Void = {}
+    /// The programmatic focus move `token` has been carried out: the text
+    /// view holds the keyboard, with the caret where the move put it.
+    var onFocusApplied: (_ token: Int) -> Void = { _ in }
     /// Escape pressed while the `/` menu is closed. The text view has already
     /// resigned first responder, so the next key reaches the window.
     var onEscape: () -> Void = {}
@@ -162,21 +165,7 @@ struct BlockTextView: NSViewRepresentable {
             view.invalidateIntrinsicContentSize()
         }
 
-        // Only touch the storage when something actually changed underneath us,
-        // otherwise every keystroke would reset the caret.
-        let signature = ContentSignature(
-            attributedText: attributedText,
-            kind: kind,
-            isCompleted: isCompleted,
-            struck: struck,
-            strikeColor: strikeColor,
-            dimsStruck: dimsStruck
-        )
-        if context.coordinator.signature != signature || context.coordinator.consumeRestyleRequest() {
-            context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
-                                      struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck)
-        }
-
+        context.coordinator.updateContent(of: view)
         context.coordinator.syncFocus(view: view, shouldFocus: isFocused, caret: pendingCaret, token: focusToken)
     }
 
@@ -218,7 +207,11 @@ struct BlockTextView: NSViewRepresentable {
         var signature: ContentSignature?
         /// Guards against re-entrant model writes while we restyle the storage.
         private var isApplyingExternalChange = false
+        /// Set while the text view hands its own edit to the model.
+        private var isReportingEdit = false
         private var lastFocusToken: Int?
+        /// The focus move this view has yet to carry out, and its caret.
+        private var pendingFocus: (token: Int, caret: Int?)?
         /// Set when the block's appearance must be rebuilt even though its text
         /// is unchanged — a kind change carries no text edit with it.
         private var needsRestyle = false
@@ -235,6 +228,33 @@ struct BlockTextView: NSViewRepresentable {
         func consumeRestyleRequest() -> Bool {
             defer { needsRestyle = false }
             return needsRestyle
+        }
+
+        /// Brings the storage up to what `parent` shows, unless it has it.
+        ///
+        /// Not while the text view hands its own edit to the model: SwiftUI
+        /// can redraw the line from inside that write, before the model holds
+        /// the edit, and the line it hands over would take the keystroke back
+        /// and move the caret. Nothing but the text changes in the middle of
+        /// a keystroke, and the text view has that already.
+        func updateContent(of view: BlockNSTextView) {
+            guard !isReportingEdit else { return }
+            // Only touch the storage when something actually changed underneath
+            // us, otherwise every keystroke would reset the caret.
+            let current = ContentSignature(attributedText: parent.attributedText, kind: parent.kind,
+                                           isCompleted: parent.isCompleted, struck: parent.struck,
+                                           strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck)
+            if signature != current || consumeRestyleRequest() {
+                apply(parent.attributedText, to: view, kind: parent.kind, isCompleted: parent.isCompleted,
+                      struck: parent.struck, strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck)
+            }
+        }
+
+        /// Hands the text view's own edit to the model.
+        func reportEdit(_ content: NSAttributedString) {
+            isReportingEdit = true
+            defer { isReportingEdit = false }
+            parent.callbacks.onChange(content)
         }
 
         func apply(_ attributed: NSAttributedString, to view: BlockNSTextView, kind: BlockKind, isCompleted: Bool,
@@ -290,26 +310,38 @@ struct BlockTextView: NSViewRepresentable {
         /// Keyed on `token` rather than the boolean, because while a block is
         /// focused SwiftUI re-runs `updateNSView` on every keystroke and a
         /// naive check would drag the caret back to `pendingCaret` each time.
+        /// Once the move is carried out, `onFocusApplied` hears its token.
         func syncFocus(view: BlockNSTextView, shouldFocus: Bool, caret: Int?, token: Int) {
             guard token != lastFocusToken else { return }
             lastFocusToken = token
+            pendingFocus = shouldFocus ? (token, caret) : nil
             guard shouldFocus else { return }
 
             // Defer: during a SwiftUI update pass the view may not be in a
             // window yet, and makeFirstResponder would fail silently.
             DispatchQueue.main.async { [weak self, weak view] in
-                guard let self, self.lastFocusToken == token, self.parent.isFocused,
-                      let view, let window = view.window else { return }
-                if window.firstResponder !== view {
-                    window.makeFirstResponder(view)
-                }
-                if let caret {
-                    let length = view.textStorage?.length ?? 0
-                    let clamped = caret < 0 ? length : min(caret, length)
-                    view.setSelectedRange(NSRange(location: clamped, length: 0))
-                    view.scrollRangeToVisible(NSRange(location: clamped, length: 0))
-                }
+                guard let self, let view else { return }
+                self.carryOutFocus(in: view)
             }
+        }
+
+        /// Carries out the focus move `syncFocus` left pending, once the view
+        /// is in a window. A line SwiftUI puts in its window only after the
+        /// update that sent it the caret takes the caret then.
+        func carryOutFocus(in view: BlockNSTextView) {
+            guard let pending = pendingFocus, pending.token == lastFocusToken, parent.isFocused,
+                  let window = view.window else { return }
+            pendingFocus = nil
+            if window.firstResponder !== view {
+                window.makeFirstResponder(view)
+            }
+            if let caret = pending.caret {
+                let length = view.textStorage?.length ?? 0
+                let clamped = caret < 0 ? length : min(caret, length)
+                view.setSelectedRange(NSRange(location: clamped, length: 0))
+                view.scrollRangeToVisible(NSRange(location: clamped, length: 0))
+            }
+            parent.callbacks.onFocusApplied(pending.token)
         }
 
         // MARK: NSTextViewDelegate
@@ -336,7 +368,7 @@ struct BlockTextView: NSViewRepresentable {
 
                 // Persist the stripped text before changing kind, otherwise the
                 // model keeps the "## " the user just consumed.
-                parent.callbacks.onChange(NSAttributedString(attributedString: storage))
+                reportEdit(NSAttributedString(attributedString: storage))
                 recordLocalEdit(storage, kind: parent.kind)
                 // The kind is about to change out from under us, and the new
                 // fonts have to be applied even though the text did not move.
@@ -351,7 +383,7 @@ struct BlockTextView: NSViewRepresentable {
             }
 
             recordLocalEdit(storage, kind: parent.kind)
-            parent.callbacks.onChange(NSAttributedString(attributedString: storage))
+            reportEdit(NSAttributedString(attributedString: storage))
             updateSlashQuery(in: view)
             view.invalidateIntrinsicContentSize()
         }
@@ -597,6 +629,14 @@ final class BlockNSTextView: NSTextView {
             ancestor = view.superview
         }
         queueGeometryUpdate()
+        // Sent the caret before it was in a window, the line takes it once
+        // the update that put it here is over.
+        if window != nil {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.coordinator?.carryOutFocus(in: self)
+            }
+        }
     }
 
     @objc private func viewportChanged(_ notification: Notification) { queueGeometryUpdate() }
@@ -829,7 +869,7 @@ final class BlockNSTextView: NSTextView {
         setSelectedRange(range)
         if let coordinator {
             coordinator.recordLocalEdit(storage, kind: blockKind)
-            coordinator.parent.callbacks.onChange(NSAttributedString(attributedString: storage))
+            coordinator.reportEdit(NSAttributedString(attributedString: storage))
         }
         invalidateIntrinsicContentSize()
     }

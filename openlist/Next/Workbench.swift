@@ -152,7 +152,12 @@ final class Workbench {
     @ObservationIgnored private(set) var noteEditRequestedAt: Date?
     /// The task the inspector's Add subtask is for, until its list's document
     /// is on show to write the new line.
-    @ObservationIgnored var pendingSubtaskParentID: UUID?
+    @ObservationIgnored var pendingSubtaskParentID: UUID? {
+        didSet { if pendingSubtaskParentID != nil { subtaskRequestedAt = .now } }
+    }
+    /// When Add subtask last went to open the task's list, for the keys
+    /// typed before the new line shows.
+    @ObservationIgnored private(set) var subtaskRequestedAt: Date?
     /// A list just made, whose title takes the keyboard once its page shows.
     @ObservationIgnored var namingListID: UUID?
     @ObservationIgnored private let defaults: UserDefaults?
