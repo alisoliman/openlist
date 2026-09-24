@@ -414,7 +414,8 @@ struct OpenOpenlistView: View {
 struct WidgetFooter: View {
     let addLabel: String
     /// What the chip reads when `addLabel` wouldn't fit whole, so it never
-    /// cuts off; VoiceOver still reads `addLabel`.
+    /// cuts off; VoiceOver still reads `addLabel`, and Voice Control answers
+    /// to the words on screen as well.
     var compactAddLabel: String?
     let addURL: URL
     let note: String
@@ -450,6 +451,7 @@ struct WidgetFooter: View {
                 .foregroundStyle(palette.ink)
                 .lineLimit(1)
                 .accessibilityLabel(addLabel)
+                .accessibilityInputLabels(label == addLabel ? [addLabel] : [label, addLabel])
         }
         .padding(EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 9))
         .background(palette.chip, in: RoundedRectangle(cornerRadius: 8))

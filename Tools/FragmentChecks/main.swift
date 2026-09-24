@@ -265,6 +265,9 @@ for (source, lines) in [("first\n\nlast", ["first", "last"]), ("first  \nsecond"
     check(parsed.allSatisfy { $0.kind == .paragraph && $0.depth == 0 } && parsed.map(\.text) == lines, "Unsupported external Markdown pastes as trimmed text lines, keeping its words")
 }
 check(MarkdownInputRules.pasteLines("- [ ] Parent\n  - [x] Child").map(\.depth) == [0, 1], "Supported external task Markdown keeps nesting")
+// The fallback takes the whole paste: one blank line anywhere keeps every line's markers as text.
+let spaced = MarkdownInputRules.pasteLines("## Groceries\n\n- [ ] Milk\n- [ ] Eggs")
+check(spaced.allSatisfy { $0.kind == .paragraph && $0.depth == 0 } && spaced.map(\.text) == ["## Groceries", "- [ ] Milk", "- [ ] Eggs"], "A blank line anywhere pastes every line as text, markers included")
 try payload.write(to: fragmentURL)
 store.deleteBlock(root); try store.persistChanges()
 check(store.block(id: sourceID) == nil && media.fileContents(filename: copiedFilename) == blob, "Source deletion leaves pasted files independent")

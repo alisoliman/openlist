@@ -320,9 +320,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   pasted under only when both are tasks or list items, two levels deep at most, and
   otherwise goes beside it, stepping out after the lines already under it, so a heading or
   text line pasted under a nested line comes to the top after that line's task and the
-  document's lines keep their places. Text that doesn't read as Markdown comes in as a trimmed text
-  line for each of its lines, a fenced block as one code line. A code line takes a paste as
-  it is.
+  document's lines keep their places. A paste that doesn't read line for line as Markdown (a
+  blank line, trailing space, an indent a list wouldn't have or a fence anywhere in it) comes
+  in whole as a trimmed text line for each non-blank line, markers and all, a fenced block
+  as one code line. A code line takes a paste as it is.
   The card opens above its line when it wouldn't fit under it on the visible page, and a
   row the pointer moves onto takes the highlight.
 

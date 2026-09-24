@@ -187,10 +187,12 @@ total media, and 32 MB per asset (images also have a 100-million-pixel ceiling).
 Unsupported versions, malformed trees/styles, invalid paths, corrupt images,
 oversized data, missing source media, or failed storage writes report an error
 without a partial insertion. Copy failures preserve the previous clipboard.
-Pasting never fetches remote assets or executes content. External Markdown lists
-keep supported structure; text that doesn't read as Markdown comes in as a trimmed
-text line for each non-blank line, and a fenced block as one code line that keeps its
-breaks and indent. No multi-selection UI is added here.
+Pasting never fetches remote assets or executes content. External Markdown keeps
+supported structure only when the whole paste reads as Markdown lines. A blank line,
+trailing space, an indent a list wouldn't have or a fence anywhere in it brings the whole
+paste in as a trimmed text line for each non-blank line, Markdown markers included, and a
+fenced block as one code line that keeps its breaks and indent. No multi-selection UI is
+added here.
 
 ### Views
 
