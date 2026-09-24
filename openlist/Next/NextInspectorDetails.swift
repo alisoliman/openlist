@@ -199,6 +199,7 @@ struct NXInspectorSubtasks: View {
                     .kerning(0.735)
                     .textCase(.uppercase)
                     .foregroundStyle(NX.ink(0.36))
+                    .accessibilityAddTraits(.isHeader)
                 // Empty without subtasks, and still spaced, as the design's count is.
                 Text(rows.isEmpty ? "" : "\(done)/\(rows.count)")
                     .font(.system(size: 10.5, weight: .semibold))

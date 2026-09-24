@@ -61,11 +61,11 @@ enum NX {
     }
 
     /// Half the difference between the design's CSS line box (`size × lineHeight`)
-    /// and the serif's own ascent and descent, which SwiftUI uses for its line.
+    /// and the serif's line as SwiftUI lays it out (`serifLineHeight`).
     /// Negative: the design packs Instrument Serif tighter than its metrics.
     static func serifLeading(_ size: CGFloat, lineHeight: CGFloat) -> CGFloat {
-        guard let font = NSFont(name: "InstrumentSerif-Regular", size: size) else { return 0 }
-        return (size * lineHeight - (font.ascender - font.descender)) / 2
+        guard let line = serifLineHeight(size) else { return 0 }
+        return (size * lineHeight - line) / 2
     }
 
     static func mono(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {

@@ -638,6 +638,7 @@ private struct NXChangesSection: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Changes").font(NX.serif(22)).padding(.vertical, NX.serifLeading(22, lineHeight: 1.1)).foregroundStyle(NX.ink)
+                    .accessibilityAddTraits(.isHeader)
                 Text("Every edit, newest first. The latest one can be undone here.")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(NX.ink(0.45))

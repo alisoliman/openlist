@@ -295,11 +295,13 @@ struct NXScreenHeader<Trailing: View>: View {
                         NXHeaderTitle(text: title)
                     }
                     // Wraps, as the design's, rather than cut off in a narrow window.
+                    // Its 12px/1.2 line box over SwiftUI's line.
                     Text(subtitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(NX.ink(0.48))
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
+                        .padding(.vertical, (12 * 1.2 - NX.lineHeight(12)) / 2)
                 }
             }
             if let progress, progress.total > 0 {

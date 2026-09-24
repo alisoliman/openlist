@@ -205,7 +205,8 @@ struct NextTasksScreen: View {
     }
 
     /// Every task in the order the lists show it: lists in sidebar order, each in its document's
-    /// order. Like the design, Tasks keeps that order in every grouping rather than sorting.
+    /// order under the list's Sort, as its page draws it. Like the design, Tasks keeps that order
+    /// in every grouping rather than sorting.
     @MainActor
     static func outlineOrder(library: NextLibrary, blocks: [Block]) -> [Block] {
         let blocksByList = Dictionary(grouping: blocks) { $0.listID }
@@ -213,7 +214,8 @@ struct NextTasksScreen: View {
             let tasks = library.tasks(in: list.id)
             guard !tasks.isEmpty else { return [] }
             let taskIDs = Set(tasks.lazy.map(\.id))
-            let ordered = BlockTree.flatten(blocksByList[list.id] ?? [], respectCollapse: false)
+            let rows = BlockTree.flatten(blocksByList[list.id] ?? [], respectCollapse: false)
+            let ordered = BlockTree.sortingTaskRuns(in: rows, by: list.sorting)
                 .compactMap { taskIDs.contains($0.id) ? $0.block : nil }
             // Tasks the outline could not reach still belong on the screen.
             let seen = Set(ordered.lazy.map(\.id))
@@ -646,7 +648,8 @@ private struct NXQueryPill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let list { NXListGlyph(list: list, size: 11) }
+            // A symbol taller than the text, as some are, keeps to its 12 pt box.
+            if let list { NXListGlyph(list: list, size: 11).frame(height: 12) }
             // The design's 12/1 line box, so the pill is 24 pt.
             Text(label).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 .padding(.vertical, (12 - NX.lineHeight(12)) / 2)

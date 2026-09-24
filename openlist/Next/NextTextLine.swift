@@ -17,4 +17,15 @@ extension NX {
         let font = NSFont.systemFont(ofSize: size)
         return font.ascender.rounded() + (-font.descender).rounded(.up)
     }
+
+    /// The height SwiftUI gives one line of Instrument Serif, the serif
+    /// titles' face, at `size`: whole points again, its ascender and
+    /// descender each rounded (22pt → 29, 34 → 45), not their fractional sum
+    /// (28.6, 44.2). Measured to match at every whole point from 10 to 48,
+    /// the sizes the titles use; half points come out a point or two over.
+    /// Nil while the face isn't registered.
+    static func serifLineHeight(_ size: CGFloat) -> CGFloat? {
+        guard let font = NSFont(name: "InstrumentSerif-Regular", size: size) else { return nil }
+        return font.ascender.rounded() + (-font.descender).rounded()
+    }
 }

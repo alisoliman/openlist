@@ -657,20 +657,30 @@ private struct NXDocumentStrike: View {
     @Environment(\.nextStyle) private var style
     let struck: Bool
     let closing: Bool
-    /// The title's text as wide as it's laid out.
+    /// The title's text as wide as it's laid out, 0 while it isn't struck.
     let width: CGFloat
 
     var body: some View {
         // The glyph box sits in the task's line box as the text view's
         // inset centres it.
         let glyph = NXStrikeText.glyphLineHeight(NXEditor.bodyPointSize)
-        Capsule()
-            .fill(closing ? style.accent : NX.ink(0.36))
-            .frame(width: struck ? width + 2 : 0, height: 1.5)
-            .offset(y: (NXEditor.lineHeight(for: .task) - glyph) / 2 + glyph * 0.52)
-            .animation(.timingCurve(0.3, 0.8, 0.2, 1, duration: style.ms(340) / 1000), value: struck)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        GeometryReader { geo in
+            // Only its width moves, as the design's: its colour changes at
+            // once, so a line reopened in its dwell undraws in grey. The
+            // stroke spans the line, so it's there to undraw once the text's
+            // width is gone.
+            Rectangle()
+                .fill(closing ? style.accent : NX.ink(0.36))
+                .frame(width: geo.size.width + 2, height: 1.5)
+                .mask(alignment: .leading) {
+                    Capsule()
+                        .frame(width: struck ? width + 2 : 0)
+                        .animation(.timingCurve(0.3, 0.8, 0.2, 1, duration: style.ms(340) / 1000), value: struck)
+                }
+                .offset(y: (NXEditor.lineHeight(for: .task) - glyph) / 2 + glyph * 0.52)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

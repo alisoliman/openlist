@@ -1,5 +1,5 @@
-// Checks NX.lineHeight against the line SwiftUI lays out, which the Next
-// UI's CSS line boxes are fitted over: a label's (size − line) / 2 padding
+// Checks NX.lineHeight and NX.serifLineHeight against the line SwiftUI lays
+// out, which the Next UI's CSS line boxes are fitted over: a label's (size − line) / 2 padding
 // and a paragraph's size × line-height − line leading. Compiled against the
 // real openlist/Next/NextTextLine.swift by Tools/run-logic-checks.sh.
 
@@ -22,6 +22,12 @@ func check(_ c: Bool, _ label: String, _ detail: @autoclosure () -> String = "")
 @MainActor
 func height<V: View>(_ view: V) -> CGFloat {
     NSHostingView(rootView: view.fixedSize()).fittingSize.height
+}
+
+/// How tall SwiftUI lays `view` out, to the fraction.
+@MainActor
+func exactHeight<V: View>(_ view: V) -> CGFloat {
+    NSHostingController(rootView: view.fixedSize()).sizeThatFits(in: CGSize(width: 2000, height: 2000)).height
 }
 
 func lines(_ count: Int) -> String { Array(repeating: "Hg", count: count).joined(separator: "\n") }
@@ -58,24 +64,43 @@ MainActor.assumeIsolated {
         check(box == size.rounded(.up), "\(size)/1 label box", "\(box)")
     }
 
-    // One box's height is rounded up, which hides a line off by a fraction of
-    // a point, so ten of each are stacked: the rows' titles and notes, their
-    // chips, the empty text, add row, pills and tabs, and the sans header
-    // title, each padded to the design's size × line-height.
+    // A fitting size is rounded up, which hides a line off by a fraction of
+    // a point, so ten of each box are stacked and measured to the fraction:
+    // the rows' titles and notes, their chips, the empty text, add row, pills
+    // and tabs, and the sans header title and subtitle, each padded to the
+    // design's size × line-height.
     let boxes: [(size: CGFloat, lineHeight: CGFloat, weight: Font.Weight, name: String)] = [
         (13.8, 1.45, .regular, "row title"), (12, 1.4, .regular, "row note"), (11, 1.2, .semibold, "chip"),
         (11.5, 1.2, .medium, "quiet chip"), (12.5, 1.4, .regular, "empty text"), (13, 1.45, .regular, "Today is clear text"),
         (13.5, 1.3, .regular, "add row"), (12, 1, .medium, "query pill"), (11, 1, .semibold, "group action"),
         (13.5, 1, .semibold, "tab"), (9.5, 1, .semibold, "pill caption"), (10.5, 1.3, .medium, "pill footer"),
-        (27, 1.1, .bold, "sans header title"),
+        (27, 1.1, .bold, "sans header title"), (12, 1.2, .medium, "header subtitle"),
     ]
     for box in boxes {
         let pad = (box.size * box.lineHeight - NX.lineHeight(box.size)) / 2
-        let stack = height(VStack(spacing: 0) {
+        let stack = exactHeight(VStack(spacing: 0) {
             ForEach(0..<10, id: \.self) { _ in Text("Hg").font(.system(size: box.size, weight: box.weight)).padding(.vertical, pad) }
         })
-        let design = (10 * box.size * box.lineHeight - 0.001).rounded(.up)
-        check(stack == design, "\(box.name) ×10 at \(box.size)/\(box.lineHeight)", "\(stack) against \(design)")
+        let design = 10 * box.size * box.lineHeight
+        check(abs(stack - design) < 0.01, "\(box.name) ×10 at \(box.size)/\(box.lineHeight)", "\(stack) against \(design)")
+    }
+
+    // Instrument Serif, the serif titles' face, from the app's bundle copy:
+    // its line at every whole point, and the titles' boxes over it (the
+    // Changes and day titles' 22/1.1, Today is clear's and the sheets' 26/1.1,
+    // the screen header's 34/1.05), ten stacked.
+    let serifURL = URL(fileURLWithPath: "Shared/Fonts/InstrumentSerif-Regular.ttf")
+    check(CTFontManagerRegisterFontsForURL(serifURL as CFURL, .process, nil), "Instrument Serif registers")
+    for size in stride(from: CGFloat(10), through: 48, by: 1) {
+        let line = exactHeight(Text("Hg").font(.custom("InstrumentSerif-Regular", size: size)))
+        check(line == NX.serifLineHeight(size), "\(size)pt serif line", "SwiftUI \(line), helper \(NX.serifLineHeight(size).map { "\($0)" } ?? "none")")
+    }
+    for (size, lineHeight) in [(CGFloat(22), CGFloat(1.1)), (26, 1.1), (34, 1.05)] {
+        let pad = (size * lineHeight - (NX.serifLineHeight(size) ?? 0)) / 2
+        let stack = exactHeight(VStack(spacing: 0) {
+            ForEach(0..<10, id: \.self) { _ in Text("Hg").font(.custom("InstrumentSerif-Regular", size: size)).padding(.vertical, pad) }
+        })
+        check(abs(stack - 10 * size * lineHeight) < 0.01, "serif title ×10 at \(size)/\(lineHeight)", "\(stack) against \(10 * size * lineHeight)")
     }
     // The add row's N: SF Mono 10/1 inside 2 pt padding, 14 pt.
     let keys = height(VStack(spacing: 0) {
