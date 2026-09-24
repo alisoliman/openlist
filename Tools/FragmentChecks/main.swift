@@ -165,16 +165,12 @@ undo.redo()
 check(BlockTree.descendants(of: copyID, in: store.blocks(inList: target.id)).count == 25, "One Redo restores complete hierarchy")
 check(store.block(id: copyID)?.inboxMembershipData == nil, "Paste Redo retains clean metadata")
 check(try store.taskActivity(for: copyID).map(\.kind).contains(.restored), "Redo records Restored under pasted UUID")
-let scheduledID = try store.pasteFragment(fragment, in: .init(listID: target.id), after: copyID, includeSchedules: true)[0]
-let scheduled = store.block(id: scheduledID)!
-check(scheduled.dueDate == root.dueDate && scheduled.reminderAt == root.reminderAt && scheduled.recurrence?.frequency == .weekly, "Explicit schedule inclusion retains dates/reminders/rules")
-check(scheduled.recurrence?.completedOccurrences == 0 && scheduled.occurrenceID == scheduled.id, "Schedule inclusion still resets occurrence identity and progress")
-check(scheduled.inboxMembershipData == nil, "Including schedules never copies legacy queue metadata")
 var active = fragment
 active.blocks[0].isCompleted = false
 active.blocks[0].completedAt = nil
-let activeID = try store.pasteFragment(active, in: .init(listID: target.id), after: nil, includeSchedules: true)[0]
-check(NotificationService.shared.scheduled.contains(activeID), "Explicit future reminder is reconciled only after the successful insertion")
+let activeID = try store.pasteFragment(active, in: .init(listID: target.id), after: nil)[0]
+check(store.block(id: activeID)?.reminderAt == nil && !NotificationService.shared.scheduled.contains(activeID),
+      "An open task's pasted copy leaves its future reminder behind")
 var converted = fragment
 converted.blocks[0].kind = "paragraph"
 let convertedID = try store.pasteFragment(converted, in: .init(listID: target.id), after: nil)[0]

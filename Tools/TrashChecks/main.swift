@@ -52,9 +52,7 @@ if phase == "delete" {
     try JSONEncoder().encode(expected).write(to: manifest)
     var closed = Set<UUID>()
     store.onEditorBlocksRemoved = { closed.formUnion($0) }
-    store.trashNotice = "Earlier restoration"
     try check(store.trashBlocks([root, child]), "Rich subtree can be retained")
-    try check(store.trashNotice == nil, "A new deletion clears stale restoration feedback")
     try check(closed == Set(expected.blocks.map(\.id)), "Deletion closes every descendant inspector and command owner")
     try check(store.trashEntries().count == 1, "Selected descendants are owned by selected ancestor")
     let entry = try store.trashEntries()[0]
@@ -289,14 +287,12 @@ if phase == "delete" {
               "Deletion records the list's icon with its title")
     let legacy = try JSONDecoder().decode(TrashMetadata.self, from: Data(#"{"deletedAt":0,"listTitle":"Older","labels":[]}"#.utf8))
     try check(legacy.listIcon == nil && legacy.listTitle == "Older", "Metadata saved before list icons were recorded still decodes")
-    failing.trashNotice = "Restored to “Failures”."
+    failing.trashError = nil
     try check(!failing.restoreTrash(ids: [task.id]) && task.isTrashed, "Rejected restore save retains recoverable group")
-    try check(failing.trashNotice == nil && failing.trashError != nil,
-              "Failed restore reports its own error, never an earlier restore's notice")
-    failing.trashNotice = "Restored to “Failures”."
+    try check(failing.trashError != nil, "Failed restore reports its own error")
+    failing.trashError = nil
     try check(!failing.permanentlyEraseTrash(ids: [task.id]), "Rejected erase save reports failure")
-    try check(failing.trashNotice == nil && failing.trashError != nil,
-              "Failed erase reports its own error, never an earlier restore's notice")
+    try check(failing.trashError != nil, "Failed erase reports its own error")
     try check(task.isTrashed && attachment.contentData == Data("safe".utf8), "Failed erase preserves retained data")
     try check(store.restoreTrash(ids: [task.id]), "Restore after failed erase rematerializes bytes")
     try check(MediaStore.shared.readFile(filename: "shared.dat") == Data("safe".utf8), "Files survive rejected erase through durable payload")

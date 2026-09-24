@@ -436,19 +436,6 @@ final class CalendarCoordinator {
         return "other scheduled work or session-length rules prevent that placement"
     }
 
-    func pin(block: PlannedBlock) {
-        guard let task = store.block(id: block.taskID), task.occurrenceID == block.occurrenceID, !block.isActive else { return }
-        store.setPlacement(for: task, start: block.start, end: block.end, isPinned: true, placementID: block.placementID)
-        replan()
-    }
-
-    func unpin(block: PlannedBlock) {
-        guard let id = block.placementID, let placement = store.placements().first(where: { $0.id == id }) else { return }
-        placement.isPinned = false
-        store.save()
-        replan()
-    }
-
     func handleMacUnavailable(reason: String, now: Date = .now) {
         guard let session = activeSession, let task = store.block(id: session.taskID) else { return }
         // Work that tracks away keeps recording while you're gone, up to the

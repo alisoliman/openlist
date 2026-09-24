@@ -136,8 +136,8 @@ enum OutlineEdit: Equatable {
     }
 }
 
-/// One `/` menu entry: the design's five kinds, then
-/// the editor's other kinds, which only a query for them brings up.
+/// One `/` menu entry: the design's five kinds, then the editor's other
+/// kinds, which only a query for them brings up.
 struct OutlineSlashOption: Identifiable, Equatable {
     let kind: BlockKind
     let label: String
@@ -183,7 +183,7 @@ struct OutlineSlashOption: Identifiable, Equatable {
 /// store or the navigator to act, so a host sets only what it does itself.
 struct OutlineHooks {
     /// Shows a task's details, once any date or label typed into its title
-    /// has been committed. `nil` opens the navigator's detail panel.
+    /// has been committed. `nil` opens it in the navigator's inspector.
     var openDetails: ((UUID) -> Void)?
     /// A block took the caret. It can fire more than once for one click.
     var didFocus: (UUID) -> Void = { _ in }

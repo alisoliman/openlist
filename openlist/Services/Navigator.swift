@@ -121,7 +121,7 @@ final class Navigator {
     /// targets.
     var documentOwnsEditorCommands: Bool { documentListID != nil }
 
-    /// The task whose detail panel is open, if any.
+    /// The task the inspector shows, if any.
     var openTaskID: UUID?
 
     /// Blocks selected in the current document: the line being written, or

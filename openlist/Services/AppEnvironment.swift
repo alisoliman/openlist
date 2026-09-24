@@ -8,7 +8,7 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-/// A picker inside the task detail panel that a keyboard shortcut can summon.
+/// A picker inside the inspector that a keyboard shortcut can summon.
 enum DetailPicker: String, Identifiable {
     case due, repeatRule, reminder, labels
     var id: String { rawValue }
@@ -78,7 +78,7 @@ final class AppEnvironment {
     var listPendingDeletion: TaskList?
     var listPendingMove: TaskList?
 
-    /// Which picker the task detail panel should pop open, set by ⌃D / ⌃L.
+    /// Which picker the inspector should pop open, set by ⌃D / ⌃L.
     var requestedPicker: DetailPicker?
 
     /// The document menu commands apply to: the list document on show, which
@@ -321,7 +321,7 @@ extension AppEnvironment {
         workbench.trashList(list)
     }
 
-    /// Opens a task's detail panel with one of its pickers already showing.
+    /// Opens a task in the inspector with one of its pickers already showing.
     func openTask(_ id: UUID, showing picker: DetailPicker?) {
         requestedPicker = picker
         navigator.openTask(id)

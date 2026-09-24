@@ -190,7 +190,7 @@ final class NextKeyHandler {
         // Every other text field and the document editor keep their keys.
         if isEditingText { return false }
         // So do controls and views outside the shell's own hosting view, such
-        // as a document list's row gutter, pickers and date fields.
+        // as pickers and date fields.
         if isForeign(responder) { return false }
 
         if flags == .command {
