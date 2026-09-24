@@ -1424,7 +1424,7 @@ final class OutlineEditor {
               target.block.listID == document.listID,
               env.store.block(id: target.id) != nil,
               env.store.list(id: document.listID) != nil else {
-            env.store.editorNotice = "The drop target is no longer available. No rows were changed."
+            env.store.refuse("The drop target is no longer available. No rows were changed.")
             return
         }
         defer { drawnRows = nil }
@@ -1433,7 +1433,7 @@ final class OutlineEditor {
             // The move is a step of its own, after the line being written.
             commitLine()
             guard let placed = nextDropPosition(for: draggedIDs, relativeTo: target.block, position: position) else {
-                env.store.editorNotice = "Only tasks and list items go under another line, two levels deep at most."
+                env.store.refuse("Only tasks and list items go under another line, two levels deep at most.")
                 return
             }
             position = placed
@@ -1596,7 +1596,7 @@ final class OutlineEditor {
         let targets = commandTargets
         guard !SelectionCommandPolicy.reject(command, selectedCount: env.navigator.selection.count, store: env.store) else { return }
         if sorting != .manual, [.moveUp, .moveDown, .indent, .outdent].contains(command) {
-            env.store.editorNotice = "Switch to manual order before rearranging rows."
+            env.store.refuse("Switch to manual order before rearranging rows.")
             return
         }
 

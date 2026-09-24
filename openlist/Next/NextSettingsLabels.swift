@@ -122,7 +122,7 @@ private struct NXLabelSettingsRow: View {
             }
 
             Button {
-                env.store.deleteLabel(label)
+                env.workbench.deleteLabel(label)
             } label: {
                 Image(systemName: "trash").font(.system(size: 11, weight: .medium))
             }

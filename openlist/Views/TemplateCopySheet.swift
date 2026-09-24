@@ -101,14 +101,9 @@ struct TemplateCopySheet: View {
             let mode = CopyMode.template(keepingRecurrence: keepsRecurrence)
             switch request.source {
             case let .task(id):
-                guard let task = env.store.block(id: id), task.isTask,
-                      let listID = task.listID else { throw CopyError.unavailable }
-                let outcome = env.store.undoableEditorEdit(in: listID, name: "Use task as template", undoManager: request.undoManager) {
-                    Result { try env.store.copyBlock(task, mode: mode) }
-                }
-                let copyID = try outcome.get()
+                // One change with Undo in the tray; the copy opens in the inspector.
+                try env.workbench.copyAsTemplate(id, keepingRecurrence: keepsRecurrence)
                 dismiss()
-                env.showCopiedTask(id: copyID, listID: listID)
             case let .list(id):
                 guard let list = env.store.list(id: id) else { throw CopyError.unavailable }
                 let copyID = try env.store.copyList(list, mode: mode)

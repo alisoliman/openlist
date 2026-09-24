@@ -83,6 +83,25 @@ extension Workbench {
         registerUndo(label, undo: { apply($0, !archived) }, redo: { apply($0, archived) })
         snap(label, icon: archived ? "archivebox" : "tray.and.arrow.up", tone: .neutral, ids: [])
     }
+
+    /// Icon & Colour…: the emoji or colour a list shows, each pick one change.
+    func setAppearance(icon: String? = nil, accent: ListAccent? = nil, for list: TaskList) {
+        let changesIcon = icon != nil && icon != list.icon
+        let changesAccent = accent != nil && accent != list.accent
+        guard changesIcon || changesAccent else { return }
+        let id = list.id
+        let before = (icon: list.icon, accent: list.accent)
+        let apply: @MainActor (Workbench, String?, ListAccent?) -> Void = { workbench, icon, accent in
+            guard let list = workbench.store.list(id: id) else { return }
+            workbench.store.setAppearance(icon: icon, accent: accent, for: list)
+        }
+        apply(self, icon, accent)
+        let label = icon.map { "\(NXFormat.quoted(list.displayTitle)) icon → \($0)" }
+            ?? "\(NXFormat.quoted(list.displayTitle)) colour → \(accent?.title ?? "")"
+        registerUndo(label, undo: { apply($0, icon.map { _ in before.icon }, accent.map { _ in before.accent }) },
+                     redo: { apply($0, icon, accent) })
+        snap(label, icon: icon == nil ? "paintpalette" : "face.smiling", tone: .accent, ids: [])
+    }
 }
 
 private extension NextAccent {

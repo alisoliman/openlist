@@ -1,6 +1,6 @@
 import Foundation
 
-/// Transient choices owned by TasksScreen; never written to synced models.
+/// Transient choices for a task list view; never written to synced models.
 struct TasksViewOptions {
     var filter: TaskFilter = .open
     var grouping: TaskGrouping = .dueDate

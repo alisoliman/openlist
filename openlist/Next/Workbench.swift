@@ -262,6 +262,11 @@ final class Workbench {
         openNotes = Set((defaults?.stringArray(forKey: Self.openNotesKey) ?? []).compactMap(UUID.init(uuidString:)))
         watchWork()
         calendar.onMacReturn = { [weak self] in self?.macDidReturn() }
+        // A refusal, like a drop the document's rules don't allow, passes in
+        // the tray as the design's "No free slot" does.
+        store.onRefusal = { [weak self] message in
+            self?.showTray(message, icon: "exclamationmark.circle", tone: .neutral)
+        }
     }
 
     // MARK: Style
@@ -917,6 +922,56 @@ final class Workbench {
         undoManager.setActionName(trash.mark.label)
     }
 
+    /// Moves a list, with its nested lists and everything in them, to Trash
+    /// as one change, as the design's trash does for tasks: the tray offers
+    /// Undo and Open Trash. Steps off the list first if it's on screen.
+    @discardableResult
+    func trashList(_ list: TaskList) -> Bool {
+        document?.commitLine()
+        let id = list.id
+        let label = "Moved \(NXFormat.quoted(list.displayTitle)) to Trash"
+        guard moveToTrash(list) else { return false }
+        let mark = record(label, icon: "trash", tone: .red, ids: [id])
+        mark.trashedListID = id
+        attach(listTrash: mark, id: id, restores: false)
+        trashUndos.add(mark)
+        showTray(label, icon: "trash", tone: .red, undoable: true,
+                 destination: TrayDestination(label: "Open Trash", route: .trash))
+        return true
+    }
+
+    /// Trashes the list through the Store, leaving its page, or a nested
+    /// list's, for Today as it goes.
+    private func moveToTrash(_ list: TaskList) -> Bool {
+        let owned = Set(store.listHierarchy().subtree(of: list.id).map(\.id))
+        let wasOpen = navigator.route.listID.map(owned.contains) == true
+        guard store.trashList(list) else { return false }
+        if wasOpen { navigator.replace(with: .today) }
+        return true
+    }
+
+    /// The list trash's one window entry. Undo restores its Trash entry,
+    /// Redo moves it to Trash again; the handler keeps the id, never the model.
+    private func attach(listTrash mark: LogMark, id: UUID, restores: Bool) {
+        guard let undoManager else { return }
+        // The manager holds its target weakly; the handler keeps the mark alive.
+        undoManager.registerUndo(withTarget: mark) { [weak self, mark] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if restores {
+                    if let list = self.store.list(id: id) { _ = self.moveToTrash(list) }
+                    self.relog(mark)
+                } else {
+                    // Restored from Trash by hand meanwhile, it's back already.
+                    if self.store.isInTrash(id) { self.store.restoreTrash(ids: [id]) }
+                    self.unlog(mark)
+                }
+                self.attach(listTrash: mark, id: id, restores: !restores)
+            }
+        }
+        undoManager.setActionName(mark.label)
+    }
+
     /// Logs a task's restore from Trash with its one window entry: Undo moves
     /// it back to Trash, Redo restores it again. Erased from Trash meanwhile,
     /// it leaves the stack instead; see `forgetErasedTrashes`.
@@ -949,12 +1004,17 @@ final class Workbench {
 
     /// Takes Undo off every trash or restore whose tasks have all been erased
     /// since: they're gone for good, so it has nothing left to do. A trash
-    /// with some of its tasks left still undoes those.
+    /// with some of its tasks left still undoes those. A trashed list is gone
+    /// once it's neither in Trash nor in the library.
     func forgetErasedTrashes() {
         let erased = store.permanentlyErasedBlockIDs
         for mark in trashUndos.allObjects {
             let ids = mark.entries.compactMap(\.taskID)
-            guard !ids.isEmpty, ids.allSatisfy(erased.contains) else { continue }
+            if let listID = mark.trashedListID {
+                guard !store.isInTrash(listID), store.list(id: listID) == nil else { continue }
+            } else {
+                guard !ids.isEmpty, ids.allSatisfy(erased.contains) else { continue }
+            }
             undoManager?.removeAllActions(withTarget: mark)
             trashUndos.remove(mark)
         }
@@ -975,6 +1035,8 @@ private final class LogMark {
     var entries: [ChangeEntry]
     /// The target the log's half of the entry shares with the change, if any.
     var owner: AnyObject?
+    /// The list a list trash moved to Trash, which Undo restores.
+    var trashedListID: UUID?
     /// The tasks and lists whose saved history the change, its Undo and Redo write.
     let covers: Set<UUID>
 

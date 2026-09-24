@@ -44,6 +44,7 @@ struct MoveListSheet: View {
             HStack(spacing: 8) {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 Button("Move") {
                     if env.store.moveList(list, under: parentID) { dismiss() }

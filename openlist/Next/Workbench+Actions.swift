@@ -61,6 +61,25 @@ private final class CreationUndo {
     var list: BackupTaskList?
 }
 
+/// A deleted label, shared by the Undo that brings it back and the Redo that
+/// deletes it again, each leaving what the other needs.
+private final class LabelDeletion {
+    var deleted: DeletedLabel
+    /// The label the tasks carry once Undo has put it back.
+    var labelID: UUID
+
+    init(_ deleted: DeletedLabel) {
+        self.deleted = deleted
+        labelID = deleted.label.id
+    }
+}
+
+/// A label merge, as Redo last made it, for the Undo after it.
+private final class LabelMerge {
+    var plan: LabelMergePlan
+    init(_ plan: LabelMergePlan) { self.plan = plan }
+}
+
 extension Workbench {
     func describe(_ tasks: [Block]) -> String {
         tasks.count == 1 ? NXFormat.quoted(tasks[0].displayTitle) : "\(tasks.count) tasks"
@@ -171,9 +190,47 @@ extension Workbench {
     func installCompletionUndo() {
         store.onCompletionUndoAvailable = { [weak self] action in
             guard let self, let manager = self.completionUndoTarget ?? self.undoManager else { return }
+            // Neither a batch writing nor a reopen naming it: the tick came from
+            // outside Next's rows.
+            let outside = self.completionUndoTarget == nil && self.completionLabel == nil
             self.store.registerCompletionUndo(action, with: manager)
             if let label = self.completionLabel { manager.setActionName(label) }
             self.bumpUndo()
+            if outside { self.reportOutsideCompletion(action) }
+        }
+    }
+
+    /// A completion or reopen from the menu bar, the calendar, a notification
+    /// or MCP reports in the tray as the design's do, logged and named on the
+    /// window entry just registered, so the tray's Undo takes it back.
+    private func reportOutsideCompletion(_ action: CompletionUndoAction) {
+        guard let change = store.completionUndoChanges[action.id], !isReported(action, change) else { return }
+        let ids = [change.rootTaskID] + change.additionalRootTaskIDs
+        let tasks = ids.compactMap { store.block(id: $0) }
+        guard !tasks.isEmpty else { return }
+        if action.isReopening {
+            snap("Reopened \(describe(tasks))", icon: "arrow.uturn.backward", tone: .neutral, ids: ids)
+        } else if tasks.count == 1, let task = tasks.first, !task.isCompleted {
+            // A repeat that rolled on to its next date.
+            snap("\(NXFormat.quoted(task.displayTitle)) rolls to \(NXFormat.dueLabel(task.dueDate))",
+                 icon: "repeat", tone: .green, ids: ids)
+        } else {
+            snap(describe(tasks) + " done", icon: "checkmark.circle.fill", tone: .green, ids: ids)
+        }
+    }
+
+    /// Whether the change log already holds this completion or reopen of the
+    /// same tasks, as when one of Next's own is saved late. Next writes a
+    /// completion once its dwell ends, so the Store's action arrives up to the
+    /// dwell (plus the row stagger) after its entry.
+    private func isReported(_ action: CompletionUndoAction, _ change: CompletionUndoChange) -> Bool {
+        let roots = Set([change.rootTaskID] + change.additionalRootTaskIDs)
+        let window = style.dwell + 5 + Double(roots.count) * style.ms(75) / 1000
+        let since = action.createdAt.addingTimeInterval(-window)
+        // Newest first, so only the recent entries are read.
+        return log.lazy.prefix { $0.at >= since }.contains { entry in
+            guard let id = entry.taskID, roots.contains(id) else { return false }
+            return action.isReopening ? entry.icon == "arrow.uturn.backward" : entry.tone == .green
         }
     }
 
@@ -272,6 +329,55 @@ extension Workbench {
         flash(\.freshChip, tasks.map(\.id), for: 700)
         pulse(list: listID)
         selection = []
+    }
+
+    // MARK: Copies
+
+    /// The task menu's Duplicate: a copy of the task and everything under it,
+    /// right after it, as one change the tray can undo.
+    func duplicate(_ id: UUID) {
+        document?.commitLine()
+        guard let task = store.block(id: id), task.isTask, let listID = task.listID else { return }
+        let label = "Duplicated \(describe([task]))"
+        var copyID: UUID?
+        store.undoableEditorEdit(in: listID, name: label, undoManager: undoManager) {
+            let copy = store.duplicateBlock(task)
+            // A copy that failed leaves the original, and says why in a notice.
+            if copy.id != task.id { copyID = copy.id }
+        }
+        guard let copyID else { return }
+        announceCopy(label, copyID: copyID, listID: listID)
+    }
+
+    /// Use as Template…'s copy of a task: its subtasks, notes and files, reset
+    /// to start again, right after it, as one change the tray can undo. The
+    /// copy opens in the inspector, ready for a new date.
+    func copyAsTemplate(_ id: UUID, keepingRecurrence: Bool) throws {
+        document?.commitLine()
+        guard let task = store.block(id: id), task.isTask, let listID = task.listID else { throw CopyError.unavailable }
+        let label = "Copied \(describe([task])) as a template"
+        let outcome = store.undoableEditorEdit(in: listID, name: label, undoManager: undoManager) {
+            Result { try store.copyBlock(task, mode: .template(keepingRecurrence: keepingRecurrence)) }
+        }
+        let copyID = try outcome.get()
+        announceCopy(label, copyID: copyID, listID: listID)
+        navigator.openTask(copyID)
+    }
+
+    private func announceCopy(_ label: String, copyID: UUID, listID: UUID) {
+        let list = store.list(id: listID)
+        let here = list.map { navigator.route == route(for: $0) } ?? true
+        snap(label, icon: "plus.square.on.square", tone: .accent, ids: [copyID],
+             destination: here ? nil : list.map { TrayDestination(label: "Show", route: route(for: $0)) })
+        flash(\.fresh, [copyID], for: 1200)
+        pulse(list: listID)
+    }
+
+    /// The task menu's Copy Text: the task's text, as written, on the pasteboard.
+    func copyText(_ id: UUID) {
+        guard let task = store.block(id: id) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(task.text, forType: .string)
     }
 
     // MARK: Trash
@@ -393,6 +499,49 @@ extension Workbench {
                 _ = workbench.store.restoreTrash(ids: [id])
             }
         })
+    }
+
+    // MARK: Labels
+
+    /// Deletes a label from every task as one change, with Undo in the tray:
+    /// it comes back where it was on the tasks that had it. Steps off the
+    /// label's page first.
+    func deleteLabel(_ label: TaskLabel) {
+        document?.commitLine()
+        let text = "Deleted #\(label.name)"
+        if navigator.route == .label(label.id) { navigator.replace(with: .tasks) }
+        guard let deleted = store.deleteLabel(label) else { return }
+        let taken = LabelDeletion(deleted)
+        registerUndo(text, undo: { workbench in
+            if let id = workbench.store.restoreDeletedLabel(taken.deleted) { taken.labelID = id }
+        }, redo: { workbench in
+            guard let label = workbench.store.label(id: taken.labelID) else { return }
+            if workbench.navigator.route == .label(label.id) { workbench.navigator.replace(with: .tasks) }
+            if let deleted = workbench.store.deleteLabel(label) { taken.deleted = deleted }
+        })
+        snap(text, icon: "tag.slash", tone: .red, ids: Array(deleted.positions.keys))
+    }
+
+    /// Settings' Merge labels as one change, with Undo in the tray and on ⌘Z
+    /// rather than in a notice of its own. Redo merges again from the labels
+    /// as they are by then.
+    func mergeLabels(_ plan: LabelMergePlan) throws {
+        try store.mergeLabels(plan)
+        let text = "Merged #\(plan.source.name) into #\(plan.destination.name)"
+        let merged = LabelMerge(plan)
+        registerUndo(text, undo: { workbench in
+            workbench.store.undoLabelMerge(merged.plan)
+        }, redo: { workbench in
+            let store = workbench.store
+            do {
+                let plan = try store.labelMergePlan(sourceID: merged.plan.source.id, destinationID: merged.plan.destination.id)
+                try store.mergeLabels(plan)
+                merged.plan = plan
+            } catch {
+                store.labelMaintenanceError = "The labels were not merged again. \(error.localizedDescription)"
+            }
+        })
+        snap(text, icon: "arrow.triangle.merge", tone: .accent, ids: [])
     }
 
     /// The hours Plan and Start working use for a list's tasks.

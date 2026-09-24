@@ -56,6 +56,8 @@ final class Store {
     @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
     var persistenceError: String?
     var editorNotice: String?
+    /// Takes what ``refuse(_:)`` reports; the window shows it in its tray.
+    @ObservationIgnored var onRefusal: ((String) -> Void)?
     var trashError: String?
     var trashNotice: String?
     @ObservationIgnored var permanentlyErasedBlockIDs: Set<UUID> = []
@@ -362,6 +364,13 @@ final class Store {
         }
         context.delete(section)
         save()
+    }
+
+    /// A one-off refusal that changed nothing, like a drop the list's rules
+    /// don't allow: it passes, as the design's tray does, rather than staying
+    /// pinned like an error. With no window to show it, it waits in `editorNotice`.
+    func refuse(_ message: String) {
+        if let onRefusal { onRefusal(message) } else { editorNotice = message }
     }
 
     // MARK: - Persistence

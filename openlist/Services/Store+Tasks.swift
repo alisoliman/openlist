@@ -6,6 +6,14 @@
 import Foundation
 import SwiftData
 
+/// A deleted label as it was, and where it sat among the labels of each task
+/// that had it, so Undo can put it back.
+struct DeletedLabel: Equatable {
+    var label: LabelMergePlan.LabelState
+    var positions: [UUID: Int]
+    var deletedAt: Date
+}
+
 extension Store {
     // MARK: - Completion
 
@@ -309,18 +317,63 @@ extension Store {
         try renameLabel(id: label.id, to: newName)
     }
 
-    func deleteLabel(_ label: TaskLabel) {
+    /// Deletes a label and takes it off every task outside Trash. Returns what
+    /// ``restoreDeletedLabel(_:)`` needs to put it back, or nil if it failed.
+    @discardableResult
+    func deleteLabel(_ label: TaskLabel) -> DeletedLabel? {
         do {
             let labelID = label.id
+            let state = LabelMergePlan.LabelState(label)
             let all = try context.fetch(FetchDescriptor<Block>())
             try preserveTrashLabel(label, referencedBy: all)
-            for block in all where !block.isTrashed && block.labelIDs.contains(labelID) {
+            var positions: [UUID: Int] = [:]
+            for block in all where !block.isTrashed {
+                guard let position = block.labelIDs.firstIndex(of: labelID) else { continue }
+                positions[block.id] = position
                 block.labelIDs.removeAll { $0 == labelID }
             }
             context.delete(label)
             try persistChanges()
+            labelRevision += 1
+            return DeletedLabel(label: state, positions: positions, deletedAt: .now)
         } catch {
             persistenceError = "The label could not be deleted. \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// Undo of ``deleteLabel(_:)``: the label comes back as it was, where it
+    /// sat among the labels of each task that had it and is still outside
+    /// Trash. A label of the same name made since the deletion stands in for
+    /// it rather than a second one. Returns the id those tasks carry, or nil
+    /// if it failed.
+    @discardableResult
+    func restoreDeletedLabel(_ deleted: DeletedLabel) -> UUID? {
+        do {
+            let labels = try context.fetch(FetchDescriptor<TaskLabel>()).filter { !$0.isDeleted }
+            let labelID: UUID
+            if labels.contains(where: { $0.id == deleted.label.id }) {
+                labelID = deleted.label.id
+            } else if let same = labels.first(where: {
+                $0.createdAt >= deleted.deletedAt && TaskLabel.namesMatch($0.name, deleted.label.name)
+            }) {
+                labelID = same.id
+            } else {
+                context.insert(deleted.label.restore())
+                labelID = deleted.label.id
+            }
+            let ids = Array(deleted.positions.keys)
+            for block in try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
+            where !block.isTrashed && !block.labelIDs.contains(labelID) {
+                let position = min(deleted.positions[block.id] ?? block.labelIDs.count, block.labelIDs.count)
+                block.labelIDs.insert(labelID, at: position)
+            }
+            try persistChanges()
+            labelRevision += 1
+            return labelID
+        } catch {
+            persistenceError = "The label could not be restored. \(error.localizedDescription)"
+            return nil
         }
     }
 
