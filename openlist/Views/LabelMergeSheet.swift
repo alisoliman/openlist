@@ -55,7 +55,7 @@ struct LabelMergeSheet: View {
                     // The inspector's chosen label pill.
                     HStack(spacing: 8) {
                         Text("#\(plan.destination.name)")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.white)
                             .padding(.vertical, 5)
                             .padding(.horizontal, 8)
@@ -68,7 +68,7 @@ struct LabelMergeSheet: View {
                     .accessibilityLabel("Surviving label: \(plan.destination.name), color: \(plan.destination.accent.title)")
                     Text("This updates \(plan.affectedTaskCount) \(plan.affectedTaskCount == 1 ? "task" : "tasks"), including completed, nested, and archived tasks. The surviving label will be used by \(plan.resultingTaskCount) \(plan.resultingTaskCount == 1 ? "task" : "tasks") in total.")
                         .foregroundStyle(NX.ink(0.7))
-                    Text("The existing label keeps its color. Tasks using both labels keep one copy. You can undo this merge after leaving Settings.")
+                    Text("The existing label keeps its color. Tasks using both labels keep one copy. You can undo this merge from the notice at the top of the window.")
                         .foregroundStyle(NX.ink(0.5))
                 }
                 .font(.system(size: 12.5))

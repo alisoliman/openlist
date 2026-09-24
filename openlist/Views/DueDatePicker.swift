@@ -44,14 +44,19 @@ struct DueDatePicker: View {
             Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
 
             HStack(spacing: 8) {
-                Image(systemName: "clock")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(style.accent)
-                    .accessibilityHidden(true)
-                Text("Include a time")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(NX.ink)
-                Spacer(minLength: 6)
+                // The switch speaks for the row; its words toggle it too.
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(style.accent)
+                    Text("Include a time")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(NX.ink)
+                    Spacer(minLength: 6)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { includesTimeBinding.wrappedValue.toggle() }
+                .accessibilityHidden(true)
                 if includesTime {
                     DatePicker("Due time", selection: timeBinding, displayedComponents: .hourAndMinute)
                         .labelsHidden()
@@ -84,9 +89,20 @@ struct DueDatePicker: View {
             if !typedPhrase.isEmpty {
                 let parsed = DateParser.parse(typedPhrase)
                 if let date = parsed.date {
-                    // Previewed the way capture previews its tokens.
-                    let label = preview(date, includesTime: parsed.includesTime, recurrence: parsed.recurrence)
-                    NXChip(chip: NXChipModel(id: label, label: label, icon: "arrow.turn.down.right", tone: .accent))
+                    // An accent chip, like capture's token previews, that
+                    // wraps when a long phrase outgrows the popover.
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Image(systemName: "arrow.turn.down.right")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .accessibilityHidden(true)
+                        Text(preview(date, includesTime: parsed.includesTime, recurrence: parsed.recurrence))
+                            .font(.system(size: 11, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(style.accent)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(style.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 } else {
                     Text("Not recognised yet")
                         .font(.system(size: 11.5, weight: .medium))

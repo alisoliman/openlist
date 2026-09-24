@@ -74,6 +74,7 @@ struct MoveListSheet: View {
                     }
                 }
                 .frame(width: 16)
+                .accessibilityHidden(true)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
                     .multilineTextAlignment(.leading)

@@ -463,8 +463,11 @@ struct NextInspector: View {
         let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
+                // The switch speaks for the row.
                 Image(systemName: "calendar.badge.clock").font(.system(size: 13, weight: .medium)).foregroundStyle(style.accent)
+                    .accessibilityHidden(true)
                 Text("Plan for today").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(NX.ink)
+                    .accessibilityHidden(true)
                 Spacer(minLength: 6)
                 NXToggle(isOn: planned, label: "Plan for today") { workbench.plan([task.id]) }
                     .disabled(task.isCompleted)
@@ -477,7 +480,7 @@ struct NextInspector: View {
             HStack(spacing: 8) {
                 Text("Estimate").font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.5))
                 Spacer(minLength: 6)
-                stepper("minus") { workbench.setEstimate(task.id, delta: -5) }
+                NXStepButton(icon: "minus") { workbench.setEstimate(task.id, delta: -5) }
                 // Like the design's 44pt cell, a wider value overflows it evenly.
                 Text("\(estimate) min")
                     .font(.system(size: 12, weight: .semibold))
@@ -486,7 +489,7 @@ struct NextInspector: View {
                     .contentTransition(.numericText())
                     .fixedSize()
                     .frame(width: 44)
-                stepper("plus") { workbench.setEstimate(task.id, delta: 5) }
+                NXStepButton(icon: "plus") { workbench.setEstimate(task.id, delta: 5) }
             }
             .padding(.top, 11)
             Text(slotText)
@@ -515,15 +518,6 @@ struct NextInspector: View {
         let offset = NXFormat.dayOffset(placement.start)
         let day = offset == 0 ? "today" : placement.start.formatted(.dateTime.weekday(.abbreviated).day())
         return "In the calendar \(day), \(NXFormat.clock(placement.start))–\(NXFormat.clock(placement.end))"
-    }
-
-    private func stepper(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon).font(.system(size: 11, weight: .medium)).frame(width: 15, height: 15)
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
-                                        padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                        foreground: NX.ink(0.6)))
     }
 
     // MARK: Note & activity

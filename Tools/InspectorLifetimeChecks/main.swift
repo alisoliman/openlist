@@ -96,7 +96,6 @@ struct RetainedInspector: View {
     var body: some View {
         VStack {
             InboxRowActions(block: block, isRevealed: true, actions: BlockRowActions())
-            TaskInspectorMetadata(block: block)
             DueDateChip(block: block)
             TaskMetadataChips(block: block, labels: [], progress: nil)
             LabelPicker(block: block)
@@ -167,7 +166,7 @@ for mode in [CopyMode.duplicate, .template(keepingRecurrence: false)] {
     // A fresh host also evaluates every retained view after invalidation;
     // its intrinsic size is independent of the old window's fixed height.
     let invalidHost = NSHostingView(rootView: RetainedInspector(block: retained, attachment: retainedAttachment, child: retainedChild).environment(env))
-    check(invalidHost.fittingSize.height < 30, "Deleted metadata, chips, label picker, attachment, nested row and menu render empty")
+    check(invalidHost.fittingSize.height < 30, "Deleted chips, label picker, attachment, nested row and menu render empty")
     let attachmentHost = NSHostingView(rootView: AttachmentRow(attachment: retainedAttachment, onDelete: {}))
     check(attachmentHost.fittingSize.height == 0, "Retained attachment renders empty independently")
     let menuHost = NSHostingView(rootView: BlockContextMenu(block: retainedChild, actions: BlockRowActions()).environment(env))

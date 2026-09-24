@@ -92,9 +92,10 @@ struct NXPanelButtonStyle: ButtonStyle {
     }
 }
 
-/// A row in the design's small menus: 8/9 padding on a 7pt radius, the
-/// accent's faint fill and a check when chosen, grey on hover. It is a real
-/// button, so the keyboard and VoiceOver can choose it.
+/// A row in the design's small menus, like the Tasks sentence menus and the
+/// label picker: 8/9 padding on a 7pt radius, the accent's faint fill and a
+/// check when chosen, grey on hover. It is a real button, so the keyboard and
+/// VoiceOver can choose it.
 struct NXPanelRowStyle: ButtonStyle {
     var isOn: Bool
 
@@ -152,10 +153,13 @@ struct NXPanelTitle: View {
 }
 
 /// A text field on a faint fill, with an optional leading symbol, like the
-/// Tasks screen's title filter.
+/// Tasks screen's title filter. The plain field has no focus ring, so the
+/// border turns to the accent while it has focus.
 struct NXPanelField<Field: View>: View {
+    @Environment(\.nextStyle) private var style
     var icon: String?
     @ViewBuilder var field: () -> Field
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 7) {
@@ -169,11 +173,14 @@ struct NXPanelField<Field: View>: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(NX.ink)
+                .focused($focused)
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 9)
         .background(NX.ink(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NX.ink(0.08), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(focused ? style.accent.opacity(0.6) : NX.ink(0.08), lineWidth: focused ? 1 : 0.5))
+        .animation(.easeOut(duration: 0.12), value: focused)
     }
 }
 

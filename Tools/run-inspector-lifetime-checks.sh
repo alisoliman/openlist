@@ -13,7 +13,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-ch
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
-  openlist/Views/TaskInspectorMetadata.swift openlist/Views/LabelPicker.swift openlist/Views/AttachmentRow.swift \
+  openlist/Views/LabelPicker.swift openlist/Views/AttachmentRow.swift \
   openlist/Editor/TaskMetadataChips.swift openlist/Editor/MetadataFlowLayout.swift \
   openlist/Views/InboxRowActions.swift openlist/Editor/BlockRowView.swift openlist/Editor/BlockTextView.swift openlist/Editor/MarkdownInputRules.swift \
   openlist/Editor/SlashMenuLayout.swift openlist/Views/TaskDetailButton.swift openlist/Views/CopyItemLinkButton.swift \

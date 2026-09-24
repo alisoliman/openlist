@@ -40,14 +40,19 @@ struct RecurrencePicker: View {
     private var liveContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "repeat")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(style.accent)
-                    .accessibilityHidden(true)
-                Text("Repeat this task")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(NX.ink)
-                Spacer(minLength: 6)
+                // The switch speaks for the row; its words toggle it too.
+                HStack(spacing: 8) {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(style.accent)
+                    Text("Repeat this task")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(NX.ink)
+                    Spacer(minLength: 6)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { enabledBinding.wrappedValue.toggle() }
+                .accessibilityHidden(true)
                 NXToggle(isOn: isEnabled, label: "Repeat this task") { enabledBinding.wrappedValue.toggle() }
             }
 
@@ -56,12 +61,15 @@ struct RecurrencePicker: View {
 
                 section("Every") {
                     NXFlow(spacing: 4, alignment: .center) {
-                        NXRepeatStepper(label: "Repeat interval", value: editing($interval), range: 1...52) {
+                        NXRepeatStepper(label: "Repeat interval", value: editing($interval), range: 1...52,
+                                        spoken: "\(interval) \(interval == 1 ? frequency.singular : frequency.plural)") {
                             Text("\(interval)")
                         }
                         .padding(.trailing, 4)
                         ForEach(Recurrence.Frequency.allCases, id: \.self) { option in
                             pill(interval == 1 ? option.singular : option.plural, isOn: frequency == option) {
+                                // Choosing the current value again saves nothing.
+                                guard frequency != option else { return }
                                 editing($frequency).wrappedValue = option
                             }
                         }
@@ -77,7 +85,10 @@ struct RecurrencePicker: View {
                 section("Count from") {
                     NXFlow(spacing: 4) {
                         ForEach(Recurrence.Anchor.allCases, id: \.self) { option in
-                            pill(option.title, isOn: anchor == option) { editing($anchor).wrappedValue = option }
+                            pill(option.title, isOn: anchor == option) {
+                                guard anchor != option else { return }
+                                editing($anchor).wrappedValue = option
+                            }
                         }
                     }
                 }
@@ -116,7 +127,10 @@ struct RecurrencePicker: View {
         VStack(alignment: .leading, spacing: 8) {
             NXFlow(spacing: 4) {
                 ForEach(Ending.allCases) { option in
-                    pill(option.title, isOn: ending == option) { editing($ending).wrappedValue = option }
+                    pill(option.title, isOn: ending == option) {
+                        guard ending != option else { return }
+                        editing($ending).wrappedValue = option
+                    }
                 }
             }
 
@@ -128,7 +142,8 @@ struct RecurrencePicker: View {
                     .labelsHidden()
                     .fixedSize()
             case .afterCount:
-                NXRepeatStepper(label: "Occurrences", value: editing($occurrenceLimit), range: 1...365) {
+                NXRepeatStepper(label: "Occurrences", value: editing($occurrenceLimit), range: 1...365,
+                                spoken: occurrenceLimit == 1 ? "1 time" : "\(occurrenceLimit) times") {
                     Text("\(occurrenceLimit) times")
                 }
             }
@@ -240,6 +255,8 @@ private struct NXRepeatStepper<Value: View>: View {
     let label: String
     @Binding var value: Int
     let range: ClosedRange<Int>
+    /// The value with its unit, as VoiceOver reads it.
+    let spoken: String
     @ViewBuilder var text: () -> Value
 
     var body: some View {
@@ -256,7 +273,7 @@ private struct NXRepeatStepper<Value: View>: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        .accessibilityValue("\(value)")
+        .accessibilityValue(spoken)
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: change(by: 1)
@@ -267,14 +284,9 @@ private struct NXRepeatStepper<Value: View>: View {
     }
 
     private func step(_ icon: String, by amount: Int) -> some View {
-        Button { change(by: amount) } label: {
-            Image(systemName: icon).font(.system(size: 11, weight: .medium)).frame(width: 15, height: 15)
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
-                                        padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                        foreground: NX.ink(0.6)))
-        .disabled(!range.contains(value + amount))
-        .opacity(range.contains(value + amount) ? 1 : 0.45)
+        NXStepButton(icon: icon) { change(by: amount) }
+            .disabled(!range.contains(value + amount))
+            .opacity(range.contains(value + amount) ? 1 : 0.45)
     }
 
     private func change(by amount: Int) {

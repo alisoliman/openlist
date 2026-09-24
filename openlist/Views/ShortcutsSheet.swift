@@ -38,7 +38,8 @@ struct ShortcutsSheet: View {
         ]),
         Group(title: "Rows", shortcuts: [
             Shortcut(keys: "J K  ↑ ↓", action: "Move focus"),
-            Shortcut(keys: "⇧J ⇧K", action: "Extend the selection"),
+            Shortcut(keys: "⇧J ⇧K  ⇧↑ ⇧↓", action: "Extend the selection"),
+            Shortcut(keys: "⌘ click  ⇧ click", action: "Add or remove a row from the selection"),
             Shortcut(keys: "↩", action: "Open details"),
             Shortcut(keys: "E", action: "Complete or reopen"),
             Shortcut(keys: "T  M", action: "Due today, tomorrow"),
@@ -158,9 +159,8 @@ struct ShortcutsSheet: View {
                                         .foregroundStyle(NX.ink(0.66))
                                     Spacer(minLength: 8)
                                     // The design's key hints: monospaced, on a faint key cap.
-                                    Text(shortcut.keys)
-                                        .font(NX.mono(10.5))
-                                        .foregroundStyle(NX.ink(0.6))
+                                    NXKey(shortcut.keys)
+                                        .foregroundStyle(NX.ink)
                                         .padding(.horizontal, 5)
                                         .padding(.vertical, 2)
                                         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))

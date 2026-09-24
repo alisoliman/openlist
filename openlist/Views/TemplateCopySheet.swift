@@ -43,26 +43,32 @@ struct TemplateCopySheet: View {
             .font(.system(size: 12.5))
             .lineSpacing(2)
             if sources.contains(where: { $0.recurrence != nil }) {
+                let hint = "Repeats start with zero completions and no end date. Choose a new due date after copying."
                 // A settings row: the design's 500 13px label and 11.5px hint beside its switch.
+                // The switch speaks for the row. Its words toggle it too, from beside
+                // the switch rather than over it, so one click never toggles twice.
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Keep repeating rules")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(NX.ink)
-                        Text("Repeats start with zero completions and no end date. Choose a new due date after copying.")
+                        Text(hint)
                             .font(.system(size: 11.5))
                             .foregroundStyle(NX.ink(0.48))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                    .padding(.leading, 14)
+                    .contentShape(Rectangle())
+                    .onTapGesture { keepsRecurrence.toggle() }
+                    .accessibilityHidden(true)
                     NXToggle(isOn: keepsRecurrence, label: "Keep repeating rules") { keepsRecurrence.toggle() }
+                        .accessibilityHint(hint)
                         .accessibilityIdentifier("template-keep-recurrence")
+                        .padding(.trailing, 14)
                 }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 14)
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
-                .contentShape(Rectangle())
-                .onTapGesture { keepsRecurrence.toggle() }
             }
             if let error {
                 Text(error)

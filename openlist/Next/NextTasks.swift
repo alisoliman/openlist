@@ -1049,17 +1049,22 @@ private struct NXTasksSentenceBar: View {
 
     private func menuRow(label: String, list: TaskList? = nil, count: Int? = nil, isOn: Bool,
                          action: @escaping () -> Void) -> some View {
-        NXMenuRow(isOn: isOn, action: action) {
-            Group {
-                if let list { NXListGlyph(list: list, size: 12) } else { Color.clear }
-            }
-            .frame(width: 16)
-            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink).lineLimit(1)
-            Spacer(minLength: 6)
-            if let count {
-                Text("\(count)").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(NX.ink(0.36))
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Group {
+                    if let list { NXListGlyph(list: list, size: 12) } else { Color.clear }
+                }
+                .frame(width: 16)
+                .accessibilityHidden(true)
+                Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink).lineLimit(1)
+                Spacer(minLength: 6)
+                if let count {
+                    Text("\(count)").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(NX.ink(0.36))
+                }
             }
         }
+        .buttonStyle(NXPanelRowStyle(isOn: isOn))
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 
@@ -1085,32 +1090,5 @@ private struct NXSentenceToken: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
         .animation(.easeOut(duration: 0.14), value: hovering)
-    }
-}
-
-/// A row in the sentence menus and other small Next menus.
-struct NXMenuRow<Content: View>: View {
-    @Environment(\.nextStyle) private var style
-    let isOn: Bool
-    let action: () -> Void
-    @ViewBuilder var content: () -> Content
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 9) {
-            content()
-            Image(systemName: "checkmark")
-                .font(.system(size: 11.5, weight: .bold))
-                .foregroundStyle(style.accent)
-                .opacity(isOn ? 1 : 0)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 9)
-        .background(isOn ? style.accent.opacity(0.06) : hovering ? NX.ink(0.05) : .clear,
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
-        .animation(.easeOut(duration: 0.12), value: isOn)
     }
 }
