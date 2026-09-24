@@ -309,6 +309,8 @@ private struct NXTriageCard: View {
             .foregroundStyle(NX.ink(0.36))
             // Wraps, as the design's does, when the column is narrow.
             .fixedSize(horizontal: false, vertical: true)
+            // The design's 600 10.5/1.
+            .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
             .padding(.bottom, 8)
     }
 
@@ -372,16 +374,20 @@ private struct NXTriageDay: View {
 
     var body: some View {
         let date = NXFormat.day(offset: offset, now: now)
+        // Both labels take the design's line-height 1 box, so the tile is its
+        // 52.5pt: 8 + 9.5 + 4 + 16 + 4 + 4 + 7.
         VStack(spacing: 4) {
             Text(offset == 0 ? "Today" : offset == 1 ? "Tmrw" : date.formatted(.dateTime.weekday(.abbreviated)))
                 .font(.system(size: 9.5, weight: .semibold))
                 .kerning(0.38)
                 .textCase(.uppercase)
                 .foregroundStyle(NX.ink(0.42))
+                .padding(.vertical, (9.5 - NXStrikeText.glyphLineHeight(9.5)) / 2)
             Text("\(Calendar.current.component(.day, from: date))")
                 .font(.system(size: 16, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(NX.ink)
+                .padding(.vertical, (16 - NXStrikeText.glyphLineHeight(16)) / 2)
             HStack(spacing: 2) {
                 ForEach(0..<min(load, 4), id: \.self) { _ in
                     Circle().fill(load >= 3 ? NX.red : NX.ink(0.3)).frame(width: 4, height: 4)

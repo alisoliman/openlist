@@ -102,7 +102,9 @@ struct WorkPopover: View {
 
     private func close() { env.calendar.isWorkPanelPresented = false }
     private func chooseTask() { env.calendar.dismissWorkCompletion(); choosingTask = true }
-    private func openCalendar() { close(); env.navigator.go(to: .calendar) }
+    /// Open calendar and Review plan: today's range, where the moves the
+    /// panel reports and the work in hand are, whichever range was left.
+    private func openCalendar() { close(); env.workbench.showOnCalendar() }
 }
 
 /// A Work panel button: filled with the accent for the main action, grey otherwise.

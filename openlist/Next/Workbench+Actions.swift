@@ -1065,12 +1065,36 @@ extension Workbench {
         CalendarWeek.start(anchor: calendarAnchor, setAt: calendarAnchorSetAt, now: now, calendar: settings.calendar)
     }
 
+    /// Whether the Calendar's range at `now` has `day` in it.
+    func calendarShows(_ day: Date, now: Date = .now) -> Bool {
+        CalendarWeek.shows(day, count: calendarDays, from: calendarStart(now: now), calendar: settings.calendar)
+    }
+
     /// Moves the Calendar's range to one that shows `day`, unless it does already.
     func revealOnCalendar(_ day: Date, now: Date = .now) {
         let cal = settings.calendar
-        let shown = CalendarWeek.days(count: calendarDays, from: calendarStart(now: now), calendar: cal)
-        guard !shown.contains(where: { cal.isDate($0, inSameDayAs: day) }) else { return }
-        calendarAnchor = CalendarWeek.anchor(showing: day, count: calendarDays, now: now, calendar: cal)
+        let anchor = CalendarWeek.anchor(revealing: day, anchor: calendarAnchor, setAt: calendarAnchorSetAt,
+                                         count: calendarDays, now: now, calendar: cal)
+        // The same anchor again needs setting only when the one there, set on
+        // an earlier day, has lapsed.
+        guard anchor != calendarAnchor || anchor != nil && !cal.isDate(calendarAnchorSetAt, inSameDayAs: now) else { return }
+        calendarAnchor = anchor
+    }
+
+    /// Opens the Calendar on a range that shows `day`, whichever range it was
+    /// stepped or moved to, so a tray's Show or a Work panel link lands on what
+    /// it points at, as the design's Calendar, always around today, does.
+    func showOnCalendar(_ day: Date = .now) {
+        go(.calendar)
+        revealOnCalendar(day)
+    }
+
+    /// Opens the Calendar on the day of the occurrence's slot, as a calendar
+    /// nudge's click and the Work panel's View plan do: the one
+    /// `CalendarWeek.nudgedDay` names.
+    func showOnCalendar(slotOf taskID: UUID, occurrenceID: UUID) {
+        showOnCalendar(CalendarWeek.nudgedDay(of: taskID, occurrenceID: occurrenceID, in: calendar.visibleBlocks,
+                                              now: .now, calendar: settings.calendar))
     }
 
     /// The tasks the Calendar gives a block, which "Not planned yet" and
@@ -1124,8 +1148,9 @@ extension Workbench {
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
             workbench.calendar.replan()
         })
+        // Show finds the block there even once the range has been stepped away.
         snap(label, icon: icon, tone: .accent, ids: [id],
-             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
+             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar, day: start))
         // A block past the days the Calendar shows, next week or after a
         // deferral, moves its range there, so the block is never out of sight.
         revealOnCalendar(start)
@@ -1344,8 +1369,14 @@ extension Workbench {
     }
 
     private func showPauseTray(_ text: String) {
-        showTray(text, icon: "calendar.badge.exclamationmark", tone: .amber,
-                 destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
+        showTray(text, icon: "calendar.badge.exclamationmark", tone: .amber, destination: workTrayDestination)
+    }
+
+    /// The Show of the trays about the running or paused work, which is
+    /// today's: none on the Calendar, as the design's, while its range shows
+    /// today, which the design's always does.
+    private var workTrayDestination: TrayDestination? {
+        navigator.route == .calendar && calendarShows(.now) ? nil : TrayDestination(label: "Show", route: .calendar)
     }
 
     /// Reports work that replaced other running work. Undo switches back, and
@@ -1405,7 +1436,7 @@ extension Workbench {
             entry.applies = { $0.calendar.canUndoExtension(grant) }
         })
         snap(label, icon: "calendar.badge.plus", tone: .amber, ids: [grant.taskID] + grant.movedTaskIDs,
-             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar), owner: entry)
+             destination: workTrayDestination, owner: entry)
         workUndos.append(entry)
     }
 
@@ -1432,8 +1463,7 @@ extension Workbench {
     private func announceConflict(_ conflict: CalendarWorkConflict) {
         guard let task = store.block(id: conflict.taskID) else { return }
         showTray("\(NXFormat.quoted(task.displayTitle)) is running into \(conflictLabel(conflict, inSentence: true))",
-                 icon: "calendar.badge.exclamationmark", tone: .red,
-                 destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
+                 icon: "calendar.badge.exclamationmark", tone: .red, destination: workTrayDestination)
     }
 
     /// What running work ran into and when, as the notch chip and the tray

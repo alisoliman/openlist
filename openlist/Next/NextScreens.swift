@@ -130,7 +130,8 @@ struct NextTodayScreen: View {
                     .foregroundStyle(NX.ink(0.56))
             }
             Spacer(minLength: 8)
-            Button("Look at tomorrow") { env.workbench.go(.calendar) }
+            // In Day view, or on the week's last day, the range moves to it.
+            Button("Look at tomorrow") { env.workbench.showOnCalendar(NXFormat.day(offset: 1)) }
                 .font(.system(size: 12, weight: .semibold))
                 .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, rest: NX.card, radius: 8,
                                                 padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),

@@ -16,6 +16,9 @@ enum TrayTone: Equatable {
 struct TrayDestination: Equatable {
     var label: String
     var route: AppRoute
+    /// On the Calendar, the day its range moves to show; nil shows today's,
+    /// as the design's Calendar always does.
+    var day: Date? = nil
 }
 
 /// The single feedback surface: one line, optional Undo, optional jump.
@@ -473,6 +476,19 @@ final class Workbench {
     func dismissTray() {
         trayTask?.cancel()
         withAnimation(style.ease(200)) { tray = nil }
+    }
+
+    /// The tray's jump: to its route, and on the Calendar to a range that
+    /// shows its day, whichever range the Calendar was stepped or moved to.
+    func follow(_ destination: TrayDestination) {
+        guard destination.route == .calendar else { go(destination.route); return }
+        showOnCalendar(destination.day ?? .now)
+    }
+
+    /// Whether the tray offers its jump: away from its route, and on the
+    /// Calendar while the range, stepped or moved away, doesn't show its day.
+    func offers(_ destination: TrayDestination) -> Bool {
+        destination.route != navigator.route || destination.route == .calendar && !calendarShows(destination.day ?? .now)
     }
 
     // MARK: Change log

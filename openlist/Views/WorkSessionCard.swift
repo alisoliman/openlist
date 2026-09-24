@@ -192,9 +192,11 @@ struct WorkSessionCard: View {
         if env.workbench.workTask?.id == task.id { env.workbench.finishWork() } else { env.workbench.complete([task.id]) }
     }
 
+    /// Task details for the running work; View plan opens the Calendar on
+    /// its slot's day, as the slot's nudge does.
     private func openContext() {
         env.calendar.isWorkPanelPresented = false
         if env.calendar.activeSession?.taskID == task.id { env.navigator.openTask(task.id) }
-        else { env.navigator.go(to: .calendar) }
+        else { env.workbench.showOnCalendar(slotOf: task.id, occurrenceID: task.occurrenceID) }
     }
 }
