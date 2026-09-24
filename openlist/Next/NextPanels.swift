@@ -8,10 +8,11 @@ import SwiftUI
 // MARK: - Buttons
 
 /// Buttons for popovers, sheets and notices. `primary` is the design's accent
-/// "Start working" button, `secondary` its grey "Review kept tasks" one and
-/// `destructive` Trash's red. `link` is a quiet action in the accent and
-/// `quiet` a grey one, like the inspector's close button. Unlike
-/// `NXHoverButtonStyle`, a disabled button dims.
+/// "Start working" button, `secondary` its grey "Review kept tasks" one, whose
+/// hover deepens only the fill, and `destructive` Trash's red. `link` is a
+/// quiet action in the accent and `quiet` a grey one that darkens on hover,
+/// like the Tasks query's clear ×. Unlike `NXHoverButtonStyle`, a disabled
+/// button dims.
 struct NXPanelButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, destructive, link, quiet }
     /// `regular` is the design's 8/12 button, `small` its 5/9 pill-sized one,
@@ -73,7 +74,7 @@ struct NXPanelButtonStyle: ButtonStyle {
         private func foreground(_ hot: Bool) -> Color {
             switch kind {
             case .primary: .white
-            case .secondary: hot ? NX.ink : NX.ink(0.7)
+            case .secondary: NX.ink(0.7)
             case .destructive: NX.redText
             case .link: style.accent
             case .quiet: hot ? NX.ink : NX.ink(0.55)
@@ -228,15 +229,14 @@ struct NXPanelField<Field: View>: View {
 
 // MARK: - Notices
 
-/// The banner the window's library, link and reveal notices share: a card
-/// with a hairline, a tinted symbol, 12.5pt text and quiet link buttons.
+/// The banner the window's notices share, from its failures and sync
+/// warnings to its link and reminder notices: an untitled card with a
+/// hairline, a tinted symbol, 12.5pt text and quiet link buttons.
 struct NXNoticeCard<Actions: View>: View {
-    enum Tone { case info, accent, warning, error }
+    enum Tone { case info, warning, error }
 
-    @Environment(\.nextStyle) private var style
     let icon: String
     var tone: Tone = .info
-    var title: String?
     let message: String
     /// Long messages stop here, with the whole text as the tooltip.
     var lineLimit: Int?
@@ -249,21 +249,13 @@ struct NXNoticeCard<Actions: View>: View {
                 .foregroundStyle(iconColor)
                 .frame(width: 16)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                if let title {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(NX.ink)
-                        .accessibilityAddTraits(.isHeader)
-                }
-                let text = Text(message)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(NX.ink(0.7))
-                    .lineLimit(lineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
-                if lineLimit != nil { text.help(message) } else { text }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            let text = Text(message)
+                .font(.system(size: 12.5))
+                .foregroundStyle(NX.ink(0.7))
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+            Group { if lineLimit != nil { text.help(message) } else { text } }
+                .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 2) { actions() }
                 .fixedSize()
         }
@@ -277,10 +269,28 @@ struct NXNoticeCard<Actions: View>: View {
     private var iconColor: Color {
         switch tone {
         case .info: NX.ink(0.45)
-        case .accent: style.accent
         case .warning: NX.amberText
         case .error: NX.redText
         }
+    }
+}
+
+/// Why an action inside a sheet failed, where the sheet stays open to try
+/// again: the notice cards' warning triangle beside red 12.5pt text, heard
+/// as one line. Use as template, Merge labels and Move planned work share it.
+struct NXSheetError: View {
+    let message: String
+
+    init(_ message: String) { self.message = message }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle").font(.system(size: 12, weight: .medium))
+            Text(message).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 12.5))
+        .foregroundStyle(NX.redText)
+        .accessibilityElement(children: .combine)
     }
 }
 

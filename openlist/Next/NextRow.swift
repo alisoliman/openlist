@@ -762,8 +762,13 @@ struct NXTaskMenu: View {
         }
         Button("Due Today", systemImage: "calendar") { workbench.schedule(ids, offset: 0) }
         Button("Due Tomorrow", systemImage: "sun.horizon") { workbench.schedule(ids, offset: 1) }
+        // Both skip completed tasks, so they're off when every target is done,
+        // as the inspector's plan switch and Task ▸'s items are.
+        let plans = workbench.canPlan(tasks)
         Button("Plan for Today", systemImage: "calendar.badge.clock") { workbench.plan(ids) }
+            .disabled(!plans)
         Button("Find a Slot", systemImage: "sparkles") { ids.forEach(workbench.fit) }
+            .disabled(!plans)
         // Star toggles, so it reads every target as Task ▸ does: all starred unstars them.
         let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
         Button(unstars ? "Unstar" : "Star", systemImage: unstars ? "star.slash" : "star") { workbench.star(ids) }
@@ -776,7 +781,9 @@ struct NXTaskMenu: View {
         Divider()
         if ids.count == 1 {
             Button("Open Details", systemImage: "sidebar.right") { workbench.inspect(ids[0]) }
+            // Off where work can't start, a done task included, as Task ▸'s is.
             Button("Start Working", systemImage: "play") { workbench.startWork(ids[0]) }
+                .disabled(tasks.first.flatMap { env.calendar.validWorkTask(WorkTaskReference($0)) } == nil)
             CopyItemLinkButton(target: .task(ids[0]), iconed: true)
             Button("Copy Text", systemImage: "doc.on.clipboard") { workbench.copyText(ids[0]) }
             Button("Copy Content and Subtasks", systemImage: "list.bullet.clipboard") { workbench.copyContent(ids[0]) }

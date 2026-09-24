@@ -112,9 +112,12 @@ struct NXTray: View {
         let workbench = env.workbench
         let tint = Self.tint(message.tone)
         HStack(spacing: 10) {
+            // The design's 15pt icon line sets a plain message's height; only
+            // Undo or a destination's pill makes the tray taller.
             Image(systemName: message.icon)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
+                .frame(height: 15)
             NXWidthCap(460) {
                 Text(message.text)
                     .font(.system(size: 12, weight: .medium))
@@ -142,7 +145,6 @@ struct NXTray: View {
         .padding(.vertical, 8)
         .padding(.leading, 12)
         .padding(.trailing, 8)
-        .frame(minHeight: 40)
         .overlay(alignment: .bottomLeading) {
             NXTrayDrain(color: Self.drain(message.tone, accent: style.accent), dwell: style.dwell)
                 .id(message.id)

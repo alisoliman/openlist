@@ -309,10 +309,9 @@ extension AppEnvironment {
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
             workbench.showTray("Link copied", icon: "link")
         } catch {
-            let reason = error as? LocalLinkError == .identityUnavailable
-                ? LocalLinkError.identityUnavailable.localizedDescription
-                : "This task or list is unavailable. It may have been deleted or changed to a text block."
-            store.actionError = "The link was not copied. \(reason)"
+            // In the link notice's words: the library's identity, or the item gone.
+            let reason: LocalLinkError = error as? LocalLinkError == .identityUnavailable ? .identityUnavailable : .targetUnavailable
+            store.actionError = "The link was not copied. \(reason.localizedDescription)"
         }
     }
 

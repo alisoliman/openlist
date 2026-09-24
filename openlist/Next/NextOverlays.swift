@@ -352,7 +352,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                         .foregroundStyle(.clear)
                         .modifier(NXAutofocus(refocus: refocus))
                         .accessibilityLabel("New task")
-                        .accessibilityHint("Type the task. A date, #label, !priority or ~estimate in the text is read as you type, as in Pay deposit friday 6pm #travel ~15m.")
+                        .accessibilityHint("Type the task. \(readsDates ? "A date, #label" : "A #label"), !priority or ~estimate in the text is read as you type, as in \(example).")
                         .accessibilityIdentifier("capture.title")
                         .accessibilityActions {
                             if let add {
@@ -432,10 +432,17 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
     }
 
+    /// Whether Settings reads dates from typed text, which the ghost and the
+    /// field's hint promise only while it does.
+    private var readsDates: Bool { draft.settings.parsesNaturalLanguageDates }
+
+    /// The design's ghost, without its date while dates aren't read.
+    private var example: String { readsDates ? "Pay deposit friday 6pm #travel ~15m" : "Pay deposit #travel ~15m" }
+
     /// The typed text with its tokens tinted, plus the placeholder ghost.
     private func styled(_ parse: CaptureParse) -> some View {
         guard !parse.text.isEmpty else {
-            return Text("Pay deposit friday 6pm #travel ~15m").foregroundStyle(NX.ink(0.3)).textRenderer(NXTokenRenderer())
+            return Text(example).foregroundStyle(NX.ink(0.3)).textRenderer(NXTokenRenderer())
         }
         let text = parse.segments.reduce(Text(verbatim: "")) { text, segment in
             guard let kind = segment.kind else { return Text("\(text)\(Text(verbatim: segment.text).foregroundStyle(NX.ink))") }

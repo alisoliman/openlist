@@ -71,10 +71,7 @@ struct TemplateCopySheet: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
             }
             if let error {
-                Text(error)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(NX.redText)
-                    .fixedSize(horizontal: false, vertical: true)
+                NXSheetError(error)
                     .accessibilityIdentifier("template-copy-error")
             }
             HStack(spacing: 8) {

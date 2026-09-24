@@ -75,15 +75,7 @@ struct LabelMergeSheet: View {
                 .font(.system(size: 12.5))
                 .fixedSize(horizontal: false, vertical: true)
             }
-            if let error {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle").font(.system(size: 12, weight: .medium))
-                    Text(error).fixedSize(horizontal: false, vertical: true)
-                }
-                .font(.system(size: 12.5))
-                .foregroundStyle(NX.redText)
-                .accessibilityElement(children: .combine)
-            }
+            if let error { NXSheetError(error) }
             HStack(spacing: 8) {
                 Spacer()
                 Button("Cancel") { dismiss() }

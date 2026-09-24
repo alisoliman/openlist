@@ -253,6 +253,10 @@ extension Workbench {
         task.selectedForDay.map { Calendar.current.startOfDay(for: $0) <= Calendar.current.startOfDay(for: .now) } ?? false
     }
 
+    /// Whether Plan for Today and Find a Slot reach any of `tasks`: both skip
+    /// completed tasks, so the row menu and Task ▸ turn them off for those alone.
+    func canPlan(_ tasks: [Block]) -> Bool { tasks.contains { !$0.isCompleted } }
+
     func plan(_ ids: [UUID]) {
         let tasks = tasks(ids).filter { !$0.isCompleted }
         guard !tasks.isEmpty else { return }

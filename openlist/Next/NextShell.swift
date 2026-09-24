@@ -80,6 +80,8 @@ struct NextShell: View {
 
     /// A narrow window gives the inspector the sidebar's room while it's open,
     /// and gets the sidebar back once the inspector closes or there's room again.
+    /// Under 980pt the page beside both would keep under 384pt, where the
+    /// design's overlay never meets a window that small; a native extra.
     /// View ▸ Hide Sidebar is separate, so this never shows a sidebar the user hid.
     private func adaptSidebar() {
         let workbench = env.workbench

@@ -15,6 +15,8 @@ struct ShortcutsSheet: View {
         var id: String { keys + action }
         var keys: String
         var action: String
+        /// Read only while Settings reads dates from typed text.
+        var readsDates = false
     }
 
     private struct Group: Identifiable {
@@ -69,8 +71,8 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⇥ ⇧⇥", action: "Change destination"),
             Shortcut(keys: "Esc", action: "Cancel capture"),
             Shortcut(keys: "⇧⌥Space", action: "Quick add from anywhere"),
-            Shortcut(keys: "friday 6pm", action: "Due date and time"),
-            Shortcut(keys: "every monday", action: "Repeat"),
+            Shortcut(keys: "friday 6pm", action: "Due date and time", readsDates: true),
+            Shortcut(keys: "every monday", action: "Repeat", readsDates: true),
             Shortcut(keys: "#label", action: "Attach a label"),
             Shortcut(keys: "!high", action: "Priority"),
             Shortcut(keys: "~15m", action: "Estimate"),
@@ -165,7 +167,7 @@ struct ShortcutsSheet: View {
                                 .padding(.bottom, 6)
                                 .accessibilityAddTraits(.isHeader)
 
-                            ForEach(group.shortcuts) { shortcut in
+                            ForEach(group.shortcuts.filter { !$0.readsDates || env.settings.parsesNaturalLanguageDates }) { shortcut in
                                 HStack(spacing: 8) {
                                     Text(shortcut.action)
                                         .font(.system(size: 12.5))

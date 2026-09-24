@@ -295,6 +295,8 @@ final class Workbench {
     @ObservationIgnored private var flashPending: [String: Set<UUID>] = [:]
     @ObservationIgnored private var trayTask: Task<Void, Never>?
     @ObservationIgnored private var undoObservers: [NSObjectProtocol] = []
+    /// The tray up as the latest Redo began, so its steps can tell one they raised.
+    @ObservationIgnored private var trayBeforeRedo: UUID?
     /// The route the last navigation reset ran for.
     @ObservationIgnored private var shownRoute: AppRoute?
     /// The route `visibleIDs` was published on.
@@ -708,6 +710,12 @@ final class Workbench {
         }
         insert(mark.entries)
         noteLogWrite(mark)
+        // Redo, a native extra, says what it put back as Undo says what it
+        // took, with Undo to take it back again. A tray the step raised
+        // itself, like work that can no longer switch, stays instead.
+        if tray?.id == trayBeforeRedo {
+            showTray("Redid — \(mark.label)", icon: "arrow.uturn.forward", tone: .neutral, undoable: true)
+        }
         undoRevision += 1
     }
 
@@ -793,6 +801,10 @@ final class Workbench {
                 MainActor.assumeIsolated { self?.undoRevision += 1 }
             })
         }
+        // On the posting thread, before the Redo's steps run.
+        undoObservers.append(center.addObserver(forName: .NSUndoManagerWillRedoChange, object: undoManager, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trayBeforeRedo = self?.tray?.id }
+        })
     }
 
     // MARK: Flashes

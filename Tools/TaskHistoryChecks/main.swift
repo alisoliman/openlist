@@ -195,6 +195,8 @@ check(["Completed", "Completion restored", "Reopened", "Next occurrence"].allSat
           && WorkSession.resumableStopText("Completion undone") == "Paused when the completion was undone"
           && WorkSession.resumableStopText("Mac slept") == "Paused while the Mac was asleep",
       "The Work panel's paused card, beside Resume working, never says the work ended")
+check(WorkSession.stopText("Stopped working") == "Stopped",
+      "Work history words a session ended by Stop as its tray does, not as paused")
 
 // Debounced fallback persists even without Return; it never inserts a row per key.
 let beforeDebounce = try history(task).count

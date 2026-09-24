@@ -20,6 +20,7 @@ struct AppCommands: Commands {
         let tasks = targets.count == 1 ? (single.map { [$0] } ?? []) : fetchTasks(targets)
         let reopens = !tasks.isEmpty && tasks.allSatisfy(env.workbench.isDoneOrClosing)
         let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
+        let plans = env.workbench.canPlan(tasks)
 
         CommandMenu("Work") {
             // With the window closed, its toolbar shows the panel once it's up.
@@ -47,9 +48,11 @@ struct AppCommands: Commands {
         }
         // Openlist ▸ Settings… opens the Settings page in the main window;
         // there is no Settings window.
-        // Settings… and Search stand down over an open capture, as its keys
-        // do, rather than close it and drop the draft: off while the window
-        // is key, and from elsewhere they only bring the window forward.
+        // What acts on the window stands down over an open capture, as the
+        // design's keys do, rather than close it and drop the draft or change
+        // the page under it: Settings…, New List and New Section, Export,
+        // Search and the View items are off while the window is key, and from
+        // elsewhere they only bring the window and its draft forward.
         let keepsCapture = env.isMainWindowKey && env.workbench.captureOpen
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { showSettings() }
@@ -61,16 +64,22 @@ struct AppCommands: Commands {
             Button("New Task…") { inMainWindow { env.presentTaskCapture() } }
                 .keyboardShortcut("n", modifiers: .command)
 
-            Button("New List") { inMainWindow(newList) }
+            Button("New List") { besideCapture(newList) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(keepsCapture)
 
-            Button("New Section") { inMainWindow { env.workbench.createSection() } }
+            Button("New Section") { besideCapture { env.workbench.createSection() } }
                 .keyboardShortcut("n", modifiers: [.command, .option])
+                .disabled(keepsCapture)
 
             Divider()
 
+            // Held by another app, ⇧⌥Space opens that app's feature even over
+            // Openlist, so the menu doesn't promise it, as the menu bar's key
+            // cap doesn't. Off, it still opens Quick Add from here.
             Button("Quick Add…") { QuickCapturePanel.shared.show() }
-                .keyboardShortcut(.space, modifiers: [.shift, .option])
+                .keyboardShortcut(QuickCaptureHotKey.shared.failure == .taken
+                    ? nil : KeyboardShortcut(.space, modifiers: [.shift, .option]))
         }
 
         // The list on show, only while the main window is key, as Task and
@@ -80,13 +89,13 @@ struct AppCommands: Commands {
             Divider()
             Button("Export List as Markdown…") { exportCurrentList() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(!env.isMainWindowKey || env.navigator.route.listID == nil)
+                .disabled(!env.isMainWindowKey || keepsCapture || env.navigator.route.listID == nil)
         }
 
         // Edit ▸ find.
         CommandGroup(after: .textEditing) {
             Divider()
-            Button("Search") { inMainWindow { if !env.workbench.captureOpen { env.navigator.isSearchOpen = true } } }
+            Button("Search") { besideCapture { env.navigator.isSearchOpen = true } }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(keepsCapture)
 
@@ -169,10 +178,11 @@ struct AppCommands: Commands {
 
             Divider()
 
+            // Both skip completed tasks, so they're off when every target is done.
             Button("Plan for Today") { act { env.workbench.plan($0) } }
-                .disabled(targets.isEmpty)
+                .disabled(!plans)
             Button("Find a Slot") { act { $0.forEach(env.workbench.fit) } }
-                .disabled(targets.isEmpty)
+                .disabled(!plans)
             Button("Start Working") { act { env.workbench.startWork($0[0]) } }
                 .disabled(workTask(single) == nil)
             // As the row menu's, for the inspected task too, whose row may be
@@ -212,40 +222,48 @@ struct AppCommands: Commands {
 
         // View ▸ navigation, in sidebar order.
         CommandGroup(before: .sidebar) {
-            Button("Inbox") { inMainWindow { env.workbench.go(.inbox) } }
+            Button("Inbox") { besideCapture { env.workbench.go(.inbox) } }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("Today") { inMainWindow { env.workbench.go(.today) } }
+                .disabled(keepsCapture)
+            Button("Today") { besideCapture { env.workbench.go(.today) } }
                 .keyboardShortcut("2", modifiers: .command)
-            Button("Calendar") { inMainWindow { env.workbench.go(.calendar) } }
+                .disabled(keepsCapture)
+            Button("Calendar") { besideCapture { env.workbench.go(.calendar) } }
                 .keyboardShortcut("3", modifiers: .command)
-            Button("Tasks") { inMainWindow { env.workbench.go(.tasks) } }
+                .disabled(keepsCapture)
+            Button("Tasks") { besideCapture { env.workbench.go(.tasks) } }
                 .keyboardShortcut("4", modifiers: .command)
-            Button("Lists") { inMainWindow { env.workbench.go(.lists) } }
+                .disabled(keepsCapture)
+            Button("Lists") { besideCapture { env.workbench.go(.lists) } }
                 .keyboardShortcut("5", modifiers: .command)
-            Button("Activity") { inMainWindow { env.workbench.go(.activity) } }
+                .disabled(keepsCapture)
+            Button("Activity") { besideCapture { env.workbench.go(.activity) } }
                 .keyboardShortcut("6", modifiers: .command)
-            Button("Trash") { inMainWindow { env.workbench.go(.trash) } }
+                .disabled(keepsCapture)
+            Button("Trash") { besideCapture { env.workbench.go(.trash) } }
+                .disabled(keepsCapture)
 
             Divider()
 
-            Button("Back") { inMainWindow { env.navigator.goBack() } }
+            Button("Back") { besideCapture { env.navigator.goBack() } }
                 .keyboardShortcut("[", modifiers: .command)
-                .disabled(!env.navigator.canGoBack)
-            Button("Forward") { inMainWindow { env.navigator.goForward() } }
+                .disabled(keepsCapture || !env.navigator.canGoBack)
+            Button("Forward") { besideCapture { env.navigator.goForward() } }
                 .keyboardShortcut("]", modifiers: .command)
-                .disabled(!env.navigator.canGoForward)
+                .disabled(keepsCapture || !env.navigator.canGoForward)
 
             Divider()
 
-            Button(env.workbench.showsSidebar ? "Hide Sidebar" : "Show Sidebar") { inMainWindow { env.workbench.toggleSidebar() } }
+            Button(env.workbench.showsSidebar ? "Hide Sidebar" : "Show Sidebar") { besideCapture { env.workbench.toggleSidebar() } }
                 .keyboardShortcut("s", modifiers: [.control, .command])
+                .disabled(keepsCapture)
 
             Divider()
 
             Button("Expand All") { env.send(.expandAll) }
-                .disabled(!hasDocumentContext)
+                .disabled(!hasDocumentContext || keepsCapture)
             Button("Collapse All") { env.send(.collapseAll) }
-                .disabled(!hasDocumentContext)
+                .disabled(!hasDocumentContext || keepsCapture)
 
             Divider()
         }
@@ -327,10 +345,13 @@ struct AppCommands: Commands {
     /// elsewhere, over a capture left open there, it only brings the window
     /// and its draft forward, as New Task… does.
     private func showSettings() {
-        inMainWindow {
-            guard !env.workbench.captureOpen else { return }
-            env.workbench.go(.settings)
-        }
+        besideCapture { env.workbench.go(.settings) }
+    }
+
+    /// As `inMainWindow`, but over a capture open there it only brings the
+    /// window and its draft forward: what `body` does would act under the card.
+    private func besideCapture(_ body: () -> Void) {
+        inMainWindow { if !env.workbench.captureOpen { body() } }
     }
 
     /// Runs `body` in the main window, opening it again if it was closed, and

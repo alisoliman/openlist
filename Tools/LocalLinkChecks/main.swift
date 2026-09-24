@@ -294,4 +294,7 @@ catch { check(error as? LocalLinkError == .targetUnavailable, "Copying a stale m
 let noIdentity = LocalLinkNavigation(libraryID: nil, navigator: Navigator())
 noIdentity.storeReady(resolve: resolve); noIdentity.windowReady(true); noIdentity.receive(taskURL)
 check(noIdentity.error == .identityUnavailable, "Missing store identity fails closed")
+let goneText = LocalLinkError.targetUnavailable.localizedDescription
+check(goneText.contains("turned into a heading, bullet or text") && !goneText.contains("block") && !goneText.contains("restores"),
+      "A dead link's notice names the line kinds a task can be turned into, in the design's words")
 print("Passed \(checks) local link parsing, library identity, queued navigation and exact reveal checks")
