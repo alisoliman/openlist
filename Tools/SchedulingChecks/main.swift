@@ -364,37 +364,42 @@ check(CalendarWeek.anchor(showing: date("2026-09-26T18:00:00+02:00"), count: 7, 
         && CalendarWeek.anchor(showing: date("2026-09-26T09:00:00+02:00"), count: 7, now: wednesday, calendar: sundayWeek) == nil,
       "A block in the week around today leaves the range following today")
 
-// A range stepped or planned to on an earlier day follows today again once today reaches it, or has passed it.
+// A range stepped or planned to holds only the day it was set; from the next day the Calendar shows the range around today again.
 @MainActor
-func rangeStart(_ anchor: String?, setAt: String, count: Int, now: String) -> Int {
-    calendar.component(.day, from: CalendarWeek.start(anchor: anchor.map(date), setAt: date(setAt), count: count,
-                                                     now: date(now), calendar: mondayWeek))
+func rangeStart(_ anchor: String?, setAt: String, now: String) -> Int {
+    calendar.component(.day, from: CalendarWeek.start(anchor: anchor.map(date), setAt: date(setAt), now: date(now), calendar: mondayWeek))
 }
-check(rangeStart(nil, setAt: "2026-09-21T09:00:00+02:00", count: 1, now: "2026-09-23T10:00:00+02:00") == 23, "With no anchor the range is today's")
-check(rangeStart("2026-09-22T00:00:00+02:00", setAt: "2026-09-23T09:00:00+02:00", count: 1, now: "2026-09-23T10:00:00+02:00") == 22,
-      "A day stepped back to today stays shown")
-check(rangeStart("2026-09-24T00:00:00+02:00", setAt: "2026-09-23T22:00:00+02:00", count: 1, now: "2026-09-24T00:01:00+02:00") == 24
-        && rangeStart("2026-09-24T00:00:00+02:00", setAt: "2026-09-23T22:00:00+02:00", count: 1, now: "2026-09-25T09:00:00+02:00") == 25,
+check(rangeStart(nil, setAt: "2026-09-21T09:00:00+02:00", now: "2026-09-23T10:00:00+02:00") == 23, "With no anchor the range is today's")
+check(rangeStart("2026-09-22T00:00:00+02:00", setAt: "2026-09-23T09:00:00+02:00", now: "2026-09-23T10:00:00+02:00") == 22
+        && rangeStart("2026-09-30T00:00:00+02:00", setAt: "2026-09-23T00:10:00+02:00", now: "2026-09-23T23:50:00+02:00") == 30,
+      "A range stepped or planned to holds for the rest of that day")
+check(rangeStart("2026-09-24T00:00:00+02:00", setAt: "2026-09-23T22:00:00+02:00", now: "2026-09-24T00:01:00+02:00") == 24
+        && rangeStart("2026-09-24T00:00:00+02:00", setAt: "2026-09-23T22:00:00+02:00", now: "2026-09-25T09:00:00+02:00") == 25,
       "Day view planned into tomorrow follows today from then on, never a day gone by")
-check(rangeStart("2026-09-26T00:00:00+02:00", setAt: "2026-09-23T09:00:00+02:00", count: 3, now: "2026-09-24T09:00:00+02:00") == 26,
-      "Three days still ahead stay shown overnight")
-check(rangeStart("2026-09-26T00:00:00+02:00", setAt: "2026-09-23T09:00:00+02:00", count: 3, now: "2026-09-27T09:00:00+02:00") == 27,
-      "Once today reaches three days stepped to, the range starts today again")
-check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday, count: 7,
+check(rangeStart("2026-09-23T00:00:00+02:00", setAt: "2026-09-21T09:00:00+02:00", now: "2026-09-22T09:00:00+02:00") == 22,
+      "A day planned ahead on Monday gives way to today on Tuesday, before it comes")
+check(rangeStart("2026-09-26T00:00:00+02:00", setAt: "2026-09-23T09:00:00+02:00", now: "2026-09-24T09:00:00+02:00") == 24,
+      "Three days stepped ahead give way to the three from today the next day")
+let lapsed = (counts: [1, 3, 7], anchor: date("2026-09-26T00:00:00+02:00"), setAt: date("2026-09-21T09:00:00+02:00"), now: date("2026-09-22T09:00:00+02:00"))
+check(lapsed.counts.allSatisfy { count in
+          CalendarWeek.days(count: count, from: CalendarWeek.start(anchor: lapsed.anchor, setAt: lapsed.setAt, now: lapsed.now, calendar: mondayWeek), calendar: mondayWeek)
+              .contains { calendar.isDate($0, inSameDayAs: lapsed.now) }
+      }, "A lapsed anchor stays lapsed in Day, 3 days and Week alike, each showing today")
+check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday,
+                                                                     now: date("2026-09-26T21:00:00+02:00"), calendar: mondayWeek), calendar: mondayWeek))
+        == [28, 29, 30, 1, 2, 3, 4], "Next week stepped to on Saturday stays shown that day")
+check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday,
                                                                      now: date("2026-09-27T09:00:00+02:00"), calendar: mondayWeek), calendar: mondayWeek))
-        == [28, 29, 30, 1, 2, 3, 4], "Next week stepped to on Saturday stays shown on Sunday")
-check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday, count: 7,
-                                                                     now: date("2026-10-06T09:00:00+02:00"), calendar: mondayWeek), calendar: mondayWeek))
-        == [5, 6, 7, 8, 9, 10, 11], "A week planned into, once it has gone by, gives way to the week around today")
+        == [21, 22, 23, 24, 25, 26, 27], "On Sunday it gives way to the week around today")
 
-// "Not planned yet" takes tasks due from a week back to the end of the week the Calendar shows, or four days out when that's later.
+// "Not planned yet" takes tasks due from a week back to the end of the week around today (the settings week, as Plan searches it), or four days out when that's later.
 @MainActor
 func dueSoon(_ due: String, now: String, week: Calendar = mondayWeek) -> Bool { CalendarWeek.isDueSoon(date(due), now: date(now), calendar: week) }
 check(dueSoon("2026-09-27T00:00:00+02:00", now: "2026-09-23T10:00:00+02:00") && !dueSoon("2026-09-28T00:00:00+02:00", now: "2026-09-23T10:00:00+02:00")
         && dueSoon("2026-09-16T00:00:00+02:00", now: "2026-09-23T10:00:00+02:00") && !dueSoon("2026-09-15T23:00:00+02:00", now: "2026-09-23T10:00:00+02:00"),
       "On the design's Wednesday, due from a week back to Sunday, +4, as the design's")
 check(dueSoon("2026-09-26T00:00:00+02:00", now: "2026-09-21T09:00:00+02:00") && dueSoon("2026-09-27T23:30:00+02:00", now: "2026-09-21T09:00:00+02:00"),
-      "On a Monday, Saturday and Sunday of the week shown are due soon too")
+      "On a Monday, Saturday and Sunday of this week are due soon too")
 check(dueSoon("2026-09-26T00:00:00+02:00", now: "2026-09-20T09:00:00+02:00", week: sundayWeek)
         && !dueSoon("2026-09-27T00:00:00+02:00", now: "2026-09-20T09:00:00+02:00", week: sundayWeek), "A Sunday week ends on its Saturday")
 check(dueSoon("2026-10-01T00:00:00+02:00", now: "2026-09-27T09:00:00+02:00") && !dueSoon("2026-10-02T00:00:00+02:00", now: "2026-09-27T09:00:00+02:00"),

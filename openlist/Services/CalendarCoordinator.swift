@@ -338,11 +338,21 @@ final class CalendarCoordinator {
         tick(now: now, checkClockGap: false, materialChange: true)
     }
 
-    func deferTask(task: Block, to day: Date) {
+    /// Defers the task, stopping its work if it runs, and takes that work off
+    /// the notch. Returns the work taken off, whose paused state is kept, so
+    /// `restoreResume` offers it again as it was.
+    @discardableResult
+    func deferTask(task: Block, to day: Date) -> WorkTaskReference? {
         if activeSession?.taskID == task.id { pause(reason: "Deferred") }
+        let resume = resumableTask.flatMap { $0.id == task.id ? WorkTaskReference($0) : nil }
         store.deferTask(task, to: day)
-        if resumeTaskID == task.id { resumeTaskID = nil }
+        if resumeTaskID == task.id {
+            resumeTaskID = nil
+            resumeOccurrenceID = nil
+            persistResume()
+        }
         replan()
+        return resume
     }
 
     func resume() {
@@ -921,11 +931,12 @@ final class CalendarCoordinator {
     }
 
     /// Offers Start for a slot the calendar draws while it runs, never for the
-    /// plan's flexible blocks, which have none.
+    /// plan's flexible blocks, which have none. None comes while there's work
+    /// in hand, running or paused, as the design's "Planned now" hides then.
     private func updateStartNudge(now: Date) {
-        guard activeSession == nil else { startNudge = nil; return }
+        guard activeSession == nil, resumableTask == nil else { startNudge = nil; return }
         let next = visibleBlocks.first { block in
-            block.placementID != nil && !block.isActive && !block.isCompleted && block.id != pausedBlockID &&
+            block.placementID != nil && !block.isActive && !block.isCompleted &&
                 block.start <= now && now < block.end &&
                 (quietUntil[block.occurrenceID.uuidString] ?? 0) <= now.timeIntervalSince1970 &&
                 store.block(id: block.taskID)?.occurrenceID == block.occurrenceID &&

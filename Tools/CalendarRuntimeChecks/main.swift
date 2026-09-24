@@ -587,6 +587,41 @@ func checkSchedulingNudges() throws {
         check(planner.undoExtension(grant, now: date(14, 11, 36)) && next.start == date(14, 11, 30), "Undo after Done puts the moved task back")
     }
     do {
+        // Work in hand, running or paused, holds back Start for another slot,
+        // as the design's "Planned now" hides then. Defer takes the work off
+        // the notch, keeping how it paused for Undo to offer it again.
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let okrs = add("Paused past its slot", to: fixtureStore, priority: 3)
+        let review = add("Planned while paused", to: fixtureStore, priority: 2)
+        fixtureStore.setPlacement(for: okrs, start: date(), end: date(14, 9, 30), isPinned: true)
+        fixtureStore.setPlacement(for: review, start: date(14, 9, 30), end: date(14, 10), isPinned: true)
+        planner.bootstrap(now: date(), monitorsEnabled: false)
+        func drawn(_ task: Block) -> PlannedBlock? { planner.visibleBlocks.first { $0.taskID == task.id } }
+        check(planner.start(task: okrs, now: date()), "paused-work nudge fixture starts")
+        planner.pause(now: date(14, 9, 20))
+        planner.tick(now: date(14, 9, 35), checkClockGap: false)
+        check(planner.resumableTask?.id == okrs.id && drawn(review)?.start == date(14, 9, 30) && planner.startNudge == nil,
+              "another task's slot running while work is paused offers no Start")
+        let resume = planner.deferTask(task: okrs, to: date(15))
+        check(resume?.taskID == okrs.id && resume?.occurrenceID == okrs.occurrenceID && planner.resumableTask == nil
+                && defaults.string(forKey: "work.resumeTaskID") == nil, "Defer takes paused work off the notch, and off it after a relaunch too")
+        planner.tick(now: date(14, 9, 36), checkClockGap: false)
+        check(planner.startNudge?.taskID == review.id, "with the paused work deferred, the running slot offers Start")
+        // Workbench's Undo: the deferral and slot back, then the work to resume.
+        okrs.deferredUntil = nil
+        okrs.selectedForDay = date()
+        fixtureStore.setPlacement(for: okrs, start: date(), end: date(14, 9, 30), isPinned: true)
+        planner.restoreResume(resume!)
+        planner.tick(now: date(14, 9, 37), checkClockGap: false)
+        check(planner.resumableTask?.id == okrs.id && planner.pausedBlockID == drawn(okrs)?.id && drawn(okrs)?.start == date()
+                && planner.startNudge == nil, "Undo offers the deferred work again, paused on its slot, and Start holds back again")
+        check(planner.start(task: okrs, now: date(14, 9, 40)), "the restored work resumes")
+        let running = planner.deferTask(task: okrs, to: date(15))
+        check(running == resume && planner.activeSession == nil && planner.resumableTask == nil && fixtureStore.workSessions().allSatisfy { $0.endedAt != nil },
+              "Defer stops running work and takes it off the notch, for Undo to offer paused")
+    }
+    do {
         // A task with no room left in its hours today stays where it is.
         let (fixtureStore, planner, lifetime) = try fixture()
         defer { withExtendedLifetime(lifetime) {} }

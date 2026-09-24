@@ -853,10 +853,10 @@ extension Workbench {
         }
     }
 
-    /// The day the Calendar builds its range from at `now`: the anchor while
-    /// it holds, else today.
+    /// The day the Calendar builds its range from at `now`: the anchor on the
+    /// day it was set, else today.
     func calendarStart(now: Date) -> Date {
-        CalendarWeek.start(anchor: calendarAnchor, setAt: calendarAnchorSetAt, count: calendarDays, now: now, calendar: settings.calendar)
+        CalendarWeek.start(anchor: calendarAnchor, setAt: calendarAnchorSetAt, now: now, calendar: settings.calendar)
     }
 
     /// Moves the Calendar's range to one that shows `day`, unless it does already.
@@ -929,20 +929,23 @@ extension Workbench {
 
     /// The inspector's Defer work: the task's remaining work waits for `day`
     /// and its slots come off the calendar, one step with the tray and Undo.
-    /// Undo puts the slots and the task's day back; work it paused stays paused.
+    /// Work on it, running or paused, stops and leaves the notch; Undo puts
+    /// the slots and the task's day back, and the work, paused, to resume.
     func deferWork(_ id: UUID, to day: Date) {
         guard let task = store.block(id: id), task.isTask, !task.isCompleted else { return }
         let occurrenceID = task.occurrenceID
         let fields = [TaskFields(task)]
         let previous = store.placements(taskID: id).filter { $0.occurrenceID == occurrenceID }
             .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
-        calendar.deferTask(task: task, to: day)
+        let resume = calendar.deferTask(task: task, to: day)
         guard let deferred = store.block(id: id), deferred.deferredUntil != nil else { return }
         let after = [TaskFields(deferred)]
         let label = "Deferred \(NXFormat.quoted(task.displayTitle)) until \(NXFormat.dueLabel(day))"
         registerUndo(label, undo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: previous)
             workbench.restore(fields, over: after)
+            // Offered again unless other work has taken the notch since.
+            if let resume { workbench.calendar.restoreResume(resume) }
             workbench.calendar.replan()
         }, redo: { workbench in
             guard let task = workbench.store.block(id: id), task.occurrenceID == occurrenceID else { return }

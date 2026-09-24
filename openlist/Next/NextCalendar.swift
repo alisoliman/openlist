@@ -14,8 +14,8 @@ struct NextCalendarScreen: View {
         let days = workbench.calendarDays
         NXPage(wide: true) {
             // The range comes from the timeline's date, so a screen left open
-            // overnight moves to the new day with its header, as does one
-            // stepped or planned to a day that has now come or gone.
+            // overnight moves to the new day with its header, from whatever
+            // range it was stepped or planned to the day before.
             TimelineView(.everyMinute) { context in
                 // Week is the settings week around today, as Plan searches it,
                 // or around the day stepped to or planned on.
@@ -29,10 +29,10 @@ struct NextCalendarScreen: View {
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     // Too narrow for both, the range control wraps under the
-                    // title, as the design's header row does.
+                    // title, as the design's header row does, its 12px gap apart.
                     ViewThatFits(in: .horizontal) {
                         header(dates) { controls }
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 12) {
                             header(dates) { EmptyView() }
                             controls
                         }
@@ -629,11 +629,11 @@ private struct NXCalendarBlock: View {
                     .lineLimit(height < 30 ? 1 : nil)
                     .truncationMode(.tail)
             }
-            // The title keeps its lines first; the time and state wrap into what's left.
-            .layoutPriority(1)
+            // The title keeps all its lines, as the design's, whose row never
+            // shrinks; the time and state wrap into what's left under it, and
+            // the block's edge cuts off what doesn't fit.
+            .fixedSize(horizontal: false, vertical: true)
             if height >= 34 {
-                // Wraps as the design's does, so a tall enough block shows
-                // its state in full under the time.
                 Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.ink(0.5))
@@ -642,7 +642,9 @@ private struct NXCalendarBlock: View {
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // No taller than its slot, so what overflows is cut at the bottom
+        // instead of the block growing past its hours.
+        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
         .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(ring, lineWidth: 1))
         .overlay {

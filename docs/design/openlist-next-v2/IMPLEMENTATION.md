@@ -115,18 +115,20 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   office) aren't drawn as meetings but still keep Plan and the planner away, so the day's
   header names them. Breaks are set in Settings, where the design has only its lunch: one
   that takes in any of 12:00–13:00 is named Lunch, as the design's; any other reads as a
-  break. A block's time and state wrap as the design's; too short for all of it, the title
-  keeps its lines and the state ends in an ellipsis rather than the title being clipped.
+  break. A block's title keeps its lines and its time and state wrap under it, cut off at
+  the block's edge, as the design's; the last whole line of a cut state ends in an ellipsis.
   The Work panel's "N tasks rescheduled" and Start notifications come only from blocks the
-  calendar draws, not from the planner's own sessions.
+  calendar draws, not from the planner's own sessions, and no Start comes while work is
+  running or paused, as the design's "Planned now" hides then.
 - Calendar week: the design's week always has today on a Wednesday. Natively, Plan keeps to
   the week around today while it has hours long enough for the task (the design's "No free
   slot this week"), then goes on into the next week, as a deferral past it gets its own. A
   block landing past the days shown moves the Calendar's range there, and the header's
-  ‹ Today › steps the range a day, three days or a week at a time; a range moved to on an
-  earlier day follows today again once today reaches it or has passed it. "Not planned yet"
-  takes tasks due from a week back to the end of the week shown, or four days out when that
-  is later: the design's −7…+4, whose +4 is its Sunday.
+  ‹ Today › steps the range a day, three days or a week at a time. A range stepped or moved
+  to holds only that day: from the next, the Calendar shows the range around today, as the
+  design's always does. "Not planned yet" takes tasks due from a week back to the end of
+  the week around today (the settings week, as Plan searches it), or four days out when
+  that is later: the design's −7…+4, whose +4 is its Sunday.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's

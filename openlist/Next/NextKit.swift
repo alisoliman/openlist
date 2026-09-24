@@ -267,7 +267,9 @@ struct NXScreenHeader<Trailing: View>: View {
                 }
             }
             .layoutPriority(1)
-            Spacer(minLength: 12)
+            // The design's flex spacer: the row's gaps alone keep the title
+            // and what trails it apart.
+            Spacer(minLength: 0)
             if let progress, progress.total > 0 {
                 NXProgress(done: progress.done, total: progress.total)
             }

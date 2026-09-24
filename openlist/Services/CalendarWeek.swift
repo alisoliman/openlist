@@ -38,21 +38,18 @@ enum CalendarWeek {
     }
 
     /// The day the Calendar builds its range from: `anchor`, the day stepped
-    /// to or planned on, else today. An anchor set on an earlier day lapses
-    /// once today reaches the range it shows, or has passed it, so the
-    /// Calendar follows today again rather than staying on a day gone by.
-    static func start(anchor: Date?, setAt: Date, count: Int, now: Date, calendar: Calendar) -> Date {
-        guard let anchor else { return now }
-        let today = calendar.startOfDay(for: now)
-        guard calendar.startOfDay(for: setAt) < today,
-              let first = days(count: count, from: anchor, calendar: calendar).first, first <= today else { return anchor }
-        return now
+    /// to or planned on, else today. An anchor lasts only the day it was set:
+    /// from the next, the Calendar shows the range around today again, as the
+    /// design's always does, whichever range it was on and however it's viewed.
+    static func start(anchor: Date?, setAt: Date, now: Date, calendar: Calendar) -> Date {
+        guard let anchor, calendar.isDate(setAt, inSameDayAs: now) else { return now }
+        return anchor
     }
 
     /// Whether a task due at `due` is due soon for "Not planned yet": from a
-    /// week back to the end of the week around today, which the Week view
-    /// shows and Plan searches, or four days out when that's later. In the
-    /// design, whose today is a Wednesday, both end on its Sunday.
+    /// week back to the end of the week around today (the settings week, as
+    /// Plan searches it), or four days out when that's later. In the design,
+    /// whose today is a Wednesday, both end on its Sunday.
     static func isDueSoon(_ due: Date, now: Date, calendar: Calendar) -> Bool {
         let today = calendar.startOfDay(for: now)
         guard let from = calendar.date(byAdding: .day, value: -7, to: today),
