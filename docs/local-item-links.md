@@ -12,10 +12,10 @@ content, grant access, contact a server, or locate a library on another Mac.
 A link lands as a search result does: a task opens on its list, or the Inbox,
 with its row focused and its inspector open, and a list opens at its top. An
 archived target opens on its list page, which says it is archived, and stays
-archived. A completed or nested task uses the same temporary exact-content
-reveal as search, without rewriting completion visibility or collapsed
-ancestors; leaving the page, closing the task or Esc ends it. Missing,
-deleted, changed-to-text, and wrong-library targets explain why they cannot
+archived. Nothing is unfolded: a done task in a folded Completed group, or a
+subtask under a folded task, stays hidden in the document while its inspector
+opens, and stored completion visibility and collapsed ancestors never change.
+Missing, deleted, changed-to-text, and wrong-library targets explain why they cannot
 open. Tasks and lists in Trash stay unavailable until explicitly restored from
 Trash or through deletion Undo.
 The same saved link then works again. Following a link never restores content,

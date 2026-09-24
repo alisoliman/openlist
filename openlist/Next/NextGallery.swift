@@ -204,7 +204,6 @@ private struct NXListCard: View {
 
 struct NextTrashScreen: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     @Query(filter: #Predicate<Block> { $0.trashID != nil }) private var blocks: [Block]
     @Query(filter: #Predicate<TaskList> { $0.trashID != nil }) private var lists: [TaskList]
@@ -225,9 +224,13 @@ struct NextTrashScreen: View {
             VStack(alignment: .leading, spacing: 0) {
                 if !rows.isEmpty {
                     HStack(spacing: 10) {
+                        // The design's 400 12.5/1.4, its extra leading between lines and, halved, around them.
+                        let leading = max(0, 12.5 * 1.4 - NXStrikeText.glyphLineHeight(12.5))
                         Text("Restoring puts a task back in its list, in its old position. Erasing can’t be undone — press and hold.")
                             .font(.system(size: 12.5))
+                            .lineSpacing(leading)
                             .foregroundStyle(NX.ink(0.5))
+                            .padding(.vertical, leading / 2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
                         NXHoldButton(title: "Hold to empty Trash", icon: "trash.slash",
@@ -255,7 +258,7 @@ struct NextTrashScreen: View {
         }
         .onAppear(perform: reload)
         .onChange(of: blocks.map(\.id) + lists.map(\.id)) {
-            withAnimation(style.standard(300)) { reload() }
+            withAnimation(NX.standard(300)) { reload() }
         }
     }
 
@@ -307,10 +310,15 @@ private struct NXTrashRow: View {
                 .frame(width: 18)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
+                // The design's 400 13.5/1.3 over a 500 11/1 line: each line box
+                // as CSS draws it, the extra leading halved around it.
+                let leading = max(0, 13.5 * 1.3 - NXStrikeText.glyphLineHeight(13.5))
                 Text(title)
                     .font(.system(size: 13.5))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.72))
                     .lineLimit(2)
+                    .padding(.vertical, leading / 2)
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     meta(now: context.date)
                         .font(.system(size: 11, weight: .medium))
@@ -319,6 +327,7 @@ private struct NXTrashRow: View {
                         // The line without its list's glyph, which reads as a symbol's name.
                         .accessibilityLabel(metaText(now: context.date))
                 }
+                .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // One element, as it reads; Restore and Hold to erase stay buttons of their own.
@@ -343,9 +352,10 @@ private struct NXTrashRow: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(hovering ? NX.ink(0.03) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .opacity(flying ? 0 : 1)
-        .offset(x: flying ? -56 : 0)
-        .animation(style.standard(300), value: flying)
+        // The design's fixed flight, whatever the Motion setting: the fade on
+        // CSS's ease, the slide on the standard curve.
+        .animation(NX.cssEase(300)) { $0.opacity(flying ? 0 : 1) }
+        .animation(NX.standard(300)) { $0.offset(x: flying ? -56 : 0) }
         .onHover { hovering = $0 }
     }
 

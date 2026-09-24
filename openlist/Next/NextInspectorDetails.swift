@@ -560,8 +560,8 @@ private struct NXInspectorHistoryPage: View {
     }
 
     private func row(_ event: ActivityEvent) -> some View {
-        let place = [event.listIcon, event.listTitle].filter { !$0.isEmpty }.joined(separator: " ")
         let when = event.timestamp.formatted(date: .abbreviated, time: .shortened)
+        let spoken = event.listTitle.isEmpty ? when : "\(when) · \(event.listTitle)"
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: event.kind.symbol).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
@@ -575,9 +575,11 @@ private struct NXInspectorHistoryPage: View {
                         .font(.system(size: 11))
                         .foregroundStyle(NX.ink(0.5))
                 }
-                Text(place.isEmpty ? when : "\(when) · \(place)")
+                place(event, when: when)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(NX.ink(0.36))
+                    // The line without its list's glyph, which reads as a symbol's name.
+                    .accessibilityLabel(spoken)
             }
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
@@ -585,5 +587,15 @@ private struct NXInspectorHistoryPage: View {
         }
         .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
+    }
+
+    /// When it happened and in which list, its glyph drawn as the Activity
+    /// day panel draws it: an SF Symbol from synced or older data as the
+    /// symbol, never its name.
+    private func place(_ event: ActivityEvent, when: String) -> Text {
+        let title = event.listTitle
+        guard !event.listIcon.isEmpty else { return Text(verbatim: title.isEmpty ? when : "\(when) · \(title)") }
+        let glyph = NXListGlyph.text(event.listIcon, size: 10.5)
+        return title.isEmpty ? Text("\(when) · \(glyph)") : Text("\(when) · \(glyph) \(title)")
     }
 }

@@ -293,7 +293,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Delete everything, Return to original library, Reset access token), are Next sheets too,
   where Return presses neither button. Delete everything also clears the window's undo stack
   and Changes' This session; the tray then says "Deleted everything for good", with no
-  Undo. Their buttons, and the inline hours editor's, are `NXPanelButtonStyle`. Format ▸ Add
+  Undo, and after Clear all activity history "Cleared all activity history". Their buttons, and the inline hours editor's, are `NXPanelButtonStyle`. Format ▸ Add
   Link… (⌘L) asks for its URL in a Next sheet too (`NXLinkSheet`; Return applies, Esc
   cancels), and Trash's hold-to-erase asks VoiceOver, which can't hold, in the confirmation
   sheet. Deviation: the only system alerts left are the window's shown when the library
@@ -334,7 +334,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   and its line with the caret would drop the tint. Such a reveal keeps folded and done lines
   on its path shown until the page is left, a revealed parent is folded, or Esc, with no
   details, selection or focus left to close, ends it in place; the document lasts the visit.
-  Only a target that can't open says so, in a notice. A hit reads as the design's two
+  Only a target that can't open says so, in a notice: one grey untitled card, for a reminder
+  as for an item link or widget row. A hit reads as the design's two
   lines, a task's whose note alone matched ending "· matched in note"; a heading or text
   line's also quotes the passage under its title when the line is long or its note
   matched, and a list's its description when only that matched.

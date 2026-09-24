@@ -99,7 +99,10 @@ enum MarkdownExporter {
 
     @MainActor
     private static func render(list: TaskList, store: Store, mediaPath: (String) -> String) -> String {
-        var output = "# \(InlineMarkdown.escape(list.icon)) \(InlineMarkdown.escape(list.displayTitle))\n\n"
+        // The glyph the app draws; an SF Symbol's name from synced or older
+        // data, which Markdown can't draw, is left out rather than written.
+        let glyph = ListIcon.isSymbolName(list.glyph) ? "" : InlineMarkdown.escape(list.glyph) + " "
+        var output = "# \(glyph)\(InlineMarkdown.escape(list.displayTitle))\n\n"
         if let filename = list.coverFilename {
             output += "![\(InlineMarkdown.escape(list.displayTitle + " cover"))](\(InlineMarkdown.destination(mediaPath(filename))))\n\n"
         }

@@ -411,6 +411,12 @@ let rolled = UUID()
 batching.withActivityBatch(rolled) { for task in [rolling, closesBeside] { batching.toggleCompletion(task) } }
 check(try completions(rolled).count == 4 && counted(rolled) == 2,
       "a repeat done with its open subtasks and another task counts two, the subtasks it reset left out")
+// Earlier words a repeat's completion as the log does, "rolls to" its next
+// date, which the completion's own event saves.
+let rolledChange = try completions(rolled).first { $0.blockID == rolling.id }?.change
+check(rolledChange?.advancesOccurrence == true && rolledChange?.after?.dueDate == rolling.dueDate
+          && rolledChange?.after?.dueDate.map { due in rolledChange?.completedDueDate.map { due > $0 } == true } == true,
+      "a repeat's completion saves the next date it rolled on to")
 // A list's restore saves where it went back to, as its tray says it.
 let placeParent = batching.createList(title: "Place parent")
 let placeChild = batching.createChildList(in: placeParent)!

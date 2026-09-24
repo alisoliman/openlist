@@ -82,7 +82,7 @@ Typing drives everything:
 | `[ ]` · `[]` · `-` · `*` · `#` · `##` | a task, a bullet, a heading or a subheading |
 | `>` | a text line |
 | `**bold**` · `*italic*` · `~~strike~~` · `` `code` `` | inline styling |
-| paste of several lines | one line each, nesting preserved |
+| paste of several lines | one line each; tasks and list items nest, two levels at most |
 
 A line keeps its text as typed; labels and dates are read in capture.
 
@@ -100,10 +100,11 @@ stars, and progress rollups from subtasks.
 Completing a repeating task rolls it forward to the next occurrence rather than
 marking it done.
 Completing a task, by click or with **E**, strikes its row and leaves it in
-place for the undo window (2–8 seconds, set in Settings → Motion & feedback)
-before it settles below its pending siblings; the tray reports each completion
-with Undo. The **Motion** setting in Settings → Appearance sets how lively rows
-move, and **Reduce motion** drops the bounces and slides. Each task carries its
+place for the undo window (2–8 seconds, set in Settings → Motion & feedback);
+then a top-level task moves to its Completed group, while a subtask stays struck
+where it is. The tray reports each completion with Undo. The **Motion** setting
+in Settings → Appearance sets how lively rows move, and **Reduce motion** drops
+the bounces and slides. Each task carries its
 subtasks and attached notes; reopening restores its stored manual position.
 
 In **Settings → Labels**, renaming into an existing name offers a merge review
@@ -642,9 +643,10 @@ existing relative offset while replacing the occurrence. Saved dates represent
 absolute instants and notification triggers include UTC so travel and DST do not
 reinterpret an already scheduled time. Saved title/list changes update request
 text. Unsaved changes never replace the prior OS request and are labeled separately.
-Notification clicks wait for bootstrap and the main window, then reveal the exact
-task through the same temporary expansion used by search, or explain that the
-subject is unavailable. Review fixtures disable actual notification operations and
+Notification clicks wait for bootstrap and the main window, then open the task as
+a search result does, on its list or the Inbox with its row focused, if it's drawn,
+and its inspector open, unfolding nothing; or they explain that the subject is
+unavailable. Review fixtures disable actual notification operations and
 say so; injected tests simulate acceptance and failures without changing permissions.
 
 For isolated native failure/retry checks, a bundle with `OpenlistReviewSession`
@@ -670,14 +672,15 @@ reminders. Only eligible future reminders resume after restoration.
 
 An independently deleted child stays a separate Trash item when its parent or
 list is later deleted. Restoring the parent restores only the content deleted
-with it. If the original parent or list is unavailable, Restore explicitly
-creates a pinned **Recovered items** list and says where the item came from as
-it restores it; that provenance is stored separately and never rewrites the
-original notes. Archived lists keep their archive state.
+with it. If the original parent or list is unavailable, Restore puts the item
+in a pinned **Recovered items** list (the one there is, or a new one) and says
+where it came from; that provenance is stored separately and never rewrites the
+original notes. Undo sends it back to Trash and removes a Recovered items list it
+made. Archived lists keep their archive state.
 
-**Hold to erase** and **Hold to empty Trash** require confirmation and remove only
-files with no remaining live or retained references. These actions cannot be
-undone. Empty lines the document takes away and undone captures use structural
+**Hold to erase** and **Hold to empty Trash** act after a press and hold
+(VoiceOver, which can't hold, asks in a sheet instead) and remove only files with
+no remaining live or retained references. These actions cannot be undone. Empty lines the document takes away and undone captures use structural
 cleanup and session Undo; they do not fill Trash. **Delete everything…** in Settings → Data
 permanently removes both active content and Trash. Library backups (format 5) include
 Trash and its media, list covers and list ownership; formats 1–4 can still be restored.

@@ -379,7 +379,7 @@ struct NXPlanningSettings: View {
         let external = env.calendar.externalCalendars
         let minimum = env.calendar.preferences.minimumSessionMinutes
         NXSettingsGroup(title: "Planning",
-                        footer: "A rolling four-week plan. Review affected tasks before extending work into their time. Connected calendars are read-only busy time; your events are never changed.") {
+                        footer: "A rolling four-week plan. Work that runs past its slot moves the tasks after it; Undo moves them back. Connected calendars are read-only busy time; your events are never changed.") {
             NXSettingMenu(label: "Minimum session", hint: "Tasks shorter than this can still use shorter slots",
                           value: "\(minimum) min",
                           // Every 5 minutes up to 2 hours.

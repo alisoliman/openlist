@@ -5,8 +5,9 @@ struct LocalLinkNotice: View {
 
     var body: some View {
         if let error = env.localLinks.error {
-            NXNoticeCard(icon: "exclamationmark.circle", tone: .warning, title: "Link unavailable",
-                         message: error.localizedDescription) {
+            // Drawn as a reminder's that can't open is, as the two land alike:
+            // grey and untitled, the message saying why.
+            NXNoticeCard(icon: "exclamationmark.circle", message: error.localizedDescription) {
                 Button("Dismiss") { env.localLinks.error = nil }
                     .buttonStyle(NXPanelButtonStyle(kind: .quiet))
             }

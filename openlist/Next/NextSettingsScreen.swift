@@ -276,10 +276,13 @@ struct NXSettingsGroup<Content: View>: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
             if let footer {
+                let leading = NXSettingType.hintLeading
                 Text(footer)
                     .font(.system(size: 11.5))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.48))
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, leading / 2)
                     .padding(.horizontal, 4)
                     .padding(.top, 8)
             }
@@ -318,6 +321,14 @@ extension EnvironmentValues {
     }
 }
 
+/// The design's settings type, a 500 13/1.25 label over a 400 11.5/1.35
+/// hint: the extra leading goes between lines and, halved, above the first
+/// and below the last, as CSS places it.
+private enum NXSettingType {
+    static let labelLeading = max(0, 13 * 1.25 - NXStrikeText.glyphLineHeight(13))
+    static let hintLeading = max(0, 11.5 * 1.35 - NXStrikeText.glyphLineHeight(11.5))
+}
+
 /// A label and its hint, with the row's control on the trailing edge.
 struct NXSettingRow<Accessory: View>: View {
     let label: String
@@ -331,10 +342,13 @@ struct NXSettingRow<Accessory: View>: View {
         NXSettingLine {
             NXSettingRowLayout {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
+                    Text(label).font(.system(size: 13, weight: .medium)).lineSpacing(NXSettingType.labelLeading).foregroundStyle(NX.ink)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.vertical, NXSettingType.labelLeading / 2)
                     if !hint.isEmpty {
-                        let text = Text(hint).font(.system(size: 11.5)).foregroundStyle(hintColor).fixedSize(horizontal: false, vertical: true)
+                        let text = Text(hint).font(.system(size: 11.5)).lineSpacing(NXSettingType.hintLeading).foregroundStyle(hintColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, NXSettingType.hintLeading / 2)
                         if selectable { text.textSelection(.enabled) } else { text }
                     }
                 }

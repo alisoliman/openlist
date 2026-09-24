@@ -6,8 +6,8 @@ elapsed time, **Pause** or **Resume**, **Done** and **Stop**. Clicking its title
 opens the **Work** panel, as does **Work → Show Work**. Suggestions never open the
 panel or begin recording by themselves.
 
-The Work panel shows the task's planned slot, estimate, recorded time,
-scheduling source and separate deadline. With nothing planned for now it offers
+The Work panel shows the task's planned slot, estimate, recorded time and
+separate deadline. With nothing planned for now it offers
 **Choose a task** and **Open calendar**.
 
 ## Behavior
