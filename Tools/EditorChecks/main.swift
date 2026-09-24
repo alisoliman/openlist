@@ -231,6 +231,29 @@ RichTextCodec.toggleStrikethrough(in: userStruck, range: NSRange(location: 0, le
 check(RichTextCodec.restylingCompletion(of: RichTextCodec.restylingCompletion(of: userStruck, kind: .task, struck: true), kind: .task, struck: false).isEqual(to: userStruck),
     "Unstriking a task keeps the user's own strikethrough")
 
+// The list document converts a line only on the design's prefixes.
+func typedPrefix(_ text: String, _ prefixes: MarkdownInputRules.BlockPrefixes) -> BlockKind? {
+    MarkdownInputRules.matchBlockPrefix(in: NSTextStorage(string: text), caret: (text as NSString).length,
+                                        wasInsertion: true, kind: .task, prefixes: prefixes)?.kind
+}
+check(typedPrefix("## ", .design) == .heading2 && typedPrefix("# ", .design) == .heading1 && typedPrefix("- ", .design) == .bullet
+    && typedPrefix("* ", .design) == .bullet && typedPrefix("[ ] ", .design) == .task && typedPrefix("[] ", .design) == .task
+    && typedPrefix("> ", .design) == .quote, "The design's prefixes convert a line")
+check(["### ", "1. ", "1) ", "+ ", "``` ", "--- "].allSatisfy { typedPrefix($0, .design) == nil && typedPrefix($0, .all) != nil },
+    "The editor's other prefixes stay as typed in the list document, and still convert elsewhere")
+var prefixedKinds: [BlockKind] = []
+coordinator.parent.callbacks.onMarkdownPrefix = { prefixedKinds.append($0) }
+coordinator.parent.markdownPrefixes = .design
+for typed in ["1. ", "## "] {
+    coordinator.apply(NSAttributedString(), to: native, kind: .task, isCompleted: false)
+    native.textStorage?.append(NSAttributedString(string: typed, attributes: RichTextCodec.baseAttributes(for: .task)))
+    native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
+}
+check(prefixedKinds == [.heading2] && native.string.isEmpty, "A line typed “1. ” keeps it; “## ” makes a subheading")
+coordinator.parent.markdownPrefixes = .all
+coordinator.parent.callbacks.onMarkdownPrefix = { _ in }
+
 let inlineRange = NSRange(location: 0, length: 6)
 let inlineEdits: [(String, (NSMutableAttributedString) -> Void)] = [
     ("italic", { RichTextCodec.toggleTrait(.italicFontMask, in: $0, range: inlineRange, kind: .task) }),
@@ -254,6 +277,17 @@ let narrowViewport = CGRect(x: 0, y: 0, width: 180, height: 140)
 let narrowPopup = SlashMenuLayout.frame(caret: CGRect(x: 140, y: 20, width: 1, height: 18), viewport: narrowViewport, preferredHeight: 264)!
 check(narrowViewport.contains(narrowPopup) && narrowPopup.width == 164 && narrowPopup.height < 264, "Narrow inspectors constrain popup width and scrolling height")
 check(SlashMenuLayout.frame(caret: CGRect(x: 0, y: 800, width: 1, height: 20), viewport: viewport, preferredHeight: 264) == nil, "A caret scrolled outside the viewport does not leave a detached menu")
+// The Next document's Turn into card opens under its line whenever it fits on the page.
+let cardPage = CGRect(x: 0, y: 300, width: 800, height: 600)
+check(!SlashMenuLayout.cardOpensAbove(line: CGRect(x: 40, y: 500, width: 600, height: 20), height: 200, viewport: cardPage),
+    "The Turn into card opens under a line with room below it, as the design places it")
+check(SlashMenuLayout.cardOpensAbove(line: CGRect(x: 40, y: 800, width: 600, height: 20), height: 200, viewport: cardPage),
+    "Near the bottom of the page, the card opens above its line, where it can be seen")
+check(!SlashMenuLayout.cardOpensAbove(line: CGRect(x: 40, y: 330, width: 600, height: 20), height: 580, viewport: cardPage)
+    && SlashMenuLayout.cardOpensAbove(line: CGRect(x: 40, y: 860, width: 600, height: 20), height: 580, viewport: cardPage),
+    "With room on neither side, the card takes the side with more")
+check(!SlashMenuLayout.cardOpensAbove(line: CGRect(x: 40, y: 800, width: 600, height: 20), height: 200, viewport: .zero),
+    "A line not on a page yet keeps the card under it")
 
 let textStorage = NSTextStorage()
 let layoutManager = NSLayoutManager()
@@ -308,6 +342,34 @@ coordinator.parent.callbacks.onTab = { _, caret in tabCaret = caret; return true
 check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertTab(_:))) && tabCaret == 7, "Indentation receives the original mid-text caret")
 input.setSelectedRange(NSRange(location: 0, length: 2))
 check(!coordinator.textView(input, doCommandBy: #selector(NSResponder.moveUp(_:))), "Up with selected text retains native selection behavior")
+// The list document's Return finishes the whole line, a selection and all.
+coordinator.parent.returnKeepsSelection = true
+coordinator.apply(selectedText, to: input, kind: .task, isCompleted: false)
+input.setSelectedRange(NSRange(location: 7, length: 7))
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertNewline(_:)))
+    && returnedText == "Before DELETE After" && input.string == "Before DELETE After",
+    "Return that finishes the line leaves its selected text in it")
+coordinator.parent.returnKeepsSelection = false
+// ← and → off a line's ends say which way they went, apart from ↑ and ↓.
+var arrowsOut: [EditorArrow] = []
+coordinator.parent.callbacks.onArrowOut = { direction, _ in arrowsOut.append(direction); return false }
+input.setSelectedRange(NSRange(location: 0, length: 0))
+_ = coordinator.textView(input, doCommandBy: #selector(NSResponder.moveLeft(_:)))
+input.setSelectedRange(NSRange(location: input.string.utf16.count, length: 0))
+_ = coordinator.textView(input, doCommandBy: #selector(NSResponder.moveRight(_:)))
+check(arrowsOut == [.left, .right], "← at a line's start and → at its end tell the outline they were heading sideways")
+coordinator.parent.callbacks.onArrowOut = { _, _ in false }
+// ⇧↩ asks the outline first, with the / menu showing too, and types a break only when it declines.
+var lineBreaksAsked = 0
+coordinator.parent.callbacks.onLineBreak = { lineBreaksAsked += 1; return true }
+input.isSlashMenuOpen = true
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertLineBreak(_:))) && lineBreaksAsked == 1
+    && !input.string.contains("\u{2028}"), "⇧↩ with the / menu showing is the outline's, and a claimed one types no break")
+input.isSlashMenuOpen = false
+coordinator.parent.callbacks.onLineBreak = { false }
+input.setSelectedRange(NSRange(location: 6, length: 0))
+check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertLineBreak(_:))) && input.string == "Before\u{2028} DELETE After",
+    "⇧↩ the outline declines still types a soft break")
 
 coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}", kind: .task), to: input, kind: .task, isCompleted: false)
 _ = input.height(fittingWidth: 180)
@@ -691,6 +753,10 @@ check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onReturn(5,
 let returned = listEditor.focus.blockID
 check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onArrowOut(.down, 0) && listEditor.focus.blockID == returned,
     "An edit made here retires the drawn rows, so the next key sees the new row")
+check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onArrowOut(.right, 0) && listEditor.focus.blockID == returned
+    && listEditor.focus.caret == 0, "In the legacy document, → at a line's end starts the next line")
+check(listEditor.actions(for: outlineRow(store.block(id: returned!)!, in: listEditor)).onArrowOut(.left, -1)
+    && listEditor.focus.blockID == afterNote.id && listEditor.focus.caret == -1, "and ← at a line's start ends the line above")
 
 // Between renders, handlers read the drawn rows rather than the store.
 let drawnBeforeAppend = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
@@ -789,9 +855,10 @@ let emptyHeading = store.appendBlock(kind: .heading2, text: "", to: nextDocument
 store.save()
 check(nextActions(emptyHeading).onReturn(0, NSAttributedString()) && emptyHeading.kind == .task, "Return on an empty heading makes it a task")
 store.setPlainText(emptyHeading, "Walk the Philosopher's Path")
-let split = NSAttributedString(string: "Walk the Philosopher's Path")
-check(nextActions(emptyHeading).onReturn(9, split) && emptyHeading.text == "Walk the " && store.block(id: addedLines[4])?.text == "Philosopher's Path",
-    "Return mid-line moves the rest of it to a new line")
+let whole = NSAttributedString(string: "Walk the Philosopher's Path")
+check(nextActions(emptyHeading).onReturn(9, whole) && emptyHeading.text == "Walk the Philosopher's Path"
+    && store.block(id: addedLines[4])?.text == "" && nextEditor.focus.blockID == addedLines[4] && nextEditor.focus.caret == 0,
+    "Return mid-line finishes the whole line and opens an empty one, as the design's does")
 nextEditor.commitLine()
 
 // Backspace at the start of a line.
@@ -828,12 +895,61 @@ check(renew.kind == .bullet, "“- ” makes a list item")
 nextActions(renew).onMarkdownPrefix(.task)
 nextEditor.commitLine()
 
-// The `/` menu: the design's five, then the editor's other kinds.
-check(Array(nextEditor.slashKinds(matching: "").prefix(5)) == [.task, .heading1, .heading2, .bullet, .paragraph]
+// The `/` menu: the design's five, and the editor's other kinds by name.
+check(nextEditor.slashKinds(matching: "") == [.task, .heading1, .heading2, .bullet, .paragraph]
     && OutlineSlashOption.all.filter(\.isExtra).map(\.kind) == [.heading3, .numbered, .quote, .code, .divider, .image],
-    "Turn into lists the design's kinds first and the rest under More")
+    "Turn into opens on the design's five kinds alone")
 check(nextEditor.slashKinds(matching: "sub") == [.heading2] && nextEditor.slashKinds(matching: "text").first == .paragraph
     && nextEditor.slashKinds(matching: "h1") == [.heading1], "Turn into filters by label and the editor's search words")
+check(nextEditor.slashKinds(matching: "u") == [.heading2, .bullet] && nextEditor.slashKinds(matching: "e") == [.heading1, .heading2, .bullet, .paragraph],
+    "A letter brings up what the design's filter does, not every other kind whose name holds it")
+check(nextEditor.slashKinds(matching: "code") == [.code] && nextEditor.slashKinds(matching: "quo") == [.quote]
+    && nextEditor.slashKinds(matching: "num") == [.numbered] && nextEditor.slashKinds(matching: "heading") == [.heading1, .heading2, .heading3]
+    && nextEditor.slashKinds(matching: "div") == [.divider] && nextEditor.slashKinds(matching: "ima") == [.image],
+    "The editor's other kinds come up for their names")
+
+// ← and → stay in a line, as in the design's inputs; ↑ and ↓ leave it.
+nextActions(prose).onFocus()
+let tokenBeforeSideways = nextEditor.focus.token
+check(!nextActions(prose).onArrowOut(.right, 0) && !nextActions(prose).onArrowOut(.left, -1)
+    && nextEditor.focus.blockID == prose.id && nextEditor.focus.token == tokenBeforeSideways,
+    "← and → never leave a list document line")
+nextEditor.appendTask()
+let sidewaysLine = nextEditor.focus.blockID!
+check(!nextEditor.actions(for: nextRows().first { $0.id == sidewaysLine }!).onArrowOut(.right, 0)
+    && store.block(id: sidewaysLine) != nil && nextEditor.focus.blockID == sidewaysLine,
+    "→ in a new empty line keeps the line and its caret")
+nextEditor.commitLine()
+
+// ⇧↩ writes a task's note. The design's other lines hold one line each,
+// and its Turn into card takes ⇧↩ as it takes Return.
+var notesWritten: [UUID] = []
+nextEditor.hooks.editNote = { notesWritten.append($0) }
+nextActions(prose).onFocus()
+check(nextActions(prose).onLineBreak() && notesWritten.isEmpty && nextEditor.focus.blockID == prose.id,
+    "⇧↩ in text takes the key and types no break")
+nextActions(confirm).onFocus()
+check(nextActions(confirm).onLineBreak() && notesWritten == [confirm.id] && nextEditor.focus.blockID == nil,
+    "⇧↩ in a task leaves its title for its note")
+nextEditor.appendTask()
+let untitledNew = nextEditor.focus.blockID!
+check(nextEditor.actions(for: nextRows().first { $0.id == untitledNew }!).onLineBreak() && store.block(id: untitledNew) == nil
+    && notesWritten == [confirm.id], "⇧↩ in a new empty task takes the line away and opens no note, as the design's")
+let snippet = store.appendBlock(kind: .code, text: "let fare = 14_000", to: nextDocument)
+store.save()
+check(!nextActions(snippet).onLineBreak(), "A code line, one of the editor's own kinds, keeps ⇧↩'s soft break")
+store.deleteBlock(snippet)
+let slashed = store.appendBlock(kind: .task, text: "/", to: nextDocument)
+store.save()
+nextActions(slashed).onFocus()
+nextActions(slashed).onSlashQuery("", NSRange(location: 0, length: 1), .zero, .zero)
+nextEditor.handleSlashCommand(.next)
+check(nextActions(slashed).onLineBreak() && slashed.kind == .heading1 && slashed.text.isEmpty && nextEditor.slash == nil
+    && notesWritten == [confirm.id], "⇧↩ with the Turn into card open turns the line into the highlighted kind")
+nextEditor.commitLine()
+store.deleteBlock(slashed)
+store.save()
+nextEditor.hooks.editNote = nil
 
 // Done top-level tasks leave the document; done subtasks stay in place.
 email.isCompleted = true
@@ -964,9 +1080,11 @@ store.setCollapsed(true, for: foldingHeading)
 check(!addRows().contains { $0.id == ryokan.id }, "The task starts folded away under its heading")
 addEditor.appendSubtask(to: ryokan.id)
 let added = addEditor.focus.blockID.flatMap { store.block(id: $0) }
-check(added?.kind == .task && added?.parentID == ryokan.id
-    && store.children(of: ryokan.id, listID: addList.id).last?.id == added?.id,
-    "Add subtask puts a task line, with the caret, at the end of the task's subtasks")
+check(added?.kind == .task && added?.parentID == compare.id
+    && store.children(of: compare.id, listID: addList.id).last?.id == added?.id
+    && addRows().firstIndex { $0.id == added?.id } == addRows().firstIndex { $0.id == annex.id }.map { $0 + 1 }
+    && addRows().first { $0.id == added?.id }?.depth == 2,
+    "Add subtask puts a task line, with the caret, after the task's last line and at its depth, as the design's Return there")
 check(!ryokan.isCollapsed && !foldingHeading.isCollapsed && addRows().contains { $0.id == added?.id },
     "The task and the heading folding it open, so the new line shows")
 addEditor.actions(for: addRow(added!)).onChange(NSAttributedString(string: "Pay the deposit"))
@@ -1005,6 +1123,36 @@ let unmoved = store.children(of: nil, listID: addList.id).map(\.id)
 addEditor.move([pass.id], relativeTo: addRow(heading), position: .before)
 check(store.children(of: nil, listID: addList.id).map(\.id) == unmoved && addRecorded.count == recordedMoves,
     "A drop that changes nothing records nothing")
+
+// Add subtask on a task with none makes its first; a last line past two
+// levels, or under a line that holds no tasks, has the new one step up.
+let depthList = store.createList(title: "Add subtask depth")
+let depthDocument = DocumentContext(listID: depthList.id)
+let depthEditor = OutlineEditor(env: outlineEnv, document: depthDocument, policy: .nextDocument)
+func depthRows() -> [BlockRow] { depthEditor.visibleRows(in: store.blocks(inList: depthList.id)) }
+func depthAdded() -> Block? { depthEditor.focus.blockID.flatMap { store.block(id: $0) } }
+let yen = store.appendBlock(kind: .task, text: "Exchange yen", to: depthDocument)
+let older = store.appendBlock(kind: .task, text: "Older outline", to: depthDocument)
+let olderOne = store.insertChild(kind: .task, text: "One", of: older, at: .last)
+let olderTwo = store.insertChild(kind: .task, text: "Two", of: olderOne, at: .last)
+let olderThree = store.insertChild(kind: .task, text: "Three", of: olderTwo, at: .last)
+let noted = store.appendBlock(kind: .task, text: "Noted", to: depthDocument)
+let nestedText = store.insertChild(kind: .paragraph, text: "Nested text", of: noted, at: .last)
+let underText = store.insertChild(kind: .task, text: "Under the text", of: nestedText, at: .last)
+store.save()
+depthEditor.appendSubtask(to: yen.id)
+check(depthAdded()?.parentID == yen.id, "A task with no subtasks gets its first")
+depthEditor.commitLine()
+depthEditor.appendSubtask(to: older.id)
+check(depthAdded()?.parentID == olderOne.id && depthRows().firstIndex { $0.id == depthAdded()?.id }
+        == depthRows().firstIndex { $0.id == olderThree.id }.map { $0 + 1 },
+    "After a line deeper than two levels, the new subtask goes no deeper than two")
+depthEditor.commitLine()
+depthEditor.appendSubtask(to: noted.id)
+check(depthAdded()?.parentID == noted.id && depthRows().firstIndex { $0.id == depthAdded()?.id }
+        == depthRows().firstIndex { $0.id == underText.id }.map { $0 + 1 },
+    "After a line under text, the new subtask goes beside the text, under a task")
+depthEditor.commitLine()
 
 // A search hit shows through the heading folding it away.
 let revealList = store.createList(title: "Reveal")
@@ -1049,8 +1197,8 @@ check(fixShows(fixEditor.focus.blockID) && !foldHeading.isCollapsed, "A line add
 fixEditor.commitLine()
 store.setCollapsed(true, for: foldHeading)
 store.setPlainText(foldHeading, "Kyoto trip")
-check(fixActions(foldHeading).onReturn(5, content(foldHeading)) && fixShows(fixEditor.focus.blockID) && foldHeading.text == "Kyoto",
-    "Return inside a folded heading splits it into a line that shows")
+check(fixActions(foldHeading).onReturn(5, content(foldHeading)) && fixShows(fixEditor.focus.blockID) && foldHeading.text == "Kyoto trip",
+    "Return inside a folded heading keeps it whole and opens a line that shows")
 fixEditor.commitLine()
 
 // A line turned into a kind that doesn't nest takes what was under it out beside it.

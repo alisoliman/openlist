@@ -6,9 +6,10 @@
 import AppKit
 import SwiftUI
 
-/// Which way an arrow key was heading when it ran off the end of a block.
+/// Which way an arrow key was heading when it ran off the end of a block:
+/// ↑ or ↓ off its first or last visual line, or ← or → off its start or end.
 enum EditorArrow {
-    case up, down
+    case up, down, left, right
 }
 
 /// Everything the outline needs to hear about from one block's text view.
@@ -48,8 +49,8 @@ struct BlockEditorCallbacks {
     /// Undo is registered against, for an outline that folds that typing
     /// into one step of its own.
     var onEndEditing: (_ undoTarget: NSTextStorage) -> Void = { _ in }
-    /// Shift-Return. Return `true` to claim it; otherwise it inserts a soft
-    /// break in the same block.
+    /// Shift-Return, with the `/` menu showing or not. Return `true` to claim
+    /// it; otherwise it inserts a soft break in the same block.
     var onLineBreak: () -> Bool = { false }
     /// A click on the text while it isn't editing. Return `true` to claim
     /// it, so the text view neither takes the keyboard nor moves a caret.
@@ -100,6 +101,11 @@ struct BlockTextView: NSViewRepresentable {
     /// Only a `/` that starts the block opens the menu, rather than one
     /// after any space.
     var slashOpensAtStartOnly = false
+    /// The typed prefixes that turn the block into another kind.
+    var markdownPrefixes: MarkdownInputRules.BlockPrefixes = .all
+    /// Return leaves a selection as it is, for an outline whose Return
+    /// finishes the whole line rather than splitting it at the caret.
+    var returnKeepsSelection = false
     /// The insertion point's colour. `nil` keeps AppKit's.
     var caretColor: NSColor? = nil
     var onSlashCommand: (SlashMenuCommand) -> Void = { _ in }
@@ -360,7 +366,8 @@ struct BlockTextView: NSViewRepresentable {
                 in: storage,
                 caret: view.selectedRange().location,
                 wasInsertion: wasInsertion,
-                kind: parent.kind
+                kind: parent.kind,
+                prefixes: parent.markdownPrefixes
             ) {
                 storage.deleteCharacters(in: rule.range)
                 view.setSelectedRange(NSRange(location: 0, length: 0))
@@ -439,13 +446,13 @@ struct BlockTextView: NSViewRepresentable {
                 }
                 // Return replaces a selection before splitting, just as native
                 // text editing does. Persist the deletion before outline logic.
-                if selection.length > 0 {
+                if selection.length > 0, !parent.returnKeepsSelection {
                     view.insertText("", replacementRange: selection)
                 }
                 return parent.callbacks.onReturn(view.selectedRange().location, NSAttributedString(attributedString: storage))
 
             case #selector(NSResponder.insertLineBreak(_:)):
-                if !view.isSlashMenuOpen, parent.callbacks.onLineBreak() { return true }
+                if parent.callbacks.onLineBreak() { return true }
                 // Shift-Return inserts a soft break inside the same block.
                 view.insertText("\u{2028}", replacementRange: selection)
                 return true
@@ -490,11 +497,11 @@ struct BlockTextView: NSViewRepresentable {
 
             case #selector(NSResponder.moveLeft(_:)):
                 guard selection.location == 0, selection.length == 0 else { return false }
-                return parent.callbacks.onArrowOut(.up, -1)
+                return parent.callbacks.onArrowOut(.left, -1)
 
             case #selector(NSResponder.moveRight(_:)):
                 guard selection.location == storage.length, selection.length == 0 else { return false }
-                return parent.callbacks.onArrowOut(.down, 0)
+                return parent.callbacks.onArrowOut(.right, 0)
 
             case #selector(NSResponder.cancelOperation(_:)):
                 if view.isSlashMenuOpen {

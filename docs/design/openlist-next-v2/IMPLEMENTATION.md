@@ -34,7 +34,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
   writes the new line in the list document (`Workbench.addSubtask`,
-  `OutlineEditor.appendSubtask`). The Inbox's document mode is the same list document under
+  `OutlineEditor.appendSubtask`), after the task's last line and at its depth, as the
+  design's does, but never past two levels and only under a task or list item, which
+  older outlines can break. The Inbox's document mode is the same list document under
   the Inbox header. Native extras on the list page: the "…" options menu, the title renamed
   in place, the description, cover and nested lists, a drag grip on every line (drops go
   through `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and
@@ -46,6 +48,15 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
   heading or task folds it away. Headings and text take no key focus after Escape, as in
   the design; Return writes them again and J/K step to the tasks beside them.
+- The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
+  Image) are a native extra: their lines draw and edit in the document, the Turn into
+  card brings them up for their names after "/" (with no query it shows the design's
+  five under its one header), and a line's Turn Into menu lists them all. Only the
+  design's prefixes (`# `, `## `, `- `, `* `, `[ ] `, `[] `, `> `) convert a line as it's
+  typed; the editor's inline `**bold**`, `_italic_`, `~~strike~~` and `` `code` `` rules
+  still style it, as the Format menu does. ⇧↩ types a soft break only in a code line.
+  The card opens above its line when it wouldn't fit under it on the visible page, and a
+  row the pointer moves onto takes the highlight.
 
 ## Status checklist
 

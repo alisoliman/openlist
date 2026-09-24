@@ -363,8 +363,9 @@ final class NextKeyHandler {
             // being written. With none, Tab moves through the window's controls.
             workbench.document?.indent(workbench.targetIDs, outdent: shift)
             return true
-        case Key.space where workbench.document != nil && !shift:
-            // Notes open in place, in the document's own rows.
+        case Key.space:
+            // Notes open in place, in the document's own rows. Elsewhere
+            // there's no note to show, and Space does nothing.
             if let id = workbench.focusID, workbench.document?.shows(id) == true { workbench.toggleNote(id) }
             return true
         case Key.escape:
@@ -380,17 +381,15 @@ final class NextKeyHandler {
         case "j", "k":
             workbench.moveFocus(by: chars == "j" ? 1 : -1, extending: shift)
             return true
-        case "x" where !shift:
+        case "x":
             if let id = workbench.focusID { workbench.toggleSelection(id) }
             return true
         default:
-            if openGlobal(chars, shift: shift) { return true }
+            if openGlobal(chars) { return true }
         }
 
-        // ⇧ with an action key does nothing, but quietly, like the key alone
-        // with no target; other ⇧-letters pass through.
-        guard !shift else { return key == Key.delete || key == Key.forwardDelete || Self.actionKeys.contains(chars) }
-        // Each action ignores an empty target list.
+        // Shift doesn't stop an action key, as in the design; other
+        // ⇧-letters pass through. Each action ignores an empty target list.
         let ids = workbench.targetIDs
         if key == Key.delete || key == Key.forwardDelete {
             workbench.trash(ids)
@@ -409,12 +408,12 @@ final class NextKeyHandler {
     }
 
     /// G (then a route key), N and / work on every screen.
-    private func openGlobal(_ chars: String, shift: Bool) -> Bool {
+    private func openGlobal(_ chars: String) -> Bool {
         let workbench = env.workbench
         switch chars {
-        case "g" where !shift:
+        case "g":
             workbench.gPressedAt = .now
-        case "n" where !shift:
+        case "n":
             workbench.openCapture()
         case "/":
             env.navigator.isSearchOpen = true
