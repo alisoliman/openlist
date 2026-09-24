@@ -15,8 +15,6 @@ extension AppEnvironment {
     @discardableResult
     func performTaskCommand(_ command: EditorCommand, on ids: [UUID]) -> Bool {
         switch command {
-        case .newTask:
-            workbench.openCapture()
         case .toggleCompletion:
             workbench.toggleCompletion(ids)
         case .openDetails:

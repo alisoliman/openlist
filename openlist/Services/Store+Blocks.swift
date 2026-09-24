@@ -289,35 +289,6 @@ extension Store {
         return true
     }
 
-    /// Swaps a block with its previous sibling — ⌥↑ in the editor.
-    @discardableResult
-    func moveUp(_ block: Block) -> Bool {
-        let siblings = orderedSiblings(of: block)
-        guard let index = siblings.firstIndex(where: { $0.id == block.id }), index > 0 else { return false }
-        let previous = siblings[index - 1]
-        let beforePrevious = index >= 2 ? siblings[index - 2].sortIndex : nil
-        block.sortIndex = BlockTree.index(after: beforePrevious, before: previous.sortIndex)
-        block.touch()
-        respaceIfNeeded(parentID: block.parentID, listID: block.listID)
-        return true
-    }
-
-    /// Swaps a block with its next sibling — ⌥↓ in the editor.
-    @discardableResult
-    func moveDown(_ block: Block) -> Bool {
-        let siblings = orderedSiblings(of: block)
-        guard
-            let index = siblings.firstIndex(where: { $0.id == block.id }),
-            index + 1 < siblings.count
-        else { return false }
-        let next = siblings[index + 1]
-        let afterNext = index + 2 < siblings.count ? siblings[index + 2].sortIndex : nil
-        block.sortIndex = BlockTree.index(after: next.sortIndex, before: afterNext)
-        block.touch()
-        respaceIfNeeded(parentID: block.parentID, listID: block.listID)
-        return true
-    }
-
     /// The attributed content for a block, decoded and styled for its kind.
     func attributedContent(of block: Block) -> NSAttributedString {
         RichTextCodec.decode(

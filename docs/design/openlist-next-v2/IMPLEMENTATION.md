@@ -138,13 +138,21 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   empty does), and the hints, add row and task placeholder offer only ⇥ Subtask, ⇧↩ Note
   and Space Show note ("Add to …").
   Return there opens a first subtask only under a task whose tasks show, as the design's
-  does under a subtree that shows. `Navigator.documentListID` (any list, and the
+  does under a subtree that shows; ⇥ goes by the depth a task has in the document, not the
+  one drawn, and ⇧⇥ steps a task out past the headings, list items and text lines holding
+  it, to beside the task it's drawn under, so the step always shows. Format ▸ Move Up and
+  Move Down (native extras) take a line past the nearest line beside it that shows,
+  passing those between that don't (a done task in Completed or, showing only tasks, a
+  heading, list item or text line), so each press moves it on screen and one with nothing
+  there records nothing. `Navigator.documentListID` (any list, and the
   Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
   writes the new line in the list document (`Workbench.addSubtask`,
   `OutlineEditor.appendSubtask`), after the task's last line and at its depth, as the
   design's does, but never past two levels and only under a task or list item, which
-  older outlines can break. MCP's create, move and append tools place lines by the same
+  older outlines can break. ⇥ keeps to them too, counting the lines under the line: one
+  whose subtree would go past two levels stays, where the design's indent moves the
+  subtree along unclamped. MCP's create, move and append tools place lines by the same
   rules (`OutlinePolicy`), refusing a heading or text under a line, or a third level.
   Markdown pasted or dropped as several lines, and Openlist content pasted after a line
   (native extras), keep to them too: a line its indent can't put under the one above goes
@@ -401,7 +409,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   heading or text line's also quotes the passage under its title when the line is long or
   its note matched, and a list's its description when only that matched.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
-  Image) are a native extra: their lines draw and edit in the document, the Turn into
+  Image) are a native extra: their lines draw and edit in the document (an image's
+  caption, 12pt under it, is written in place: a click on it, or on the "Add a caption…"
+  a hover offers, edits it, and Return or a click away commits it as a step of its own,
+  "Edited caption on “Image”", logged as a line's edit is), the Turn into
   card brings them up for their names after "/" (with no query it shows the design's
   five under its one header, and a single letter filters the five by label as the
   design's does), and a line's Turn Into menu lists them all. From the second letter

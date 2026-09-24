@@ -104,6 +104,8 @@ enum OutlineEdit: Equatable {
     /// Lines pasted, or dropped in from another app, as a step of their
     /// own: the ones at the paste's top level.
     case pasted([UUID])
+    /// An image line's caption written, changed or cleared.
+    case captioned(UUID)
 
     /// The name the outline gives the change when its host has none.
     var defaultName: String {
@@ -117,6 +119,7 @@ enum OutlineEdit: Equatable {
         case let .moved(_, up): up ? "Move Up" : "Move Down"
         case .dragged: "Move"
         case .pasted: "Paste"
+        case .captioned: "Edit caption"
         }
     }
 }
@@ -706,7 +709,7 @@ final class OutlineEditor {
     private func handleReturn(block: Block, content: NSAttributedString) -> Bool {
         if content.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let changed = editorEdit("Edit line") { () -> Bool in
-                if depth(of: block) > 0, canOutdent(block) { return env.store.outdent(block) }
+                if depth(of: block) > 0, canOutdent(block) { return outdentLine(block) }
                 guard block.kind != .task else { return false }
                 convert(block, to: .task)
                 return true
@@ -757,16 +760,22 @@ final class OutlineEditor {
     /// Headings and text stay at the top. One holding the lines it kept as
     /// it was turned takes the line in after them, as the design's indent
     /// goes by the line right above.
+    ///
+    /// The two levels are the document's, the lines under the line counted,
+    /// as a drag, paste or Add subtask counts them: a line whose subtree
+    /// would go past them stays, and so does one the Tasks presentation
+    /// draws shallower than it is, under a list item or text line.
     private func indentLine(_ block: Block) -> Bool {
         guard OutlinePolicy.nests(block.kind) else { return false }
         let current = rows
         guard let index = current.firstIndex(where: { $0.id == block.id }), index > 0 else { return false }
         let depth = current[index].depth
         let previous = current[index - 1]
-        guard depth < OutlinePolicy.maximumDepth, OutlinePolicy.nests(previous.block.kind), previous.depth >= depth,
+        guard OutlinePolicy.nests(previous.block.kind), previous.depth >= depth,
               let parent = current[..<index].last(where: { $0.depth <= depth }), parent.depth == depth,
               parent.block.parentID == block.parentID,
               OutlinePolicy.nests(parent.block.kind) || previous.depth > depth,
+              fitsOneLevelDeeper(block),
               env.store.move(block, toParent: parent.id, above: nil, in: document.listID)
         else { return false }
         // A heading's fold is its section's, which holds the line either way.
@@ -775,8 +784,36 @@ final class OutlineEditor {
         return true
     }
 
+    /// Whether `block` and every line under it stay within two levels in
+    /// the document one level deeper than it is now.
+    private func fitsOneLevelDeeper(_ block: Block) -> Bool {
+        let current = blocks
+        let depth = BlockTree.ancestors(of: block, in: current).count
+        return depth + 1 + Self.height(of: block, in: BlockTree.childIndex(of: current)) <= OutlinePolicy.maximumDepth
+    }
+
+    /// How many levels of lines sit under `block`, folded or done ones too.
+    private static func height(of block: Block, in index: [UUID?: [Block]]) -> Int {
+        (index[block.id] ?? []).map { 1 + height(of: $0, in: index) }.max() ?? 0
+    }
+
+    /// Steps a line out a level. Showing only tasks, a level as the tasks
+    /// draw it: the line steps out past the headings, list items and text
+    /// lines holding it too, to beside the task it was under, so the step
+    /// always shows. One no task holds is at the Tasks presentation's top
+    /// level already, and stays.
     private func outdentLine(_ block: Block) -> Bool {
-        guard canOutdent(block), env.store.outdent(block) else { return false }
+        guard canOutdent(block) else { return false }
+        guard tasksOnly else {
+            guard env.store.outdent(block) else { return false }
+            drawnRows = nil
+            return true
+        }
+        let current = blocks
+        func taskDepth() -> Int { BlockTree.ancestors(of: block, in: current).filter(\.isTask).count }
+        let depth = taskDepth()
+        guard depth > 0 else { return false }
+        while taskDepth() == depth, env.store.outdent(block) {}
         drawnRows = nil
         return true
     }
@@ -880,6 +917,22 @@ final class OutlineEditor {
         if focus.blockID == id { focus.request(nil) }
         editorEdit("Delete", edit: .deleted(id), joiningLine: false) {
             removeLine(block)
+            env.store.save()
+        }
+    }
+
+    /// Writes an image line's caption, the text its Markdown and copies give
+    /// the image, in a step of its own. Kept to one line and trimmed, as a
+    /// line's text is committed; an empty one clears it.
+    func setCaption(_ id: UUID, to caption: String) {
+        let caption = caption.split(whereSeparator: \.isNewline).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        guard let block = env.store.block(id: id), block.listID == document.listID,
+              block.kind == .image, block.mediaCaption != caption else { return }
+        commitLine()
+        editorEdit("Edit caption", edit: .captioned(id), joiningLine: false) {
+            block.mediaCaption = caption
+            block.touch()
             env.store.save()
         }
     }
@@ -1464,11 +1517,8 @@ final class OutlineEditor {
         let index = BlockTree.childIndex(of: current)
         let dragged = topmost(ids.compactMap { id in current.first { $0.id == id } })
         guard !dragged.isEmpty else { return nil }
-        func height(_ block: Block) -> Int {
-            (index[block.id] ?? []).map { 1 + height($0) }.max() ?? 0
-        }
         func fit(at depth: Int) -> Bool {
-            dragged.allSatisfy { (depth == 0 || OutlinePolicy.nests($0.kind)) && depth + height($0) <= OutlinePolicy.maximumDepth }
+            dragged.allSatisfy { (depth == 0 || OutlinePolicy.nests($0.kind)) && depth + Self.height(of: $0, in: index) <= OutlinePolicy.maximumDepth }
         }
         let depth = BlockTree.ancestors(of: target, in: current).count
         if position == .inside, OutlinePolicy.nests(target.kind), fit(at: depth + 1) { return .inside }
@@ -1715,17 +1765,8 @@ final class OutlineEditor {
         case .outdent:
             env.store.batch { for block in topmost(targets).reversed() { _ = outdentLine(block) } }
 
-        case .moveUp:
-            if let first = targets.first {
-                _ = env.store.moveUp(first)
-                env.store.save()
-            }
-
-        case .moveDown:
-            if let first = targets.first {
-                _ = env.store.moveDown(first)
-                env.store.save()
-            }
+        case .moveUp, .moveDown:
+            if let first = targets.first { moveLine(first, up: command == .moveUp) }
 
         case .expandAll, .collapseAll:
             // Every line, the ones folded away too.
@@ -1748,6 +1789,31 @@ final class OutlineEditor {
         default:
             break
         }
+    }
+
+    /// Move Up and Move Down: the line, with what's under it, goes past the
+    /// nearest line beside it that shows, itself or a line under it, as the
+    /// rows draw them, and past the lines between that don't: a done
+    /// top-level task in Completed or, showing only tasks, a heading or text
+    /// line. So each step moves it on screen. A line that doesn't show, or
+    /// has no such line on that side, stays, and nothing is recorded.
+    private func moveLine(_ block: Block, up: Bool) {
+        let shown = Set(rows.map(\.id))
+        let siblings = env.store.orderedSiblings(of: block)
+        guard shown.contains(block.id), let position = siblings.firstIndex(where: { $0.id == block.id }) else { return }
+        let index = BlockTree.childIndex(of: blocks)
+        func shows(_ sibling: Block) -> Bool {
+            shown.contains(sibling.id) || BlockTree.descendants(of: sibling.id, using: index).contains { shown.contains($0.id) }
+        }
+        if up {
+            guard let past = siblings[..<position].last(where: shows) else { return }
+            env.store.move(block, toParent: block.parentID, above: past, in: document.listID)
+        } else {
+            guard let past = siblings[(position + 1)...].firstIndex(where: shows) else { return }
+            env.store.move(block, toParent: block.parentID, above: siblings.indices.contains(past + 1) ? siblings[past + 1] : nil,
+                           in: document.listID)
+        }
+        env.store.save()
     }
 
     // MARK: - Resuming after Escape
