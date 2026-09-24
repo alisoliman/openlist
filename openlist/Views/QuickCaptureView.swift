@@ -56,11 +56,8 @@ struct QuickCaptureView: View {
     private func handle(_ key: QuickCaptureKey, lists: [TaskList]) {
         switch key {
         case let .add(keepOpen): add(keepOpen: keepOpen)
-        case let .step(delta):
-            // Command selection doesn't animate, as in the main window.
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) { draft.cycleCaptureDestination(by: delta, among: lists.map(\.id)) }
+        // The lit destination fades over the chip's 140ms, as in the main window.
+        case let .step(delta): draft.cycleCaptureDestination(by: delta, among: lists.map(\.id))
         case .close: close(.finished)
         }
     }

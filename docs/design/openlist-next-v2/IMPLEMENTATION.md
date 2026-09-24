@@ -36,7 +36,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Modal flags reuse `navigator.isSearchOpen` and `navigator.isCommandPaletteOpen`; ⌘N goes
   through `env.presentTaskCapture()`, which opens the workbench capture
   (`workbench.openCapture`), so menu commands keep working. Over an open capture ⌘N, ⌘F
-  and ⌘, stand down and its draft stays, as the design's keys do; only ⌘K's palette
+  and ⌘, stand down and its draft stays, as the design's keys do, and so do the menus'
+  other window items (New List, New Section, Export, the View screens, Back, Forward, Hide
+  Sidebar, Expand and Collapse All, the Work menu's, Keyboard Shortcuts); only ⌘K's palette
   replaces it. Capture aims at the list on show only while it takes tasks: on an archived
   list's page, a native one, it aims at Inbox, as Quick Add does. A save that fails says so
   on the card, as Quick Add's does, not in the tray under the backdrop.
@@ -73,6 +75,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - A screen header's progress and controls wrap under its title when they don't fit beside
   it, as the design's; a title too long for its line wraps beside the tile, where the
   design's would drop under it.
+- Deviation: in a window under 956 pt, opening details folds the sidebar away while they
+  stay open, where the design's inspector only covers the page. The page keeps its width
+  under the inspector either way; folding widens the strip left uncovered beside the
+  sidebar and the 360 pt inspector (804 pt in the design's 1400 pt window), and it folds
+  only where that strip would be narrower than the inspector, rows past the page's 40 pt
+  margin showing under 320 pt (4 pt at the 640 pt minimum). The sidebar comes back when
+  details close or the window reaches 1076 pt; View ▸ Hide Sidebar is separate, so this
+  never shows a sidebar the user hid.
 - Typing is on the window's undo stack natively, where the design keeps it out of Undo
   until a line commits. While a list document line holds typing, the toolbar's Undo names
   the step the line commits as ("Edited “…”", "Added “…”", "Removed an empty line"), which
@@ -100,9 +110,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking
   space in every text field, so a global hot key on it would take that from every app. The
   Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space; held by another
-  app, Settings' hint says so in red and the menu bar drops its key cap. A task it adds goes
+  app, Settings' hint says so in red, and the menu bar drops its key cap and File ▸ Quick
+  Add… its key equivalent. A task it adds goes
   on the window's undo stack and in Changes as the window's capture does ("Added to …"),
   but raises no tray: its own card says what it added, usually over another app.
+- With Settings' "Read dates from what you type" off, a native switch, capture's ghost,
+  its VoiceOver hint and the shortcuts sheet drop the date and repeat examples they give.
 - Capture's chips follow the typed tokens in order, a typed day as "Fri 25 · in 2 days",
   as the design's. A bare time already past, or a repeat whose first day isn't today, shows
   the day it saves (tomorrow, the repeat's first day), where the design saves both today
@@ -187,7 +200,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   history), and Activity with "Full history", the task's saved activity; both start closed.
   The footer is the design's Trash and Start working. Deviation: a completed task's Plan for
   today switch fades and Start working is off, as Plan and work skip completed tasks, where
-  the design's still toggle and start. Copy Link is in the task's row menu and in Task ▸,
+  the design's still toggle and start; the row menu's and Task ▸'s Plan for Today, Find a
+  Slot and Start Working are off for it too. Copy Link is in the task's row menu and in Task ▸,
   which reaches the inspected task from the keyboard too, each saying "Link copied" in the
   tray. The Schedule popover's tabs are the rows' Due, Repeat and Reminder, in their order;
   it fits its section, up to 510pt, and its date and time controls are Next pills. It writes
@@ -338,7 +352,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Work history words a session's pause as the Work panel does, and the panel's completion
   reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
-  (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
+  (with "Undo with Command-Z" when it offers Undo). Redo, a native extra, says "Redid — …"
+  with Undo, as Undo says "Undid — …"; one of a task's Trash that moves nothing, either way,
+  says "Could not …", keeps the log as it was and leaves the stack. Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
   completion entry, and so does Settings' Export… ("Exported N lists as Markdown"). One-off
   refusals (`Store.refuse`: a drop the document's rules don't allow, rearranging a sorted

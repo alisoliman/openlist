@@ -295,6 +295,8 @@ final class Workbench {
     @ObservationIgnored private var flashPending: [String: Set<UUID>] = [:]
     @ObservationIgnored private var trayTask: Task<Void, Never>?
     @ObservationIgnored private var undoObservers: [NSObjectProtocol] = []
+    /// The tray up as the latest Redo began, so its steps can tell one they raised.
+    @ObservationIgnored private var trayBeforeRedo: UUID?
     /// The route the last navigation reset ran for.
     @ObservationIgnored private var shownRoute: AppRoute?
     /// The route `visibleIDs` was published on.
@@ -705,6 +707,12 @@ final class Workbench {
         }
         insert(mark.entries)
         noteLogWrite(mark)
+        // Redo, a native extra, says what it put back as Undo says what it
+        // took, with Undo to take it back again. A tray the step raised
+        // itself, like work that can no longer switch, stays instead.
+        if tray?.id == trayBeforeRedo {
+            showTray("Redid — \(mark.label)", icon: "arrow.uturn.forward", tone: .neutral, undoable: true)
+        }
         undoRevision += 1
     }
 
@@ -790,6 +798,10 @@ final class Workbench {
                 MainActor.assumeIsolated { self?.undoRevision += 1 }
             })
         }
+        // On the posting thread, before the Redo's steps run.
+        undoObservers.append(center.addObserver(forName: .NSUndoManagerWillRedoChange, object: undoManager, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trayBeforeRedo = self?.tray?.id }
+        })
     }
 
     // MARK: Flashes
@@ -1119,17 +1131,27 @@ final class Workbench {
     }
 
     /// The trash's one window entry. Undo puts the rows back, or stops a trash
-    /// still in flight; Redo moves them to Trash again.
+    /// still in flight; Redo moves them to Trash again. A step that moved
+    /// nothing, as when the tasks went meanwhile or the Store refused, changed
+    /// nothing: as a restore's does, the log stays as it was, the tray says so
+    /// and the entry leaves the stack.
     private func attach(trash: TrashBatch, restores: Bool) {
         guard let undoManager else { return }
         // The manager holds its target weakly; the handler keeps the batch alive.
         undoManager.registerUndo(withTarget: trash.mark) { [weak self, trash] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                // What's in the library before the step, to tell whether it moved anything.
+                let present = Set(trash.ids.filter { self.store.block(id: $0) != nil })
                 if restores {
                     if trash.changes.canRedo { trash.changes.redo() } else { _ = self.writeTrash(trash) }
+                    guard present.contains(where: { self.store.block(id: $0) == nil }) else {
+                        self.trashStepFailed(trash.mark, redo: true)
+                        return
+                    }
                     self.relog(trash.mark)
                 } else {
+                    let landed = trash.task == nil
                     if let task = trash.task {
                         task.cancel()
                         trash.task = nil
@@ -1137,6 +1159,10 @@ final class Workbench {
                         withAnimation(self.style.ease(260)) { self.flying.subtract(trash.ids) }
                     }
                     while trash.changes.canUndo { trash.changes.undo() }
+                    guard !landed || trash.ids.contains(where: { !present.contains($0) && self.store.block(id: $0) != nil }) else {
+                        self.trashStepFailed(trash.mark, redo: false)
+                        return
+                    }
                     self.unlog(trash.mark)
                 }
                 self.attach(trash: trash, restores: !restores)
@@ -1267,7 +1293,7 @@ final class Workbench {
                     // Restored from Trash by hand meanwhile, it's back already.
                     if self.store.isInTrash(id) {
                         guard let recoveries = self.store.restoreTrashRecoveries(ids: [id]) else {
-                            self.restoreStepFailed(restore, redo: true)
+                            self.trashStepFailed(restore.mark, redo: true)
                             return
                         }
                         restore.recoveries = recoveries
@@ -1285,14 +1311,14 @@ final class Workbench {
                         // The handler keeps the id, never the model, which Trash may erase.
                         // Out of the library, it's in Trash already or erased.
                         if let list = self.store.list(id: id), !self.moveToTrash(list) {
-                            self.restoreStepFailed(restore, redo: false)
+                            self.trashStepFailed(restore.mark, redo: false)
                             return
                         }
                     } else if let block = self.store.block(id: id) {
                         // Back to Trash as it was, taking a Recovered items list made for it.
                         let made = Set(restore.recoveries.filter(\.madeList).map(\.listID))
                         guard self.store.trashBlocks([block], puttingBack: restore.recoveries) else {
-                            self.restoreStepFailed(restore, redo: false)
+                            self.trashStepFailed(restore.mark, redo: false)
                             return
                         }
                         restore.recoveries = []
@@ -1308,10 +1334,11 @@ final class Workbench {
         undoManager.setActionName(restore.mark.label)
     }
 
-    /// An Undo or Redo of a restore the Store refused, whose notice says why.
-    private func restoreStepFailed(_ restore: RestoreBatch, redo: Bool) {
-        trashUndos.remove(restore.mark)
-        showTray("Could not \(redo ? "redo" : "undo") — \(restore.mark.label)", icon: "exclamationmark.triangle", tone: .red)
+    /// An Undo or Redo of a trash or restore that changed nothing; the Store's
+    /// notice says why when it refused.
+    private func trashStepFailed(_ mark: LogMark, redo: Bool) {
+        trashUndos.remove(mark)
+        showTray("Could not \(redo ? "redo" : "undo") — \(mark.label)", icon: "exclamationmark.triangle", tone: .red)
         undoRevision += 1
     }
 

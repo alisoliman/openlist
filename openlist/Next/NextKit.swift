@@ -504,8 +504,9 @@ struct NXProgress: View {
     }
 }
 
-/// Segmented control used by Calendar's range picker. The white pill moves
-/// at once, as the design's.
+/// Segmented control used by Calendar's range picker, the Schedule popover's
+/// Due, Repeat and Reminder tabs and Work history's tabs. The white pill
+/// moves at once, as the design's.
 struct NXSegmented<Value: Hashable>: View {
     let options: [(Value, String)]
     let selection: Value

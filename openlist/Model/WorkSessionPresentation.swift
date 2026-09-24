@@ -3,14 +3,13 @@ import Foundation
 extension WorkSession {
     /// Why a session stopped recording, as Work history and the Work panel
     /// word it: "Paused while the Mac was asleep", "Ended when the task was
-    /// done". Sessions keep the reason they were saved with, so older reasons
-    /// read the same way.
+    /// done", "Stopped". Sessions keep the reason they were saved with, so
+    /// older reasons read the same way.
     static func stopText(_ reason: String?) -> String {
         if let ended = endedText(reason) { return ended }
         return switch reason {
         case nil, "Paused": "Paused"
         case "Switched task": "Paused when you switched tasks"
-        case "Stopped working": "Paused when you stopped working"
         case "Mac slept": "Paused while the Mac was asleep"
         case "Screen slept": "Paused while the screen was asleep"
         case "Mac locked": "Paused while the Mac was locked"
@@ -30,9 +29,11 @@ extension WorkSession {
         endedText(reason) == nil ? stopText(reason) : "Paused"
     }
 
-    /// The reasons that end the work with its task rather than pause it.
+    /// The reasons that end the work, with its task or by Stop, rather than pause it.
     private static func endedText(_ reason: String?) -> String? {
         switch reason {
+        // Stop ends the work, as its "Stopped — 12:34 recorded" tray says.
+        case "Stopped working": "Stopped"
         // A redone completion ends the work again, as the completion did.
         case "Completed", "Completion restored": "Ended when the task was done"
         case "Reopened": "Ended when the task was reopened"
