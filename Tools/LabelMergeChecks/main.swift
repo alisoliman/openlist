@@ -230,12 +230,16 @@ check(history.route == .label(destinationID), "back stack uses destination after
 history.goBack(); history.retargetLabel(from: sourceID, to: destinationID); history.goForward()
 check(history.route != .label(sourceID), "forward history never retains removed source identity")
 
-// Editor undo and capture defaults can have been created in another window
+// Editor undo and a Quick Add's Redo can have been recorded in another window
 // before Settings removes a label identity.
 let deleted = task("Restored by editor undo", labels: [sourceID, destinationID])
 let deletedID = deleted.id
 let cleared = task("Labels restored by editor undo", labels: [sourceID])
 try store.persistChanges()
+let captured = try store.saveCapture(CaptureSnapshot(title: "Captured with an old label", labels: ["Work", "Home"]),
+                                     destinationID: active.id)
+check(captured.labelIDs == [sourceID, destinationID], "a capture names the source label before the merge")
+guard let discardedCapture = store.discardCapturedTask(id: captured.id) else { fatalError("FAIL: a fresh capture can be discarded") }
 let editorUndo = UndoManager()
 editorUndo.groupsByEvent = false
 editorUndo.beginUndoGrouping()
@@ -249,9 +253,8 @@ editorUndo.undo()
 let restored = store.block(id: deletedID)!
 check(restored.labelIDs == [destinationID], "pre-merge deletion undo resolves and deduplicates the old source identity")
 check(cleared.labelIDs == [destinationID], "pre-merge clear-label undo restores the surviving identity")
-let captured = store.captureTask(text: "Captured from an old label context", in: active,
-                                defaults: CaptureDefaults(parsesNaturalLanguage: false, labelIDs: [sourceID, destinationID]))
-check(captured.labelIDs == [destinationID], "pre-merge capture defaults resolve to one surviving label")
+check(store.restoreDiscardedTask(discardedCapture)?.labelIDs == [destinationID],
+      "redoing a pre-merge capture resolves and deduplicates the old source identity")
 store.toggleLabel(id: sourceID, on: restored)
 check(restored.labelIDs.isEmpty, "retained picker selection toggles the destination instead of resurrecting source")
 store.toggleLabel(id: sourceID, on: restored)

@@ -64,13 +64,6 @@ final class NotificationService {
 
     // MARK: - Authorization
 
-    /// Asks for permission the first time a reminder is actually needed.
-    func requestAuthorizationIfNeeded() {
-        guard ReviewSession.identifier == nil, !hasRequestedAuthorization else { return }
-        hasRequestedAuthorization = true
-        Task { _ = await reminders.requestPermission() }
-    }
-
     func authorizationStatus() async -> UNAuthorizationStatus {
         guard ReviewSession.identifier == nil else { return .notDetermined }
         return await center.notificationSettings().authorizationStatus
@@ -89,9 +82,6 @@ final class NotificationService {
     func reconcileReminders(_ intents: [ReminderIntent]) { reminders.reconcile(intents) }
 
     func reminderReadFailed(_ message: String) { reminders.recordReadFailure(message) }
-
-    /// Clears only task reminders. Calendar nudges have their own lifecycle.
-    func cancelAll() { reminders.resetForLibraryRestore() }
 
     /// Fresh-process selection boundary, before any publisher is constructed.
     /// OS removals have no completion callback; the saved-state reconciliation

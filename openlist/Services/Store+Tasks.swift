@@ -121,17 +121,6 @@ extension Store {
         }
     }
 
-    /// Fraction of a task's subtasks that are done, for the progress pill.
-    ///
-    /// Fetches the owning list, so this is for one-off use. Views that render
-    /// many rows should build `BlockTree.subtaskCounts(in:)` once instead.
-    func subtaskProgress(for block: Block) -> (done: Int, total: Int)? {
-        guard let listID = block.listID else { return nil }
-        let counts = BlockTree.subtaskCounts(in: blocks(inList: listID))
-        guard let entry = counts[block.id], entry.total > 0 else { return nil }
-        return entry
-    }
-
     // MARK: - Scheduling
 
     func setDueDate(_ date: Date?, includesTime: Bool = false, for block: Block) {
@@ -404,15 +393,8 @@ extension Store {
 
     // MARK: - Text formatting
 
-    /// How much detail a relative date string carries.
-    enum DateStyle {
-        /// "today", "Tue", "12 Mar" — for chips.
-        case short
-        /// "Today", "Tuesday", "Tue 12 March" — for section headings.
-        case long
-    }
-
-    static func relativeDateText(_ date: Date, style: DateStyle = .short) -> String {
+    /// "today", "Tue" or "12 Mar", for due chips, repeat summaries and history.
+    static func relativeDateText(_ date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return "today" }
         if calendar.isDateInTomorrow(date) { return "tomorrow" }
@@ -426,16 +408,12 @@ extension Store {
 
         // Within a week either way, the weekday name is the clearest label.
         if abs(days) < 7 {
-            return date.formatted(.dateTime.weekday(style == .long ? .wide : .abbreviated))
+            return date.formatted(.dateTime.weekday(.abbreviated))
         }
         if calendar.component(.year, from: date) == calendar.component(.year, from: .now) {
-            return style == .long
-                ? date.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
-                : date.formatted(.dateTime.day().month(.abbreviated))
+            return date.formatted(.dateTime.day().month(.abbreviated))
         }
-        return style == .long
-            ? date.formatted(.dateTime.day().month(.wide).year())
-            : date.formatted(.dateTime.day().month(.abbreviated).year())
+        return date.formatted(.dateTime.day().month(.abbreviated).year())
     }
 
     /// Short chip text such as "Today", "Tue", "12 Mar", with an optional time.
@@ -453,11 +431,6 @@ extension Store {
         includesTime
             ? date.formatted(date: .abbreviated, time: .shortened)
             : date.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    /// "Today" / "Yesterday" / "Tue 12 March" headings for day-grouped lists.
-    static func dayHeading(for date: Date) -> String {
-        relativeDateText(date, style: .long).capitalizedFirstLetter
     }
 }
 

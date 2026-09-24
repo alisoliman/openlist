@@ -14,10 +14,6 @@
         <key>UTTypeIdentifier</key><string>app.openlist.block-drag</string>
         <key>UTTypeDescription</key><string>Openlist Row Move</string>
         <key>UTTypeConformsTo</key><array><string>public.data</string></array>
-    </dict><dict>
-        <key>UTTypeIdentifier</key><string>app.openlist.inbox-order</string>
-        <key>UTTypeDescription</key><string>Openlist Inbox Order</string>
-        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
     </dict></array>
     <key>CFBundleURLTypes</key>
     <array><dict>

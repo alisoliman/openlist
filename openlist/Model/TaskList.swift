@@ -82,9 +82,6 @@ extension TaskList {
     static var availablePredicate: Predicate<TaskList> {
         #Predicate<TaskList> { $0.trashID == nil && $0.mergedIntoID == nil }
     }
-    static var activePredicate: Predicate<TaskList> {
-        #Predicate<TaskList> { $0.trashID == nil && !$0.isArchived && $0.mergedIntoID == nil }
-    }
 
     var isTrashed: Bool { trashID != nil }
     @MainActor var isEffectivelyArchived: Bool { (try? ownershipAncestors().contains { $0.isArchived }) ?? true }

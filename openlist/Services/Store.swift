@@ -24,7 +24,7 @@ struct DocumentContext: Hashable {
 ///
 /// Views own presentation; `Store` owns the rules — how completing a repeating
 /// task rolls it forward, what indenting does to a subtree, which changes are
-/// worth recording in the Updates feed.
+/// worth recording in Activity's Changes.
 @Observable
 @MainActor
 final class Store {
@@ -540,10 +540,6 @@ final class Store {
         list.sorting = sorting
         list.touch()
         save()
-    }
-
-    func setShowsCompleted(_ shows: Bool, for list: TaskList) {
-        setCompletedVisibility(shows ? .show : .hide, for: list)
     }
 
     func setCompletedVisibility(_ visibility: TaskList.CompletedVisibility, for list: TaskList) {

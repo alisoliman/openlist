@@ -113,7 +113,7 @@ extension CalendarPersistenceChecks {
         manager.endUndoGrouping()
         let action = store.completionUndo!
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: day)!
-        check(notifications == 1 && action.expiresAt.timeIntervalSince(action.createdAt) == 10, "A parent completion publishes one saved ten-second Undo action")
+        check(notifications == 1, "A parent completion publishes one saved Undo action")
         check(parent.deferredUntil == tomorrow && child.deferredUntil == tomorrow && parent.selectedForDay == nil, "Future recurring occurrences and their undated subtasks wait until tomorrow automatically")
         check(work.endedAt == completedAt && store.workSessions(taskID: parent.id).allSatisfy { $0.endedAt != nil }, "Completion pauses work before an Undo can restore task state")
         let changedDue = tomorrow.addingTimeInterval(5 * 86_400)

@@ -143,7 +143,7 @@ extension Store {
         return result
     }
 
-    /// Task history is independent of the Updates feed's latest-300 helper.
+    /// Task history is independent of `recentActivity`, which Changes reads.
     func taskActivity(for taskID: UUID, limit: Int = 50, offset: Int = 0) throws -> [ActivityEvent] {
         let excluded = Array(uncommittedActivityIDs)
         var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == taskID && !excluded.contains($0.id) },

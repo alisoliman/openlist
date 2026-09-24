@@ -89,6 +89,28 @@ for sorting in ListSorting.allCases {
     check(ids(result) == ids([firstTie, nestedTie, lastTie]), "\(sorting) retains outline order for equal keys")
 }
 
+// The orders Today's and a list's Completed groups, the label screen, the
+// Due date sort and the widget take from the model's comparators.
+func loose(_ title: String, due: Date? = nil, priority: TaskPriority = .none, completed: Date? = nil) -> Block {
+    let value = Block(kind: .task, text: title, listID: list.id)
+    value.dueDate = due
+    value.priority = priority
+    value.isCompleted = completed != nil
+    value.completedAt = completed
+    return value
+}
+let finishedEarly = loose("Finished early", completed: date)
+let finishedLate = loose("Finished late", completed: date.addingTimeInterval(3_600))
+let unfinished = loose("Not finished")
+check(ids([finishedEarly, unfinished, finishedLate].sorted(by: Block.byCompletionDate)) == ids([finishedLate, finishedEarly, unfinished]),
+      "Completion order puts the newest completion first")
+let sameDayLow = loose("Same day, low", due: date, priority: .low)
+let sameDayHigh = loose("Same day, high", due: date, priority: .high)
+let sooner = loose("Sooner", due: date.addingTimeInterval(-86_400))
+let undated = loose("Undated", priority: .high)
+check(ids([undated, sameDayLow, sooner, sameDayHigh].sorted(by: Block.byDueDate)) == ids([sooner, sameDayHigh, sameDayLow, undated]),
+      "Due-date order breaks a shared date by priority and puts undated tasks last")
+
 let foreign = Block(kind: .task, text: "Other list", listID: UUID())
 check(ids(projection(source: blocks + [foreign, alpha]).tasks) == ids(manual),
       "A foreign-list block and repeated input cannot duplicate or contaminate the queue")

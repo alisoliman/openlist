@@ -56,12 +56,6 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
         case .brown: Color(hex: 0xA0694B)
         }
     }
-
-    /// Tinted background for chips and soft badges.
-    var softBackground: Color { color.opacity(0.14) }
-
-    /// Readable text colour when drawn on `softBackground`.
-    var textColor: Color { color }
 }
 
 extension Color {

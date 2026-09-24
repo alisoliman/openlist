@@ -62,9 +62,10 @@ Subtasks are written in the list's document, two levels deep as the design's
 indent allows; the inspector lists a task's subtasks with their progress, and a
 subtask shows the task it belongs to.
 
-Lists can also own separately titled **child list documents**. Create one from
-List options, navigate with breadcrumbs, or use **Move List** to change its
-parent while retaining its contents and identity. Parent archive applies to
+Lists can also own separately titled **child list documents**. Create one with
+**New Child List** in a list's **…** menu; a parent shows its children above its
+document, and the sidebar nests them. **Move List…** changes a list's parent
+while retaining its contents and identity. Parent archive applies to
 its subtree; parent deletion retains the subtree as one restorable Trash unit.
 Duplicate, template copy, Markdown folder export, and full backup preserve the
 document boundaries. See [nested lists](docs/NESTED_LISTS.md).
@@ -91,9 +92,11 @@ the completion date, ending never / on a date / after N times), labels, priority
 stars, and progress rollups from subtasks.
 Completing a repeating task rolls it forward to the next occurrence rather than
 marking it done.
-Completion is silent. Pointer actions give a brief checkbox acknowledgement
-and settle completed tasks below pending siblings without a delay or bounce.
-Keyboard actions and Reduce Motion update immediately. Each task carries its
+Completing a task, by click or with **E**, strikes its row and leaves it in
+place for the undo window (2–8 seconds, set in Settings → Motion & feedback)
+before it settles below its pending siblings; the tray reports each completion
+with Undo. The **Motion** setting in Settings → Appearance sets how lively rows
+move, and **Reduce motion** drops the bounces and slides. Each task carries its
 subtasks and attached notes; reopening restores its stored manual position.
 
 In **Settings → Labels**, renaming into an existing name offers a merge review
@@ -147,19 +150,18 @@ subtree, including hidden/completed descendants, notes, supported inline formatt
 images, and files. Other apps receive it as readable Markdown, with images/files
 described by name, without private local file URLs.
 
-Use **Paste content after this block** at a destination row, or **Paste content**
-in the blank document area's context menu. ⌘V in an empty outline row also inserts
-the internal content. Selected text and inline pastes retain normal text behavior;
+⌘V in an empty line of a list document inserts the internal content; elsewhere
+it pastes as Markdown. Selected text and inline pastes retain normal text behavior;
 ordinary ⌘C still copies the selected text. The insertion has fresh IDs and independent
 media, and is one editor Undo/Redo operation. A blank destination row is retained.
 Completed content remains completed and follows the destination's visibility/sort settings.
 
 Content paste keeps text, formatting, links, notes, hierarchy, completion/date,
 collapse, stars, priority, estimates, and planning preferences. **Dates, reminders,
-repeating rules, selected day, and deferral are cleared by default.** The explicit
-**Paste content including schedules** action also retains those scheduling values;
-only eligible future reminders are reconciled after a successful save. Repeat progress,
-occurrence IDs, calendar placements, work sessions, and prior history never transfer.
+repeating rules, selected day, and deferral are cleared.** `Store.pasteFragment`
+can also retain those scheduling values, reconciling only eligible future
+reminders after a successful save. Repeat progress, occurrence IDs, calendar
+placements, work sessions, and prior history never transfer.
 Every pasted task gets a fresh Created event; Undo/Redo records Deleted/Restored.
 Links retain their original destinations rather than being rewritten to the new IDs.
 
@@ -182,10 +184,10 @@ text instead of being silently discarded. No multi-selection UI is added here.
 ### Views
 
 **Inbox** (⌘1) · **Today** (⌘2) · **Calendar** (⌘3) · **Tasks** (⌘4) · **Lists** (⌘5) ·
-**Activity** (⌘6), plus per-label views and a completed archive. Today groups
-overdue, due-today, planned-for-today, and starred work; Tasks filters and groups
-by list or date; Activity shows the completion heatmap, the selected day, and the
-log of recent changes. Updates now lives under Activity.
+**Activity** (⌘6), plus per-label views. Today groups overdue, due-today,
+planned-for-today and starred work, with what was completed today; Tasks filters
+by status and query words and groups by list or date; Activity shows the
+completion heatmap, the selected day, and the log of recent changes.
 
 The sidebar is flat: Inbox, Today, Calendar, Tasks, Lists, and Activity sit at the
 top, followed by your list sections, pinned lists, and labels. Trash and Settings
@@ -193,85 +195,80 @@ are in the sidebar footer, and Trash also opens from the View menu.
 The toolbar's **New task** button (N) is the shared task capture action on every page.
 
 Inbox holds unorganized tasks and notes. Filing into a list moves the complete
-branch out of Inbox; setting a due date keeps it there. Hover or focus a row for
-filing, date, details and Trash icons, or use its native context menu. See
+branch out of Inbox; setting a due date keeps it there. Inbox opens as triage,
+one task at a time: file it, schedule it, mark it done, discard it or keep it for
+later. Its header button shows it as a document instead. See
 [Inbox](docs/INBOX.md) for behavior and compatibility.
 
-Task details include a paginated **Activity** timeline with committed title,
-date/time, completion, recurrence, and list-move changes. It shares history with
-Updates; **Clear History** clears both after confirmation. Older entries retain
-only the facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md)
-for save, retention, and export behavior.
+Task details end with **Activity**: this session's changes and, under **Full
+history**, a paginated timeline of committed title, date/time, completion,
+recurrence, and list-move changes, with the creation and completion times. It
+shares history with Activity's **Changes**; **Clear all activity history…** in
+Settings › Data clears both after confirmation. Older entries retain only the
+facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md) for save,
+retention, and export behavior.
 
 The inspector keeps the title and active metadata above notes and subtasks.
-Empty notes and files use add actions rather than empty forms. Creation and
-completion timestamps are inside **Activity**; **More** contains Copy Link
-and Delete. Priority and label controls remain named for
-accessibility, and long label collections show a compact summary.
+Empty notes and files use add actions rather than empty forms. Its footer has
+**Trash**, **Copy Link** and **Start**. Priority and label controls remain named
+for accessibility.
 **Add subtask** goes to the task's list document, opening it if needed, unfolds
 the task and writes a new subtask line at the end of its subtasks, as one Undo
 step.
 
-The sidebar's **Activity** heatmap shows 12 weeks of recorded completions with
+The **Activity** screen's heatmap shows 12 weeks of recorded completions with
 daily counts and saved task details. Ordinary tasks count once; recurring tasks
-and subtasks count once per recorded occurrence. Missing history stays explicit,
-and clearing Updates history also clears the heatmap. See
-[activity heatmap](docs/ACTIVITY_HEATMAP.md) for counting and coverage details.
+and subtasks count once per recorded occurrence. Clearing activity history also
+clears the heatmap. See [activity heatmap](docs/ACTIVITY_HEATMAP.md) for
+counting and coverage details.
 
-Today's **Sort** menu orders tasks within each section by priority (highest first),
-due date (earliest first, undated last), title (A–Z), creation date (oldest first),
-or list position and stored document order. **Default** restores the original
-task ordering within each section. Equal values use creation date, then task identity for stable
-ties. This Mac remembers the choice; task membership, list documents, and synced
-list preferences stay unchanged.
-
-Tasks has a local **Filter task titles** field and a **Filter** menu for status
-and list. It matches visible titles without case or accent differences;
-notes, labels and parent titles are not searched. **Sort tasks** independently
-orders every group by due date, title or creation date in either direction.
-Grouping and **Sort tasks** live in **View**. Only active filters add a second
-control line; clearing the last filter returns to the compact default.
-Undated tasks stay last in due-date order; equal values use creation time then
-task identity for stable ties. The page count counts each matching task once,
-even when it appears under several labels. **Reset filters** clears title,
-status and list constraints while keeping grouping and sorting; **Reset sort**
-in the sort menu restores earliest due first. These Tasks choices are temporary
-screen state and reset when the app relaunches. Sorting never rewrites documents.
+Tasks shows every task in its lists' outline order, under **Open**, **Completed**
+or **All**. Its query field combines words: `overdue`, `today`, `tomorrow`, `week`,
+`later` and `undated` for dates, `starred`, `planned` and `high` for flags, a
+list's key word, `#label`, and any other text to match titles. Suggestions
+complete the word being typed, and the grouping label beside the field switches
+between list, date and none. Settings → Appearance can swap the query for a
+sentence of list and title filters. These choices are screen state and never
+rewrite documents.
 
 ### Adaptive calendar
 
-Calendar offers **1-day, 3-day, 1-week, and 1-month** views of a rolling four-week
-plan. Select tasks for today or give them upcoming due dates; undated backlog
-stays unscheduled. Lists inherit separate work or personal hours, with weekly
+Calendar offers **day, 3-day and week** views of a rolling four-week plan. Select
+tasks for today or give them upcoming due dates; undated backlog stays
+unscheduled. Lists inherit separate work or personal hours, with weekly
 breaks and date overrides. Estimates start at an editable 30 minutes. Work can
 split into sessions, with a 25-minute minimum by default and a per-task
 **Keep task together** option.
 
-Use **Work** in the toolbar to review a suggestion's planned time, duration,
-deadline, and source. Suggestions never open the panel or start tracking by
-themselves. **Later → Remind in 15 minutes** quiets that occurrence without
-moving the plan; **Move planned time** previews affected work separately.
+The **Work** panel (**Work → Show Work**, or the toolbar's work notch while
+working) shows a suggestion's planned time, duration, deadline, and source.
+Suggestions never open the panel or start tracking by themselves. **Later… →
+Remind in 15 minutes** quiets that occurrence without moving the plan; **Later… →
+Move planned time…** previews affected work separately.
 
-Start work explicitly, at any time. The toolbar shows the active task and its
-elapsed time, with **Stop** always available. **Stop working** saves the session
-and leaves the task open; **Complete task** completes the occurrence. Stopped work
-can be resumed as a new segment. Starting another task switches straight away,
-saving the old segment, and the tray offers Undo. Completion can be undone without
-restarting a timer.
+Start work explicitly, at any time. The toolbar's work notch shows the active task
+and its elapsed time, with **Done** and **Stop** always available. **Stop
+working** saves the session and leaves the task open; **Complete task** completes
+the occurrence. Stopped work can be resumed as a new segment. Starting another
+task switches straight away, saving the old segment, and the tray offers Undo.
+Completion can be undone without restarting a timer.
 
 Recording continues past the estimate: the working block grows in 15-minute steps
 and later flexible work moves out of its way, with Undo in the tray. When a
 meeting, a break or a pinned task leaves no more room, work keeps recording and
-the toolbar names what it is running into; at the end of available hours the block
-simply stops growing. Lock and sleep pause work; a task can opt into tracking away
-from the Mac, which still stops at the next meeting, break, pinned time or the end
-of its hours. Move blocks to express a preference or choose **Pin time** for fixed placements. Deadline coverage distinguishes
-**Scheduled**, **Cannot fit before deadline**, and **Outside planning horizon**.
+the work notch names what it is running into; at the end of available hours the
+block simply stops growing. Lock and sleep pause work; a task can opt into
+tracking away from the Mac, which still stops at the next meeting, break, pinned
+time or the end of its hours. **Plan** on Calendar's **Not planned yet** column
+pins a task into its next free slot, and **Move planned time…** in the Work panel
+saves a preference. Deadline coverage distinguishes **Scheduled**, **Cannot fit
+before deadline**, and **Outside planning horizon**.
 
 The **Work** menu and command palette (⌘K) offer Show work, Start selected task,
 Stop current session, Resume task, and Complete current task. Existing selected-task
-shortcuts keep their meaning. Optional background work notifications are enabled
-in Calendar settings; reminder suppression survives replanning and restarting.
+shortcuts keep their meaning. Optional background work notifications are turned
+on with **Notify me about planned work** in Settings → Notifications; reminder
+suppression survives replanning and restarting.
 
 Connected macOS calendars supply read-only busy time. Session and completion
 history preserve recurring occurrences, support recorded-time corrections, and
@@ -283,16 +280,15 @@ per-Mac.
 See the [calendar guide and developer invariants](docs/ADAPTIVE_CALENDAR.md) for
 setup, scheduling behavior, storage boundaries, and validation scope.
 
-Each list has a **Completed (count)** control to show or hide finished tasks below
-pending siblings, preserving their notes and nested content. Settings → Tasks sets the app
-default; each list can inherit it or explicitly show/hide completed tasks. On
+Settings → Tasks sets whether completed tasks show by default; each list can
+inherit it or explicitly show or hide them under **Completed Tasks** in its **…**
+menu, preserving their notes and nested content. On
 upgrade, previously hidden lists stay hidden and lists using the historical
 shown default adopt inheritance. Older versions did not distinguish an explicit
 Show choice from that default. Inbox continues to inherit the app setting.
 The default stays on each Mac; explicit list overrides sync with the list.
 On a list's page, done top-level tasks gather in the **Completed** group under
-its document, open or folded by that preference, which the list's **…** menu
-sets under **Completed Tasks**.
+its document, open or folded by that preference.
 
 The list's **…** menu also has **Show Tasks Only**, remembered per list on this
 Mac: the same document with its headings, notes and prose hidden, each task
@@ -300,17 +296,15 @@ under the tasks above it. Its **Sort** menu orders the list's top-level tasks by
 due date, creation date, alphabetically or priority. **Manual** follows the
 original outline, and equal sort keys keep that order.
 
-Editing, completing and opening details act on the original task. **Add task**
-and ⌘N in Tasks mode start capture in the current list and place the new task at
-the end of its document, then show it at its sorted position. You can choose
-another destination in capture. Returning to Document restores the original
-prose and hierarchy; its existing sort continues to order only adjacent root
-tasks, carrying each subtree. Neither presentation rewrites stored order. Drag
-reordering remains an operation of manual Document view. Search and reminder
-links to exact content return to Document so hidden prose can be revealed.
+Editing, completing and opening details act on the original task. **New task**
+and ⌘N on a list start capture in that list and place the new task at the end of
+its document, then show it at its sorted position. You can choose another
+destination in capture. Turning Tasks Only off restores the original prose and
+hierarchy; the sort orders only adjacent root tasks, carrying each subtree, and
+neither presentation rewrites stored order. Search and reminder links to exact
+content show the document for that visit so hidden prose can be revealed.
 
-The [list Tasks validation guide](docs/LIST_TASKS.md) covers the projection and
-native interaction checks.
+The [list Tasks guide](docs/LIST_TASKS.md) covers the presentation and its checks.
 
 ### Capture and navigation
 
@@ -327,37 +321,28 @@ Clicking or switching away also closes it, but the next Quick Add within five
 minutes picks up what you'd typed. ⇧⌥Space works from launch, with or without
 a window open; with VoiceOver on, Quick Add brings Openlist forward so
 VoiceOver can read it.
-Navigation, command selection, and keyboard scrolling do not animate. Custom
-pointer feedback lasts 140 ms; task rearrangement lasts 200 ms. Reduce Motion
-disables custom movement.
-Back restores native scroll coordinates, including the negative offset beneath
-the toolbar, so returning to a page does not clip its heading or accumulate drift.
-Rescheduling summaries and work notices live in the toolbar's Work panel, available
-from every destination. Passive changes never displace the current document.
+Settings → Appearance sets the motion style. Settings → Motion & feedback sets
+**Reduce motion**, which keeps state changes but drops bounces, rings and slides,
+and the undo window a finished task stays in place for. Work notices live in the
+Work panel, available from every destination. Passive changes never displace the current document.
 Save failures remain visible across the app.
 
-Row-selection handles reveal on hover, selection, or keyboard focus without
-changing the row's hit target. They stay available to accessibility, and
-VoiceOver keeps them visible. Command-click, Shift-click, and arrow selection
-retain their existing behavior; a task's round checkbox still means completion.
+⌘-click or ⇧-click selects rows on a screen, and the selection bar completes,
+schedules, plans, stars or trashes them together; a task's round checkbox still
+means completion. See [row selection](docs/BLOCK_SELECTION.md).
 
-Search shows an honest total and loads results in batches of 80; **Load next**
-and the arrow keys can reach every match. **Include completed** and **Include
-archived** start on, retaining access to existing content. The Notes scope finds
-non-task blocks; notes attached to tasks also match in All and Tasks. Matching
-ignores case, accents and character width, and results include their list,
-ancestor path and a matching passage when needed.
-The **Search filters** button contains type, completion, and archive controls.
-Non-default filters remain summarized below the query; Reset filters keeps the query.
+Search (⌘F) finds tasks, notes, headings and lists, archived content included,
+and lists the first 30 results with an honest total; keep typing to narrow the
+rest. **Include completed** adds finished tasks. Matching ignores case, accents
+and character width, and results include their list, ancestor path and a
+matching passage when needed.
 
 Opening a result resolves its current identity. Tasks open their inspector and
 reveal the matching title or note; other blocks open their owning list, scroll
 to the exact result and temporarily expose collapsed/completed ancestors.
-**Finish** or leaving the page ends this temporary reveal without changing
-stored collapse, archive or completion settings. Missing results show an
-unavailable message. Escape closes search and returns focus to its previous
-control when no result was opened. Search preferences are local to the open
-search session; no index or query history is persisted.
+**Finish** or leaving the page ends this temporary reveal without changing stored
+collapse, archive or completion settings. Missing results show an unavailable message.
+Escape closes search. No index or query history is persisted.
 
 **Copy Link** in task and list menus copies a stable reference to that item in
 this Mac's library. Links survive renaming and moving tasks, and can open
@@ -442,8 +427,10 @@ Choose **Claude Desktop / stdio** or **VS Code / HTTP** in Settings, merge the
 copied configuration into your client's MCP settings, and reconnect. Other local
 clients can use the bundled stdio launcher or the Streamable HTTP endpoint with
 its bearer token.
-Client setup appears after MCP is enabled. **Connection options** contains the
-port and token-reset controls; access and token warnings remain visible.
+Client setup appears after MCP is enabled: the endpoint, the client
+configuration with **Copy configuration** and **Copy token**, the **Port**, and
+**Access token** with **Reset access token…**; access and token warnings remain
+visible.
 
 Keep copied configurations private: they contain your access token. Turning MCP
 off disconnects clients; resetting the token revokes old configurations. Connected
@@ -451,8 +438,7 @@ AI clients may send the content they read to their own model providers.
 
 Per-list *grouping* was cut rather than shipped half-working: grouping a rich
 document that mixes headings, notes and tasks has no well-defined meaning, and
-the Tasks screen already groups across every list by date, list, label or
-priority.
+the Tasks screen already groups across every list by list or date.
 
 ---
 
@@ -484,7 +470,7 @@ openlist/
                BlockRowView, SlashMenuView, MarkdownInputRules, BlockDragAndDrop
   Next/        Openlist Next shell: sidebar, screens, rows, inspector,
                calendar, overlays, settings, Workbench (shared UI state and actions)
-  Views/       RootView, document screens, shared pickers
+  Views/       RootView, menus, the Work panel, calendar history, shared pickers
   Design/      Theme
 Shared/        ListAccent, WidgetSnapshot, WidgetRoute, WidgetActions,
                WidgetIntents, AppGroup, Fonts   (app + widget)
@@ -637,8 +623,9 @@ unconfirmed; the next launch reconciles it. Timeout never implies acceptance.
 ### Recovering deleted content
 
 Delete moves a task subtree or an entire list to **Trash** in the sidebar.
-Trash keeps content indefinitely; nothing is emptied automatically. Each item
-shows its former location, deletion time, and retained file size. Restore keeps
+Trash keeps content indefinitely; nothing is emptied automatically. A task
+entry shows where it came from and when it was deleted; a list entry shows its
+item count and deletion time. Restore keeps
 original IDs, rich notes, nested content, files, labels, completion and list
 ownership. Tasks in Trash are excluded from active views, search, widgets and
 reminders. Only eligible future reminders resume after restoration.
@@ -649,10 +636,10 @@ with it. If the original parent or list is unavailable, Restore explicitly
 creates a pinned **Recovered items** list and keeps a separate provenance note;
 it does not rewrite the original notes. Archived lists keep their archive state.
 
-**Permanently Delete** and **Empty Trash** require confirmation and remove only
+**Hold to erase** and **Hold to empty Trash** require confirmation and remove only
 files with no remaining live or retained references. These actions cannot be
-undone. Editor merges and abandoned empty captures use structural cleanup and
-session Undo; they do not fill Trash. Settings → Delete everything permanently
-removes both active content and Trash. Library backup format 3 includes Trash
+undone. Editor merges and undone captures use structural cleanup and session
+Undo; they do not fill Trash. **Delete everything…** in Settings → Data
+permanently removes both active content and Trash. Library backup format 3 includes Trash
 and its media; versions 1 and 2 can still be imported. A restore already staged
 by an older app must be cancelled and prepared again from the original backup.

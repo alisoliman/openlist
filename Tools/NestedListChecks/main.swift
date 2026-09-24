@@ -50,7 +50,7 @@ if phase == "write" {
     let childID = child.id, taskID = childTask.id
     try store.persistChanges()
     try check(child.parentListID == parent.id && nestedTask.listID == child.id && nestedTask.parentID == childTask.id, "Document ownership is independent of task indentation")
-    try check(store.listHierarchy().ancestors(of: grandchild.id).map(\.id) == [parent.id, child.id], "Breadcrumbs preserve ancestor order")
+    try check(store.listHierarchy().ancestors(of: grandchild.id).map(\.id) == [parent.id, child.id], "Ancestor paths preserve order")
     try check(!store.moveList(parent, under: grandchild.id) && !store.moveList(child, under: child.id), "Self and descendant moves are rejected")
     try check(!store.moveList(child, under: store.inboxList()!.id), "Inbox cannot own documents")
     try check(store.createChildList(in: store.inboxList()!) == nil, "Inbox child creation is rejected")
@@ -189,6 +189,32 @@ if phase == "write" {
     try check(!store.moveList(other, under: cycleA.id), "Moves into imported cycles are rejected")
     try check(store.moveList(cycleA, under: nil), "An explicit move repairs an imported cycle")
     try store.persistChanges()
+
+    // Sidebar, gallery and search rows share a body-local graph for paths and membership.
+    let owner = TaskList(title: "Owner"), descendant = TaskList(title: "Child")
+    descendant.parentListID = owner.id
+    var projected = [owner, descendant]
+    try check(ListHierarchy(projected).path(for: descendant.id) == "Owner › Child", "Shared row projection includes the current owning path")
+    owner.title = "Renamed owner"
+    try check(ListHierarchy(projected).path(for: descendant.id) == "Renamed owner › Child", "Rebuilding the parent projection reflects ancestor rename")
+    owner.isArchived = true
+    var projection = ListHierarchy(projected)
+    try check(!projection.activeIDs.contains(descendant.id) && projection.isArchived(descendant.id),
+        "Shared active membership and card archive state change together")
+    owner.isArchived = false
+    descendant.parentListID = UUID()
+    projection = ListHierarchy(projected)
+    try check(projection.ancestors(of: descendant.id).isEmpty && projection.recoveryContext(for: descendant.id) != nil,
+        "Shared projection represents an unavailable parent without a stale path")
+    let arriving = TaskList(title: "Arriving owner"); arriving.id = descendant.parentListID!
+    projected.append(arriving)
+    projection = ListHierarchy(projected)
+    try check(projection.path(for: descendant.id) == "Arriving owner › Child" && projection.recoveryContext(for: descendant.id) == nil,
+        "Late parent arrival updates shared row paths and clears recovery context")
+    descendant.parentListID = owner.id
+    try check(ListHierarchy(projected).path(for: descendant.id) == "Renamed owner › Child",
+        "Moving a document updates the shared row projection to its new parent")
+
     let expected = try snapshot(); try expected.validate()
     try JSONEncoder().encode(expected).write(to: directory.appendingPathComponent("expected.json"))
 } else {

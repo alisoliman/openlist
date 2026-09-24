@@ -24,9 +24,6 @@ extension NSAttributedString.Key {
 /// then re-applied on top of the base font for the block's current kind. That
 /// is what lets a bold word stay bold when a paragraph becomes a heading.
 enum RichTextCodec {
-    /// The canonical font used when writing RTF, so archives stay comparable.
-    private static var canonicalFont: NSFont { .systemFont(ofSize: Theme.Editor.bodyPointSize) }
-
     /// Heading 1 was once system bold at this size, so a run styled inside an
     /// older heading was archived bold along with its own trait.
     private static let legacyHeading1PointSize: CGFloat = 21

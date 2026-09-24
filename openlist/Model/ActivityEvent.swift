@@ -6,7 +6,7 @@
 import Foundation
 import SwiftData
 
-/// A record of something that happened, powering the Updates view.
+/// A record of something that happened, powering Activity's Changes and task history.
 ///
 /// In shared Superlist workspaces this feed shows teammate activity. On the
 /// personal side it becomes a personal history: what you completed, created,

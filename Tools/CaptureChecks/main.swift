@@ -89,10 +89,6 @@ store.undoableEditorEdit(in: inbox.id, name: "Schedule Inbox task", undoManager:
 undo.endUndoGrouping()
 undo.undo()
 check(parsed.dueDate == preview.date && parsed.includesTime, "Undo restores original scheduling precision")
-check(CommandMatchRank.rank(title: "Go to Inbox", query: "inbox") == 0, "Inbox is an exact navigation match")
-check(CommandMatchRank.rank(title: "New List", query: "new list") == 0, "New List is an exact command match")
-check(CommandMatchRank.rank(title: "New Task", query: "new task") == 0, "New Task command opens a draft before generic Create")
-check(CommandMatchRank.rank(title: "Create Inbox", query: "inbox", isCreation: true) > CommandMatchRank.rank(title: "Go to Inbox", query: "inbox"), "Generic creation must follow matching navigation")
 
 // Only locally edited text may be parsed when a row finishes or opens details.
 var inlineEdits = InlineMetadataEdits()
