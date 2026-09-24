@@ -23,10 +23,14 @@ struct LabelMergeSheet: View {
                 .padding(.vertical, NX.serifLeading(26, lineHeight: 1.1))
                 .foregroundStyle(NX.ink)
             if destinations.count > 1 {
+                let kept = destinations.first { $0.id == destinationID }
                 HStack(spacing: 8) {
                     Text("Keep this label").font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
-                    NXPopUpPill(value: destinations.first { $0.id == destinationID }.map(title) ?? "Choose",
-                                label: "Keep this label", swatch: destinations.first { $0.id == destinationID }?.nxColor,
+                        .fixedSize()
+                    // The menu tells matching labels apart by when they were made;
+                    // the pill names the choice and truncates a long name.
+                    NXPopUpPill(value: kept.map { "\($0.name) · \($0.accent.title)" } ?? "Choose",
+                                label: "Keep this label", swatch: kept?.nxColor, truncates: true,
                                 entries: destinations.map { label in
                                     .choice(title(label), isSelected: label.id == destinationID, swatch: label.nxColor) {
                                         destinationID = label.id

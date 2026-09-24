@@ -6,6 +6,7 @@
 //  of planning: the minimum session and connected calendars.
 //
 
+import AppKit
 import SwiftUI
 
 /// One category's weekly hours and breaks, and the dates that replace them.
@@ -184,6 +185,58 @@ private struct NXOverrideEditor: View {
         }
         .padding(.vertical, 10)
         .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
+        // Return saves and Escape cancels.
+        .background { NXEditorKeys(onReturn: save, onEscape: cancel) }
+    }
+}
+
+/// Gives an inline editor Return and Escape. The window's key handler takes
+/// them for its rows unless a view of its own has the keys, so this view
+/// takes first responder as the editor opens and keeps it while clicks land
+/// inside the editor. Other keys travel on as usual.
+private struct NXEditorKeys: NSViewRepresentable {
+    let onReturn: () -> Void
+    let onEscape: () -> Void
+
+    func makeNSView(context: Context) -> Keys {
+        let view = Keys()
+        updateNSView(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ nsView: Keys, context: Context) {
+        nsView.onReturn = onReturn
+        nsView.onEscape = onEscape
+    }
+
+    final class Keys: NSView {
+        var onReturn: (() -> Void)?
+        var onEscape: (() -> Void)?
+
+        override var acceptsFirstResponder: Bool { true }
+        // Not a stop of its own when Tab moves through the window.
+        override var canBecomeKeyView: Bool { false }
+        // Clicks reach the editor's controls.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.window else { return }
+                window.makeFirstResponder(self)
+            }
+        }
+
+        override func keyDown(with event: NSEvent) {
+            guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else {
+                return super.keyDown(with: event)
+            }
+            switch event.keyCode {
+            case 36, 76: onReturn?()
+            case 53: onEscape?()
+            default: super.keyDown(with: event)
+            }
+        }
     }
 }
 
@@ -213,10 +266,10 @@ private struct NXWindowsEditor: View {
             ForEach(windows.indices, id: \.self) { index in
                 HStack(spacing: 6) {
                     NXPopUpPill(value: NXHours.clock(windows[index].startMinute), label: "From", monospacedDigits: true,
-                                entries: startEntries(index))
+                                custom: customTime("From", index, end: false), entries: startEntries(index))
                     Text("–").font(.system(size: 12)).foregroundStyle(NX.ink(0.4))
                     NXPopUpPill(value: NXHours.clock(windows[index].endMinute), label: "To", monospacedDigits: true,
-                                entries: endEntries(index))
+                                custom: customTime("To", index, end: true), entries: endEntries(index))
                     NXRemoveButton(label: "Remove \(title.lowercased()) time") { windows.remove(at: index) }
                 }
             }
@@ -242,6 +295,24 @@ private struct NXWindowsEditor: View {
         let times = Array(stride(from: 15, through: 1440, by: 15)).filter { $0 > window.startMinute }
         return nxPresets(times, including: window.endMinute).map { minute in
             .choice(NXHours.clock(minute), isSelected: minute == window.endMinute) { setEnd(index, minute) }
+        }
+    }
+
+    /// Any minute, typed, for a time between the quarter hours. An end must
+    /// come after the start; "00:00" ends at midnight.
+    private func customTime(_ label: String, _ index: Int, end: Bool) -> NXCustomValue {
+        let window = windows[index]
+        return NXCustomValue(label: label, placeholder: "HH:MM", initial: NXHours.clock(end ? window.endMinute : window.startMinute),
+                             width: 58, monospaced: true) { text in
+            guard windows.indices.contains(index), let minute = NXHours.minute(from: text) else { return false }
+            if end {
+                guard minute == 0 || minute > windows[index].startMinute else { return false }
+                setEnd(index, minute)
+            } else {
+                guard minute < 1440 else { return false }
+                setStart(index, minute)
+            }
+            return true
         }
     }
 
@@ -311,7 +382,8 @@ struct NXPlanningSettings: View {
                         footer: "A rolling four-week plan. Review affected tasks before extending work into their time. Connected calendars are read-only busy time; your events are never changed.") {
             NXSettingMenu(label: "Minimum session", hint: "Tasks shorter than this can still use shorter slots",
                           value: "\(minimum) min",
-                          entries: nxChoices(nxPresets([5, 10, 15, 20, 25, 30, 45, 60, 90, 120], including: minimum),
+                          // Every 5 minutes up to 2 hours.
+                          entries: nxChoices(nxPresets(Array(stride(from: 5, through: 120, by: 5)), including: minimum),
                                              selection: minimumSession) { "\($0) minutes" })
             NXSettingRow(label: "Connected calendars", hint: external.error ?? external.authorizationDescription,
                          hintColor: external.error == nil ? NX.ink(0.48) : NX.amberText) {

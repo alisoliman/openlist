@@ -61,7 +61,8 @@ struct NextSettingsScreen: View {
                     NXSettingMenu(label: "Default estimate", hint: "For tasks without their own",
                                   value: Self.estimate(env.workbench.defaultEstimate),
                                   entries: nxChoices(nxPresets([15, 30, 45, 60, 90], including: env.workbench.defaultEstimate),
-                                                     selection: defaultEstimate, title: Self.estimate))
+                                                     selection: defaultEstimate, title: Self.estimate),
+                                  custom: customEstimate)
                 }
                 NXSettingsGroup(title: "Library") {
                     let sync = env.sync.state
@@ -146,6 +147,17 @@ struct NextSettingsScreen: View {
         })
     }
 
+    /// Any whole number of minutes up to a day. Planning in the window treats
+    /// less than 5 as 5, so that's the least that can be typed.
+    private var customEstimate: NXCustomValue {
+        NXCustomValue(label: "Default estimate in minutes", placeholder: "Minutes",
+                      initial: "\(env.workbench.defaultEstimate)", unit: "min") { text in
+            guard let minutes = Int(text.trimmingCharacters(in: .whitespaces)), (5...1440).contains(minutes) else { return false }
+            defaultEstimate.wrappedValue = minutes
+            return true
+        }
+    }
+
     /// "30 min", "1 h", "1 h 30 min": the design's roomy form for an estimate.
     private static func estimate(_ minutes: Int) -> String {
         let hours = minutes / 60, rest = minutes % 60
@@ -187,7 +199,7 @@ private enum NXSettingsDetail: Hashable {
 /// "Mon–Fri 09:00–17:00" for a weekly availability profile.
 enum NXHours {
     static func summary(_ profile: AvailabilityProfile, calendar: Calendar) -> String {
-        let days = (0..<7).map { (calendar.firstWeekday - 1 + $0) % 7 + 1 }
+        let days = weekdays(calendar)
         let active = days.filter { !(profile.weekly[$0] ?? []).isEmpty }
         guard let first = active.first, let windows = profile.weekly[first] else { return "Off" }
         let times = windows.map { "\(clock($0.startMinute))–\(clock($0.endMinute))" }.joined(separator: ", ")
@@ -213,6 +225,23 @@ enum NXHours {
     /// The days of the week in the order `calendar` starts them, as weekday numbers.
     static func weekdays(_ calendar: Calendar) -> [Int] {
         (0..<7).map { (calendar.firstWeekday - 1 + $0) % 7 + 1 }
+    }
+
+    /// A typed time as minutes after midnight: "8:50", "08.50", "0850" or
+    /// "8". "24:00" is the end of the day.
+    static func minute(from text: String) -> Int? {
+        let typed = text.trimmingCharacters(in: .whitespaces)
+        let parts = typed.split { $0 == ":" || $0 == "." }.map(String.init)
+        let hour: Int?, minute: Int?
+        if parts.count == 2, parts[1].count == 2 {
+            (hour, minute) = (Int(parts[0]), Int(parts[1]))
+        } else if (1...4).contains(typed.count), typed.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            (hour, minute) = typed.count <= 2 ? (Int(typed), 0) : (Int(typed.dropLast(2)), Int(typed.suffix(2)))
+        } else {
+            return nil
+        }
+        guard let hour, let minute, (0...24).contains(hour), (0...59).contains(minute), hour * 60 + minute <= 1440 else { return nil }
+        return hour * 60 + minute
     }
 }
 
@@ -358,22 +387,26 @@ struct NXSettingToggle: View {
 
     var body: some View {
         NXSettingRow(label: label, hint: hint) {
-            Capsule()
-                .fill(isOn ? style.accent : NX.ink(0.16))
-                .frame(width: 34, height: 20)
-                .overlay(alignment: .leading) {
-                    Circle().fill(.white)
-                        .frame(width: 16, height: 16)
-                        .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
-                        .offset(x: isOn ? 16 : 2)
-                        .animation(style.spring(200), value: isOn)
-                }
-                // The design's `background 180ms ease` (CSS `ease`).
-                .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: style.ms(180) / 1000), value: isOn)
+            // A button, so Tab reaches the switch and Space flips it.
+            Button { isOn.toggle() } label: {
+                Capsule()
+                    .fill(isOn ? style.accent : NX.ink(0.16))
+                    .frame(width: 34, height: 20)
+                    .overlay(alignment: .leading) {
+                        Circle().fill(.white)
+                            .frame(width: 16, height: 16)
+                            .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
+                            .offset(x: isOn ? 16 : 2)
+                            .animation(style.spring(200), value: isOn)
+                    }
+                    // The design's `background 180ms ease` (CSS `ease`).
+                    .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: style.ms(180) / 1000), value: isOn)
+            }
+            .buttonStyle(NXBareButtonStyle(radius: 10))
         }
         .opacity(isEnabled ? 1 : 0.45)
         .onTapGesture { if isEnabled { isOn.toggle() } }
-        .accessibilityRepresentation { Toggle(label, isOn: $isOn) }
+        .accessibilityRepresentation { Toggle(label, isOn: $isOn).accessibilityHint(hint) }
     }
 }
 
@@ -426,7 +459,8 @@ struct NXSettingValue: View {
 
     var body: some View {
         NXSettingRow(label: label, hint: hint) {
-            NXValuePill(text: value, isExpanded: isExpanded)
+            Button(action: action) { NXValuePill(text: value, isExpanded: isExpanded) }
+                .buttonStyle(NXBareButtonStyle())
         }
         .onTapGesture(perform: action)
         .accessibilityElement(children: .combine)
@@ -508,6 +542,8 @@ struct NXDialogButtonStyle: ButtonStyle {
         var body: some View {
             let active = hovering && isEnabled
             configuration.label
+                // The design's `12px/1` line box, so the button is 28pt tall.
+                .frame(height: 12)
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
                 .foregroundStyle(foreground)
@@ -539,6 +575,18 @@ struct NXDialogButtonStyle: ButtonStyle {
     }
 }
 
+/// A control drawn only as its label, like a switch or a value pill, which
+/// shows its own hover and disabled look. As a button, Tab reaches it with
+/// keyboard navigation on and Space presses it; its focus ring follows `radius`.
+struct NXBareButtonStyle: ButtonStyle {
+    var radius: CGFloat = 7
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(.focusEffect, RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+}
+
 /// A short value typed into a pill, like a port or a new label's name.
 struct NXSettingField: View {
     @Environment(\.nextStyle) private var style
@@ -547,6 +595,14 @@ struct NXSettingField: View {
     var width: CGFloat?
     var monospaced = false
     var onSubmit: () -> Void = {}
+    /// What VoiceOver calls the field, when the placeholder says too little.
+    var label: String?
+    /// Takes focus as it appears, like a value typed in place of a pill.
+    var focusesOnAppear = false
+    /// Runs when focus leaves the field.
+    var onBlur: (() -> Void)?
+    /// Runs on Escape.
+    var onCancel: (() -> Void)?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -556,13 +612,64 @@ struct NXSettingField: View {
             .foregroundStyle(NX.ink)
             .focused($focused)
             .onSubmit(onSubmit)
+            .onExitCommand(perform: onCancel)
+            // Focus once the field is on screen; set as it's inserted, it can miss.
+            .onAppear { if focusesOnAppear { DispatchQueue.main.async { focused = true } } }
+            .onChange(of: focused) { _, isFocused in if !isFocused { onBlur?() } }
             .padding(.vertical, 5)
             .padding(.horizontal, 9)
             .frame(width: width)
             .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(focused ? style.accent.opacity(0.6) : .clear, lineWidth: 1))
-            .accessibilityLabel(placeholder)
+            .accessibilityLabel(label ?? placeholder)
+    }
+}
+
+/// A value a menu doesn't list, offered as its "Custom…" entry and typed in
+/// place of the pill.
+struct NXCustomValue {
+    /// What VoiceOver calls the field.
+    let label: String
+    let placeholder: String
+    /// The field's text as it opens: the current value.
+    let initial: String
+    /// Shown after the field, like "min".
+    var unit: String?
+    var width: CGFloat = 56
+    var monospaced = false
+    /// Sets the value from the typed text; false when the text isn't one.
+    let commit: (String) -> Bool
+}
+
+/// The field a "Custom…" entry opens in place of its pill. Return sets the
+/// value, or beeps when the text isn't one; leaving the field sets a valid
+/// value and closes it; Escape puts the pill back as it was.
+private struct NXCustomValueField: View {
+    let custom: NXCustomValue
+    /// The text being typed; nil puts the pill back.
+    @Binding var text: String?
+
+    var body: some View {
+        HStack(spacing: 5) {
+            NXSettingField(placeholder: custom.placeholder, text: Binding(get: { text ?? "" }, set: { text = $0 }),
+                           width: custom.width, monospaced: custom.monospaced, onSubmit: submit, label: custom.label,
+                           focusesOnAppear: true, onBlur: finish, onCancel: { text = nil })
+            if let unit = custom.unit {
+                Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.48))
+            }
+        }
+    }
+
+    private func submit() {
+        guard let typed = text else { return }
+        if custom.commit(typed) { text = nil } else { NSSound.beep() }
+    }
+
+    private func finish() {
+        guard let typed = text else { return }
+        _ = custom.commit(typed)
+        text = nil
     }
 }
 
@@ -585,7 +692,8 @@ func nxChoices<Value: Hashable>(_ values: [Value], selection: Binding<Value>,
 }
 
 /// A row whose value pill pops up a menu, the way a pop-up button does:
-/// the current choice opens over the pill. Pressing anywhere on the row opens it.
+/// the current choice opens over the pill. Pressing anywhere on the row opens
+/// it, and so does Space once Tab has reached the pill.
 struct NXSettingMenu: View {
     let label: String
     let hint: String
@@ -594,25 +702,39 @@ struct NXSettingMenu: View {
     let value: String
     var swatch: Color?
     let entries: [NXMenuEntry]
+    /// Adds "Custom…", for a value the menu doesn't list.
+    var custom: NXCustomValue?
     @State private var anchor = NXMenuAnchor()
+    /// The custom value being typed in place of the pill.
+    @State private var customText: String?
 
     var body: some View {
-        NXSettingRow(label: label, hint: hint, hintColor: isError ? NX.redText : NX.ink(0.48)) {
-            NXValuePill(text: value, swatch: swatch)
-                .background { NXMenuAnchorView(anchor: anchor) }
+        let hintColor = isError ? NX.redText : NX.ink(0.48)
+        if let custom, customText != nil {
+            NXSettingRow(label: label, hint: hint, hintColor: hintColor) {
+                NXCustomValueField(custom: custom, text: $customText)
+            }
+        } else {
+            NXSettingRow(label: label, hint: hint, hintColor: hintColor) {
+                Button(action: popUp) { NXValuePill(text: value, swatch: swatch) }
+                    .buttonStyle(NXBareButtonStyle())
+                    .background { NXMenuAnchorView(anchor: anchor) }
+            }
+            .overlay { NXMenuPress(action: popUp) }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { popUp() }
         }
-        .overlay { NXMenuPress(action: popUp) }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { popUp() }
     }
 
     private func popUp() {
-        anchor.popUp(entries, titleInset: NXValuePill.textInset(hasSwatch: swatch != nil))
+        let more: [NXMenuEntry] = custom.map { custom in [.divider, .command("Custom…") { customText = custom.initial }] } ?? []
+        anchor.popUp(entries + more, titleInset: NXValuePill.textInset(hasSwatch: swatch != nil))
     }
 }
 
-/// A value pill on its own that pops up its menu, like a time in the hours editor.
+/// A value pill on its own that pops up its menu, like a time in the hours
+/// editor. Space opens it too, once Tab has reached it.
 struct NXPopUpPill: View {
     @Environment(\.isEnabled) private var isEnabled
     let value: String
@@ -620,27 +742,42 @@ struct NXPopUpPill: View {
     let label: String
     var swatch: Color?
     var monospacedDigits = false
+    /// Lets the pill shrink, truncating its text, rather than overflow a
+    /// narrow row.
+    var truncates = false
+    /// Adds "Custom…", for a value the menu doesn't list.
+    var custom: NXCustomValue?
     let entries: [NXMenuEntry]
     @State private var anchor = NXMenuAnchor()
     @State private var hovering = false
+    /// The custom value being typed in place of the pill.
+    @State private var customText: String?
 
     var body: some View {
-        NXValuePill(text: value, swatch: swatch, monospacedDigits: monospacedDigits, hovering: hovering && isEnabled)
+        if let custom, customText != nil {
+            NXCustomValueField(custom: custom, text: $customText)
+        } else {
+            Button(action: popUp) {
+                NXValuePill(text: value, swatch: swatch, monospacedDigits: monospacedDigits, hovering: hovering && isEnabled)
+            }
+            .buttonStyle(NXBareButtonStyle())
             .background { NXMenuAnchorView(anchor: anchor) }
             .overlay { NXMenuPress(action: popUp) }
             .opacity(isEnabled ? 1 : 0.45)
             .onHover { hovering = $0 }
-            .fixedSize()
+            .fixedSize(horizontal: !truncates, vertical: true)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
             .accessibilityValue(value)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { popUp() }
+        }
     }
 
     private func popUp() {
         guard isEnabled else { return }
-        anchor.popUp(entries, titleInset: NXValuePill.textInset(hasSwatch: swatch != nil))
+        let more: [NXMenuEntry] = custom.map { custom in [.divider, .command("Custom…") { customText = custom.initial }] } ?? []
+        anchor.popUp(entries + more, titleInset: NXValuePill.textInset(hasSwatch: swatch != nil))
     }
 }
 
