@@ -189,6 +189,20 @@ enum BlockTree {
         return result
     }
 
+    /// The done top-level tasks of the document under `root` with a task
+    /// still open somewhere below them, which a document hiding its done
+    /// top-level tasks keeps on show, or that open task would go with it.
+    static func completedTasksHoldingOpenTasks(in blocks: [Block], root: UUID? = nil) -> Set<UUID> {
+        let index = childIndex(of: blocks, root: root)
+        var result: Set<UUID> = []
+        for top in index[root] ?? [] where top.isTask && top.isCompleted {
+            if descendants(of: top.id, using: index).contains(where: { $0.isTask && !$0.isCompleted }) {
+                result.insert(top.id)
+            }
+        }
+        return result
+    }
+
     // MARK: - Heading sections
 
     /// The level of a heading that bounds a section, `nil` for other kinds.

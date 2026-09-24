@@ -71,6 +71,8 @@ extension Workbench {
     /// Mutates tasks through the Store, then registers an Undo that restores the fields.
     private func edit(_ tasks: [Block], label: String, icon: String, tone: TrayTone,
                       chip: Bool = true, _ change: (Block) -> Void) {
+        // After the list document's line being written, as its own step.
+        document?.commitLine()
         let before = tasks.map(TaskFields.init)
         // One save for the whole selection, not one per task.
         store.batch { for task in tasks { change(task) } }
@@ -93,6 +95,7 @@ extension Workbench {
     // MARK: Completion
 
     func toggle(_ id: UUID) {
+        document?.commitLine()
         guard let task = store.block(id: id) else { return }
         if closing[id] != nil { cancelClosing([id]) }
         else if task.isCompleted { reopen(id) }
@@ -111,9 +114,9 @@ extension Workbench {
     /// Completes `ids` and their open subtasks, which close with them, as the
     /// design's complete does.
     func complete(_ ids: [UUID]) {
+        document?.commitLine()
         let candidates = tasks(withSubtasksOf: ids, openOnly: true).filter { !$0.isCompleted && closing[$0.id] == nil }
         guard !candidates.isEmpty else { return }
-        let rolls = candidates.filter { $0.recurrence != nil }
         if let session = calendar.activeSession, candidates.contains(where: { $0.id == session.taskID }) {
             calendar.pause(reason: "Completed")
         }
@@ -125,12 +128,17 @@ extension Workbench {
         if let paused = calendar.resumeTaskID, candidates.contains(where: { $0.id == paused }) {
             calendar.dismissResume()
         }
-        beginClosing(candidates, resuming: resume) {
-            if candidates.count > 1 { return "\(candidates.count) tasks done" }
-            if rolls.isEmpty { return describe(candidates) + " done" }
-            return "\(NXFormat.quoted(rolls[0].displayTitle)) rolls to \(NXFormat.dueLabel(rolls[0].dueDate))"
+        // Named for what closes and what rolls: a repeat resets its subtasks
+        // for its next date rather than closing them.
+        var rolled: [UUID] = []
+        beginClosing(candidates, resuming: resume) { rolls, closes in
+            rolled = rolls.map(\.id)
+            let count = rolls.count + closes.count
+            if count > 1 { return "\(count) tasks done" }
+            if let roll = rolls.first { return "\(NXFormat.quoted(roll.displayTitle)) rolls to \(NXFormat.dueLabel(roll.dueDate))" }
+            return describe(closes) + " done"
         }
-        if !rolls.isEmpty { flash(\.freshChip, rolls.map(\.id), for: 900) }
+        if !rolled.isEmpty { flash(\.freshChip, rolled, for: 900) }
         selection = []
     }
 
@@ -139,6 +147,7 @@ extension Workbench {
     /// Reopens through the Store's bulk path, whose Undo restores each task's
     /// completion exactly instead of completing it afresh.
     func reopen(_ ids: [UUID]) {
+        document?.commitLine()
         let tasks = tasks(ids).filter(\.isCompleted)
         guard !tasks.isEmpty else { return }
         let label = "Reopened \(describe(tasks))"
@@ -245,6 +254,7 @@ extension Workbench {
     // MARK: Moving
 
     func move(_ ids: [UUID], to listID: UUID, quiet: Bool = false) {
+        document?.commitLine()
         let tasks = tasks(ids)
         guard !tasks.isEmpty, let list = store.list(id: listID) else { return }
         let label = "Moved \(describe(tasks)) to \(list.displayTitle)"
@@ -291,6 +301,7 @@ extension Workbench {
     /// Moves `ids` to Trash with everything nested under them, as the
     /// design's trash does: their subtasks fly out and count with them.
     func trash(_ ids: [UUID]) {
+        document?.commitLine()
         let roots = ids.compactMap { store.block(id: $0) }
         let subtasks = tasks(withSubtasksOf: ids, openOnly: false).filter { !ids.contains($0.id) }
         let tasks = roots + subtasks
@@ -458,6 +469,8 @@ extension Workbench {
              destination: here || list == nil ? nil : TrayDestination(label: "Show", route: route(for: list!)))
         flash(\.fresh, [block.id], for: 1200)
         pulse(list: block.listID)
+        // At the end of the document on show, under a folded last heading, it opens.
+        if appendsToRoot, document?.document.listID == block.listID { document?.unfold(toShow: block.id) }
         if keepOpen { captureText = "" } else { closeCapture() }
         return block
     }

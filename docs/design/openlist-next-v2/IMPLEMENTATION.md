@@ -39,6 +39,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   in place, the description, cover and nested lists, a drag grip on every line (drops go
   through `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and
   search reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
+- Where the list document departs from the design, to keep native data safe: a done
+  top-level task stays in the document while a task under it is open; a line left empty
+  goes only when it was new or emptied in its edit and holds nothing but text (Backspace
+  also takes one that was already empty); a line's undo step leaves alone what anything
+  else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
+  heading or task folds it away. Headings and text take no key focus after Escape, as in
+  the design; Return writes them again and J/K step to the tasks beside them.
 
 ## Status checklist
 

@@ -70,6 +70,21 @@ private struct EditorBlockRecord: Equatable {
         mediaHeight = model.mediaHeight
         mediaCaption = model.mediaCaption
     }
+    /// Takes every field `current` has that `expected` doesn't: a change
+    /// something else made since the edit last wrote, which the edit's Undo
+    /// must leave alone.
+    mutating func adopt(changesIn current: Self, since expected: Self) {
+        func take<T: Equatable>(_ field: WritableKeyPath<Self, T>) {
+            if current[keyPath: field] != expected[keyPath: field] { self[keyPath: field] = current[keyPath: field] }
+        }
+        take(\.kindRaw); take(\.text); take(\.richData); take(\.sortIndex); take(\.listID); take(\.parentID)
+        take(\.isCollapsed); take(\.createdAt); take(\.updatedAt); take(\.isCompleted); take(\.completedAt)
+        take(\.dueDate); take(\.includesTime); take(\.reminderAt); take(\.isStarred); take(\.priorityRaw)
+        take(\.recurrenceData); take(\.labelIDs); take(\.note); take(\.inboxMembershipData)
+        take(\.schedulingEstimateMinutes); take(\.selectedForDay); take(\.deferredUntil)
+        take(\.keepsSessionsTogether); take(\.tracksAwayFromMac); take(\.occurrenceID); take(\.mediaFilename)
+        take(\.mediaData); take(\.mediaWidth); take(\.mediaHeight); take(\.mediaCaption)
+    }
     func apply(to model: Block, replacing old: Self?) {
         if old == nil || old?.id != id { model.id = id }
         if old == nil || old?.kindRaw != kindRaw { model.kindRaw = kindRaw }
@@ -150,11 +165,23 @@ private struct EditorSnapshot {
     /// - Parameter blockIDs: records only these blocks and their attachments,
     ///   for an edit known to touch nothing else. `nil` records every block.
     init(store: Store, listIDs: Set<UUID>, blockIDs: Set<UUID>? = nil, includingNewLabels: Bool = false) {
-        self.listIDs = Set(listIDs.map { store.resolvedListID($0) ?? $0 })
-        let listed = self.listIDs.flatMap { store.blocks(inList: $0) }
-        let models = blockIDs.map { ids in listed.filter { ids.contains($0.id) } } ?? listed
+        let resolved = Set(listIDs.map { store.resolvedListID($0) ?? $0 })
+        self.listIDs = resolved
+        let models: [Block]
+        if let blockIDs {
+            // A line's edit covers a few blocks: fetch those, not their lists.
+            let ids = Array(blockIDs)
+            let descriptor = FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) && $0.trashID == nil })
+            models = ((try? store.context.fetch(descriptor)) ?? []).filter { $0.listID.map(resolved.contains) == true }
+        } else {
+            models = resolved.flatMap { store.blocks(inList: $0) }
+        }
         blocks = Dictionary(uniqueKeysWithValues: models.map { ($0.id, EditorBlockRecord($0)) })
-        attachments = Dictionary(uniqueKeysWithValues: models.flatMap { store.attachments(for: $0.id) }.map { ($0.id, EditorAttachmentRecord($0)) })
+        // One fetch for every block's attachments, not one per block.
+        let owners: [UUID?] = models.map(\.id)
+        let files = (try? store.context.fetch(FetchDescriptor<Attachment>(predicate: #Predicate { owners.contains($0.blockID) })))
+            ?? models.flatMap { store.attachments(for: $0.id) }
+        attachments = Dictionary(files.map { ($0.id, EditorAttachmentRecord($0)) }, uniquingKeysWith: { first, _ in first })
         if includingNewLabels, let models = try? store.context.fetch(FetchDescriptor<TaskLabel>()) {
             labels = Dictionary(models.filter { !$0.isDeleted }.map { ($0.id, EditorLabelRecord($0)) }, uniquingKeysWith: { first, _ in first })
             hasLabelSnapshot = true
@@ -187,11 +214,53 @@ final class EditorEditSession {
     fileprivate var media: [String: Data] = [:]
     /// The blocks the edit may have changed, including ones it created.
     fileprivate(set) var touchedIDs: Set<UUID>
+    /// The touched blocks and their attachments as the edit itself last left
+    /// them. Whatever differs from these when the edit next writes, or ends,
+    /// something else changed meanwhile, like a completion settling or a
+    /// date picked in the inspector, and the edit's Undo leaves it alone.
+    fileprivate var expected: [UUID: EditorBlockRecord]
+    fileprivate var expectedAttachments: [UUID: EditorAttachmentRecord]
 
     fileprivate init(listIDs: Set<UUID>, baseline: EditorSnapshot, touchedIDs: Set<UUID>) {
         self.listIDs = listIDs
         self.baseline = baseline
         self.touchedIDs = touchedIDs
+        expected = baseline.blocks
+        expectedAttachments = baseline.attachments
+    }
+
+    /// Folds into the baseline what changed in `current` since the edit last
+    /// wrote. `current` holds every touched block that still exists, unless
+    /// `partial`, when it holds only some of them.
+    fileprivate func absorbChanges(in current: EditorSnapshot, partial: Bool = false) {
+        for id in touchedIDs {
+            guard let expected = expected[id] else { continue }
+            if let now = current.blocks[id] {
+                baseline.blocks[id]?.adopt(changesIn: now, since: expected)
+            } else if !partial {
+                // Taken away by something else: the edit's Undo doesn't bring it back.
+                baseline.blocks[id] = nil
+                self.expected[id] = nil
+            }
+        }
+        guard !partial else { return }
+        for (id, now) in current.attachments where now.blockID.map(touchedIDs.contains) == true {
+            if let expected = expectedAttachments[id] {
+                if now != expected { baseline.attachments[id] = now }
+            } else if baseline.attachments[id] == nil {
+                baseline.attachments[id] = now
+            }
+        }
+        for id in expectedAttachments.keys where current.attachments[id] == nil {
+            baseline.attachments[id] = nil
+            expectedAttachments[id] = nil
+        }
+    }
+
+    /// Takes `current` as how the edit left its blocks.
+    fileprivate func expect(_ current: EditorSnapshot) {
+        for id in touchedIDs { expected[id] = current.blocks[id] }
+        expectedAttachments = current.attachments.filter { $0.value.blockID.map(touchedIDs.contains) == true }
     }
 }
 
@@ -257,6 +326,7 @@ extension Store {
     func recordInEditorSession<T>(_ session: EditorEditSession, _ body: () -> T) -> T {
         guard !isRecordingEditorEdit else { return body() }
         let before = EditorSnapshot(store: self, listIDs: session.listIDs)
+        session.absorbChanges(in: before)
         isRecordingEditorEdit = true
         editorMediaBackups = [:]
         let result = body()
@@ -276,6 +346,22 @@ extension Store {
                 session.baseline.attachments[attachmentID] = record
             }
         }
+        session.expect(after)
+        return result
+    }
+
+    /// Runs a change the session's own line makes to `block` outside any
+    /// structural change, such as its typing, so the session tells it apart
+    /// from what anything else changes in that block.
+    func writeInEditorSession<T>(_ session: EditorEditSession, to block: Block, _ body: () -> T) -> T {
+        let id = block.id
+        let live = { block.modelContext != nil && !block.isDeleted }
+        guard session.touchedIDs.contains(id), live() else { return body() }
+        var current = session.baseline
+        current.blocks = [id: EditorBlockRecord(block)]
+        session.absorbChanges(in: current, partial: true)
+        let result = body()
+        if live() { session.expected[id] = EditorBlockRecord(block) }
         return result
     }
 
@@ -284,6 +370,7 @@ extension Store {
     /// the session must not restore past it.
     func rebaseEditorSession(_ session: EditorEditSession) {
         session.baseline = EditorSnapshot(store: self, listIDs: session.listIDs, blockIDs: session.touchedIDs)
+        session.expect(session.baseline)
         session.media = [:]
     }
 
@@ -292,6 +379,7 @@ extension Store {
     @discardableResult
     func commitEditorSession(_ session: EditorEditSession, name: String, undoManager: UndoManager?) -> Bool {
         let after = EditorSnapshot(store: self, listIDs: session.listIDs, blockIDs: session.touchedIDs)
+        session.absorbChanges(in: after)
         let before = session.baseline
         let changed = before.changedIDs(comparedTo: after)
         guard !changed.blocks.isEmpty || !changed.attachments.isEmpty else { return false }

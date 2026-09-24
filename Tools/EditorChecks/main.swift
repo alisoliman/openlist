@@ -794,12 +794,18 @@ let rowsWithDoneSubtask = nextRows()
 check(rowsWithDoneSubtask.contains { $0.id == email.id } && rowsWithDoneSubtask.firstIndex { $0.id == email.id }! < rowsWithDoneSubtask.firstIndex { $0.id == confirm.id }!,
     "A done subtask stays where it was ticked")
 book.isCompleted = true
+check(nextRows().contains { $0.id == book.id } && nextRows().contains { $0.id == pay.id },
+    "A done top-level task stays while a task under it is still open, so that task shows")
+check(BlockTree.completedTasksHoldingOpenTasks(in: store.blocks(inList: nextList.id)) == [book.id],
+    "The done tasks held on show are those with an open task below")
+pay.isCompleted = true
 check(!nextRows().contains { $0.id == book.id || $0.id == email.id || $0.id == pay.id }, "A done top-level task leaves with its subtree")
 nextEditor.completedTasksKeptVisible = [book.id]
 check(nextRows().contains { $0.id == book.id }, "The host can keep a done task in view")
 nextEditor.completedTasksKeptVisible = []
 book.isCompleted = false
 email.isCompleted = false
+pay.isCompleted = false
 
 // A heading's section folds with it.
 let later = store.appendBlock(kind: .heading1, text: "Later", to: nextDocument)
@@ -857,7 +863,7 @@ let sessionLine = store.appendBlock(kind: .task, text: "Before", to: nextDocumen
 let bystander = store.appendBlock(kind: .task, text: "Bystander", to: nextDocument)
 store.save()
 let session = store.beginEditorSession(in: nextList.id, covering: [sessionLine.id])
-store.setPlainText(sessionLine, "After")
+store.writeInEditorSession(session, to: sessionLine) { store.setPlainText(sessionLine, "After") }
 let sessionChild = store.recordInEditorSession(session) { store.insertBlock(kind: .task, text: "Created", after: sessionLine) }
 store.setPlainText(bystander, "Changed meanwhile")
 sessionUndo.beginUndoGrouping()
@@ -970,5 +976,180 @@ check(revealEditor.reveal?.blockID == foldedText.id && revealRows().contains { $
     "A search hit shows through the heading folding it, which stays folded")
 outlineEnv.navigator.finishReveal()
 check(!revealRows().contains { $0.id == foldedText.id }, "Finishing the reveal folds the text away again")
+
+// New lines never open out of sight, conversions carry what's under them,
+// and a line's undo step is only what the line itself did.
+let fixList = store.createList(title: "Document fixes")
+let fixDocument = DocumentContext(listID: fixList.id)
+let fixEditor = OutlineEditor(env: outlineEnv, document: fixDocument, policy: .nextDocument)
+var fixRecorded: [OutlineEdit] = []
+fixEditor.hooks.didRecordEdit = { edit, _ in fixRecorded.append(edit) }
+func fixRows() -> [BlockRow] { fixEditor.visibleRows(in: store.blocks(inList: fixList.id)) }
+func fixActions(_ block: Block) -> BlockRowActions { fixEditor.actions(for: fixRows().first { $0.id == block.id }!) }
+func fixShows(_ id: UUID?) -> Bool { id.map { id in fixRows().contains { $0.id == id } } ?? false }
+
+let foldHeading = store.appendBlock(kind: .heading1, text: "Kyoto", to: fixDocument)
+let foldTask = store.appendBlock(kind: .task, text: "Book the ryokan", to: fixDocument)
+store.save()
+store.setCollapsed(true, for: foldHeading)
+check(!fixShows(foldTask.id), "A folded heading hides its section")
+check(fixActions(foldHeading).onReturn(content(foldHeading).length, content(foldHeading)) && fixShows(fixEditor.focus.blockID)
+    && !foldHeading.isCollapsed, "Return at the end of a folded heading opens it, so the new line and its caret show")
+fixEditor.commitLine()
+store.setCollapsed(true, for: foldHeading)
+fixEditor.appendTask()
+check(fixShows(fixEditor.focus.blockID) && !foldHeading.isCollapsed, "A line added at the end of a folded last section shows")
+fixEditor.commitLine()
+store.setCollapsed(true, for: foldHeading)
+store.setPlainText(foldHeading, "Kyoto trip")
+check(fixActions(foldHeading).onReturn(5, content(foldHeading)) && fixShows(fixEditor.focus.blockID) && foldHeading.text == "Kyoto",
+    "Return inside a folded heading splits it into a line that shows")
+fixEditor.commitLine()
+
+// A line turned into a kind that doesn't nest takes what was under it out beside it.
+let packing = store.appendBlock(kind: .task, text: "Pack", to: fixDocument)
+let packedSocks = store.insertChild(kind: .task, text: "Socks", of: packing, at: .last)
+let adapters = store.insertChild(kind: .task, text: "Adapters", of: packing, at: .last)
+let typeA = store.insertChild(kind: .task, text: "Type A", of: adapters, at: .last)
+store.save()
+fixActions(packing).onFocus()
+fixActions(packing).onMarkdownPrefix(.heading1)
+let packed = fixRows().map(\.id)
+check(packing.kind == .heading1 && packing.parentID == nil && packedSocks.parentID == nil && adapters.parentID == nil
+    && typeA.parentID == adapters.id, "“# ” on a task with subtasks makes a heading with them beside it, a level up")
+check(packed.firstIndex(of: packedSocks.id) == packed.firstIndex(of: packing.id)! + 1
+    && packed.firstIndex(of: adapters.id) == packed.firstIndex(of: packedSocks.id)! + 1, "They follow the heading in their order")
+fixEditor.commitLine()
+let groceries = store.appendBlock(kind: .task, text: "Groceries", to: fixDocument)
+let market = store.insertChild(kind: .bullet, text: "Market", of: groceries, at: .last)
+let yuba = store.insertChild(kind: .task, text: "Yuba", of: market, at: .last)
+store.save()
+fixActions(market).onFocus()
+check(fixActions(market).onBackspaceAtStart(content(market)) && market.kind == .paragraph && market.parentID == nil
+    && yuba.parentID == nil, "Backspace on a nested list item makes text at the top, with what was under it beside it")
+fixEditor.commitLine()
+
+// Something else changing the line's task isn't the line's edit.
+fixRecorded.removeAll()
+let ticked = store.appendBlock(kind: .task, text: "Ticked", to: fixDocument)
+store.save()
+fixActions(ticked).onFocus()
+store.toggleCompletion(ticked)
+fixEditor.commitLine()
+check(ticked.isCompleted && fixRecorded.isEmpty, "A line whose task completes from elsewhere while it's open records no edit")
+let netUndo = UndoManager()
+netUndo.groupsByEvent = false
+let netLine = store.appendBlock(kind: .task, text: "Draft", to: fixDocument)
+store.save()
+let net = store.beginEditorSession(in: fixList.id, covering: [netLine.id])
+store.writeInEditorSession(net, to: netLine) { store.setPlainText(netLine, "Draft two") }
+netLine.isStarred = true
+netLine.dueDate = due
+store.writeInEditorSession(net, to: netLine) { store.setPlainText(netLine, "Draft three") }
+netUndo.beginUndoGrouping()
+check(store.commitEditorSession(net, name: "Edited", undoManager: netUndo), "The line's own typing is still one step")
+netUndo.endUndoGrouping()
+netUndo.undo()
+check(netLine.text == "Draft" && netLine.isStarred && netLine.dueDate == due,
+    "Undoing it takes back the typing and leaves the star and date set meanwhile")
+let bystanderChange = store.beginEditorSession(in: fixList.id, covering: [netLine.id])
+netLine.isStarred = false
+check(!store.commitEditorSession(bystanderChange, name: "Edited", undoManager: netUndo), "Only something else's change registers nothing")
+
+// Only a line emptied in its edit, holding nothing but text, goes.
+let untitled = store.appendBlock(kind: .task, text: "", to: fixDocument)
+untitled.note = "Call before noon"
+let spacer = store.appendBlock(kind: .paragraph, text: "", to: fixDocument)
+let belowSpacer = store.appendBlock(kind: .task, text: "Last", to: fixDocument)
+store.save()
+fixRecorded.removeAll()
+fixActions(untitled).onFocus()
+fixActions(untitled).onEndEditing(NSTextStorage())
+check(store.block(id: untitled.id) != nil && fixRecorded.isEmpty, "An untitled task with a note survives the caret passing")
+fixActions(spacer).onFocus()
+check(fixActions(spacer).onArrowOut(.down, 0) && store.block(id: spacer.id) != nil,
+    "A blank line the caret passes through stays")
+check(fixEditor.focus.blockID == belowSpacer.id && fixEditor.focus.caret == -1, "↓ puts the caret at the end of the next line")
+fixEditor.commitLine()
+let watering = store.appendBlock(kind: .task, text: "Water plants", to: fixDocument)
+watering.dueDate = due
+let trip = store.appendBlock(kind: .task, text: "Trip", to: fixDocument)
+let tickets = store.insertChild(kind: .task, text: "Tickets", of: trip, at: .last)
+store.save()
+for emptied in [watering, trip] {
+    fixActions(emptied).onFocus()
+    fixActions(emptied).onChange(NSAttributedString())
+    fixActions(emptied).onEndEditing(NSTextStorage())
+}
+check(store.block(id: watering.id) != nil && store.block(id: trip.id) != nil && tickets.parentID == trip.id,
+    "A task emptied that holds a date, or has lines under it, keeps its line")
+fixEditor.appendTask()
+let labelled = store.block(id: fixEditor.focus.blockID!)!
+fixActions(labelled).onChange(NSAttributedString(string: "#errands"))
+fixEditor.commitLine()
+check(store.block(id: labelled.id) != nil && !labelled.labelIDs.isEmpty, "A new line of only a label keeps its line and label")
+
+// Taken out, a line's lines go where they show: not under a done task the document lists apart.
+let doneAbove = store.appendBlock(kind: .task, text: "Done already", to: fixDocument)
+let emptiedParent = store.appendBlock(kind: .task, text: "", to: fixDocument)
+let stillOpen = store.insertChild(kind: .task, text: "Still open", of: emptiedParent, at: .last)
+store.save()
+doneAbove.isCompleted = true
+store.save()
+fixActions(emptiedParent).onFocus()
+check(fixActions(emptiedParent).onBackspaceAtStart(NSAttributedString()) && store.block(id: emptiedParent.id) == nil
+    && stillOpen.parentID == nil && fixShows(stillOpen.id), "Backspace in an empty line lifts its lines a level, past a done task above")
+
+// A line that stops showing while it holds the caret lets the caret go.
+fixActions(belowSpacer).onFocus()
+fixEditor.visibleRowsDidChange(fixRows().map(\.id), from: fixRows().map(\.id).filter { $0 != belowSpacer.id })
+check(fixEditor.focus.blockID == belowSpacer.id, "A line not drawn before keeps the caret sent to it")
+fixEditor.visibleRowsDidChange(fixRows().map(\.id).filter { $0 != belowSpacer.id }, from: fixRows().map(\.id))
+check(fixEditor.focus.blockID == nil, "A line folded or settled away while being written lets the caret go")
+
+// The menu of a line that isn't a task.
+let turned = store.appendBlock(kind: .heading2, text: "Food", to: fixDocument)
+let underTurned = store.appendBlock(kind: .task, text: "Taste the yuba", to: fixDocument)
+store.save()
+fixEditor.turn(turned.id, into: .bullet)
+check(turned.kind == .bullet, "Turn Into changes a line's kind")
+_ = fixActions(underTurned).onTab(false, 0)
+fixEditor.commitLine()
+check(underTurned.parentID == turned.id, "A task goes under the list item it became")
+fixEditor.deleteLine(turned.id)
+check(store.block(id: turned.id) == nil && store.block(id: underTurned.id) != nil && fixShows(underTurned.id),
+    "Delete takes the line out and keeps what was under it on show")
+
+// Backspace in an empty first line takes the caret to the line below.
+let firstList = store.createList(title: "Empty first line")
+let firstDocument = DocumentContext(listID: firstList.id)
+let firstEditor = OutlineEditor(env: outlineEnv, document: firstDocument, policy: .nextDocument)
+let emptyFirst = store.appendBlock(kind: .task, text: "", to: firstDocument)
+let secondLine = store.appendBlock(kind: .task, text: "Second", to: firstDocument)
+store.save()
+let firstRows = firstEditor.visibleRows(in: store.blocks(inList: firstList.id))
+firstEditor.actions(for: firstRows[0]).onFocus()
+check(firstEditor.actions(for: firstRows[0]).onBackspaceAtStart(NSAttributedString()) && store.block(id: emptyFirst.id) == nil
+    && firstEditor.focus.blockID == secondLine.id && firstEditor.focus.caret == 0,
+    "Backspace in an empty first line removes it and starts the line below")
+
+// Showing only tasks, what headings and list items fold away still shows.
+let tasksList = store.createList(title: "Tasks only")
+let tasksDocument = DocumentContext(listID: tasksList.id)
+let tasksEditor = OutlineEditor(env: outlineEnv, document: tasksDocument, policy: .nextDocument)
+tasksEditor.tasksOnly = true
+let laterSection = store.appendBlock(kind: .heading1, text: "Later", to: tasksDocument)
+let inSection = store.appendBlock(kind: .task, text: "Pack", to: tasksDocument)
+let shops = store.appendBlock(kind: .bullet, text: "Shops", to: tasksDocument)
+let underShops = store.insertChild(kind: .task, text: "Tenugui", of: shops, at: .last)
+let foldedTask = store.appendBlock(kind: .task, text: "Folded", to: tasksDocument)
+let underFoldedTask = store.insertChild(kind: .task, text: "Hidden", of: foldedTask, at: .last)
+store.save()
+store.setCollapsed(true, for: laterSection)
+store.setCollapsed(true, for: shops)
+store.setCollapsed(true, for: foldedTask)
+let onlyTasks = tasksEditor.visibleRows(in: store.blocks(inList: tasksList.id)).map(\.id)
+check(onlyTasks == [inSection.id, underShops.id, foldedTask.id] && !onlyTasks.contains(underFoldedTask.id),
+    "Showing only tasks, a folded heading or list item hides none, and a folded task still folds")
 
 print("✅ \(checks) editor/store checks passed")

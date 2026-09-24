@@ -72,7 +72,8 @@ struct NextInboxDocumentScreen: View {
     var body: some View {
         let workbench = env.workbench
         let groups = NextListScreen.completedGroups(library.tasks(in: inbox.id), workbench: workbench,
-                                                    showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks))
+                                                    showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks),
+                                                    inDocument: Set(documentRowIDs))
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox",
                            subtitle: "\(library.inboxQueue(workbench).count) to triage") {

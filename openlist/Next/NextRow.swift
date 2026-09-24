@@ -63,16 +63,24 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
     /// Being written in the list document: the design's editing fill in
     /// place of the focused card.
     var editing = false
-    /// The rowIn a fresh row plays, in milliseconds.
-    var entrance: Double = 320
+    /// The rowIn a fresh row plays, in milliseconds. `nil` plays none, for
+    /// the list document, whose lines play their own whatever their kind.
+    var entrance: Double? = 320
     /// The whole row drags. The list document's text keeps its own drag.
     var draggable = true
+    /// The pointer tints the row, as the screens' grouped rows do. The list
+    /// document's lines have no hover of their own.
+    var hoverFill = true
+    /// The open icon comes to full strength under the pointer, as the list
+    /// document's does.
+    var opensOnHover = false
     /// A click on the row around its title. `nil` is the workbench's click.
     var onClick: (() -> Void)?
     @ViewBuilder var title: () -> Title
     /// Buttons before the open icon, like the document's note button.
     @ViewBuilder var buttons: () -> Buttons
     @State private var hovering = false
+    @State private var openHovering = false
     /// Set once a freshly captured row has played its rowIn entrance.
     @State private var entered = false
 
@@ -85,6 +93,7 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         let focused = workbench.focusID == id || env.navigator.openTaskID == id
         let selected = workbench.selection.contains(id)
         let fresh = workbench.fresh.contains(id)
+        let entering = fresh && !entered && entrance != nil
         let restored = workbench.restored.contains(id)
         let chipFresh = workbench.freshChip.contains(id) || fresh
 
@@ -95,6 +104,8 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
             NXCheckbox(filled: task.isCompleted || closing != nil,
                        closing: closing, priority: task.priority, title: task.displayTitle,
                        ringing: workbench.pulseTaskID == id && closing != nil) {
+                // A line being written is left first, as a click on the box leaves it in the design.
+                NXDocumentEditing.end()
                 workbench.toggle(id)
             }
             .frame(width: 26, alignment: .leading)
@@ -115,15 +126,22 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                 }
                 if selected { NXSelectionMark() }
                 buttons()
-                Button { workbench.inspect(task.id) } label: {
+                Button {
+                    // The inspector takes the keys, not the line being written.
+                    NXDocumentEditing.end()
+                    workbench.inspect(task.id)
+                } label: {
                     Image(systemName: "sidebar.right")
                         .font(.system(size: 12.5, weight: .medium))
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
+                .onHover { openHovering = $0 }
                 // Only the fade is animated, so the icon never trails a reflow.
-                .animation(.easeOut(duration: 0.14)) { $0.opacity(focused ? 1 : options.quiet ? 0 : 0.22) }
+                .animation(.easeOut(duration: 0.14)) {
+                    $0.opacity(focused || opensOnHover && openHovering ? 1 : options.quiet ? 0 : 0.22)
+                }
                 .help("Open details (↩)")
                 .accessibilityLabel("Open details")
             }
@@ -154,9 +172,9 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         }
         .contentShape(Rectangle())
         // rowIn: a freshly captured row slides down into place.
-        .opacity(fresh && !entered ? 0 : 1)
-        .offset(y: fresh && !entered ? -8 : 0)
-        .scaleEffect(fresh && !entered ? 0.99 : 1)
+        .opacity(entering ? 0 : 1)
+        .offset(y: entering ? -8 : 0)
+        .scaleEffect(entering ? 0.99 : 1)
         .onAppear { if fresh { enter() } }
         .onChange(of: fresh) { _, isFresh in if isFresh, !entered { enter() } }
         .opacity(flying ? 0 : closing != nil ? 0.62 : 1)
@@ -176,6 +194,7 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
     }
 
     private func enter() {
+        guard let entrance else { entered = true; return }
         withAnimation(style.ease(entrance)) { entered = true }
     }
 
@@ -184,7 +203,7 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         if selected { return style.accent.opacity(0.08) }
         if fresh { return style.accent.opacity(0.11) }
         if restored { return style.accent.opacity(0.07) }
-        return hovering ? NX.ink(0.03) : .clear
+        return hovering && hoverFill ? NX.ink(0.03) : .clear
     }
 }
 
@@ -194,13 +213,32 @@ extension NXTaskRowChrome where Buttons == EmptyView {
     }
 }
 
-/// Drags a whole row to a list in the sidebar.
+/// Drags a whole row to a list in the sidebar, or to a line of the list
+/// document, in this library's own payload: never text a line could take in.
 private struct NXRowDrag: ViewModifier {
+    @Environment(AppEnvironment.self) private var env
     let id: UUID
     let isEnabled: Bool
 
     func body(content: Content) -> some View {
-        if isEnabled { content.draggable(DragPayload.block.encode(id)) } else { content }
+        if isEnabled {
+            content.onDrag { NXBlockDrag.provider(for: [id], session: env.navigator.blockDragSessionID) }
+        } else {
+            content
+        }
+    }
+}
+
+/// The rows a drag carries, readable only by this app.
+enum NXBlockDrag {
+    static func provider(for ids: [UUID], session: UUID) -> NSItemProvider {
+        let payload = DragPayload.encodeBlocks(ids, session: session)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier, visibility: .ownProcess) { load in
+            load(Data(payload.utf8), nil)
+            return nil
+        }
+        return provider
     }
 }
 

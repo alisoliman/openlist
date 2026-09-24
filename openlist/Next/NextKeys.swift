@@ -95,9 +95,10 @@ final class NextKeyHandler {
         let isEnter = key == Key.enter || key == Key.keypadEnter
 
         // After Return or Backspace the list document's caret is on its way
-        // to another line. Keys typed meanwhile wait for it, in order, rather
-        // than type into the line it left or reach the single-key map.
-        if !flags.contains(.command), !heldKeys.isEmpty || workbench.document?.isMovingCaret == true {
+        // to another line, and after ⇧↩ or Space a note is about to take the
+        // keyboard. Keys typed meanwhile wait for it, in order, rather than
+        // type into the line it left or reach the single-key map.
+        if !flags.contains(.command), !heldKeys.isEmpty || isAwaitingKeyboard(in: window) {
             heldKeys.append(event)
             if heldKeys.count == 1 { releaseHeldKeys(in: window, since: .now) }
             return true
@@ -205,7 +206,25 @@ final class NextKeyHandler {
             }
         }
         guard flags.isEmpty || flags == .shift else { return false }
+        // A held key repeats only the keys that move. An action repeated would
+        // act again on whatever the last left focused, as a held Backspace
+        // would trash the inspected task once its empty line had gone.
+        if event.isARepeat, Self.unrepeated.contains(key) || Self.actionKeys.contains(chars) || chars == "/" { return true }
         return handleSingleKey(key: key, chars: chars, shift: flags == .shift)
+    }
+
+    /// Keys whose repeats the single-key map ignores.
+    private static let unrepeated: Set<UInt16> = [Key.delete, Key.forwardDelete, Key.enter, Key.keypadEnter,
+                                                  Key.space, Key.tab, Key.escape]
+
+    /// Whether the list document is moving its caret, or a note is about to
+    /// take the keyboard, and keys should wait for where they're going.
+    private func isAwaitingKeyboard(in window: NSWindow) -> Bool {
+        let workbench = env.workbench
+        if workbench.document?.isMovingCaret == true { return true }
+        guard workbench.editingNoteID != nil, !(window.firstResponder is NXNoteTextView),
+              let requested = workbench.noteEditRequestedAt else { return false }
+        return Date.now.timeIntervalSince(requested) < 0.4
     }
 
     /// ↑/↓ move `index`, Return runs the current item, Escape closes, and Tab
@@ -235,22 +254,28 @@ final class NextKeyHandler {
         }
     }
 
-    /// Hands held keys on once the caret has landed, or, if it never does,
-    /// once the wait has run out and the document has let the move go.
+    /// Hands held keys on once the caret has landed, or the note has the
+    /// keyboard. If neither happens before the wait runs out, the document
+    /// lets the move go and the keys go too: typed for a line, they belong
+    /// in neither the single-key map nor the line the caret left.
     private func releaseHeldKeys(in window: NSWindow, since start: Date) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self, weak window] in
             guard let self else { return }
             guard let window else { self.heldKeys = []; return }
             let document = self.env.workbench.document
-            if document?.isMovingCaret == true, Date.now.timeIntervalSince(start) < 0.4 {
+            let waiting = self.isAwaitingKeyboard(in: window)
+            if waiting, Date.now.timeIntervalSince(start) < 0.4 {
                 self.releaseHeldKeys(in: window, since: start)
                 return
             }
             if document?.isMovingCaret == true { document?.requestFocus(nil) }
             let keys = self.heldKeys
             self.heldKeys = []
+            let landed = !waiting && (window.firstResponder is NXNoteTextView
+                || document.map { $0.focus.blockID != nil && !$0.isMovingCaret } == true)
+            guard landed else { return }
             // Straight to the window, past this monitor: each key reaches the
-            // line that now has the caret, or the single-key map if none does.
+            // line or note that now has the keyboard.
             for key in keys where !self.handle(key) { window.sendEvent(key) }
         }
     }
@@ -324,14 +349,14 @@ final class NextKeyHandler {
             workbench.moveFocus(by: key == Key.down ? 1 : -1, extending: shift)
             return true
         case Key.enter, Key.keypadEnter:
-            // A list document's heading or text has no details: Return edits it.
-            if let document = workbench.document, let id = workbench.focusID,
-               let block = env.store.block(id: id), !block.isTask, block.listID == navigator.documentListID {
-                document.edit(id)
-            } else if let id = workbench.focusID ?? workbench.targetIDs.first { workbench.inspect(id) }
+            // A list document's heading or text, left with Escape, has no
+            // details: Return writes it again.
+            if workbench.focusID == nil, workbench.selection.isEmpty, workbench.document?.resumeEditing() == true { return true }
+            if let id = workbench.focusID ?? workbench.targetIDs.first { workbench.inspect(id) }
             return true
-        case Key.tab where workbench.document != nil:
-            // Tab and ⇧Tab nest and lift the focused rows, as they do the line being written.
+        case Key.tab where workbench.document != nil && (workbench.focusID != nil || !workbench.selection.isEmpty):
+            // Tab and ⇧Tab nest and lift the focused rows, as they do the line
+            // being written. With none, Tab moves through the window's controls.
             workbench.document?.indent(workbench.targetIDs, outdent: shift)
             return true
         case Key.space where workbench.document != nil && !shift:

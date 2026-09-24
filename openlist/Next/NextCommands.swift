@@ -52,6 +52,7 @@ extension AppEnvironment {
 extension Workbench {
     /// Task ▸ Clear Labels: strips every target's labels as one undoable change.
     func clearLabels(_ ids: [UUID]) {
+        document?.commitLine()
         let tasks = tasks(ids).filter { !$0.labelIDs.isEmpty }
         guard !tasks.isEmpty else { return }
         let before = tasks.map { (id: $0.id, labelIDs: $0.labelIDs) }

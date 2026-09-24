@@ -53,6 +53,10 @@ struct BlockEditorCallbacks {
     var onInactiveClick: (NSEvent) -> Bool = { _ in false }
     /// A double-click on the text, after the text view has selected a word.
     var onDoubleClick: () -> Void = {}
+    /// The menu a right-click or Control-click on the text shows, in place
+    /// of the text view's own, such as its row's menu while the line isn't
+    /// being written. `nil`, or a `nil` menu, keeps the text menu.
+    var contextMenu: (() -> NSMenu?)?
 }
 
 /// A single editable line of a document, backed by `NSTextView`.
@@ -534,7 +538,12 @@ final class BlockNSTextView: NSTextView {
     weak var coordinator: BlockTextView.Coordinator?
     var blockKind: BlockKind = .paragraph
     var placeholderString: String = "" {
-        didSet { if placeholderString != oldValue { needsDisplay = true } }
+        didSet {
+            guard placeholderString != oldValue else { return }
+            needsDisplay = true
+            // Drawn by hand, so VoiceOver hears of it here.
+            setAccessibilityPlaceholderValue(placeholderString.isEmpty ? nil : placeholderString)
+        }
     }
     /// Set by the outline while the `/` menu is visible so key handling defers to it.
     var isSlashMenuOpen = false {
@@ -558,6 +567,20 @@ final class BlockNSTextView: NSTextView {
             ancestor = view.superview
         }
         return result
+    }
+
+    /// A line taken away while it holds the keyboard, folded away or settled,
+    /// loses it without a word from AppKit, so once the update that took it
+    /// is over, and it hasn't come back, the outline hears the line was left.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, let window, window.firstResponder === self {
+            DispatchQueue.main.async { [weak self, weak window] in
+                guard let self, self.window == nil, let storage = self.textStorage else { return }
+                if window?.firstResponder === self { window?.makeFirstResponder(nil) }
+                self.coordinator?.parent.callbacks.onEndEditing(storage)
+            }
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func viewDidMoveToWindow() {
@@ -824,12 +847,28 @@ final class BlockNSTextView: NSTextView {
 
     // MARK: Clicks
 
+    override func menu(for event: NSEvent) -> NSMenu? {
+        coordinator?.parent.callbacks.contextMenu?() ?? super.menu(for: event)
+    }
+
     override func mouseDown(with event: NSEvent) {
         if window?.firstResponder !== self, coordinator?.parent.callbacks.onInactiveClick(event) == true { return }
         super.mouseDown(with: event)
         // AppKit's own tracking has run to the mouse-up by now, so the word
         // is selected before the outline hears about the double-click.
         if event.clickCount == 2 { coordinator?.parent.callbacks.onDoubleClick() }
+    }
+
+    // MARK: Accessibility
+
+    /// A heading line is a text area VoiceOver announces as a heading.
+    override func accessibilityRoleDescription() -> String? {
+        switch blockKind {
+        case .heading1: "heading level 1"
+        case .heading2: "heading level 2"
+        case .heading3: "heading level 3"
+        default: super.accessibilityRoleDescription()
+        }
     }
 
     // MARK: Focus reporting

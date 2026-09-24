@@ -220,7 +220,8 @@ struct NextListScreen: View {
         let tasks = library.tasks(in: list.id)
         let open = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
         let groups = Self.completedGroups(tasks, workbench: workbench,
-                                          showsCompleted: list.showsCompleted(default: env.settings.showsCompletedTasks))
+                                          showsCompleted: list.showsCompleted(default: env.settings.showsCompletedTasks),
+                                          inDocument: Set(documentRowIDs))
         let section = library.sectionTitle(for: list)
         let archived = library.archived.contains { $0.id == list.id }
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
@@ -273,10 +274,14 @@ struct NextListScreen: View {
 
     /// The Completed group under a list's document: the tasks done at its top
     /// level once they've settled. As the design's list branch, done subtasks
-    /// stay struck in place.
+    /// stay struck in place. A done task the document still draws, with a
+    /// task under it still open, isn't listed twice.
     @MainActor
-    static func completedGroups(_ tasks: [Block], workbench: Workbench, showsCompleted: Bool) -> [NXGroup] {
-        let done = tasks.filter { $0.isCompleted && workbench.closing[$0.id] == nil && $0.parentID == nil }
+    static func completedGroups(_ tasks: [Block], workbench: Workbench, showsCompleted: Bool,
+                                inDocument: Set<UUID> = []) -> [NXGroup] {
+        let done = tasks.filter {
+            $0.isCompleted && workbench.closing[$0.id] == nil && $0.parentID == nil && !inDocument.contains($0.id)
+        }
             .sorted(by: Block.byCompletionDate)
         guard !done.isEmpty else { return [] }
         return [NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green, rows: done,
@@ -453,6 +458,9 @@ private struct NXListDescription: View {
                             .contentShape(Rectangle())
                             .onTapGesture { editing = true }
                             .pointerStyle(.horizontalText)
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityHint("Edits the description")
+                            .accessibilityAction { editing = true }
                     }
                 }
                 .font(.system(size: 13.8))

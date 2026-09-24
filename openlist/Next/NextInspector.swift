@@ -6,6 +6,37 @@
 import SwiftData
 import SwiftUI
 
+/// A task's ancestors in its list document, nearest first, looked up again
+/// only when the chain changes, so typing in the task doesn't fetch them on
+/// every keystroke.
+@MainActor
+private final class NXLineage {
+    private var key: [UUID?] = []
+    private var chain: [Block] = []
+
+    func ancestors(of task: Block, store: Store) -> [Block] {
+        let live = chain.allSatisfy { $0.modelContext != nil && !$0.isDeleted && $0.trashID == nil }
+        // A chain that stopped short of the top, at a parent out of reach, is looked up again.
+        let complete = (chain.last?.parentID ?? task.parentID) == nil
+        if live, complete, key == Self.key(of: task, chain: chain) { return chain }
+        var result: [Block] = []
+        var seen: Set<UUID> = [task.id]
+        var next = task.parentID
+        while let id = next, seen.insert(id).inserted, let block = store.block(id: id) {
+            result.append(block)
+            next = block.parentID
+        }
+        chain = result
+        key = Self.key(of: task, chain: result)
+        return result
+    }
+
+    /// The task and each link's parent, read from the models without a fetch.
+    private static func key(of task: Block, chain: [Block]) -> [UUID?] {
+        [task.id, task.parentID] + chain.map(\.parentID)
+    }
+}
+
 /// The 360pt panel that slides in from the right with one task's details.
 struct NextInspector: View {
     @Environment(AppEnvironment.self) private var env
@@ -21,6 +52,7 @@ struct NextInspector: View {
     @State private var picker: (section: DetailPicker, taskID: UUID)?
     @State private var titleSelection: TextSelection?
     @State private var noteSelection: TextSelection?
+    @State private var lineage = NXLineage()
     @FocusState private var focus: Field?
 
     enum Field { case title, note }
@@ -62,7 +94,7 @@ struct NextInspector: View {
                         if let reveal {
                             ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
                         }
-                        let ancestors = self.ancestors
+                        let ancestors = lineage.ancestors(of: task, store: env.store)
                         if let parent = ancestors.first(where: \.isTask) {
                             NXInspectorParentCrumb(parent: parent)
                                 .id(parent.id)
@@ -209,18 +241,6 @@ struct NextInspector: View {
             env.store.setNote(edited, for: target)
         }
         note.reset(to: target.note)
-    }
-
-    /// The task's ancestors in its list document, nearest first.
-    private var ancestors: [Block] {
-        var result: [Block] = []
-        var seen: Set<UUID> = [task.id]
-        var next = task.parentID
-        while let id = next, seen.insert(id).inserted, let block = env.store.block(id: id) {
-            result.append(block)
-            next = block.parentID
-        }
-        return result
     }
 
     /// ⌃D and ⌃L open their popover on the inspected task.

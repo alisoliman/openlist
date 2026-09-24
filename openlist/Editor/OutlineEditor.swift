@@ -126,6 +126,8 @@ enum OutlineEdit: Equatable {
     case edited(UUID)
     /// A line left empty was taken out.
     case removedEmptyLine(UUID)
+    /// A line deleted from its menu.
+    case deleted(UUID)
     case indented([UUID])
     case outdented([UUID])
     case moved(UUID, up: Bool)
@@ -138,6 +140,7 @@ enum OutlineEdit: Equatable {
         case .added: "Added a line"
         case .edited: "Edited a line"
         case .removedEmptyLine: "Removed an empty line"
+        case .deleted: "Delete"
         case .indented: "Indent"
         case .outdented: "Outdent"
         case let .moved(_, up): up ? "Move Up" : "Move Down"
@@ -312,9 +315,13 @@ final class OutlineEditor {
 
     /// Every row in display order, before completed tasks are hidden.
     func allRows(in blocks: [Block]) -> [BlockRow] {
-        let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
+        projectedRows(of: blocks.filter { $0.modelContext != nil && !$0.isDeleted })
+    }
+
+    /// ``allRows(in:)`` of live blocks, showing what `expanding` folds away too.
+    private func projectedRows(of live: [Block], expanding: Set<UUID> = []) -> [BlockRow] {
         let rows = BlockTree.sortingTaskRuns(in: BlockTree.flatten(live,
-            root: document.rootBlockID, expanding: reveal?.ancestorIDs ?? []), by: sorting)
+            root: document.rootBlockID, expanding: expanding.union(reveal?.ancestorIDs ?? [])), by: sorting)
         switch policy {
         case .legacy: return BlockTree.prioritizingPendingTasks(in: rows)
         // The design keeps done subtasks where they were ticked.
@@ -325,21 +332,30 @@ final class OutlineEditor {
     /// The rows to draw: ``allRows(in:)`` after hiding completed tasks, and
     /// everything nested under them, unless the document shows them. The
     /// Next document always hides its done top-level tasks, which its host
-    /// lists apart, keeps done subtasks in place, and hides the sections of
-    /// collapsed headings.
+    /// lists apart, unless a task under one is still open, keeps done
+    /// subtasks in place, and hides the sections of collapsed headings.
     func visibleRows(in blocks: [Block]) -> [BlockRow] {
-        let rows = allRows(in: blocks)
+        let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
         let revealing = (reveal?.visiblePath ?? []).union(completedTasksKeptVisible)
         switch policy {
         case .legacy:
+            let rows = projectedRows(of: live)
             guard !showsCompleted else { return rows }
             return BlockTree.hidingCompletedTasks(in: rows, revealing: revealing)
         case .nextDocument:
+            let kept = revealing.union(BlockTree.completedTasksHoldingOpenTasks(in: live, root: document.rootBlockID))
+            if tasksOnly {
+                // Only tasks fold here: what a heading, list item or text
+                // line folds away still shows, as tasks under the tasks above.
+                let folding = Set(live.lazy.filter { !$0.isTask && $0.isCollapsed }.map(\.id))
+                let rows = projectedRows(of: live, expanding: folding)
+                return Self.taskOutline(BlockTree.hidingCompletedTasks(in: rows, revealing: kept, topLevelOnly: true))
+            }
+            let rows = projectedRows(of: live)
             // A revealed line shows through the headings folding it away.
             let unfolded = reveal?.blockID.map { Set(BlockTree.enclosingSections(of: $0, in: rows)) } ?? []
-            let shown = BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
-                                                       revealing: revealing, topLevelOnly: true)
-            return tasksOnly ? Self.taskOutline(shown) : shown
+            return BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
+                                                  revealing: kept, topLevelOnly: true)
         }
     }
 
@@ -541,7 +557,7 @@ final class OutlineEditor {
                 // begins from the text as it was.
                 noteTyping(in: blockID)
                 inlineMetadataEdits.recordTextChange(for: current, to: attributed.string)
-                env.store.setContent(current, attributed: attributed)
+                writeInLine(current) { env.store.setContent(current, attributed: attributed) }
                 // A sorted document can reorder on a title change.
                 if sorting != .manual { drawnRows = nil }
                 // Typing only mutates the model; without this the save that
@@ -811,7 +827,8 @@ final class OutlineEditor {
 
         commitInlineMetadata(block)
         commitLine()
-        focus.request(target.id, caret: direction == .up ? -1 : 0)
+        // The design's startEdit puts the caret at the end of the line either way.
+        focus.request(target.id, caret: direction == .up || policy == .nextDocument ? -1 : 0)
         return true
     }
 
@@ -839,7 +856,8 @@ final class OutlineEditor {
 
     /// Changes a line's kind. In the Next document a kind that doesn't nest
     /// comes out to the top level where it stands, as the design's convert
-    /// resets its depth.
+    /// resets its depth, and the lines under it follow it there, since
+    /// nothing goes under a heading or text.
     private func convert(_ block: Block, to kind: BlockKind) {
         env.store.changeKind(block, to: kind)
         guard policy == .nextDocument else { return }
@@ -852,7 +870,21 @@ final class OutlineEditor {
         }
         guard !OutlinePolicy.nests(kind) else { return }
         while canOutdent(block), env.store.outdent(block) {}
+        liftChildren(of: block)
         drawnRows = nil
+    }
+
+    /// Moves the lines under `block` out beside it, right after it and in
+    /// their order, keeping what's under each of them.
+    private func liftChildren(of block: Block) {
+        guard let listID = block.listID else { return }
+        let children = env.store.children(of: block.id, listID: listID)
+        guard !children.isEmpty else { return }
+        let siblings = env.store.orderedSiblings(of: block)
+        let next = siblings.firstIndex { $0.id == block.id }.flatMap { siblings.dropFirst($0 + 1).first }
+        for child in children {
+            env.store.move(child, toParent: block.parentID, above: next, in: listID)
+        }
     }
 
     /// A line whose text view a kind change may be replacing.
@@ -889,6 +921,7 @@ final class OutlineEditor {
             // The split belongs to this line's edit; the new line starts its own.
             let created = editorEdit("Split line") { nextLine(after: block, row: row, splittingAt: caret, content: content) }
             env.store.save()
+            unfold(toShow: created.id)
             focus.request(created.id, caret: 0)
             hooks.didAddLine(created.id)
             return true
@@ -961,16 +994,21 @@ final class OutlineEditor {
     }
 
     /// The design's Backspace at the start of a line. An empty line goes and
-    /// the caret ends the line above; a heading or list item turns into text;
-    /// a nested line steps out. Lines never merge.
+    /// the caret ends the line above, or starts the one below at the top;
+    /// a heading or list item turns into text; a nested line steps out.
+    /// Lines never merge.
     private func nextBackspace(block: Block, content: NSAttributedString) -> Bool {
         if content.length == 0 {
             let current = rows
             let index = current.firstIndex { $0.id == block.id } ?? current.endIndex
+            // The line above, or with none, the one below, so the caret stays in the document.
             let previous = current[..<index].last { !$0.block.kind.isVoid }
+            let next = previous == nil ? current.dropFirst(index + 1).first { !$0.block.kind.isVoid } : nil
             openLine(for: block.id)
-            commitLine()
-            focus.request(previous?.id, caret: -1)
+            commitLine(removingEmpty: true)
+            // A line holding more than its text stays, with the caret.
+            guard env.store.block(id: block.id) == nil else { return true }
+            if let target = previous ?? next { focus.request(target.id, caret: previous != nil ? -1 : 0) }
             return true
         }
         let changed = editorEdit("Edit line") { () -> Bool in
@@ -1026,6 +1064,38 @@ final class OutlineEditor {
     /// Whether `id` is one of the rows on show.
     func shows(_ id: UUID) -> Bool { rows.contains { $0.id == id } }
 
+    /// The nearest task on show after `id`, or before it, for keys that step
+    /// through tasks from a line that isn't one.
+    func task(beside id: UUID, forward: Bool) -> UUID? {
+        let current = rows
+        guard let index = current.firstIndex(where: { $0.id == id }) else { return nil }
+        let candidates = forward ? Array(current[(index + 1)...]) : current[..<index].reversed()
+        return candidates.first { $0.block.isTask }?.id
+    }
+
+    /// Turns a line that isn't being written into `kind`, as the `/` menu
+    /// turns the line holding the caret, in a step of its own.
+    func turn(_ id: UUID, into kind: BlockKind) {
+        guard policy == .nextDocument, let block = env.store.block(id: id), block.listID == document.listID,
+              !block.kind.isVoid, !kind.isVoid, block.kind != kind else { return }
+        commitLine()
+        editorEdit("Change block type", edit: .edited(id), joiningLine: false) {
+            convert(block, to: kind)
+            env.store.save()
+        }
+    }
+
+    /// Deletes a line, keeping what's under it where it shows, in a step of its own.
+    func deleteLine(_ id: UUID) {
+        guard policy == .nextDocument, let block = env.store.block(id: id), block.listID == document.listID else { return }
+        commitLine()
+        if focus.blockID == id { focus.request(nil) }
+        editorEdit("Delete", edit: .deleted(id), joiningLine: false) {
+            removeLine(block)
+            env.store.save()
+        }
+    }
+
     /// The inspector's Add subtask: a task line at the end of `taskID`'s
     /// subtasks, which takes the caret. The task, and whatever folds it
     /// away, open first so the new line shows. A task two levels deep
@@ -1073,15 +1143,19 @@ final class OutlineEditor {
         var isNew: Bool
         /// Changed more than the line's text.
         var isStructural: Bool
+        /// Its text was already empty when the caret arrived, as an untitled
+        /// task or a spacer in an older list is, so passing through leaves it.
+        let arrivedEmpty: Bool
         let session: EditorEditSession
         /// Where the line's typing Undo is registered, folded into this step.
         /// A line whose kind changes can be drawn by a new text view.
         let undoTargets = NSHashTable<NSTextStorage>.weakObjects()
 
-        init(blockID: UUID, isNew: Bool, session: EditorEditSession) {
+        init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession) {
             self.blockID = blockID
             self.isNew = isNew
             isStructural = isNew
+            self.arrivedEmpty = arrivedEmpty
             self.session = session
         }
     }
@@ -1098,8 +1172,8 @@ final class OutlineEditor {
         guard policy == .nextDocument, let id else { return nil }
         if let line, line.blockID == id { return line }
         commitLine()
-        guard env.store.block(id: id) != nil else { return nil }
-        let edit = LineEdit(blockID: id, isNew: false,
+        guard let block = env.store.block(id: id) else { return nil }
+        let edit = LineEdit(blockID: id, isNew: false, arrivedEmpty: Self.isBlank(block.text),
                             session: env.store.beginEditorSession(in: document.listID, covering: [id]))
         line = edit
         observeUndo()
@@ -1107,15 +1181,16 @@ final class OutlineEditor {
     }
 
     /// Adds a line in an edit of its own, which ends as "Added" or, left
-    /// empty, leaves nothing to undo.
+    /// empty, leaves nothing to undo. A heading or task folding the new line
+    /// away opens, so the caret has a line to land in.
     private func addLine(covering ids: Set<UUID>, _ create: () -> Block) {
         commitLine()
         let session = env.store.beginEditorSession(in: document.listID, covering: ids)
         let created = env.store.recordInEditorSession(session, create)
         env.store.save()
-        line = LineEdit(blockID: created.id, isNew: true, session: session)
+        line = LineEdit(blockID: created.id, isNew: true, arrivedEmpty: true, session: session)
         observeUndo()
-        drawnRows = nil
+        unfold(toShow: created.id)
         env.activeDocument = document
         focus.request(created.id, caret: 0)
         hooks.didAddLine(created.id)
@@ -1129,10 +1204,27 @@ final class OutlineEditor {
         if let storage = textStorage(editing: id) { edit.undoTargets.add(storage) }
     }
 
+    /// A change the line being edited makes to its own block, which its
+    /// step tells apart from what anything else changes there meanwhile.
+    private func writeInLine(_ block: Block, _ body: () -> Void) {
+        if let edit = line, edit.blockID == block.id {
+            env.store.writeInEditorSession(edit.session, to: block, body)
+        } else {
+            body()
+        }
+    }
+
+    private static func isBlank(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// Finishes the line being edited. A line left empty is removed, as the
     /// design's commit does, and whatever changed becomes one undo step,
-    /// named for what it was, in place of the line's typing.
-    func commitLine(undoTarget: NSTextStorage? = nil) {
+    /// named for what it was, in place of the line's typing. Only a line
+    /// emptied in this edit goes, and only while it holds nothing but its
+    /// text; `removingEmpty`, as Backspace in an empty line asks, also takes
+    /// one that was empty already, and what's under it stays.
+    func commitLine(undoTarget: NSTextStorage? = nil, removingEmpty: Bool = false) {
         guard let edit = line else { return }
         line = nil
         defer { drawnRows = nil }
@@ -1142,9 +1234,11 @@ final class OutlineEditor {
             targets.forEach(discardTyping)
             return
         }
-        commitInlineMetadata(block)
+        // Empty as typed: a title of only a label or a date keeps its line.
+        let typed = block.text
+        env.store.writeInEditorSession(edit.session, to: block) { commitInlineMetadata(block) }
         var change: OutlineEdit = edit.isNew ? .added(block.id) : .edited(block.id)
-        if !block.kind.isVoid, block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !block.kind.isVoid, Self.isBlank(typed), removes(block, in: edit, explicitly: removingEmpty) {
             env.store.recordInEditorSession(edit.session) { removeLine(block) }
             env.store.save()
             if focus.blockID == edit.blockID { focus.request(nil) }
@@ -1157,15 +1251,36 @@ final class OutlineEditor {
         }
     }
 
+    /// Whether an empty line goes as its edit ends. A new one always does.
+    /// Any other holds nothing but its text: no note, date, reminder, repeat,
+    /// label, file, calendar placement or work, some of which no Undo could
+    /// bring back. Left by the caret, it also has no lines under it and was
+    /// emptied in this edit.
+    private func removes(_ block: Block, in edit: LineEdit, explicitly: Bool) -> Bool {
+        if edit.isNew { return true }
+        guard explicitly || !edit.arrivedEmpty else { return false }
+        guard block.note.isEmpty, block.dueDate == nil, block.reminderAt == nil, block.recurrence == nil,
+              block.labelIDs.isEmpty, block.mediaFilename == nil,
+              env.store.attachments(for: block.id).isEmpty,
+              env.store.placements(taskID: block.id).isEmpty,
+              env.store.workSessions(taskID: block.id).isEmpty else { return false }
+        guard !explicitly, let listID = block.listID else { return true }
+        return env.store.children(of: block.id, listID: listID).isEmpty
+    }
+
     /// Takes a line out of the document. What was nested under it stays
     /// where it shows, as in the design's flat document: under the line
-    /// above, when that line can hold it.
+    /// above, when that line can hold it and shows its lines, or else a
+    /// level up, in the line's place.
     private func removeLine(_ block: Block) {
         let siblings = env.store.orderedSiblings(of: block)
-        if let index = siblings.firstIndex(where: { $0.id == block.id }), index > 0,
-           OutlinePolicy.nests(siblings[index - 1].kind), let listID = block.listID {
-            for child in env.store.children(of: block.id, listID: listID) {
-                env.store.move(child, toParent: siblings[index - 1].id, above: nil, in: listID)
+        if let index = siblings.firstIndex(where: { $0.id == block.id }), index > 0, let listID = block.listID {
+            // A done task the document lists apart, or one folded, would hide them.
+            let above = siblings[index - 1]
+            if OutlinePolicy.nests(above.kind), !above.isCollapsed, rows.contains(where: { $0.id == above.id }) {
+                for child in env.store.children(of: block.id, listID: listID) {
+                    env.store.move(child, toParent: above.id, above: nil, in: listID)
+                }
             }
         }
         env.store.deleteBlock(block, liftChildren: true)
@@ -1233,10 +1348,12 @@ final class OutlineEditor {
     private func commitInlineMetadata(_ block: Block) {
         guard block.modelContext != nil, !block.isDeleted else { return }
         guard inlineMetadataEdits.consume(for: block) else { return }
-        env.store.applyInlineMetadata(
-            to: block,
-            parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates
-        )
+        writeInLine(block) {
+            env.store.applyInlineMetadata(
+                to: block,
+                parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates
+            )
+        }
     }
 
     // MARK: - Structure changes
@@ -1283,12 +1400,13 @@ final class OutlineEditor {
     }
 
     /// Runs a structural change as one undo step. In the Next document the
-    /// change joins the edit of the line holding the caret, when one does,
-    /// and otherwise is named for `edit` and reported to the host.
+    /// change joins the edit of the line holding the caret, when one does
+    /// and `joiningLine`, and otherwise is named for `edit` and reported to
+    /// the host.
     @discardableResult
-    private func editorEdit<T>(_ name: String, edit: OutlineEdit? = nil, _ body: () -> T) -> T {
+    private func editorEdit<T>(_ name: String, edit: OutlineEdit? = nil, joiningLine: Bool = true, _ body: () -> T) -> T {
         defer { drawnRows = nil }
-        if let line = openLine(for: focus.blockID) {
+        if joiningLine, let line = openLine(for: focus.blockID) {
             line.isStructural = true
             return env.store.recordInEditorSession(line.session, body)
         }
@@ -1441,7 +1559,12 @@ final class OutlineEditor {
         let structural: [EditorCommand] = [.newTask, .indent, .outdent, .moveUp, .moveDown]
         if let command = env.pendingCommand, structural.contains(command) {
             editorEdit("Edit outline", edit: outlineEdit(for: command, on: commandTargets.map(\.id))) { handleCommand() }
-        } else { handleCommand() }
+        } else {
+            // A task command comes after the line being written, as it would
+            // after a click away from it, so neither step takes in the other.
+            if policy == .nextDocument, env.pendingCommand != nil { commitLine() }
+            handleCommand()
+        }
     }
 
     private func outlineEdit(for command: EditorCommand, on ids: [UUID]) -> OutlineEdit? {
@@ -1574,6 +1697,11 @@ final class OutlineEditor {
         }
     }
 
+    /// Forgets the block Escape left, once the host's keys have moved on.
+    func forgetEscape() {
+        if escapedBlockID != nil { stopWaitingToResume() }
+    }
+
     private func stopWaitingToResume() {
         escapedBlockID = nil
         escapeWindow = nil
@@ -1643,8 +1771,16 @@ final class OutlineEditor {
         }
     }
 
-    func visibleRowsDidChange(_ ids: [UUID]) {
+    /// The rows on show changed from `old` to `ids`.
+    func visibleRowsDidChange(_ ids: [UUID], from old: [UUID] = []) {
         env.navigator.reconcileSelection(scope: selectionScopeID, visible: ids)
+        // A Next line that stops showing while it holds the caret, folded
+        // away or settled into Completed, is left, as a click away leaves it.
+        // Nothing could take the caret there. A line just added, not drawn
+        // yet, keeps it.
+        guard policy == .nextDocument, let id = focus.blockID, old.contains(id), !ids.contains(id) else { return }
+        if line?.blockID == id { commitLine() }
+        focus.request(nil)
     }
 
     /// Forgets drafts of removed blocks, and moves a caret whose block went away.
@@ -1697,7 +1833,7 @@ struct OutlineEditorLifecycle: ViewModifier {
     func body(content: Content) -> some View {
         let env = editor.env
         content
-            .onChange(of: visibleIDs, initial: true) { _, ids in editor.visibleRowsDidChange(ids) }
+            .onChange(of: visibleIDs, initial: true) { old, ids in editor.visibleRowsDidChange(ids, from: old) }
             .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
                 editor.commitPendingInlineMetadata()
             }

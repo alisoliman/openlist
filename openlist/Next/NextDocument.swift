@@ -71,7 +71,8 @@ private struct NXDocumentLines: View {
             contents: contents,
             drawnIDs: rows.map(\.id),
             reveal: reveal,
-            readyRevealID: editor.readyRevealID)
+            readyRevealID: editor.readyRevealID,
+            tasksOnly: tasksOnly)
 
         return LazyVStack(alignment: .leading, spacing: 1) {
             if let reveal {
@@ -133,16 +134,18 @@ private struct NXDocumentLines: View {
         hooks.didFocus = { id in
             guard let block = store.block(id: id) else { return }
             // As the design's startEdit: a task takes the focus, and the
-            // selection clears. Writing a closing task keeps it open.
-            if workbench.closing[id] != nil { workbench.cancelClosing([id]) }
+            // selection clears. A closing task keeps closing: only a click
+            // on it takes it back, which its text view hears first.
             workbench.clearSelection()
             if workbench.editingNoteID != nil { workbench.editingNoteID = nil }
             workbench.focusID = block.isTask ? id : nil
             // A new line leaves the inspector where it is, as the design's addLine does.
             if block.isTask, navigator.openTaskID != nil, !workbench.fresh.contains(id) { navigator.openTask(id) }
         }
-        // The caret leaves; the line stays focused for the keys.
-        hooks.didEscape = { workbench.focusID = $0 }
+        // The caret leaves; a task stays focused for the keys. A heading or
+        // text line takes no focus, as in the design, and the keys go back
+        // to it from where Escape left it.
+        hooks.didEscape = { id in workbench.focusID = store.block(id: id)?.isTask == true ? id : nil }
         // Return and the arrows are the Next keys' once the caret has left.
         hooks.resumesAfterEscape = false
         hooks.taskCommand = { command, ids in
@@ -172,6 +175,7 @@ private struct NXDocumentLines: View {
         case let .added(id): return "Added \(quoted(id))"
         case let .edited(id): return "Edited \(quoted(id))"
         case .removedEmptyLine: return "Removed an empty line"
+        case let .deleted(id): return "Deleted \(quoted(id))"
         case let .indented(ids): return "Indented \(described(ids))"
         case let .outdented(ids): return "Outdented \(described(ids))"
         case let .moved(id, up): return "Moved \(quoted(id)) \(up ? "up" : "down")"
@@ -181,7 +185,7 @@ private struct NXDocumentLines: View {
 
     private static func ids(of edit: OutlineEdit) -> [UUID] {
         switch edit {
-        case let .added(id), let .edited(id), let .removedEmptyLine(id), let .moved(id, _): [id]
+        case let .added(id), let .edited(id), let .removedEmptyLine(id), let .deleted(id), let .moved(id, _): [id]
         case let .indented(ids), let .outdented(ids), let .dragged(ids): ids
         }
     }
@@ -225,6 +229,8 @@ private struct NXLineContext {
     /// A search hit or link shown in the document.
     let reveal: ContentReveal?
     let readyRevealID: UUID?
+    /// Only the document's tasks are drawn.
+    let tasksOnly: Bool
 }
 
 /// Decoded line content, kept until its block changes, so a render doesn't
@@ -273,7 +279,7 @@ private struct NXDocumentRow: View {
     private var workbench: Workbench { env.workbench }
 
     var body: some View {
-        let fresh = !block.isTask && workbench.fresh.contains(row.id)
+        let fresh = workbench.fresh.contains(row.id)
         let revealed = context.reveal?.blockID == row.id
         VStack(alignment: .leading, spacing: 0) {
             Group {
@@ -301,7 +307,9 @@ private struct NXDocumentRow: View {
         }
         .overlay(alignment: .topLeading) {
             if hasCaret {
-                NXDocumentCaret(open: !block.isCollapsed) {
+                NXDocumentCaret(open: !block.isCollapsed, title: block.displayTitle) {
+                    // The line being written is left first, as the design's input blurs.
+                    NXDocumentEditing.end()
                     withAnimation(style.ease(180)) { context.editor.actions(for: row).onToggleCollapse() }
                 }
                 .offset(x: CGFloat(row.depth) * 26 - 10, y: caretTop)
@@ -323,18 +331,21 @@ private struct NXDocumentRow: View {
         // morphIn, when a line turns into another kind.
         .opacity(morphing ? 0.3 : 1)
         .offset(x: morphing ? -6 : 0)
-        // rowIn, for a new line; a task's chrome plays its own.
+        // rowIn, for a new line of any kind. Only here, so a line that turns
+        // into another kind while it's still fresh plays only morphIn.
         .opacity(fresh && !entered ? 0 : 1)
         .offset(y: fresh && !entered ? -8 : 0)
         .scaleEffect(fresh && !entered ? 0.99 : 1)
-        .onAppear { if fresh { enter() } }
+        .onAppear { if fresh { enter() } else { entered = true } }
         .onChange(of: block.kind) { _, _ in morph() }
     }
 
     /// Tasks with anything under them and headings with a section always
-    /// show their caret.
+    /// show their caret, as the design's do; nothing else folds. Showing only
+    /// tasks, a task folds only the tasks under it.
     private var hasCaret: Bool {
-        row.hasChildren || BlockTree.sectionLevel(of: block.kind) != nil && context.sections[row.id]?.isEmpty == false
+        if block.isTask { return context.tasksOnly ? (context.progress[row.id]?.total ?? 0) > 0 : row.hasChildren }
+        return BlockTree.sectionLevel(of: block.kind) != nil && context.sections[row.id]?.isEmpty == false
     }
 
     private var caretTop: CGFloat {
@@ -411,13 +422,7 @@ private struct NXLineGrip: View {
     /// The row drag the document, and the sidebar's lists, take: this
     /// library's own payload, never text another app or a line could read.
     private func provider() -> NSItemProvider {
-        let payload = DragPayload.encodeBlocks(draggedIDs, session: env.navigator.blockDragSessionID)
-        let provider = NSItemProvider()
-        provider.registerDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier, visibility: .ownProcess) { load in
-            load(Data(payload.utf8), nil)
-            return nil
-        }
-        return provider
+        NXBlockDrag.provider(for: draggedIDs, session: env.navigator.blockDragSessionID)
     }
 
     private func click() {
@@ -462,6 +467,8 @@ private struct NXLineDragPreview: View {
 /// The disclosure chevron left of a line.
 private struct NXDocumentCaret: View {
     let open: Bool
+    /// The line's title, for VoiceOver.
+    let title: String
     let action: () -> Void
     @State private var hovering = false
 
@@ -479,7 +486,7 @@ private struct NXDocumentCaret: View {
         .buttonStyle(.plain)
         .focusable(false)
         .onHover { hovering = $0 }
-        .accessibilityLabel(open ? "Collapse" : "Expand")
+        .accessibilityLabel("\(open ? "Collapse" : "Expand") \(NXFormat.quoted(title))")
     }
 }
 
@@ -492,6 +499,9 @@ private struct NXDocumentTask: View {
     @Environment(\.nextStyle) private var style
     let row: BlockRow
     let context: NXLineContext
+    @State private var noteHovering = false
+    /// The title's width, to tell whether a folded note's hint fits after it.
+    @State private var titleWidth: CGFloat = 0
 
     private var task: Block { row.block }
     private var workbench: Workbench { env.workbench }
@@ -501,9 +511,15 @@ private struct NXDocumentTask: View {
         let editing = context.focus.blockID == id
         let noteEditing = workbench.editingNoteID == id
         let noteOpen = workbench.openNotes.contains(id)
+        // The design's hint that a folded note is there.
+        let hint = !editing && !noteOpen && !noteEditing && !task.note.isEmpty
+            ? NXNoteHint.placement(after: context.contents.content(of: task, store: env.store), width: titleWidth)
+            : nil
+        // The line plays its own rowIn, and has no hover of its own.
         NXTaskRowChrome(task: task, options: NXRowOptions(showList: false, listID: context.listID),
                         indent: CGFloat(row.depth) * 26, leadingChips: progressChip,
-                        editing: editing || noteEditing, entrance: 300, draggable: false,
+                        editing: editing || noteEditing, entrance: nil, draggable: false,
+                        hoverFill: false, opensOnHover: true,
                         onClick: {
                             // Clicking beside the text leaves any line being written, as a click away does.
                             NXDocumentEditing.end()
@@ -511,11 +527,12 @@ private struct NXDocumentTask: View {
                         }) {
             VStack(alignment: .leading, spacing: 0) {
                 NXLineText(row: row, context: context, editing: editing)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
+                    // A hint with no room after the last line takes the next,
+                    // as the design's inline icon wraps.
+                    .padding(.bottom, hint?.wraps == true ? NXNoteHint.linePitch : 0)
                     .overlay(alignment: .topLeading) {
-                        // The design's hint that a folded note is there.
-                        if !editing, !noteOpen, !noteEditing, !task.note.isEmpty {
-                            NXNoteHint(content: context.contents.content(of: task, store: env.store))
-                        }
+                        if let hint { NXNoteHint(placement: hint) }
                     }
                 if noteOpen || noteEditing {
                     NXDocumentNote(task: task, listID: context.listID, editing: noteEditing)
@@ -531,8 +548,11 @@ private struct NXDocumentTask: View {
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
                                             padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                             foreground: noteOpen ? style.accent : NX.ink(0.45), hoverForeground: NX.ink))
-            .opacity(!task.note.isEmpty || noteOpen ? 0.9 : 0.2)
+            .onHover { noteHovering = $0 }
+            // Full strength under the pointer, as the design's hover has it.
+            .opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : 0.2)
             .animation(.easeOut(duration: 0.14), value: noteOpen)
+            .animation(.easeOut(duration: 0.14), value: noteHovering)
             .help("Note · Space")
             .accessibilityLabel(noteOpen ? "Hide note" : "Show note")
         }
@@ -546,23 +566,37 @@ private struct NXDocumentTask: View {
 }
 
 /// The notes glyph after a task's title whose note is folded away, set
-/// after the last line's text as the design's inline icon.
+/// after the last line's text as the design's inline icon, or at the start
+/// of a line of its own when the last line has no room left for it.
 private struct NXNoteHint: View {
-    let content: NSAttributedString
+    struct Placement {
+        let x: CGFloat
+        let y: CGFloat
+        /// On a line of its own under the title, which makes room for it.
+        let wraps: Bool
+    }
+
+    /// The pitch of a title's lines.
+    static let linePitch = (Theme.Editor.lineHeight(for: .task) * 2).rounded() / 2
+
+    static func placement(after content: NSAttributedString, width: CGFloat) -> Placement {
+        let end = NXTextMeasure.end(of: content, width: width)
+        // 7pt after the text, its 13pt box 2pt under the baseline.
+        let y = Theme.Editor.lineBoxInset(for: .task) + end.baseline - 11
+        guard width > 1, end.x + 7 + 13 > width else { return Placement(x: end.x + 7, y: y, wraps: false) }
+        return Placement(x: 0, y: y + linePitch, wraps: true)
+    }
+
+    let placement: Placement
 
     var body: some View {
-        GeometryReader { proxy in
-            let inset = Theme.Editor.lineBoxInset(for: .task)
-            let end = NXTextMeasure.end(of: content, width: proxy.size.width)
-            Image(systemName: "text.alignleft")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(NX.ink(0.3))
-                .frame(width: 13, height: 13)
-                // 7pt after the text, its box 2pt under the baseline.
-                .offset(x: min(end.x + 7, max(0, proxy.size.width - 13)), y: inset + end.baseline - 11)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Image(systemName: "text.alignleft")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(NX.ink(0.3))
+            .frame(width: 13, height: 13)
+            .offset(x: placement.x, y: placement.y)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -607,6 +641,9 @@ private struct NXDocumentNote: View {
                 .contentShape(Rectangle())
                 .onTapGesture { env.workbench.editNote(task.id) }
                 .pointerStyle(.horizontalText)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Edits the note")
+                .accessibilityAction { env.workbench.editNote(task.id) }
         }
     }
 
@@ -783,9 +820,6 @@ private struct NXDocumentBlock: View {
 
     var body: some View {
         let editing = context.focus.blockID == row.id
-        // Left with Escape, a line keeps the keys' focus; the design has no
-        // mark for it, so it keeps the editing fill.
-        let focused = !editing && env.workbench.focusID == row.id
         let heading = BlockTree.sectionLevel(of: block.kind) != nil
         HStack(alignment: .top, spacing: 0) {
             if row.depth > 0 { Color.clear.frame(width: CGFloat(row.depth) * 26, height: 1) }
@@ -801,15 +835,17 @@ private struct NXDocumentBlock: View {
         .padding(.top, padding.top)
         .padding(.bottom, padding.bottom)
         .padding(.horizontal, 10)
-        .background(editing && !heading || focused ? NX.ink(0.035) : .clear,
+        // The design's editing fill, which a heading goes without.
+        .background(editing && !heading ? NX.ink(0.035) : .clear,
                     in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .animation(.easeOut(duration: 0.18), value: editing || focused)
+        .animation(.easeOut(duration: 0.18), value: editing)
         .zIndex(editing ? 4 : 0)
         .contentShape(Rectangle())
         .onTapGesture {
             guard !block.kind.isVoid else { return }
             context.editor.edit(row.id)
         }
+        .contextMenu { NXLineMenu(id: row.id, kind: block.kind, editor: context.editor) }
     }
 
     /// The design's line paddings: 20/4 and 13/3 for its headings, 5 for the rest.
@@ -915,6 +951,7 @@ private struct NXDocumentImage: View {
 /// A line's live text, in its kind's font and the design's line box.
 private struct NXLineText: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextLibrary) private var library
     let row: BlockRow
     let context: NXLineContext
     let editing: Bool
@@ -940,7 +977,23 @@ private struct NXLineText: View {
             }
             return false
         }
-        callbacks.onDoubleClick = { if block.isTask { workbench.inspect(id) } }
+        callbacks.onDoubleClick = {
+            guard block.isTask else { return }
+            // Only the inspector opens, with the row focused for the keys, not
+            // the text a double-click selected.
+            NXDocumentEditing.end()
+            workbench.inspect(id)
+        }
+        // Right-click shows the line's menu, as it does beside the text. Once
+        // the line is being written, the text's own menu.
+        if !editing {
+            callbacks.contextMenu = { [env, library] in
+                let menu = block.isTask
+                    ? AnyView(NXTaskMenu(ids: workbench.selection.contains(id) ? Array(workbench.selection) : [id]))
+                    : AnyView(NXLineMenu(id: id, kind: block.kind, editor: editor))
+                return NSHostingMenu(rootView: menu.environment(env).environment(\.nextLibrary, library))
+            }
+        }
         return BlockTextView(
             blockID: id,
             kind: block.kind,
@@ -978,11 +1031,40 @@ private struct NXLineText: View {
     }
 }
 
-/// Ends the writing of any document line, as a click away from it does.
+/// The menu of a line that isn't a task: turn it into another kind, or
+/// delete it. A task's is the Next rows' own.
+private struct NXLineMenu: View {
+    let id: UUID
+    let kind: BlockKind
+    let editor: OutlineEditor
+
+    var body: some View {
+        if !kind.isVoid {
+            Menu("Turn Into") {
+                let options = OutlineSlashOption.all.filter { !$0.kind.isVoid && $0.kind != kind }
+                ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                    if option.isExtra, index > 0, !options[index - 1].isExtra { Divider() }
+                    Button(option.label, systemImage: option.symbol) {
+                        NXDocumentEditing.end()
+                        editor.turn(id, into: option.kind)
+                    }
+                }
+            }
+            Divider()
+        }
+        Button("Delete", systemImage: "trash", role: .destructive) {
+            NXDocumentEditing.end()
+            editor.deleteLine(id)
+        }
+    }
+}
+
+/// Ends the writing of any document line or note, as a click away from it does.
 enum NXDocumentEditing {
     @MainActor
     static func end() {
-        guard let window = NSApp.keyWindow, window.firstResponder is BlockNSTextView else { return }
+        guard let window = NSApp.keyWindow,
+              window.firstResponder is BlockNSTextView || window.firstResponder is NXNoteTextView else { return }
         window.makeFirstResponder(nil)
     }
 }

@@ -289,8 +289,13 @@ private struct NXInspectorSubtaskRow: View {
         .onHover { hovering = $0 }
         .onTapGesture { workbench.inspect(task.id) }
         .contextMenu { NXTaskMenu(ids: [task.id]) }
-        .accessibilityElement(children: .combine)
+        // One element: opening is its action, ticking a named one.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(task.displayTitle)
+        .accessibilityValue(closing != nil ? "Completing" : filled ? "Completed" : "Open")
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { workbench.inspect(task.id) }
+        .accessibilityAction(named: filled ? "Reopen" : "Complete") { workbench.toggle(task.id) }
         .accessibilityAction(named: "Open Details") { workbench.inspect(task.id) }
     }
 }
