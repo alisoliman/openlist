@@ -24,15 +24,23 @@ struct ReminderPicker: View {
         if block.modelContext != nil, !block.isDeleted { liveContent }
     }
 
+    /// The due time a timed task with no reminder of its own reminds you at,
+    /// as the Store schedules it.
+    static func dueTimeReminder(of block: Block) -> Date? {
+        block.reminderAt == nil && block.includesTime ? block.dueDate : nil
+    }
+
     private var liveContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let dueTime = Self.dueTimeReminder(of: block)
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: block.reminderAt == nil ? "bell.slash" : "bell")
+                // A reminder at the due time rings grey, not being one of its own.
+                Image(systemName: block.reminderAt == nil && dueTime == nil ? "bell.slash" : "bell")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(block.reminderAt == nil ? NX.ink(0.4) : style.accent)
                     .accessibilityHidden(true)
-                // As the Reminder pill that opens it reads.
-                Text(block.reminderAt.map { NXFormat.dueAndClock($0) } ?? "No reminder")
+                // As the Reminder pill that opens it reads, with the time.
+                Text(block.reminderAt.map { NXFormat.dueAndClock($0) } ?? dueTime.map { NXFormat.atDueTime($0) } ?? "No reminder")
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
                 Spacer(minLength: 6)
@@ -118,7 +126,9 @@ struct ReminderPicker: View {
 
     private func offsetPill(_ title: String, minutes: Int) -> some View {
         let date = offsetDate(minutes: minutes)
-        let isOn = date.flatMap { date in block.reminderAt.map { abs($0.timeIntervalSince(date)) < 1 } } ?? false
+        // At the due time is lit too when that's when the task reminds you.
+        let isOn = date.flatMap { date in block.reminderAt.map { abs($0.timeIntervalSince(date)) < 1 } }
+            ?? (minutes == 0 && Self.dueTimeReminder(of: block) != nil)
         return NXInspectorPill(isOn: isOn) {
             guard let date = offsetDate(minutes: minutes) else { return }
             env.workbench.setReminder(block.id, at: date)

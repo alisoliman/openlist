@@ -269,6 +269,9 @@ check(NXFormat.reminds(at: todayMorning, atDueTime: false, now: setAt) == "Remin
       && NXFormat.reminds(at: morning, atDueTime: true, now: setAt)
           == "Reminds you at the due time, \(NXFormat.dueAndClock(morning, now: setAt))",
       "The Reminder tab says when it reminds you, and that it's the due time for a timed task with no reminder of its own")
+check(NXFormat.atDueTime(morning, now: setAt) == "At the due time · \(NXFormat.dueAndClock(morning, now: setAt))"
+      && NXFormat.atDueTime(todayMorning, now: setAt) == "At the due time · Today 09:05",
+      "The Reminder tab's header names the due time a timed task with no reminder of its own reminds you at")
 check(NXFormat.dayLabel(morning, now: setAt) == NXFormat.dueLabel(morning, now: setAt)
       && NXFormat.dayLabel(NXFormat.day(offset: 1, now: setAt), now: setAt) == "Tomorrow",
       "A day this year, or within the week, reads as its due chip")

@@ -43,17 +43,21 @@ private final class NXLineage {
 /// as a browser blurs an input on a click elsewhere. AppKit leaves a text field
 /// first responder when a SwiftUI row, subtask, crumb or pill is clicked, so
 /// the next key would type into the title, the next task's once the panel
-/// moves on, rather than act on the row. It watches only while one is edited.
+/// moves on, rather than act on the row. A click in the box drawn around a
+/// field is in the field, as in a textarea's padding.
 @MainActor
 private final class NXInspectorClicks {
     private var monitor: Any?
+    private var settling: Task<Void, Never>?
     /// The panel's own view, for its window and frame.
     weak var panel: NSView?
+    /// The title's and the note box's areas, the padding around the text included.
+    private let areas = NSHashTable<NSView>.weakObjects()
 
     func install() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            MainActor.assumeIsolated { self?.release(for: event) }
+            MainActor.assumeIsolated { self?.handle(event) }
             return event
         }
     }
@@ -61,6 +65,14 @@ private final class NXInspectorClicks {
     func uninstall() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        settling?.cancel()
+    }
+
+    fileprivate func mark(_ view: NSView, as role: NXInspectorMark.Role) {
+        switch role {
+        case .panel: panel = view
+        case .field: areas.add(view)
+        }
     }
 
     /// Lets the field go at once, as the panel moves to another task.
@@ -69,13 +81,45 @@ private final class NXInspectorClicks {
         window.makeFirstResponder(nil)
     }
 
-    /// A click in the field, or on a scroller, leaves it be; another field
-    /// clicked takes the keys once this one lets them go.
-    private func release(for event: NSEvent) {
-        guard let window = panel?.window, event.window === window,
-              let frame = editedFrame(in: window), !frame.contains(event.locationInWindow),
-              !(window.contentView?.hitTest(event.locationInWindow) is NSScroller) else { return }
-        window.makeFirstResponder(nil)
+    /// Runs `action` once the click under way, if any, is over, and a beat
+    /// more, so what it changes doesn't move what was clicked out from under
+    /// the pointer before its button fires on mouse-up, as the Tasks bar waits.
+    func afterClick(_ action: @escaping @MainActor () -> Void) {
+        settling?.cancel()
+        guard NSEvent.pressedMouseButtons != 0 else { return action() }
+        settling = Task { @MainActor in
+            repeat {
+                try? await Task.sleep(for: .milliseconds(60))
+            } while NSEvent.pressedMouseButtons != 0 && !Task.isCancelled
+            try? await Task.sleep(for: .milliseconds(60))
+            guard !Task.isCancelled else { return }
+            action()
+        }
+    }
+
+    /// A click on text or a scroller goes as AppKit sends it: in the field it
+    /// places the caret, another field takes the keys, and scrolling leaves
+    /// the edit be. One in the box around a field puts the caret there;
+    /// anywhere else it ends the edit.
+    private func handle(_ event: NSEvent) {
+        guard let window = panel?.window, event.window === window else { return }
+        let point = event.locationInWindow
+        // Only what shows of a box counts, not the part scrolled under the bars.
+        let area = areas.allObjects.lazy.filter { $0.window === window }
+            .map { $0.convert($0.visibleRect, to: nil) }.first { $0.contains(point) }
+        guard area != nil || editedFrame(in: window) != nil else { return }
+        if let hit = window.contentView?.hitTest(point),
+           hit is NSScroller || sequence(first: hit, next: \.superview).contains(where: { $0 is NSText || $0 is NSTextField }) {
+            return
+        }
+        if let area {
+            // A right click there leaves things be, as a textarea keeps its focus.
+            guard event.type == .leftMouseDown, let field = field(in: area, window: window) else { return }
+            if !isEditing(field, in: window) { window.makeFirstResponder(field) }
+            placeCaret(near: point, in: window)
+        } else {
+            window.makeFirstResponder(nil)
+        }
     }
 
     /// Where the field being edited is in the window, when it's the panel's.
@@ -85,19 +129,66 @@ private final class NXInspectorClicks {
         let frame = field.convert(field.visibleRect, to: nil)
         return panel.convert(panel.bounds, to: nil).contains(CGPoint(x: frame.midX, y: frame.midY)) ? frame : nil
     }
+
+    private func isEditing(_ field: NSView, in window: NSWindow) -> Bool {
+        guard let editor = window.firstResponder as? NSText else { return false }
+        return (editor.delegate as? NSView ?? editor) === field
+    }
+
+    /// The editable field an area is drawn around: the one being edited, or
+    /// the one found inside it.
+    private func field(in area: CGRect, window: NSWindow) -> NSView? {
+        if let editor = window.firstResponder as? NSText {
+            let field = editor.delegate as? NSView ?? editor
+            if area.contains(Self.center(of: field)) { return field }
+        }
+        return window.contentView.flatMap { Self.editableText(in: area, under: $0) }
+    }
+
+    private static func editableText(in area: CGRect, under view: NSView) -> NSView? {
+        for subview in view.subviews where !subview.isHidden {
+            if (subview as? NSTextField)?.isEditable == true || (subview as? NSTextView)?.isEditable == true,
+               area.contains(center(of: subview)) {
+                return subview
+            }
+            if let found = editableText(in: area, under: subview) { return found }
+        }
+        return nil
+    }
+
+    /// The caret at the place in the text nearest the click, as a textarea
+    /// puts it for a click in its padding: below the last line, at its end.
+    private func placeCaret(near point: CGPoint, in window: NSWindow) {
+        guard let editor = window.firstResponder as? NSTextView else { return }
+        let local = editor.convert(point, from: nil)
+        let bounds = editor.bounds
+        let clamped = CGPoint(x: min(max(local.x, bounds.minX), bounds.maxX),
+                              y: min(max(local.y, bounds.minY), bounds.maxY))
+        let length = (editor.string as NSString).length
+        let index = editor.characterIndexForInsertion(at: clamped)
+        editor.setSelectedRange(NSRange(location: index == NSNotFound ? length : min(index, length), length: 0))
+    }
+
+    private static func center(of view: NSView) -> CGPoint {
+        let frame = view.convert(view.bounds, to: nil)
+        return CGPoint(x: frame.midX, y: frame.midY)
+    }
 }
 
-/// Hands `NXInspectorClicks` the panel's view, taking no clicks itself.
-private struct NXInspectorPanelMark: NSViewRepresentable {
+/// Hands `NXInspectorClicks` the panel's view, or the area drawn around a
+/// field, taking no clicks itself.
+private struct NXInspectorMark: NSViewRepresentable {
+    enum Role { case panel, field }
+    let role: Role
     let clicks: NXInspectorClicks
 
     func makeNSView(context: Context) -> NSView {
         let view = MarkView()
-        clicks.panel = view
+        clicks.mark(view, as: role)
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) { clicks.panel = nsView }
+    func updateNSView(_ nsView: NSView, context: Context) { clicks.mark(nsView, as: role) }
 
     private final class MarkView: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -120,6 +211,8 @@ struct NextInspector: View {
     @State private var lineage = NXLineage()
     /// "Add a note" opened the note, which shows while it has focus or text.
     @State private var addingNote = false
+    /// The note just let go keeps its box until the click that ended it is over.
+    @State private var holdsNote = false
     @State private var dropTargeted = false
     @State private var clicks = NXInspectorClicks()
     @FocusState private var focus: Field?
@@ -234,7 +327,7 @@ struct NextInspector: View {
         .frame(width: 360)
         .frame(maxHeight: .infinity)
         .background(NX.inspector)
-        .background(NXInspectorPanelMark(clicks: clicks))
+        .background(NXInspectorMark(role: .panel, clicks: clicks))
         // Files dropped anywhere on the panel are kept with the task.
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             NXTaskFiles(workbench: env.workbench).drop(providers, on: task.id)
@@ -255,6 +348,7 @@ struct NextInspector: View {
         .onAppear {
             load()
             adoptRequestedPicker()
+            clicks.install()
         }
         .onChange(of: task.id) { _, _ in
             // The shell reuses this view for every task. A field being edited
@@ -272,13 +366,17 @@ struct NextInspector: View {
         }
         .onChange(of: task.text) { _, _ in title.receive(Self.title(of: task)) }
         .onChange(of: task.note) { _, _ in note.receive(task.note) }
-        .onChange(of: focus) { old, new in
+        .onChange(of: focus) { old, _ in
             if old == .title { commitTitle() }
             if old == .note {
+                // A box the click that ended the note leaves empty closes
+                // once that click is over, so a button below doesn't move out
+                // from under the pointer before it fires on mouse-up.
+                holdsNote = showsNote
                 commitNote()
                 addingNote = false
+                clicks.afterClick { holdsNote = false }
             }
-            if new == nil { clicks.uninstall() } else { clicks.install() }
         }
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
         .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
@@ -305,6 +403,7 @@ struct NextInspector: View {
         title.reset(to: Self.title(of: task))
         note.reset(to: task.note)
         addingNote = false
+        holdsNote = false
     }
 
     /// The title as written, so an untitled task shows the field's placeholder, as
@@ -374,6 +473,7 @@ struct NextInspector: View {
                 // Esc saves and stops editing; the next Esc closes the panel.
                 .onExitCommand { focus = nil }
                 .padding(.vertical, leading / 2)
+                .background(NXInspectorMark(role: .field, clicks: clicks))
         }
     }
 
@@ -454,7 +554,9 @@ struct NextInspector: View {
                 NXInspectorPill(isOn: task.reminderAt != nil) { openPicker(.reminder) } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "bell").font(.system(size: 10.5, weight: .medium))
-                        Text(task.reminderAt.map { NXFormat.dueAndClock($0) } ?? "None")
+                        // A timed task with none of its own reminds you at its due time.
+                        Text(task.reminderAt.map { NXFormat.dueAndClock($0) }
+                            ?? (ReminderPicker.dueTimeReminder(of: task) == nil ? "None" : "At the due time"))
                     }
                 }
                 .popover(isPresented: pickerBinding(.reminder), arrowEdge: .bottom) { schedulePopover(.reminder) }
@@ -654,7 +756,7 @@ struct NextInspector: View {
 
     /// A note, or one being written or revealed; else "Add a note" stands in.
     private var showsNote: Bool {
-        !note.value.isEmpty || !task.note.isEmpty || addingNote || focus == .note || reveal?.field == .note
+        !note.value.isEmpty || !task.note.isEmpty || addingNote || holdsNote || focus == .note || reveal?.field == .note
     }
 
     /// What "Add a note" does while it stands in for the note.
@@ -680,6 +782,8 @@ struct NextInspector: View {
             .padding(.vertical, 10 + leading / 2)
             .padding(.horizontal, 12)
             .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // A click anywhere in the box is in the note, as in a textarea.
+            .background(NXInspectorMark(role: .field, clicks: clicks))
     }
 
     private var activity: some View {

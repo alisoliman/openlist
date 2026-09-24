@@ -64,6 +64,12 @@ enum NXFormat {
         return atDueTime ? "Reminds you at the due time, \(when)" : "Reminds you \(when)"
     }
 
+    /// The Reminder tab's header for a timed task with no reminder of its
+    /// own, which reminds you at its due time: "At the due time · Fri 25 18:00".
+    static func atDueTime(_ due: Date, now: Date = .now) -> String {
+        "At the due time · \(dueAndClock(due, now: now))"
+    }
+
     /// A new due date as the tray and Changes name it: its day, and its time
     /// only when the change set that time. A timed task moved to another day
     /// keeps its time unnamed, as the design's date pills name only the day.

@@ -165,7 +165,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (the note saved as the document saves one: trailing space goes, and an emptied note closes
   under its task; a click off the field, on a row, subtask, crumb or pill, ends the edit as
   a browser blurs an input, and the caret never follows to another task, so the keys act on
-  the row) and files kept with the task. As the design, the note shows only when there
+  the row, while one in the note's box puts the caret at the nearest place in it, as a
+  textarea's padding does, and a box left empty closes once the click is over, so what
+  was clicked below it doesn't move away) and files kept with the task. As the design, the note shows only when there
   is one; until then a quiet "Add a note" row stands in, with "Attach a file" beside it until
   the task has files, when Files shows. Files dropped anywhere on the panel are attached;
   attaching snaps with Undo, which takes the files off again, and removing one does too, its
@@ -185,8 +187,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   dueLabel. Its Due tab clears a date with the Due row's grey None, and its Reminder tab's
   Remove reminder is grey too, red being for deletions; that tab says in plain words
   whether and when the task reminds you ("Reminds you at the due time, today 18:00",
-  "Off while the task is done"). Done first sets a due time still being typed as
-  Custom…, and Set reminder a reminder time. "Remind me at" is a draft only Set reminder
+  "Off while the task is done"). A timed task with no reminder of its own, which reminds
+  you at its due time, says so: the pill reads "At the due time", the header adds the
+  time beside a grey bell, and the tab's At the due time is lit. Done first sets a due
+  time still being typed as Custom…, and Set reminder a reminder time. "Remind me at" is a draft only Set reminder
   sets: Done keeps the reminder there was, over a day or time picked there, or still being
   typed. The label picker (⇧⌘L) lists the name typed first, then labels starting with it,
   and Create last, only for a name no label has; Return picks the highlighted row, the best

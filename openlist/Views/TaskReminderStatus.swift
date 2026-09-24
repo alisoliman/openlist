@@ -71,11 +71,11 @@ struct TaskReminderStatus: View {
     }
 
     /// A reminder waiting on the user rings with a badge, one that won't come
-    /// is struck, as the Reminder tab's "No reminder".
+    /// is struck, as the Reminder tab's "No reminder", in a review build too.
     private static func symbol(for status: ReminderStatus) -> String {
         if status.needsRecovery { return "bell.badge" }
         switch status {
-        case .expired, .inactive: return "bell.slash"
+        case .expired, .inactive, .unavailable: return "bell.slash"
         default: return "bell"
         }
     }
