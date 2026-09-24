@@ -79,7 +79,7 @@ struct NextOverlays: View {
         ZStack(alignment: .top) {
             if workbench.captureOpen {
                 NXOverlayBackdrop(top: 96, close: { workbench.closeCapture() }) {
-                    NXCaptureCard()
+                    NXCaptureCard(draft: workbench)
                 }
             } else if navigator.isSearchOpen {
                 NXOverlayBackdrop(top: 72, close: { navigator.isSearchOpen = false }) {
@@ -132,10 +132,7 @@ private struct NXOverlayBackdrop<Card: View>: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close)
             card()
-                .background(NX.card)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.18), lineWidth: 0.5))
-                .shadow(color: Color(hex: 0x17161A, opacity: 0.3), radius: 35, y: 30)
+                .nxOverlayCard()
                 .padding(.horizontal, 20)
                 .padding(.top, top)
                 .scaleEffect(shown ? 1 : 0.97, anchor: .top)
@@ -145,6 +142,17 @@ private struct NXOverlayBackdrop<Card: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .transition(.opacity)
         .onAppear { withAnimation(style.ease(180)) { shown = true } }
+    }
+}
+
+extension View {
+    /// The overlay card's surface: the design's 14pt card with its hairline and
+    /// `0 30px 70px` drop, in the window's overlays and the Quick Add panel alike.
+    func nxOverlayCard() -> some View {
+        background(NX.card)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.18), lineWidth: 0.5))
+            .shadow(color: Color(hex: 0x17161A, opacity: 0.3), radius: 35, y: 30)
     }
 }
 
@@ -163,15 +171,81 @@ private struct NXAutofocus: ViewModifier {
 
 // MARK: - Capture
 
-private struct NXCaptureCard: View {
+/// What a capture card types into: the text, where it goes, and what Return
+/// saves. The main window's draft is the workbench's; the Quick Add panel
+/// keeps one of its own, so the two never share half-typed text.
+@MainActor
+protocol NXCaptureDraft: AnyObject, Observable {
+    var store: Store { get }
+    var settings: AppSettings { get }
+    var captureText: String { get set }
+    var captureListID: UUID? { get set }
+    /// Whether a task with no date of its own is due today.
+    var captureForToday: Bool { get }
+    /// The label screen capture opened on; the new task gets that label.
+    var captureLabelID: UUID? { get }
+}
+
+extension NXCaptureDraft {
+    /// The capture text read as the card tints it and Return saves it, with
+    /// dates only while Settings reads them from typed text.
+    func captureParse() -> CaptureParse {
+        CaptureParse(captureText, parsesDates: settings.parsesNaturalLanguageDates)
+    }
+
+    /// What Return saves, which the capture card's chips preview. A task with
+    /// no date of its own is due today when the draft is for today; captured
+    /// on a label screen it also gets that label.
+    func capturePreview(_ parse: CaptureParse) -> TaskCaptureDraft.Preview {
+        let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
+        return TaskCaptureDraft.Preview(
+            title: parse.title,
+            date: parse.schedule?.date ?? (captureForToday ? NXFormat.day(offset: 0) : nil),
+            includesTime: parse.schedule?.includesTime ?? false,
+            recurrence: parse.schedule?.recurrence,
+            labels: Array(Set(parse.labels + screenLabel)).sorted())
+    }
+
+    /// Saves the draft into its list, or Inbox: one capture for the title,
+    /// date, repeat and labels, then the priority and estimate its tokens name.
+    func saveCapture(_ parse: CaptureParse, appendToRoot: Bool = false) throws -> Block {
+        let block = try store.saveCapture(capturePreview(parse), destinationID: captureListID ?? store.inboxList()?.id,
+                                          appendToRoot: appendToRoot)
+        if let priority = parse.priority { store.setPriority(priority, for: block) }
+        if let minutes = parse.estimateMinutes, minutes > 0 { store.setTaskEstimate(minutes, for: block) }
+        return block
+    }
+
+    /// Tab and Shift-Tab step the destination through Inbox and every list.
+    func cycleCaptureDestination(by delta: Int, among ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        let index = ids.firstIndex { $0 == captureListID } ?? 0
+        captureListID = ids[(index + delta + ids.count) % ids.count]
+    }
+}
+
+/// The main window's capture, which `openCapture` fills for the current screen.
+extension Workbench: NXCaptureDraft {}
+
+/// A line the card shows where there is no tray to say it: what ⇧↩ just
+/// added, or why Return couldn't add the task.
+struct NXCaptureNotice: Equatable {
+    var text: String
+    var failed = false
+}
+
+/// The design's capture card, over the main window or in the Quick Add panel.
+/// Its host handles Return, Tab and Escape.
+struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    @Bindable var draft: Draft
+    var notice: NXCaptureNotice?
     @State private var refocus = 0
 
     var body: some View {
-        @Bindable var workbench = env.workbench
-        let parse = workbench.captureParse()
+        let parse = draft.captureParse()
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 11) {
                 Circle()
@@ -185,11 +259,13 @@ private struct NXCaptureCard: View {
                         .fixedSize()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .allowsHitTesting(false)
-                    TextField("", text: $workbench.captureText)
+                    TextField("", text: $draft.captureText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .foregroundStyle(.clear)
                         .modifier(NXAutofocus(refocus: refocus))
+                        .accessibilityLabel("New task")
+                        .accessibilityIdentifier("capture.title")
                 }
                 .frame(height: 24)
                 .clipped()
@@ -201,6 +277,17 @@ private struct NXCaptureCard: View {
             }
             .frame(minHeight: 22, alignment: .leading)
             .padding(EdgeInsets(top: 6, leading: 46, bottom: 12, trailing: 18))
+
+            if let notice, notice.failed {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10.5, weight: .semibold))
+                    Text(notice.text).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(NX.redText)
+                .padding(EdgeInsets(top: 0, leading: 46, bottom: 12, trailing: 18))
+                .transition(.opacity)
+            }
 
             destinations
                 .padding(.vertical, 10)
@@ -227,15 +314,27 @@ private struct NXCaptureCard: View {
             .padding(.trailing, 2)
             .frame(height: 23)
         ForEach(library.lists) { list in
-            destination(list, isOn: env.workbench.captureListID == list.id)
+            destination(list, isOn: draft.captureListID == list.id)
         }
     }
 
-    private var hints: some View {
-        Text("⇥ destination · ↩ add · ⇧↩ add another")
+    /// The key hints, or for a moment what ⇧↩ just added.
+    @ViewBuilder private var hints: some View {
+        if let notice, !notice.failed {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 10.5, weight: .semibold))
+                Text(notice.text)
+            }
             .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(NX.ink(0.4))
+            .foregroundStyle(NX.greenText)
+            .lineLimit(1)
             .fixedSize()
+        } else {
+            Text("⇥ destination · ↩ add · ⇧↩ add another")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(NX.ink(0.4))
+                .fixedSize()
+        }
     }
 
     /// The typed text with its tokens tinted, plus the placeholder ghost.
@@ -264,8 +363,7 @@ private struct NXCaptureCard: View {
     /// Every token previews as soon as it's typed, from the same parse and
     /// draft Return saves, so the chips show what it will store.
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
-        let workbench = env.workbench
-        let preview = workbench.capturePreview(parse)
+        let preview = draft.capturePreview(parse)
         var chips: [NXChipModel] = []
         if let date = preview.date {
             let due = NXFormat.dueLabel(date)
@@ -294,7 +392,7 @@ private struct NXCaptureCard: View {
             }
         }
         // A label screen adds its own label, unless the text names it already.
-        if let label = workbench.captureLabelID.flatMap({ env.store.label(id: $0) }),
+        if let label = draft.captureLabelID.flatMap({ env.store.label(id: $0) }),
            !parse.labels.contains(label.name.lowercased()) {
             chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor)))
         }
@@ -312,7 +410,7 @@ private struct NXCaptureCard: View {
 
     private func destination(_ list: TaskList, isOn: Bool) -> some View {
         Button {
-            env.workbench.captureListID = list.id
+            draft.captureListID = list.id
             refocus += 1
         } label: {
             HStack(spacing: 4) {
@@ -327,6 +425,8 @@ private struct NXCaptureCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Add to \(list.displayTitle)")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
         .animation(.easeOut(duration: 0.14), value: isOn)
     }
 }

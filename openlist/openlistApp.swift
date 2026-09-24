@@ -47,6 +47,8 @@ struct openlistApp: App {
                 libraryID: try? LibraryIdentity.read(at: startup.storeURL),
                 libraryStorage: storage, libraryStartup: startup)
             _env = State(initialValue: environment)
+            // Quick Add floats in a panel of its own rather than a scene.
+            QuickCapturePanel.shared.install(env: environment, container: loaded.container)
             // Menu-bar-only launches must also migrate files and start sync.
             applicationDelegate.onDidLaunch = { [weak environment] in
                 guard let environment else { return }
@@ -132,21 +134,6 @@ struct openlistApp: App {
             if let env { AppCommands(env: env) }
         }
 
-        Window("Quick Add", id: WindowID.quickAdd) {
-            if let env, let container {
-                QuickAddWindowView()
-                    .modifier(InteractionMotion())
-                    .environment(env)
-                    .modelContainer(container)
-                    .environment(\.calendar, env.settings.calendar)
-                    .preferredColorScheme(env.settings.appearance.colorScheme)
-            }
-        }
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
-        .defaultPosition(.top)
-        .handlesExternalEvents(matching: [])
-
         Settings {
             if let env, let container {
                 SettingsView()
@@ -161,11 +148,12 @@ struct openlistApp: App {
 
         MenuBarExtra("Openlist", systemImage: "checkmark.circle", isInserted: menuBarBinding) {
             if let env, let container {
+                // Its motion is the Next style's, which follows Reduce Motion.
                 MenuBarView()
-                    .modifier(InteractionMotion())
                     .environment(env)
                     .modelContainer(container)
                     .environment(\.calendar, env.settings.calendar)
+                    .preferredColorScheme(env.settings.appearance.colorScheme)
             }
         }
         .menuBarExtraStyle(.window)
@@ -188,5 +176,4 @@ struct openlistApp: App {
 
 enum WindowID {
     static let main = "main"
-    static let quickAdd = "quick-add"
 }

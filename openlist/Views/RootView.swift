@@ -281,10 +281,8 @@ struct RootView: View {
     }
 
     private func installQuickCapture() {
-        QuickCaptureHotKey.shared.onTrigger = {
-            openWindow(id: WindowID.quickAdd)
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // The panel takes the keyboard without activating Openlist.
+        QuickCaptureHotKey.shared.onTrigger = { QuickCapturePanel.shared.show() }
         if env.settings.quickCaptureHotKeyEnabled {
             QuickCaptureHotKey.shared.register()
         }
