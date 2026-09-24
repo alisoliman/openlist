@@ -83,7 +83,12 @@ struct NextSettingsScreen: View {
                                       value: daily ? "Daily" : "Off",
                                       entries: nxChoices([true, false], selection: $settings.takesDailySnapshots) { $0 ? "Daily" : "Off" } + [
                                           .divider,
-                                          .command("Show Snapshots in Finder") { maintenance.showSnapshots() },
+                                          // A one-off failure: the tray says it here, not Data's row below.
+                                          .command("Show Snapshots in Finder") {
+                                              do { try maintenance.showSnapshots() } catch {
+                                                  env.workbench.showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
+                                              }
+                                          },
                                       ])
                             .onChange(of: settings.takesDailySnapshots) { _, daily in
                                 if daily { Task { await maintenance.snapshotIfDue() } }

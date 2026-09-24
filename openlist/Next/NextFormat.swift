@@ -43,6 +43,15 @@ enum NXFormat {
         }
     }
 
+    /// A new due date as the tray and Changes name it: its day, and its time
+    /// only when the change set that time. A timed task moved to another day
+    /// keeps its time unnamed, as the design's date pills name only the day.
+    static func dueChange(_ due: Date, includesTime: Bool, from old: Date?, oldIncludesTime: Bool,
+                          now: Date = .now) -> String {
+        let keepsTime = oldIncludesTime && old.map { clock($0) } == clock(due)
+        return dueLabel(due, now: now) + (includesTime && !keepsTime ? " \(clock(due))" : "")
+    }
+
     static func relativeDay(_ date: Date, now: Date = .now) -> String {
         let offset = dayOffset(date, now: now)
         if offset == 0 { return "today" }

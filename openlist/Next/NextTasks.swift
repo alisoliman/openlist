@@ -934,6 +934,7 @@ private struct NXTasksSentenceBar: View {
                         .font(.system(size: 11, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(NX.ink(0.38))
+                        .accessibilityLabel(count == 1 ? "1 matching task" : "\(count) matching tasks")
                 }
             }
             // 200 pt wide inside the padding, as the design's box measures it, and no wider than the bar.

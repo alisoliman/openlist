@@ -303,10 +303,12 @@ extension Workbench {
     // through here like the design's pills, each with its tray and Undo.
 
     /// A day picked in the month, a time, or a typed phrase, which may also
-    /// set the repeat. Named for where the task lands, as `schedule` is.
+    /// set the repeat. Named for where the task lands, as `schedule` is, and
+    /// by the rule Changes names the saved change with after a relaunch.
     func setDue(_ id: UUID, date: Date, includesTime: Bool, recurrence: Recurrence? = nil) {
         guard let task = store.block(id: id), task.isTask else { return }
-        var label = "\(describe([task])) → \(NXFormat.dueLabel(date))" + (includesTime ? " \(NXFormat.clock(date))" : "")
+        var label = "\(describe([task])) → "
+            + NXFormat.dueChange(date, includesTime: includesTime, from: task.dueDate, oldIncludesTime: task.includesTime)
         if let recurrence { label += " · \(recurrence.displayText)" }
         edit([task], label: label, icon: "calendar", tone: .accent) { task in
             store.setDueDate(date, includesTime: includesTime, for: task)

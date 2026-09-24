@@ -128,6 +128,15 @@ if phase == "delete" {
     try check(child.id == childID && child.parentID == nil && child.listID != oldListID, "Recovery preserves identity and makes a visible root")
     try check(child.note == oldNote && child.trashMetadata?.recoveryNote?.contains("Rich source") == true, "Provenance is separate from untouched user notes")
     try check(store.list(id: child.listID)?.isPinned == true, "Recovery list is visible in sidebar")
+    let recovery = store.list(id: child.listID)!
+    try check(recovery.summary == Store.recoveredItemsSummary, "Recovered items doesn't promise a former location it doesn't show")
+    let former = "Content restored from an unavailable location. Each recovered item keeps its former location."
+    recovery.summary = former
+    let edited = store.createList(title: "Recovered items")
+    edited.summary = former + " Mine."
+    store.bootstrap()
+    try check(recovery.summary == Store.recoveredItemsSummary && edited.summary == former + " Mine.",
+              "An older Recovered items list takes the new description at launch; one edited since keeps its own")
     try snapshot().validate()
  } else if phase == "readonly" {
     let list = store.createList(title: "Read-only failures")

@@ -173,4 +173,19 @@ do {
     check(failingStore.recentActivity().isEmpty, "Failed persistence rolls back creation events")
     check(!failingStore.context.hasChanges, "Failed capture leaves no records awaiting accidental autosave")
 }
+
+// The tray and Changes name a date change by one rule, so it reads the same after a relaunch.
+let setAt = NXFormat.day(offset: 0)
+let evening = Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: setAt)!
+let tomorrowEvening = NXFormat.day(NXFormat.day(offset: 1, now: setAt), at: evening)
+check(NXFormat.dueChange(tomorrowEvening, includesTime: true, from: evening, oldIncludesTime: true, now: setAt) == "Tomorrow",
+      "A timed task moved to another day keeps its time unnamed, as the design's date pills name only the day")
+check(NXFormat.dueChange(evening.addingTimeInterval(3600), includesTime: true, from: evening, oldIncludesTime: true, now: setAt) == "Today 19:00",
+      "A new time is named with its day")
+check(NXFormat.dueChange(evening, includesTime: true, from: setAt, oldIncludesTime: false, now: setAt) == "Today 18:00",
+      "A time set on a task that had none is named")
+check(NXFormat.dueChange(NXFormat.day(offset: 1, now: setAt), includesTime: false, from: evening, oldIncludesTime: true, now: setAt) == "Tomorrow",
+      "A day without a time is named as the day")
+check(NXFormat.dueChange(tomorrowEvening, includesTime: true, from: evening, oldIncludesTime: true, now: tomorrowEvening) == "Today",
+      "A date change is named as of when it was made")
 print("Passed \(checks) capture and triage checks")
