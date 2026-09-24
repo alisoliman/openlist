@@ -342,6 +342,53 @@ await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>)
 }
 check(input.selectedRange().location == 5, "Typing in the middle of a focused block does not reapply its pending caret")
 
+// SwiftUI can redraw a line from inside the model's write of a keystroke,
+// with the text the model held before it. That must neither take the
+// keystroke back nor move the caret.
+let focusedCallbacks = coordinator.parent.callbacks
+let typed = RichTextCodec.decode(nil, plainText: "Ask", kind: .task)
+coordinator.apply(typed, to: input, kind: .task, isCompleted: false)
+input.setSelectedRange(NSRange(location: 3, length: 0))
+var redrawnMidWrite = false
+coordinator.parent.callbacks.onChange = { _ in
+    coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, attributedText: typed,
+                                       isFocused: true, focusToken: 2, callbacks: focusedCallbacks)
+    coordinator.updateContent(of: input)
+    redrawnMidWrite = true
+}
+input.insertText("k", replacementRange: input.selectedRange())
+check(redrawnMidWrite && input.string == "Askk" && input.selectedRange().location == 4,
+    "A redraw from inside the text view's own write keeps the keystroke and the caret")
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false,
+                                   attributedText: RichTextCodec.decode(nil, plainText: "Ask about", kind: .task),
+                                   isFocused: true, focusToken: 2, callbacks: focusedCallbacks)
+coordinator.updateContent(of: input)
+check(input.string == "Ask about", "Once the write is over, a change from outside still reaches the text view")
+
+// A focus move tells the outline once it's carried out, including for a
+// line SwiftUI puts in its window only after the update that sent the caret.
+var appliedFocusTokens: [Int] = []
+var landingCallbacks = focusedCallbacks
+landingCallbacks.onFocusApplied = { appliedFocusTokens.append($0) }
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, attributedText: plain,
+                                   isFocused: true, focusToken: 3, callbacks: landingCallbacks)
+coordinator.apply(plain, to: input, kind: .task, isCompleted: false)
+fixtureWindow.makeFirstResponder(nil)
+input.removeFromSuperview()
+coordinator.syncFocus(view: input, shouldFocus: true, caret: 2, token: 3)
+await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    DispatchQueue.main.async { continuation.resume() }
+}
+check(appliedFocusTokens.isEmpty && fixtureWindow.firstResponder !== input, "A line not in a window yet can't take the caret")
+scrollDocument.addSubview(input)
+await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    DispatchQueue.main.async { continuation.resume() }
+}
+check(appliedFocusTokens == [3] && fixtureWindow.firstResponder === input && input.selectedRange().location == 2,
+    "Put in its window later, the line takes the caret it was sent, and says so")
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, attributedText: plain,
+                                   isFocused: true, focusToken: 2, callbacks: focusedCallbacks)
+
 // Escape must hand the keyboard back to the window, otherwise the next
 // single-key shortcut is typed into the row.
 var windowHeldKeyboardOnEscape = false
@@ -1151,5 +1198,33 @@ store.setCollapsed(true, for: foldedTask)
 let onlyTasks = tasksEditor.visibleRows(in: store.blocks(inList: tasksList.id)).map(\.id)
 check(onlyTasks == [inSection.id, underShops.id, foldedTask.id] && !onlyTasks.contains(underFoldedTask.id),
     "Showing only tasks, a folded heading or list item hides none, and a folded task still folds")
+
+// A caret move is on its way until the line's text view carries it out,
+// or a click puts the caret in another line. The list document holds the
+// keys typed meanwhile for that line.
+let movingList = store.createList(title: "Caret moves")
+let movingDocument = DocumentContext(listID: movingList.id)
+let movingEditor = OutlineEditor(env: outlineEnv, document: movingDocument, policy: .nextDocument)
+let movingFirst = store.appendBlock(kind: .task, text: "First", to: movingDocument)
+let movingSecond = store.appendBlock(kind: .task, text: "Second", to: movingDocument)
+store.save()
+func movingActions(_ block: Block) -> BlockRowActions {
+    movingEditor.actions(for: movingEditor.visibleRows(in: store.blocks(inList: movingList.id)).first { $0.id == block.id }!)
+}
+check(movingEditor.appliedFocusToken == movingEditor.focus.token && !movingEditor.isMovingCaret, "No caret move is on its way before any is sent")
+movingEditor.edit(movingFirst.id)
+check(movingEditor.appliedFocusToken != movingEditor.focus.token && movingEditor.isMovingCaret, "A caret move is on its way once sent")
+movingActions(movingFirst).onFocusApplied(movingEditor.focus.token)
+check(movingEditor.appliedFocusToken == movingEditor.focus.token, "The line's text view carrying it out ends it")
+movingEditor.edit(movingFirst.id, caret: 0)
+check(movingEditor.appliedFocusToken != movingEditor.focus.token, "A move within the line holding the caret, as Tab's, is on its way too")
+movingActions(movingSecond).onFocus()
+check(movingEditor.appliedFocusToken == movingEditor.focus.token && movingEditor.focus.blockID == movingSecond.id,
+    "A click into another line overtakes a move on its way")
+movingActions(movingSecond).onMarkdownPrefix(.bullet)
+check(movingSecond.kind == .bullet && movingEditor.focus.blockID == movingSecond.id
+    && movingEditor.appliedFocusToken != movingEditor.focus.token,
+    "A line turned into another kind sends the caret on to the text view that draws it")
+movingEditor.commitLine()
 
 print("✅ \(checks) editor/store checks passed")

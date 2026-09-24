@@ -94,10 +94,11 @@ final class NextKeyHandler {
         let isComposing = (responder as? NSTextInputClient)?.hasMarkedText() == true
         let isEnter = key == Key.enter || key == Key.keypadEnter
 
-        // After Return or Backspace the list document's caret is on its way
-        // to another line, and after ⇧↩ or Space a note is about to take the
-        // keyboard. Keys typed meanwhile wait for it, in order, rather than
-        // type into the line it left or reach the single-key map.
+        // After Return, Backspace, Tab, Add subtask or a line turning into
+        // another kind, the list document's caret is on its way to a line,
+        // and after ⇧↩ or Space a note is about to take the keyboard. Keys
+        // typed meanwhile wait for it, in order, rather than type into the
+        // line or text view it left or reach the single-key map.
         if !flags.contains(.command), !heldKeys.isEmpty || isAwaitingKeyboard(in: window) {
             heldKeys.append(event)
             if heldKeys.count == 1 { releaseHeldKeys(in: window, since: .now) }
@@ -217,11 +218,14 @@ final class NextKeyHandler {
     private static let unrepeated: Set<UInt16> = [Key.delete, Key.forwardDelete, Key.enter, Key.keypadEnter,
                                                   Key.space, Key.tab, Key.escape]
 
-    /// Whether the list document is moving its caret, or a note is about to
-    /// take the keyboard, and keys should wait for where they're going.
+    /// Whether the list document is moving its caret, or opening to write a
+    /// subtask, or a note is about to take the keyboard, and keys should wait
+    /// for where they're going.
     private func isAwaitingKeyboard(in window: NSWindow) -> Bool {
         let workbench = env.workbench
         if workbench.document?.isMovingCaret == true { return true }
+        if workbench.pendingSubtaskParentID != nil, let requested = workbench.subtaskRequestedAt,
+           Date.now.timeIntervalSince(requested) < 0.4 { return true }
         guard workbench.editingNoteID != nil, !(window.firstResponder is NXNoteTextView),
               let requested = workbench.noteEditRequestedAt else { return false }
         return Date.now.timeIntervalSince(requested) < 0.4

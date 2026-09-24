@@ -53,6 +53,7 @@ struct BlockRowActions {
     var onDeleteAtEnd: () -> Bool = { false }
     var onArrowOut: (EditorArrow, Int) -> Bool = { _, _ in false }
     var onFocus: () -> Void = {}
+    var onFocusApplied: (Int) -> Void = { _ in }
     var onEscape: () -> Void = {}
     var onSlashQuery: (String?, NSRange, CGRect, CGRect) -> Void = { _, _, _, _ in }
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
@@ -79,6 +80,7 @@ extension BlockRowActions {
             onDeleteAtEnd: onDeleteAtEnd,
             onArrowOut: onArrowOut,
             onFocus: onFocus,
+            onFocusApplied: onFocusApplied,
             onEscape: onEscape,
             onSlashQuery: onSlashQuery,
             onMarkdownPrefix: onMarkdownPrefix,
@@ -590,6 +592,8 @@ final class OutlineEditor {
                 guard !(NSApp?.keyWindow?.firstResponder is RowSelectionNSControl) else { return }
                 if slash?.blockID != blockID { slash = nil }
                 stopWaitingToResume()
+                // A click into another line ends any caret move on its way.
+                if focus.blockID != blockID { appliedFocusToken = focus.token }
                 focus.adopt(blockID)
                 if redrawnLineID == blockID { redrawnLineID = nil }
                 openLine(for: blockID)
@@ -597,6 +601,9 @@ final class OutlineEditor {
                 // Typing inside a document makes it the target for menu commands.
                 env.activeDocument = document
                 hooks.didFocus(blockID)
+            },
+            onFocusApplied: { [self] token in
+                appliedFocusToken = token
             },
             onEscape: { [self] in
                 commitInlineMetadata(block)
@@ -1127,11 +1134,17 @@ final class OutlineEditor {
     }
 
     /// Whether the caret has been sent to a row that hasn't taken it yet, as
-    /// after Return or Backspace. Keys pressed meanwhile belong to that row.
+    /// after Return or Backspace, or that hasn't put it where it was sent, as
+    /// after Tab, or a kind change that draws the line in a new text view
+    /// while the one it replaces still holds the keyboard. Keys pressed
+    /// meanwhile belong to that row, once it has.
     var isMovingCaret: Bool {
         guard let id = focus.blockID else { return false }
-        return textStorage(editing: id) == nil
+        return appliedFocusToken != focus.token || textStorage(editing: id) == nil
     }
+
+    /// The last caret move a row's text view carried out, or a click ended.
+    @ObservationIgnored private(set) var appliedFocusToken = 0
 
     // MARK: - Line edits
 
@@ -1148,8 +1161,10 @@ final class OutlineEditor {
         let arrivedEmpty: Bool
         let session: EditorEditSession
         /// Where the line's typing Undo is registered, folded into this step.
-        /// A line whose kind changes can be drawn by a new text view.
-        let undoTargets = NSHashTable<NSTextStorage>.weakObjects()
+        /// A line whose kind changes can be drawn by a new text view. Held
+        /// until the step ends, by identity: the undo manager doesn't keep
+        /// them, and a text view gone with its storage would leave its typing.
+        let undoTargets = NSHashTable<NSTextStorage>(options: [.strongMemory, .objectPointerPersonality])
 
         init(blockID: UUID, isNew: Bool, arrivedEmpty: Bool, session: EditorEditSession) {
             self.blockID = blockID
