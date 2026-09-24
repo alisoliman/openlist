@@ -5,7 +5,8 @@
 //  Renders every widget kind and size from the design's sample data, in light,
 //  dark and the desktop's in-background rendering, so they can be compared with
 //  the design (docs/design/openlist-next-v2/widgets). Built and run by
-//  Tools/WidgetPreviews/render.sh; not part of Tools/check.sh.
+//  Tools/WidgetPreviews/render.sh; not part of Tools/check.sh. The default
+//  fixture adds agenda-overlap tiles, a meeting over two planned slots.
 //
 //    render.sh [--out DIR] [--fixture default|session|all] [--scale 2]
 //
@@ -45,11 +46,36 @@ struct WidgetPreviews {
                         write(view, size: tileSize(size), scale: scale, to: folder.appendingPathComponent("\(name(kind))-\(size.rawValue).png"))
                     }
                 }
+                // The sample week has no meeting over a planned slot, so the
+                // Agenda's layering gets a tile of its own.
+                if fixture == .default {
+                    let overlap = WidgetEntry(date: entry.date, snapshot: overlapping(snapshot))
+                    for size in OpenlistWidgetKind.agenda.sizes {
+                        let view = PreviewTile(kind: .agenda, entry: overlap, size: size, mode: mode, framed: true)
+                        write(view, size: tileSize(size), scale: scale, to: folder.appendingPathComponent("agenda-overlap-\(size.rawValue).png"))
+                    }
+                }
                 let sheet = PreviewSheet(entry: entry, mode: mode, fixture: fixture)
                 write(sheet, size: sheet.size, scale: scale, to: out.appendingPathComponent("\(fixture.rawValue)/\(mode.rawValue)-sheet.png"))
             }
         }
         print("Wrote previews to \(out.path)")
+    }
+
+    /// Today with a meeting from 11:00 over the end of the 10:00 slot and all
+    /// of the 11:30 one, in the live feed's start order: both slots draw over
+    /// it, as the design draws a day's meetings first.
+    static func overlapping(_ snapshot: WidgetSnapshot) -> WidgetSnapshot {
+        var snapshot = snapshot
+        let calendar = Calendar.current
+        let now = WidgetSampleData.referenceDate
+        guard let day = snapshot.agenda.firstIndex(where: { calendar.isDate($0.day, inSameDayAs: now) }),
+              let start = calendar.date(bySettingHour: 11, minute: 0, second: 0, of: now) else { return snapshot }
+        snapshot.agenda[day].items.append(WidgetSnapshot.AgendaItem(
+            id: "m-overlap", kind: .meeting, title: "Vendor call", start: start, end: start.addingTimeInterval(3_600),
+            isCompleted: false, isActive: false, isFlexible: false))
+        snapshot.agenda[day].items.sort { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+        return snapshot
     }
 
     /// The design's kind names, for the file names.

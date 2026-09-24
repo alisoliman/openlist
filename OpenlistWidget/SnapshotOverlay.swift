@@ -34,16 +34,24 @@ enum SnapshotOverlay {
         // Only an open row the snapshot still shows counts, for the occurrence
         // the widget showed: once the app has published the completion, or a
         // repeat has rolled on, the file lingering changes nothing.
-        let shown = snapshot.todayItems.contains { matches($0.id, $0.occurrenceID, action) && !$0.isCompleted }
-            || snapshot.lists.contains { $0.openItems.contains { matches($0.id, $0.occurrenceID, action) } }
+        let listed = snapshot.lists.contains { $0.openItems.contains { matches($0.id, $0.occurrenceID, action) } }
+        let shown = listed || snapshot.todayItems.contains { matches($0.id, $0.occurrenceID, action) && !$0.isCompleted }
         guard shown else { return }
         let row = snapshot.todayItems.first { matches($0.id, $0.occurrenceID, action) }
             ?? snapshot.lists.lazy.compactMap { $0.openItems.first { matches($0.id, $0.occurrenceID, action) } }.first
         if let due = row?.dueDate { snapshot.countDue(on: due, by: -1, calendar: calendar) }
         snapshot.todayItems.removeAll { matches($0.id, $0.occurrenceID, action) }
         for index in snapshot.lists.indices {
-            guard let row = snapshot.lists[index].openItems.firstIndex(where: { matches($0.id, $0.occurrenceID, action) }) else { continue }
-            var item = snapshot.lists[index].openItems.remove(at: row)
+            var item: WidgetSnapshot.Item
+            if let carried = snapshot.lists[index].openItems.firstIndex(where: { matches($0.id, $0.occurrenceID, action) }) {
+                item = snapshot.lists[index].openItems.remove(at: carried)
+            } else if !listed, let row, row.listID == snapshot.lists[index].id {
+                // A Today row past the open rows its list carries: the list
+                // still counts it done and shows it among its latest.
+                item = row
+            } else {
+                continue
+            }
             item.isCompleted = true
             item.completedAt = action.createdAt
             snapshot.lists[index].doneItems.insert(item, at: 0)

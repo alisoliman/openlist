@@ -152,6 +152,16 @@ check(DueCounts(SnapshotOverlay.apply([reopen], to: ticked), clock: clock) == Du
       "A queued reopen of an undated task counts nothing due")
 let kyotoDue = WidgetAction(kind: .complete, taskID: id("k5"), occurrenceID: id("k5"))
 check(SnapshotOverlay.apply([kyotoDue], to: design).dueDays.reduce(0) { $0 + $1.count } == 12, "A list row's tick counts one fewer due")
+// A Today tick on a task past the open rows its list carries: the list still
+// counts it done and shows it among its latest, as when it carries the row.
+var uncarried = design
+let kyotoIndex = uncarried.lists.firstIndex { $0.id == id("kyoto") }!
+uncarried.lists[kyotoIndex].openItems.removeAll { $0.id == id("k3") }
+check(SnapshotOverlay.apply([tick], to: uncarried) == ticked, "A Today tick past its list's rows still counts in the list")
+check(SnapshotOverlay.apply([tick, tick], to: uncarried) == ticked, "and counts once")
+let backAgain = SnapshotOverlay.apply([tick, WidgetAction(kind: .reopen, taskID: id("k3"), occurrenceID: id("k3"))], to: uncarried)
+check(backAgain.lists[kyotoIndex].openCount == 5 && backAgain.lists[kyotoIndex].doneCount == 1
+      && backAgain.todayItems.contains { $0.id == id("k3") }, "and a reopen after it counts it open again")
 check([WidgetAction.Kind.startWork, .pauseWork, .resumeWork, .finishWork].allSatisfy(\.isWork)
       && ![WidgetAction.Kind.complete, .reopen].contains(where: \.isWork), "Only the timer's buttons are work")
 

@@ -6,7 +6,8 @@
 #   Tools/WidgetPreviews/render.sh                        both fixtures, 2x, into /tmp/widget-previews
 #   Tools/WidgetPreviews/render.sh --fixture session --scale 1 --out /tmp/previews
 #
-# Writes <out>/<fixture>/<mode>/<kind>-<size>.png and <out>/<fixture>/<mode>-sheet.png.
+# Writes <out>/<fixture>/<mode>/<kind>-<size>.png and <out>/<fixture>/<mode>-sheet.png,
+# and for the default fixture agenda-overlap-<size>.png, a meeting over planned slots.
 # Not a run-*-checks.sh script, so Tools/check.sh never runs it.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
