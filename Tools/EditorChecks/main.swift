@@ -563,119 +563,121 @@ check(RichTextCodec.decode(RichTextCodec.encode(legacyDecoded, kind: .heading1),
 // The outline engine behind the list document, driven without a view.
 let outlineList = store.createList(title: "Outline engine")
 let outlineDocument = DocumentContext(listID: outlineList.id)
-let pageTask = store.appendBlock(kind: .task, text: "Parent", to: outlineDocument)
-let firstSubtask = store.insertChild(kind: .task, text: "First subtask", of: pageTask, at: .last)
-let secondSubtask = store.insertChild(kind: .task, text: "Second subtask", of: pageTask, at: .last)
+let parentTask = store.appendBlock(kind: .task, text: "Parent", to: outlineDocument)
+let firstSubtask = store.insertChild(kind: .task, text: "First subtask", of: parentTask, at: .last)
+let secondSubtask = store.insertChild(kind: .task, text: "Second subtask", of: parentTask, at: .last)
 store.save()
 let outlineEnv = AppEnvironment(store: store)
-let page = DocumentContext(listID: outlineList.id, rootBlockID: pageTask.id)
-let pageEditor = OutlineEditor(env: outlineEnv, document: page)
 let listEditor = OutlineEditor(env: outlineEnv, document: outlineDocument)
 func outlineRow(_ block: Block, in editor: OutlineEditor) -> BlockRow {
     editor.visibleRows(in: store.blocks(inList: outlineList.id)).first { $0.id == block.id }!
 }
-func pageRows() -> [BlockRow] { pageEditor.visibleRows(in: store.blocks(inList: outlineList.id)) }
-check(pageRows().map(\.id) == [firstSubtask.id, secondSubtask.id] && pageRows().allSatisfy { $0.depth == 0 },
-    "A document rooted at a task projects only its subtree, from depth 0")
+func listRows() -> [BlockRow] { listEditor.visibleRows(in: store.blocks(inList: outlineList.id)) }
+check(listRows().map(\.id) == [parentTask.id, firstSubtask.id, secondSubtask.id] && listRows().map(\.depth) == [0, 1, 1],
+    "A list document projects the whole list, from depth 0")
 
-// A document's root is a floor: the root task's children never outdent out of it.
-check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).editorCallbacks.onTab(true, 0) && secondSubtask.parentID == pageTask.id,
-    "Shift-Tab on the root task's direct child is consumed and keeps it in the document")
-check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onTab(false, 0) && secondSubtask.parentID == firstSubtask.id,
-    "Tab still nests subtasks in a rooted document")
-check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onTab(true, 0) && secondSubtask.parentID == pageTask.id,
-    "Shift-Tab still outdents nested subtasks up to the root task")
+// The list is a floor: its top-level lines never outdent out of it.
+check(listEditor.actions(for: outlineRow(parentTask, in: listEditor)).editorCallbacks.onTab(true, 0) && parentTask.parentID == nil,
+    "Shift-Tab on a top-level line is consumed and keeps it at the top level")
+check(listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onTab(false, 0) && secondSubtask.parentID == firstSubtask.id,
+    "Tab nests a subtask under the one above it")
+check(listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onTab(true, 0) && secondSubtask.parentID == parentTask.id,
+    "Shift-Tab outdents a nested subtask one level")
 var focusedIDs: [UUID] = []
 var escapedIDs: [UUID] = []
-pageEditor.hooks.didFocus = { focusedIDs.append($0) }
-pageEditor.hooks.didEscape = { escapedIDs.append($0) }
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onFocus()
-check(pageEditor.focus.blockID == firstSubtask.id && focusedIDs.last == firstSubtask.id && outlineEnv.activeDocument == page,
+listEditor.hooks.didFocus = { focusedIDs.append($0) }
+listEditor.hooks.didEscape = { escapedIDs.append($0) }
+listEditor.actions(for: outlineRow(parentTask, in: listEditor)).onFocus()
+check(listEditor.focus.blockID == parentTask.id && focusedIDs.last == parentTask.id && outlineEnv.activeDocument == outlineDocument,
     "Focusing a row adopts the caret, claims menu commands and tells the host")
 outlineEnv.pendingCommand = .outdent
-pageEditor.receiveCommand()
-check(firstSubtask.parentID == pageTask.id && outlineEnv.pendingCommand == nil, "The Outdent command keeps the root task's children in the document")
+listEditor.receiveCommand()
+check(parentTask.parentID == nil && outlineEnv.pendingCommand == nil, "The Outdent command keeps a top-level line in the list")
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 
 // Escape lets go of the caret and tells the host which block it left.
 check(outlineEnv.navigator.selection == [firstSubtask.id], "Editing a row makes it the row selection")
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onEscape()
-check(escapedIDs == [firstSubtask.id] && pageEditor.focus.blockID == nil && outlineEnv.navigator.selection.isEmpty,
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
+check(escapedIDs == [firstSubtask.id] && listEditor.focus.blockID == nil && outlineEnv.navigator.selection.isEmpty,
     "Escape releases the caret and selection, then reports the block to the host")
 
 // With the caret gone, the host's keys can put it back.
-check(pageEditor.escapedBlockID == firstSubtask.id, "The outline remembers the block Escape left")
+check(listEditor.escapedBlockID == firstSubtask.id, "The outline remembers the block Escape left")
 outlineEnv.activeDocument = nil
-let tokenBeforeResume = pageEditor.focus.token
-check(pageEditor.resumeEditing() && pageEditor.focus.blockID == firstSubtask.id && pageEditor.focus.caret == nil
-    && pageEditor.focus.token != tokenBeforeResume && outlineEnv.activeDocument == page,
+let tokenBeforeResume = listEditor.focus.token
+check(listEditor.resumeEditing() && listEditor.focus.blockID == firstSubtask.id && listEditor.focus.caret == nil
+    && listEditor.focus.token != tokenBeforeResume && outlineEnv.activeDocument == outlineDocument,
     "Resuming puts the caret back where the text view had it, and claims menu commands")
-check(pageEditor.escapedBlockID == nil && !pageEditor.resumeEditing(), "Resuming lets go of the escaped block")
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onEscape()
-pageEditor.forgetEscape()
-check(!pageEditor.resumeEditing() && pageEditor.focus.blockID == nil, "Once the host's keys move on, Escape's block is forgotten")
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onEscape()
-pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onFocus()
-check(pageEditor.escapedBlockID == nil, "Clicking into any row ends the wait to resume")
+check(listEditor.escapedBlockID == nil && !listEditor.resumeEditing(), "Resuming lets go of the escaped block")
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
+listEditor.forgetEscape()
+check(!listEditor.resumeEditing() && listEditor.focus.blockID == nil, "Once the host's keys move on, Escape's block is forgotten")
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
+listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onFocus()
+check(listEditor.escapedBlockID == nil, "Clicking into any row ends the wait to resume")
 
 // Hooks replace host policy; without one, the store or navigator acts.
 var openedIDs: [UUID] = []
-pageEditor.hooks.openDetails = { openedIDs.append($0) }
+listEditor.hooks.openDetails = { openedIDs.append($0) }
 outlineEnv.pendingCommand = .openDetails
-pageEditor.receiveCommand()
-check(openedIDs == [secondSubtask.id] && outlineEnv.navigator.openTaskID == nil, "A details hook replaces the navigator's detail panel")
+listEditor.receiveCommand()
+check(openedIDs == [secondSubtask.id] && outlineEnv.navigator.openTaskID == nil, "A details hook opens the task in the navigator's place")
 var claimed: [(EditorCommand, [UUID])] = []
-pageEditor.hooks.taskCommand = { command, ids in
+listEditor.hooks.taskCommand = { command, ids in
     claimed.append((command, ids))
     return command == .toggleStar
 }
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onFocus()
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 outlineEnv.pendingCommand = .toggleStar
-pageEditor.receiveCommand()
+listEditor.receiveCommand()
 check(claimed.last?.0 == .toggleStar && claimed.last?.1 == [firstSubtask.id] && !firstSubtask.isStarred,
     "A host claims task commands for the command targets before the store")
 outlineEnv.pendingCommand = .setDueToday
-pageEditor.receiveCommand()
+listEditor.receiveCommand()
 check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate != nil, "Commands a host declines fall back to the store")
-outlineEnv.activeDocument = outlineDocument
+let menuElsewhere = store.createList(title: "Menu targets elsewhere")
+outlineEnv.activeDocument = DocumentContext(listID: menuElsewhere.id)
 outlineEnv.pendingCommand = .clearDueDate
-pageEditor.receiveCommand()
+listEditor.receiveCommand()
 check(outlineEnv.pendingCommand == .clearDueDate && firstSubtask.dueDate != nil, "Only the active document runs menu commands")
 outlineEnv.pendingCommand = nil
 
 // The Task menu reads the tasks a command sent now would reach.
-check(pageEditor.commandTaskIDs == [firstSubtask.id], "The menu's targets are the task holding the caret")
-let menuNote = store.insertChild(kind: .paragraph, text: "A text line", of: pageTask, at: .last)
-let menuElsewhere = store.createList(title: "Menu targets elsewhere")
+check(listEditor.commandTaskIDs == [firstSubtask.id], "The menu's targets are the task holding the caret")
+let menuNote = store.insertChild(kind: .paragraph, text: "A text line", of: parentTask, at: .last)
 let menuOtherTask = store.appendBlock(kind: .task, text: "Another list's task", to: DocumentContext(listID: menuElsewhere.id))
 store.save()
-pageEditor.hooks.commandTargets = { [secondSubtask.id] }
-pageEditor.actions(for: outlineRow(menuNote, in: pageEditor)).onFocus()
-check(pageEditor.commandTaskIDs.isEmpty, "A text line holding the caret leaves the menu no task, whatever the host targets")
-pageEditor.actions(for: outlineRow(menuNote, in: pageEditor)).onEscape()
-check(pageEditor.commandTaskIDs == [secondSubtask.id], "With no caret, the menu reads the host's targets")
-pageEditor.hooks.commandTargets = { [menuOtherTask.id] }
-check(pageEditor.commandTaskIDs.isEmpty, "The host's targets count only in the document's list")
-pageEditor.hooks.commandTargets = { [] }
+listEditor.hooks.commandTargets = { [secondSubtask.id] }
+listEditor.actions(for: outlineRow(menuNote, in: listEditor)).onFocus()
+check(listEditor.commandTaskIDs.isEmpty, "A text line holding the caret leaves the menu no task, whatever the host targets")
+listEditor.actions(for: outlineRow(menuNote, in: listEditor)).onEscape()
+check(listEditor.commandTaskIDs == [secondSubtask.id], "With no caret, the menu reads the host's targets")
+listEditor.hooks.commandTargets = { [menuOtherTask.id] }
+check(listEditor.commandTaskIDs.isEmpty, "The host's targets count only in the document's list")
+listEditor.hooks = OutlineHooks()
 store.deleteBlock(menuNote)
 store.save()
 
 // Done tasks at the document's top level are the host's to list apart.
-secondSubtask.isCompleted = true
-check(!pageRows().contains { $0.id == secondSubtask.id }, "A done top-level task leaves the visible rows")
-pageEditor.completedTasksKeptVisible = [secondSubtask.id]
-check(pageRows().map(\.id) == [firstSubtask.id, secondSubtask.id], "The host can keep a done task on screen")
-pageEditor.documentDidChange()
-check(pageEditor.completedTasksKeptVisible.isEmpty && pageEditor.focus.blockID == nil,
+let doneAtTop = store.appendBlock(kind: .task, text: "Done at the top level", to: outlineDocument)
+doneAtTop.isCompleted = true
+store.save()
+check(!listRows().contains { $0.id == doneAtTop.id }, "A done top-level task leaves the visible rows")
+listEditor.completedTasksKeptVisible = [doneAtTop.id]
+check(listRows().last?.id == doneAtTop.id, "The host can keep a done task on screen")
+listEditor.documentDidChange()
+check(listEditor.completedTasksKeptVisible.isEmpty && listEditor.focus.blockID == nil,
     "A document changing in place forgets the tasks its host kept visible")
-secondSubtask.isCompleted = false
-let doneFirst = store.insertChild(kind: .task, text: "Done first", of: pageTask, at: .first)
+store.deleteBlock(doneAtTop)
+store.save()
+let doneFirst = store.insertChild(kind: .task, text: "Done first", of: parentTask, at: .first)
 doneFirst.isCompleted = true
 
-// The list's floor is the document root: nested rows still outdent there.
+// Nested rows outdent to the list's top level.
 listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 outlineEnv.pendingCommand = .outdent
 listEditor.receiveCommand()
-check(firstSubtask.parentID == nil, "A list document still outdents nested rows to its top level")
+check(firstSubtask.parentID == nil, "A list document outdents nested rows to its top level")
 
 // Slash selection and arrows through void rows.
 let noteBlock = store.appendBlock(kind: .paragraph, text: "/div", to: outlineDocument)
@@ -714,7 +716,7 @@ _ = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
 check(listEditor.actions(for: drawnBeforeAppend.last!).onArrowOut(.down, 0) && listEditor.focus.blockID == undrawn.id,
     "The next render's rows reach the handlers")
 let shownRows = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
-check(shownRows[shownRows.firstIndex { $0.id == pageTask.id }! + 1].id == doneFirst.id, "A completed subtask is drawn under its parent")
+check(shownRows[shownRows.firstIndex { $0.id == parentTask.id }! + 1].id == doneFirst.id, "A completed subtask is drawn under its parent")
 let doneTop = store.appendBlock(kind: .task, text: "Done at the top", to: outlineDocument)
 doneTop.isCompleted = true
 store.save()

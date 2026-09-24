@@ -8,7 +8,9 @@ import SwiftData
 import SwiftUI
 
 /// Identifies a document: a list, or the subtree under one of its tasks,
-/// which behaves like a miniature list rooted at that task.
+/// which behaves like a miniature list rooted at that task. The list
+/// document edits a whole list; the store appends under a task too, as MCP
+/// adds subtasks.
 struct DocumentContext: Hashable {
     var listID: UUID
     /// `nil` for the list itself; a task id for the subtree under it.

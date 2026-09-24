@@ -139,36 +139,28 @@ enum BlockTree {
         return rows
     }
 
-    /// Temporarily revealed ancestors/targets remain visible without changing
-    /// completion preferences or exposing every other completed branch.
-    ///
-    /// - Parameter topLevelOnly: hides only completed tasks at depth 0, with
-    ///   their subtrees, keeping nested completed tasks where they are.
-    static func hidingCompletedTasks(in rows: [BlockRow], revealing: Set<UUID> = [],
-                                     topLevelOnly: Bool = false) -> [BlockRow] {
+    /// Hides the done tasks at depth 0, with their subtrees, keeping done
+    /// subtasks where they were ticked. Revealed ancestors and targets stay
+    /// visible without exposing every other done branch.
+    static func hidingCompletedTasks(in rows: [BlockRow], revealing: Set<UUID> = []) -> [BlockRow] {
         var result: [BlockRow] = []
-        var skipDeeperThan: Int?
+        var hidesBranch = false
         for row in rows {
-            if let limit = skipDeeperThan {
-                if row.depth > limit { continue }
-                skipDeeperThan = nil
+            if row.depth == 0 {
+                hidesBranch = row.block.isTask && row.block.isCompleted && !revealing.contains(row.id)
             }
-            if row.block.isTask, row.block.isCompleted, !topLevelOnly || row.depth == 0, !revealing.contains(row.id) {
-                skipDeeperThan = row.depth
-                continue
-            }
-            result.append(row)
+            if !hidesBranch { result.append(row) }
         }
         return result
     }
 
-    /// The done top-level tasks of the document under `root` with a task
-    /// still open somewhere below them, which a document hiding its done
-    /// top-level tasks keeps on show, or that open task would go with it.
-    static func completedTasksHoldingOpenTasks(in blocks: [Block], root: UUID? = nil) -> Set<UUID> {
-        let index = childIndex(of: blocks, root: root)
+    /// The done top-level tasks with a task still open somewhere below them,
+    /// which a document hiding its done top-level tasks keeps on show, or
+    /// that open task would go with it.
+    static func completedTasksHoldingOpenTasks(in blocks: [Block]) -> Set<UUID> {
+        let index = childIndex(of: blocks)
         var result: Set<UUID> = []
-        for top in index[root] ?? [] where top.isTask && top.isCompleted {
+        for top in index[nil] ?? [] where top.isTask && top.isCompleted {
             if descendants(of: top.id, using: index).contains(where: { $0.isTask && !$0.isCompleted }) {
                 result.insert(top.id)
             }

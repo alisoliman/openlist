@@ -222,14 +222,13 @@ struct OutlineHooks {
 /// One editor serves one document. Key the view that owns it on the document,
 /// as `NXDocumentOutline` does with `.id(...)`, so another list gets a fresh
 /// editor; ``documentDidChange()`` only resets the caret, menu, drafts and
-/// kept-visible tasks if a document changes in place. A document rooted at a
-/// task, ``DocumentContext/rootBlockID``, is the subtree under it.
+/// kept-visible tasks if a document changes in place.
 @MainActor
 @Observable
 final class OutlineEditor {
     let env: AppEnvironment
     @ObservationIgnored var hooks: OutlineHooks
-    /// The document being edited.
+    /// The document being edited: a whole list, with no root task.
     @ObservationIgnored private(set) var document: DocumentContext { didSet { drawnRows = nil } }
     /// Done top-level tasks the host keeps on screen, which the document
     /// otherwise leaves for the host to list apart.
@@ -287,8 +286,7 @@ final class OutlineEditor {
     /// The reveal this document is showing, if a search or link opened it.
     var reveal: ContentReveal? {
         guard let request = env.navigator.contentReveal,
-              request.taskID == nil, request.listID == document.listID,
-              document.rootBlockID == nil else { return nil }
+              request.taskID == nil, request.listID == document.listID else { return nil }
         return request
     }
 
@@ -304,7 +302,7 @@ final class OutlineEditor {
     /// too. Done subtasks stay where they were ticked, as in the design.
     private func projectedRows(of live: [Block], expanding: Set<UUID> = []) -> [BlockRow] {
         BlockTree.sortingTaskRuns(in: BlockTree.flatten(live,
-            root: document.rootBlockID, expanding: expanding.union(reveal?.ancestorIDs ?? [])), by: sorting)
+            expanding: expanding.union(reveal?.ancestorIDs ?? [])), by: sorting)
     }
 
     /// The rows to draw: ``allRows(in:)`` without the done top-level tasks,
@@ -313,19 +311,19 @@ final class OutlineEditor {
     func visibleRows(in blocks: [Block]) -> [BlockRow] {
         let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
         let kept = (reveal?.visiblePath ?? []).union(completedTasksKeptVisible)
-            .union(BlockTree.completedTasksHoldingOpenTasks(in: live, root: document.rootBlockID))
+            .union(BlockTree.completedTasksHoldingOpenTasks(in: live))
         if tasksOnly {
             // Only tasks fold here: what a heading, list item or text line
             // folds away still shows, as tasks under the tasks above.
             let folding = Set(live.lazy.filter { !$0.isTask && $0.isCollapsed }.map(\.id))
             let rows = projectedRows(of: live, expanding: folding)
-            return Self.taskOutline(BlockTree.hidingCompletedTasks(in: rows, revealing: kept, topLevelOnly: true))
+            return Self.taskOutline(BlockTree.hidingCompletedTasks(in: rows, revealing: kept))
         }
         let rows = projectedRows(of: live)
         // A revealed line shows through the headings folding it away.
         let unfolded = reveal?.blockID.map { Set(BlockTree.enclosingSections(of: $0, in: rows)) } ?? []
         return BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
-                                              revealing: kept, topLevelOnly: true)
+                                              revealing: kept)
     }
 
     /// Only the tasks among `rows`, each as deep as the tasks above it.
@@ -629,10 +627,10 @@ final class OutlineEditor {
 
     // MARK: - Key handling
 
-    /// The document's root is its floor: a line at its top level can't step
-    /// out of it, nor one under the task a document is rooted at.
+    /// The list is the document's floor: a line at its top level can't step
+    /// out of it.
     private func canOutdent(_ block: Block) -> Bool {
-        block.parentID != document.rootBlockID
+        block.parentID != nil
     }
 
     /// ↑ off a line's first visual line, or ↓ off its last, takes the caret
@@ -937,7 +935,7 @@ final class OutlineEditor {
         let current = blocks
         guard let block = current.first(where: { $0.id == id }) else { return }
         let ancestors = BlockTree.ancestors(of: block, in: current)
-        let rows = BlockTree.flatten(current, root: document.rootBlockID, respectCollapse: false)
+        let rows = BlockTree.flatten(current, respectCollapse: false)
         let headings = Set(BlockTree.enclosingSections(of: id, in: rows))
         env.store.batch {
             for ancestor in ancestors { env.store.setCollapsed(false, for: ancestor) }
@@ -1289,7 +1287,7 @@ final class OutlineEditor {
 
     /// Every line's place in the outline, to tell whether a move changed any.
     private func outlineShape() -> [String] {
-        BlockTree.flatten(blocks, root: document.rootBlockID, respectCollapse: false).map { "\($0.id)/\($0.depth)" }
+        BlockTree.flatten(blocks, respectCollapse: false).map { "\($0.id)/\($0.depth)" }
     }
 
     private func insertPastedText(_ text: String, after block: Block) {
@@ -1345,8 +1343,9 @@ final class OutlineEditor {
     /// Runs the pending menu command, if this is the document the user is
     /// working in. Call it whenever `env.commandToken` changes.
     func receiveCommand() {
-        // Only the document the user is actually working in should respond,
-        // otherwise ⌘N would fire in both the list and the open task panel.
+        // Only the document that claimed menu commands responds. Without a
+        // claim, RootView runs them on the workbench's targets instead, so a
+        // command never runs twice.
         guard env.activeDocument == document else { return }
         defer { drawnRows = nil }
         let structural: [EditorCommand] = [.indent, .outdent, .moveUp, .moveDown]
@@ -1483,10 +1482,9 @@ final class OutlineEditor {
 
     // MARK: - Lifecycle
 
-    /// A list's document claims menu commands on appear; one rooted at a
-    /// task waits until the user edits inside it.
+    /// The document claims menu commands on appear.
     func didAppear() {
-        if document.rootBlockID == nil { env.activeDocument = document }
+        env.activeDocument = document
     }
 
     func didDisappear() {
@@ -1503,7 +1501,7 @@ final class OutlineEditor {
         completedTasksKeptVisible = []
         escapedBlockID = nil
         drawnRows = nil
-        if document.rootBlockID == nil { env.activeDocument = document }
+        env.activeDocument = document
     }
 
     func activeDocumentDidChange(_ active: DocumentContext?) {
@@ -1512,9 +1510,7 @@ final class OutlineEditor {
 
     func openTaskDidChange(_ openTaskID: UUID?) {
         // Closing the inspector hands control back to the list.
-        if openTaskID == nil, document.rootBlockID == nil {
-            env.activeDocument = document
-        }
+        if openTaskID == nil { env.activeDocument = document }
     }
 
     /// The rows on show changed from `old` to `ids`.
