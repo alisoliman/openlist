@@ -5,7 +5,8 @@
 //  The design's own data (`LISTS`, `TASKS`, `INBOX`, `EVENTS`, `PLAN` in
 //  widgets.jsx), laid out around a chosen moment. The widget gallery and the
 //  placeholder show it; the preview harness and the widget checks use it to
-//  compare against the design.
+//  compare against the design. Its `SHORT` names are left out, as lists have
+//  none: the List footer names the whole list.
 //
 
 import Foundation

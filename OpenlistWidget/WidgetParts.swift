@@ -413,6 +413,9 @@ struct OpenOpenlistView: View {
 /// The large sizes' footer: an add chip and a count.
 struct WidgetFooter: View {
     let addLabel: String
+    /// What the chip reads when `addLabel` wouldn't fit whole, so it never
+    /// cuts off; VoiceOver still reads `addLabel`.
+    var compactAddLabel: String?
     let addURL: URL
     let note: String
     @Environment(\.widgetPalette) private var palette
@@ -422,16 +425,10 @@ struct WidgetFooter: View {
             Hairline(vertical: false)
             HStack(alignment: .center, spacing: 8) {
                 WidgetLink(destination: addURL) {
-                    HStack(spacing: 5) {
-                        WidgetSymbol(name: "plus", size: 11, weight: .medium, color: palette.acc)
-                            .frame(width: 14, height: 14)
-                        Text(addLabel)
-                            .css(.sans(11, .semibold), line: 1)
-                            .foregroundStyle(palette.ink)
-                            .lineLimit(1)
+                    ViewThatFits(in: .horizontal) {
+                        chip(addLabel)
+                        if let compactAddLabel { chip(compactAddLabel) }
                     }
-                    .padding(EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 9))
-                    .background(palette.chip, in: RoundedRectangle(cornerRadius: 8))
                 }
                 Spacer(minLength: 0)
                 Text(note)
@@ -442,5 +439,19 @@ struct WidgetFooter: View {
             }
             .padding(.top, 9)
         }
+    }
+
+    private func chip(_ label: String) -> some View {
+        HStack(spacing: 5) {
+            WidgetSymbol(name: "plus", size: 11, weight: .medium, color: palette.acc)
+                .frame(width: 14, height: 14)
+            Text(label)
+                .css(.sans(11, .semibold), line: 1)
+                .foregroundStyle(palette.ink)
+                .lineLimit(1)
+                .accessibilityLabel(addLabel)
+        }
+        .padding(EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 9))
+        .background(palette.chip, in: RoundedRectangle(cornerRadius: 8))
     }
 }

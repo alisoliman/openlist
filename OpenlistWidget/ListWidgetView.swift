@@ -25,8 +25,10 @@ struct ListWidgetView: View {
                     .clipped()
             }
             if size == .large {
-                WidgetFooter(addLabel: "Add to \(model.name)", addURL: WidgetRoute.capture(listID: model.id, forToday: false).url,
-                             note: "\(model.done) done")
+                // The whole name, as the app's add row gives it: lists have no
+                // short form like the design's "Add to Kyoto".
+                WidgetFooter(addLabel: "Add to \(model.name)", compactAddLabel: "New task",
+                             addURL: WidgetRoute.capture(listID: model.id, forToday: false).url, note: "\(model.done) done")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

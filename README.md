@@ -188,8 +188,9 @@ Unsupported versions, malformed trees/styles, invalid paths, corrupt images,
 oversized data, missing source media, or failed storage writes report an error
 without a partial insertion. Copy failures preserve the previous clipboard.
 Pasting never fetches remote assets or executes content. External Markdown lists
-keep supported structure; unsupported fences/whitespace/indentation stay as literal
-text instead of being silently discarded. No multi-selection UI is added here.
+keep supported structure; text that doesn't read as Markdown comes in as a trimmed
+text line for each non-blank line, and a fenced block as one code line that keeps its
+breaks and indent. No multi-selection UI is added here.
 
 ### Views
 
@@ -668,6 +669,7 @@ original notes. Archived lists keep their archive state.
 files with no remaining live or retained references. These actions cannot be
 undone. Empty lines the document takes away and undone captures use structural
 cleanup and session Undo; they do not fill Trash. **Delete everything…** in Settings → Data
-permanently removes both active content and Trash. Library backup format 3 includes Trash
-and its media; versions 1 and 2 can still be imported. A restore already staged
-by an older app must be cancelled and prepared again from the original backup.
+permanently removes both active content and Trash. Library backups (format 5) include
+Trash and its media, list covers and list ownership; formats 1–4 can still be restored.
+A restore already staged by an older app must be cancelled and prepared again from the
+original backup.
