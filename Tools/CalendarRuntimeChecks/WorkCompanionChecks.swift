@@ -21,12 +21,8 @@ func checkWorkCompanion() throws {
     check(planner.workSelection == reference, "opening Work selects the currently planned occurrence")
     let anchors = planner.plan.blocks.map(\.start)
     let secondSlot = planner.plan.blocks.first { $0.taskID == second.id }!
-    _ = planner.previewMove(secondSlot, to: date(), now: date())
-    check(planner.plan.blocks.map(\.start) == anchors && fixture.placements().isEmpty, "move previews never mutate saved placements or the current plan")
-    let firstSlot = planner.plan.blocks.first { $0.taskID == first.id }!
-    check(planner.previewMove(firstSlot, to: date(14, 10), now: date()).contains {
-        $0.taskID == second.id && $0.proposedStart == date()
-    }, "preview reports a task moved earlier even when its new slot ends at its old start")
+    check(planner.moveOverlaps(secondSlot, to: date()).isEmpty && planner.plan.blocks.map(\.start) == anchors && fixture.placements().isEmpty,
+          "a move's preview never mutates saved placements or the plan, and never names flexible work, which the calendar doesn't draw")
     planner.quietWork(reference, now: date())
     check(planner.startNudge == nil && planner.plan.blocks.map(\.start) == anchors, "Later quiets the suggestion without moving the plan")
     planner.tick(now: date(14, 9, 5), checkClockGap: false)

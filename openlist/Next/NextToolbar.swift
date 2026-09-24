@@ -184,12 +184,13 @@ struct NXWorkNotch: View {
                             HStack(spacing: 10) {
                                 panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: false)
                                 // What the work ran into, in red, takes the place of the time it was given, in amber.
-                                if let conflict = env.calendar.workConflict, conflict.occurrenceID == task.occurrenceID {
+                                // Paused, the notch reads as the work did when it paused, as its block does.
+                                if let conflict = env.calendar.displayedWorkConflict, conflict.occurrenceID == task.occurrenceID {
                                     let sentence = workbench.conflictLabel(conflict, inSentence: true)
                                     extensionChip(workbench.conflictLabel(conflict), color: NX.redText, fill: NX.red.opacity(0.12))
-                                        .help("Still recording. Running into \(sentence)")
-                                        .accessibilityLabel("Running into \(sentence)")
-                                } else if let extended = env.calendar.workExtension, extended.occurrenceID == task.occurrenceID {
+                                        .help(paused ? "Ran into \(sentence)" : "Still recording. Running into \(sentence)")
+                                        .accessibilityLabel((paused ? "Ran into " : "Running into ") + sentence)
+                                } else if let extended = env.calendar.displayedWorkExtension, extended.occurrenceID == task.occurrenceID {
                                     extensionChip("+\(extended.minutes)m", color: NX.amberText, fill: NX.amber.opacity(0.16))
                                         .help("Extended by \(extended.minutes) min")
                                         .accessibilityLabel("Extended by \(extended.minutes) minutes")

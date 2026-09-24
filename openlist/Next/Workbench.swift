@@ -113,8 +113,13 @@ final class Workbench {
     var completedFold: NXCompletedFold?
     var calendarDays = 7
     /// A day the Calendar shows its range from instead of today: stepped to,
-    /// or where Plan put a task. Nil follows today.
-    var calendarAnchor: Date?
+    /// or where Plan put a task. Nil follows today, as does one set on an
+    /// earlier day (`calendarStart(now:)`).
+    var calendarAnchor: Date? {
+        didSet { calendarAnchorSetAt = .now }
+    }
+    /// When `calendarAnchor` was last set.
+    @ObservationIgnored private(set) var calendarAnchorSetAt = Date.now
     var tasksStatus: TasksStatusFilter = .open
     var tasksGrouping: TasksGroupingMode = .list
     var tasksQuery = ""

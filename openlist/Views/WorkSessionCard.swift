@@ -81,7 +81,6 @@ struct WorkSessionCard: View {
                         if let plan {
                             detail("\(plan.start.formatted(date: .abbreviated, time: .shortened))–\(plan.end.formatted(date: .omitted, time: .shortened)) · \(Int(plan.durationMinutes)) min",
                                    icon: "calendar")
-                            caption(env.calendar.workPlanSource(task))
                         } else {
                             caption("\(minutes(estimate)) estimated")
                         }

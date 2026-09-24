@@ -14,8 +14,8 @@ final class CalendarCoordinator {
     /// What the calendar draws. Only explicit planning puts a task there: its
     /// placements at their saved times, past ones included, the running work,
     /// paused work where it was, and completed occurrences that had a slot or
-    /// recorded work. The plan's flexible blocks only drive Start nudges,
-    /// suggestions and what more time for the running work would move.
+    /// recorded work. The plan's flexible blocks only drive the Work panel's
+    /// suggestion; Start nudges and what gets reported as moved are drawn blocks.
     private(set) var visibleBlocks: [PlannedBlock] = []
     /// The block in `visibleBlocks` that paused work keeps, drawn as the work
     /// while it can resume.
@@ -214,7 +214,6 @@ final class CalendarCoordinator {
     }
 
     func replan(now: Date = .now) {
-        let previous = plan
         refreshActiveEstimate(now: now)
         missedPlacementIDs.subtract(store.placements().filter { $0.start > now }.map(\.id))
         let lists = store.allLists()
@@ -232,7 +231,6 @@ final class CalendarCoordinator {
         }
         publish(AdaptiveScheduler.plan(tasks: inputs, preferences: preferences, busyTimes: externalCalendars.busyTimes,
                                        placements: placements, active: active, now: now, calendar: calendar), now: now)
-        summarizeMoves(from: previous, message: "The plan was updated.", excluding: activeSession?.taskID)
     }
 
     /// Starts recording `task` now, whatever the plan says: outside the list's
@@ -304,7 +302,7 @@ final class CalendarCoordinator {
             workSelection = WorkTaskReference(task)
             pausedWork = drawn.map { block in
                 PausedWork(occurrenceID: block.occurrenceID, start: block.start, end: block.end,
-                           extended: workExtension?.occurrenceID == block.occurrenceID,
+                           grant: workExtension?.occurrenceID == block.occurrenceID ? workExtension : nil,
                            conflict: workConflict?.occurrenceID == block.occurrenceID ? workConflict : nil)
             }
             persistResume()
@@ -340,11 +338,21 @@ final class CalendarCoordinator {
         tick(now: now, checkClockGap: false, materialChange: true)
     }
 
-    func deferTask(task: Block, to day: Date) {
+    /// Defers the task, stopping its work if it runs, and takes that work off
+    /// the notch. Returns the work taken off, whose paused state is kept, so
+    /// `restoreResume` offers it again as it was.
+    @discardableResult
+    func deferTask(task: Block, to day: Date) -> WorkTaskReference? {
         if activeSession?.taskID == task.id { pause(reason: "Deferred") }
+        let resume = resumableTask.flatMap { $0.id == task.id ? WorkTaskReference($0) : nil }
         store.deferTask(task, to: day)
-        if resumeTaskID == task.id { resumeTaskID = nil }
+        if resumeTaskID == task.id {
+            resumeTaskID = nil
+            resumeOccurrenceID = nil
+            persistResume()
+        }
         replan()
+        return resume
     }
 
     func resume() {
@@ -371,56 +379,6 @@ final class CalendarCoordinator {
         persistResume()
         workSelection = reference
         refreshVisibleBlocks(now: .now)
-    }
-
-    /// Saves `start` as the planned work's preferred time, which planning
-    /// honors when it can, and explains in `notice` when it can't.
-    func move(block: PlannedBlock, to start: Date, now: Date = .now) {
-        guard let task = store.block(id: block.taskID), task.occurrenceID == block.occurrenceID, !block.isActive else { return }
-        let duration = min(block.end.timeIntervalSince(block.start), remainingMinutes(for: task, now: now) * 60)
-        let end = start.addingTimeInterval(duration)
-        guard let placement = store.setPlacement(for: task, start: start, end: end, placementID: block.placementID),
-              store.persistenceError == nil else {
-            notice = store.persistenceError ?? "The requested time could not be saved. Try again."
-            return
-        }
-        missedPlacementIDs.remove(placement.id)
-        replan(now: now)
-        let honored = plan.blocks.contains {
-            $0.placementID == placement.id && abs($0.start.timeIntervalSince(start)) < 1 && $0.end >= end.addingTimeInterval(-1)
-        }
-        notice = honored ? nil : "Preferred time saved, but " + moveConstraint(for: task, placement: placement, now: now)
-            + ". Choose another time, or use Find a Slot."
-    }
-
-    /// Explain an unfulfilled preference using the same availability and fixed
-    /// intervals as planning, without changing the saved choice into a hard pin.
-    private func moveConstraint(for task: Block, placement: SchedulePlacement, now: Date) -> String {
-        let start = placement.start
-        let end = placement.end
-        if start < now { return "that time has already passed" }
-        if start >= plan.end || end > plan.end { return "that time is outside the rolling four-week planning horizon" }
-        if let earliest = task.deferredUntil, start < earliest {
-            return "the task is deferred until " + earliest.formatted(date: .abbreviated, time: .omitted)
-        }
-        if let due = task.dueDate {
-            let cutoff = task.includesTime ? due : calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: due))!
-            if end > cutoff { return "it would finish after the task’s deadline" }
-        }
-        let category = AvailabilityCategory(rawValue: store.list(id: task.listID)?.availabilityCategoryRaw ?? "work") ?? .work
-        let dayEnd = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: end))!
-        let hours = AdaptiveScheduler.availabilityIntervals(for: category, preferences: preferences,
-                                                            from: calendar.startOfDay(for: start), to: dayEnd, calendar: calendar)
-        if !hours.contains(where: { $0.start <= start && $0.end >= end }) {
-            return "it falls outside \(category.title.lowercased()) hours or overlaps a break"
-        }
-        if let meeting = externalCalendars.busyTimes.first(where: { $0.start < end && $0.end > start }) {
-            return "it overlaps \(meeting.title.isEmpty ? "fixed busy time" : meeting.title)"
-        }
-        if plan.blocks.contains(where: { ($0.isPinned || $0.isActive) && $0.placementID != placement.id && $0.start < end && $0.end > start }) {
-            return "it overlaps active work or another pinned time"
-        }
-        return "other scheduled work or session-length rules prevent that placement"
     }
 
     func handleMacUnavailable(reason: String, now: Date = .now) {
@@ -546,12 +504,10 @@ final class CalendarCoordinator {
         approvedWorkEnd = proposed
         overrunNudge = nil
         replan(now: now)
-        let flexible = summarizeMoves(from: previousPlan, message: "Made room for continued work.", excluding: task.id)
+        // Only the placements it moved, which the calendar draws, as the design reports.
         var placed: [UUID] = []
         for move in moved where !placed.contains(move.taskID) { placed.append(move.taskID) }
-        if !placed.isEmpty {
-            report(Set(flexible + placed).sorted { $0.uuidString < $1.uuidString }, message: "Made room for continued work.")
-        }
+        report(placed, message: "Made room for continued work.")
         let earlier = previousGrant.flatMap { $0.occurrenceID == task.occurrenceID ? $0.minutes : nil } ?? 0
         let grant = CalendarWorkExtension(taskID: task.id, occurrenceID: task.occurrenceID, end: proposed,
                                           minutes: earlier + Int((proposed.timeIntervalSince(end) / 60).rounded(.up)),
@@ -731,13 +687,14 @@ final class CalendarCoordinator {
     }
 
     /// Once Undo or Redo has moved the stopped work's slot: paused, its block
-    /// reads extended only while an extension is left in place, and with
-    /// Undo no longer runs into anything, as the design's snapshot has it;
-    /// running again, it ends where its slot now ends.
+    /// and the notch read extended, by the latest extension left in place,
+    /// only while there is one, and with Undo no longer run into anything,
+    /// as the design's snapshot has it; running again, it ends where its
+    /// slot now ends.
     private func followSettledMove(of step: WorkExtensionStep, undo: Bool) {
         let occurrenceID = step.grant.occurrenceID
         if pausedWork?.occurrenceID == occurrenceID {
-            pausedWork?.extended = settledExtensionSteps.contains { $0.grant.occurrenceID == occurrenceID }
+            pausedWork?.grant = settledExtensionSteps.last { $0.grant.occurrenceID == occurrenceID }?.grant
             if undo { pausedWork?.conflict = nil }
         }
         guard let session = activeSession, session.occurrenceID == occurrenceID,
@@ -939,7 +896,20 @@ final class CalendarCoordinator {
     /// work paused: what it had run into, or whether it had been extended.
     var pausedWorkNote: (extended: Bool, conflict: CalendarWorkConflict?)? {
         guard pausedBlockID != nil, let pausedWork, pausedWork.occurrenceID == resumeOccurrenceID else { return nil }
-        return (pausedWork.extended, pausedWork.conflict)
+        return (pausedWork.grant != nil, pausedWork.conflict)
+    }
+
+    /// What the work in hand ran into, for the notch: running, or paused, as
+    /// it was when it paused, as its block reads.
+    var displayedWorkConflict: CalendarWorkConflict? {
+        activeSession != nil ? workConflict : pausedWorkNote?.conflict
+    }
+
+    /// The extra time the work in hand has been given, for the notch: running,
+    /// or paused, as it was when it paused.
+    var displayedWorkExtension: CalendarWorkExtension? {
+        guard activeSession == nil else { return workExtension }
+        return pausedWorkNote == nil ? nil : pausedWork?.grant
     }
 
     /// Where paused work's block was: as it paused, or after a relaunch,
@@ -960,10 +930,14 @@ final class CalendarCoordinator {
         return min(now, awayLimit ?? now)
     }
 
+    /// Offers Start for a slot the calendar draws while it runs, never for the
+    /// plan's flexible blocks, which have none. None comes while there's work
+    /// in hand, running or paused, as the design's "Planned now" hides then.
     private func updateStartNudge(now: Date) {
-        guard activeSession == nil else { startNudge = nil; return }
-        let next = plan.blocks.first { block in
-            !block.isActive && block.start <= now && block.end > block.start &&
+        guard activeSession == nil, resumableTask == nil else { startNudge = nil; return }
+        let next = visibleBlocks.first { block in
+            block.placementID != nil && !block.isActive && !block.isCompleted &&
+                block.start <= now && now < block.end &&
                 (quietUntil[block.occurrenceID.uuidString] ?? 0) <= now.timeIntervalSince1970 &&
                 store.block(id: block.taskID)?.occurrenceID == block.occurrenceID &&
                 store.block(id: block.taskID)?.isCompleted == false
@@ -992,9 +966,7 @@ final class CalendarCoordinator {
         for block in missed where handled.insert(block.occurrenceID).inserted {
             guard let task = store.block(id: block.taskID), task.occurrenceID == block.occurrenceID, !task.isCompleted else { continue }
             if block.isPinned, let placementID = block.placementID { missedPlacementIDs.insert(placementID) }
-            let previous = plan
             rescheduleOnly(task: task, now: now)
-            summarizeMoves(from: previous, message: "Moved an unstarted task to the next free time.")
         }
         updateStartNudge(now: now)
     }
@@ -1021,19 +993,6 @@ final class CalendarCoordinator {
         let blocks = (anchors + replacement.blocks).sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
         let assessments = plan.assessments.filter { $0.occurrenceID != task.occurrenceID } + replacement.assessments
         publish(CalendarPlan(start: plan.start, end: plan.end, blocks: blocks, assessments: assessments), now: now)
-    }
-
-    /// Reports the flexible tasks that moved since `previous`, and returns them.
-    @discardableResult
-    private func summarizeMoves(from previous: CalendarPlan, message: String, excluding taskID: UUID? = nil) -> [UUID] {
-        let moved = Set(previous.blocks.filter { block in
-            guard !block.isActive, !block.isPinned, block.taskID != taskID,
-                  let task = store.block(id: block.taskID), !task.isCompleted,
-                  task.occurrenceID == block.occurrenceID, store.list(id: task.listID)?.isEffectivelyArchived == false else { return false }
-            return !plan.blocks.contains { $0.occurrenceID == block.occurrenceID && $0.start == block.start && $0.end == block.end }
-        }.map(\.taskID)).sorted { $0.uuidString < $1.uuidString }
-        report(moved, message: message)
-        return moved
     }
 
     /// Tells the Work panel which tasks just moved, and why.
@@ -1161,13 +1120,6 @@ final class CalendarCoordinator {
         }
     }
 
-    func workPlanSource(_ task: Block) -> String {
-        if let block = plannedWork(WorkTaskReference(task)), block.isPinned { return "You pinned this time." }
-        if store.placements(taskID: task.id).contains(where: { $0.occurrenceID == task.occurrenceID }) { return "Planned from your preferred time." }
-        if task.selectedForDay != nil { return "Planned from your Today selection." }
-        return "Automatically planned in your \(store.list(id: task.listID)?.availabilityCategoryRaw == "personal" ? "Personal" : "Work") hours."
-    }
-
     func dismissWorkCompletion() { workCompletion = nil; workSelection = nil }
 
     func undoWorkCompletion(now: Date = .now) {
@@ -1187,44 +1139,18 @@ final class CalendarCoordinator {
         tick(now: now, checkClockGap: false, materialChange: true)
     }
 
-    func previewMove(_ block: PlannedBlock, to start: Date, now: Date = .now) -> [WorkPlanChange] {
-        guard let task = store.block(id: block.taskID), validWorkTask(WorkTaskReference(task)) != nil,
-              task.occurrenceID == block.occurrenceID else { return [] }
-        let duration = min(block.end.timeIntervalSince(block.start), remainingMinutes(for: task, now: now) * 60)
-        var placements = store.placements().filter { $0.id != block.placementID }.map {
-            PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID, start: $0.start, end: $0.end, isPinned: $0.isPinned)
+    /// What `block` moved to `start` would overlap on the calendar: meetings
+    /// and the other blocks drawn there, in time order. Nothing else moves
+    /// for it; the move is a placement like Plan's.
+    func moveOverlaps(_ block: PlannedBlock, to start: Date) -> [WorkMoveOverlap] {
+        let end = start.addingTimeInterval(max(0, block.end.timeIntervalSince(block.start)))
+        let meetings = externalCalendars.busyTimes.filter { $0.start < end && start < $0.end }.map {
+            WorkMoveOverlap(id: "busy-" + $0.id, title: $0.title.isEmpty ? "Busy" : $0.title, start: $0.start, end: $0.end)
         }
-        placements.append(PlacementInput(id: block.placementID ?? UUID(), taskID: task.id, occurrenceID: task.occurrenceID,
-            start: start, end: start.addingTimeInterval(duration), isPinned: false))
-        let active = activeSession.flatMap { session -> ActiveScheduleInput? in
-            guard let task = store.block(id: session.taskID) else { return nil }
-            return ActiveScheduleInput(taskID: task.id, occurrenceID: task.occurrenceID, start: session.startedAt,
-                end: min(targetEnd(for: session, task: task, now: now), activeBoundary ?? .distantFuture))
+        let blocks = visibleBlocks.filter { $0.id != block.id && $0.end > $0.start && $0.start < end && start < $0.end }.map {
+            WorkMoveOverlap(id: $0.id, title: store.block(id: $0.taskID)?.displayTitle ?? $0.titleSnapshot ?? "Task", start: $0.start, end: $0.end)
         }
-        return workPlanChanges(in: workPreview(active: active, placements: placements, now: now), excluding: task.id)
-    }
-
-    private func workPreview(active: ActiveScheduleInput?, placements: [PlacementInput]? = nil, now: Date) -> CalendarPlan {
-        let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted }))) ?? [])
-            .filter { validWorkTask(WorkTaskReference($0)) != nil }
-        let placements = placements ?? store.placements().filter { !missedPlacementIDs.contains($0.id) }.map {
-            PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID, start: $0.start, end: $0.end, isPinned: $0.isPinned)
-        }
-        return AdaptiveScheduler.plan(tasks: tasks.map { scheduleInput(for: $0, now: now) }, preferences: preferences,
-            busyTimes: externalCalendars.busyTimes, placements: placements, active: active, now: now, calendar: calendar)
-    }
-
-    private func workPlanChanges(in preview: CalendarPlan, excluding taskID: UUID) -> [WorkPlanChange] {
-        var seen: Set<UUID> = []
-        return plan.blocks.compactMap { old -> WorkPlanChange? in
-            guard old.taskID != taskID, !old.isActive, !old.isPinned, !seen.contains(old.occurrenceID),
-                  let task = store.block(id: old.taskID), validWorkTask(WorkTaskReference(task)) != nil,
-                  !preview.blocks.contains(where: { $0.occurrenceID == old.occurrenceID && $0.start == old.start && $0.end == old.end }) else { return nil }
-            seen.insert(old.occurrenceID)
-            let next = preview.blocks.first { $0.occurrenceID == old.occurrenceID }
-            return WorkPlanChange(taskID: old.taskID, occurrenceID: old.occurrenceID, title: task.displayTitle,
-                previousStart: old.start, proposedStart: next?.start)
-        }
+        return (meetings + blocks).sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
     }
 
     private func validateWorkReferences() {
@@ -1259,9 +1185,13 @@ final class CalendarCoordinator {
     private func nextStop(for task: Block, at date: Date) -> (start: Date, kind: CalendarWorkConflict.Kind?, title: String)? {
         let intervals = availability(for: task, on: date)
         guard let window = intervals.first(where: { $0.start <= date && date <= $0.end }) else { return nil }
-        let category = AvailabilityCategory(rawValue: store.list(id: task.listID)?.availabilityCategoryRaw ?? "work") ?? .work
+        // The hours go on after a break, which the design names Lunch at
+        // midday: one that takes in any of 12:00–13:00, as the default does.
+        let resumes = intervals.map(\.start).filter { $0 >= window.end }.min()
+        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: window.end) ?? window.end
+        let isLunch = resumes.map { window.end < noon.addingTimeInterval(3600) && $0 > noon } ?? false
         var stops: [(start: Date, kind: CalendarWorkConflict.Kind?, title: String)] = [
-            (window.end, intervals.contains { $0.start >= window.end } ? .breakTime : nil, category.title)
+            (window.end, resumes == nil ? nil : .breakTime, isLunch ? "Lunch" : "")
         ]
         stops += externalCalendars.busyTimes.filter { $0.end > date && $0.end > $0.start }
             .map { (max($0.start, date), .event, $0.title) }
@@ -1316,17 +1246,18 @@ struct CalendarWorkConflict: Equatable, Sendable {
     var taskID: UUID
     var occurrenceID: UUID
     var kind: Kind
-    /// The meeting's title; for a break, whose hours it interrupts: Work or Personal.
+    /// The meeting's title; for a break, "Lunch" at midday, else empty.
     var title: String
     var start: Date
 }
 
-/// Where paused work's block was and how it read when the work paused.
+/// Where paused work's block was and how it read when the work paused:
+/// the extra time it had been given and what it had run into.
 private struct PausedWork {
     var occurrenceID: UUID
     var start: Date
     var end: Date
-    var extended: Bool
+    var grant: CalendarWorkExtension?
     var conflict: CalendarWorkConflict?
 }
 

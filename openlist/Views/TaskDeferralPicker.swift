@@ -39,7 +39,7 @@ struct TaskDeferralPicker: View {
                 Button("Cancel") { dismiss() }
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                 Spacer()
-                Button("Defer") { env.workbench.deferTask(block.id, to: date); dismiss() }
+                Button("Defer") { env.workbench.deferWork(block.id, to: date); dismiss() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
             }

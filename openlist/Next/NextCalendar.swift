@@ -14,19 +14,27 @@ struct NextCalendarScreen: View {
         let days = workbench.calendarDays
         NXPage(wide: true) {
             // The range comes from the timeline's date, so a screen left open
-            // overnight moves to the new day with its header.
+            // overnight moves to the new day with its header, from whatever
+            // range it was stepped or planned to the day before.
             TimelineView(.everyMinute) { context in
                 // Week is the settings week around today, as Plan searches it,
                 // or around the day stepped to or planned on.
                 let calendar = env.settings.calendar
-                let dates = CalendarWeek.days(count: days, from: workbench.calendarAnchor ?? context.date, calendar: calendar)
+                let dates = CalendarWeek.days(count: days, from: workbench.calendarStart(now: context.date), calendar: calendar)
+                let controls = HStack(spacing: 10) {
+                    NXCalendarStepper(dates: dates, now: context.date, calendar: calendar)
+                    NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { value in
+                        withAnimation(style.ease(260)) { workbench.calendarDays = value }
+                    }
+                }
                 VStack(alignment: .leading, spacing: 0) {
-                    NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates)) {
-                        HStack(spacing: 10) {
-                            NXCalendarStepper(dates: dates, now: context.date, calendar: calendar)
-                            NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { value in
-                                withAnimation(style.ease(260)) { workbench.calendarDays = value }
-                            }
+                    // Too narrow for both, the range control wraps under the
+                    // title, as the design's header row does, its 12px gap apart.
+                    ViewThatFits(in: .horizontal) {
+                        header(dates) { controls }
+                        VStack(alignment: .leading, spacing: 12) {
+                            header(dates) { EmptyView() }
+                            controls
                         }
                     }
                     NXCalendarBody(dates: dates, now: context.date)
@@ -34,6 +42,10 @@ struct NextCalendarScreen: View {
                 }
             }
         }
+    }
+
+    private func header<Trailing: View>(_ dates: [Date], @ViewBuilder trailing: @escaping () -> Trailing) -> some View {
+        NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates), trailing: trailing)
     }
 
     static func rangeText(_ dates: [Date]) -> String {
@@ -165,11 +177,12 @@ private struct NXCalendarBody: View {
         busy.filter { $0.end.timeIntervalSince($0.start) >= 20 * 3600 }
     }
 
+    /// The slot running now, with nothing to work on in hand: the design's
+    /// banner hides while there's work, running or paused.
     private var plannedNow: PlannedBlock? {
-        guard env.calendar.activeSession == nil else { return nil }
-        let paused = env.calendar.resumableTask?.id
+        guard env.workbench.workTask == nil else { return nil }
         return env.calendar.visibleBlocks.first { block in
-            guard !block.isCompleted, block.start <= now, now < block.end, block.taskID != paused,
+            guard !block.isCompleted, block.start <= now, now < block.end,
                   let task = env.store.block(id: block.taskID) else { return false }
             return !task.isCompleted && task.trashID == nil && env.workbench.closing[task.id] == nil
         }
@@ -616,17 +629,22 @@ private struct NXCalendarBlock: View {
                     .lineLimit(height < 30 ? 1 : nil)
                     .truncationMode(.tail)
             }
+            // The title keeps all its lines, as the design's, whose row never
+            // shrinks; the time and state wrap into what's left under it, and
+            // the block's edge cuts off what doesn't fit.
+            .fixedSize(horizontal: false, vertical: true)
             if height >= 34 {
                 Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.ink(0.5))
-                    .lineLimit(1)
                     .padding(.leading, 17)
             }
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // No taller than its slot, so what overflows is cut at the bottom
+        // instead of the block growing past its hours.
+        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
         .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(ring, lineWidth: 1))
         .overlay {
@@ -768,7 +786,7 @@ private struct NXUnplannedColumn: View {
         let placed = workbench.placedTaskIDs(now: now)
         return library.open.filter { task in
             guard !placed.contains(task.id), workbench.closing[task.id] == nil else { return false }
-            if let due = task.dueDate, (-7...4).contains(NXFormat.dayOffset(due, now: now)) { return true }
+            if let due = task.dueDate, CalendarWeek.isDueSoon(due, now: now, calendar: env.settings.calendar) { return true }
             return workbench.isPlanned(task)
         }
         .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
