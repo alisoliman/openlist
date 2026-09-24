@@ -83,10 +83,23 @@ final class StagedContentCopy {
         return (name, bytes)
     }
 
-    func commit(owningList: TaskList) throws { try commit(owningLists: [owningList]) }
+    func commit(owningList: TaskList, copy: ActivityCopy? = nil, root: UUID? = nil) throws {
+        try commit(owningLists: [owningList], copy: copy, root: root)
+    }
 
-    func commit(owningLists: [TaskList]) throws {
+    /// `root` is the copy's first task, or the list a list's copy made,
+    /// whose history names it by `copy`; that list's is titled `source`, the
+    /// list it copied, as the log names it.
+    func commit(owningLists: [TaskList], copy: ActivityCopy? = nil, root: UUID? = nil, source: String? = nil) throws {
         let owners = Dictionary(uniqueKeysWithValues: owningLists.map { ($0.id, $0) })
+        // One change: Changes shows its history as the log's one row.
+        let batch = UUID()
+        if let source, let list = root.flatMap({ owners[$0] }) {
+            let event = ActivityEvent(kind: .listCreated, title: source, listID: list.id,
+                                      listTitle: list.displayTitle, listIcon: list.icon)
+            event.change = TaskActivityChange(batchID: batch, copy: copy)
+            writer.insert(event)
+        }
         // Copy and its fresh history share one transaction. These are creation
         // facts about the new IDs, never inherited events from the source.
         for task in tasks {
@@ -94,7 +107,8 @@ final class StagedContentCopy {
             let event = ActivityEvent(kind: .created, title: task.displayTitle,
                 blockID: task.id, listID: task.listID,
                 listTitle: owningList.displayTitle, listIcon: owningList.icon)
-            event.change = TaskActivityChange(before: nil, after: TaskActivityState(task, list: owningList))
+            event.change = TaskActivityChange(before: nil, after: TaskActivityState(task, list: owningList),
+                                              batchID: batch, copy: task.id == root ? copy : nil)
             writer.insert(event)
         }
         try writer.save()
@@ -124,7 +138,7 @@ extension Store {
         defer { staged.discard() }
         let ids = try staged.clone(originals, to: listID, store: self, mode: mode,
             rootID: source.id, parentID: source.parentID, rootIndex: index)
-        try staged.commit(owningList: owningList)
+        try staged.commit(owningList: owningList, copy: ActivityCopy(mode), root: ids[source.id]!)
         refreshAllReminders()
         onDidSave?()
         return ids[source.id]!
@@ -172,7 +186,7 @@ extension Store {
                 .filter { !$0.isDeleted }
             _ = try staged.clone(blocks, to: copy.id, store: self, mode: mode)
         }
-        try staged.commit(owningLists: copies)
+        try staged.commit(owningLists: copies, copy: ActivityCopy(mode), root: idMap[source.id]!, source: source.displayTitle)
         refreshAllReminders()
         onDidSave?()
         return idMap[source.id]!
@@ -182,5 +196,11 @@ extension Store {
         let index = BlockTree.index(after: source, before: next)
         guard index.isFinite, index > source, next.map({ index < $0 }) ?? true else { throw CopyError.ordering }
         return index
+    }
+}
+
+private extension ActivityCopy {
+    init(_ mode: CopyMode) {
+        if case .duplicate = mode { self = .duplicate } else { self = .template }
     }
 }

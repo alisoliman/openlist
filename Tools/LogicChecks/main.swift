@@ -1,6 +1,7 @@
 // Headless checks for the pure-logic layer: natural-language date parsing,
-// the recurrence engine and when the change log's writes reached saved
-// history. Compiled and run by Tools/run-logic-checks.sh.
+// the recurrence engine, when the change log's writes reached saved
+// history and how saved history reads as changes. Compiled and run by
+// Tools/run-logic-checks.sh.
 
 import Foundation
 
@@ -411,6 +412,47 @@ do {
     check(!writes.wrote(at: start.addingTimeInterval(101), about: [line]), "nor another task")
     writes.note([], at: start.addingTimeInterval(200))
     check(writes.wrote(at: start.addingTimeInterval(199), about: [line]), "a change that covered nothing covers everything then")
+}
+
+// MARK: - Saved changes
+
+print("── Saved changes ──")
+
+do {
+    // Newest first, as Changes reads saved history.
+    let trash = UUID(), move = UUID(), list = UUID(), copy = UUID(), restore = UUID()
+    let facts = [
+        NXSavedFact(batch: trash, kind: "deleted", key: "deleted"),
+        NXSavedFact(batch: trash, kind: "deleted", key: "deleted"),
+        NXSavedFact(batch: trash, kind: "deleted", key: "deleted"),
+        NXSavedFact(batch: move, kind: "moved", key: "moved Work"),
+        NXSavedFact(batch: move, kind: "renamed"),
+        NXSavedFact(batch: move, kind: "moved", key: "moved Home"),
+        NXSavedFact(batch: move, kind: "moved", key: "moved Work"),
+        // A list trashed: its tasks' trash, saved after it, read as its row.
+        NXSavedFact(batch: list, kind: "deleted", key: "deleted"),
+        NXSavedFact(batch: list, kind: "deleted", key: "deleted"),
+        NXSavedFact(batch: list, kind: "listDeleted", takes: "deleted"),
+        // A list copied, and a list restored, whose own event keys like its tasks'.
+        NXSavedFact(batch: copy, kind: "listCreated", takes: "created"),
+        NXSavedFact(batch: copy, kind: "created", key: "created A"),
+        NXSavedFact(batch: copy, kind: "created", key: "created B"),
+        NXSavedFact(batch: restore, kind: "restored", key: "restored L"),
+        NXSavedFact(batch: restore, kind: "restored", takes: "restored"),
+        // History saved before batches, and a list document line's, each alone.
+        NXSavedFact(batch: nil, kind: "deleted", key: "deleted"),
+        NXSavedFact(batch: nil, kind: "deleted", key: "deleted"),
+    ]
+    let rows = NXSavedChanges.rows(facts)
+    check(rows == [[0, 1, 2], [3, 6], [4], [5], [9, 7, 8], [10, 11, 12], [14, 13], [15], [16]],
+          "one change's tasks read as one row, a list's with its own event first", "\(rows)")
+    check(NXSavedChanges.rows([]).isEmpty, "no history, no rows")
+    // Another change's tasks never join the row, however alike.
+    let other = UUID()
+    check(NXSavedChanges.rows([NXSavedFact(batch: trash, kind: "deleted", key: "deleted"),
+                               NXSavedFact(batch: other, kind: "deleted", key: "deleted"),
+                               NXSavedFact(batch: other, kind: "listDeleted", takes: "deleted")]) == [[0], [2, 1]],
+          "a change's rows hold only its own history")
 }
 
 // MARK: - Summary

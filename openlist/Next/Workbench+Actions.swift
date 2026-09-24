@@ -428,7 +428,8 @@ extension Workbench {
         do {
             _ = try store.moveSelection(tasks.map(\.id), to: listID, undoManager: undoManager)
         } catch {
-            showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
+            // The red card, as for a move dragged in a list document.
+            store.actionError = error.localizedDescription
             return
         }
         undoManager?.setActionName(label)
@@ -500,7 +501,8 @@ extension Workbench {
             try FragmentClipboard.copy([id], store: store)
             showTray("Copied \(describe([task])) with its subtasks", icon: "list.bullet.clipboard")
         } catch {
-            showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
+            // The red card, as for Copy as Markdown and a paste of it that fails.
+            store.actionError = error.localizedDescription
         }
     }
 
@@ -576,7 +578,7 @@ extension Workbench {
             if list.isArchived || parent?.isEffectivelyArchived == true { text += " (archived)" }
             return (text, TrayDestination(label: "Open \(list.displayTitle)", route: .list(id)))
         }
-        guard let root = try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })).first else {
+        guard let root = store.blockIncludingTrash(id: id) else {
             return ("Restored \(title) to \(entry.metadata?.listTitle ?? "its list")", nil)
         }
         let owner = store.list(id: root.listID)

@@ -331,4 +331,53 @@ try restoring.persistChanges()
 check(try restoring.taskActivity(for: restoreID).count == 1 && restoring.taskActivity(for: restoreID).first?.kind == .restored, "Undo after clearing history records exactly one known restoration")
 check(restoring.block(id: restoreID)?.text == "Restore after clear", "Undo after clear restores the actual task")
 check(restoring.pendingRestoredTaskIDs.isEmpty, "successful save consumes the restoration signal")
-print("✅ \(checks) task history checks passed (commits, recurrence, undo, failure, paging, coalescing)")
+// The history one change saves, a task each, shares a batch, which Changes
+// shows as the change's one row; another change's has its own.
+let batchContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+let batching = Store(context: batchContainer.mainContext)
+batching.bootstrap()
+let batchList = batching.createList(title: "Batch source")
+let batchParent = batching.appendBlock(kind: .task, text: "Batch parent", to: .init(listID: batchList.id))
+_ = batching.insertChild(kind: .task, text: "Batch child", of: batchParent)
+try batching.persistChanges()
+func batch(of kind: ActivityKind) throws -> [ActivityEvent] {
+    let all = try events(batching).filter { $0.kind == kind }.sorted { $0.timestamp > $1.timestamp }
+    guard let newest = all.first?.batchID else { return [] }
+    return try events(batching).filter { $0.batchID == newest }
+}
+check(batching.trashBlocks([batchParent]), "a task trashes with its subtask")
+let trashBatch = try batch(of: .deleted)
+check(trashBatch.count == 2 && trashBatch.allSatisfy { $0.kind == .deleted }, "a task trashed with its subtask saves one batch")
+check(batching.restoreTrash(ids: [batchParent.id]), "the task restores with its subtask")
+let restoreBatch = try batch(of: .restored)
+check(restoreBatch.count == 2 && restoreBatch.allSatisfy { $0.kind == .restored } && restoreBatch[0].batchID != trashBatch[0].batchID,
+      "its restore is a batch of its own")
+check(batching.trashList(batchList), "the list trashes")
+let listTrash = try batch(of: .listDeleted)
+check(listTrash.count == 3 && listTrash.filter { $0.kind == .deleted }.count == 2,
+      "a list trashed saves its own event and its tasks' in one batch")
+check(listTrash.first { $0.kind == .listDeleted }?.recordedDetail == "", "a list's event, with only its batch, says only what it recorded")
+check(batching.restoreTrash(ids: [batchList.id]), "the list restores")
+let listRestore = try batch(of: .restored)
+check(listRestore.count == 3 && listRestore.contains { $0.blockID == nil && $0.listID == batchList.id && $0.title == "Batch source" },
+      "a list restored saves an event of its own, in its tasks' batch")
+let listCopyID = try batching.copyList(batchList, mode: .duplicate)
+let listCopy = try batch(of: .listCreated)
+check(listCopy.count == 3 && listCopy.contains { $0.kind == .listCreated && $0.listID == listCopyID && $0.title == "Batch source"
+          && $0.change?.copy == .duplicate } && listCopy.filter { $0.kind == .created }.allSatisfy { $0.change?.copy == nil },
+      "a list duplicated saves one event for the copy, naming the list it copied, in its tasks' batch")
+let taskCopyID = try batching.copyBlock(batching.block(id: batchParent.id)!, mode: .template(keepingRecurrence: false))
+let copied = try events(batching)
+let copyBatch = copied.first { $0.blockID == taskCopyID }?.batchID
+let taskCopy = copied.filter { $0.kind == .created && copyBatch != nil && $0.batchID == copyBatch }
+check(taskCopy.count == 2 && taskCopy.first { $0.blockID == taskCopyID }?.change?.copy == .template
+          && taskCopy.filter { $0.change?.copy == nil }.count == 1, "a task copied names its copy as a template, its subtask with it")
+let together = ["First together", "Second together"].map { batching.appendBlock(kind: .task, text: $0, to: .init(listID: batchList.id)) }
+try batching.persistChanges()
+let shared = UUID()
+batching.withActivityBatch(shared) {
+    for task in together { batching.toggleCompletion(task) }
+}
+check(try events(batching).filter { $0.kind == .completed && $0.batchID == shared }.count == 2,
+      "a change saved more than once, like tasks completed together, keeps one batch")
+print("✅ \(checks) task history checks passed (commits, recurrence, undo, failure, paging, coalescing, batches)")

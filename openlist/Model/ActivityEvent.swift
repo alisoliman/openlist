@@ -61,6 +61,17 @@ extension ActivityEvent {
         get { changeData.flatMap { try? JSONDecoder().decode(TaskActivityChange.self, from: $0) } }
         set { changeData = newValue.flatMap { try? JSONEncoder().encode($0) } }
     }
+
+    /// The change that saved it, which an event of its own without task
+    /// history, like a list trashed, keeps in a change with nothing else.
+    var batchID: UUID? {
+        get { change?.batchID }
+        set {
+            var change = change ?? TaskActivityChange()
+            change.batchID = newValue
+            self.change = change
+        }
+    }
 }
 
 enum ActivityKind: String, Codable, CaseIterable, Sendable {

@@ -343,7 +343,7 @@ struct NextSidebar: View {
         }))
         Divider()
         Button("Duplicate") { workbench.duplicateList(list) }
-        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
+        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
         Button("Export as Markdown…") { workbench.exportMarkdown(list) }
         // A nested list shows under its parent whether pinned or not.
         if !nested {

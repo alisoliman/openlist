@@ -137,6 +137,42 @@ if phase == "delete" {
     store.bootstrap()
     try check(recovery.summary == Store.recoveredItemsSummary && edited.summary == former + " Mine.",
               "An older Recovered items list takes the new description at launch; one edited since keeps its own")
+    // Another task whose list is gone goes to the same Recovered items list,
+    // never to a list of the user's that's only called that.
+    func orphan(_ title: String) throws -> Block {
+        let gone = store.createList(title: "Gone \(title)")
+        let task = store.appendBlock(kind: .task, text: title, to: DocumentContext(listID: gone.id))
+        try store.persistChanges()
+        try check(store.trashBlocks([task]) && store.trashList(gone) && store.permanentlyEraseTrash(ids: [gone.id]),
+                  "A task can outlive its erased list in Trash")
+        return task
+    }
+    let second = try orphan("Second orphan")
+    let listCount = try context.fetchCount(FetchDescriptor<TaskList>())
+    let reused = store.restoreTrashRecoveries(ids: [second.id])
+    try check(second.listID == recovery.id && reused?.first?.madeList == false
+              && context.fetchCount(FetchDescriptor<TaskList>()) == listCount,
+              "A second task restores into the Recovered items list there is, not another")
+    try check(store.trashBlocks([second], puttingBack: reused ?? []) && store.list(id: recovery.id) != nil,
+              "Undo leaves a Recovered items list the restore didn't make")
+    try check(second.trashMetadata?.formerLocation == "Gone Second orphan" && second.trashMetadata?.recoveryNote == nil,
+              "Undo puts the task back in Trash saying where it came from")
+    // With none there, the restore makes one, and its Undo takes it back out.
+    store.rename(recovery, to: "Kept")
+    let third = try orphan("Third orphan")
+    let before = third.trashMetadata
+    let made = store.restoreTrashRecoveries(ids: [third.id])
+    let madeID = third.listID!
+    try check(made?.first?.madeList == true && madeID != recovery.id && madeID != edited.id
+              && store.list(id: madeID)?.title == "Recovered items", "A restore makes Recovered items when there's none")
+    try check(store.trashBlocks([third], puttingBack: made ?? []), "A restore that made Recovered items can be undone")
+    try check(store.list(id: madeID) == nil && context.fetchCount(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == madeID })) == 0
+              && third.trashMetadata == before && third.listID != madeID && store.trashEntries().contains { $0.id == third.id },
+              "Its Undo returns the task to Trash as it was and takes the list it made with it")
+    try check(store.restoreTrashRecoveries(ids: [third.id])?.first?.madeList == true && third.listID != madeID
+              && store.list(id: third.listID)?.title == "Recovered items", "Redo makes it again")
+    try check(store.restoreTrash(ids: [second.id]) && second.listID == third.listID && store.trashEntries().isEmpty,
+              "The next one goes to that list")
     try snapshot().validate()
  } else if phase == "readonly" {
     let list = store.createList(title: "Read-only failures")

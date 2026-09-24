@@ -2,7 +2,8 @@ import Foundation
 
 extension ActivityEvent {
     var recordedDetail: String {
-        guard let change else { return detail }
+        // A change with neither state only says which change saved it.
+        guard let change, change.before != nil || change.after != nil else { return detail }
         let before = change.before
         let after = change.after
         switch kind {

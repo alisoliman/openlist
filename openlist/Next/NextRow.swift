@@ -754,7 +754,7 @@ struct NXTaskMenu: View {
             Divider()
             Button("Duplicate", systemImage: "plus.square.on.square") { workbench.duplicate(ids[0]) }
             Button("Use as Template…", systemImage: "doc.on.doc") {
-                env.templateCopyRequest = TemplateCopyRequest(source: .task(ids[0]), undoManager: nil)
+                env.templateCopyRequest = TemplateCopyRequest(source: .task(ids[0]))
             }
         }
         Divider()

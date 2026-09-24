@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
-# 1. Date parsing, recurrence and the change log's writes — Foundation only.
+# 1. Date parsing, recurrence, the change log's writes and saved changes — Foundation only.
 xcrun swiftc \
     -swift-version 6 -O \
     -o "$OUT/logic-checks" \
@@ -16,6 +16,7 @@ xcrun swiftc \
     openlist/Services/DateParser.swift \
     openlist/Services/RecurrenceEngine.swift \
     openlist/Next/NextLogWrites.swift \
+    openlist/Next/NextSavedChanges.swift \
     Tools/LogicChecks/main.swift
 
 # 2. Rich-text splicing — needs AppKit and the theme's font metrics.

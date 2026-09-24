@@ -204,6 +204,24 @@ private struct NextNotices: View {
             // Successful trash and restore report in the tray; only failures stay pinned here.
             if env.store.trashError != nil { TrashNotice() }
         }
+        // What the user's own action set off appears without a sound, so
+        // VoiceOver hears each card as it appears, as it hears the tray; at
+        // the tray's priority, so a failed Undo's or Restore's tray line and
+        // its reason are both heard. Sync's warnings, which no action set
+        // off, stay quiet.
+        .onChange(of: env.store.editorNotice) { _, notice in announce(notice) }
+        .onChange(of: env.store.actionError) { _, error in announce(error) }
+        .onChange(of: env.store.persistenceError) { _, error in announce(error.map { "Changes are not saved. \($0)" }) }
+        .onChange(of: env.store.trashError) { _, error in announce(error) }
+        .onChange(of: env.store.labelMaintenanceError) { _, error in announce(error) }
+        .onChange(of: env.localLinks.error?.localizedDescription) { _, error in announce(error.map { "Link unavailable. \($0)" }) }
+        .onChange(of: env.reminderNavigation.unavailableMessage) { _, message in announce(message) }
+    }
+
+    private func announce(_ message: String?) {
+        guard let message, NSApp.isActive else { return }
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 }
 
