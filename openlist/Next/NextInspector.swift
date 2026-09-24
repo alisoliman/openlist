@@ -51,8 +51,6 @@ struct NextInspector: View {
     /// The open popover, and the task it was opened on. The shell reuses this
     /// view for every task, so a popover never carries over to the next one.
     @State private var picker: (section: DetailPicker, taskID: UUID)?
-    @State private var titleSelection: TextSelection?
-    @State private var noteSelection: TextSelection?
     @State private var lineage = NXLineage()
     /// "Add a note" opened the note, which shows while it has focus or text.
     @State private var addingNote = false
@@ -230,8 +228,6 @@ struct NextInspector: View {
         draftID = task.id
         title.reset(to: Self.title(of: task))
         note.reset(to: task.note)
-        titleSelection = nil
-        noteSelection = nil
         addingNote = false
     }
 
@@ -290,7 +286,7 @@ struct NextInspector: View {
                 workbench.toggle(task.id)
             }
             .padding(.top, 3)
-            TextField("Task", text: $title.value, selection: $titleSelection, axis: .vertical)
+            TextField("Task", text: $title.value, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 18, weight: .semibold))
                 // The design's 1.3 line height, over the system font's own.
@@ -581,7 +577,7 @@ struct NextInspector: View {
     }
 
     private var noteBox: some View {
-        TextField("Add a note", text: $note.value, selection: $noteSelection, axis: .vertical)
+        TextField("Add a note", text: $note.value, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             // The design's 1.55 line height, over the system font's own.

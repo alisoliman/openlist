@@ -124,21 +124,30 @@ struct NXDisclosureButton: View {
 
 /// A row in the design's small menus, like the Tasks sentence menus and the
 /// label picker: 8/9 padding on a 7pt radius, the accent's faint fill and a
-/// check when chosen, grey on hover or while it's the row Return picks. It
-/// is a real button, so the keyboard and VoiceOver can choose it.
+/// check when chosen, grey on hover. It is a real button, so the keyboard and
+/// VoiceOver can choose it.
 struct NXPanelRowStyle: ButtonStyle {
     var isOn: Bool
-    var isHighlighted = false
+    /// Whether it's the row Return picks, in a menu that keeps one. Given, it
+    /// alone draws the grey, as in the design's palette: the pointer moves
+    /// that one highlight rather than greying a second row.
+    var isHighlighted: Bool?
 
     func makeBody(configuration: Configuration) -> some View {
         PanelRow(configuration: configuration, isOn: isOn, isHighlighted: isHighlighted)
+    }
+
+    /// Whether a row takes the grey: its highlight when the menu keeps one,
+    /// else the pointer, and while pressed.
+    static func greys(highlighted: Bool?, hovering: Bool, pressed: Bool) -> Bool {
+        (highlighted ?? hovering) || pressed
     }
 
     private struct PanelRow: View {
         @Environment(\.nextStyle) private var style
         let configuration: Configuration
         let isOn: Bool
-        let isHighlighted: Bool
+        let isHighlighted: Bool?
         @State private var hovering = false
 
         var body: some View {
@@ -154,7 +163,8 @@ struct NXPanelRowStyle: ButtonStyle {
             .foregroundStyle(NX.ink)
             .padding(.vertical, 8)
             .padding(.horizontal, 9)
-            .background(hovering || isHighlighted || configuration.isPressed ? NX.ink(0.05) : isOn ? style.accent.opacity(0.06) : .clear,
+            .background(NXPanelRowStyle.greys(highlighted: isHighlighted, hovering: hovering, pressed: configuration.isPressed)
+                            ? NX.ink(0.05) : isOn ? style.accent.opacity(0.06) : .clear,
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }

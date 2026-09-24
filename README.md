@@ -263,8 +263,8 @@ block simply stops growing. Lock and sleep pause work; a task can opt into
 tracking away from the Mac, which still stops at the next meeting, break, pinned
 time or the end of its hours. **Plan** on Calendar's **Not planned yet** column
 pins a task into its next free slot, and **Move planned time…** in the Work panel
-saves a preference. Deadline coverage distinguishes **Scheduled**, **Cannot fit
-before deadline**, and **Outside planning horizon**.
+saves a preference. A slot that goes by unworked stays on the calendar as **carried
+forward**, and the task's details show where the calendar has it.
 
 The **Work** menu offers Show Work, Start Selected Task, Stop Current Session,
 Pause or Resume Task, and Complete Current Task, acting in place as the notch's

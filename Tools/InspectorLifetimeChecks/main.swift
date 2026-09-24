@@ -399,5 +399,13 @@ do {
     check(none.matches.isEmpty && none.create == "home", "With no match, Create is the only row")
     let all = LabelPicker.choices(for: "  ", in: labels)
     check(all.matches.map(\.name) == labels.map(\.name) && all.create == nil, "An empty query lists every label, in order")
+    // Its highlight alone greys a row: the pointer resting on another row
+    // doesn't add a second grey there after ↓ moves on.
+    check(!NXPanelRowStyle.greys(highlighted: false, hovering: true, pressed: false)
+            && NXPanelRowStyle.greys(highlighted: true, hovering: false, pressed: false),
+          "In the label picker only the row Return picks is grey, wherever the pointer rests")
+    check(NXPanelRowStyle.greys(highlighted: nil, hovering: true, pressed: false)
+            && !NXPanelRowStyle.greys(highlighted: nil, hovering: false, pressed: false),
+          "A menu row with no highlight to follow greys on hover")
 }
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

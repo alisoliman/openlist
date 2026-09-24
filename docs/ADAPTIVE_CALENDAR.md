@@ -77,8 +77,7 @@ tray offers Undo. While work records, the toolbar’s work notch keeps **Done** 
 
 At a planned start, the **Planned now** banner offers one-click **Start**. If it
 is ignored for five minutes, only the missed task moves into the next free gap;
-the rest of the day stays steady. Missed time is never logged as work. Any resulting deadline
-risk remains visible in coverage.
+the rest of the day stays steady. Missed time is never logged as work.
 
 Recording continues past the estimate. A minute before the working block ends,
 it grows to the next quarter hour plus **15 minutes**, clipped to the next fixed
@@ -90,8 +89,7 @@ still running. An optional
 background notification offers **Complete task** near the estimated finish.
 Reaching an estimate never marks a task complete.
 
-Routine moves animate quietly. Deadline and pin conflicts remain visible in task
-details until resolved. Background calendar nudges use silent macOS notifications
+Routine moves animate quietly. Background calendar nudges use silent macOS notifications
 when notification permission is available; the in-app work notch remains
 available without that permission.
 
@@ -102,7 +100,7 @@ the planner never places work past it. Blocks the running work runs over stay
 where they were rather than being moved as missed; pausing replans them and the
 remaining work into the next available slot. **Defer…** pauses work, removes that
 occurrence’s explicit placements, and chooses the next day on which planning may
-start. Its deadline stays unchanged, so deferral can reveal a deadline conflict.
+start. Its deadline stays unchanged, even when deferral leaves too little time before it.
 Undo takes a deferral back, placements included; **Clear** ends one, keeping the
 task selected for today once its day has come.
 
@@ -127,14 +125,14 @@ planned time…** saves a preferred placement instead, which can yield to busy t
 deadlines and changes in remaining work; when it can’t be kept, a notice says
 why. Neither changes the task’s due date.
 
-Pinned conflicts are shown in deadline coverage. Pins can conflict
-with meetings, other pins, active work, availability, breaks, deadlines, or the
-**Keep task together** choice. A conflicting pin does not count as safe deadline
-coverage. A missed pin is reported and unfinished work is replanned; it is never
-retrospectively treated as an active session. Active sessions cannot be moved or
-pinned while running.
+Pins can conflict with meetings, other pins, active work, availability, breaks,
+deadlines, or the **Keep task together** choice. A conflicting pin does not count
+as safe deadline coverage. A missed pin stays on the calendar as **carried
+forward**, and the task’s details show where the calendar has it, while unfinished
+work is replanned; it is never retrospectively treated as an active session.
+Active sessions cannot be moved or pinned while running.
 
-Pins beyond the four-week horizon remain fixed and are reported as outside the
+Pins beyond the four-week horizon remain fixed and are rated outside the
 plan. A pin crossing the horizon contributes only its in-horizon portion to
 coverage; its remaining fixed time is not silently moved into today.
 
