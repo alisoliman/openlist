@@ -2539,12 +2539,12 @@ store.save()
 check(moveDrawn() == ["Book flights", "Buy yen"], "A done top-level task leaves the document for Completed")
 moveCommand(.moveUp, moveYen)
 check(moveDrawn() == ["Buy yen", "Book flights"] && moveStored() == ["Buy yen", "Book flights", "Pack"]
-        && moveRecorded == [.moved(moveYen.id, up: true)],
+        && moveRecorded == [.moved([moveYen.id], up: true)],
     "Move Up passes the done task in Completed, so one press moves the line on screen")
 moveCommand(.moveUp, moveYen)
 check(moveStored() == ["Buy yen", "Book flights", "Pack"] && moveRecorded.count == 1, "At the top, Move Up does nothing and records nothing")
 moveCommand(.moveDown, moveYen)
-check(moveStored() == ["Book flights", "Buy yen", "Pack"] && moveRecorded.last == .moved(moveYen.id, up: false),
+check(moveStored() == ["Book flights", "Buy yen", "Pack"] && moveRecorded.last == .moved([moveYen.id], up: false),
     "Move Down goes past the next line that shows")
 moveCommand(.moveDown, moveYen)
 check(moveStored() == ["Book flights", "Buy yen", "Pack"] && moveRecorded.count == 2,
@@ -2565,6 +2565,51 @@ moveCommand(.moveDown, moveOnsen)
 check(moveDrawn() == ["Book flights", "Buy yen", "Temple", "Onsen"] && moveStored().last == "Onsen",
     "Move Down passes the list item whose task shows, as one step on screen")
 moveEditor.tasksOnly = false
+
+// Rows selected together, with no caret in a line, move together, as Indent
+// and Outdent take them all: each past the nearest line that isn't moving,
+// so they keep their order, and one held back holds back the rest.
+let groupList = store.createList(title: "Move together")
+let groupDocument = DocumentContext(listID: groupList.id)
+let groupEditor = OutlineEditor(env: outlineEnv, document: groupDocument)
+let groupUndo = UndoManager()
+groupUndo.groupsByEvent = false
+groupEditor.windowUndoManager = { groupUndo }
+var groupRecorded: [OutlineEdit] = []
+groupEditor.hooks.didRecordEdit = { edit, _ in groupRecorded.append(edit) }
+var groupTargets: [UUID] = []
+groupEditor.hooks.commandTargets = { groupTargets }
+func groupStored() -> [String] { BlockTree.children(of: nil, in: store.blocks(inList: groupList.id)).map(\.text) }
+func groupCommand(_ command: EditorCommand, _ blocks: [Block]) {
+    outlineEnv.navigator.clearSelection()
+    groupTargets = blocks.map(\.id)
+    outlineEnv.activeDocument = groupDocument
+    outlineEnv.pendingCommand = command
+    groupUndo.beginUndoGrouping()
+    groupEditor.receiveCommand()
+    groupUndo.endUndoGrouping()
+}
+let groupLines = ["A", "B", "C", "D", "E"].map { store.appendBlock(kind: .task, text: $0, to: groupDocument) }
+let groupSub = store.insertChild(kind: .task, text: "E1", of: groupLines[4], at: .last)
+store.save()
+groupCommand(.moveDown, [groupLines[1], groupLines[2]])
+check(groupStored() == ["A", "D", "B", "C", "E"] && groupRecorded == [.moved([groupLines[1].id, groupLines[2].id], up: false)],
+    "Move Down with two rows selected takes both past the next line, as one step")
+groupUndo.undo()
+check(groupStored() == ["A", "B", "C", "D", "E"], "Undo puts both back")
+groupCommand(.moveUp, [groupLines[1], groupLines[3]])
+check(groupStored() == ["B", "A", "D", "C", "E"] && groupRecorded.count == 2,
+    "Rows apart each go up a line, keeping the line between them")
+groupCommand(.moveUp, [groupLines[0], groupLines[1]])
+check(groupStored() == ["B", "A", "D", "C", "E"] && groupRecorded.count == 2,
+    "A row at the top holds back the one selected under it, and nothing is recorded")
+groupCommand(.moveUp, [groupLines[2], groupLines[4], groupSub])
+check(groupStored() == ["B", "A", "C", "E", "D"] && groupSub.parentID == groupLines[4].id
+        && groupRecorded.last == .moved([groupLines[2].id, groupLines[4].id, groupSub.id], up: true),
+    "A subtask selected with its task goes with it, under it")
+groupCommand(.moveDown, [groupLines[3], groupLines[4]])
+check(groupStored() == ["B", "A", "C", "E", "D"] && groupRecorded.count == 3,
+    "At the bottom, the selected rows stay together")
 
 // Next to a folded heading, a moved line doesn't go into the fold unseen:
 // the heading whose section it, or a moved heading's lines, land in opens,
@@ -2668,5 +2713,30 @@ moveUndo.beginUndoGrouping()
 moveEditor.setCaption(captionImage.id, to: "")
 moveUndo.endUndoGrouping()
 check(captionImage.mediaCaption.isEmpty && moveRecorded.count == 2, "An empty caption clears it")
+
+// The add row's click, and the inspector's Add subtask, open a new line
+// before the caption being written loses the keyboard to it: the caption
+// commits as its own step, and the new line stays open with the caret.
+moveEditor.appendTask()
+let captionNext = moveEditor.focus.blockID
+moveRecorded.removeAll()
+moveUndo.beginUndoGrouping()
+moveEditor.setCaption(captionImage.id, to: "Senbon torii")
+moveUndo.endUndoGrouping()
+check(captionNext.flatMap { store.block(id: $0) } != nil && moveEditor.focus.blockID == captionNext
+        && moveEditor.isWritingLine && captionImage.mediaCaption == "Senbon torii"
+        && moveRecorded == [.captioned(captionImage.id)] && moveEditor.stepUnderLine == "Edit caption",
+    "A caption committed as a new line takes the caret keeps that line, open, over the caption's step")
+let captionRow = moveEditor.visibleRows(in: store.blocks(inList: moveList.id)).first { $0.id == captionNext }!
+moveEditor.actions(for: captionRow).onChange(NSAttributedString(string: "Buy omamori"))
+moveUndo.beginUndoGrouping()
+moveEditor.commitLine()
+moveUndo.endUndoGrouping()
+check(moveRecorded == [.captioned(captionImage.id), .added(captionRow.id)] && captionRow.block.text == "Buy omamori",
+    "The new line is added as a step after the caption's")
+moveUndo.undo()
+check(store.block(id: captionRow.id) == nil && captionImage.mediaCaption == "Senbon torii", "Undo takes the line back first")
+moveUndo.undo()
+check(captionImage.mediaCaption.isEmpty, "Then the caption")
 
 print("✅ \(checks) editor/store checks passed")

@@ -188,7 +188,7 @@ private struct NXDocumentLines: View {
         case let .deleted(id): return "Deleted \(quoted(id))"
         case let .indented(ids): return "Indented \(described(ids))"
         case let .outdented(ids): return "Outdented \(described(ids))"
-        case let .moved(id, up): return "Moved \(quoted(id)) \(up ? "up" : "down")"
+        case let .moved(ids, up): return "Moved \(described(ids)) \(up ? "up" : "down")"
         case let .dragged(ids): return "Moved \(described(ids))"
         case let .pasted(ids): return "Added \(described(ids))"
         case let .captioned(id): return "Edited caption on \(quoted(id))"
@@ -197,9 +197,8 @@ private struct NXDocumentLines: View {
 
     private static func ids(of edit: OutlineEdit) -> [UUID] {
         switch edit {
-        case let .added(id), let .edited(id), let .removedEmptyLine(id), let .deleted(id), let .moved(id, _),
-             let .captioned(id): [id]
-        case let .indented(ids), let .outdented(ids), let .dragged(ids), let .pasted(ids): ids
+        case let .added(id), let .edited(id), let .removedEmptyLine(id), let .deleted(id), let .captioned(id): [id]
+        case let .indented(ids), let .outdented(ids), let .moved(ids, _), let .dragged(ids), let .pasted(ids): ids
         }
     }
 
@@ -456,6 +455,11 @@ private struct NXLineGrip: View {
             env.workbench.click(row.id, command: NXModifiers.command, shift: NXModifiers.shift)
         } else if !row.block.kind.isVoid {
             context.editor.edit(row.id)
+        } else {
+            // A divider or image takes no caret: as a click on the line, it
+            // leaves the line being written.
+            NXDocumentEditing.end()
+            env.workbench.focusID = nil
         }
     }
 }
@@ -940,7 +944,13 @@ private struct NXDocumentBlock: View {
         .zIndex(editing ? 4 : 0)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !block.kind.isVoid else { return }
+            guard !block.kind.isVoid else {
+                // A divider or image takes no caret: the click leaves the line
+                // being written, as one on the page does.
+                NXDocumentEditing.end()
+                env.workbench.focusID = nil
+                return
+            }
             context.editor.edit(row.id)
         }
         .contextMenu { NXLineMenu(id: row.id, kind: block.kind, editor: context.editor) }
@@ -1017,8 +1027,8 @@ private struct NXDocumentBlock: View {
 
 /// An image line: rounded 11, a hairline, its caption under it. A click on
 /// the caption writes it, and on a line without one, hovering offers "Add a
-/// caption…"; Return or a click away commits it as a step of its own, and
-/// Escape leaves it as it was.
+/// caption…" in the row kept for it, so nothing below moves; Return or a
+/// click away commits it as a step of its own, and Escape leaves it as it was.
 private struct NXDocumentImage: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     let block: Block
@@ -1070,12 +1080,17 @@ private struct NXDocumentImage: View {
                 // Scrolled away or gone with its line, it keeps what's typed.
                 .onDisappear(perform: commit)
                 .accessibilityLabel("Image caption")
-        } else if !block.mediaCaption.isEmpty || hovering || voiceOver {
+        } else {
             // The caption, or where it goes, in the document's placeholder ink.
+            // The prompt fades in over its row rather than making room, as
+            // the design's hovers only tint.
+            let shown = !block.mediaCaption.isEmpty || hovering || voiceOver
             Text(block.mediaCaption.isEmpty ? "Add a caption…" : block.mediaCaption)
                 .font(.system(size: 12))
                 .foregroundStyle(NX.ink(block.mediaCaption.isEmpty ? 0.36 : 0.5))
                 .fixedSize(horizontal: false, vertical: true)
+                .opacity(shown ? 1 : 0)
+                .animation(.easeOut(duration: 0.12), value: shown)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     // A line being written is left first, as a click away leaves it.

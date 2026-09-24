@@ -160,6 +160,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   under it). A folded heading whose section the move puts lines in opens, while a heading
   at a folded one's level or above, moving down, goes past it and its section, which stays
   folded, so each press moves it on screen and one with nothing there records nothing.
+  Rows selected together (⌘/⇧-click, X, ⌘A) move together, as Indent and Outdent and
+  their drag take them all: each past the nearest line beside it that isn't moving, so
+  they keep their order and gaps, one held at the top or bottom holding back the rest,
+  as one step ("Moved 3 lines down").
   `Navigator.documentListID` (any list, and the Inbox shown as a document) and
   `documentOwnsEditorCommands` replace `hasDocumentEditor`.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
@@ -454,8 +458,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
   Image) are a native extra: their lines draw and edit in the document (an image's
   caption, 12pt under it, is written in place: a click on it, or on the "Add a caption…"
-  a hover offers, edits it, and Return or a click away commits it as a step of its own,
-  "Edited caption on “Image”", logged as a line's edit is; by pointer or VoiceOver only,
+  a hover fades in over the row an image keeps for it (so no line below moves), edits
+  it, and Return or a click away commits it as a step of its own, "Edited caption on
+  “Image”", logged as a line's edit is, a line that click opens (the add row's, Add
+  subtask's) staying open with the caret; by pointer or VoiceOver only,
   as in the old editor, since the keys pass over an image line), the Turn into
   card brings them up for their names after "/" (with no query it shows the design's
   five under its one header, and a single letter filters the five by label as the
