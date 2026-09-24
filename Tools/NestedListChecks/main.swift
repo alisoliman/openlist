@@ -50,7 +50,7 @@ if phase == "write" {
     let childID = child.id, taskID = childTask.id
     try store.persistChanges()
     try check(child.parentListID == parent.id && nestedTask.listID == child.id && nestedTask.parentID == childTask.id, "Document ownership is independent of task indentation")
-    try check(store.listHierarchy().ancestors(of: grandchild.id).map(\.id) == [parent.id, child.id], "Breadcrumbs preserve ancestor order")
+    try check(store.listHierarchy().ancestors(of: grandchild.id).map(\.id) == [parent.id, child.id], "Ancestor paths preserve order")
     try check(!store.moveList(parent, under: grandchild.id) && !store.moveList(child, under: child.id), "Self and descendant moves are rejected")
     try check(!store.moveList(child, under: store.inboxList()!.id), "Inbox cannot own documents")
     try check(store.createChildList(in: store.inboxList()!) == nil, "Inbox child creation is rejected")

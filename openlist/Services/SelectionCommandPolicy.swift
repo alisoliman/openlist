@@ -1,7 +1,8 @@
 import Foundation
 
-/// Bulk actions are explicit toolbar operations. Legacy task commands must
-/// never toggle mixed states, delete a multi-selection or borrow its first row.
+/// A list document's multi-line selection takes structural commands only.
+/// Task commands must never toggle mixed states, delete a multi-selection or
+/// borrow its first line.
 enum SelectionCommandPolicy {
     static func reject(_ command: EditorCommand, selectedCount: Int, store: Store) -> Bool {
         guard selectedCount > 1 else { return false }
@@ -9,7 +10,7 @@ enum SelectionCommandPolicy {
         case .newTask, .expandAll, .collapseAll:
             return false
         default:
-            store.editorNotice = "Use Complete, Reopen, Move or Delete in the selection bar. Select one row for other task actions."
+            store.editorNotice = "Select one line for task actions."
             return true
         }
     }

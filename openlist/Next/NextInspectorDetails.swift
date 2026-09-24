@@ -520,7 +520,7 @@ struct NXInspectorHistory: View {
         VStack(alignment: .leading, spacing: 8) {
             NXInspectorDisclosure(title: "Full history", isExpanded: $expanded)
                 .help("Newest first. Clearing activity history in Settings › Data also clears this.")
-            // Queried only when open, like the legacy Activity disclosure.
+            // Queried only when open, so a closed disclosure fetches no history.
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
