@@ -68,11 +68,14 @@ struct AppCommands: Commands {
                 .keyboardShortcut(.space, modifiers: [.shift, .option])
         }
 
+        // The list on show, only while the main window is key, as Task and
+        // Format are: closed, it would export a list no one can see, and
+        // its tray would go unseen.
         CommandGroup(after: .newItem) {
             Divider()
             Button("Export List as Markdown…") { exportCurrentList() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(env.navigator.route.listID == nil)
+                .disabled(!env.isMainWindowKey || env.navigator.route.listID == nil)
         }
 
         // Edit ▸ find.
@@ -219,16 +222,16 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Back") { env.navigator.goBack() }
+            Button("Back") { inMainWindow { env.navigator.goBack() } }
                 .keyboardShortcut("[", modifiers: .command)
                 .disabled(!env.navigator.canGoBack)
-            Button("Forward") { env.navigator.goForward() }
+            Button("Forward") { inMainWindow { env.navigator.goForward() } }
                 .keyboardShortcut("]", modifiers: .command)
                 .disabled(!env.navigator.canGoForward)
 
             Divider()
 
-            Button(env.workbench.showsSidebar ? "Hide Sidebar" : "Show Sidebar") { env.workbench.toggleSidebar() }
+            Button(env.workbench.showsSidebar ? "Hide Sidebar" : "Show Sidebar") { inMainWindow { env.workbench.toggleSidebar() } }
                 .keyboardShortcut("s", modifiers: [.control, .command])
 
             Divider()

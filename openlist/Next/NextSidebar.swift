@@ -343,7 +343,7 @@ struct NextSidebar: View {
         }))
         Divider()
         Button("Duplicate") { workbench.duplicateList(list) }
-        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
+        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
         Button("Export as Markdown…") { workbench.exportMarkdown(list) }
         // A nested list shows under its parent whether pinned or not.
         if !nested {
@@ -355,7 +355,7 @@ struct NextSidebar: View {
 
     // MARK: Drag and drop
 
-    /// Tasks dropped on a list move into it. A list dropped on a top-level
+    /// Rows dropped on a list move into it. A list dropped on a top-level
     /// list moves above it, in its section.
     private func drop(_ items: [String], on list: TaskList, nested: Bool) -> Bool {
         if items.contains(where: { DragPayload.list.decode($0) != nil }) {
@@ -368,15 +368,17 @@ struct NextSidebar: View {
     }
 
     /// Rows move only in this library's session payload. A bare row ID,
-    /// from another app or library, is not one.
+    /// from another app or library, is not one. Any line a document's grip
+    /// drags moves, a heading or text too. Rows already all in the list are
+    /// refused, as they'd go nowhere.
     private func dropRows(_ items: [String], on listID: UUID) -> Bool {
         let session = env.navigator.blockDragSessionID
         let ids = items.flatMap { item -> [UUID] in
             guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session) else { return [] }
             return ids
         }
-        guard !ids.isEmpty else { return false }
-        workbench.move(ids, to: listID)
+        guard ids.contains(where: { env.store.block(id: $0).map { $0.listID != listID } ?? false }) else { return false }
+        workbench.move(ids, to: listID, lines: true)
         return true
     }
 

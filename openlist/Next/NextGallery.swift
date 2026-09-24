@@ -175,7 +175,7 @@ private struct NXListCard: View {
             Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") { workbench.setPinned(!list.isPinned, for: list) }
         }
         Button("Duplicate") { workbench.duplicateList(list) }
-        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
+        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
         Button("Export as Markdown…") { workbench.exportMarkdown(list) }
         Button("Move List…") { env.listPendingMove = list }
         Button("New Child List") { workbench.createChildList(in: list) }

@@ -186,6 +186,10 @@ check(coordinator.signature == BlockTextView.ContentSignature(attributedText: ty
 check(BlockNSTextView.linkURL(from: " example.com\n") == URL(string: "https://example.com")
     && BlockNSTextView.linkURL(from: "http://example.com") == URL(string: "http://example.com")
     && BlockNSTextView.linkURL(from: "  ") == nil, "A typed link is trimmed, with https:// when it names no scheme")
+check(BlockNSTextView.linkURL(from: "https://") == nil && BlockNSTextView.linkURL(from: " http:// ") == nil
+    && BlockNSTextView.linkURL(from: "https:///path") == nil
+    && BlockNSTextView.linkURL(from: "openlist://item/x") == URL(string: "openlist://item/x"),
+      "Add Link's prefilled https:// alone, or any web address with no host, applies nothing")
 var linkPrompt: LinkPrompt?
 native.setSelectedRange(NSRange(location: 0, length: 6))
 BlockNSTextView.linkPrompter = { linkPrompt = $0 }
@@ -225,16 +229,15 @@ let isBoldUnderSheet = {
     (underSheet.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
         .map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == true
 }
-let boldItem = NSMenuItem(title: "Bold", action: #selector(BlockNSTextView.toggleBold(_:)), keyEquivalent: "")
 sheetHost.beginSheet(linkSheetWindow) { _ in }
 linkPrompt = nil
 underSheet.toggleBold(nil)
 underSheet.promptForLink(nil)
-check(!isBoldUnderSheet() && linkPrompt == nil && !underSheet.validateUserInterfaceItem(boldItem),
+check(!isBoldUnderSheet() && linkPrompt == nil,
     "Under a sheet, the Format menu neither formats the selection behind it nor asks for a link again")
 sheetHost.endSheet(linkSheetWindow)
 underSheet.toggleBold(nil)
-check(isBoldUnderSheet() && underSheet.validateUserInterfaceItem(boldItem), "Once the sheet has gone, the Format menu formats the line again")
+check(isBoldUnderSheet(), "Once the sheet has gone, the Format menu formats the line again")
 underSheet.removeFromSuperview()
 BlockNSTextView.linkPrompter = nil
 coordinator.apply(plain, to: native, kind: .task, isCompleted: false)

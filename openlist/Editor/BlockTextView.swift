@@ -901,12 +901,15 @@ final class BlockNSTextView: NSTextView {
     }
 
     /// The URL typed for a link, trimmed, with `https://` in front when it
-    /// names no scheme. `nil` for an empty entry or one that isn't a URL.
+    /// names no scheme. `nil` for an empty entry, one that isn't a URL, or a
+    /// web address with no host, as the sheet's "https://" alone is.
     static func linkURL(from entry: String) -> URL? {
         var text = entry.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if !text.contains("://") { text = "https://" + text }
-        return URL(string: text)
+        guard let url = URL(string: text) else { return nil }
+        if ["http", "https"].contains(url.scheme?.lowercased()), url.host()?.isEmpty != false { return nil }
+        return url
     }
 
     /// Whether a sheet is over this line's window, as Add Link…'s is. The
@@ -931,19 +934,6 @@ final class BlockNSTextView: NSTextView {
             coordinator.reportEdit(NSAttributedString(attributedString: storage))
         }
         invalidateIntrinsicContentSize()
-    }
-
-    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-        switch item.action {
-        case #selector(toggleBold(_:)),
-             #selector(toggleItalic(_:)),
-             #selector(toggleStrikethrough(_:)),
-             #selector(toggleInlineCode(_:)),
-             #selector(promptForLink(_:)):
-            return selectedRange().length > 0 && !isUnderSheet
-        default:
-            return super.validateUserInterfaceItem(item)
-        }
     }
 
     // MARK: Clicks

@@ -52,6 +52,7 @@ struct WorkMovePicker: View {
             HStack(spacing: 8) {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 Button(overlaps.isEmpty ? "Move" : "Move anyway", action: confirm)
                     .keyboardShortcut(.defaultAction)

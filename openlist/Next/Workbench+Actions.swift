@@ -420,23 +420,41 @@ extension Workbench {
 
     // MARK: Moving
 
-    func move(_ ids: [UUID], to listID: UUID, quiet: Bool = false) {
+    /// The design's move: the tasks go to the list, each keeping everything
+    /// under it. `lines` takes any line, as a list document's grip drags one
+    /// onto the sidebar, a heading or text too. As the design's move only
+    /// sets the list, what's already in it stays where it is; with nothing
+    /// left to move, only the design's tray shows, with no Undo to take.
+    func move(_ ids: [UUID], to listID: UUID, quiet: Bool = false, lines: Bool = false) {
         document?.commitLine()
-        let tasks = tasks(ids)
-        guard !tasks.isEmpty, let list = store.list(id: listID) else { return }
-        let label = "Moved \(describe(tasks)) to \(list.displayTitle)"
-        do {
-            _ = try store.moveSelection(tasks.map(\.id), to: listID, undoManager: undoManager)
-        } catch {
-            showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
-            return
+        let blocks = lines ? ids.compactMap { store.block(id: $0) } : tasks(ids)
+        guard !blocks.isEmpty, let list = store.list(id: listID) else { return }
+        let moving = blocks.filter { $0.listID != listID }
+        let label = "Moved \(describeMoved(moving.isEmpty ? blocks : moving)) to \(list.displayTitle)"
+        let destination = quiet ? nil : TrayDestination(label: "Open \(list.displayTitle)", route: route(for: list))
+        if !moving.isEmpty {
+            do {
+                _ = try store.moveSelection(moving.map(\.id), to: listID, undoManager: undoManager)
+            } catch {
+                showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
+                return
+            }
+            undoManager?.setActionName(label)
+            snap(label, icon: "folder", tone: .accent, ids: moving.map(\.id), destination: destination)
+        } else {
+            showTray(label, icon: "folder", tone: .accent, destination: destination)
         }
-        undoManager?.setActionName(label)
-        snap(label, icon: "folder", tone: .accent, ids: tasks.map(\.id),
-             destination: quiet ? nil : TrayDestination(label: "Open \(list.displayTitle)", route: route(for: list)))
-        flash(\.freshChip, tasks.map(\.id), for: 700)
+        flash(\.freshChip, blocks.map(\.id), for: 700)
         pulse(list: listID)
         selection = []
+    }
+
+    /// A move's rows as its tray names them: tasks as `describe` does, and
+    /// any other line by its text, or its kind where it has none.
+    private func describeMoved(_ blocks: [Block]) -> String {
+        if blocks.allSatisfy(\.isTask) { return describe(blocks) }
+        guard blocks.count == 1, let block = blocks.first else { return "\(blocks.count) lines" }
+        return NXFormat.quoted(block.kind.isVoid ? block.kind.title : block.displayTitle)
     }
 
     // MARK: Copies
@@ -901,8 +919,11 @@ extension Workbench {
 
     /// Opens capture for the current screen. `forToday: true` makes an undated
     /// task due today; otherwise Today and the New tasks setting decide. On a
-    /// label screen the task gets that label.
+    /// label screen the task gets that label. Nothing opens it again over its
+    /// own draft, as in the design, whose keys stand down while it's open:
+    /// File ▸ New Task… (⌘N) there keeps the text and destination typed.
     func openCapture(text: String = "", listID: UUID? = nil, forToday: Bool? = nil) {
+        guard !captureOpen else { return }
         if case let .list(id) = navigator.route { captureListID = listID ?? id }
         else { captureListID = listID ?? store.inboxList()?.id }
         captureForToday = forToday == true || navigator.route == .today || settings.defaultDestination == .today

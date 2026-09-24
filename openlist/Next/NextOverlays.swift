@@ -543,8 +543,8 @@ private struct NXTokenRenderer: TextRenderer {
 /// The app's search (tasks, notes, headings, list titles and summaries,
 /// archived lists, diacritic-insensitive) in the Next overlay.
 enum NXSearch {
-    /// Results listed at once; typing more narrows the rest.
-    static let shownLimit = 30
+    /// Results listed at once, as the design's; typing more narrows them.
+    static let shownLimit = 12
 
     @MainActor
     static func options(_ workbench: Workbench) -> SearchOptions {
@@ -722,9 +722,8 @@ private struct NXSearchCard: View {
         let options = session.hitsOptions
         if typed.needle.isEmpty || (options.needle.isEmpty && !session.isSlow) { return "Search tasks, notes and lists" }
         if session.isSlow { return "Searching…" }
-        let total = session.hits.count
-        if hits.count < total { return "Showing \(hits.count) of \(total) · keep typing to narrow" }
-        if !hits.isEmpty { return "\(total) \(total == 1 ? "result" : "results") · ↑↓ choose · ↩ open" }
+        // The rows listed, as the design counts them.
+        if !hits.isEmpty { return "\(hits.count) \(hits.count == 1 ? "result" : "results") · ↑↓ choose · ↩ open" }
         return "Nothing matches “\(options.needle)”" + (options.includesCompleted ? "" : " — try including completed")
     }
 }
