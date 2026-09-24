@@ -2,7 +2,8 @@ import SwiftUI
 import SwiftData
 
 /// The Work panel's task: its timer while it runs, else when it is planned and
-/// how to start. Stop and Complete go through the workbench, as the notch does.
+/// how to start. Pause, Stop and Complete go through the workbench, as the
+/// notch's buttons do.
 struct WorkSessionCard: View {
     let task: Block
     let chooseTask: () -> Void
@@ -20,7 +21,7 @@ struct WorkSessionCard: View {
             let quiet = env.calendar.quietUntil[reference.occurrenceID.uuidString].map(Date.init(timeIntervalSince1970:))
             let estimate = env.calendar.estimatedMinutes(for: task)
             VStack(alignment: .leading, spacing: 0) {
-                Text(session != nil ? "Working now" : paused ? "Session stopped" : plan.map { $0.start > context.date ? "Planned for later" : "Ready when you are" } ?? "Ready when you are")
+                Text(session != nil ? "Working now" : paused ? "Paused" : plan.map { $0.start > context.date ? "Planned for later" : "Ready when you are" } ?? "Ready when you are")
                     .font(.system(size: 10.5, weight: .semibold))
                     .kerning(0.74)
                     .textCase(.uppercase)
@@ -66,6 +67,7 @@ struct WorkSessionCard: View {
                         }
                     }
                     HStack(spacing: 8) {
+                        NXWorkButton("Pause") { env.workbench.toggleWorkPause() }
                         NXWorkButton("Stop working", action: stop)
                         Spacer(minLength: 8)
                         NXWorkButton("Complete task", prominent: true, action: complete)
@@ -74,8 +76,7 @@ struct WorkSessionCard: View {
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         if paused, let previous = env.store.workSessions(taskID: task.id).first(where: { $0.occurrenceID == reference.occurrenceID && $0.endedAt != nil }) {
-                            detail(previous.pauseReason == "Stopped working" ? "Task still open. No time is being recorded." : "Paused: \(previous.pauseReason ?? "Session ended"). No time is being recorded.",
-                                   icon: "pause.circle")
+                            detail(Self.pausedDetail(previous.pauseReason), icon: "pause.circle")
                             caption("\(minutes(env.calendar.recordedMinutes(for: previous))) recorded in the last session")
                         }
                         if let plan {
@@ -133,7 +134,7 @@ struct WorkSessionCard: View {
                 }
                 .padding(.top, 10)
                 if paused {
-                    NXWorkLink("Dismiss stopped session") { env.calendar.dismissResume(); env.calendar.isWorkPanelPresented = false }
+                    NXWorkLink("Stop working", action: stop)
                         .padding(.top, 6)
                 }
             }
@@ -155,9 +156,31 @@ struct WorkSessionCard: View {
 
     private func minutes(_ value: Double) -> String { "\(value.formatted(.number.precision(.fractionLength(0)))) min" }
 
+    /// Why the work paused, in a sentence: plain for a Pause, and for work a
+    /// completion's Undo, or its cancelled dwell, gives back paused; else what
+    /// paused it.
+    private static func pausedDetail(_ reason: String?) -> String {
+        let why: String = switch reason {
+        case nil, "Paused", "Completed": "Paused."
+        case "Switched task": "Paused when you switched tasks."
+        case "Stopped working": "Paused when you stopped working."
+        case "Mac slept": "Paused while the Mac was asleep."
+        case "Screen slept": "Paused while the screen was asleep."
+        case "Mac locked": "Paused while the Mac was locked."
+        case "Mac was unavailable": "Paused while the Mac was away."
+        case "Openlist closed", "Openlist restarted", "Recovered before starting": "Paused when Openlist closed."
+        case "Deferred": "Paused when the task was deferred."
+        case "List unavailable": "Paused while its list was unavailable."
+        case let reason? where reason.hasPrefix("Library restored"): "Paused when the library was restored."
+        case let reason?: "Paused — \(reason)."
+        }
+        return why + " No time is being recorded."
+    }
+
     private func start() { env.calendar.requestWork(WorkTaskReference(task)) }
 
-    /// As the notch's ✕: ends the session with its "Stopped" tray, and the panel goes with it.
+    /// As the notch's ✕, running or paused: ends the work with its "Stopped"
+    /// tray, and the panel goes with it.
     private func stop() {
         env.calendar.isWorkPanelPresented = false
         env.workbench.stopWork()

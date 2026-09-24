@@ -249,8 +249,8 @@ revealing.go(to: .today)
 let taskReveal = try ContentReveal.resolve(.block(inboxTask.id), blocks: inboxBlocks, lists: [revealInbox])
 revealing.reveal(taskReveal)
 check(revealing.route == .inbox && revealing.listViewMode(for: revealInbox.id) == .tasks
-      && revealing.openTaskID == inboxTask.id && revealing.contentReveal == taskReveal,
-      "An Inbox task opens in the inspector over the Inbox as this Mac shows it")
+      && revealing.openTaskID == inboxTask.id && revealing.contentReveal == taskReveal && revealing.selection.isEmpty,
+      "An Inbox task opens in the inspector over the Inbox as this Mac shows it, with no line selected")
 revealing.go(to: .today)
 let inboxReveal = try ContentReveal.resolve(.list(revealInbox.id), blocks: inboxBlocks, lists: [revealInbox])
 revealing.reveal(inboxReveal)

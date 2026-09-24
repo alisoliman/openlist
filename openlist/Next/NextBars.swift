@@ -226,8 +226,9 @@ struct NXBottomBars: View {
                 NXTray(message: tray).transition(style.slide(Self.barTransition))
             }
         }
-        .animation(style.ease(220), value: hasSelection)
-        .animation(style.ease(200), value: workbench.tray == nil)
+        // The design's barIn, at its own speed whatever the Motion setting.
+        .animation(NX.ease(220), value: hasSelection)
+        .animation(NX.ease(200), value: workbench.tray == nil)
         .padding(.bottom, 26)
         // The tray rises and drains away without a sound, so VoiceOver hears
         // each message, even one a selection bar keeps off screen.

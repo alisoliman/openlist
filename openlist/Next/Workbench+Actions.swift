@@ -855,6 +855,19 @@ extension Workbench {
         return block
     }
 
+    /// A task Quick Add saved, over this window or another app, taken in as
+    /// the window's own capture is: a window Undo entry that takes it back and
+    /// its line in Changes, and the fresh row and list pulse. Quick Add's card
+    /// says what it added, so the tray stays down.
+    func didQuickAdd(_ block: Block) {
+        let name = store.list(id: block.listID)?.displayTitle ?? "Inbox"
+        let undoable = undoManager != nil
+        if undoable { registerCreationUndo("Added to \(name)", taskID: block.id) }
+        snap("Added to \(name)", icon: "plus.circle", tone: .accent, ids: [block.id], undoable: undoable, showsTray: false)
+        flash(\.fresh, [block.id], for: 1200)
+        pulse(list: block.listID)
+    }
+
     /// Undo takes a capture back as though it was never added: no Trash
     /// entry, reminder or history. Redo brings back the same task. One that
     /// has since gained subtasks, files, a plan or work goes to Trash instead,

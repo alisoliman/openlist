@@ -32,9 +32,11 @@ nonisolated struct SearchProjection: Sendable {
                 let own = " › " + list.displayTitle
                 let parent = list.path.hasSuffix(own) ? String(list.path.dropLast(own.count)) : ""
                 let context = ["List", parent, list.isArchived ? "Archived" : ""].filter { !$0.isEmpty }
+                // Two lines, as the design's list hit; only a match in the
+                // description, which has no line of its own, quotes it.
                 return SearchHit(id: .list(list.id), title: list.displayTitle,
                     context: context.joined(separator: " · "),
-                    snippet: list.summary.isEmpty ? "" : Self.snippet(list.summary, matching: needle),
+                    snippet: field == .summary ? Self.snippet(list.summary, matching: needle) : "",
                     symbol: "square.2.layers.3d", emoji: nil, accent: list.accent, field: field)
             }
         }
@@ -66,11 +68,16 @@ nonisolated struct SearchProjection: Sendable {
                 var context = [place.joined(separator: " › ")]
                 if list?.isArchived == true { context.append("Archived") }
                 if completed { context.append("Completed") }
+                // A task's hit is the design's two lines, its title and where it
+                // is, which the row ends with "matched in note" for a note's
+                // match. A heading or text line quotes the passage that
+                // matched, the only place a long line or its note reads.
+                let quotes = !block.isTask && (field == .note || block.text.utf8.count > 160 || block.text.contains("\n"))
                 result.append(SearchHit(id: .block(block.id), title: block.displayTitle,
                     context: context.joined(separator: " · "),
-                    snippet: field == .text && block.text.utf8.count <= 160 && !block.text.contains("\n")
-                        ? "" : Self.snippet(field == .note ? block.note : block.text, matching: needle),
-                    symbol: block.isTask ? (block.isCompleted ? "checkmark.circle.fill" : "circle") : block.symbol,
+                    snippet: quotes ? Self.snippet(field == .note ? block.note : block.text, matching: needle) : "",
+                    // The design's outline check_circle, as its state reads in the context.
+                    symbol: block.isTask ? (completed ? "checkmark.circle" : "circle") : block.symbol,
                     emoji: nil, accent: list?.accent ?? .graphite, field: field,
                     dueDate: block.isTask && !completed ? block.dueDate : nil,
                     listIcon: list.map { $0.icon.isEmpty ? "📋" : $0.icon }))

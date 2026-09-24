@@ -66,6 +66,10 @@ final class AppEnvironment {
     /// Where a widget tap asked to go, awaiting the main window.
     var pendingWidgetRoute: WidgetRoute?
 
+    /// Work ▸ Show Work asked for the Work panel as it opened the main window,
+    /// so its toolbar shows the panel once up. The window's closing clears it.
+    @ObservationIgnored var showsWorkPanelOnOpen = false
+
     /// A command awaiting pickup by the focused document view.
     var pendingCommand: EditorCommand?
     /// Bumped to make the focused document re-read `pendingCommand` even when

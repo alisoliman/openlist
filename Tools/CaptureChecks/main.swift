@@ -131,6 +131,34 @@ check(designWeek.title == "Offsite" && Calendar.current.component(.day, from: de
       "next week is next Monday")
 check(!(CaptureParse("Dinner tonight", reference: captureReference).schedule?.includesTime ?? true), "tonight has no time")
 
+// The card's chips follow the typed tokens, as the design's capChips.
+func chipLabels(_ text: String, forToday: Bool = false) -> [String] {
+    let parse = CaptureParse(text, reference: captureReference)
+    // As `snapshot(dueToday:)` makes it, on the reference day.
+    var preview = parse.snapshot()
+    if forToday, preview.date == nil { preview.date = NXFormat.day(offset: 0, now: captureReference) }
+    return parse.chips(for: preview, forToday: forToday, now: captureReference).map(\.label)
+}
+func captureDay(_ offset: Int) -> String {
+    let date = NXFormat.day(offset: offset, now: captureReference)
+    return "\(NXFormat.dueLabel(date, now: captureReference)) · \(NXFormat.relativeDay(date, now: captureReference))"
+}
+check(chipLabels("Pay deposit friday 6pm #travel ~15m") == [captureDay(2), "18:00", "travel", "15m estimate"],
+      "The design's example chips its tokens with the day's distance")
+check(chipLabels("#travel !high pay deposit friday 6pm") == ["travel", "High", captureDay(2), "18:00"],
+      "Chips come in the order the tokens were typed")
+check(chipLabels("Call mum today") == ["Today · today"] && chipLabels("Call mum tomorrow") == ["Tomorrow · tomorrow"],
+      "A typed today or tomorrow keeps its distance, as the design's")
+check(chipLabels("Call mum 6pm") == ["18:00"], "A time alone shows only its time")
+check(chipLabels("Call mum 6pm", forToday: true) == ["Today", "18:00"], "Capture for Today leads with Today")
+check(chipLabels("Call mum", forToday: true) == ["Today"] && chipLabels("Call mum").isEmpty,
+      "Only capture for Today shows a day nobody typed")
+check(chipLabels("Call mum 9am") == [captureDay(1), "09:00"], "A time already past shows the day it saves")
+check(chipLabels("Stretch every day") == ["every day"], "A repeat starting today shows only the repeat")
+check(chipLabels("Standup every monday") == [captureDay(5), "every monday"],
+      "A repeat whose first day isn't today shows the day it saves")
+check(chipLabels("Plan friday #work", forToday: true) == [captureDay(2), "work"], "A typed day stands in for Today")
+
 // Undoing a capture erases the task outright: no Trash entry and no history.
 let undoList = store.createList(title: "Undo target")
 let captured = try store.saveCapture(CaptureParse("Book ryokan tomorrow #travel").snapshot(), destinationID: undoList.id)

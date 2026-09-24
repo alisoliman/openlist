@@ -44,7 +44,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   ⇧⌘S Star. Help ▸ Keyboard Shortcuts (⌘/) lists the design's single keys with the keys
   the list document and menus handle. Work ▸ Start Selected Task, Stop, Pause or Resume and
   Complete run `workbench.startWork`, `stopWork`, `toggleWorkPause` and `finishWork`, as
-  Task ▸ Start Working and the notch's buttons do. View ▸ Collapse All folds only what the
+  Task ▸ Start Working and the notch's buttons do. Items that show something in the main
+  window (Show Work, New Task…, New List, New Section, Search, Actions…, the View screens,
+  Keyboard Shortcuts, Settings…) open it first when it was closed. Format ▸'s inline styles
+  are on only while a line in the main window has text selected, and Task ▸ Open Details
+  (⌘↩) is off while a note is being written, where ⌘↩ finishes the note as the design's
+  does. View ▸ Collapse All folds only what the
   design's carets fold (tasks with lines under them, headings with a section); Expand All
   opens every fold, one an older list left on a list item too. A line that becomes a
   heading, or stops being one, opens, so such a fold never hides a new heading's section
@@ -52,7 +57,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   again).
 - Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
   then the Undo label, which at last leaves only its icon; Actions and New task keep their
-  labels.
+  labels. The work notch, with no room for a few words of its title, drops the title, then
+  its chip, keeping Pause or Resume, Done and Stop, and goes altogether rather than cover
+  the crumb or the buttons, where the design's clips.
 - Typing is on the window's undo stack natively, where the design keeps it out of Undo
   until a line commits. While a list document line holds typing, the toolbar's Undo names
   the step the line commits as ("Edited “…”", "Added “…”", "Removed an empty line"), which
@@ -62,14 +69,21 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
   bars and the overlay cards in rather than sliding them, as its hint says, where the design
-  only shortens the slides.
+  shortens the inspector's slide and plays the others' unchanged. Each fade takes as long as
+  that slide.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
   snapshot failed); a backup or restore made by hand, and what it reports, are Data's.
 - Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking
   space in every text field, so a global hot key on it would take that from every app. The
-  Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space.
+  Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space. A task it adds goes
+  on the window's undo stack and in Changes as the window's capture does ("Added to …"),
+  but raises no tray: its own card says what it added, usually over another app.
+- Capture's chips follow the typed tokens in order, a typed day as "Fri 25 · in 2 days",
+  as the design's. A bare time already past, or a repeat whose first day isn't today, shows
+  the day it saves (tomorrow, the repeat's first day), where the design saves both today
+  and shows no day.
 - Trash keeps one entry per trashed task or list, not a row per subtask: the subtasks
   restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
   counts entries. A list's Restore names where it goes back, as a task's names its list
@@ -112,8 +126,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the best match, which ↑/↓ and the pointer move.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
-  `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists, which drag
-  on a private type of their own that no line takes), and search
+  `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists and the
+  Inbox, which drag on a private type of their own that no line takes), and search
   reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
   puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
   says "Copied “List” as Markdown" in the tray. Its Hours picks the Work or Personal hours
@@ -258,7 +272,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   and its line with the caret would drop the tint. Such a reveal keeps folded and done lines
   on its path shown until the page is left, a revealed parent is folded, or Esc, with no
   details, selection or focus left to close, ends it in place; the document lasts the visit.
-  Only a target that can't open says so, in a notice.
+  Only a target that can't open says so, in a notice. A hit reads as the design's two
+  lines, a task's whose note alone matched ending "· matched in note"; a heading or text
+  line's also quotes the passage under its title when the line is long or its note
+  matched, and a list's its description when only that matched.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
   Image) are a native extra: their lines draw and edit in the document, the Turn into
   card brings them up for their names after "/" (with no query it shows the design's

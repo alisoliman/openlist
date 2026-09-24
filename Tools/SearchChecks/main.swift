@@ -60,7 +60,14 @@ check(allHits == (try project(options, source: blocks.reversed())), "tied order 
 check(allHits.first { $0.id == .block(paragraph.id) }?.context.contains("Ancestor context › Nested heading") == true, "paragraph exposes ancestor context")
 check(allHits.first { $0.id == .block(paragraph.id) }?.context.contains("Completed") == true, "completed ancestor is explicit")
 let noteHit = allHits.first { $0.id == .block(noteTask.id) }!
-check(noteHit.field == .note && noteHit.snippet.contains("needle target résumé") && noteHit.snippet.hasPrefix("…"), "deep note match gets useful snippet and exact field")
+check(noteHit.field == .note && noteHit.snippet.isEmpty && noteHit.symbol == "circle",
+      "a task's note match is the design's two lines, the row saying it matched in the note")
+check(allHits.first { $0.id == .block(completed.id) }?.symbol == "checkmark.circle", "a done task's hit shows the design's outline check")
+let longNote = Block(kind: .heading2, text: "Long note heading", listID: list.id, sortIndex: 0)
+longNote.note = noteTask.note
+let longNoteHit = try project(options, source: [longNote]).first!
+check(longNoteHit.field == .note && longNoteHit.snippet.contains("needle target résumé") && longNoteHit.snippet.hasPrefix("…"),
+      "a heading's deep note match quotes the passage that matched")
 check(try project(SearchOptions(query: " "), source: blocks).isEmpty, "whitespace query shows no corpus")
 check(try project(SearchOptions(query: "\n needle \t")).count == allHits.count, "query trims all outer whitespace")
 check(try project(SearchOptions(query: "needle", scope: .lists)).isEmpty, "list scope excludes content")
@@ -76,6 +83,7 @@ check(try project(SearchOptions(query: "project", scope: .lists, includesArchive
 let listHits = try project(SearchOptions(query: "project", scope: .lists))
 check(listHits.first { $0.id == .list(list.id) }?.context == "List" && listHits.first { $0.id == .list(archived.id) }?.context == "List · Archived",
       "list hits say they're a list rather than repeating their own name")
+check(listHits.allSatisfy { $0.snippet.isEmpty }, "a list hit on its name is the design's two lines")
 check(listHits.allSatisfy { $0.emoji == nil && $0.symbol == "square.2.layers.3d" }, "list hits use the layers symbol")
 let child = TaskList(title: "Needle child list")
 child.parentListID = list.id
@@ -116,6 +124,7 @@ navigator.reveal(reveal)
 check(navigator.route == .list(list.id) && navigator.openTaskID == nil && navigator.selection == [paragraph.id], "reveal navigation selects exact paragraph and closes inspector")
 navigator.reveal(taskReveal)
 check(navigator.openTaskID == noteTask.id && navigator.contentReveal == taskReveal, "same-list task reveal replaces previous request")
+check(navigator.selection.isEmpty, "a task reveal selects nothing, landing on the focus as a search hit does")
 let activation = navigator.searchActivation
 navigator.closeTask()
 check(navigator.contentReveal == nil && navigator.searchActivation == activation, "closing inspector ends temporary reveal")
@@ -127,6 +136,14 @@ navigator.reveal(reveal)
 navigator.selection = [completed.id]
 navigator.finishReveal()
 check(navigator.contentReveal == nil && navigator.selection == [completed.id], "finishing a reveal keeps a selection that moved on")
+navigator.reveal(reveal)
+navigator.releaseRevealSelection()
+check(navigator.selection.isEmpty && navigator.contentReveal == reveal, "the focus moving to a row lets the revealed line go")
+let writingScope = UUID()
+navigator.selectForEditing(paragraph.id, scope: writingScope, visible: [paragraph.id])
+navigator.releaseRevealSelection()
+check(navigator.selection == [paragraph.id], "a line being written keeps its selection")
+navigator.clearSelection()
 navigator.reveal(reveal)
 navigator.go(to: .today)
 check(navigator.contentReveal == nil, "navigation ends temporary expansion")
@@ -147,6 +164,8 @@ check(movedField.field == .note, "resolver follows the live matching field after
 paragraph.text = formerTitle
 paragraph.note = ""
 list.summary = "Hidden description needle"
+let summaryHit = try project(SearchOptions(query: "needle", scope: .lists)).first { $0.id == .list(list.id) }
+check(summaryHit?.field == .summary && summaryHit?.snippet.contains("needle") == true, "a list's description match quotes it")
 let summaryRequest = try ContentReveal.resolve(.list(list.id), field: .summary, query: "needle", blocks: blocks, lists: lists)
 navigator.go(to: .list(list.id))
 navigator.reveal(summaryRequest)
@@ -260,7 +279,8 @@ session.update(corpus: corpus)
 let rapidStart = ContinuousClock.now
 for query in ["p", "pr", "pro", "proj", "project", "needle 9999"] { session.update(options: SearchOptions(query: query)); await Task.yield() }
 for _ in 0..<2000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
-check(session.hits.count == 1 && session.hits.first?.snippet.contains("needle 9999") == true, "10k rapid typing publishes only latest query")
+check(session.hits.count == 1 && session.hits.first?.id == .block(performanceBlocks.first { $0.note.hasSuffix("needle 9999") }!.id),
+      "10k rapid typing publishes only latest query")
 print("10k rapid_latest_ms=\(String(format: "%.2f", ms(rapidStart)))")
 let obsolete = Task.detached { try SearchProjection(corpus: corpus, options: SearchOptions(query: "project")) }
 obsolete.cancel()

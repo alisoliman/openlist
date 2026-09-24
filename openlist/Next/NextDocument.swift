@@ -861,12 +861,25 @@ final class NXNoteTextView: NSTextView {
     }()
 
     override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if event.keyCode == 36 || event.keyCode == 76, flags.contains(.command) {
+        if Self.commits(event) {
             window?.makeFirstResponder(nil)
             return
         }
         super.keyDown(with: event)
+    }
+
+    /// ⌘Return commits before the menus see it, so Task ▸ Open Details can't
+    /// take it from the note being written. Views are offered key equivalents
+    /// ahead of the main menu, this one only while it has the keyboard.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard Self.commits(event), window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+        window?.makeFirstResponder(nil)
+        return true
+    }
+
+    private static func commits(_ event: NSEvent) -> Bool {
+        (event.keyCode == 36 || event.keyCode == 76)
+            && event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
     }
 
     func height(fittingWidth width: CGFloat) -> CGFloat {
@@ -1121,7 +1134,7 @@ private struct NXLineMenu: View {
 
     var body: some View {
         if !kind.isVoid {
-            Menu("Turn Into") {
+            Menu("Turn Into", systemImage: "arrow.triangle.2.circlepath") {
                 let options = OutlineSlashOption.all.filter { !$0.kind.isVoid && $0.kind != kind }
                 ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
                     if option.isExtra, index > 0, !options[index - 1].isExtra { Divider() }

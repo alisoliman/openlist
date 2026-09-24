@@ -26,8 +26,8 @@ struct QuickCaptureView: View {
         // The card reads lists and labels; task counts aren't shown here.
         let library = NextLibrary(lists: allLists, sections: sections, labels: labels, tasks: [])
         let style = env.workbench.style
-        // The design's popIn, as the window's capture card plays it; with
-        // Reduce Motion it only fades.
+        // The design's popIn, as the window's capture card plays it, at its
+        // own speed whatever the Motion setting; with Reduce Motion it only fades.
         let settled = shown || !style.slides
         NXCaptureCard(draft: draft, notice: notice, add: { add(keepOpen: $0) })
             .frame(width: 600)
@@ -47,7 +47,7 @@ struct QuickCaptureView: View {
             .environment(\.nextStyle, style)
             .tint(style.accent)
             .animation(style.ease(140), value: notice)
-            .onAppear { withAnimation(style.ease(180)) { shown = true } }
+            .onAppear { withAnimation(NX.ease(180)) { shown = true } }
             .onChange(of: draft.captureText) {
                 if notice?.failed == true { notice = nil }
             }
@@ -82,9 +82,9 @@ struct QuickCaptureView: View {
                                  failed: true))
             return
         }
-        // The main window greets the task as it does its own captures.
-        env.workbench.flash(\.fresh, [block.id], for: 1200)
-        env.workbench.pulse(list: block.listID)
+        // The main window takes the task in as it does its own captures,
+        // Undo and Changes included.
+        env.workbench.didQuickAdd(block)
         let added = "Added to \(env.store.list(id: block.listID)?.displayTitle ?? "Inbox")"
         if !keepOpen {
             AccessibilityNotification.Announcement(added).post()

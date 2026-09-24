@@ -254,11 +254,12 @@ Remind in 15 minutes** quiets that occurrence without moving the plan; **Laterâ€
 Move planned timeâ€¦** moves a placed block, listing what the new time would overlap.
 
 Start work explicitly, at any time. The toolbar's work notch shows the active task
-and its elapsed time, with **Done** and **Stop** always available. **Stop
-working** saves the session and leaves the task open; **Complete task** completes
-the occurrence. Stopped work can be resumed as a new segment. Starting another
-task switches straight away, saving the old segment, and the tray offers Undo.
-Completion can be undone without restarting a timer.
+and its elapsed time, with **Pause** or **Resume**, **Done** and **Stop** always
+available. **Pause** saves the session and keeps the work to resume as a new
+segment; **Stop working** saves it, leaves the task open and ends the work;
+**Complete task** completes the occurrence. Starting another task switches
+straight away, saving the old segment, and the tray offers Undo. Completion can
+be undone without restarting a timer.
 
 Recording continues past the estimate: the working block grows in 15-minute steps
 and later placements that day move out of its way, with Undo in the tray. When a

@@ -352,14 +352,12 @@ final class Workbench {
 
     // MARK: Navigation
 
+    /// Going to the screen already on show only closes the palette and
+    /// search, as the design's go returns: the focus and selection stay.
     func go(_ route: AppRoute) {
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
-        guard navigator.route != route else {
-            focusID = nil
-            clearSelection()
-            return
-        }
+        guard navigator.route != route else { return }
         navigator.go(to: route)
         routeDidChange()
     }
@@ -387,6 +385,7 @@ final class Workbench {
 
     func inspect(_ id: UUID?) {
         guard let id else { navigator.closeTask(); return }
+        navigator.releaseRevealSelection()
         focusID = id
         navigator.openTask(id)
     }
@@ -410,6 +409,7 @@ final class Workbench {
             }
         }
         let id = visibleIDs[next]
+        navigator.releaseRevealSelection()
         if extending {
             withAnimation(style.ease(180)) {
                 if let focusID { selection.insert(focusID) }
@@ -448,6 +448,7 @@ final class Workbench {
             return
         }
         clearSelection()
+        navigator.releaseRevealSelection()
         focusID = id
         if navigator.openTaskID != nil { navigator.openTask(id) }
     }
@@ -474,16 +475,21 @@ final class Workbench {
 
     // MARK: Change log
 
-    /// Records a change in the log and announces it in the tray. An undoable
-    /// change ties its log batch to the Undo entry the caller just registered.
-    /// An `owner` shares the Undo entry's target, so the whole entry leaves the
-    /// stack with `removeAllActions(withTarget:)`.
+    /// Records a change in the log and announces it in the tray, unless
+    /// `showsTray` is off. An undoable change ties its log batch to the Undo
+    /// entry the caller just registered. An `owner` shares the Undo entry's
+    /// target, so the whole entry leaves the stack with `removeAllActions(withTarget:)`.
     func snap(_ label: String, icon: String, tone: TrayTone, ids: [UUID], undoable: Bool = true,
-              destination: TrayDestination? = nil, owner: AnyObject? = nil) {
+              destination: TrayDestination? = nil, owner: AnyObject? = nil, showsTray: Bool = true) {
         let mark = record(label, icon: icon, tone: tone, ids: ids)
         mark.owner = owner
         if undoable { attach(mark, restores: false) }
-        showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
+        if showsTray {
+            showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
+        } else if undoable, tray?.undoable == true {
+            // The tray still up would take this back, not its own change.
+            withAnimation(style.ease(200)) { tray?.undoable = false }
+        }
     }
 
     /// Records and announces a change whose Undo or Redo can fail, like a
