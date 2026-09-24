@@ -74,7 +74,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and search
-  reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
+  reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
+  puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
+  says "Copied “List” as Markdown" in the tray. Open notes are remembered per task on this Mac.
 - Back and Forward, a native extra, return a page to where it was scrolled when it was left:
   each visit in the navigator's history keeps its own offset, which `NXPage` takes on
   appearing. Any other arrival (the sidebar, a link, a new visit from the history) opens the
