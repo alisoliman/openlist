@@ -121,7 +121,8 @@ struct CalendarMonthPicker: View {
     }
 
     private func moveFocus(from day: Date, by amount: Int) -> KeyPress.Result {
-        guard let date = calendar.date(byAdding: .day, value: amount, to: day) else { return .ignored }
+        // Stops at the earliest day, as the disabled days and months before it can't take focus.
+        guard let date = CalendarMonthGrid.day(day, movedBy: amount, earliest: earliest, calendar: calendar) else { return .ignored }
         if !calendar.isDate(date, equalTo: displayedMonth, toGranularity: .month) {
             displayedMonth = monthStart(date)
         }

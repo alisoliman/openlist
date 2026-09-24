@@ -8,55 +8,6 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// The fields a design action can change, captured so Undo can put them back.
-private struct TaskFields {
-    var id: UUID
-    var dueDate: Date?
-    var includesTime: Bool
-    var reminderAt: Date?
-    var isStarred: Bool
-    var priorityRaw: Int
-    var recurrenceData: Data?
-    var labelIDs: [UUID]
-    var selectedForDay: Date?
-    var deferredUntil: Date?
-    var estimate: Int
-
-    init(_ block: Block) {
-        id = block.id
-        dueDate = block.dueDate
-        includesTime = block.includesTime
-        reminderAt = block.reminderAt
-        isStarred = block.isStarred
-        priorityRaw = block.priorityRaw
-        recurrenceData = block.recurrenceData
-        labelIDs = block.labelIDs
-        selectedForDay = block.selectedForDay
-        deferredUntil = block.deferredUntil
-        estimate = block.schedulingEstimateMinutes
-    }
-
-    /// Puts the fields back. Given the fields they replace, it writes only
-    /// those that differ, the ones the step changed, so Undo and Redo leave
-    /// alone whatever else changed in the task meanwhile.
-    func apply(to block: Block, replacing replaced: TaskFields? = nil) {
-        func put<Value: Equatable>(_ field: KeyPath<TaskFields, Value>, _ write: (Value) -> Void) {
-            if replaced.map({ $0[keyPath: field] != self[keyPath: field] }) ?? true { write(self[keyPath: field]) }
-        }
-        put(\.dueDate) { block.dueDate = $0 }
-        put(\.includesTime) { block.includesTime = $0 }
-        put(\.reminderAt) { block.reminderAt = $0 }
-        put(\.isStarred) { block.isStarred = $0 }
-        put(\.priorityRaw) { block.priorityRaw = $0 }
-        put(\.recurrenceData) { block.recurrenceData = $0 }
-        put(\.labelIDs) { block.labelIDs = $0 }
-        put(\.selectedForDay) { block.selectedForDay = $0 }
-        put(\.deferredUntil) { block.deferredUntil = $0 }
-        put(\.estimate) { block.schedulingEstimateMinutes = $0 }
-        block.touch()
-    }
-}
-
 /// A calendar placement, kept by value so Undo and Redo can rebuild a task's set.
 private struct PlacementSpan {
     var start: Date
@@ -91,10 +42,12 @@ extension Workbench {
         if chip { flash(\.freshChip, tasks.map(\.id), for: 700) }
     }
 
-    private func restore(_ fields: [TaskFields], over replaced: [TaskFields]? = nil) {
+    /// Puts back `fields` where they differ from `replaced`, as the step being
+    /// undone or redone left them, so only what the step changed goes back.
+    private func restore(_ fields: [TaskFields], over replaced: [TaskFields]) {
         for field in fields {
             guard let block = store.block(id: field.id) else { continue }
-            field.apply(to: block, replacing: replaced?.first { $0.id == field.id })
+            field.apply(to: block, replacing: replaced.first { $0.id == field.id })
             store.scheduleReminderIfNeeded(for: block)
         }
         store.save()
@@ -288,7 +241,7 @@ extension Workbench {
         guard stored != task.recurrence || (rule != nil && task.dueDate == nil) else { return }
         let label = stored.map { rule in
             "Repeats \(rule.displayText.prefix(1).lowercased() + rule.displayText.dropFirst()) · \(describe([task]))"
-        } ?? "Stopped repeating \(describe([task]))"
+        } ?? "Stopped repeating · \(describe([task]))"
         edit([task], label: label, icon: "repeat", tone: .accent) { task in
             store.setRecurrence(rule, for: task)
         }
@@ -404,8 +357,10 @@ extension Workbench {
         let taskIDs = tasks.map(\.id)
         // A row still in its dwell goes to Trash instead of completing.
         cancelClosing(taskIDs, restoresWork: false)
-        // The Undo the tray offers is on the stack from the start; the rows fly
+        // The Undo the tray offers is on the stack from the start, as a step of
+        // its own after the line or inspector draft saved for it; the rows fly
         // out before the Store writes the trash.
+        separateUndoStep()
         beginTrash(taskIDs, label: "Moved \(describe(tasks)) to Trash")
         selection = []
         focusID = nil
@@ -735,12 +690,14 @@ extension Workbench {
             .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
         let planned = [PlacementSpan(start: start, end: end, isPinned: true)]
         setPlacements(of: id, occurrenceID: occurrenceID, to: planned)
+        // Planning also selects the task for its day when no day is; Undo puts back only what it changed.
+        let placed = store.block(id: id).map { [TaskFields($0)] } ?? fields
         let label = "Planned \(NXFormat.quoted(task.displayTitle)) · \(dayOffset == 0 ? "Today" : NXFormat.dueLabel(start)) \(NXFormat.clock(start))"
         // Both directions rebuild the occurrence's whole placement set, so any
         // number of Undo and Redo steps leaves exactly one set.
         registerUndo(label, undo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: previous)
-            workbench.restore(fields)
+            workbench.restore(fields, over: placed)
             workbench.calendar.replan()
         }, redo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: planned)
@@ -778,10 +735,11 @@ extension Workbench {
         let occurrenceID = reopened.occurrenceID
         let fields = [TaskFields(reopened)]
         setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
+        let placed = store.block(id: id).map { [TaskFields($0)] } ?? fields
         // Grouped with the reopen, so Undo takes the slots back before the task closes again.
         registerUndo("Reopened \(describe([reopened]))", undo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: [])
-            workbench.restore(fields)
+            workbench.restore(fields, over: placed)
             workbench.calendar.replan()
         }, redo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)

@@ -335,4 +335,47 @@ do {
     check(store.matchingLabels(named: "travel").first?.id == created?.id, "Redo brings back the same label")
     check(created.map { store.block(id: task.id)?.labelIDs == [$0.id] } == true, "Redo puts the label back on the task")
 }
+
+// A design action's snapshot Undo and Redo, as the workbench runs them, write
+// back only the fields the step changed: an estimate, label or due date set
+// outside the undo stack meanwhile stays, and a repeat rule round-trips.
+do {
+    let task = store.appendBlock(kind: .task, text: "Water the plants", to: .init(listID: list.id))
+    let monday = Calendar.current.date(byAdding: .day, value: 4, to: Calendar.current.startOfDay(for: .now))!
+    store.setDueDate(monday, for: task)
+    store.setTaskEstimate(30, for: task)
+    let before = TaskFields(task)
+    store.setPriority(.high, for: task)
+    store.setRecurrence(.weekly, for: task)
+    let after = TaskFields(task)
+    let rule = task.recurrenceData
+    // Meanwhile, with no step of their own: the estimate stepper, a label and a date.
+    store.setTaskEstimate(45, for: task)
+    let garden = store.findOrCreateLabel(named: "garden")!
+    store.addLabel(garden, to: task)
+    let friday = Calendar.current.date(byAdding: .day, value: 8, to: monday)!
+    store.setDueDate(friday, for: task)
+    before.apply(to: task, replacing: after)
+    check(task.priority == .none && task.recurrence == nil, "Undo takes back the priority and repeat the step set")
+    check(task.schedulingEstimateMinutes == 45 && task.labelIDs == [garden.id] && task.dueDate == friday,
+          "Undo leaves the estimate, label and date set since")
+    after.apply(to: task, replacing: before)
+    check(task.priority == .high && task.recurrenceData == rule, "Redo puts back the priority and the same repeat rule")
+    check(task.schedulingEstimateMinutes == 45 && task.labelIDs == [garden.id] && task.dueDate == friday,
+          "Redo leaves the estimate, label and date set since")
+
+    // Planning selects a task for its day; its Undo takes back only that.
+    let plant = store.appendBlock(kind: .task, text: "Repot the fern", to: .init(listID: list.id))
+    store.setTaskEstimate(30, for: plant)
+    let unplanned = TaskFields(plant)
+    let start = Calendar.current.date(byAdding: .hour, value: 10, to: monday)!
+    store.setPlacement(for: plant, start: start, end: start.addingTimeInterval(1800), isPinned: true)
+    let placed = TaskFields(plant)
+    check(plant.selectedForDay != nil, "A placement selects an unselected task for its day")
+    store.setTaskEstimate(60, for: plant)
+    unplanned.apply(to: plant, replacing: placed)
+    check(plant.selectedForDay == nil, "Undoing the plan takes back the day it selected")
+    check(plant.schedulingEstimateMinutes == 60, "Undoing the plan leaves an estimate stepped since")
+    store.save()
+}
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

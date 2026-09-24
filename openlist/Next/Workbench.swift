@@ -590,6 +590,17 @@ final class Workbench {
         undoRevision += 1
     }
 
+    /// Closes the window's undo group, which holds everything registered in
+    /// this event, so the change about to be made is a step of its own rather
+    /// than undone with, say, a draft just saved for it. Only right before a
+    /// change that is sure to register: a group left empty stays on the stack.
+    func separateUndoStep() {
+        guard let undoManager, undoManager.groupingLevel > 0,
+              !undoManager.isUndoing, !undoManager.isRedoing else { return }
+        undoManager.endUndoGrouping()
+        undoManager.beginUndoGrouping()
+    }
+
     private func observeUndo() {
         for observer in undoObservers { NotificationCenter.default.removeObserver(observer) }
         undoObservers = []

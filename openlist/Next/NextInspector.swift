@@ -129,19 +129,6 @@ struct NextInspector: View {
                     .padding(.bottom, 20)
                 }
                 .scrollIndicators(.automatic)
-                // Files dropped anywhere on the panel are kept with the task.
-                .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-                    NXTaskFiles(store: env.store).drop(providers, on: task.id)
-                }
-                .overlay {
-                    if dropTargeted {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(style.accent.opacity(0.5), lineWidth: 1)
-                            .background(style.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .padding(6)
-                            .allowsHitTesting(false)
-                    }
-                }
                 .task(id: readyRevealID) {
                     guard readyRevealID != nil, let reveal else { return }
                     await Task.yield()
@@ -161,7 +148,8 @@ struct NextInspector: View {
             HStack(spacing: 6) {
                 Button {
                     // Save what is being typed first, so it goes to Trash, and
-                    // comes back on Undo, with the task and its subtasks.
+                    // comes back on Undo, with the task and its subtasks: the
+                    // trash is a step of its own, which leaves the text alone.
                     NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
                     workbench.trash([task.id])
                 } label: {
@@ -193,6 +181,19 @@ struct NextInspector: View {
         .frame(width: 360)
         .frame(maxHeight: .infinity)
         .background(NX.inspector)
+        // Files dropped anywhere on the panel are kept with the task.
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            NXTaskFiles(store: env.store).drop(providers, on: task.id)
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(style.accent.opacity(0.5), lineWidth: 1)
+                    .background(style.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) }
         .shadow(color: NX.shadowWarm.opacity(0.1), radius: 17, x: -14)
         .contentShape(Rectangle())

@@ -642,6 +642,25 @@ struct NXCustomValue {
     let commit: (String) -> Bool
 }
 
+/// A "Custom…" value being typed under a view, which a sheet's default
+/// button sets before it acts: Return there, or a click on it, would
+/// otherwise act on the value the pill had.
+struct NXPendingCustomValue: Equatable {
+    let id: UUID
+    /// Sets the value typed so far and puts the pill back; false when the
+    /// text isn't one.
+    let commit: () -> Bool
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+}
+
+struct NXPendingCustomValueKey: PreferenceKey {
+    static var defaultValue: NXPendingCustomValue? { nil }
+    static func reduce(value: inout NXPendingCustomValue?, nextValue: () -> NXPendingCustomValue?) {
+        value = value ?? nextValue()
+    }
+}
+
 /// The field a "Custom…" entry opens in place of its pill. Return sets the
 /// value, or beeps when the text isn't one; leaving the field sets a valid
 /// value and closes it; Escape puts the pill back as it was.
@@ -649,6 +668,7 @@ private struct NXCustomValueField: View {
     let custom: NXCustomValue
     /// The text being typed; nil puts the pill back.
     @Binding var text: String?
+    @State private var id = UUID()
 
     var body: some View {
         HStack(spacing: 5) {
@@ -659,11 +679,18 @@ private struct NXCustomValueField: View {
                 Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.48))
             }
         }
+        .preference(key: NXPendingCustomValueKey.self, value: NXPendingCustomValue(id: id, commit: commit))
     }
 
     private func submit() {
-        guard let typed = text else { return }
-        if custom.commit(typed) { text = nil } else { NSSound.beep() }
+        if !commit() { NSSound.beep() }
+    }
+
+    private func commit() -> Bool {
+        guard let typed = text else { return true }
+        guard custom.commit(typed) else { return false }
+        text = nil
+        return true
     }
 
     private func finish() {

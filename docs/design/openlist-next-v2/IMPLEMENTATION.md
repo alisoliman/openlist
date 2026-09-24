@@ -43,10 +43,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   and files kept with the task. As the design, the note shows only when there is one; until
   then a quiet "Add a note" row stands in, with "Attach a file" beside it until the task has
   files, when Files shows. Files dropped anywhere on the panel are attached. The Schedule
-  popover fits its section, up to 510pt, and its date and time controls are Next pills. Native extras on the list page: the "…" options menu, the title renamed
-  in place, the description, cover and nested lists, a drag grip on every line (drops go
-  through `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and
-  search reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
+  popover fits its section, up to 510pt, and its date and time controls are Next pills.
+  Native extras on the list page: the "…" options menu, the title renamed in place, the
+  description, cover and nested lists, a drag grip on every line (drops go through
+  `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and search
+  reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
 - Where the list document departs from the design, to keep native data safe: a done
   top-level task stays in the document while a task under it is open; a line left empty
   goes only when it was new or emptied in its edit and holds nothing but text (Backspace

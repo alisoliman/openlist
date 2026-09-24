@@ -89,6 +89,26 @@ expect(calendar.isDate(nine, inSameDayAs: earliest) && CalendarMonthGrid.minute(
        "A time lands on its own day")
 expect(CalendarMonthGrid.date(earliest, atMinute: 9 * 60, notBefore: earliest, calendar: calendar) == earliest,
        "A time earlier than the earliest becomes the earliest")
+// Arrow keys stop at the earliest day, a cell of its month's grid, and never
+// take focus, or the month shown, before it.
+@MainActor func moved(_ day: Date, _ amount: Int, earliest: Date?) -> Date? {
+    CalendarMonthGrid.day(day, movedBy: amount, earliest: earliest, calendar: calendar)
+}
+let earliestDay = calendar.startOfDay(for: earliest)
+expect(moved(earliestDay, -1, earliest: earliest) == earliestDay, "Left from the earliest day stays on it")
+expect(CalendarMonthGrid.days(in: earliest, calendar: calendar).contains(earliestDay),
+       "The earliest day focus stops at is one of the grid's own cells")
+let monday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 28))!
+expect(moved(monday, -7, earliest: earliest) == earliestDay, "Up past the earliest day stops on it")
+expect(moved(earliestDay, 1, earliest: earliest) == calendar.date(byAdding: .day, value: 1, to: earliestDay),
+       "Right from the earliest day moves on")
+expect(moved(earliestDay, -1, earliest: nil) == calendar.date(byAdding: .day, value: -1, to: earliestDay),
+       "Without an earliest the arrows go back freely")
+let firstOfOctober = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 9))!
+let thirdOfOctober = calendar.date(from: DateComponents(year: 2026, month: 10, day: 3))!
+expect(moved(thirdOfOctober, -7, earliest: firstOfOctober).map {
+    calendar.isDate($0, equalTo: firstOfOctober, toGranularity: .month)
+} == true, "Up from the earliest month's first week stays in that month")
 let later = CalendarMonthGrid.date(earliest, atMinute: 16 * 60, notBefore: earliest, calendar: calendar)
 expect(CalendarMonthGrid.minute(of: later, calendar: calendar) == 960, "A time after the earliest stays as picked")
 // Amsterdam skips 02:00–03:00 on 29 March 2026.

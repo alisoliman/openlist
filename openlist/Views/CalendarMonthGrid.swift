@@ -16,6 +16,14 @@ nonisolated enum CalendarMonthGrid {
         return calendar.startOfDay(for: day) < calendar.startOfDay(for: earliest)
     }
 
+    /// Where the arrow keys take focus from `day`, `amount` days on: never to
+    /// a day before `earliest`, which can't be picked, but to the earliest's own.
+    static func day(_ day: Date, movedBy amount: Int, earliest: Date?, calendar: Calendar) -> Date? {
+        guard let moved = calendar.date(byAdding: .day, value: amount, to: day) else { return nil }
+        guard let earliest, isBefore(moved, earliest: earliest, calendar: calendar) else { return moved }
+        return calendar.startOfDay(for: earliest)
+    }
+
     /// The wall-clock time of `date`, in minutes after midnight.
     static func minute(of date: Date, calendar: Calendar) -> Int {
         let parts = calendar.dateComponents([.hour, .minute], from: date)

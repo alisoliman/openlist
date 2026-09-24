@@ -8,6 +8,8 @@ struct WorkMovePicker: View {
     @State private var date = Date.now
     @State private var changes: [WorkPlanChange] = []
     @State private var feedback: String?
+    /// A start time still being typed as Custom…, which Move sets first.
+    @State private var typedTime: NXPendingCustomValue?
 
     private var calendar: Calendar { env.settings.calendar }
 
@@ -58,9 +60,16 @@ struct WorkMovePicker: View {
         .tint(style.accent)
         .onAppear { date = max(.now, block.start); refresh() }
         .onChange(of: date) { _, _ in refresh() }
+        .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
     }
     private func refresh() { changes = env.calendar.previewMove(block, to: date); feedback = nil }
     private func confirm() {
+        // Return in the time field, or a click here while typing, moves the
+        // work to the time typed, not the one before it.
+        if let typedTime {
+            guard typedTime.commit() else { NSSound.beep(); return }
+            self.typedTime = nil
+        }
         let current = env.calendar.previewMove(block, to: date)
         guard current == changes else { changes = current; feedback = "The plan changed. Review these times before moving."; return }
         env.calendar.move(block: block, to: date)
