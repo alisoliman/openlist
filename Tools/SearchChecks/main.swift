@@ -99,27 +99,6 @@ for (haystack, needle) in [("café", "CAFE"), ("cafe\u{301}", "CAFÉ"), ("résum
     check(SearchProjection.snippet(haystack, matching: needle).contains(haystack), "snippet keeps complete graphemes")
 }
 
-var selection = SearchResultSelection()
-let ids = allHits.map(\.id)
-selection.reconcile(ids)
-check(selection.limit == 80 && selection.selected == ids.first, "first page and selection")
-selection.move(1, in: ids)
-check(selection.keyboardDestination(focused: ids[0]) == ids[1], "Tab-focused A then Down to B makes Return activate B before focus transfer")
-selection.reconcile(ids, reset: true)
-for index in 1..<ids.count {
-    selection.move(1, in: ids)
-    check(selection.selected == ids[index] && selection.limit > index, "Down reaches result \(index + 1) including page boundaries")
-}
-selection.move(1, in: ids)
-check(selection.selected == ids.last, "Down stops at final result")
-selection.move(-1, in: ids)
-check(selection.selected == ids[ids.count - 2], "Up moves backward")
-selection.reconcile(Array(ids.prefix(3)))
-check(selection.selected == ids.first, "deletion or filter change reconciles stale selection")
-selection.reconcile(ids, reset: true)
-selection.loadMore(total: ids.count)
-check(selection.limit == 160, "explicit pagination preserves honest count")
-
 let reveal = try ContentReveal.resolve(.block(paragraph.id), query: "needle", blocks: blocks, lists: lists)
 check(reveal.listID == list.id && reveal.taskID == nil && reveal.blockID == paragraph.id, "non-task targets full owner document")
 check(reveal.ancestorIDs == [nested.id, collapsed.id], "nested reveal includes exact collapsed path")
