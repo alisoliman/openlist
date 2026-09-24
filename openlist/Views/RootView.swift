@@ -131,6 +131,27 @@ struct RootView: View {
             guard env.activeDocument == nil else { return }
             handleGlobalCommand()
         }
+        .onChange(of: env.pendingWidgetRoute, initial: true) { _, route in
+            if let route { openWidgetRoute(route) }
+        }
+    }
+
+    /// Where a widget tap asked to go: Quick Add, or a screen in this window.
+    private func openWidgetRoute(_ route: WidgetRoute) {
+        env.pendingWidgetRoute = nil
+        switch route {
+        case let .capture(listID, forToday):
+            // The Quick Add panel floats over the app in front without activating Openlist.
+            QuickCapturePanel.shared.show(QuickCaptureRequest(listID: listID, plansForToday: forToday,
+                                                              appendsToList: listID != nil))
+            return
+        // The Inbox screen is where triage happens.
+        case .inbox, .triage: env.workbench.go(.inbox)
+        case .today: env.workbench.go(.today)
+        case .calendar: env.workbench.go(.calendar)
+        case .activity: env.workbench.go(.activity)
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private var statusNotices: some View {

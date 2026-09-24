@@ -17,7 +17,7 @@ extension TaskActivityState {
 extension Store {
     /// A fresh reader publishes only committed completion actions, including
     /// after a failed write leaves retryable models in the live context.
-    func activityHeatmap(now: Date = .now, calendar: Calendar = .current) throws -> ActivityHeatmap {
+    func activityHeatmap(now: Date = .now, calendar: Calendar = .current, weeks: Int = 12) throws -> ActivityHeatmap {
         let reader = ModelContext(context.container)
         reader.autosaveEnabled = false
         let events = try reader.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.kindRaw == "completed" }))
@@ -27,7 +27,7 @@ extension Store {
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ActivityHeatmap(completions: events.map {
             ActivityCompletion(event: $0, matchingRecord: $0.change?.completionID.flatMap { byID[$0] })
-        }, now: now, calendar: calendar)
+        }, now: now, calendar: calendar, weeks: weeks)
     }
 
     /// Existing one-way note/star entries must still describe a committed

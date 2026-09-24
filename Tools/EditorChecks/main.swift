@@ -5,7 +5,7 @@ import SwiftUI
 
 // Register the bundled display serif as the app does at launch, before
 // anything resolves the editor's heading font.
-CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: "openlist/Resources/Fonts/InstrumentSerif-Regular.ttf") as CFURL, .process, nil)
+CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: "Shared/Fonts/InstrumentSerif-Regular.ttf") as CFURL, .process, nil)
 
 var checks = 0
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {

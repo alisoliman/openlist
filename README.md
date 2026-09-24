@@ -366,10 +366,15 @@ uses a separate URL scheme. See the [local link and backup/restore contract](doc
 
 ### Widgets
 
-Three macOS widgets — **Today**, **Summary** and **Lists**. The app publishes a small
-JSON snapshot into the shared App Group container and reloads timelines on save;
-the widget never opens the SwiftData store, which keeps cross-process access out
-of the picture entirely.
+Seven macOS widgets — **Today**, **Up Next**, **Quick Add**, **List**, **Agenda**,
+**Summary** and **Activity** — drawn for full colour, dark and the desktop's
+in-background rendering. The app publishes a small JSON snapshot into the shared
+App Group container and reloads timelines when anything they show changes; the
+widget never opens the SwiftData store, which keeps cross-process access out of
+the picture entirely. Ticking a task off, and Up Next's Start, Pause and Done, are
+App Intents: applied at once inside the app, or queued in the container for the
+app when the system runs them in the extension. `Tools/WidgetPreviews/render.sh`
+renders every kind and size from the design's sample data.
 
 ### iCloud
 
@@ -480,7 +485,8 @@ openlist/
                calendar, overlays, settings, Workbench (shared UI state and actions)
   Views/       RootView, document screens, shared pickers
   Design/      Theme
-Shared/        ListAccent, WidgetSnapshot, AppGroup   (app + widget)
+Shared/        ListAccent, WidgetSnapshot, WidgetRoute, WidgetActions,
+               WidgetIntents, AppGroup, Fonts   (app + widget)
 OpenlistWidget/  WidgetKit extension
 MCPTransport/   Local Swift package: authenticated MCP/HTTP transport
 OpenlistMCPHelper/  Bundled native stdio-to-localhost launcher

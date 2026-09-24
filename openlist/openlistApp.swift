@@ -94,7 +94,12 @@ struct openlistApp: App {
                     })
                     .task { env.bootstrap() }
                     .onOpenURL { url in
-                        env.localLinks.receive(url)
+                        // Widget taps have routes of their own; the rest are item links.
+                        if let route = WidgetRoute(url: url) {
+                            env.pendingWidgetRoute = route
+                        } else {
+                            env.localLinks.receive(url)
+                        }
                         NSApplication.shared.activate(ignoringOtherApps: true)
                     }
                     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])

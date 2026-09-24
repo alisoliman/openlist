@@ -12,12 +12,14 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
     var total: Int { days.reduce(0) { $0 + $1.count } }
     var unclassifiedCount: Int { days.reduce(invalidDateCount) { $0 + $1.unclassifiedCount } }
 
-    init(completions: [ActivityCompletion], now: Date = .now, calendar: Calendar = .current) {
+    /// `weeks` whole weeks, the last one today's: the Activity screen shows 12,
+    /// the medium Activity widget 21.
+    init(completions: [ActivityCompletion], now: Date = .now, calendar: Calendar = .current, weeks: Int = 12) {
         self.calendar = calendar
         let today = calendar.startOfDay(for: now)
         let weekdayOffset = (calendar.component(.weekday, from: today) - calendar.firstWeekday + 7) % 7
         let weekStart = calendar.date(byAdding: .day, value: -weekdayOffset, to: today)!
-        let firstDay = calendar.date(byAdding: .day, value: -77, to: weekStart)!
+        let firstDay = calendar.date(byAdding: .day, value: -7 * (max(1, weeks) - 1), to: weekStart)!
         var dates: [Date] = []
         var next = firstDay
         while next <= today {

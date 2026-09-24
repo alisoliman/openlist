@@ -7,7 +7,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - `openlist/Next/` holds the redesigned UI. Existing views remain for features the
   design doesn't cover (document editor, sheets for list move etc.).
 - `NextTheme` — tokens (paper #FCFBFA, sidebar #F1EEEA, inspector #F7F5F2, ink #17161A,
-  semantic colours), Instrument Serif (bundled, `Resources/Fonts`), density, motion.
+  semantic colours), Instrument Serif (bundled, `Shared/Fonts`, so the widget has it too), density, motion.
 - `Workbench` (@Observable, on AppEnvironment) — design interaction state: keyboard focus,
   visible order, completion dwell (`closing`), fresh/restored/flying rows, sidebar pulse,
   tray, session change log, inbox triage (kept/reviewed), G-prefix.

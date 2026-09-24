@@ -108,7 +108,10 @@ extension Workbench {
         else { complete(tasks.filter { !$0.isCompleted }.map(\.id)) }
     }
 
-    func complete(_ ids: [UUID]) {
+    /// `settleNow` writes the completion without the dwell, for a tick made
+    /// outside the window, like a widget's, whose reload must already see the
+    /// task done. `date` is when the tick was made.
+    func complete(_ ids: [UUID], settleNow: Bool = false, at date: Date? = nil, clearsSelection: Bool = true) {
         let candidates = tasks(ids).filter { !$0.isCompleted && closing[$0.id] == nil }
         guard !candidates.isEmpty else { return }
         let rolls = candidates.filter { $0.recurrence != nil }
@@ -123,13 +126,13 @@ extension Workbench {
         if let paused = calendar.resumeTaskID, candidates.contains(where: { $0.id == paused }) {
             calendar.dismissResume()
         }
-        beginClosing(candidates, resuming: resume) {
+        beginClosing(candidates, resuming: resume, settleNow: settleNow, at: date) {
             if candidates.count > 1 { return "\(candidates.count) tasks done" }
             if rolls.isEmpty { return describe(candidates) + " done" }
             return "\(NXFormat.quoted(rolls[0].displayTitle)) rolls to \(NXFormat.dueLabel(rolls[0].dueDate))"
         }
         if !rolls.isEmpty { flash(\.freshChip, rolls.map(\.id), for: 900) }
-        selection = []
+        if clearsSelection { selection = [] }
     }
 
     func reopen(_ id: UUID) { reopen([id]) }
