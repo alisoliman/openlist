@@ -675,7 +675,7 @@ struct NXTaskMenu: View {
         Button("Star", systemImage: "star") { workbench.star(ids) }
         Menu("Move to") {
             ForEach(library.lists, id: \.id) { list in
-                Button("\(list.glyph) \(list.displayTitle)") { workbench.move(ids, to: list.id) }
+                NXListMenuButton(list: list) { workbench.move(ids, to: list.id) }
             }
         }
         Divider()

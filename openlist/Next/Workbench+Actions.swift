@@ -102,14 +102,23 @@ extension Workbench {
         else { complete([id]) }
     }
 
-    /// Task › Complete / Reopen (⌘D): reopens the tasks when every one is done,
-    /// else completes the open ones. E only completes, as in the design.
+    /// Task › Mark as Done / Reopen (⌘D): reopens the tasks when every one is
+    /// done or closing, taking the closing ones back as the row menu's Reopen
+    /// does, else completes the open ones. E only completes, as in the design.
     func toggleCompletion(_ ids: [UUID]) {
         let tasks = tasks(ids)
         guard !tasks.isEmpty else { return }
-        if tasks.allSatisfy(\.isCompleted) { reopen(tasks.map(\.id)) }
-        else { complete(tasks.filter { !$0.isCompleted }.map(\.id)) }
+        if tasks.allSatisfy(isDoneOrClosing) {
+            let pending = tasks.filter { closing[$0.id] != nil }.map(\.id)
+            if !pending.isEmpty { cancelClosing(pending) }
+            reopen(tasks.filter(\.isCompleted).map(\.id))
+        } else {
+            complete(tasks.filter { !$0.isCompleted }.map(\.id))
+        }
     }
+
+    /// Whether a task counts as done for Reopen: completed, or in its dwell.
+    func isDoneOrClosing(_ task: Block) -> Bool { task.isCompleted || closing[task.id] != nil }
 
     /// Completes `ids` and their open subtasks, which close with them, as the
     /// design's complete does. `settleNow` writes the completion without the

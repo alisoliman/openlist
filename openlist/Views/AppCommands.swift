@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 
 /// Context-aware macOS commands; capture is available from every screen.
@@ -12,18 +13,20 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
-        // Each Task item reads the same targets, so resolve them once per update.
-        // Only a single target is fetched; RootView resolves the rest on use.
+        // Each Task item reads the same targets, so resolve them once per update:
+        // a single target on its own, more in one fetch, for the titles.
         let targets = taskTargetIDs
         let single = singleTask(among: targets)
+        let tasks = targets.count == 1 ? (single.map { [$0] } ?? []) : fetchTasks(targets)
+        let reopens = !tasks.isEmpty && tasks.allSatisfy(env.workbench.isDoneOrClosing)
+        let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
 
         CommandMenu("Work") {
             Button("Show Work") { env.calendar.showWork() }
-            Button("Start Selected Task") {
-                if let task = workTask(singleTask(among: taskTargetIDs)) {
-                    env.calendar.requestWork(WorkTaskReference(task))
-                }
-            }.disabled(workTask(single) == nil)
+            // As Task ▸ Start Working, the palette's and the row menu's: the
+            // notch shows the work, and a failure the tray.
+            Button("Start Selected Task") { act { env.workbench.startWork($0[0]) } }
+                .disabled(workTask(single) == nil)
             Divider()
             // As the notch's ✕ and ✓: the Stopped tray, or the dwell and the
             // done tray with Undo, and the panel goes with them.
@@ -121,7 +124,7 @@ struct AppCommands: Commands {
         // single keys (E, T, M, P, F, D) stay off the menu, since a menu key
         // equivalent would fire while typing; ⌘/ lists them.
         CommandMenu("Task") {
-            Button(single?.isCompleted == true ? "Reopen" : "Mark as Done") { env.send(.toggleCompletion) }
+            Button(reopens ? "Reopen" : "Mark as Done") { env.send(.toggleCompletion) }
                 .keyboardShortcut("d", modifiers: .command)
                 .disabled(targets.isEmpty)
             Button("Open Details") { env.send(.openDetails) }
@@ -160,14 +163,14 @@ struct AppCommands: Commands {
             Button("Clear Labels") { env.send(.clearLabels) }
                 .keyboardShortcut("l", modifiers: [.control, .shift])
                 .disabled(targets.isEmpty)
-            Button(single?.isStarred == true ? "Unstar" : "Star") { env.send(.toggleStar) }
+            Button(unstars ? "Unstar" : "Star") { env.send(.toggleStar) }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
                 .disabled(targets.isEmpty)
             Menu("Move to") {
-                // Only fetched while there is something to move.
+                // The lists the window last drew, only while there is something to move.
                 if !targets.isEmpty {
-                    ForEach(moveDestinations, id: \.id) { list in
-                        Button("\(list.glyph) \(list.displayTitle)") { act { env.workbench.move($0, to: list.id) } }
+                    ForEach(env.workbench.drawnLists, id: \.id) { list in
+                        NXListMenuButton(list: list) { act { env.workbench.move($0, to: list.id) } }
                     }
                 }
             }
@@ -228,16 +231,20 @@ struct AppCommands: Commands {
         }
     }
 
-    /// What the Task menu acts on, only while the main window is key. A
-    /// document editor that has claimed commands keeps its single selected
-    /// task; the Next screens use the workbench targets (selection, focused
-    /// row, inspected task) that `RootView.handleGlobalCommand` runs on.
+    /// What the Task menu acts on, only while the main window is key: the
+    /// tasks the commands it sends would reach. The Next screens run them on
+    /// the workbench targets (selection, focused row, inspected task), as
+    /// `RootView.handleGlobalCommand` does; a list document on its own, the
+    /// line being written first; a legacy task page on its single selection.
     private var taskTargetIDs: [UUID] {
         guard env.isMainWindowKey, !env.workbench.captureOpen, !env.navigator.isCommandPaletteOpen,
               !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return [] }
-        // The Next list documents act on the workbench's targets too; a
-        // legacy task page on its own selection.
-        guard env.activeDocument?.rootBlockID != nil else { return env.workbench.targetIDs }
+        guard let active = env.activeDocument else { return env.workbench.targetIDs }
+        if active.rootBlockID == nil {
+            // Only the document that claimed them runs the commands.
+            guard let document = env.workbench.document, document.document == active else { return [] }
+            return document.commandTaskIDs
+        }
         guard env.navigator.selection.count == 1, let id = env.navigator.selection.first,
               env.store.block(id: id)?.isTask == true else { return [] }
         return [id]
@@ -254,19 +261,21 @@ struct AppCommands: Commands {
         task.flatMap { env.calendar.validWorkTask(WorkTaskReference($0)) }
     }
 
-    /// Runs a Workbench action on the targets as they are when the item is
-    /// chosen, after the list document's line being written, as its own step.
-    private func act(_ body: ([UUID]) -> Void) {
-        let ids = env.workbench.tasks(taskTargetIDs).map(\.id)
-        guard !ids.isEmpty else { return }
-        env.workbench.document?.commitLine()
-        body(ids)
+    /// The target tasks in one fetch.
+    private func fetchTasks(_ ids: [UUID]) -> [Block] {
+        guard !ids.isEmpty else { return [] }
+        let descriptor = FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) && $0.trashID == nil })
+        return ((try? env.store.context.fetch(descriptor)) ?? []).filter(\.isTask)
     }
 
-    /// The lists Move to offers, in the sidebar's order, as the row menu's.
-    private var moveDestinations: [TaskList] {
-        NextLibrary(lists: env.store.allLists(includeArchived: true), sections: env.store.allSections(),
-                    labels: [], tasks: []).lists
+    /// Runs a Workbench action on the targets as they are when the item is
+    /// chosen, after the list document's line being written, as its own step:
+    /// the order a command the document receives runs in.
+    private func act(_ body: ([UUID]) -> Void) {
+        env.workbench.document?.commitLine()
+        let ids = env.workbench.tasks(taskTargetIDs).map(\.id)
+        guard !ids.isEmpty else { return }
+        body(ids)
     }
 
     private var hasBlockSelection: Bool {

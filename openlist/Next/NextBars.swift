@@ -253,9 +253,9 @@ struct NXBottomBars: View {
         let hasSelection = !NXSelectionBar.selected(workbench).isEmpty
         ZStack {
             if hasSelection && !env.navigator.isCommandPaletteOpen {
-                NXSelectionBar().transition(Self.barTransition)
+                NXSelectionBar().transition(style.slide(Self.barTransition))
             } else if let tray = workbench.tray, !hasSelection {
-                NXTray(message: tray).transition(Self.barTransition)
+                NXTray(message: tray).transition(style.slide(Self.barTransition))
             }
         }
         .animation(style.ease(220), value: hasSelection)

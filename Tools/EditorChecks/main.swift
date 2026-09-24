@@ -598,6 +598,23 @@ pageEditor.receiveCommand()
 check(outlineEnv.pendingCommand == .clearDueDate && firstSubtask.dueDate != nil, "Only the active document runs menu commands")
 outlineEnv.pendingCommand = nil
 
+// The Task menu reads the tasks a command sent now would reach.
+check(pageEditor.commandTaskIDs == [firstSubtask.id], "The menu's targets are the task holding the caret")
+let menuNote = store.insertChild(kind: .paragraph, text: "A text line", of: pageTask, at: .last)
+let menuElsewhere = store.createList(title: "Menu targets elsewhere")
+let menuOtherTask = store.appendBlock(kind: .task, text: "Another list's task", to: DocumentContext(listID: menuElsewhere.id))
+store.save()
+pageEditor.hooks.commandTargets = { [secondSubtask.id] }
+pageEditor.actions(for: outlineRow(menuNote, in: pageEditor)).onFocus()
+check(pageEditor.commandTaskIDs.isEmpty, "A text line holding the caret leaves the menu no task, whatever the host targets")
+pageEditor.actions(for: outlineRow(menuNote, in: pageEditor)).onEscape()
+check(pageEditor.commandTaskIDs == [secondSubtask.id], "With no caret, the menu reads the host's targets")
+pageEditor.hooks.commandTargets = { [menuOtherTask.id] }
+check(pageEditor.commandTaskIDs.isEmpty, "The host's targets count only in the document's list")
+pageEditor.hooks.commandTargets = { [] }
+store.deleteBlock(menuNote)
+store.save()
+
 // Completion visibility is the host's to decide.
 pageEditor.showsCompleted = false
 check(!pageRows().contains { $0.id == secondSubtask.id }, "Hidden completed tasks leave the visible rows")

@@ -20,7 +20,7 @@ struct NextShell: View {
     @State private var sidebarFrame: CGRect = .zero
 
     var body: some View {
-        let library = NextLibrary(lists: allLists, sections: sections, labels: labels, tasks: tasks)
+        let library = drawnLibrary()
         let style = env.workbench.style
         let showsSidebar = env.workbench.showsSidebar
         let revealedDocuments = overlays.revealedDocuments.filter { env.navigator.listViewMode(for: $0) == .document }
@@ -57,6 +57,14 @@ struct NextShell: View {
             settleRevealedLists()
         }
         .onChange(of: revealedDocuments) { settleRevealedLists() }
+    }
+
+    /// The library the window draws, its lists left on the workbench for
+    /// Task ▸ Move to. Untracked there, so the write doesn't draw again.
+    private func drawnLibrary() -> NextLibrary {
+        let library = NextLibrary(lists: allLists, sections: sections, labels: labels, tasks: tasks)
+        env.workbench.drawnLists = library.lists
+        return library
     }
 
     /// A search result shows a task list as a document to reveal a note in it.
@@ -124,7 +132,7 @@ private struct NextMain: View {
             ZStack(alignment: .topTrailing) {
                 if let inspected {
                     NextInspector(task: inspected)
-                        .transition(.move(edge: .trailing))
+                        .transition(style.slide(.move(edge: .trailing)))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)

@@ -24,13 +24,20 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   through `env.presentTaskCapture()`, which opens the workbench capture
   (`workbench.openCapture`), so menu commands keep working.
 - The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
-  and runs the Workbench's actions; its key equivalents all carry a modifier (⌘D Mark as
-  Done or Reopen, ⌃T/⌃M due today/tomorrow, ⇧⌘S Star), since a bare letter would fire while
-  typing. Help ▸ Keyboard Shortcuts (⌘/) lists the design's single keys with the keys the
-  list document and menus handle. Work ▸ Stop and Complete run `workbench.stopWork` and
-  `finishWork`, as the notch's ✕ and ✓ do.
-- Too narrow for the whole toolbar, the crumb truncates first, then the Undo label, which
-  at last leaves only its icon; Actions and New task keep their labels.
+  and runs the Workbench's actions on the tasks its commands reach (in a list document the
+  line being written, else the workbench targets in that list); its titles read every
+  target, as the row menu's do. Its key equivalents all carry a modifier, since a bare letter
+  would fire while typing: ⌘D Mark as Done or Reopen (kept as the one key that completes a
+  task while its line is being written), ⌃T/⌃M due today/tomorrow, ⇧⌘S Star. Help ▸
+  Keyboard Shortcuts (⌘/) lists the design's single keys with the keys the list document
+  and menus handle. Work ▸ Start Selected Task, Stop and Complete run `workbench.startWork`,
+  `stopWork` and `finishWork`, as Task ▸ Start Working and the notch's ✕ and ✓ do.
+- Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
+  then the Undo label, which at last leaves only its icon; Actions and New task keep their
+  labels.
+- Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
+  bars and the overlay cards in rather than sliding them, as its hint says, where the design
+  only shortens the slides.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the

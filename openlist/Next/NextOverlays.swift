@@ -127,6 +127,8 @@ private struct NXOverlayBackdrop<Card: View>: View {
     @State private var shown = false
 
     var body: some View {
+        // The design's popIn; with Reduce Motion the card only fades.
+        let settled = shown || !style.slides
         ZStack(alignment: .top) {
             Color(hex: 0x17161A, opacity: 0.16)
                 .contentShape(Rectangle())
@@ -135,8 +137,8 @@ private struct NXOverlayBackdrop<Card: View>: View {
                 .nxOverlayCard()
                 .padding(.horizontal, 20)
                 .padding(.top, top)
-                .scaleEffect(shown ? 1 : 0.97, anchor: .top)
-                .offset(y: shown ? 0 : -6)
+                .scaleEffect(settled ? 1 : 0.97, anchor: .top)
+                .offset(y: settled ? 0 : -6)
                 .opacity(shown ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
