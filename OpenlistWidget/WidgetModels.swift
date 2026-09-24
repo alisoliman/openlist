@@ -47,9 +47,22 @@ struct WidgetClock {
         return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
 
-    /// Hours since the start of `day`, fractional.
+    /// `date`'s wall-clock hour on `day`, fractional, as the Agenda's hour
+    /// labels read it: 10:40 is 10.67 on a day the clocks change too, where
+    /// the time since midnight is an hour more or less. Past midnight it goes
+    /// on counting, 24 and up.
     func hours(_ date: Date, on day: Date) -> Double {
-        date.timeIntervalSince(day) / 3600
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: day), to: calendar.startOfDay(for: date)).day ?? 0
+        let time = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let seconds = Double(time.second ?? 0) + Double(time.nanosecond ?? 0) / 1_000_000_000
+        return Double(24 * days + (time.hour ?? 0)) + Double(time.minute ?? 0) / 60 + seconds / 3600
+    }
+
+    /// The moment `hour` reads on the clock on `day`, the inverse of `hours`.
+    func date(hour: Double, on day: Date) -> Date {
+        let minutes = Int((hour * 60).rounded())
+        return calendar.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: day)
+            ?? calendar.startOfDay(for: day).addingTimeInterval(hour * 3600)
     }
 
     var nowHours: Double { hours(now, on: today) }
@@ -347,9 +360,12 @@ struct CaptureModel: Equatable {
     var count: Int
     var items: [Item]
 
+    /// The Inbox items medium Quick Add lists.
+    static let shown = 4
+
     init(_ snapshot: WidgetSnapshot, clock: WidgetClock) {
         count = snapshot.inboxCount
-        items = snapshot.inboxItems.prefix(4).map {
+        items = snapshot.inboxItems.prefix(Self.shown).map {
             Item(id: $0.id, title: $0.title.isEmpty ? "Untitled task" : $0.title, age: Self.age($0.createdAt, now: clock.now))
         }
     }
@@ -360,6 +376,26 @@ struct CaptureModel: Equatable {
         if minutes < 60 { return "\(max(1, minutes))m" }
         if minutes < 24 * 60 { return "\(minutes / 60)h" }
         return "\(minutes / (24 * 60))d"
+    }
+
+    /// When an age shown reads differently in the day after `now`, for the
+    /// timeline's entries: each minute of the newest item's first hour (an
+    /// older item's minutes move up to a minute late), then each item's own
+    /// hours and its next day.
+    static func ageChanges(_ snapshot: WidgetSnapshot, after now: Date) -> [Date] {
+        let created = snapshot.inboxItems.prefix(shown).map(\.createdAt)
+        let end = now.addingTimeInterval(86_400)
+        var dates: Set<Date> = []
+        if let newest = created.max() {
+            // "1m" holds for the first two minutes.
+            for minute in 2..<60 { dates.insert(newest.addingTimeInterval(Double(minute) * 60)) }
+        }
+        for date in created {
+            for hour in 1..<24 { dates.insert(date.addingTimeInterval(Double(hour) * 3600)) }
+            let days = max(1, Int(now.timeIntervalSince(date) / 86_400) + 1)
+            dates.insert(date.addingTimeInterval(Double(days) * 86_400))
+        }
+        return dates.filter { $0 > now && $0 < end }.sorted()
     }
 }
 
@@ -480,7 +516,7 @@ struct AgendaModel: Equatable {
         var id: String
         var title: String
         var timeText: String
-        /// Hours since the day's start.
+        /// Wall-clock hours on the item's day.
         var start: Double
         var end: Double
         var isMeeting: Bool

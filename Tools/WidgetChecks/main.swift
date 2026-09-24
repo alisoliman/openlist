@@ -213,6 +213,37 @@ let capture = CaptureModel(design, clock: clock)
 check(capture.count == 6 && capture.items.map(\.age) == ["2h", "5h", "1d", "2d"], "Quick Add: 6 waiting, the newest four with ages")
 check(CaptureModel.age(WidgetSampleData.referenceDate.addingTimeInterval(-20), now: WidgetSampleData.referenceDate) == "1m", "A fresh capture reads 1m")
 
+// Quick Add's timeline has an entry wherever an age shown moves on, so none stays behind.
+let captureStart = WidgetSampleData.referenceDate
+var captured = design
+let capturedAges: [(TimeInterval, String)] = [(20, "Just now"), (1_807, "Half an hour ago"), (18_011, "This morning"), (183_600, "Two days ago")]
+captured.inboxItems = capturedAges.map { age, title in
+    WidgetSnapshot.InboxItem(id: UUID(), title: title, createdAt: captureStart.addingTimeInterval(-age))
+}
+let ageEntries = [captureStart] + CaptureModel.ageChanges(captured, after: captureStart)
+check(ageEntries == ageEntries.sorted() && Set(ageEntries).count == ageEntries.count && ageEntries.count < 200
+      && ageEntries.last! < captureStart.addingTimeInterval(86_400), "Age entries run in order through the day ahead: \(ageEntries.count)")
+check(ageEntries[1] == captureStart.addingTimeInterval(100) && ageEntries.contains(captureStart.addingTimeInterval(3_580)),
+      "A fresh capture moves to 2m two minutes in, and to 1h at the hour")
+var newestBehind: Date?
+var ageLag: TimeInterval = 0
+var behindSince: Date?
+var ageEntry = 0
+for step in stride(from: 0.0, to: 86_400, by: 5) {
+    let moment = captureStart.addingTimeInterval(step)
+    while ageEntry + 1 < ageEntries.count, ageEntries[ageEntry + 1] <= moment { ageEntry += 1 }
+    let drawn = CaptureModel(captured, clock: clockAt(ageEntries[ageEntry])).items.map(\.age)
+    let exact = CaptureModel(captured, clock: clockAt(moment)).items.map(\.age)
+    if drawn[0] != exact[0], newestBehind == nil { newestBehind = moment }
+    behindSince = drawn == exact ? nil : behindSince ?? moment
+    if let behindSince { ageLag = max(ageLag, moment.timeIntervalSince(behindSince)) }
+}
+check(newestBehind == nil, "The newest capture's age is never behind: at \(String(describing: newestBehind))")
+check(ageLag < 60, "Older ages are at most a minute behind: \(ageLag)s")
+var emptyInbox = design
+emptyInbox.inboxItems = []
+check(CaptureModel.ageChanges(emptyInbox, after: captureStart).isEmpty, "An empty Inbox has no ages to move on")
+
 let summary = SummaryModel(design, clock: clock)
 check([summary.due, summary.overdue, summary.inbox, summary.done] == [4, 3, 6, 2], "Summary: 4, 3, 6, 2")
 check(summary.week.map(\.day) == ["M", "T", "W", "T", "F", "S", "S"] && summary.week[2].isToday, "The week runs Monday to Sunday")
@@ -243,6 +274,78 @@ check(AgendaModel(session, clock: clock).week[1].items.first { $0.title == "Clos
       "A done slot shows done")
 let across = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(6 * 86_400))
 check(AgendaModel(design, clock: across).range == "28 September – 4 October", "A week across months names both")
+check(clock.hours(WidgetSampleData.referenceDate.addingTimeInterval(15 * 3_600), on: clock.today) == 25 + 40.0 / 60,
+      "Past midnight the hours go on counting")
+
+// On the days the clocks change, blocks and the now line keep to the hour labels.
+var amsterdam = Calendar(identifier: .gregorian)
+amsterdam.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+for (month, day, change) in [(3, 29, "go forward"), (10, 25, "go back")] {
+    let moment = amsterdam.date(from: DateComponents(year: 2026, month: month, day: day, hour: 10, minute: 40))!
+    let changeDay = WidgetClock(now: moment, firstWeekday: WidgetSampleData.firstWeekday, calendar: amsterdam, locale: english)
+    check(abs(changeDay.nowHours - (10 + 40.0 / 60)) < 0.0001, "10:40 is 10.67 on the day the clocks \(change)")
+    let block = AgendaModel(WidgetSampleData.snapshot(now: moment, calendar: amsterdam), clock: changeDay)
+        .today.items.first { $0.title == "Draft Q3 OKRs" }!
+    check(block.start == 10 && block.end == 11.5 && block.timeText == "10:00–11:30", "and 10:00–11:30 sits at 10 to 11.5")
+}
+
+// The gallery's sample week is the week today falls in: today with the design's
+// Wednesday, the other days their own weekday's meetings, and planned slots on
+// their tasks' due days.
+func sampleAgenda(_ day: Int) -> (clock: WidgetClock, agenda: AgendaModel) {
+    let at = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(Double(day - 23) * 86_400))
+    return (at, AgendaModel(WidgetSampleData.snapshot(now: at.now), clock: at))
+}
+func meetings(_ agenda: AgendaModel) -> [[String]] { agenda.week.map { $0.items.filter(\.isMeeting).map(\.title) } }
+func slots(_ agenda: AgendaModel, _ column: Int) -> [String] {
+    agenda.week[column].items.filter { !$0.isMeeting }.map { "\($0.title) \($0.timeText)" }
+}
+let designWeek = meetings(agenda)
+check(designWeek[5] == ["Pottery class"] && designWeek[6].isEmpty && designWeek.prefix(5).allSatisfy { $0.first == "Standup" },
+      "The design's week: a standup every weekday, pottery on Saturday")
+check(slots(agenda, 1) == ["Close out Q2 retro actions 14:00–14:30"] && slots(agenda, 3) == ["Review hiring budget with Sam 13:00–13:45"]
+      && slots(agenda, 4) == ["Prep board update slides 10:00–11:00"], "The design's slots around its Wednesday, where it has them")
+let thursday = sampleAgenda(24)
+check(meetings(thursday.agenda) == [designWeek[0], designWeek[1], designWeek[3], designWeek[2], designWeek[4], designWeek[5], designWeek[6]]
+      && thursday.agenda.week[3].isToday, "On a Thursday the design's Wednesday is today, and Monday still starts the week")
+check(thursday.agenda.daySubtitle == "Thu 24 · 4 meetings · 5 planned", "Today has the design's plan")
+check(slots(thursday.agenda, 2) == ["Close out Q2 retro actions 14:00–14:30"]
+      && slots(thursday.agenda, 4) == ["Review hiring budget with Sam 13:00–13:45"]
+      && slots(thursday.agenda, 5) == ["Prep board update slides 11:30–12:30"],
+      "Slots keep their days from today, one moved past Saturday's pottery")
+let tuesday = sampleAgenda(22)
+check(meetings(tuesday.agenda) == [designWeek[0], designWeek[2], designWeek[1], designWeek[3], designWeek[4], designWeek[5], designWeek[6]]
+      && slots(tuesday.agenda, 3) == ["Prep board update slides 12:00–13:00"], "On a Tuesday a slot starts as Thursday's offsite ends")
+let saturday = sampleAgenda(26)
+check(meetings(saturday.agenda) == [designWeek[0], designWeek[1], designWeek[2], designWeek[3], designWeek[4], designWeek[2], designWeek[6]],
+      "On a Saturday the weekdays keep their own meetings")
+let sunday = sampleAgenda(27)
+check(meetings(sunday.agenda) == [designWeek[0], designWeek[1], designWeek[2], designWeek[3], designWeek[4], designWeek[5], designWeek[2]]
+      && slots(sunday.agenda, 5) == ["Close out Q2 retro actions 14:00–14:30"] && slots(sunday.agenda, 6).count == 5,
+      "On a Sunday too, pottery still on Saturday")
+let monday = sampleAgenda(21)
+check(meetings(monday.agenda) == [designWeek[2], designWeek[1], designWeek[0], designWeek[3], designWeek[4], designWeek[5], designWeek[6]],
+      "On a Monday, Monday's own meetings move to Wednesday")
+for date in 21...27 {
+    let (at, week) = sampleAgenda(date)
+    let due = Dictionary(WidgetSampleData.snapshot(now: at.now).lists.flatMap(\.openItems).compactMap { item in
+        item.dueDate.map { (item.title, at.calendar.startOfDay(for: $0)) }
+    }, uniquingKeysWith: { first, _ in first })
+    check(meetings(week).prefix(5).allSatisfy { $0.first == "Standup" }, "A standup every weekday, on the \(date)th too")
+    for day in week.week {
+        for slot in day.items where !slot.isMeeting {
+            check(due[slot.title].map { $0 < at.today || $0 == day.day } ?? true, "\(slot.title) sits on its due day, on the \(date)th")
+            check(!day.items.contains { $0.isMeeting && $0.start < slot.end && slot.start < $0.end }, "\(slot.title) clears the meetings")
+        }
+    }
+}
+let thursdaySample = WidgetSampleData.snapshot(now: thursday.clock.now)
+let thursdayActivity = ActivityModel(thursdaySample, clock: thursday.clock, weeks: 21)
+check(thursdayActivity.todayIndex == 3 && thursdayActivity.weeks[20][3] == 2 && thursdayActivity.weeks[20][4] == nil
+      && Array(thursdayActivity.weeks.prefix(20)) == Array(activity.weeks.prefix(20)), "The heatmap keeps the design's weeks, today on Thursday")
+let thursdayBars = SummaryModel(thursdaySample, clock: thursday.clock).week.map(\.count)
+check(thursdayBars.prefix(2) == [0, 0] && thursdayBars[3] == 2 && thursdayBars.suffix(3) == [nil, nil, nil],
+      "Summary's bars fall on their own days")
 
 // MARK: Emoji
 

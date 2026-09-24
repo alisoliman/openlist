@@ -56,7 +56,7 @@ enum OpenlistWidgetKind: String, CaseIterable, Sendable {
     var cadence: WidgetCadence {
         switch self {
         case .today, .list, .summary, .activity: .daily
-        case .capture: .hourly
+        case .capture: .inboxAges
         case .agenda: .quarterHourly
         case .upNext: .upNext
         }

@@ -120,4 +120,37 @@ check(crowded.count == 65 && pushed.count == 66 && pushed.last?.id == list.id, "
 check(pushed.first { $0.id == beta.id }?.openItems.map(\.title) == ["Plan offsite"],
       "A later section's list keeps its place and rows after a new list is made")
 
+// However much is overdue, Today still gets today's and tomorrow's rows: large
+// Today draws its Due today section under at most three overdue ones.
+let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+let behind = store.createList(title: "Behind")
+for index in 0..<45 {
+    let late = Block(kind: .task, text: "Late \(index)", listID: behind.id, sortIndex: Double(index))
+    late.dueDate = Calendar.current.date(byAdding: .day, value: -2 - index, to: today)
+    store.context.insert(late)
+}
+// Tomorrow's two tie on day and priority: Next E was captured first, and the
+// two ties after them were captured at once.
+let captured = Date.now
+var exactTies: [Block] = []
+for (index, title) in ["Due A", "Due B", "Due C", "Next D", "Next E", "Tie F", "Tie G"].enumerated() {
+    let due = Block(kind: .task, text: title, listID: behind.id, sortIndex: Double(100 + index))
+    due.dueDate = index < 3 ? today : tomorrow
+    due.createdAt = captured.addingTimeInterval(title == "Next E" ? -60 : index < 5 ? 0 : 60)
+    if index >= 5 { exactTies.append(due) }
+    store.context.insert(due)
+}
+store.save()
+let crowdedToday = publisher.buildSnapshot().todayItems
+func titles(_ day: (Date) -> Bool) -> [String] { crowdedToday.filter { day(Calendar.current.startOfDay(for: $0.dueDate!)) }.map(\.title) }
+let lateTitles = titles { $0 < today }
+check(lateTitles.count == WidgetSnapshotPublisher.todayRows.overdue && lateTitles.first == "Late 44",
+      "The oldest overdue rows come first, up to their own cap: \(lateTitles)")
+check(Set(["Due A", "Due B", "Due C"]).isSubset(of: titles { $0 == today }), "Today's rows come however much is overdue")
+let tieOrder = exactTies.sorted { $0.id.uuidString < $1.id.uuidString }.map(\.text)
+check(titles { $0 == tomorrow } == ["Next E", "Next D"] + tieOrder,
+      "and tomorrow's, for entries after midnight, in capture order and then one fixed order")
+check((0..<5).allSatisfy { _ in publisher.buildSnapshot().todayItems == crowdedToday }, "Each rebuild gives the same rows")
+check(crowdedToday.map(\.title) == lateTitles + titles { $0 == today } + titles { $0 == tomorrow }, "Overdue, then today, then tomorrow")
+
 print("Passed \(checks) widget publisher checks")
