@@ -188,29 +188,198 @@ struct NXInspectorPlanOptions: View {
 
 // MARK: - Subtasks
 
-/// The task's own outline, drawn by the same editor a list uses.
+/// The task's subtasks as the design lists them: every task under it, in
+/// document order and indented by depth, with their progress. Rows tick and
+/// open from here; Add subtask writes the new line in the list's document.
 struct NXInspectorSubtasks: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     let task: Block
+    @Query private var blocks: [Block]
+
+    init(task: Block) {
+        self.task = task
+        _blocks = OutlineEditor.blocksQuery(for: DocumentContext(listID: task.listID ?? UUID()))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            NXInspectorHeading(title: "Subtasks") {
-                if let progress = env.store.subtaskProgress(for: task) {
-                    SubtaskProgressChip(done: progress.done, total: progress.total)
+        let workbench = env.workbench
+        let rows = Self.subtasks(of: task.id, in: blocks)
+        let done = rows.filter { $0.block.isCompleted || workbench.closing[$0.id] != nil }.count
+        let fraction = rows.isEmpty ? 0 : CGFloat(done) / CGFloat(rows.count)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text("Subtasks")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .kerning(0.735)
+                    .textCase(.uppercase)
+                    .foregroundStyle(NX.ink(0.36))
+                // Empty without subtasks, and still spaced, as the design's count is.
+                Text(rows.isEmpty ? "" : "\(done)/\(rows.count)")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(NX.ink(0.45))
+                    .monospacedDigit()
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2).fill(NX.ink(0.07))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(!rows.isEmpty && done == rows.count ? NX.green : style.accent)
+                            .frame(width: proxy.size.width * fraction)
+                    }
+                    .animation(NX.cssEase(400), value: fraction)
                 }
+                .frame(height: 3)
             }
-            DocumentView(
-                document: DocumentContext(listID: task.listID ?? UUID(), rootBlockID: task.id),
-                emptyPlaceholder: "Add a subtask…",
-                showsCompleted: true,
-                seedsEmptyBlock: false,
-                appendButtonTitle: "Add subtask",
-                // After Escape, Return and the arrows belong to the Next list.
-                hooks: OutlineHooks(resumesAfterEscape: false)
-            )
-            .id(task.id)
+            // The design's line-height 1.
+            .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
+            .padding(.bottom, 6)
+            ForEach(rows) { row in
+                NXInspectorSubtaskRow(row: row)
+            }
+            NXInspectorAddSubtask { workbench.addSubtask(to: task.id) }
         }
+    }
+
+    /// Every task under `id`, at any depth, in document order; each row's
+    /// depth counts from the task's own children.
+    static func subtasks(of id: UUID, in blocks: [Block]) -> [BlockRow] {
+        let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
+        return BlockTree.flatten(live, root: id, respectCollapse: false).filter(\.block.isTask)
+    }
+}
+
+/// One subtask: 15pt checkbox, 13pt title, struck once done, and a chevron.
+/// A click inspects it.
+private struct NXInspectorSubtaskRow: View {
+    @Environment(AppEnvironment.self) private var env
+    let row: BlockRow
+    @State private var hovering = false
+
+    var body: some View {
+        let workbench = env.workbench
+        let task = row.block
+        let closing = workbench.closing[task.id]
+        let filled = task.isCompleted || closing != nil
+        HStack(spacing: 9) {
+            // 18 a level; at the top it's still one of the row's gaps, as in the design.
+            Color.clear.frame(width: CGFloat(row.depth) * 18, height: 1)
+            NXCheckbox(filled: filled, closing: closing, priority: .none, title: task.displayTitle, size: 15) {
+                workbench.toggle(task.id)
+            }
+            // 400 13/1.3.
+            Text(task.displayTitle)
+                .font(.system(size: 13))
+                .foregroundStyle(filled ? NX.ink(0.42) : NX.ink)
+                .strikethrough(filled, color: NX.ink(0.42))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.vertical, (13 * 1.3 - NXStrikeText.glyphLineHeight(13)) / 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(NX.ink(0.3))
+                .frame(width: 14, height: 14)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(hovering ? NX.ink(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .opacity(closing != nil ? 0.6 : 1)
+        .animation(.easeOut(duration: 0.3), value: closing != nil)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { workbench.inspect(task.id) }
+        .contextMenu { NXTaskMenu(ids: [task.id]) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Open Details") { workbench.inspect(task.id) }
+    }
+}
+
+/// The design's "Add subtask" under the subtasks.
+private struct NXInspectorAddSubtask: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 15, height: 15)
+            // 500 12.5/1.
+            Text("Add subtask")
+                .font(.system(size: 12.5, weight: .medium))
+                .padding(.vertical, (12.5 - NXStrikeText.glyphLineHeight(12.5)) / 2)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(hovering ? NX.ink : NX.ink(0.42))
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(hovering ? NX.ink(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: action)
+        .help("Add a subtask in the list")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Add subtask")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
+    }
+}
+
+/// "Subtask of" the task above, over the inspector's title, with that
+/// task's progress. A click inspects it.
+struct NXInspectorParentCrumb: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    let parent: Block
+    @Query private var blocks: [Block]
+    @State private var hovering = false
+
+    init(parent: Block) {
+        self.parent = parent
+        _blocks = OutlineEditor.blocksQuery(for: DocumentContext(listID: parent.listID ?? UUID()))
+    }
+
+    var body: some View {
+        let workbench = env.workbench
+        let subtasks = NXInspectorSubtasks.subtasks(of: parent.id, in: blocks)
+        let done = subtasks.filter { $0.block.isCompleted || workbench.closing[$0.id] != nil }.count
+        Button { workbench.inspect(parent.id) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 14, height: 14)
+                Text("Subtask of")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .fixedSize()
+                Text(parent.displayTitle)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text("\(done)/\(subtasks.count)")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .monospacedDigit()
+                    .opacity(0.8)
+                    .fixedSize()
+            }
+            .foregroundStyle(hovering ? style.accent : NX.ink(0.55))
+            .padding(.top, 5)
+            .padding(.bottom, 5)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .background(hovering ? style.accent.opacity(0.1) : NX.ink(0.04),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.14), value: hovering)
+        .help("Show “\(parent.displayTitle)”")
+        .accessibilityLabel("Subtask of \(parent.displayTitle)")
+        // The design's -4 above and -8 below, so it sits close over the title.
+        .padding(.top, -4)
+        .padding(.bottom, -8)
     }
 }
 

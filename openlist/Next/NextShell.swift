@@ -195,18 +195,9 @@ private struct NextRoutedScreen: View {
         Group {
             switch navigator.route {
             case .inbox:
-                if navigator.legacyDocumentOwnsKeys, let inboxID = navigator.inboxListID {
-                    InboxScreen()
-                        .modifier(NXNoRows())
-                        .safeAreaInset(edge: .bottom, spacing: 0) {
-                            SelectionActionsBar(scopeID: navigator.rowSelection.scopeID)
-                        }
-                        // The Inbox document has no mode picker of its own.
-                        .overlay(alignment: .topTrailing) {
-                            NXViewModeButton(listID: inboxID, showsTitle: true)
-                                .padding(.top, 18)
-                                .padding(.trailing, 22)
-                        }
+                // Triage, as the design; shown as a document, the Inbox is the list document too.
+                if navigator.documentOwnsEditorCommands, let inbox = library.inbox {
+                    NextInboxDocumentScreen(inbox: inbox)
                 } else {
                     NextInboxScreen()
                 }
@@ -257,7 +248,8 @@ private struct NXNoRows: ViewModifier {
 // MARK: - Page scaffold
 
 /// The scrolling page every screen sits in: 26/40/120 padding, an 880pt
-/// measure unless wide, a click-to-clear background and scroll-to-focus.
+/// measure unless wide, a click-to-clear background, scroll-to-focus, and
+/// scrolling to what a search hit or link reveals in a list document.
 struct NXPage<Content: View>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
@@ -266,12 +258,23 @@ struct NXPage<Content: View>: View {
     var rowIDs: [UUID] = []
     @ViewBuilder var content: () -> Content
     @State private var appeared = false
+    /// The reveal whose note card has laid out, so the page can scroll to it.
+    @State private var visibleNoteRevealID: UUID?
+
+    /// A reveal in the list on show, once search has stepped aside. Tasks
+    /// reveal in the inspector instead.
+    private var readyRevealID: UUID? {
+        guard !env.navigator.isSearchOpen, let request = env.navigator.contentReveal,
+              request.taskID == nil, env.navigator.route == .list(request.listID) else { return nil }
+        return request.id
+    }
 
     var body: some View {
         let workbench = env.workbench
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: 0).id(ContentReveal.Anchor.pageHeader)
                     content()
                 }
                 .frame(maxWidth: wide ? .infinity : 880, alignment: .topLeading)
@@ -291,12 +294,40 @@ struct NXPage<Content: View>: View {
                 guard let id, rowIDs.contains(id) else { return }
                 withAnimation(style.ease(180)) { proxy.scrollTo(id) }
             }
+            .onChange(of: rowIDs) { old, ids in
+                workbench.visibleIDs = ids
+                // A row focused before it was drawn, like a line just added,
+                // comes into view once it is.
+                guard let id = workbench.focusID, ids.contains(id), !old.contains(id) else { return }
+                withAnimation(style.ease(180)) { proxy.scrollTo(id) }
+            }
+            .task(id: readyRevealID) {
+                guard readyRevealID != nil, let request = env.navigator.contentReveal else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                if request.revealsSummary(for: request.listID) {
+                    proxy.scrollTo(ContentReveal.Anchor.listSummary(request.listID), anchor: .center)
+                } else if let id = request.blockID, request.field == .note, visibleNoteRevealID == request.id {
+                    proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
+                } else if let id = request.blockID {
+                    proxy.scrollTo(id, anchor: .center)
+                } else {
+                    proxy.scrollTo(ContentReveal.Anchor.pageHeader, anchor: .top)
+                }
+            }
+            .onPreferenceChange(ContentRevealNoteReadyKey.self) { requestID in
+                visibleNoteRevealID = requestID
+                guard let requestID, requestID == readyRevealID,
+                      let id = env.navigator.contentReveal?.blockID else { return }
+                // The first scroll brings the line in; only then does the
+                // note card under it exist to scroll to.
+                proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
+            }
         }
         .onAppear {
             workbench.visibleIDs = rowIDs
             withAnimation(style.ease(260)) { appeared = true }
         }
-        .onChange(of: rowIDs) { _, ids in workbench.visibleIDs = ids }
     }
 
     private func clearBackground() {

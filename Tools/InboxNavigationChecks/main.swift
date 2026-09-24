@@ -9,10 +9,10 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
 let navigator = Navigator()
 let listID = UUID()
 navigator.go(to: .list(listID))
-check(navigator.listViewMode(for: listID) == .document && navigator.documentOwnsEditorCommands && !navigator.legacyDocumentOwnsKeys,
-      "A list opens as its Next document, which takes outline commands and leaves the Next keys on")
+check(navigator.listViewMode(for: listID) == .document && navigator.documentOwnsEditorCommands && navigator.documentListID == listID,
+      "A list opens as its Next document, which takes outline commands")
 navigator.setListViewMode(.tasks, for: listID)
-check(navigator.documentOwnsEditorCommands && !navigator.legacyDocumentOwnsKeys,
+check(navigator.documentOwnsEditorCommands && navigator.documentListID == listID,
       "List Tasks mode is the same document, filtered, and keeps outline commands")
 navigator.selection = [UUID()]
 let inspectedInTasks = UUID()
@@ -30,7 +30,7 @@ check(navigator.documentOwnsEditorCommands && navigator.listViewMode(for: listID
       "Back restores the original list's document")
 let unknownInbox = Navigator()
 unknownInbox.go(to: .inbox)
-check(!unknownInbox.documentOwnsEditorCommands && !unknownInbox.legacyDocumentOwnsKeys, "Without a known Inbox list, Inbox stays a Next screen")
+check(!unknownInbox.documentOwnsEditorCommands && unknownInbox.documentListID == nil, "Without a known Inbox list, Inbox stays a Next screen")
 let inboxID = UUID()
 navigator.inboxListID = inboxID
 navigator.go(to: .inbox)
@@ -39,19 +39,20 @@ check(navigator.listViewMode(for: inboxID) == .tasks && !navigator.documentOwnsE
 navigator.selection = [UUID()]
 navigator.openTask(UUID())
 navigator.setListViewMode(.document, for: inboxID)
-check(navigator.legacyDocumentOwnsKeys && navigator.documentOwnsEditorCommands && navigator.selection.isEmpty && navigator.openTaskID == nil,
-      "The Inbox list's Document mode gives Inbox its legacy document editor, which takes the task panel over")
+check(navigator.documentListID == inboxID && navigator.documentOwnsEditorCommands && navigator.selection.isEmpty
+      && navigator.openTaskID != nil,
+      "The Inbox list's Document mode shows the Inbox as its Next document, and the inspector stays open")
 navigator.openTask(UUID())
-check(navigator.legacyDocumentOwnsKeys, "Inspector does not replace Inbox document ownership")
+check(navigator.documentListID == inboxID, "Inspector does not replace Inbox document ownership")
 navigator.closeTask()
-check(navigator.legacyDocumentOwnsKeys, "Closing details returns to Inbox editing")
+check(navigator.documentListID == inboxID, "Closing details returns to Inbox editing")
 navigator.goBack()
-check(navigator.route == .list(listID) && navigator.documentOwnsEditorCommands && !navigator.legacyDocumentOwnsKeys,
+check(navigator.route == .list(listID) && navigator.documentOwnsEditorCommands && navigator.documentListID == listID,
       "Back restores the list document")
 navigator.goForward()
-check(navigator.route == .inbox && navigator.legacyDocumentOwnsKeys, "Forward restores Inbox document commands")
+check(navigator.route == .inbox && navigator.documentListID == inboxID, "Forward restores Inbox document commands")
 navigator.go(to: .tasks)
-check(!navigator.documentOwnsEditorCommands && !navigator.legacyDocumentOwnsKeys, "Tasks does not inherit Inbox document ownership")
+check(!navigator.documentOwnsEditorCommands && navigator.documentListID == nil, "Tasks does not inherit Inbox document ownership")
 
 let suite = "openlist-list-mode-checks-\(UUID().uuidString)"
 let defaults = UserDefaults(suiteName: suite)!
@@ -128,7 +129,7 @@ navigator.rememberScrollOffset(0, for: .tasks)
 check(navigator.scrollOffset(for: .tasks) == 0, "A saved raw zero remains distinct from an unvisited page")
 
 // The inspector belongs to the window: it stays open across screens and
-// closes only when a document takes the list over or the route is replaced.
+// presentations, and closes only when the route is replaced.
 let inspecting = Navigator()
 let inspected = UUID(), inspectedListID = UUID()
 inspecting.openTask(inspected)
@@ -145,8 +146,7 @@ let inspectingInbox = UUID()
 inspecting.inboxListID = inspectingInbox
 inspecting.go(to: .inbox)
 inspecting.setListViewMode(.document, for: inspectingInbox)
-check(inspecting.openTaskID == nil, "Handing the Inbox to its legacy document editor closes the inspector")
-inspecting.openTask(inspected)
+check(inspecting.openTaskID == inspected, "The Inbox's document is the Next document too, so the inspector stays")
 inspecting.replace(with: .today)
 check(inspecting.openTaskID == nil, "Stepping off a deleted list closes the inspector")
 

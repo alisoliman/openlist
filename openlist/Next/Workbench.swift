@@ -135,10 +135,34 @@ final class Workbench {
     /// The list document on show, for the keys and Undo that reach it from
     /// outside its rows.
     @ObservationIgnored weak var document: OutlineEditor?
-    /// Tasks whose note shows under them in the list document.
-    var openNotes: Set<UUID> = []
+    /// Tasks whose note shows under them in the list document, remembered on
+    /// this Mac.
+    var openNotes: Set<UUID> = [] {
+        didSet { if openNotes != oldValue { defaults?.set(openNotes.map(\.uuidString), forKey: Self.openNotesKey) } }
+    }
     /// The task whose note is being written in place.
     var editingNoteID: UUID?
+    /// The task the inspector's Add subtask is for, until its list's document
+    /// is on show to write the new line.
+    @ObservationIgnored var pendingSubtaskParentID: UUID?
+    /// A list just made, whose title takes the keyboard once its page shows.
+    @ObservationIgnored var namingListID: UUID?
+    @ObservationIgnored private let defaults: UserDefaults?
+    private static let openNotesKey = "nextOpenNotes"
+
+    /// The inspector's Add subtask, as the design's: goes to the task's list
+    /// document, opening it if needed, where the task unfolds and a new
+    /// subtask line at the end of its subtasks takes the caret.
+    func addSubtask(to id: UUID) {
+        guard let task = store.block(id: id), task.isTask, let list = store.list(id: task.listID) else { return }
+        document?.commitLine()
+        if let document, document.document.listID == list.id {
+            document.appendSubtask(to: id)
+            return
+        }
+        pendingSubtaskParentID = id
+        go(route(for: list))
+    }
 
     /// Space, or a task's note button: shows or hides its note under it. A
     /// task with no note starts one instead.
@@ -220,11 +244,14 @@ final class Workbench {
     /// The route `visibleIDs` was published on.
     @ObservationIgnored private var visibleRoute: AppRoute?
 
-    init(store: Store, navigator: Navigator, settings: AppSettings, calendar: CalendarCoordinator) {
+    init(store: Store, navigator: Navigator, settings: AppSettings, calendar: CalendarCoordinator,
+         defaults: UserDefaults? = nil) {
         self.store = store
         self.navigator = navigator
         self.settings = settings
         self.calendar = calendar
+        self.defaults = defaults
+        openNotes = Set((defaults?.stringArray(forKey: Self.openNotesKey) ?? []).compactMap(UUID.init(uuidString:)))
         watchWork()
         calendar.onMacReturn = { [weak self] in self?.macDidReturn() }
     }

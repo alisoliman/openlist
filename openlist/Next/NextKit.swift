@@ -181,6 +181,17 @@ extension View {
 
 // MARK: - Screen header
 
+/// A screen title renamed in place, like a list's: a click on it starts,
+/// Return or clicking away commits, Esc cancels.
+struct NXTitleRename {
+    var isEditing: Binding<Bool>
+    /// What the field starts from, all selected: the title as stored, or
+    /// nothing for a title still to be given.
+    var value: String
+    var placeholder: String
+    var commit: (String) -> Void
+}
+
 struct NXScreenHeader<Trailing: View>: View {
     @Environment(\.nextStyle) private var style
     enum Tile { case icon(String), emoji(String), list(TaskList) }
@@ -191,6 +202,8 @@ struct NXScreenHeader<Trailing: View>: View {
     var progress: (done: Int, total: Int)?
     /// Sits after the subtitle, like the list header's hours menu.
     var accessory: AnyView?
+    /// Makes the title editable in place.
+    var rename: NXTitleRename?
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
@@ -209,15 +222,11 @@ struct NXScreenHeader<Trailing: View>: View {
             .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(style.serifTitles ? NX.serif(34) : .system(size: 27, weight: .bold))
-                    .kerning(style.serifTitles ? 0 : -0.27)
-                    .foregroundStyle(NX.ink)
-                    // Long names wrap, as the design's header does, rather than truncate.
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    // The design's 34px/1.05 line box, not the serif's taller metrics.
-                    .padding(.vertical, style.serifTitles ? NX.serifLeading(34, lineHeight: 1.05) : 0)
+                if let rename {
+                    NXHeaderTitleField(title: title, rename: rename)
+                } else {
+                    NXHeaderTitle(text: title)
+                }
                 // The accessory's hover padding stands in for the space after the subtitle.
                 HStack(spacing: -1) {
                     Text(subtitle)
@@ -235,6 +244,87 @@ struct NXScreenHeader<Trailing: View>: View {
             }
             trailing()
         }
+    }
+}
+
+/// A screen header's title: serif 34 on the design's 1.05 line box, or bold
+/// 27 without serif titles.
+struct NXHeaderTitle: View {
+    @Environment(\.nextStyle) private var style
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .modifier(NXHeaderTitleType())
+            // Long names wrap, as the design's header does, rather than truncate.
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            // The design's 34px/1.05 line box, not the serif's taller metrics.
+            .padding(.vertical, style.serifTitles ? NX.serifLeading(34, lineHeight: 1.05) : 0)
+    }
+}
+
+/// The header title's face, shared by the title and the field renaming it.
+private struct NXHeaderTitleType: ViewModifier {
+    @Environment(\.nextStyle) private var style
+
+    func body(content: Content) -> some View {
+        content
+            .font(style.serifTitles ? NX.serif(34) : .system(size: 27, weight: .bold))
+            .kerning(style.serifTitles ? 0 : -0.27)
+            .foregroundStyle(NX.ink)
+    }
+}
+
+/// The header's title renamed in place. The field sits on the title's own
+/// line box, which keeps laying out what's typed, so the header keeps its
+/// metrics while the title is written.
+private struct NXHeaderTitleField: View {
+    let title: String
+    let rename: NXTitleRename
+    @State private var draft = ""
+    @State private var selection: TextSelection?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        if rename.isEditing.wrappedValue {
+            NXHeaderTitle(text: draft.isEmpty ? rename.placeholder : draft)
+                .opacity(0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .leading) {
+                    TextField(rename.placeholder, text: $draft, selection: $selection, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .modifier(NXHeaderTitleType())
+                        .lineLimit(1...2)
+                        .focused($focused)
+                        .onSubmit(commit)
+                        .onExitCommand { rename.isEditing.wrappedValue = false }
+                        .accessibilityLabel("Title")
+                }
+                .onAppear {
+                    draft = rename.value
+                    selection = TextSelection(range: draft.startIndex..<draft.endIndex)
+                    // Once the field is on screen, or the focus can miss it.
+                    DispatchQueue.main.async { focused = true }
+                }
+                .onChange(of: focused) { _, now in if !now { commit() } }
+        } else {
+            NXHeaderTitle(text: title)
+                .contentShape(Rectangle())
+                .onTapGesture { rename.isEditing.wrappedValue = true }
+                .pointerStyle(.horizontalText)
+                .help("Rename")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: "Rename") { rename.isEditing.wrappedValue = true }
+        }
+    }
+
+    /// Return or clicking away: a name that isn't empty, and has changed, is kept.
+    private func commit() {
+        guard rename.isEditing.wrappedValue else { return }
+        rename.isEditing.wrappedValue = false
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty, name != rename.value { rename.commit(name) }
     }
 }
 

@@ -108,7 +108,8 @@ final class AppEnvironment {
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
-        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar)
+        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar,
+                              defaults: ReviewSession.defaults)
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
 

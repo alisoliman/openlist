@@ -84,30 +84,22 @@ final class Navigator {
             contentReveal = nil
             clearSelection()
         }
-        // The Inbox's document is the legacy editor, which takes the task
-        // panel over. A list is the Next document either way.
-        if route == .inbox && listID == inboxListID { openTaskID = nil }
     }
 
-    /// Whether the screen on show is the legacy document editor, which keeps
-    /// its own keys: the Inbox shown as a document. The single-key map and
-    /// the workbench's Undo stand aside for it.
-    var legacyDocumentOwnsKeys: Bool {
-        guard route == .inbox else { return false }
-        return inboxListID.map { listViewMode(for: $0) == .document } ?? false
+    /// The list whose document is on show: any list, drawn as the Next list
+    /// document in either presentation, or the Inbox shown as a document.
+    var documentListID: UUID? {
+        switch route {
+        case let .list(id): id
+        case .inbox: inboxListID.flatMap { listViewMode(for: $0) == .document ? $0 : nil }
+        default: nil
+        }
     }
 
     /// Whether the screen on show is a document that takes the outline's menu
-    /// commands: every list, drawn as the Next list document in either
-    /// presentation, and the Inbox as a document. Everything else is a Next
-    /// screen served by the workbench targets.
-    var documentOwnsEditorCommands: Bool {
-        switch route {
-        case .list: true
-        case .inbox: legacyDocumentOwnsKeys
-        default: false
-        }
-    }
+    /// commands. Everything else is a Next screen served by the workbench
+    /// targets.
+    var documentOwnsEditorCommands: Bool { documentListID != nil }
 
     /// The task whose detail panel is open, if any.
     var openTaskID: UUID?

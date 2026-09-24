@@ -30,8 +30,15 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Next row's chrome with the live text as its title) and the other kinds in the same
   language. Done top-level tasks leave for the Completed group below. Each line's edit is
   one undo step with the design's label and a change-log entry. The Tasks presentation is
-  the same document showing only its tasks. `Navigator.legacyDocumentOwnsKeys` (the Inbox
-  document) and `documentOwnsEditorCommands` (any list) replace `hasDocumentEditor`.
+  the same document showing only its tasks. `Navigator.documentListID` (any list, and the
+  Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
+- The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
+  writes the new line in the list document (`Workbench.addSubtask`,
+  `OutlineEditor.appendSubtask`). The Inbox's document mode is the same list document under
+  the Inbox header. Native extras on the list page: the "…" options menu, the title renamed
+  in place, the description, cover and nested lists, a drag grip on every line (drops go
+  through `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and
+  search reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
 
 ## Status checklist
 
@@ -49,5 +56,5 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - [x] Lists gallery, Activity (+ Changes), Trash (hold), Settings
 - [x] Build + native verification screenshots
 - [x] List document: lines, carets, notes, Turn into, completed split, keys, undo and log
-- [ ] Inspector subtasks and "Subtask of", Inbox document mode, list options menu,
+- [x] Inspector subtasks and "Subtask of", Inbox document mode, list options menu,
       title in place, drag grip, search reveal

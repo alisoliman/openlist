@@ -192,8 +192,6 @@ final class NextKeyHandler {
         if isForeign(responder) { return false }
 
         if flags == .command {
-            // The legacy document keeps its own Undo and Select All.
-            guard !navigator.legacyDocumentOwnsKeys else { return false }
             switch chars {
             case "z":
                 workbench.undoLast()
@@ -272,9 +270,9 @@ final class NextKeyHandler {
     /// had it (a picker, a date field) would keep the keys from the rows. A
     /// click anywhere outside it hands them back to the shell; a click on
     /// another control or field still lets that one take focus. Text fields
-    /// and document screens keep AppKit's own behaviour.
+    /// keep AppKit's own behaviour.
     private func releaseForeignFocus(for event: NSEvent) {
-        guard let window = view?.window, event.window === window, !env.navigator.legacyDocumentOwnsKeys,
+        guard let window = view?.window, event.window === window,
               let focused = window.firstResponder as? NSView, !(focused is NSText), isForeign(focused),
               !focused.bounds.contains(focused.convert(event.locationInWindow, from: nil)) else { return }
         window.makeFirstResponder(nil)
@@ -294,19 +292,10 @@ final class NextKeyHandler {
             }
         }
 
-        // The legacy document keeps its keys; only going, capturing,
-        // searching and closing the inspector stay global there.
-        if navigator.legacyDocumentOwnsKeys {
-            if key == Key.escape, !shift, navigator.openTaskID != nil {
-                navigator.closeTask()
-                return true
-            }
-            return openGlobal(chars, shift: shift)
-        }
-
         // The card's keys win whenever no row is focused, selection or not, and
-        // Shift doesn't stop them, as in the design.
-        if navigator.route == .inbox, workbench.focusID == nil,
+        // Shift doesn't stop them, as in the design. The Inbox shown as its
+        // document has no card.
+        if navigator.route == .inbox, !navigator.documentOwnsEditorCommands, workbench.focusID == nil,
            let task = library.inboxQueue(workbench).first {
             if let digit = Int(chars), (1...9).contains(digit) {
                 let destinations = library.destinations
@@ -337,7 +326,7 @@ final class NextKeyHandler {
         case Key.enter, Key.keypadEnter:
             // A list document's heading or text has no details: Return edits it.
             if let document = workbench.document, let id = workbench.focusID,
-               let block = env.store.block(id: id), !block.isTask, block.listID == navigator.route.listID {
+               let block = env.store.block(id: id), !block.isTask, block.listID == navigator.documentListID {
                 document.edit(id)
             } else if let id = workbench.focusID ?? workbench.targetIDs.first { workbench.inspect(id) }
             return true

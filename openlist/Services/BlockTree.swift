@@ -215,6 +215,21 @@ enum BlockTree {
         return sections
     }
 
+    /// The top-level headings whose sections hold `id`, nearest first: the
+    /// heading above it, then each heading of a higher level above that one.
+    static func enclosingSections(of id: UUID, in rows: [BlockRow]) -> [UUID] {
+        guard let index = rows.firstIndex(where: { $0.id == id }) else { return [] }
+        // A heading sits in the sections of higher-level headings only.
+        var limit = rows[index].depth == 0 ? sectionLevel(of: rows[index].block.kind) ?? .max : .max
+        var headings: [UUID] = []
+        for row in rows[..<index].reversed() where row.depth == 0 {
+            guard let level = sectionLevel(of: row.block.kind), level < limit else { continue }
+            headings.append(row.id)
+            limit = level
+        }
+        return headings
+    }
+
     /// Hides a collapsed top-level heading's section, the way a collapsed
     /// task hides its subtree.
     static func hidingCollapsedSections(in rows: [BlockRow], revealing: Set<UUID> = []) -> [BlockRow] {

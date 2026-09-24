@@ -60,6 +60,7 @@ private struct NXDocumentLines: View {
         let workbench = env.workbench
         // The whole document, hidden lines too, for sections and progress.
         let everything = BlockTree.flatten(blocks, respectCollapse: false)
+        let reveal = editor.reveal
         let context = NXLineContext(
             editor: editor,
             listID: list.id,
@@ -67,12 +68,29 @@ private struct NXDocumentLines: View {
             slashBlockID: editor.slash?.blockID,
             sections: BlockTree.sections(in: everything),
             progress: Self.progress(in: blocks, closing: Set(workbench.closing.keys)),
-            contents: contents)
+            contents: contents,
+            drawnIDs: rows.map(\.id),
+            reveal: reveal,
+            readyRevealID: editor.readyRevealID)
 
         return LazyVStack(alignment: .leading, spacing: 1) {
+            if let reveal {
+                ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
+                    .padding(.bottom, 8)
+            }
             ForEach(rows) { row in
                 if row.block.modelContext != nil, !row.block.isDeleted {
                     NXDocumentRow(row: row, context: context)
+                        // The grip's drags land before, after or inside a line.
+                        .modifier(BlockDragAndDrop(
+                            row: row,
+                            isEnabled: list.sorting == .manual,
+                            holdsDrops: OutlinePolicy.holdsDrops(row),
+                            accent: style.accent,
+                            indicatorInset: 10,
+                            radius: 9,
+                            onMove: { ids, position in editor.move(ids, relativeTo: row, position: position) },
+                            onDropText: { text in editor.dropText(text, after: row.block) }))
                         .id(row.id)
                 }
             }
@@ -90,7 +108,14 @@ private struct NXDocumentLines: View {
         .modifier(OutlineEditorLifecycle(editor: editor, document: document,
                                          visibleIDs: rows.map(\.id), blockIDs: blocks.map(\.id)))
         .preference(key: NXDocumentRowsKey.self, value: rows.filter(\.block.isTask).map(\.id))
-        .onAppear { workbench.document = editor }
+        .onAppear {
+            workbench.document = editor
+            // The inspector's Add subtask, once this list's document is on show.
+            if let id = workbench.pendingSubtaskParentID, env.store.block(id: id)?.listID == list.id {
+                workbench.pendingSubtaskParentID = nil
+                editor.appendSubtask(to: id)
+            }
+        }
         .onDisappear { if workbench.document === editor { workbench.document = nil } }
         .onChange(of: blocks.map(\.id)) { _, ids in contents.retain(Set(ids)) }
     }
@@ -113,7 +138,8 @@ private struct NXDocumentLines: View {
             workbench.clearSelection()
             if workbench.editingNoteID != nil { workbench.editingNoteID = nil }
             workbench.focusID = block.isTask ? id : nil
-            if block.isTask, navigator.openTaskID != nil { navigator.openTask(id) }
+            // A new line leaves the inspector where it is, as the design's addLine does.
+            if block.isTask, navigator.openTaskID != nil, !workbench.fresh.contains(id) { navigator.openTask(id) }
         }
         // The caret leaves; the line stays focused for the keys.
         hooks.didEscape = { workbench.focusID = $0 }
@@ -125,7 +151,11 @@ private struct NXDocumentLines: View {
         hooks.commandTargets = { workbench.targetIDs }
         hooks.nameEdit = { Self.name(of: $0, store: store) }
         hooks.didRecordEdit = { edit, name in workbench.logEdit(name, ids: Self.ids(of: edit)) }
-        hooks.didAddLine = { workbench.flash(\.fresh, [$0], for: 1100) }
+        hooks.didAddLine = { id in
+            workbench.flash(\.fresh, [id], for: 1100)
+            // A new task takes the focus, so the page brings it into view.
+            if store.block(id: id)?.isTask == true { workbench.focusID = id }
+        }
         hooks.editNote = { workbench.editNote($0) }
         return hooks
     }
@@ -145,13 +175,14 @@ private struct NXDocumentLines: View {
         case let .indented(ids): return "Indented \(described(ids))"
         case let .outdented(ids): return "Outdented \(described(ids))"
         case let .moved(id, up): return "Moved \(quoted(id)) \(up ? "up" : "down")"
+        case let .dragged(ids): return "Moved \(described(ids))"
         }
     }
 
     private static func ids(of edit: OutlineEdit) -> [UUID] {
         switch edit {
         case let .added(id), let .edited(id), let .removedEmptyLine(id), let .moved(id, _): [id]
-        case let .indented(ids), let .outdented(ids): ids
+        case let .indented(ids), let .outdented(ids), let .dragged(ids): ids
         }
     }
 
@@ -189,6 +220,11 @@ private struct NXLineContext {
     let sections: [UUID: ArraySlice<BlockRow>]
     let progress: [UUID: (done: Int, total: Int)]
     let contents: NXContentCache
+    /// The rows drawn, in order, for the grip to drag a selection in.
+    let drawnIDs: [UUID]
+    /// A search hit or link shown in the document.
+    let reveal: ContentReveal?
+    let readyRevealID: UUID?
 }
 
 /// Decoded line content, kept until its block changes, so a render doesn't
@@ -229,17 +265,38 @@ private struct NXDocumentRow: View {
     let context: NXLineContext
     @State private var morphing = false
     @State private var entered = false
+    @State private var hovering = false
+    /// Lets the pointer cross the margin to the grip before it hides.
+    @State private var unhover: Task<Void, Never>?
 
     private var block: Block { row.block }
     private var workbench: Workbench { env.workbench }
 
     var body: some View {
         let fresh = !block.isTask && workbench.fresh.contains(row.id)
-        Group {
-            if block.isTask {
-                NXDocumentTask(row: row, context: context)
-            } else {
-                NXDocumentBlock(row: row, context: context)
+        let revealed = context.reveal?.blockID == row.id
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if block.isTask {
+                    NXDocumentTask(row: row, context: context)
+                } else {
+                    NXDocumentBlock(row: row, context: context)
+                }
+            }
+            .overlay {
+                // Where a search hit or link landed.
+                if revealed {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(style.accent, lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            // A note found on a line that isn't a task, which has no inspector.
+            if revealed, context.reveal?.field == .note, !block.isTask, !block.note.isEmpty {
+                ContentRevealNote(text: block.note, query: context.reveal?.query ?? "", requestID: context.readyRevealID)
+                    .id(ContentReveal.Anchor.blockNote(row.id))
+                    .padding(.leading, CGFloat(row.depth) * 26 + 10)
+                    .padding(.vertical, 4)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -248,6 +305,19 @@ private struct NXDocumentRow: View {
                     withAnimation(style.ease(180)) { context.editor.actions(for: row).onToggleCollapse() }
                 }
                 .offset(x: CGFloat(row.depth) * 26 - 10, y: caretTop)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            // In the margin, left of the caret's place.
+            NXLineGrip(row: row, context: context, lineHovered: hovering)
+                .offset(x: CGFloat(row.depth) * 26 - 28, y: caretTop)
+        }
+        .onHover { inside in
+            unhover?.cancel()
+            guard !inside else { hovering = true; return }
+            unhover = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(250))
+                if !Task.isCancelled { hovering = false }
             }
         }
         // morphIn, when a line turns into another kind.
@@ -289,6 +359,103 @@ private struct NXDocumentRow: View {
     private func enter() {
         guard animates else { entered = true; return }
         withAnimation(.timingCurve(0.2, 0.9, 0.2, 1, duration: 0.3)) { entered = true }
+    }
+}
+
+/// The hover grip in a line's margin: drag it to move the line, with the
+/// rows selected alongside it, before, after or into another line, or onto
+/// a list in the sidebar. A click focuses the line, as a click on it does.
+private struct NXLineGrip: View {
+    @Environment(AppEnvironment.self) private var env
+    let row: BlockRow
+    let context: NXLineContext
+    let lineHovered: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        let ids = draggedIDs
+        ZStack {
+            // Six dots, two by three.
+            VStack(spacing: 2.5) {
+                ForEach(0..<3, id: \.self) { _ in
+                    HStack(spacing: 2.5) {
+                        Circle().frame(width: 2.5, height: 2.5)
+                        Circle().frame(width: 2.5, height: 2.5)
+                    }
+                }
+            }
+            .foregroundStyle(NX.ink(0.3))
+            .opacity(lineHovered || hovering ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: lineHovered || hovering)
+        }
+        .frame(width: 14, height: 16)
+        .background(hovering ? NX.ink(0.06) : .clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .pointerStyle(.grabIdle)
+        .onTapGesture { click() }
+        .onDrag { provider() } preview: {
+            NXLineDragPreview(title: row.block.kind.isVoid ? row.block.kind.title : row.block.displayTitle, count: ids.count)
+        }
+        .help("Drag to move")
+        .accessibilityHidden(true)
+    }
+
+    /// The line, or the drawn rows selected with it, in document order.
+    private var draggedIDs: [UUID] {
+        let selection = env.workbench.selection
+        guard selection.contains(row.id) else { return [row.id] }
+        return context.drawnIDs.filter(selection.contains)
+    }
+
+    /// The row drag the document, and the sidebar's lists, take: this
+    /// library's own payload, never text another app or a line could read.
+    private func provider() -> NSItemProvider {
+        let payload = DragPayload.encodeBlocks(draggedIDs, session: env.navigator.blockDragSessionID)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier, visibility: .ownProcess) { load in
+            load(Data(payload.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
+    private func click() {
+        if row.block.isTask {
+            NXDocumentEditing.end()
+            env.workbench.click(row.id, command: NXModifiers.command, shift: NXModifiers.shift)
+        } else if !row.block.kind.isVoid {
+            context.editor.edit(row.id)
+        }
+    }
+}
+
+/// What a dragged line looks like under the pointer: its text on a card,
+/// with a count of the rows moving with it.
+private struct NXLineDragPreview: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 13.8))
+                .foregroundStyle(NX.ink)
+                .lineLimit(1)
+            if count > 1 {
+                Text("+\(count - 1)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(NX.ink(0.58))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(NX.card, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .nxCardShadow(radius: 9, hairline: 0.14, drop: 0.12, y: 6, blur: 18)
     }
 }
 

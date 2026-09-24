@@ -111,8 +111,8 @@ struct RootView: View {
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
-            // Editing a subtask inside the inspector makes it the command
-            // target. Closing it has to release that or ⌘N stays dead.
+            // Editing a subtask on a legacy task page makes it the command
+            // target. Closing the task has to release that or ⌘N stays dead.
             if newValue == nil, !env.navigator.documentOwnsEditorCommands {
                 env.activeDocument = nil
                 focusClearedFor = nil
@@ -120,11 +120,11 @@ struct RootView: View {
             }
         }
         .onChange(of: env.navigator.selection) { _, selection in
-            // Esc in an inspector subtask drops its selection but not its
+            // Esc in a legacy task page drops its selection but not its
             // claim. With no row left to act on, the screen takes over: a
             // list's own document, or the Next screen's targets.
-            if selection.isEmpty, env.activeDocument?.rootBlockID != nil, !env.navigator.legacyDocumentOwnsKeys {
-                env.activeDocument = env.navigator.route.listID.map { DocumentContext(listID: $0) }
+            if selection.isEmpty, env.activeDocument?.rootBlockID != nil {
+                env.activeDocument = env.navigator.documentListID.map { DocumentContext(listID: $0) }
             }
         }
         .onChange(of: env.commandToken) { _, newValue in
@@ -241,10 +241,10 @@ struct RootView: View {
         }
     }
 
-    /// Whether nothing on screen wants the focus AppKit handed out: no legacy
-    /// document editor, overlay or open task, and this route not already settled.
+    /// Whether nothing on screen wants the focus AppKit handed out: no overlay
+    /// or open task, and this route not already settled.
     private func mayClearFocus(on route: AppRoute) -> Bool {
-        !env.navigator.legacyDocumentOwnsKeys && focusClearedFor != route
+        focusClearedFor != route
             && !env.navigator.isSearchOpen && !env.navigator.isCommandPaletteOpen
             && !env.navigator.isShortcutSheetOpen && !env.workbench.captureOpen
             && env.navigator.openTaskID == nil

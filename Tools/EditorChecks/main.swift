@@ -872,4 +872,103 @@ check(store.block(id: sessionLine.id)?.text == "After" && store.block(id: sessio
 let unchanged = store.beginEditorSession(in: nextList.id, covering: [bystander.id])
 check(!store.commitEditorSession(unchanged, name: "Edited", undoManager: sessionUndo), "An edit that changed nothing registers nothing")
 
+// A heading's section sits inside the sections of the headings above it
+// with higher levels.
+let sectionList = store.createList(title: "Sections")
+let sectionDocument = DocumentContext(listID: sectionList.id)
+let outerHeading = store.appendBlock(kind: .heading1, text: "Trip", to: sectionDocument)
+let middleHeading = store.appendBlock(kind: .heading2, text: "Before", to: sectionDocument)
+let sectionTask = store.appendBlock(kind: .task, text: "Renew passports", to: sectionDocument)
+let otherHeading = store.appendBlock(kind: .heading2, text: "During", to: sectionDocument)
+let innerHeading = store.appendBlock(kind: .heading3, text: "Kyoto", to: sectionDocument)
+let innerTask = store.appendBlock(kind: .task, text: "Book the ryokan", to: sectionDocument)
+let innerSubtask = store.insertChild(kind: .task, text: "Compare Gion", of: innerTask, at: .last)
+let nextTopHeading = store.appendBlock(kind: .heading1, text: "Home", to: sectionDocument)
+store.save()
+let sectionRows = BlockTree.flatten(store.blocks(inList: sectionList.id), respectCollapse: false)
+check(BlockTree.enclosingSections(of: sectionTask.id, in: sectionRows) == [middleHeading.id, outerHeading.id]
+    && BlockTree.enclosingSections(of: innerSubtask.id, in: sectionRows) == [innerHeading.id, otherHeading.id, outerHeading.id],
+    "A line sits in the section of the heading above it and of each higher heading above that")
+check(BlockTree.enclosingSections(of: otherHeading.id, in: sectionRows) == [outerHeading.id]
+    && BlockTree.enclosingSections(of: nextTopHeading.id, in: sectionRows).isEmpty,
+    "A heading sits only in the sections of higher-level headings")
+
+// The inspector's Add subtask writes a line at the end of the task's subtasks.
+let addList = store.createList(title: "Add subtask")
+let addDocument = DocumentContext(listID: addList.id)
+let addEditor = OutlineEditor(env: outlineEnv, document: addDocument, policy: .nextDocument)
+var addRecorded: [(edit: OutlineEdit, name: String)] = []
+addEditor.hooks.didRecordEdit = { addRecorded.append(($0, $1)) }
+func addRows() -> [BlockRow] { addEditor.visibleRows(in: store.blocks(inList: addList.id)) }
+func addRow(_ block: Block) -> BlockRow { addRows().first { $0.id == block.id }! }
+let foldingHeading = store.appendBlock(kind: .heading1, text: "Before we go", to: addDocument)
+let ryokan = store.appendBlock(kind: .task, text: "Book the ryokan", to: addDocument)
+let compare = store.insertChild(kind: .task, text: "Compare Gion", of: ryokan, at: .last)
+let annex = store.insertChild(kind: .task, text: "Ask about the annex", of: compare, at: .last)
+store.save()
+store.setCollapsed(true, for: ryokan)
+store.setCollapsed(true, for: foldingHeading)
+check(!addRows().contains { $0.id == ryokan.id }, "The task starts folded away under its heading")
+addEditor.appendSubtask(to: ryokan.id)
+let added = addEditor.focus.blockID.flatMap { store.block(id: $0) }
+check(added?.kind == .task && added?.parentID == ryokan.id
+    && store.children(of: ryokan.id, listID: addList.id).last?.id == added?.id,
+    "Add subtask puts a task line, with the caret, at the end of the task's subtasks")
+check(!ryokan.isCollapsed && !foldingHeading.isCollapsed && addRows().contains { $0.id == added?.id },
+    "The task and the heading folding it open, so the new line shows")
+addEditor.actions(for: addRow(added!)).onChange(NSAttributedString(string: "Pay the deposit"))
+addEditor.commitLine()
+check(addRecorded.last?.edit == .added(added!.id) && added?.text == "Pay the deposit", "The new subtask is one added line")
+let annexChildren = store.children(of: annex.id, listID: addList.id).count
+addEditor.appendSubtask(to: annex.id)
+check(store.children(of: annex.id, listID: addList.id).count == annexChildren, "A task two levels down takes no subtask")
+
+// Drags follow the design's nesting rules.
+let heading = store.appendBlock(kind: .heading1, text: "On the ground", to: addDocument)
+let pass = store.appendBlock(kind: .bullet, text: "JR pass", to: addDocument)
+let loose = store.appendBlock(kind: .task, text: "Reserve the market tour", to: addDocument)
+let pack = store.appendBlock(kind: .task, text: "Pack", to: addDocument)
+let socks = store.insertChild(kind: .task, text: "Socks", of: pack, at: .last)
+store.save()
+addRecorded.removeAll()
+addEditor.move([loose.id], relativeTo: addRow(ryokan), position: .inside)
+check(loose.parentID == ryokan.id && addRecorded.map(\.edit) == [.dragged([loose.id])] && addRecorded.last?.name == "Move",
+    "A task dragged into a task becomes its subtask, as one named move")
+addEditor.move([heading.id], relativeTo: addRow(pass), position: .inside)
+let rootOrder = store.children(of: nil, listID: addList.id).map(\.id)
+check(heading.parentID == nil && rootOrder.firstIndex(of: heading.id) == rootOrder.firstIndex(of: pass.id)! + 1,
+    "A heading dropped into a list item lands after it, at the top")
+store.editorNotice = nil
+let recordedMoves = addRecorded.count
+addEditor.move([heading.id], relativeTo: addRow(compare), position: .before)
+check(heading.parentID == nil && store.editorNotice != nil && addRecorded.count == recordedMoves,
+    "A heading never goes beside a nested line")
+store.editorNotice = nil
+addEditor.move([pack.id], relativeTo: addRow(annex), position: .before)
+check(pack.parentID == nil && socks.parentID == pack.id && store.editorNotice != nil,
+    "A task whose subtasks would go past two levels stays where it is")
+store.editorNotice = nil
+let unmoved = store.children(of: nil, listID: addList.id).map(\.id)
+addEditor.move([pass.id], relativeTo: addRow(heading), position: .before)
+check(store.children(of: nil, listID: addList.id).map(\.id) == unmoved && addRecorded.count == recordedMoves,
+    "A drop that changes nothing records nothing")
+
+// A search hit shows through the heading folding it away.
+let revealList = store.createList(title: "Reveal")
+let revealDocument = DocumentContext(listID: revealList.id)
+let revealEditor = OutlineEditor(env: outlineEnv, document: revealDocument, policy: .nextDocument)
+let foldedHeading = store.appendBlock(kind: .heading1, text: "Before we go", to: revealDocument)
+let foldedText = store.appendBlock(kind: .paragraph, text: "Kasuga replies in about a day", to: revealDocument)
+store.save()
+store.setCollapsed(true, for: foldedHeading)
+func revealRows() -> [BlockRow] { revealEditor.visibleRows(in: store.blocks(inList: revealList.id)) }
+check(!revealRows().contains { $0.id == foldedText.id }, "A folded heading hides the text under it")
+let request = try ContentReveal.resolve(.block(foldedText.id), query: "Kasuga",
+                                        blocks: store.blocks(inList: revealList.id), lists: [revealList])
+outlineEnv.navigator.reveal(request)
+check(revealEditor.reveal?.blockID == foldedText.id && revealRows().contains { $0.id == foldedText.id } && foldedHeading.isCollapsed,
+    "A search hit shows through the heading folding it, which stays folded")
+outlineEnv.navigator.finishReveal()
+check(!revealRows().contains { $0.id == foldedText.id }, "Finishing the reveal folds the text away again")
+
 print("✅ \(checks) editor/store checks passed")

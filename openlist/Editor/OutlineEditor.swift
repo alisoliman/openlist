@@ -111,6 +111,11 @@ enum OutlinePolicy {
 
     /// The deepest a Next document line can be indented.
     static let maximumDepth = 2
+
+    /// Whether a Next document line takes lines dropped into it.
+    static func holdsDrops(_ row: BlockRow) -> Bool {
+        nests(row.block.kind) && row.depth < maximumDepth
+    }
 }
 
 /// An outline change a host can name and log.
@@ -124,6 +129,8 @@ enum OutlineEdit: Equatable {
     case indented([UUID])
     case outdented([UUID])
     case moved(UUID, up: Bool)
+    /// Lines dragged to another place.
+    case dragged([UUID])
 
     /// The name the outline gives the change when its host has none.
     var defaultName: String {
@@ -134,6 +141,7 @@ enum OutlineEdit: Equatable {
         case .indented: "Indent"
         case .outdented: "Outdent"
         case let .moved(_, up): up ? "Move Up" : "Move Down"
+        case .dragged: "Move"
         }
     }
 }
@@ -327,7 +335,9 @@ final class OutlineEditor {
             guard !showsCompleted else { return rows }
             return BlockTree.hidingCompletedTasks(in: rows, revealing: revealing)
         case .nextDocument:
-            let shown = BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows),
+            // A revealed line shows through the headings folding it away.
+            let unfolded = reveal?.blockID.map { Set(BlockTree.enclosingSections(of: $0, in: rows)) } ?? []
+            let shown = BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
                                                        revealing: revealing, topLevelOnly: true)
             return tasksOnly ? Self.taskOutline(shown) : shown
         }
@@ -1016,6 +1026,36 @@ final class OutlineEditor {
     /// Whether `id` is one of the rows on show.
     func shows(_ id: UUID) -> Bool { rows.contains { $0.id == id } }
 
+    /// The inspector's Add subtask: a task line at the end of `taskID`'s
+    /// subtasks, which takes the caret. The task, and whatever folds it
+    /// away, open first so the new line shows. A task two levels deep
+    /// takes none, as the design's indent allows no deeper.
+    func appendSubtask(to taskID: UUID) {
+        let current = blocks
+        guard policy == .nextDocument, let task = current.first(where: { $0.id == taskID }), task.isTask,
+              BlockTree.ancestors(of: task, in: current).count < OutlinePolicy.maximumDepth else { return }
+        unfold(toShow: taskID)
+        env.store.setCollapsed(false, for: task)
+        addLine(covering: [taskID]) { env.store.insertChild(kind: .task, of: task, at: .last) }
+    }
+
+    /// Opens the tasks, list items and headings that fold `id` away, and
+    /// keeps the done top-level task it sits under on show.
+    func unfold(toShow id: UUID) {
+        let current = blocks
+        guard let block = current.first(where: { $0.id == id }) else { return }
+        let ancestors = BlockTree.ancestors(of: block, in: current)
+        let rows = BlockTree.flatten(current, root: document.rootBlockID, respectCollapse: false)
+        let headings = Set(BlockTree.enclosingSections(of: id, in: rows))
+        env.store.batch {
+            for ancestor in ancestors { env.store.setCollapsed(false, for: ancestor) }
+            for heading in current where headings.contains(heading.id) { env.store.setCollapsed(false, for: heading) }
+        }
+        let root = ancestors.last ?? block
+        if root.isTask, root.isCompleted { completedTasksKeptVisible.insert(root.id) }
+        drawnRows = nil
+    }
+
     /// Whether the caret has been sent to a row that hasn't taken it yet, as
     /// after Return or Backspace. Keys pressed meanwhile belong to that row.
     var isMovingCaret: Bool {
@@ -1270,6 +1310,16 @@ final class OutlineEditor {
             return
         }
         defer { drawnRows = nil }
+        var position = position
+        if policy == .nextDocument {
+            // The move is a step of its own, after the line being written.
+            commitLine()
+            guard let placed = nextDropPosition(for: draggedIDs, relativeTo: target.block, position: position) else {
+                env.store.editorNotice = "Only tasks and list items go under another line, two levels deep at most."
+                return
+            }
+            position = placed
+        }
         NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
         let parentID: UUID?
         let aboveID: UUID?
@@ -1292,11 +1342,43 @@ final class OutlineEditor {
             aboveID = env.store.children(of: target.id, listID: document.listID)
                 .first { !draggedIDs.contains($0.id) }?.id
         }
+        let shape = policy == .nextDocument ? outlineShape() : []
         do {
-            _ = try env.store.moveSelection(draggedIDs, to: document.listID,
+            let moved = try env.store.moveSelection(draggedIDs, to: document.listID,
                 parentID: parentID, above: aboveID, expandsParent: position == .inside,
                 undoManager: NSApp?.keyWindow?.undoManager)
+            // Named and logged in the Next document, when anything moved.
+            guard policy == .nextDocument, !moved.isEmpty, outlineShape() != shape else { return }
+            let edit = OutlineEdit.dragged(moved)
+            let name = hooks.nameEdit(edit) ?? edit.defaultName
+            undoManager?.setActionName(name)
+            hooks.didRecordEdit(edit, name)
         } catch { env.store.editorNotice = error.localizedDescription }
+    }
+
+    /// Where a drag lands under the design's rules: only tasks and list
+    /// items go under a line, and only under a task or list item, two levels
+    /// deep at most. A drop into a line that can't hold it lands after it;
+    /// `nil` when the lines can't go beside it either.
+    private func nextDropPosition(for ids: [UUID], relativeTo target: Block, position: DropPosition) -> DropPosition? {
+        let current = blocks
+        let index = BlockTree.childIndex(of: current)
+        let dragged = topmost(ids.compactMap { id in current.first { $0.id == id } })
+        guard !dragged.isEmpty else { return nil }
+        func height(_ block: Block) -> Int {
+            (index[block.id] ?? []).map { 1 + height($0) }.max() ?? 0
+        }
+        func fit(at depth: Int) -> Bool {
+            dragged.allSatisfy { (depth == 0 || OutlinePolicy.nests($0.kind)) && depth + height($0) <= OutlinePolicy.maximumDepth }
+        }
+        let depth = BlockTree.ancestors(of: target, in: current).count
+        if position == .inside, OutlinePolicy.nests(target.kind), fit(at: depth + 1) { return .inside }
+        return fit(at: depth) ? (position == .inside ? .after : position) : nil
+    }
+
+    /// Every line's place in the outline, to tell whether a move changed any.
+    private func outlineShape() -> [String] {
+        BlockTree.flatten(blocks, root: document.rootBlockID, respectCollapse: false).map { "\($0.id)/\($0.depth)" }
     }
 
     private func insertPastedText(_ text: String, after block: Block) {

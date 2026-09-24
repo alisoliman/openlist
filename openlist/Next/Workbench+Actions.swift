@@ -356,6 +356,7 @@ extension Workbench {
         registerListCreationUndo(label, listID: id)
         snap(label, icon: "plus.circle.fill", tone: .accent, ids: [])
         pulse(list: id)
+        namingListID = id
         go(.list(id))
     }
 
@@ -430,7 +431,7 @@ extension Workbench {
         let destinationID = captureListID ?? store.inboxList()?.id
         // Captured into the list on show, a task goes at the end of its
         // document, where the add row sits; anywhere else it's prepended.
-        let appendsToRoot = navigator.route.listID.map { $0 == destinationID } ?? false
+        let appendsToRoot = navigator.documentListID.map { $0 == destinationID } ?? false
         let block: Block
         do {
             block = try store.saveCapture(preview, destinationID: destinationID, appendToRoot: appendsToRoot)
