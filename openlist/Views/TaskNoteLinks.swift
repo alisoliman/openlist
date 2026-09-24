@@ -9,18 +9,19 @@ struct TaskNoteLinks: View {
     var body: some View {
         let references = NoteItemLink.references(in: note)
         if !references.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
                 ForEach(references) { reference in
                     Button(reference.title, systemImage: "link") {
                         env.localLinks.receive(reference.url)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(NXPanelButtonStyle(kind: .link))
                     .help(reference.url.absoluteString)
                     .accessibilityValue(reference.url.absoluteString)
                     .accessibilityHint("Reveal the referenced item in this local library")
                 }
             }
-            .font(.callout)
+            // The links line up with the note's text; their hover fill reaches past it.
+            .padding(.leading, 7)
             .accessibilityIdentifier("task-note-links")
         }
     }

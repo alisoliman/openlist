@@ -5,17 +5,16 @@ struct ContentRevealNotice: View {
     let finish: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(message)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+        NXNoticeCard(icon: icon, tone: .accent, message: message) {
             Button("Finish", action: finish)
+                .buttonStyle(NXPanelButtonStyle(kind: .link))
                 .accessibilityLabel("Finish revealing content")
         }
-        .font(.callout)
-        .padding(10)
-        .background(Theme.accent.opacity(0.08), in: .rect(cornerRadius: 8))
         .accessibilityIdentifier("content-reveal-notice")
+    }
+
+    private var icon: String {
+        request.source == .localLink ? "link" : request.query.isEmpty ? "eye" : "magnifyingglass"
     }
 
     private var message: String {

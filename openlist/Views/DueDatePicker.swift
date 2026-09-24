@@ -12,6 +12,7 @@ struct DueDatePicker: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
 
     @State private var selectedDate: Date = .now
     @State private var includesTime = false
@@ -27,42 +28,44 @@ struct DueDatePicker: View {
     }
 
     private var liveContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             typeToSchedule
-            Divider()
-            presets
-            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                NXCapsTitle(text: "Due")
+                presets
+            }
 
             CalendarMonthPicker(selection: block.dueDate, calendar: calendar) { date in
                 selectedDate = date
                 apply()
             }
 
-            Divider()
+            Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
 
-            HStack {
-                Toggle("Include a time", isOn: includesTimeBinding)
-                    .toggleStyle(.checkbox)
-                    .font(Theme.Font.body)
-
-                Spacer()
-
+            HStack(spacing: 8) {
+                Image(systemName: "clock")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(style.accent)
+                    .accessibilityHidden(true)
+                Text("Include a time")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                Spacer(minLength: 6)
                 if includesTime {
                     DatePicker("Due time", selection: timeBinding, displayedComponents: .hourAndMinute)
                         .labelsHidden()
                         .frame(width: 90)
                 }
+                NXToggle(isOn: includesTime, label: "Include a time") { includesTimeBinding.wrappedValue.toggle() }
             }
 
             if block.dueDate != nil {
-                Divider()
                 Button("Clear due date") {
                     env.store.setDueDate(nil, for: block)
                     load()
                 }
-                .buttonStyle(.plain)
-                .font(Theme.Font.body)
-                .foregroundStyle(ListAccent.red.color)
+                .buttonStyle(NXPanelButtonStyle(kind: .destructive, size: .small))
             }
         }
         .onAppear(perform: load)
@@ -72,26 +75,22 @@ struct DueDatePicker: View {
     // MARK: - Natural language entry
 
     private var typeToSchedule: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("Try “next friday at 9am”", text: $typedPhrase)
-                .textFieldStyle(.roundedBorder)
-                .font(Theme.Font.body)
-                .onSubmit(applyTypedPhrase)
+        VStack(alignment: .leading, spacing: 6) {
+            NXPanelField(icon: "text.cursor") {
+                TextField("Try “next friday at 9am”", text: $typedPhrase)
+                    .onSubmit(applyTypedPhrase)
+            }
 
             if !typedPhrase.isEmpty {
                 let parsed = DateParser.parse(typedPhrase)
                 if let date = parsed.date {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.turn.down.right")
-                            .font(.system(size: 9))
-                        Text(preview(date, includesTime: parsed.includesTime, recurrence: parsed.recurrence))
-                    }
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.accent)
+                    // Previewed the way capture previews its tokens.
+                    let label = preview(date, includesTime: parsed.includesTime, recurrence: parsed.recurrence)
+                    NXChip(chip: NXChipModel(id: label, label: label, icon: "arrow.turn.down.right", tone: .accent))
                 } else {
                     Text("Not recognised yet")
-                        .font(Theme.Font.metadata)
-                        .foregroundStyle(Theme.tertiaryText)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(NX.ink(0.4))
                 }
             }
         }
@@ -121,45 +120,44 @@ struct DueDatePicker: View {
     // MARK: - Presets
 
     private var presets: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 4) {
-            presetRow("Today", symbol: "sun.max", detail: shortWeekday(0)) {
+        NXFlow(spacing: 4) {
+            presetPill("Today", symbol: "sun.max", detail: shortWeekday(0), day: day(0)) {
                 env.store.setDueToday(block)
             }
-            presetRow("Tomorrow", symbol: "sunrise", detail: shortWeekday(1)) {
+            presetPill("Tomorrow", symbol: "sunrise", detail: shortWeekday(1), day: day(1)) {
                 env.store.setDueTomorrow(block)
             }
-            presetRow("This weekend", symbol: "beach.umbrella", detail: weekendDetail) {
+            presetPill("This weekend", symbol: "beach.umbrella", detail: weekendDetail, day: weekendDate) {
                 if let date = weekendDate {
                     env.store.setDueDate(date, for: block)
                 }
             }
-            presetRow("Next week", symbol: "calendar", detail: shortWeekday(NXFormat.nextWeekOffset())) {
+            presetPill("Next week", symbol: "calendar", detail: shortWeekday(NXFormat.nextWeekOffset()),
+                       day: day(NXFormat.nextWeekOffset())) {
                 env.store.setDueNextWeek(block)
             }
         }
     }
 
-    private func presetRow(_ title: String, symbol: String, detail: String, action: @escaping () -> Void) -> some View {
-        Button {
+    private func presetPill(_ title: String, symbol: String, detail: String, day: Date?,
+                            action: @escaping () -> Void) -> some View {
+        let isOn = day.flatMap { day in block.dueDate.map { calendar.isDate($0, inSameDayAs: day) } } ?? false
+        return NXInspectorPill(isOn: isOn) {
             action()
             load()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.secondaryText)
-                    .frame(width: 16)
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10.5, weight: .medium))
                 Text(title)
-                    .font(.system(size: 12.5))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .help("\(title) · \(detail)")
+        .accessibilityValue(detail)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private func day(_ offset: Int) -> Date? {
+        calendar.date(byAdding: .day, value: offset, to: .now)
     }
 
     private func shortWeekday(_ offset: Int) -> String {

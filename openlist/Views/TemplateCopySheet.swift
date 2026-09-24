@@ -25,38 +25,69 @@ struct TemplateCopySheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Use as template").font(.title2.weight(.semibold))
-            Text(sourceTitle).font(.headline).lineLimit(3)
-            Text("Create an independent copy with all nested tasks, notes and files. Tasks start incomplete, with no due dates, reminders or calendar placements.")
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Labels, priority, stars and formatting are kept. The original stays unchanged.")
-                .foregroundStyle(Theme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                NXPanelTitle("Use as template")
+                Text(sourceTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(3)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Create an independent copy with all nested tasks, notes and files. Tasks start incomplete, with no due dates, reminders or calendar placements.")
+                    .foregroundStyle(NX.ink(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Labels, priority, stars and formatting are kept. The original stays unchanged.")
+                    .foregroundStyle(NX.ink(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 12.5))
+            .lineSpacing(2)
             if sources.contains(where: { $0.recurrence != nil }) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle("Keep repeating rules", isOn: $keepsRecurrence)
+                // A settings row: the design's 500 13px label and 11.5px hint beside its switch.
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Keep repeating rules")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(NX.ink)
+                        Text("Repeats start with zero completions and no end date. Choose a new due date after copying.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(NX.ink(0.48))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    NXToggle(isOn: keepsRecurrence, label: "Keep repeating rules") { keepsRecurrence.toggle() }
                         .accessibilityIdentifier("template-keep-recurrence")
-                    Text("Repeats start with zero completions and no end date. Choose a new due date after copying.")
-                        .font(.callout).foregroundStyle(Theme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+                .contentShape(Rectangle())
+                .onTapGesture { keepsRecurrence.toggle() }
             }
             if let error {
-                Text(error).foregroundStyle(.red)
+                Text(error)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(NX.redText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("template-copy-error")
             }
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 Button("Create copy", action: createCopy)
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(NXPanelButtonStyle(kind: .primary))
                     .accessibilityIdentifier("template-create-copy")
             }
         }
         .padding(24)
         .frame(width: 430)
+        .presentationBackground(NX.card)
+        .tint(env.workbench.style.accent)
+        // Presented from the window, outside the Next shell's style.
+        .environment(\.nextStyle, env.workbench.style)
     }
 
     private func createCopy() {

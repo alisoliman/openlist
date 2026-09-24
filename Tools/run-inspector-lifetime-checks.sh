@@ -23,5 +23,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-ch
   openlist/Services/Navigator.swift openlist/Services/SelectionCommandPolicy.swift openlist/Services/DragPayload.swift openlist/Services/SearchProjection.swift \
   openlist/Views/RowSelectionContext.swift openlist/Views/RowSelectionGutter.swift openlist/Views/RowSelectionControl.swift \
   openlist/Views/ContentRevealNotice.swift openlist/Views/ContentRevealNote.swift \
+  openlist/Next/NextTheme.swift openlist/Next/NextPanels.swift openlist/Services/AppSettings.swift \
   Tools/EditorChecks/Support.swift Tools/InspectorLifetimeChecks/LifetimeSupport.swift Tools/InspectorLifetimeChecks/main.swift
 "$OUT/inspector-checks"

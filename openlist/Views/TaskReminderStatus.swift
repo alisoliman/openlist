@@ -58,8 +58,9 @@ struct TaskReminderStatus: View {
                         }
                     }
                 }
-                .font(Theme.Font.metadata)
-                .foregroundStyle(Theme.secondaryText)
+                .font(.system(size: 11.5))
+                .foregroundStyle(NX.ink(0.55))
+                .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                 .fixedSize(horizontal: false, vertical: true)
                 .task { recovery.refresh() }
             }
