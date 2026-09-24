@@ -117,7 +117,10 @@ struct OpenlistWidgetContent: View {
         case .upNext, .agenda: WidgetRoute.calendar.url
         case .activity: WidgetRoute.activity.url
         case .capture: size == .small ? WidgetRoute.capture(listID: nil, forToday: false).url : WidgetRoute.inbox.url
-        case .list: list.map { WidgetRoute.listURL(libraryID: entry.snapshot?.libraryID, listID: $0.id) } ?? WidgetRoute.lists.url
+        // "No lists" opens Lists; "Open Openlist", before any snapshot, Today.
+        case .list:
+            list.map { WidgetRoute.listURL(libraryID: entry.snapshot?.libraryID, listID: $0.id) }
+                ?? (entry.snapshot == nil ? WidgetRoute.today.url : WidgetRoute.lists.url)
         }
     }
 }

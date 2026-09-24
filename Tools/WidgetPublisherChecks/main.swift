@@ -109,4 +109,15 @@ store.save()
 let picker = publisher.buildSnapshot().lists.map(\.title)
 check(picker == ["Home", "Beta", "Alpha", "Alpha notes", "Trip"], "Lists come in sidebar order, not creation order: \(picker)")
 
+// Every active list is published, with its rows, so a List widget's list in a
+// later section stays however many new lists join the sidebar ahead of it.
+store.context.insert(Block(kind: .task, text: "Plan offsite", listID: beta.id, sortIndex: 0))
+for index in 1...60 { store.createList(title: "More \(index)") }
+let crowded = publisher.buildSnapshot().lists
+store.createList(title: "Newest")
+let pushed = publisher.buildSnapshot().lists
+check(crowded.count == 65 && pushed.count == 66 && pushed.last?.id == list.id, "Past 60 lists, every one is published")
+check(pushed.first { $0.id == beta.id }?.openItems.map(\.title) == ["Plan offsite"],
+      "A later section's list keeps its place and rows after a new list is made")
+
 print("Passed \(checks) widget publisher checks")

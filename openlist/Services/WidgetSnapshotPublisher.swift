@@ -177,10 +177,11 @@ final class WidgetSnapshotPublisher {
         let tasksByList = Dictionary(grouping: allTasks.filter { $0.listID != nil }, by: { $0.listID! })
         let above = blocksAbove(allTasks)
         var orders: [UUID: (key: Int, ids: [UUID])] = [:]
-        // The List widget's picker and its default follow the sidebar, and
-        // what doesn't fit is the sidebar's last.
+        // The List widget's picker and its default follow the sidebar. Every
+        // active list is here, so the one a widget shows stays however many
+        // lists are made, moved or reordered ahead of it.
         let sidebar = hierarchy.sidebarOrder(lists, sections: store.allSections())
-        snapshot.lists = sidebar.filter { !$0.isSystemInbox }.prefix(60).map { list in
+        snapshot.lists = sidebar.filter { !$0.isSystemInbox }.map { list in
             let owned = tasksByList[list.id] ?? []
             let open = openTasks(in: list, tasks: owned, above: above, limit: 7, orders: &orders)
             let done = owned.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
@@ -214,6 +215,8 @@ final class WidgetSnapshotPublisher {
     /// typing in the list's prose leaves it be.
     private func openTasks(in list: TaskList, tasks: [Block], above: [UUID: Block], limit: Int,
                            orders: inout [UUID: (key: Int, ids: [UUID])]) -> [Block] {
+        // A list with nothing open has no order to work out.
+        guard tasks.contains(where: { !$0.isCompleted }) else { return [] }
         let sorting = list.sorting
         func hash(_ body: (inout Hasher) -> Void) -> Int {
             var hasher = Hasher()

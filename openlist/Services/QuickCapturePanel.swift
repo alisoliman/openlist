@@ -7,8 +7,8 @@ import AppKit
 import SwiftData
 import SwiftUI
 
-/// What opened Quick Add asks of it. The hot key, the menu bar and File ▸
-/// Quick Add ask nothing; a widget can name a list, or ask for today.
+/// What a widget asks of Quick Add: a list, or today, or neither for Inbox
+/// with no date. The hot key, the menu bar and File ▸ Quick Add ask nothing.
 struct QuickCaptureRequest: Equatable {
     /// The list the card starts on; Inbox when nil.
     var listID: UUID?
@@ -112,25 +112,26 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         if enabled { QuickCaptureHotKey.shared.register() }
     }
 
-    /// Opens the card, resuming a draft put aside by a click away. A request
-    /// with a list or for today re-aims the card, an open one included; one
-    /// that asks nothing leaves the card as it was.
-    func show(_ request: QuickCaptureRequest = QuickCaptureRequest()) {
+    /// Opens the card, resuming a draft put aside by a click away. A widget's
+    /// request re-aims the card, an open one included, so the Quick Add
+    /// widget's always starts on Inbox with no date; without one, from the hot
+    /// key, the menu bar or File ▸ Quick Add, the card stays as it was.
+    func show(_ request: QuickCaptureRequest? = nil) {
         guard let env, let container else { return }
         let panel = panel ?? makePanel()
         self.panel = panel
         if panel.isVisible, let draft {
-            draft.apply(request)
+            if let request { draft.apply(request) }
             panel.makeKeyAndOrderFront(nil)
             return
         }
         let draft: QuickCaptureDraft
         if let kept = self.draft, let keptUntil, keptUntil > .now {
-            kept.apply(request)
+            if let request { kept.apply(request) }
             draft = kept
             if !kept.captureText.isEmpty { caretToEnd(in: panel) }
         } else {
-            draft = QuickCaptureDraft(store: env.store, settings: env.settings, request: request)
+            draft = QuickCaptureDraft(store: env.store, settings: env.settings, request: request ?? QuickCaptureRequest())
         }
         self.draft = draft
         keptUntil = nil
