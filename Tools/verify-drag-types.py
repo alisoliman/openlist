@@ -16,9 +16,10 @@ except (OSError, plistlib.InvalidFileException) as error:
     fail(f"cannot read Info.plist ({error})")
 exports = info.get("UTExportedTypeDeclarations")
 if not isinstance(exports, list):
-    fail("must declare the private drag type and the library backup type")
+    fail("must declare the private drag types and the library backup type")
 for identifier, conformance in [
     ("app.openlist.block-drag", "public.data"),
+    ("app.openlist.list-drag", "public.data"),
     ("solimanali.openlist.library-backup", "com.apple.package"),
 ]:
     matches = [item for item in exports if isinstance(item, dict) and item.get("UTTypeIdentifier") == identifier]
@@ -27,4 +28,4 @@ for identifier, conformance in [
     parents = matches[0].get("UTTypeConformsTo")
     if not isinstance(parents, list) or conformance not in parents:
         fail(f"{identifier} must conform to {conformance}")
-print(f"Verified private drag type and library backup export: {path}")
+print(f"Verified private drag types and library backup export: {path}")

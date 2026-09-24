@@ -60,7 +60,6 @@ struct BlockDragAndDrop: ViewModifier {
                         onMove: onMove,
                         onDropText: onDropText,
                         onInvalid: { env.store.refuse("This internal drag is invalid or belongs to another library. No rows were changed.") },
-                        onList: { env.store.refuse("Lists can't be dropped into a document. No rows were changed.") },
                         onUnavailable: { env.store.refuse("The drop target is no longer available. No rows were changed.") }
                     )
                 )
@@ -100,8 +99,6 @@ private struct RowDropDelegate: DropDelegate {
     let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
     let onInvalid: () -> Void
-    /// A sidebar list, which travels on the rows' own type.
-    let onList: () -> Void
     let onUnavailable: () -> Void
 
     private var targetIsAvailable: Bool {
@@ -138,9 +135,8 @@ private struct RowDropDelegate: DropDelegate {
                     // The target may disappear while the provider loads. Do
                     // not inspect its kind, ID or position after deletion.
                     guard targetIsAvailable else { onUnavailable(); return }
-                    guard let data, let value = String(data: data, encoding: .utf8) else { onInvalid(); return }
-                    if DragPayload.list.decode(value) != nil { onList(); return }
-                    guard case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID) else {
+                    guard let data, let value = String(data: data, encoding: .utf8),
+                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID) else {
                         onInvalid()
                         return
                     }

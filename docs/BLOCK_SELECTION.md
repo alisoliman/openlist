@@ -58,10 +58,12 @@ Versioned drag payloads carry a per-Navigator session nonce. A document line
 and a sidebar list take only those: an older single-row UUID payload and
 malformed internal payloads are rejected, never inserted as text or moved. Drop handlers recheck the target model before
 dispatching a mutation, so a target deleted during payload loading produces an
-unavailable-target notice and no partial drop. Both app manifests export
-`app.openlist.block-drag` as `public.data`; `Tools/verify-drag-types.py` checks
-both manifests, and the Dev and Release verifiers run it on the built
-Info.plist.
+unavailable-target notice and no partial drop. A sidebar list drags on a
+private type of its own, `app.openlist.list-drag`, which only the sidebar takes,
+so a document line neither takes it in as text nor marks a drop for it. Both
+app manifests export `app.openlist.block-drag` and `app.openlist.list-drag` as
+`public.data`; `Tools/verify-drag-types.py` checks both manifests, and the Dev
+and Release verifiers run it on the built Info.plist.
 
 ## Checks
 

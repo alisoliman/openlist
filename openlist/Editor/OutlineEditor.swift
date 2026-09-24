@@ -545,7 +545,7 @@ final class OutlineEditor {
                 appliedFocusToken = token
             },
             onEscape: { [self] in
-                if line?.blockID == blockID { commitLine(leaving: true) }
+                if holdsEdit(blockID) { commitLine(leaving: true) }
                 slash = nil
                 focus.request(nil)
                 env.navigator.clearSelection()
@@ -587,7 +587,7 @@ final class OutlineEditor {
             onEndEditing: { [self] storage in
                 // The text view a kind change replaced, not the line being left.
                 guard redrawnLineID != blockID else { return }
-                if line?.blockID == blockID { commitLine(undoTarget: storage, leaving: true) }
+                if holdsEdit(blockID) { commitLine(undoTarget: storage, leaving: true) }
                 // Clicking away lets the caret go, so the host's keys and
                 // targets work again. A caret moving to another row has
                 // already let go.
@@ -683,9 +683,14 @@ final class OutlineEditor {
     /// level where it stands, as the design's convert resets its depth, and
     /// the lines under it follow it there, since nothing goes under a heading
     /// or text. A line turning into a task or from one opens, as the design's
-    /// convert makes it anew.
+    /// convert makes it anew, and so does one turning into a heading or from
+    /// one: a heading folds its section, and a fold an older list left on a
+    /// list item, which draws no caret, mustn't hide the new heading's.
     private func convert(_ block: Block, to kind: BlockKind) {
-        if block.isTask != (kind == .task) { block.isCollapsed = false }
+        let isHeading = { (kind: BlockKind) in BlockTree.sectionLevel(of: kind) != nil }
+        if OutlinePolicy.folds(block.kind) != OutlinePolicy.folds(kind) || isHeading(block.kind) != isHeading(kind) {
+            block.isCollapsed = false
+        }
         env.store.changeKind(block, to: kind)
         // The renderer may draw the new kind in a new text view. The one it
         // replaces gives up the keyboard, which isn't the line being left.
@@ -974,6 +979,9 @@ final class OutlineEditor {
         var isStructural: Bool
         /// Its text when the caret arrived.
         let arrivedText: String
+        /// Its text before the caret wrote in it: what it arrived with, or
+        /// what it had before a commit the caret stayed through.
+        let unwrittenText: String
         /// Its text was already empty when the caret arrived, as an untitled
         /// task or a spacer in an older list is, so passing through leaves it.
         var arrivedEmpty: Bool { OutlineEditor.isBlank(arrivedText) }
@@ -984,16 +992,22 @@ final class OutlineEditor {
         /// them, and a text view gone with its storage would leave its typing.
         let undoTargets = NSHashTable<NSTextStorage>(options: [.strongMemory, .objectPointerPersonality])
 
-        init(blockID: UUID, isNew: Bool, arrivedText: String, session: EditorEditSession) {
+        init(blockID: UUID, isNew: Bool, arrivedText: String, unwrittenText: String? = nil, session: EditorEditSession) {
             self.blockID = blockID
             self.isNew = isNew
             isStructural = isNew
             self.arrivedText = arrivedText
+            self.unwrittenText = unwrittenText ?? arrivedText
             self.session = session
         }
     }
 
     @ObservationIgnored private var line: LineEdit?
+    /// A line written and committed while the caret stayed in it, as for a
+    /// Task menu command, with its text before it was written. It's trimmed
+    /// once the caret leaves, as ``commitLine(undoTarget:removingEmpty:leaving:)``
+    /// trims a line left.
+    @ObservationIgnored private var untrimmed: (blockID: UUID, unwrittenText: String)?
     @ObservationIgnored private var undoObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var isUndoing = false
     @ObservationIgnored private var undoTypedInLine = false
@@ -1003,9 +1017,13 @@ final class OutlineEditor {
     private func openLine(for id: UUID?) -> LineEdit? {
         guard let id else { return nil }
         if let line, line.blockID == id { return line }
+        // Written before a commit the caret stayed through, the line takes
+        // its trim into this edit.
+        let written = untrimmed?.blockID == id ? untrimmed?.unwrittenText : nil
+        if written != nil { untrimmed = nil }
         commitLine(leaving: true)
         guard let block = env.store.block(id: id) else { return nil }
-        let edit = LineEdit(blockID: id, isNew: false, arrivedText: block.text,
+        let edit = LineEdit(blockID: id, isNew: false, arrivedText: block.text, unwrittenText: written,
                             session: env.store.beginEditorSession(in: document.listID, covering: [id]))
         line = edit
         observeUndo()
@@ -1050,6 +1068,24 @@ final class OutlineEditor {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Whether `id` is the line being written, or one written that a commit
+    /// the caret stayed through left to trim.
+    private func holdsEdit(_ id: UUID) -> Bool {
+        line?.blockID == id || untrimmed?.blockID == id
+    }
+
+    /// Whether the caret is still in `id`'s text view: first responder in
+    /// its window, the key one or one a panel or popover has come over.
+    private func caretStays(in id: UUID) -> Bool {
+        firstResponders().contains { ($0 as? BlockNSTextView)?.coordinator?.parent.blockID == id }
+    }
+
+    /// Each window's first responder. Checks, which have no key window,
+    /// stand in text views of their own.
+    @ObservationIgnored var firstResponders: () -> [NSResponder] = {
+        NSApp?.windows.compactMap(\.firstResponder) ?? []
+    }
+
     /// Takes the spaces and line breaks off both ends of a line's text, its
     /// styling kept. Code, one of the editor's own kinds, keeps its indent.
     private func trimEnds(of block: Block) {
@@ -1074,9 +1110,13 @@ final class OutlineEditor {
     ///
     /// A line written in this edit keeps its text trimmed at both ends, as
     /// the design's commit stores it, once the caret is `leaving` it or has
-    /// left. A caret staying, as for a Task menu command, keeps what's typed.
+    /// left. A caret staying, as for a Task menu command, keeps what's typed
+    /// under it until it leaves.
     func commitLine(undoTarget: NSTextStorage? = nil, removingEmpty: Bool = false, leaving: Bool = false) {
-        guard let edit = line else { return }
+        guard let edit = line else {
+            trimUntrimmed(leaving: leaving)
+            return
+        }
         line = nil
         defer { drawnRows = nil }
         for storage in [undoTarget, textStorage(editing: edit.blockID)].compactMap({ $0 }) { edit.undoTargets.add(storage) }
@@ -1085,8 +1125,16 @@ final class OutlineEditor {
             targets.forEach(discardTyping)
             return
         }
-        if block.text != edit.arrivedText, leaving || textStorage(editing: edit.blockID) == nil {
-            env.store.writeInEditorSession(edit.session, to: block) { trimEnds(of: block) }
+        if block.text != edit.unwrittenText {
+            if leaving || !caretStays(in: edit.blockID) {
+                // Written only before a commit the caret stayed through, the
+                // line's writing is in that commit's step.
+                if block.text == edit.arrivedText { trimWritten(block) }
+                else { env.store.writeInEditorSession(edit.session, to: block) { trimEnds(of: block) } }
+            } else {
+                // A space taken from under the caret would join the next word typed.
+                untrimmed = (block.id, edit.unwrittenText)
+            }
         }
         var change: OutlineEdit = edit.isNew ? .added(block.id) : .edited(block.id)
         if !block.kind.isVoid, Self.isBlank(block.text), removes(block, in: edit, explicitly: removingEmpty) {
@@ -1100,6 +1148,25 @@ final class OutlineEditor {
         if env.store.commitEditorSession(edit.session, name: name, undoManager: undoManager) {
             hooks.didRecordEdit(change, name)
         }
+    }
+
+    /// Trims the line a commit the caret stayed through left written, once
+    /// the caret is `leaving` it or has left.
+    private func trimUntrimmed(leaving: Bool) {
+        guard let pending = untrimmed, leaving || !caretStays(in: pending.blockID) else { return }
+        untrimmed = nil
+        guard let block = env.store.block(id: pending.blockID), block.text != pending.unwrittenText else { return }
+        trimWritten(block)
+        drawnRows = nil
+    }
+
+    /// Trims a line whose writing is in a commit's step already, one the
+    /// caret stayed through, now under the step it stayed for. The trim, of
+    /// spaces the design never stores, joins no step: Undo still brings back
+    /// the text the line had before it was written.
+    private func trimWritten(_ block: Block) {
+        trimEnds(of: block)
+        env.store.scheduleSave(after: .seconds(1))
     }
 
     /// Whether an empty line goes as its edit ends. A new one always does.
@@ -1536,7 +1603,7 @@ final class OutlineEditor {
         // could take the caret there. A line just added, not drawn yet,
         // keeps it.
         guard let id = focus.blockID, old.contains(id), !ids.contains(id) else { return }
-        if line?.blockID == id { commitLine(leaving: true) }
+        if holdsEdit(id) { commitLine(leaving: true) }
         focus.request(nil)
     }
 
@@ -1547,6 +1614,7 @@ final class OutlineEditor {
             line = nil
             edit.undoTargets.allObjects.forEach(discardTyping)
         }
+        if let pending = untrimmed, !ids.contains(pending.blockID) { untrimmed = nil }
         if let focused = focus.blockID, !ids.contains(focused) {
             // The caret goes; the host keeps the focus.
             focus.request(nil)

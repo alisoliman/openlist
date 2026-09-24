@@ -141,14 +141,15 @@ func nativeTextView(in view: NSView) -> BlockNSTextView? {
 }
 final class InlineEditorFixture {
     var textChanges = 0
-    var commits = 0
+    /// What each Return handed over as the line's content.
+    var commits: [String] = []
     let block: Block
     init(block: Block) { self.block = block }
     func change(_ content: NSAttributedString) {
         textChanges += 1
         store.setContent(block, attributed: content)
     }
-    func commit() { commits += 1 }
+    func commit(_ content: NSAttributedString) { commits.append(content.string) }
 }
 for paste in [false, true] {
     let block = store.appendBlock(kind: .task, to: .init(listID: list.id))
@@ -156,7 +157,7 @@ for paste in [false, true] {
     let fixture = InlineEditorFixture(block: block)
     let editor = BlockTextView(blockID: block.id, kind: .task, isCompleted: false,
         attributedText: NSAttributedString(string: ""), isFocused: false, pendingCaret: nil, focusToken: 0,
-        callbacks: BlockEditorCallbacks(onChange: fixture.change, onReturn: { _, _ in fixture.commit(); return true }))
+        callbacks: BlockEditorCallbacks(onChange: fixture.change, onReturn: { _, content in fixture.commit(content); return true }))
     let host = NSHostingView(rootView: editor)
     let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 380, height: 80),
         styleMask: .borderless, backing: .buffered, defer: false)
@@ -173,9 +174,10 @@ for paste in [false, true] {
         textView.insertText("Call mum tomorrow", replacementRange: NSRange(location: 0, length: 0))
     }
     check(fixture.textChanges > 0 && block.text == "Call mum tomorrow", "Native typing or single-line paste reports a local text change")
-    check(textView.coordinator!.textView(textView, doCommandBy: #selector(NSTextView.insertNewline(_:))) && fixture.commits == 1,
+    check(textView.coordinator!.textView(textView, doCommandBy: #selector(NSTextView.insertNewline(_:))) && fixture.commits.count == 1,
         "Native Return invokes the line's commit callback")
-    check(block.text == "Call mum tomorrow" && block.dueDate == nil, "A typed or pasted title stays as written, as a document line's does")
+    check(fixture.commits == ["Call mum tomorrow"] && block.text == "Call mum tomorrow",
+        "Native Return hands the whole typed or pasted title to its callback, and leaves it as the text view reported it")
     window.contentView = nil
 }
 

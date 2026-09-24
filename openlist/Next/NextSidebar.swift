@@ -8,13 +8,28 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// What a list in the sidebar takes: another list, or the rows a task row
-/// or a list document's grip drags, in this library's own payload.
+/// or a list document's grip drags, in this library's own payloads.
 private nonisolated struct NXSidebarDrop: Transferable {
     let value: String
 
     static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.listTypeIdentifier)) { data in
+            NXSidebarDrop(value: String(decoding: data, as: UTF8.self))
+        }
         DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.blockTypeIdentifier)) { data in
             NXSidebarDrop(value: String(decoding: data, as: UTF8.self))
+        }
+    }
+}
+
+/// What a sidebar section takes: only a list, so a row dragged over it
+/// marks no drop it would refuse.
+private nonisolated struct NXSidebarListDrop: Transferable {
+    let value: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.listTypeIdentifier)) { data in
+            NXSidebarListDrop(value: String(decoding: data, as: UTF8.self))
         }
     }
 }
@@ -205,7 +220,7 @@ struct NextSidebar: View {
                         Button("Delete Section", role: .destructive) { deleteSection(section) }
                     }
                 }
-                .dropDestination(for: NXSidebarDrop.self) { items, _ in
+                .dropDestination(for: NXSidebarListDrop.self) { items, _ in
                     guard let dragged = draggedList(items.map(\.value)) else { return false }
                     env.store.move(list: dragged, toSection: section.id, above: nil)
                     return true

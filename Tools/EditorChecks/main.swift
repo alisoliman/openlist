@@ -231,6 +231,19 @@ coordinator.textDidChange(Notification(name: NSText.didChangeNotification, objec
 let fadedEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task, isCompleted: true)
 check(native.string == "Done task!" && coordinator.signature == BlockTextView.ContentSignature(attributedText: fadedEcho, kind: .task,
     isCompleted: true, drawsStrike: false), "Typing in it matches the model's echo without resetting native editing")
+// Written, a done task reads at full ink, as the design's input does.
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: true, dimsStruck: false, drawsStrike: false,
+    attributedText: doneTitle, isFocused: true, focusToken: 0, callbacks: unstruckParent.callbacks)
+coordinator.apply(doneTitle, to: native, kind: .task, isCompleted: true, dimsStruck: false, drawsStrike: false)
+let writtenAttributes = native.textStorage!.attributes(at: 0, effectiveRange: nil)
+check(writtenAttributes[.strikethroughStyle] == nil && writtenAttributes[.foregroundColor] as? NSColor === NXEditor.ink
+    && native.typingAttributes[.foregroundColor] as? NSColor === NXEditor.ink, "A done task being written reads at full ink, unstruck")
+native.textStorage?.append(NSAttributedString(string: "?", attributes: native.typingAttributes))
+native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
+coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
+let writtenEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task, isCompleted: true)
+check(native.string == "Done task?" && coordinator.signature == BlockTextView.ContentSignature(attributedText: writtenEcho, kind: .task,
+    isCompleted: true, dimsStruck: false, drawsStrike: false), "Typing in it matches the model's echo, done as it is")
 check(BlockTextView.ContentSignature(attributedText: plain, kind: .task, isCompleted: false, drawsStrike: false)
     == BlockTextView.ContentSignature(attributedText: plain, kind: .task, isCompleted: false),
     "An open task's text is the same whoever draws its strike")
@@ -1120,6 +1133,51 @@ store.deleteBlock(olderSpacing)
 store.deleteBlock(indented)
 store.save()
 
+// A commit the caret stays through, as a Task menu command's, keeps the
+// spaces under the caret. The line is trimmed once the caret leaves it, in
+// no step of its own: that commit's step holds what was written.
+let everyResponder = nextEditor.firstResponders
+nextEditor.appendTask()
+let staying = store.block(id: nextEditor.focus.blockID!)!
+let stayingCoordinator = BlockTextView(blockID: staying.id, kind: .task, isCompleted: false, attributedText: NSAttributedString(),
+    isFocused: true, focusToken: 0, callbacks: BlockEditorCallbacks()).makeCoordinator()
+let stayingView = BlockNSTextView(frame: .zero)
+stayingView.coordinator = stayingCoordinator
+nextEditor.firstResponders = { [stayingView] }
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk "))
+recorded.removeAll()
+nextEditor.commitLine()
+check(staying.text == "Buy milk " && recorded.map(\.edit) == [.added(staying.id)], "A commit the caret stays through keeps the spaces under it")
+nextEditor.commitLine()
+check(staying.text == "Buy milk ", "So does another while it stays")
+nextActions(staying).onEscape()
+check(staying.text == "Buy milk" && recorded.count == 1, "Escape then trims the line, in no step of its own")
+nextActions(staying).onFocus()
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk and eggs "))
+nextEditor.commitLine()
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk and eggs  "))
+nextActions(staying).onChange(NSAttributedString(string: "Buy milk and eggs "))
+recorded.removeAll()
+nextActions(staying).onEndEditing(NSTextStorage())
+check(staying.text == "Buy milk and eggs" && recorded.isEmpty,
+    "Written on after it and left as it was then, the line is trimmed as it's left, in no step of its own")
+nextActions(staying).onFocus()
+nextActions(staying).onChange(NSAttributedString(string: " Pack bags "))
+nextEditor.commitLine()
+check(staying.text == " Pack bags ", "The caret staying keeps them once more")
+let showing = nextRows().map(\.id)
+nextEditor.visibleRowsDidChange(showing.filter { $0 != staying.id }, from: showing)
+check(staying.text == "Pack bags" && nextEditor.focus.blockID == nil, "A line leaving the page with the caret in it is trimmed as it goes")
+nextActions(staying).onFocus()
+nextActions(staying).onChange(NSAttributedString(string: "Pack bags "))
+nextEditor.commitLine()
+nextEditor.firstResponders = { [] }
+nextEditor.commitLine()
+check(staying.text == "Pack bags", "A later commit, once the caret has gone, trims it too")
+nextEditor.firstResponders = everyResponder
+store.deleteBlock(staying)
+store.save()
+
 // The store half: one Undo restores exactly what the edit touched.
 let sessionUndo = UndoManager()
 sessionUndo.groupsByEvent = false
@@ -1521,6 +1579,14 @@ store.setCollapsed(true, for: caretTask)
 caretEditor.turn(caretTask.id, into: .bullet)
 check(caretTask.kind == .bullet && !caretTask.isCollapsed && caretRows().contains(caretSubtask.id),
     "A folded task turned into a list item opens, as the design's convert makes the line anew")
+store.setCollapsed(true, for: caretItem)
+caretEditor.turn(caretItem.id, into: .heading2)
+check(caretItem.kind == .heading2 && !caretItem.isCollapsed && caretRows().contains(caretUnderItem.id),
+    "A list item an older list left folded turned into a heading shows its section, as the design's would")
+store.setCollapsed(true, for: caretItem)
+caretEditor.turn(caretItem.id, into: .heading1)
+check(caretItem.kind == .heading1 && caretItem.isCollapsed && !caretRows().contains(caretUnderItem.id),
+    "A folded heading turned into another heading stays folded, as the design's convert keeps it")
 outlineEnv.activeDocument = nil
 
 print("✅ \(checks) editor/store checks passed")

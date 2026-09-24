@@ -40,7 +40,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   `stopWork` and `finishWork`, as Task ▸ Start Working and the notch's ✕ and ✓ do. View ▸
   Collapse All folds only what the design's carets fold (tasks with lines under them,
   headings with a section); Expand All opens every fold, one an older list left on a list
-  item too.
+  item too. A line that becomes a heading, or stops being one, opens, so such a fold never
+  hides a new heading's section (the design keeps a block's flag, which folds a heading
+  turned into a block and back again).
 - Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
   then the Undo label, which at last leaves only its icon; Actions and New task keep their
   labels.
@@ -77,7 +79,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists, which drag
-  on the same private type and are refused on a line), and search
+  on a private type of their own that no line takes), and search
   reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
   puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
   says "Copied “List” as Markdown" in the tray. Open notes are remembered per task on this Mac.

@@ -241,6 +241,7 @@ private final class NXContentCache {
     }
 
     private var entries: [UUID: (key: Key, content: NSAttributedString)] = [:]
+    private var widths: [UUID: (content: NSAttributedString, width: CGFloat, used: CGFloat)] = [:]
 
     func content(of block: Block, store: Store) -> NSAttributedString {
         let key = Key(updatedAt: block.updatedAt, kind: block.kind, isCompleted: block.isCompleted, text: block.text)
@@ -250,8 +251,19 @@ private final class NXContentCache {
         return content
     }
 
+    /// How wide the line's text is laid out at `width`, laid out again only
+    /// once its content or its width changes.
+    func usedWidth(of block: Block, store: Store, width: CGFloat) -> CGFloat {
+        let content = content(of: block, store: store)
+        if let entry = widths[block.id], entry.content === content, entry.width == width { return entry.used }
+        let used = NXTextMeasure.usedWidth(of: content, width: width)
+        widths[block.id] = (content, width, used)
+        return used
+    }
+
     func retain(_ ids: Set<UUID>) {
         entries = entries.filter { ids.contains($0.key) }
+        widths = widths.filter { ids.contains($0.key) }
     }
 }
 
@@ -513,8 +525,7 @@ private struct NXDocumentTask: View {
             : nil
         let closing = workbench.closing[id]
         let struck = closing ?? task.isCompleted
-        let strikeWidth = struck ? NXTextMeasure.usedWidth(of: context.contents.content(of: task, store: env.store),
-                                                           width: titleWidth) : 0
+        let strikeWidth = struck && !editing ? context.contents.usedWidth(of: task, store: env.store, width: titleWidth) : 0
         // The design's 20s clock, so a done subtask's chip moves on from
         // "just now", and a due or late chip turns with the time.
         TimelineView(.periodic(from: .now, by: 20)) { clock in
@@ -532,7 +543,9 @@ private struct NXDocumentTask: View {
                     NXLineText(row: row, context: context, editing: editing)
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
                         .overlay(alignment: .topLeading) {
-                            NXDocumentStrike(struck: struck, closing: closing != nil, width: strikeWidth)
+                            // A line being written shows only what's typed, as
+                            // the design's input does.
+                            if !editing { NXDocumentStrike(struck: struck, closing: closing != nil, width: strikeWidth) }
                         }
                         // A hint with no room after the last line takes the next,
                         // as the design's inline icon wraps.
@@ -1058,7 +1071,9 @@ private struct NXLineText: View {
             kind: block.kind,
             isCompleted: block.isCompleted,
             // A task's strike is drawn over its text, to draw across it as
-            // the design's does.
+            // the design's does. Written, a done task reads at full ink, as
+            // the design's input does.
+            dimsStruck: !(block.isTask && editing),
             drawsStrike: !block.isTask,
             verticalInset: NXEditor.lineBoxInset(for: block.kind),
             attributedText: context.contents.content(of: block, store: env.store),
