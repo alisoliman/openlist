@@ -5,9 +5,13 @@ struct LocalLinkNotice: View {
 
     var body: some View {
         if let error = env.localLinks.error {
-            // Drawn as a reminder's that can't open is, as the two land alike:
-            // grey and untitled, the message saying why.
-            NXNoticeCard(icon: "exclamationmark.circle", message: error.localizedDescription) {
+            // A link that can't open is drawn as a reminder's that can't is, as
+            // the two land alike: grey and untitled, the message saying why. A
+            // library whose link identity can't be read is the app failing,
+            // drawn red as its other failures are.
+            let failed = error == .identityUnavailable
+            NXNoticeCard(icon: failed ? "exclamationmark.triangle" : "exclamationmark.circle", tone: failed ? .error : .info,
+                         message: error.localizedDescription) {
                 Button("Dismiss") { env.localLinks.error = nil }
                     .buttonStyle(NXPanelButtonStyle(kind: .quiet))
             }

@@ -507,7 +507,9 @@ private struct NXSavedTasks {
         case .restored: label = lead.restoredList.isEmpty ? "Restored \(tasks)" : "Restored \(tasks) to \(lead.restoredList)"
         default: label = "\(lead.kind.verb) \(tasks)"
         }
-        return NXSavedItem(id: "e\(lead.id)", icon: NXChangesSection.icon(lead.kind), tone: NXChangesSection.tone(lead.kind),
+        // Repeats rolled on with no other task closing, as the log draws them.
+        let icon = counted.allSatisfy(\.rolls) ? "repeat" : NXChangesSection.icon(lead.kind)
+        return NXSavedItem(id: "e\(lead.id)", icon: icon, tone: NXChangesSection.tone(lead.kind),
                            label: label, listID: lead.listID, listTitle: lead.listTitle, at: lead.at)
     }
 

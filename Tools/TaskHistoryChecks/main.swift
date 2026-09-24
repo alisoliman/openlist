@@ -417,6 +417,20 @@ let rolledChange = try completions(rolled).first { $0.blockID == rolling.id }?.c
 check(rolledChange?.advancesOccurrence == true && rolledChange?.after?.dueDate == rolling.dueDate
           && rolledChange?.after?.dueDate.map { due in rolledChange?.completedDueDate.map { due > $0 } == true } == true,
       "a repeat's completion saves the next date it rolled on to")
+// Repeats done together with no other task closing count as rolls alone, so
+// Earlier draws their row with the repeat glyph, as the log does.
+let bothRolling = ["Rolls one", "Rolls two"].map { batching.appendBlock(kind: .task, text: $0, to: .init(listID: batchList.id)) }
+for task in bothRolling { task.dueDate = .now; task.recurrence = .weekly }
+_ = batching.insertChild(kind: .task, text: "Reset three", of: bothRolling[0])
+try batching.persistChanges()
+let rolledTogether = UUID()
+batching.withActivityBatch(rolledTogether) { for task in bothRolling { batching.toggleCompletion(task) } }
+let togetherTasks = try completions(rolledTogether).map { NXSavedTask(id: $0.blockID, rolls: $0.change?.advancesOccurrence == true) }
+let togetherCounted = NXSavedChanges.counted(togetherTasks, kind: ActivityKind.completed.rawValue) {
+    batching.blockIncludingTrash(id: $0)?.parentID
+}
+check(togetherTasks.count == 3 && togetherCounted.count == 2 && togetherCounted.allSatisfy { togetherTasks[$0].rolls },
+      "two repeats done together count two, each a roll, the subtask one reset left out")
 // A list's restore saves where it went back to, as its tray says it.
 let placeParent = batching.createList(title: "Place parent")
 let placeChild = batching.createChildList(in: placeParent)!

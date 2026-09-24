@@ -676,13 +676,14 @@ with it. If the original parent or list is unavailable, Restore puts the item
 in a pinned **Recovered items** list (the one there is, or a new one) and says
 where it came from; that provenance is stored separately and never rewrites the
 original notes. Undo sends it back to Trash and removes a Recovered items list it
-made. Archived lists keep their archive state.
+made once that list is empty again. Archived lists keep their archive state.
 
 **Hold to erase** and **Hold to empty Trash** act after a press and hold
 (VoiceOver, which can't hold, asks in a sheet instead) and remove only files with
-no remaining live or retained references. These actions cannot be undone. Empty lines the document takes away and undone captures use structural
-cleanup and session Undo; they do not fill Trash. **Delete everything…** in Settings → Data
-permanently removes both active content and Trash. Library backups (format 5) include
-Trash and its media, list covers and list ownership; formats 1–4 can still be restored.
-A restore already staged by an older app must be cancelled and prepared again from the
-original backup.
+no remaining live or retained references. These actions cannot be undone. Empty
+lines the document takes away and undone captures use structural cleanup and
+session Undo; they do not fill Trash. **Delete everything…** in Settings → Data
+permanently removes both active content and Trash. Library backups (format 5)
+include Trash and its media, list covers and list ownership; formats 1–4 can
+still be restored. A restore already staged by an older app must be cancelled
+and prepared again from the original backup.

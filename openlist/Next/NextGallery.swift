@@ -353,9 +353,10 @@ private struct NXTrashRow: View {
         .padding(.horizontal, 12)
         .background(hovering ? NX.ink(0.03) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         // The design's fixed flight, whatever the Motion setting: the fade on
-        // CSS's ease, the slide on the standard curve.
+        // CSS's ease, the slide on the standard curve. Reduce Motion only
+        // fades it, as its hint promises.
         .animation(NX.cssEase(300)) { $0.opacity(flying ? 0 : 1) }
-        .animation(NX.standard(300)) { $0.offset(x: flying ? -56 : 0) }
+        .animation(NX.standard(300)) { $0.offset(x: flying && style.slides ? -56 : 0) }
         .onHover { hovering = $0 }
     }
 
