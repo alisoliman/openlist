@@ -58,8 +58,9 @@ and the [MIT license](LICENSE).
 
 A list holds an arbitrarily deep tree of blocks — tasks, paragraphs, three heading
 levels, bullets, numbered items, quotes, code and dividers, plus inline images.
-A task's detail page is the same editor rooted at that task, so subtasks nest as
-deeply as you like.
+Subtasks are written in the list's document, two levels deep as the design's
+indent allows; the inspector lists a task's subtasks with their progress, and a
+subtask shows the task it belongs to.
 
 Lists can also own separately titled **child list documents**. Create one from
 List options, navigate with breadcrumbs, or use **Move List** to change its
@@ -206,8 +207,9 @@ Empty notes and files use add actions rather than empty forms. Creation and
 completion timestamps are inside **Activity**; **More** contains Copy Link
 and Delete. Priority and label controls remain named for
 accessibility, and long label collections show a compact summary.
-**Add subtask** uses the document editor's insertion and Undo path, placing the
-caret in the new subtask immediately.
+**Add subtask** goes to the task's list document, opening it if needed, unfolds
+the task and writes a new subtask line at the end of its subtasks, as one Undo
+step.
 
 The sidebar's **Activity** heatmap shows 12 weeks of recorded completions with
 daily counts and saved task details. Ordinary tasks count once; recurring tasks
@@ -287,17 +289,15 @@ upgrade, previously hidden lists stay hidden and lists using the historical
 shown default adopt inheritance. Older versions did not distinguish an explicit
 Show choice from that default. Inbox continues to inherit the app setting.
 The default stays on each Mac; explicit list overrides sync with the list.
-This compact control sits beside Document / Tasks. Its adjacent menu chooses
-the visibility policy; an empty list uses the completed icon without a zero count.
+On a list's page, done top-level tasks gather in the **Completed** group under
+its document, open or folded by that preference, which the list's **…** menu
+sets under **Completed Tasks**.
 
-Each list also has a **Document / Tasks** switch, remembered per list on this
-Mac. Document keeps headings, notes, images and nested content. Tasks hides that
-prose and shows every task once, including subtasks beneath collapsed blocks;
-the parent breadcrumb keeps each subtask in context. Its sort menu orders the
-whole list by due date, creation date, alphabetically or priority. **Document
-order** follows the original outline, and equal sort keys keep that order.
-Completed tasks follow the same sort and visibility preference; hiding a
-completed parent does not hide its open subtasks in Tasks mode.
+The list's **…** menu also has **Show Tasks Only**, remembered per list on this
+Mac: the same document with its headings, notes and prose hidden, each task
+under the tasks above it. Its **Sort** menu orders the list's top-level tasks by
+due date, creation date, alphabetically or priority. **Manual** follows the
+original outline, and equal sort keys keep that order.
 
 Editing, completing and opening details act on the original task. **Add task**
 and ⌘N in Tasks mode start capture in the current list and place the new task at
@@ -509,7 +509,10 @@ block, ⇥ that re-parents it, ⌫ that merges into the row above, arrow keys th
 between blocks. Each block therefore hosts a bare `NSTextView` (explicit TextKit 1,
 so `sizeThatFits` can measure synchronously) and `OutlineEditor` arbitrates the keys.
 `OutlineEditor` owns the caret, the `/` menu and every structural edit, and knows
-nothing about how rows look, so `DocumentView` is only one renderer over it.
+nothing about how rows look. `DocumentView` is the legacy renderer over it;
+`NXDocumentOutline` in `Next/` draws every list, and the Inbox shown as a document,
+as the Next design's document, with the engine's `.nextDocument` policy: the
+design's indent, Return, Backspace and drag rules, and one undo step per line edited.
 Everything else is SwiftUI.
 
 ---

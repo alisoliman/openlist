@@ -9,62 +9,69 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
 let navigator = Navigator()
 let listID = UUID()
 navigator.go(to: .list(listID))
-check(!navigator.hasDocumentEditor, "A list opens as a task list until this Mac chooses Document")
-navigator.setListViewMode(.document, for: listID)
-check(navigator.hasDocumentEditor, "Document mode gives the list native outline command ownership")
-navigator.selection = [UUID()]
-navigator.openTask(UUID())
+check(navigator.listViewMode(for: listID) == .document && navigator.documentOwnsEditorCommands && navigator.documentListID == listID,
+      "A list opens as its Next document, which takes outline commands")
 navigator.setListViewMode(.tasks, for: listID)
-check(!navigator.hasDocumentEditor, "List Tasks mode releases outline command ownership")
-check(navigator.selection.isEmpty && navigator.openTaskID == nil, "Switching presentation clears stale document and inspector selection")
-navigator.openTask(UUID())
+check(navigator.documentOwnsEditorCommands && navigator.documentListID == listID,
+      "List Tasks mode is the same document, filtered, and keeps outline commands")
+navigator.selection = [UUID()]
+let inspectedInTasks = UUID()
+navigator.openTask(inspectedInTasks)
+navigator.setListViewMode(.document, for: listID)
+check(navigator.selection.isEmpty && navigator.openTaskID == inspectedInTasks,
+      "Switching a list's presentation clears stale document selection and keeps the inspector")
 navigator.closeTask()
-check(!navigator.hasDocumentEditor, "Closing a Tasks-mode inspector keeps global task commands available")
+check(navigator.documentOwnsEditorCommands, "Closing the inspector keeps the list document's commands")
 let otherListID = UUID()
 navigator.go(to: .list(otherListID))
-check(!navigator.hasDocumentEditor, "Other lists keep Tasks as their default")
+check(navigator.listViewMode(for: otherListID) == .document, "Other lists open as their document too")
 navigator.goBack()
-check(!navigator.hasDocumentEditor, "Back restores the original list's Tasks presentation")
-navigator.setListViewMode(.document, for: listID)
-check(navigator.hasDocumentEditor, "Returning to Document restores native outline commands")
+check(navigator.documentOwnsEditorCommands && navigator.listViewMode(for: listID) == .document,
+      "Back restores the original list's document")
 let unknownInbox = Navigator()
 unknownInbox.go(to: .inbox)
-check(!unknownInbox.hasDocumentEditor, "Without a known Inbox list, Inbox stays a Next screen")
+check(!unknownInbox.documentOwnsEditorCommands && unknownInbox.documentListID == nil, "Without a known Inbox list, Inbox stays a Next screen")
 let inboxID = UUID()
 navigator.inboxListID = inboxID
 navigator.go(to: .inbox)
-check(!navigator.hasDocumentEditor, "Inbox opens as triage until its list chooses Document")
+check(navigator.listViewMode(for: inboxID) == .tasks && !navigator.documentOwnsEditorCommands,
+      "Inbox opens as triage until its list chooses Document")
 navigator.selection = [UUID()]
-navigator.setListViewMode(.document, for: inboxID)
-check(navigator.hasDocumentEditor && navigator.selection.isEmpty, "The Inbox list's Document mode gives Inbox its rich document editor")
 navigator.openTask(UUID())
-check(navigator.hasDocumentEditor, "Inspector does not replace Inbox document ownership")
+navigator.setListViewMode(.document, for: inboxID)
+check(navigator.documentListID == inboxID && navigator.documentOwnsEditorCommands && navigator.selection.isEmpty
+      && navigator.openTaskID != nil,
+      "The Inbox list's Document mode shows the Inbox as its Next document, and the inspector stays open")
+navigator.openTask(UUID())
+check(navigator.documentListID == inboxID, "Inspector does not replace Inbox document ownership")
 navigator.closeTask()
-check(navigator.hasDocumentEditor, "Closing details returns to Inbox editing")
+check(navigator.documentListID == inboxID, "Closing details returns to Inbox editing")
 navigator.goBack()
-check(navigator.route == .list(listID) && navigator.hasDocumentEditor, "Back restores the list editor")
+check(navigator.route == .list(listID) && navigator.documentOwnsEditorCommands && navigator.documentListID == listID,
+      "Back restores the list document")
 navigator.goForward()
-check(navigator.route == .inbox && navigator.hasDocumentEditor, "Forward restores Inbox document commands")
+check(navigator.route == .inbox && navigator.documentListID == inboxID, "Forward restores Inbox document commands")
 navigator.go(to: .tasks)
-check(!navigator.hasDocumentEditor, "Tasks does not inherit Inbox document ownership")
+check(!navigator.documentOwnsEditorCommands && navigator.documentListID == nil, "Tasks does not inherit Inbox document ownership")
 
 let suite = "openlist-list-mode-checks-\(UUID().uuidString)"
 let defaults = UserDefaults(suiteName: suite)!
 defer { defaults.removePersistentDomain(forName: suite) }
 let saved = Navigator(defaults: defaults)
-saved.setListViewMode(.document, for: listID)
+saved.setListViewMode(.tasks, for: listID)
 let reopened = Navigator(defaults: defaults)
 reopened.go(to: .list(listID))
-check(reopened.hasDocumentEditor, "This Mac remembers each list's presentation across relaunch")
+check(reopened.listViewMode(for: listID) == .tasks, "This Mac remembers each list's presentation across relaunch")
+reopened.setListViewMode(.document, for: listID)
+check(Navigator(defaults: defaults).listViewMode(for: listID) == .document,
+      "Choosing Document again is remembered too")
 reopened.setListViewMode(.tasks, for: listID)
-check(!reopened.hasDocumentEditor && Navigator(defaults: defaults).listViewMode(for: listID) == .tasks,
-      "Choosing Tasks again is remembered too")
 let list = TaskList(title: "List")
 list.id = listID
 let note = Block(kind: .paragraph, text: "Visible source", listID: listID)
 let reveal = try ContentReveal.resolve(.block(note.id), blocks: [note], lists: [list])
 reopened.reveal(reveal)
-check(reopened.hasDocumentEditor && reopened.contentReveal == reveal,
+check(reopened.listViewMode(for: listID) == .document && reopened.contentReveal == reveal,
       "Exact-content navigation returns to Document before revealing prose")
 let outlineScope = UUID(), inspectorScope = UUID()
 let a = UUID(), b = UUID(), c = UUID()
@@ -94,7 +101,7 @@ navigator.go(to: .list(listID))
 navigator.selectRow(a, gesture: .replace, scope: listScope, visible: [a, b, c])
 navigator.stepRowSelection(1, extending: true, scope: listScope, visible: [a, b, c])
 navigator.setListViewMode(.tasks, for: listID)
-check(!navigator.hasDocumentEditor && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil
+check(navigator.listViewMode(for: listID) == .tasks && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil
       && !navigator.isSelectingRows && navigator.rowFocusRequest == nil,
       "Switching to list Tasks clears the document selection, anchor and pending native focus")
 navigator.selectRow(c, gesture: .replace, scope: listScope, visible: [c, b, a])
@@ -103,7 +110,7 @@ check(navigator.orderedSelection == [c, b, a], "List Tasks range follows the ent
 navigator.reconcileSelection(scope: listScope, visible: [b, a])
 check(navigator.orderedSelection == [b, a], "Hiding a completed task prunes it from list Tasks selection")
 navigator.setListViewMode(.document, for: listID)
-check(navigator.hasDocumentEditor && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil,
+check(navigator.listViewMode(for: listID) == .document && navigator.selection.isEmpty && navigator.rowSelection.scopeID == nil,
       "Returning to Document clears list Tasks row selection before text focus resumes")
 
 check(navigator.scrollOffset(for: .calendar) == nil, "New pages use the native top anchor rather than a raw zero offset")
@@ -122,7 +129,7 @@ navigator.rememberScrollOffset(0, for: .tasks)
 check(navigator.scrollOffset(for: .tasks) == 0, "A saved raw zero remains distinct from an unvisited page")
 
 // The inspector belongs to the window: it stays open across screens and
-// closes only when a document takes the list over or the route is replaced.
+// presentations, and closes only when the route is replaced.
 let inspecting = Navigator()
 let inspected = UUID(), inspectedListID = UUID()
 inspecting.openTask(inspected)
@@ -133,9 +140,13 @@ check(inspecting.openTaskID == inspected, "Back keeps the inspector open")
 inspecting.goForward()
 check(inspecting.openTaskID == inspected, "Forward keeps the inspector open")
 inspecting.go(to: .list(inspectedListID))
-inspecting.setListViewMode(.document, for: inspectedListID)
-check(inspecting.openTaskID == nil, "Handing the list to its document editor closes the inspector")
-inspecting.openTask(inspected)
+inspecting.setListViewMode(.tasks, for: inspectedListID)
+check(inspecting.openTaskID == inspected, "A list's presentation is its document either way, so the inspector stays")
+let inspectingInbox = UUID()
+inspecting.inboxListID = inspectingInbox
+inspecting.go(to: .inbox)
+inspecting.setListViewMode(.document, for: inspectingInbox)
+check(inspecting.openTaskID == inspected, "The Inbox's document is the Next document too, so the inspector stays")
 inspecting.replace(with: .today)
 check(inspecting.openTaskID == nil, "Stepping off a deleted list closes the inspector")
 

@@ -25,6 +25,27 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (`workbench.openCapture`), so menu commands keep working.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
+- Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
+  `OutlineEditor` engine under its `.nextDocument` policy, tasks on `NXTaskRowChrome` (the
+  Next row's chrome with the live text as its title) and the other kinds in the same
+  language. Done top-level tasks leave for the Completed group below. Each line's edit is
+  one undo step with the design's label and a change-log entry. The Tasks presentation is
+  the same document showing only its tasks. `Navigator.documentListID` (any list, and the
+  Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
+- The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
+  writes the new line in the list document (`Workbench.addSubtask`,
+  `OutlineEditor.appendSubtask`). The Inbox's document mode is the same list document under
+  the Inbox header. Native extras on the list page: the "…" options menu, the title renamed
+  in place, the description, cover and nested lists, a drag grip on every line (drops go
+  through `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and
+  search reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
+- Where the list document departs from the design, to keep native data safe: a done
+  top-level task stays in the document while a task under it is open; a line left empty
+  goes only when it was new or emptied in its edit and holds nothing but text (Backspace
+  also takes one that was already empty); a line's undo step leaves alone what anything
+  else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
+  heading or task folds it away. Headings and text take no key focus after Escape, as in
+  the design; Return writes them again and J/K step to the tasks beside them.
 
 ## Status checklist
 
@@ -41,3 +62,6 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - [x] Calendar (grid, not planned yet, plan, planned now, overrun)
 - [x] Lists gallery, Activity (+ Changes), Trash (hold), Settings
 - [x] Build + native verification screenshots
+- [x] List document: lines, carets, notes, Turn into, completed split, keys, undo and log
+- [x] Inspector subtasks and "Subtask of", Inbox document mode, list options menu,
+      title in place, drag grip, search reveal

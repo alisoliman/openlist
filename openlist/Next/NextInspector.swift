@@ -6,6 +6,37 @@
 import SwiftData
 import SwiftUI
 
+/// A task's ancestors in its list document, nearest first, looked up again
+/// only when the chain changes, so typing in the task doesn't fetch them on
+/// every keystroke.
+@MainActor
+private final class NXLineage {
+    private var key: [UUID?] = []
+    private var chain: [Block] = []
+
+    func ancestors(of task: Block, store: Store) -> [Block] {
+        let live = chain.allSatisfy { $0.modelContext != nil && !$0.isDeleted && $0.trashID == nil }
+        // A chain that stopped short of the top, at a parent out of reach, is looked up again.
+        let complete = (chain.last?.parentID ?? task.parentID) == nil
+        if live, complete, key == Self.key(of: task, chain: chain) { return chain }
+        var result: [Block] = []
+        var seen: Set<UUID> = [task.id]
+        var next = task.parentID
+        while let id = next, seen.insert(id).inserted, let block = store.block(id: id) {
+            result.append(block)
+            next = block.parentID
+        }
+        chain = result
+        key = Self.key(of: task, chain: result)
+        return result
+    }
+
+    /// The task and each link's parent, read from the models without a fetch.
+    private static func key(of task: Block, chain: [Block]) -> [UUID?] {
+        [task.id, task.parentID] + chain.map(\.parentID)
+    }
+}
+
 /// The 360pt panel that slides in from the right with one task's details.
 struct NextInspector: View {
     @Environment(AppEnvironment.self) private var env
@@ -21,6 +52,7 @@ struct NextInspector: View {
     @State private var picker: (section: DetailPicker, taskID: UUID)?
     @State private var titleSelection: TextSelection?
     @State private var noteSelection: TextSelection?
+    @State private var lineage = NXLineage()
     @FocusState private var focus: Field?
 
     enum Field { case title, note }
@@ -62,17 +94,26 @@ struct NextInspector: View {
                         if let reveal {
                             ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
                         }
+                        let ancestors = lineage.ancestors(of: task, store: env.store)
+                        if let parent = ancestors.first(where: \.isTask) {
+                            NXInspectorParentCrumb(parent: parent)
+                                .id(parent.id)
+                        }
                         titleRow
                             .id(ContentReveal.Anchor.taskTitle(task.id))
                         properties(list: list)
                         TaskReminderStatus(block: task, attentionOnly: true)
+                        // As the design: not for the Inbox's tasks, nor two levels down.
+                        if !library.isInbox(task), ancestors.count < OutlinePolicy.maximumDepth {
+                            NXInspectorSubtasks(task: task)
+                                .id(task.id)
+                        }
                         planCard
                         VStack(alignment: .leading, spacing: 8) {
                             noteBox
                                 .id(ContentReveal.Anchor.taskNote(task.id))
                             TaskNoteLinks(note: task.note)
                         }
-                        NXInspectorSubtasks(task: task)
                         NXInspectorFiles(task: task)
                         activity
                     }
@@ -140,24 +181,20 @@ struct NextInspector: View {
             load()
             adoptRequestedPicker()
         }
-        .onChange(of: task.id) { oldID, _ in
+        .onChange(of: task.id) { _, _ in
             // The shell reuses this view for every task: save the old task's
             // drafts before loading the new one's.
             commitTitle()
             commitNote()
-            releaseSubtaskCommands(for: oldID)
             if picker?.taskID != task.id { picker = nil }
             load()
         }
         .onChange(of: task.text) { _, _ in title.receive(task.displayTitle) }
         .onChange(of: task.note) { _, _ in note.receive(task.note) }
-        .onChange(of: focus) { old, new in
+        .onChange(of: focus) { old, _ in
             if old == .title { commitTitle() }
             if old == .note { commitNote() }
-            if new != nil { releaseSubtaskCommands(for: task.id) }
         }
-        .onChange(of: workbench.focusID) { _, _ in releaseSubtaskCommands(for: task.id) }
-        .onChange(of: workbench.selection) { _, _ in releaseSubtaskCommands(for: task.id) }
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
         .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
             commitTitle()
@@ -204,13 +241,6 @@ struct NextInspector: View {
             env.store.setNote(edited, for: target)
         }
         note.reset(to: target.note)
-    }
-
-    /// Editing a subtask hands menu commands to its outline. Working anywhere
-    /// else, or on another task, hands them back to the Next screens.
-    private func releaseSubtaskCommands(for id: UUID?) {
-        guard let id, env.activeDocument?.rootBlockID == id else { return }
-        env.activeDocument = nil
     }
 
     /// ⌃D and ⌃L open their popover on the inspected task.

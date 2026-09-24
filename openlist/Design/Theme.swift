@@ -100,50 +100,86 @@ enum Theme {
     ///
     /// There is one editor typography for every renderer: stored rich text
     /// drops fonts that match these, so a renderer-specific face would be
-    /// saved into the document. The values follow the Next rows.
+    /// saved into the document. The values are the Next list document's.
     enum Editor {
-        /// Matches `NXStrikeText`: with no vertical inset, a task title in a
-        /// document sits exactly where a task title does on any Next screen.
+        /// Tasks, bullets and numbered items: 400 13.8/1.45, the size
+        /// `NXStrikeText` sets a Next row's title in.
         static let bodyPointSize: CGFloat = 13.8
-        nonisolated static let heading1PointSize: CGFloat = 26
-        static let heading2PointSize: CGFloat = 17
-        static let heading3PointSize: CGFloat = 14
+        /// Text and quotes: 400 13.5/1.55.
+        static let textPointSize: CGFloat = 13.5
+        /// 700 20/1.3.
+        nonisolated static let heading1PointSize: CGFloat = 20
+        /// 600 15.5/1.35.
+        static let heading2PointSize: CGFloat = 15.5
+        /// 600 13.8/1.45, a Next extra the design has no line for.
+        static let heading3PointSize: CGFloat = 13.8
         static let codePointSize: CGFloat = 12.5
-        /// Space between wrapped lines, as a fraction of the point size. Like
-        /// SwiftUI's `lineSpacing` on the Next rows, none is added above the
-        /// first line or below the last, so a single line keeps the font's
-        /// natural height and never sits low in its selection highlight.
-        static let lineSpacingRatio: CGFloat = 0.2
-        static let codeLineHeightMultiple: CGFloat = 1.15
+        /// Heading 1's letter-spacing, −0.01em.
+        static let heading1Kern: CGFloat = -0.2
         /// Space above and below a block's text, the default for
         /// `BlockTextView.verticalInset`. The legacy document's gutter controls
-        /// are tuned to a single line padded to 20pt. A single 13.8pt line is
-        /// 16pt with its baseline at 13, like `NXStrikeText`, and a Next row
-        /// takes its height from its controls rather than a line box, so a
-        /// renderer lining titles up with Next rows passes 0.
+        /// are tuned to a single line padded to 20pt; a renderer drawing the
+        /// design's line boxes passes ``lineBoxInset(for:)`` instead.
         static let textVerticalInset: CGFloat = 2
-
-        /// The display serif Next uses for titles. Resolved once, after
-        /// `NX.registerFonts()` has run at launch; the system serif stands in
-        /// wherever the bundled face is not registered. Fonts are immutable,
-        /// so sharing one across isolation domains is safe.
-        private nonisolated(unsafe) static let heading1Font = serifFont(ofSize: heading1PointSize)
-
-        private nonisolated static func serifFont(ofSize size: CGFloat) -> NSFont {
-            NSFont(name: "InstrumentSerif-Regular", size: size)
-                ?? NSFont.systemFont(ofSize: size).fontDescriptor.withDesign(.serif).flatMap { NSFont(descriptor: $0, size: size) }
-                ?? .systemFont(ofSize: size)
-        }
 
         static func nsFont(for kind: BlockKind) -> NSFont {
             switch kind {
-            case .heading1: heading1Font
+            case .heading1: .systemFont(ofSize: heading1PointSize, weight: .bold)
             case .heading2: .systemFont(ofSize: heading2PointSize, weight: .semibold)
             case .heading3: .systemFont(ofSize: heading3PointSize, weight: .semibold)
             case .code: .monospacedSystemFont(ofSize: codePointSize, weight: .regular)
-            case .quote: .systemFont(ofSize: bodyPointSize, weight: .regular)
+            case .paragraph, .quote: .systemFont(ofSize: textPointSize, weight: .regular)
             default: .systemFont(ofSize: bodyPointSize, weight: .regular)
             }
+        }
+
+        /// The design's CSS `line-height` for a kind, as a multiple of its size.
+        static func lineHeightMultiple(for kind: BlockKind) -> CGFloat {
+            switch kind {
+            case .paragraph, .quote: 1.55
+            case .heading1: 1.3
+            case .heading2: 1.35
+            default: 1.45
+            }
+        }
+
+        /// One line box, as CSS draws it: `size × line-height`.
+        static func lineHeight(for kind: BlockKind) -> CGFloat {
+            nsFont(for: kind).pointSize * lineHeightMultiple(for: kind)
+        }
+
+        /// Space between wrapped lines, so they fall on the design's line
+        /// pitch. Like SwiftUI's `lineSpacing` on the Next rows, none is added
+        /// above the first line or below the last, so a single line keeps
+        /// TextKit's own height and never sits low in its selection highlight.
+        /// Rounded to the half point, so wrapped text measures whole lines.
+        static func lineSpacing(for kind: BlockKind) -> CGFloat {
+            (max(0, lineHeight(for: kind) - metrics(for: kind).lineHeight) * 2).rounded() / 2
+        }
+
+        /// The inset above and below a text view's lines that grows its first
+        /// line into the design's line box, the spare height split evenly as
+        /// SwiftUI splits it for `NXStrikeText`. A task's first baseline then
+        /// sits where a Next row's title does.
+        static func lineBoxInset(for kind: BlockKind) -> CGFloat {
+            max(0, lineHeight(for: kind) - metrics(for: kind).lineHeight) / 2
+        }
+
+        /// TextKit's first baseline in a line of `kind`.
+        static func baselineOffset(for kind: BlockKind) -> CGFloat { metrics(for: kind).baseline }
+
+        /// TextKit's own line height and first baseline for each kind's font,
+        /// measured once.
+        private static let lineMetrics: [BlockKind: (lineHeight: CGFloat, baseline: CGFloat)] = {
+            let layout = NSLayoutManager()
+            return Dictionary(uniqueKeysWithValues: BlockKind.allCases.map { kind in
+                let font = nsFont(for: kind)
+                return (kind, (layout.defaultLineHeight(for: font), layout.defaultBaselineOffset(for: font)))
+            })
+        }()
+
+        private static func metrics(for kind: BlockKind) -> (lineHeight: CGFloat, baseline: CGFloat) {
+            lineMetrics[kind] ?? (16, 13)
         }
 
         /// Extra space above a block, used to give headings breathing room.
@@ -178,8 +214,8 @@ enum Theme {
         // caret and IME.
 
         nonisolated static let ink = inkColor(1)
-        /// Quotes.
-        nonisolated static let secondaryInk = inkColor(0.62)
+        /// Text lines and quotes.
+        nonisolated static let secondaryInk = inkColor(0.66)
         nonisolated static let placeholderInk = inkColor(0.36)
         /// Completed task text.
         nonisolated static let completedInk = inkColor(0.42)

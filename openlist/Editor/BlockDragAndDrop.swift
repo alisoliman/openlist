@@ -22,6 +22,14 @@ struct BlockDragAndDrop: ViewModifier {
     /// Reordering is only offered while the stored order is what's on screen —
     /// a sorted view would put the block somewhere other than where it landed.
     var isEnabled: Bool = true
+    /// Whether the middle of the row nests a drop inside it. `nil` offers it
+    /// on every row that can hold children.
+    var holdsDrops: Bool?
+    /// The indicators' colour, indent step, inset past the indent and corner.
+    var accent: Color = Theme.accent
+    var indentStep: CGFloat = Theme.Spacing.indentStep
+    var indicatorInset: CGFloat = 20
+    var radius: CGFloat = Theme.Radius.row
     let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
 
@@ -45,6 +53,7 @@ struct BlockDragAndDrop: ViewModifier {
                     of: [UTType(exportedAs: DragPayload.blockTypeIdentifier), .text, .plainText, .utf8PlainText],
                     delegate: RowDropDelegate(
                         row: row,
+                        holdsDrops: holdsDrops ?? row.block.kind.acceptsChildren,
                         rowHeight: rowHeight,
                         indicator: $indicator,
                         sessionID: env.navigator.blockDragSessionID,
@@ -64,9 +73,9 @@ struct BlockDragAndDrop: ViewModifier {
     private func indicatorLine(for position: DropPosition) -> some View {
         if indicator == position {
             Capsule()
-                .fill(Theme.accent)
+                .fill(accent)
                 .frame(height: 2)
-                .padding(.leading, CGFloat(row.depth) * Theme.Spacing.indentStep + 20)
+                .padding(.leading, CGFloat(row.depth) * indentStep + indicatorInset)
                 .transition(.opacity)
         }
     }
@@ -74,9 +83,9 @@ struct BlockDragAndDrop: ViewModifier {
     @ViewBuilder
     private var nestingHighlight: some View {
         if indicator == .inside {
-            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .strokeBorder(Theme.accent, lineWidth: 1.5)
-                .padding(.leading, CGFloat(row.depth) * Theme.Spacing.indentStep)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(accent, lineWidth: 1.5)
+                .padding(.leading, CGFloat(row.depth) * indentStep)
         }
     }
 }
@@ -84,6 +93,7 @@ struct BlockDragAndDrop: ViewModifier {
 /// Resolves the drop position from the pointer's location within the row.
 private struct RowDropDelegate: DropDelegate {
     let row: BlockRow
+    let holdsDrops: Bool
     let rowHeight: CGFloat
     @Binding var indicator: DropPosition?
     let sessionID: UUID
@@ -153,14 +163,14 @@ private struct RowDropDelegate: DropDelegate {
     }
 
     /// Top third inserts above, bottom third below, and the middle nests —
-    /// but only when the target can actually hold children.
+    /// but only when the target holds drops.
     private func position(for info: DropInfo) -> DropPosition {
         let height = max(1, rowHeight)
         let y = info.location.y
 
         if y < height * 0.3 { return .before }
         if y > height * 0.7 { return .after }
-        return row.block.kind.acceptsChildren ? .inside : .after
+        return holdsDrops ? .inside : .after
     }
 
 }

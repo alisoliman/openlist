@@ -121,7 +121,7 @@ check(navigator.contentReveal == nil && navigator.listViewMode(for: listID) == .
       "Closed main window queues a list link without prematurely leaving Tasks mode")
 links.windowReady(true)
 check(navigator.openTaskID == nil && navigator.contentReveal?.destination == .list(listID), "Reopened window consumes pending list link")
-check(navigator.listViewMode(for: listID) == .document && navigator.hasDocumentEditor,
+check(navigator.listViewMode(for: listID) == .document && navigator.documentOwnsEditorCommands,
       "Queued whole-list link reopens the original document from Tasks mode")
 
 // Both entry points share one navigator after integration. Readiness must not

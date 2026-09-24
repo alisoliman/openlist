@@ -60,6 +60,45 @@ struct NextInboxScreen: View {
     }
 }
 
+/// The Inbox as its document, a native extra: the list document every list
+/// shows, under the Inbox's own header. Triage stays the Inbox's default.
+struct NextInboxDocumentScreen: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextLibrary) private var library
+    let inbox: TaskList
+    /// The document's task rows, which lead the page's J/K order.
+    @State private var documentRowIDs: [UUID] = []
+
+    var body: some View {
+        let workbench = env.workbench
+        let groups = NextListScreen.completedGroups(library.tasks(in: inbox.id), workbench: workbench,
+                                                    showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks),
+                                                    inDocument: Set(documentRowIDs))
+        NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
+            NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox",
+                           subtitle: "\(library.inboxQueue(workbench).count) to triage") {
+                Button { env.navigator.setListViewMode(.tasks, for: inbox.id) } label: {
+                    Image(systemName: "rectangle.stack").font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 7,
+                                                padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
+                                                foreground: NX.ink(0.45), hoverForeground: NX.ink))
+                .help("Triage one task at a time")
+                .accessibilityLabel("Show as Triage")
+            }
+            NXDocumentOutline(list: inbox)
+                // The Turn into card draws over the Completed group.
+                .zIndex(1)
+                .onPreferenceChange(NXDocumentRowsKey.self) { documentRowIDs = $0 }
+            // The design's 20s clock, so Completed's done-ago chips move on.
+            TimelineView(.periodic(from: .now, by: 20)) { context in
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: inbox.id, notes: true,
+                                                                    now: context.date))
+            }
+        }
+    }
+}
+
 private struct NXTriageCard: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style

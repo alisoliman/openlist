@@ -114,7 +114,8 @@ final class AppEnvironment {
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store, libraryID: libraryID)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
-        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar)
+        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar,
+                              defaults: ReviewSession.defaults)
         widgetActions = WidgetActionApplier(store: store, workbench: workbench, calendar: calendar, publisher: widgetPublisher)
         assert(WidgetRoute.scheme == LocalLink.scheme, "Widget routes and item links share the app's URL scheme")
 

@@ -59,7 +59,10 @@ final class Workbench {
 
     // MARK: Focus & selection
 
-    var focusID: UUID?
+    var focusID: UUID? {
+        // A row taking the focus ends what Escape left in the list document.
+        didSet { if focusID != nil { document?.forgetEscape() } }
+    }
     var selection: Set<UUID> = []
     /// Row order on screen, published by the visible screen for J/K and ⌘A.
     @ObservationIgnored var visibleIDs: [UUID] = [] {
@@ -130,6 +133,66 @@ final class Workbench {
     var searchIncludesCompleted = false
     var activityDay: Date?
 
+    // MARK: List document
+
+    /// The list document on show, for the keys and Undo that reach it from
+    /// outside its rows.
+    @ObservationIgnored weak var document: OutlineEditor?
+    /// Tasks whose note shows under them in the list document, remembered on
+    /// this Mac.
+    var openNotes: Set<UUID> = [] {
+        didSet { if openNotes != oldValue { defaults?.set(openNotes.map(\.uuidString), forKey: Self.openNotesKey) } }
+    }
+    /// The task whose note is being written in place.
+    var editingNoteID: UUID? {
+        didSet { if editingNoteID != nil, editingNoteID != oldValue { noteEditRequestedAt = .now } }
+    }
+    /// When a note was last asked to take the keyboard, which it does a
+    /// moment later, for the keys typed in between.
+    @ObservationIgnored private(set) var noteEditRequestedAt: Date?
+    /// The task the inspector's Add subtask is for, until its list's document
+    /// is on show to write the new line.
+    @ObservationIgnored var pendingSubtaskParentID: UUID?
+    /// A list just made, whose title takes the keyboard once its page shows.
+    @ObservationIgnored var namingListID: UUID?
+    @ObservationIgnored private let defaults: UserDefaults?
+    private static let openNotesKey = "nextOpenNotes"
+
+    /// The inspector's Add subtask, as the design's: goes to the task's list
+    /// document, opening it if needed, where the task unfolds and a new
+    /// subtask line at the end of its subtasks takes the caret.
+    func addSubtask(to id: UUID) {
+        guard let task = store.block(id: id), task.isTask, let list = store.list(id: task.listID) else { return }
+        document?.commitLine()
+        if let document, document.document.listID == list.id {
+            document.appendSubtask(to: id)
+            return
+        }
+        pendingSubtaskParentID = id
+        go(route(for: list))
+    }
+
+    /// Space, or a task's note button: shows or hides its note under it. A
+    /// task with no note starts one instead.
+    func toggleNote(_ id: UUID) {
+        guard let task = store.block(id: id), task.isTask else { return }
+        if !openNotes.contains(id), task.note.isEmpty {
+            editNote(id)
+            return
+        }
+        withAnimation(style.ease(180)) {
+            if openNotes.contains(id) { openNotes.remove(id) } else { openNotes.insert(id) }
+        }
+    }
+
+    /// Opens a task's note for writing in place, as ⇧↩ does from its title.
+    func editNote(_ id: UUID) {
+        openNotes.insert(id)
+        editingNoteID = id
+        focusID = id
+        clearSelection()
+    }
+
     /// View ▸ Hide Sidebar. The shell also folds the sidebar away while a
     /// narrow window shows the inspector; either one hides it.
     var isSidebarHidden = false
@@ -189,11 +252,14 @@ final class Workbench {
     /// The route `visibleIDs` was published on.
     @ObservationIgnored private var visibleRoute: AppRoute?
 
-    init(store: Store, navigator: Navigator, settings: AppSettings, calendar: CalendarCoordinator) {
+    init(store: Store, navigator: Navigator, settings: AppSettings, calendar: CalendarCoordinator,
+         defaults: UserDefaults? = nil) {
         self.store = store
         self.navigator = navigator
         self.settings = settings
         self.calendar = calendar
+        self.defaults = defaults
+        openNotes = Set((defaults?.stringArray(forKey: Self.openNotesKey) ?? []).compactMap(UUID.init(uuidString:)))
         watchWork()
         calendar.onMacReturn = { [weak self] in self?.macDidReturn() }
     }
@@ -283,7 +349,19 @@ final class Workbench {
     func moveFocus(by delta: Int, extending: Bool) {
         guard !visibleIDs.isEmpty else { return }
         let current = focusID.flatMap { visibleIDs.firstIndex(of: $0) }
-        let next = current.map { min(max($0 + delta, 0), visibleIDs.count - 1) } ?? (delta > 0 ? 0 : visibleIDs.count - 1)
+        var next = current.map { min(max($0 + delta, 0), visibleIDs.count - 1) } ?? (delta > 0 ? 0 : visibleIDs.count - 1)
+        // From a list document line left with Escape that isn't a task, J
+        // and K go to the task beside it, or below the document to the rows
+        // after it.
+        if current == nil, focusID == nil, let document, let line = document.escapedBlockID, document.shows(line) {
+            if let id = document.task(beside: line, forward: delta > 0), let index = visibleIDs.firstIndex(of: id) {
+                next = index
+            } else if delta > 0, let index = visibleIDs.firstIndex(where: { !document.shows($0) }) {
+                next = index
+            } else {
+                return
+            }
+        }
         let id = visibleIDs[next]
         if extending {
             withAnimation(style.ease(180)) {
@@ -357,6 +435,13 @@ final class Workbench {
         mark.owner = owner
         if undoable { attach(mark, restores: false) }
         showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
+    }
+
+    /// Logs an edit the list document has just put on the undo stack, in the
+    /// same step, so it shows in Changes and names the toolbar's Undo. As in
+    /// the design, an edit shows no tray.
+    func logEdit(_ label: String, ids: [UUID]) {
+        attach(record(label, icon: "pencil", tone: .neutral, ids: ids), restores: false)
     }
 
     var latestBatch: Int? { log.first?.batch }
@@ -476,6 +561,8 @@ final class Workbench {
     /// Toolbar, tray and ⌘Z: step the window's undo stack. A completion still in
     /// its dwell is an entry there like any other; undoing it cancels the dwell.
     func undoLast() {
+        // A line still being written is one step of its own, so finish it.
+        document?.commitLine()
         guard let undoManager, undoManager.canUndo else { return }
         undoManager.undo()
     }
@@ -568,22 +655,25 @@ final class Workbench {
     /// gets a single entry for all of it straight away. Undone during the dwell
     /// it cancels what's pending; undone later it restores what was written.
     /// `resume` is paused work the completion took off the notch, which Undo
-    /// offers again. `makeLabel` runs after rolling, so a lone repeat can name
-    /// its next date. `settleNow` writes every row at once, with no dwell, and
-    /// `date` is when the completion happened, for ticks made outside the window.
+    /// offers again. `makeLabel` runs after rolling, with the repeats that
+    /// rolled and the tasks that close, so a lone repeat can name its next
+    /// date; those are the tasks the log records. `settleNow` writes every row
+    /// at once, with no dwell, and `date` is when the completion happened, for
+    /// ticks made outside the window.
     func beginClosing(_ tasks: [Block], resuming resume: WorkTaskReference? = nil, settleNow: Bool = false,
-                      at date: Date? = nil, label makeLabel: () -> String) {
+                      at date: Date? = nil, label makeLabel: (_ rolls: [Block], _ closes: [Block]) -> String) {
         // A parent covers the subtasks ticked with it: a repeat resets them for
         // its next date, and the rest complete with their parent as it settles.
         let rolls = uncovered(tasks.filter { $0.recurrence != nil }, by: Set(tasks.map(\.id)))
         let rolled = Set(rolls.map(\.id))
-        let plain = uncovered(tasks.filter { !rolled.contains($0.id) }, by: rolled).map(\.id)
+        let closes = uncovered(tasks.filter { !rolled.contains($0.id) }, by: rolled)
+        let plain = closes.map(\.id)
         let changes = UndoManager()
         changes.groupsByEvent = false
         write(rolls, on: changes, at: date)
-        let label = makeLabel()
+        let label = makeLabel(rolls, closes)
         let icon = !rolls.isEmpty && plain.isEmpty ? "repeat" : "checkmark.circle.fill"
-        let completion = CompletionBatch(mark: record(label, icon: icon, tone: .green, ids: tasks.map(\.id)),
+        let completion = CompletionBatch(mark: record(label, icon: icon, tone: .green, ids: rolls.map(\.id) + plain),
                                          changes: changes, pending: plain, resume: resume, date: date)
         attach(completion: completion, restores: false)
         showTray(label, icon: icon, tone: .green, undoable: true)

@@ -5,6 +5,20 @@
 
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// What a list in the sidebar takes: a list or task dragged as text, or the
+/// rows a list document's grip drags, in this library's own payload.
+private nonisolated struct NXSidebarDrop: Transferable {
+    let value: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.blockTypeIdentifier)) { data in
+            NXSidebarDrop(value: String(decoding: data, as: UTF8.self))
+        }
+        ProxyRepresentation { (value: String) in NXSidebarDrop(value: value) }
+    }
+}
 
 struct NextSidebar: View {
     @Environment(AppEnvironment.self) private var env
@@ -263,8 +277,8 @@ struct NextSidebar: View {
         // Past three levels the title keeps its room.
         .padding(.leading, CGFloat(min(depth, 3)) * 14)
         .contextMenu { listMenu(list, nested: depth > 0) }
-        .dropDestination(for: String.self) { items, _ in
-            drop(items, on: list, nested: depth > 0)
+        .dropDestination(for: NXSidebarDrop.self) { items, _ in
+            drop(items.map(\.value), on: list, nested: depth > 0)
         } isTargeted: { setDropTarget(list.id, $0) }
     }
 
@@ -307,7 +321,12 @@ struct NextSidebar: View {
             env.store.move(list: dragged, toSection: sectionID, above: list)
             return true
         }
-        let ids = items.compactMap { DragPayload.block.decode($0) }
+        let session = env.navigator.blockDragSessionID
+        let ids = items.flatMap { item -> [UUID] in
+            if let id = DragPayload.block.decode(item) { return [id] }
+            guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session, activeLegacyID: nil) else { return [] }
+            return ids
+        }
         guard !ids.isEmpty else { return false }
         workbench.move(ids, to: list.id)
         return true

@@ -47,11 +47,12 @@ enum RichTextCodec {
             normalised.removeAttribute(.font, range: range)
         }
 
-        // Strip colours and paragraph styles; those are presentation concerns
-        // owned by the current theme, not by the document.
+        // Strip colours, spacing and paragraph styles; those are presentation
+        // concerns owned by the current theme, not by the document.
         normalised.removeAttribute(.foregroundColor, range: full)
         normalised.removeAttribute(.backgroundColor, range: full)
         normalised.removeAttribute(.paragraphStyle, range: full)
+        normalised.removeAttribute(.kern, range: full)
 
         // Clear completion strikethrough, then put back only the runs the user
         // struck through themselves. RTF has no way to tell the two apart, so
@@ -116,8 +117,8 @@ enum RichTextCodec {
             if let font = attributes[.font] as? NSFont {
                 let mask = NSFontManager.shared.traits(of: font)
                 // That bold was the old heading's weight, not the user's: the
-                // regular serif shows it as plain, and the next `encode`
-                // stores the run without it.
+                // heading's own weight draws it, and the next `encode` stores
+                // the run without it.
                 let isLegacyHeadingWeight = kind == .heading1
                     && abs(font.pointSize - legacyHeading1PointSize) < 0.01
                 if mask.contains(.boldFontMask), !isLegacyHeadingWeight { traits.insert(.boldFontMask) }
@@ -159,32 +160,32 @@ enum RichTextCodec {
 
     /// Font, colour and paragraph style for a block kind in its normal state.
     ///
-    /// - Parameter strikeColor: the completion strike's colour, when it should
-    ///   differ from the editor's strike ink.
+    /// - Parameters:
+    ///   - strikeColor: the completion strike's colour, when it should differ
+    ///     from the editor's strike ink.
+    ///   - dimsCompleted: whether completed text fades to the completed ink.
+    ///     A task struck during its completion dwell keeps its ink.
     static func baseAttributes(for kind: BlockKind, isCompleted: Bool = false,
-                               strikeColor: NSColor? = nil) -> [NSAttributedString.Key: Any] {
+                               strikeColor: NSColor? = nil, dimsCompleted: Bool = true) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         let font = Theme.Editor.nsFont(for: kind)
         // Keep the first and last line at the font's natural height. A line
         // height multiplier puts the extra leading before the baseline and
         // makes a single-line title sit low in its selection highlight.
-        paragraph.lineSpacing = kind == .code
-            ? NSLayoutManager().defaultLineHeight(for: font) * (Theme.Editor.codeLineHeightMultiple - 1)
-            : font.pointSize * Theme.Editor.lineSpacingRatio
+        paragraph.lineSpacing = Theme.Editor.lineSpacing(for: kind)
         paragraph.lineBreakMode = .byWordWrapping
 
+        let ink = kind == .paragraph || kind == .quote ? Theme.Editor.secondaryInk : Theme.Editor.ink
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .paragraphStyle: paragraph,
-            .foregroundColor: isCompleted ? Theme.Editor.completedInk : Theme.Editor.ink,
+            .foregroundColor: isCompleted && dimsCompleted ? Theme.Editor.completedInk : ink,
         ]
+        if kind == .heading1 { attributes[.kern] = Theme.Editor.heading1Kern }
 
         if isCompleted {
             attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
             attributes[.strikethroughColor] = strikeColor ?? Theme.Editor.strikeInk
-        }
-        if kind == .quote {
-            attributes[.foregroundColor] = isCompleted ? Theme.Editor.completedInk : Theme.Editor.secondaryInk
         }
         return attributes
     }
@@ -197,10 +198,10 @@ enum RichTextCodec {
     /// Restyling decoded content to its own completion state returns it
     /// unchanged, which is what lets the editor compare against the model.
     static func restylingCompletion(of attributed: NSAttributedString, kind: BlockKind, struck: Bool,
-                                    strikeColor: NSColor? = nil) -> NSAttributedString {
+                                    strikeColor: NSColor? = nil, dimsCompleted: Bool = true) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: attributed)
         let full = NSRange(location: 0, length: result.length)
-        let base = baseAttributes(for: kind, isCompleted: struck, strikeColor: strikeColor)
+        let base = baseAttributes(for: kind, isCompleted: struck, strikeColor: strikeColor, dimsCompleted: dimsCompleted)
         attributed.enumerateAttributes(in: full) { attributes, range, _ in
             if attributes[.link] == nil, let color = base[.foregroundColor] {
                 result.addAttribute(.foregroundColor, value: color, range: range)

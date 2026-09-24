@@ -31,6 +31,7 @@ extension Workbench {
         registerListCreationUndo(label, listID: id)
         snap(label, icon: "plus.circle.fill", tone: .accent, ids: [])
         pulse(list: id)
+        namingListID = id
         go(.list(id))
     }
 

@@ -60,16 +60,21 @@ final class Navigator {
     /// list or choosing a presentation ends it; it is never saved.
     private var revealedDocumentListID: UUID?
 
-    /// Lists open as a task list until this Mac chooses Document for them.
+    /// Lists open as their document, and the Inbox as triage, until this Mac
+    /// chooses otherwise for them.
     func listViewMode(for listID: UUID) -> ListViewMode {
         if listID == revealedDocumentListID, route == .list(listID) { return .document }
-        return listViewModes[listID] ?? .tasks
+        return listViewModes[listID] ?? defaultViewMode(for: listID)
+    }
+
+    private func defaultViewMode(for listID: UUID) -> ListViewMode {
+        listID == inboxListID ? .tasks : .document
     }
 
     func setListViewMode(_ mode: ListViewMode, for listID: UUID) {
         let shown = listViewMode(for: listID)
         if revealedDocumentListID == listID { revealedDocumentListID = nil }
-        if (listViewModes[listID] ?? .tasks) != mode {
+        if (listViewModes[listID] ?? defaultViewMode(for: listID)) != mode {
             listViewModes[listID] = mode
             defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
                           forKey: Self.listViewModesKey)
@@ -77,20 +82,24 @@ final class Navigator {
         guard shown != mode else { return }
         if route == .list(listID) || (route == .inbox && listID == inboxListID) {
             contentReveal = nil
-            openTaskID = nil
             clearSelection()
         }
     }
 
-    /// Whether the screen on show is a document editor that owns menu commands.
-    /// Everything else is a Next screen served by the workbench targets.
-    var hasDocumentEditor: Bool {
+    /// The list whose document is on show: any list, drawn as the Next list
+    /// document in either presentation, or the Inbox shown as a document.
+    var documentListID: UUID? {
         switch route {
-        case let .list(id): listViewMode(for: id) == .document
-        case .inbox: inboxListID.map { listViewMode(for: $0) == .document } ?? false
-        default: false
+        case let .list(id): id
+        case .inbox: inboxListID.flatMap { listViewMode(for: $0) == .document ? $0 : nil }
+        default: nil
         }
     }
+
+    /// Whether the screen on show is a document that takes the outline's menu
+    /// commands. Everything else is a Next screen served by the workbench
+    /// targets.
+    var documentOwnsEditorCommands: Bool { documentListID != nil }
 
     /// The task whose detail panel is open, if any.
     var openTaskID: UUID?

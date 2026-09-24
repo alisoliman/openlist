@@ -46,6 +46,13 @@ struct ListCoverMenu: View {
     }
 
     private func chooseImage() {
+        guard let source = Self.chooseImage(for: list) else { return }
+        perform { try env.store.setListCover(list, from: source) }
+    }
+
+    /// Asks for the image a list's cover should show. The Next list header's
+    /// options ask the same way.
+    static func chooseImage(for list: TaskList) -> URL? {
         let panel = NSOpenPanel()
         panel.title = list.coverFilename == nil ? "Add list cover" : "Replace list cover"
         panel.prompt = "Choose image"
@@ -53,8 +60,8 @@ struct ListCoverMenu: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Choose an image up to 20 MB and 40 megapixels. Openlist keeps its own copy."
-        guard panel.runModal() == .OK, let source = panel.url else { return }
-        perform { try env.store.setListCover(list, from: source) }
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 
     private func perform(_ operation: () throws -> Void) {

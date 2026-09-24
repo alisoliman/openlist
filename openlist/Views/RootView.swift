@@ -98,31 +98,32 @@ struct RootView: View {
             clearInitialFocus(for: route)
             // Screens that aren't documents (Today, Tasks, …) have no editor to
             // claim menu commands, so hand them to the fallback below.
-            if !env.navigator.hasDocumentEditor { env.activeDocument = nil }
+            if !env.navigator.documentOwnsEditorCommands { env.activeDocument = nil }
         }
-        .onChange(of: env.navigator.hasDocumentEditor) { _, hasDocumentEditor in
-            // Switching a list presentation can remove the editor without
-            // changing the route or closing an inspector.
-            if !hasDocumentEditor {
+        .onChange(of: env.navigator.documentOwnsEditorCommands) { _, ownsCommands in
+            // Switching the Inbox's presentation can remove the editor
+            // without changing the route or closing an inspector.
+            if !ownsCommands {
                 env.activeDocument = nil
                 focusClearedFor = nil
                 clearInitialFocus(for: env.navigator.route)
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
-            // Editing a subtask inside the inspector makes it the command
-            // target. Closing it has to release that or ⌘N stays dead.
-            if newValue == nil, !env.navigator.hasDocumentEditor {
+            // Editing a subtask on a legacy task page makes it the command
+            // target. Closing the task has to release that or ⌘N stays dead.
+            if newValue == nil, !env.navigator.documentOwnsEditorCommands {
                 env.activeDocument = nil
                 focusClearedFor = nil
                 clearInitialFocus(for: env.navigator.route)
             }
         }
         .onChange(of: env.navigator.selection) { _, selection in
-            // Esc in an inspector subtask drops its selection but not its
-            // claim. With no row left to act on, the Next screen takes over.
-            if selection.isEmpty, env.activeDocument?.rootBlockID != nil, !env.navigator.hasDocumentEditor {
-                env.activeDocument = nil
+            // Esc in a legacy task page drops its selection but not its
+            // claim. With no row left to act on, the screen takes over: a
+            // list's own document, or the Next screen's targets.
+            if selection.isEmpty, env.activeDocument?.rootBlockID != nil {
+                env.activeDocument = env.navigator.documentListID.map { DocumentContext(listID: $0) }
             }
         }
         .onChange(of: env.commandToken) { _, newValue in
@@ -209,41 +210,8 @@ struct RootView: View {
     /// the tasks AppCommands enables the Task menu for.
     private func handleGlobalCommand() {
         guard let command = env.consumeCommand() else { return }
-        let workbench = env.workbench
-        let ids = workbench.targetTasks.map(\.id)
-
-        switch command {
-        case .newTask:
-            workbench.openCapture()
-        case .toggleCompletion:
-            workbench.toggleCompletion(ids)
-        case .openDetails:
-            if let first = ids.first { inspect(first) }
-        case .pickDueDate, .pickLabel:
-            guard let first = ids.first else { return }
-            env.requestedPicker = command == .pickDueDate ? .due : .labels
-            inspect(first)
-        case .setDueToday:
-            workbench.schedule(ids, offset: 0)
-        case .clearDueDate:
-            workbench.schedule(ids, offset: nil)
-        case .toggleStar:
-            workbench.star(ids)
-        case .deleteSelection:
-            workbench.trash(ids)
-        case .clearLabels:
-            workbench.clearLabels(ids)
-        case .indent, .outdent, .moveUp, .moveDown, .expandAll, .collapseAll:
-            // Outline-only operations have no meaning in a cross-list view.
-            break
-        }
-    }
-
-    /// Opens a task in the inspector. The task already on show keeps the focus
-    /// it has, so the Inbox triage keys still work once the inspector closes.
-    private func inspect(_ id: UUID) {
-        guard id != env.navigator.openTaskID else { return }
-        env.workbench.inspect(id)
+        // Outline-only operations have no meaning in a cross-list view.
+        env.performTaskCommand(command, on: env.workbench.targetTasks.map(\.id))
     }
 
     // MARK: - Quick capture & Dock
@@ -274,6 +242,8 @@ struct RootView: View {
             // settles this guard without taking the user's focus away.
             guard let editor else { return }
             focusClearedFor = route
+            // A list document line's caret or selection is the user's own.
+            guard !(editor is BlockNSTextView) else { return }
             let length = (editor.string as NSString).length
             if length > 0, editor.selectedRange() == NSRange(location: 0, length: length) {
                 window.makeFirstResponder(nil)
@@ -281,10 +251,10 @@ struct RootView: View {
         }
     }
 
-    /// Whether nothing on screen wants the focus AppKit handed out: no document
-    /// editor, overlay or open task, and this route not already settled.
+    /// Whether nothing on screen wants the focus AppKit handed out: no overlay
+    /// or open task, and this route not already settled.
     private func mayClearFocus(on route: AppRoute) -> Bool {
-        !env.navigator.hasDocumentEditor && focusClearedFor != route
+        focusClearedFor != route
             && !env.navigator.isSearchOpen && !env.navigator.isCommandPaletteOpen
             && !env.navigator.isShortcutSheetOpen && !env.workbench.captureOpen
             && env.navigator.openTaskID == nil
