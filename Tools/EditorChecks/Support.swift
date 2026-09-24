@@ -10,5 +10,5 @@ final class NotificationService {
     func reminderReadFailed(_ message: String) {}
 }
 enum EditorCommand: Equatable {
-    case newTask, toggleCompletion, openDetails, setDueToday, pickDueDate, clearDueDate, pickLabel, clearLabels, toggleStar, indent, outdent, moveUp, moveDown, deleteSelection, expandAll, collapseAll
+    case toggleCompletion, openDetails, setDueToday, pickDueDate, clearDueDate, pickLabel, clearLabels, toggleStar, indent, outdent, moveUp, moveDown, deleteSelection, expandAll, collapseAll
 }

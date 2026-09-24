@@ -17,7 +17,6 @@ enum DetailPicker: String, Identifiable {
 /// One-shot instructions sent from menus and shortcuts down into whichever
 /// document view is on screen.
 enum EditorCommand: Equatable {
-    case newTask
     case toggleCompletion
     case openDetails
     case setDueToday
@@ -195,19 +194,15 @@ final class AppEnvironment {
     }
 
     func send(_ command: EditorCommand) {
-        if command == .newTask {
-            presentTaskCapture()
-            return
-        }
         pendingCommand = command
         commandToken &+= 1
     }
 
-    /// ⌘N and the screens' Add buttons. The capture lives on the workbench, so
-    /// a main window opened for it shows the capture as soon as it appears.
-    /// On Today the task it makes is due today.
-    func presentTaskCapture(text: String = "") {
-        workbench.openCapture(text: text)
+    /// File ▸ New Task… (⌘N). The capture lives on the workbench, so a main
+    /// window opened for it shows the capture as soon as it appears. On Today
+    /// the task it makes is due today, as `openCapture` decides.
+    func presentTaskCapture() {
+        workbench.openCapture()
     }
 
     func consumeCommand() -> EditorCommand? {

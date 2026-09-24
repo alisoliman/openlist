@@ -2442,4 +2442,231 @@ check(store.block(id: contentBlank) == nil && contentShape() == ["0 Milk", "0 Te
         && contentRecorded.map(\.name) == ["Added “Tent”"] && contentUndo.undoActionName == "Added “Tent”",
     "Pasted in a new empty line, the line goes as the caret moves on, and the paste is the only step")
 
+// Tab counts the document's two levels with the lines under the line, as a
+// drag or paste does, and showing only tasks, the depth the line has in the
+// document rather than the one drawn. ⇧Tab steps a line out a level as the
+// tasks draw it.
+let levelList = store.createList(title: "Two levels")
+let levelDocument = DocumentContext(listID: levelList.id)
+let levelEditor = OutlineEditor(env: outlineEnv, document: levelDocument)
+let levelUndo = UndoManager()
+levelUndo.groupsByEvent = false
+levelEditor.windowUndoManager = { levelUndo }
+var levelRecorded: [OutlineEdit] = []
+levelEditor.hooks.didRecordEdit = { edit, _ in levelRecorded.append(edit) }
+func levelRows() -> [BlockRow] { levelEditor.visibleRows(in: store.blocks(inList: levelList.id)) }
+func levelShape() -> [String] { levelRows().map { "\($0.depth) \($0.block.text)" } }
+// One key's change, as the window's undo manager groups it, with the caret
+// let go after it so the next one isn't that line's edit.
+func levelKey(_ block: Block, backtab: Bool = false) {
+    levelUndo.beginUndoGrouping()
+    _ = levelEditor.actions(for: levelRows().first { $0.id == block.id }!).onTab(backtab, 0)
+    levelUndo.endUndoGrouping()
+    levelEditor.requestFocus(nil)
+}
+let levelA = store.appendBlock(kind: .task, text: "A", to: levelDocument)
+let levelB = store.insertChild(kind: .task, text: "B", of: levelA, at: .last)
+_ = store.insertChild(kind: .task, text: "C", of: levelB, at: .last)
+let levelD = store.insertChild(kind: .task, text: "D", of: levelA, at: .last)
+_ = store.insertChild(kind: .task, text: "E", of: levelD, at: .last)
+store.save()
+levelKey(levelD)
+check(levelD.parentID == levelA.id && levelShape() == ["0 A", "1 B", "2 C", "1 D", "2 E"] && levelRecorded.isEmpty,
+    "Tab leaves a line whose subtask would go past two levels where it is, and records nothing")
+levelEditor.indent([levelD.id], outdent: false)
+check(levelD.parentID == levelA.id && levelRecorded.isEmpty, "So does Format ▸ Indent")
+store.setCollapsed(true, for: levelD)
+levelKey(levelD)
+check(levelD.parentID == levelA.id && levelRecorded.isEmpty, "A folded subtask counts too")
+store.setCollapsed(false, for: levelD)
+let levelTrip = store.appendBlock(kind: .task, text: "Trip", to: levelDocument)
+let levelShops = store.insertChild(kind: .bullet, text: "Shops", of: levelTrip, at: .last)
+let levelTenugui = store.insertChild(kind: .task, text: "Tenugui", of: levelShops, at: .last)
+let levelFans = store.insertChild(kind: .task, text: "Fans", of: levelShops, at: .last)
+let levelIdeas = store.appendBlock(kind: .bullet, text: "Ideas", to: levelDocument)
+let levelOnsen = store.insertChild(kind: .task, text: "Onsen", of: levelIdeas, at: .last)
+store.save()
+levelEditor.tasksOnly = true
+check(levelShape().suffix(4) == ["0 Trip", "1 Tenugui", "1 Fans", "0 Onsen"], "Showing only tasks, the tasks a list item holds draw a level up")
+levelKey(levelFans)
+check(levelFans.parentID == levelShops.id && levelRecorded.isEmpty,
+    "Showing only tasks, Tab refuses a task the document holds two levels deep, however deep it's drawn")
+levelKey(levelFans, backtab: true)
+check(levelFans.parentID == nil && levelShape().suffix(4) == ["0 Trip", "1 Tenugui", "0 Fans", "0 Onsen"]
+        && levelRecorded == [.outdented([levelFans.id])],
+    "⇧Tab steps it out from under the task it's drawn under, past the list item, as one step")
+levelUndo.undo()
+check(levelFans.parentID == levelShops.id && levelShape().suffix(4) == ["0 Trip", "1 Tenugui", "1 Fans", "0 Onsen"],
+    "Undo puts it back under the list item")
+levelKey(levelTenugui, backtab: true)
+check(levelShape().suffix(4) == ["0 Trip", "0 Tenugui", "1 Fans", "0 Onsen"] && levelFans.parentID == levelTenugui.id,
+    "The task after it goes under it, as the design's lines after an outdented one")
+levelRecorded.removeAll()
+levelKey(levelOnsen, backtab: true)
+check(levelOnsen.parentID == levelIdeas.id && levelRecorded.isEmpty,
+    "A task no task holds is at the top level showing only tasks: ⇧Tab leaves it, and records nothing")
+levelEditor.tasksOnly = false
+
+// Move Up and Move Down go past the line beside it that shows, not a done
+// task in Completed or, showing only tasks, a heading or list item between.
+let moveList = store.createList(title: "Move up and down")
+let moveDocument = DocumentContext(listID: moveList.id)
+let moveEditor = OutlineEditor(env: outlineEnv, document: moveDocument)
+let moveUndo = UndoManager()
+moveUndo.groupsByEvent = false
+moveEditor.windowUndoManager = { moveUndo }
+var moveRecorded: [OutlineEdit] = []
+moveEditor.hooks.didRecordEdit = { edit, _ in moveRecorded.append(edit) }
+var moveTargets: [UUID] = []
+moveEditor.hooks.commandTargets = { moveTargets }
+func moveDrawn() -> [String] { moveEditor.visibleRows(in: store.blocks(inList: moveList.id)).map(\.block.text) }
+func moveStored() -> [String] { BlockTree.children(of: nil, in: store.blocks(inList: moveList.id)).map(\.text) }
+func moveCommand(_ command: EditorCommand, _ block: Block) {
+    outlineEnv.navigator.clearSelection()
+    moveTargets = [block.id]
+    outlineEnv.activeDocument = moveDocument
+    outlineEnv.pendingCommand = command
+    moveUndo.beginUndoGrouping()
+    moveEditor.receiveCommand()
+    moveUndo.endUndoGrouping()
+}
+let moveFlights = store.appendBlock(kind: .task, text: "Book flights", to: moveDocument)
+let movePack = store.appendBlock(kind: .task, text: "Pack", to: moveDocument)
+let moveYen = store.appendBlock(kind: .task, text: "Buy yen", to: moveDocument)
+movePack.isCompleted = true
+movePack.completedAt = .now
+store.save()
+check(moveDrawn() == ["Book flights", "Buy yen"], "A done top-level task leaves the document for Completed")
+moveCommand(.moveUp, moveYen)
+check(moveDrawn() == ["Buy yen", "Book flights"] && moveStored() == ["Buy yen", "Book flights", "Pack"]
+        && moveRecorded == [.moved(moveYen.id, up: true)],
+    "Move Up passes the done task in Completed, so one press moves the line on screen")
+moveCommand(.moveUp, moveYen)
+check(moveStored() == ["Buy yen", "Book flights", "Pack"] && moveRecorded.count == 1, "At the top, Move Up does nothing and records nothing")
+moveCommand(.moveDown, moveYen)
+check(moveStored() == ["Book flights", "Buy yen", "Pack"] && moveRecorded.last == .moved(moveYen.id, up: false),
+    "Move Down goes past the next line that shows")
+moveCommand(.moveDown, moveYen)
+check(moveStored() == ["Book flights", "Buy yen", "Pack"] && moveRecorded.count == 2,
+    "With only a done task below, Move Down does nothing and records nothing")
+moveCommand(.moveUp, movePack)
+check(moveStored() == ["Book flights", "Buy yen", "Pack"] && moveRecorded.count == 2, "A line the document doesn't draw stays")
+_ = store.appendBlock(kind: .heading1, text: "Later", to: moveDocument)
+let moveOnsen = store.appendBlock(kind: .task, text: "Onsen", to: moveDocument)
+let moveIdeas = store.appendBlock(kind: .bullet, text: "Ideas", to: moveDocument)
+_ = store.insertChild(kind: .task, text: "Temple", of: moveIdeas, at: .last)
+store.save()
+moveEditor.tasksOnly = true
+moveCommand(.moveUp, moveOnsen)
+check(moveDrawn() == ["Book flights", "Onsen", "Buy yen", "Temple"] && moveStored().prefix(3) == ["Book flights", "Onsen", "Buy yen"],
+    "Showing only tasks, Move Up passes the heading and the done task to go above the task drawn above")
+moveCommand(.moveDown, moveOnsen)
+moveCommand(.moveDown, moveOnsen)
+check(moveDrawn() == ["Book flights", "Buy yen", "Temple", "Onsen"] && moveStored().last == "Onsen",
+    "Move Down passes the list item whose task shows, as one step on screen")
+moveEditor.tasksOnly = false
+
+// Next to a folded heading, a moved line doesn't go into the fold unseen:
+// the heading whose section it, or a moved heading's lines, land in opens,
+// and a heading at the folded one's level passes that section with it.
+var foldTargets: [UUID] = []
+func foldCase(_ title: String, _ lines: [(BlockKind, String)], folding: String) -> (OutlineEditor, UndoManager, [String: Block]) {
+    let document = DocumentContext(listID: store.createList(title: title).id)
+    let editor = OutlineEditor(env: outlineEnv, document: document)
+    let undo = UndoManager()
+    undo.groupsByEvent = false
+    editor.windowUndoManager = { undo }
+    editor.hooks.commandTargets = { foldTargets }
+    var byText: [String: Block] = [:]
+    for (kind, text) in lines { byText[text] = store.appendBlock(kind: kind, text: text, to: document) }
+    store.setCollapsed(true, for: byText[folding]!)
+    store.save()
+    return (editor, undo, byText)
+}
+func foldCommand(_ command: EditorCommand, _ block: Block, in editor: OutlineEditor, undo: UndoManager) {
+    outlineEnv.navigator.clearSelection()
+    foldTargets = [block.id]
+    outlineEnv.activeDocument = editor.document
+    outlineEnv.pendingCommand = command
+    undo.beginUndoGrouping()
+    editor.receiveCommand()
+    undo.endUndoGrouping()
+}
+func foldDrawn(_ editor: OutlineEditor) -> [String] {
+    editor.visibleRows(in: store.blocks(inList: editor.document.listID)).map(\.block.text)
+}
+func foldStored(_ editor: OutlineEditor) -> [String] {
+    BlockTree.children(of: nil, in: store.blocks(inList: editor.document.listID)).map(\.text)
+}
+let foldLines: [(BlockKind, String)] = [(.task, "A"), (.heading1, "H"), (.task, "S1"), (.paragraph, "S2"),
+                                        (.heading1, "H2"), (.task, "Y")]
+do {
+    let (editor, undo, line) = foldCase("Fold down", foldLines, folding: "H")
+    check(foldDrawn(editor) == ["A", "H", "H2", "Y"], "A folded heading draws without its section")
+    foldCommand(.moveDown, line["A"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "A", "S1", "S2", "H2", "Y"] && line["H"]?.isCollapsed == false,
+        "Move Down past a folded heading lands the line under it, and the heading opens so it shows")
+    undo.undo()
+    check(foldDrawn(editor) == ["A", "H", "H2", "Y"] && line["H"]?.isCollapsed == true,
+        "Undo takes the move and the opening back as one step")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold up", foldLines, folding: "H")
+    foldCommand(.moveUp, line["Y"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["A", "H", "S1", "S2", "Y", "H2"] && line["H"]?.isCollapsed == false,
+        "Move Up into the end of a folded heading's section opens it too")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold heading up", foldLines, folding: "H")
+    foldCommand(.moveUp, line["H2"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["A", "H2", "H", "S1", "S2", "Y"] && foldStored(editor) == ["A", "H2", "H", "S1", "S2", "Y"],
+        "A heading moved up past a folded one opens it, as its section's lines join that heading's")
+    foldCommand(.moveUp, line["H2"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H2", "A", "H", "S1", "S2", "Y"], "The heading still shows, so the next press moves it again")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold heading down", [(.heading1, "G"), (.heading1, "H"), (.task, "S1"),
+                                                              (.heading1, "H2"), (.task, "Y")], folding: "H")
+    foldCommand(.moveDown, line["G"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "G", "H2", "Y"] && foldStored(editor) == ["H", "S1", "G", "H2", "Y"]
+            && line["H"]?.isCollapsed == true,
+        "A heading at the folded one's level moves down past its section, which stays folded under it")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold lower heading down", [(.heading2, "G"), (.heading1, "H"), (.task, "S1"),
+                                                                    (.heading1, "H2")], folding: "H")
+    foldCommand(.moveDown, line["G"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "G", "S1", "H2"] && line["H"]?.isCollapsed == false,
+        "A lower heading goes into the section, which opens")
+}
+do {
+    let (editor, undo, line) = foldCase("Fold left behind", [(.heading2, "H"), (.task, "S1"), (.heading2, "G"),
+                                                             (.task, "P")], folding: "H")
+    foldCommand(.moveDown, line["G"]!, in: editor, undo: undo)
+    check(foldDrawn(editor) == ["H", "S1", "P", "G"] && line["H"]?.isCollapsed == false,
+        "A heading moved down leaves the line it passed in the folded section above, which opens")
+}
+
+// An image line's caption is written in a step of its own, named and logged.
+let captionImage = store.appendBlock(kind: .image, to: moveDocument)
+store.save()
+moveRecorded.removeAll()
+moveUndo.beginUndoGrouping()
+moveEditor.setCaption(captionImage.id, to: "  Fushimi\nInari  ")
+moveUndo.endUndoGrouping()
+check(captionImage.mediaCaption == "Fushimi Inari" && moveRecorded == [.captioned(captionImage.id)]
+        && moveUndo.undoActionName == "Edit caption",
+    "A caption is kept to one trimmed line, as one named step the host logs")
+moveUndo.undo()
+check(captionImage.mediaCaption.isEmpty, "Undo takes the caption back")
+moveUndo.redo()
+check(captionImage.mediaCaption == "Fushimi Inari", "Redo writes it again")
+moveEditor.setCaption(captionImage.id, to: "Fushimi Inari ")
+moveEditor.setCaption(moveFlights.id, to: "Not an image")
+check(moveRecorded.count == 1 && moveFlights.mediaCaption.isEmpty, "An unchanged caption, or a line that isn't an image, records nothing")
+moveUndo.beginUndoGrouping()
+moveEditor.setCaption(captionImage.id, to: "")
+moveUndo.endUndoGrouping()
+check(captionImage.mediaCaption.isEmpty && moveRecorded.count == 2, "An empty caption clears it")
+
 print("✅ \(checks) editor/store checks passed")

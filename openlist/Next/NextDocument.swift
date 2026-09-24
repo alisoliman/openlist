@@ -191,12 +191,14 @@ private struct NXDocumentLines: View {
         case let .moved(id, up): return "Moved \(quoted(id)) \(up ? "up" : "down")"
         case let .dragged(ids): return "Moved \(described(ids))"
         case let .pasted(ids): return "Added \(described(ids))"
+        case let .captioned(id): return "Edited caption on \(quoted(id))"
         }
     }
 
     private static func ids(of edit: OutlineEdit) -> [UUID] {
         switch edit {
-        case let .added(id), let .edited(id), let .removedEmptyLine(id), let .deleted(id), let .moved(id, _): [id]
+        case let .added(id), let .edited(id), let .removedEmptyLine(id), let .deleted(id), let .moved(id, _),
+             let .captioned(id): [id]
         case let .indented(ids), let .outdented(ids), let .dragged(ids), let .pasted(ids): ids
         }
     }
@@ -994,7 +996,7 @@ private struct NXDocumentBlock: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
         case .image:
-            NXDocumentImage(block: block)
+            NXDocumentImage(block: block, editor: context.editor)
         case .code:
             NXLineText(row: row, context: context, editing: editing)
                 .padding(.vertical, 6)
@@ -1013,9 +1015,18 @@ private struct NXDocumentBlock: View {
     }
 }
 
-/// An image line: rounded 11, a hairline, its caption under it.
+/// An image line: rounded 11, a hairline, its caption under it. A click on
+/// the caption writes it, and on a line without one, hovering offers "Add a
+/// caption…"; Return or a click away commits it as a step of its own, and
+/// Escape leaves it as it was.
 private struct NXDocumentImage: View {
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     let block: Block
+    let editor: OutlineEditor
+    @State private var hovering = false
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1032,13 +1043,58 @@ private struct NXDocumentImage: View {
                     .frame(height: 80)
                     .overlay(Image(systemName: "photo").foregroundStyle(NX.ink(0.3)))
             }
-            if !block.mediaCaption.isEmpty {
-                Text(block.mediaCaption)
-                    .font(.system(size: 12))
-                    .foregroundStyle(NX.ink(0.5))
-            }
+            caption
         }
         .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+    }
+
+    @ViewBuilder
+    private var caption: some View {
+        if editing {
+            TextField("Caption", text: $draft, prompt: Text("Add a caption…"))
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(NX.ink(0.5))
+                .focused($focused)
+                .onSubmit(commit)
+                .onExitCommand { editing = false }
+                .onAppear {
+                    draft = block.mediaCaption
+                    // Once the field is on screen, or the focus can miss it.
+                    DispatchQueue.main.async { focused = true }
+                }
+                .onChange(of: focused) { _, now in if !now { commit() } }
+                // Scrolled away or gone with its line, it keeps what's typed.
+                .onDisappear(perform: commit)
+                .accessibilityLabel("Image caption")
+        } else if !block.mediaCaption.isEmpty || hovering || voiceOver {
+            // The caption, or where it goes, in the document's placeholder ink.
+            Text(block.mediaCaption.isEmpty ? "Add a caption…" : block.mediaCaption)
+                .font(.system(size: 12))
+                .foregroundStyle(NX.ink(block.mediaCaption.isEmpty ? 0.36 : 0.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    // A line being written is left first, as a click away leaves it.
+                    NXDocumentEditing.end()
+                    editing = true
+                }
+                .pointerStyle(.horizontalText)
+                .accessibilityLabel(block.mediaCaption.isEmpty ? "Add a caption" : "Caption: \(block.mediaCaption)")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Edits the image's caption")
+                .accessibilityAction { editing = true }
+        }
+    }
+
+    private func commit() {
+        guard editing else { return }
+        editing = false
+        guard block.modelContext != nil, !block.isDeleted else { return }
+        editor.setCaption(block.id, to: draft)
     }
 }
 
@@ -1329,7 +1385,7 @@ private struct NXDocumentHints: View {
     private static let taskHints = hints.suffix(3)
 
     var body: some View {
-        MetadataFlowLayout(spacing: 14) {
+        NXFlow(spacing: 14) {
             ForEach(tasksOnly ? Array(Self.taskHints) : Self.hints, id: \.key) { hint in
                 HStack(spacing: 5) {
                     Text(hint.key)
