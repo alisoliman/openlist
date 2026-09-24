@@ -870,9 +870,15 @@ extension Workbench {
         do {
             saved = try saveCapture(parse)
         } catch {
-            showTray(error.localizedDescription, icon: "exclamationmark.triangle", tone: .red)
+            // On the card, as Quick Add's says it: the tray would pass dimmed
+            // under the capture's backdrop.
+            let notice = NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
+                                         failed: true)
+            captureNotice = notice
+            AccessibilityNotification.Announcement(notice.text).post()
             return nil
         }
+        captureNotice = nil
         let block = saved.block
         let list = store.list(id: block.listID)
         let here: Bool = {
@@ -949,10 +955,15 @@ extension Workbench {
     /// label screen the task gets that label. Nothing opens it again over its
     /// own draft, as in the design, whose keys stand down while it's open:
     /// File ▸ New Task… (⌘N) there keeps the text and destination typed.
+    /// It aims at the list on show, or the one asked for, only while that
+    /// list takes tasks, as Quick Add's does: on an archived list's page, or
+    /// one left in Trash, it aims at Inbox, so a chip is always lit.
     func openCapture(text: String = "", listID: UUID? = nil, forToday: Bool? = nil) {
         guard !captureOpen else { return }
-        if case let .list(id) = navigator.route { captureListID = listID ?? id }
-        else { captureListID = listID ?? store.inboxList()?.id }
+        let routeListID: UUID? = if case let .list(id) = navigator.route { id } else { nil }
+        let chosen = store.list(id: listID ?? routeListID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
+        captureListID = chosen?.id ?? store.inboxList()?.id
+        captureNotice = nil
         captureForToday = forToday == true || navigator.route == .today || settings.defaultDestination == .today
         if case let .label(id) = navigator.route { captureLabelID = id } else { captureLabelID = nil }
         captureText = text
@@ -964,6 +975,7 @@ extension Workbench {
     func closeCapture() {
         withAnimation(style.ease(180)) { captureOpen = false }
         captureText = ""
+        captureNotice = nil
     }
 
     // MARK: Inbox triage

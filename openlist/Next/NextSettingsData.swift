@@ -63,7 +63,7 @@ struct NXICloudDetails: View {
     private func transfer(_ title: String, _ date: Date) -> some View {
         GridRow {
             Text(title).foregroundStyle(NX.ink(0.48))
-            Text(date.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(NX.ink(0.7)).monospacedDigit()
+            Text(NXFormat.moment(date)).foregroundStyle(NX.ink(0.7)).monospacedDigit()
         }
         .font(.system(size: 11.5, weight: .medium))
     }
@@ -117,7 +117,7 @@ struct NXDataSettings: View {
         .sheet(isPresented: $isConfirmingClearHistory) {
             NXConfirmationSheet(title: "Clear all activity history?",
                                 message: "This removes every change in Activity, the completion heatmap and each task’s history, including older events, on synced devices. Your tasks are kept.",
-                                confirm: "Clear History") { env.workbench.clearActivityHistory() }
+                                confirm: "Clear history") { env.workbench.clearActivityHistory() }
         }
         .background {
             // A second sheet, on a view of its own.
@@ -217,7 +217,7 @@ private struct NXLibraryBackupRows: View {
             Color.clear.sheet(isPresented: $confirmsReturn) {
                 NXConfirmationSheet(title: "Return to the original library?",
                                     message: "Open Openlist again after it quits. The original library and its preferences will return, including its previous iCloud behaviour. This restored copy will be retained separately; its changes are not merged into the original.",
-                                    confirm: "Return to Original and Quit", isDestructive: false) {
+                                    confirm: "Return to original and quit", isDestructive: false) {
                     Task { await library.returnToOriginal() }
                 }
             }
@@ -291,7 +291,7 @@ private struct LibraryRestorePreview: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 NXPanelTitle("Restore this backup?")
-                Text("Format \(preview.manifest.version) · \(preview.manifest.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("Format \(preview.manifest.version) · \(NXFormat.moment(preview.manifest.createdAt))")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(NX.ink(0.48))
             }
@@ -328,7 +328,7 @@ private struct LibraryRestorePreview: View {
                 Button("Cancel", role: .cancel) { library.preview = nil }
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                     .keyboardShortcut(.cancelAction)
-                Button("Restore and Quit", role: .destructive) { Task { await library.confirmRestore() } }
+                Button("Restore and quit", role: .destructive) { Task { await library.confirmRestore() } }
                     .buttonStyle(NXPanelButtonStyle(kind: .destructive))
             }
             .disabled(library.isBusy)

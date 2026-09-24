@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// The Work panel after its task is done, in the design's words for the
+/// same event: "Done", or for a repeat when it rolls to next.
 struct WorkCompletionView: View {
     let summary: WorkCompletionSummary
     let chooseNext: () -> Void
@@ -8,7 +10,7 @@ struct WorkCompletionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Label {
-                Text("Occurrence complete")
+                Text("Done")
             } icon: {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(NX.green)
             }
@@ -19,13 +21,14 @@ struct WorkCompletionView: View {
                 .foregroundStyle(NX.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
-            Text("\(summary.recordedMinutes.formatted(.number.precision(.fractionLength(0)))) minutes recorded. Nothing else has started.")
+            Text("\(summary.recordedMinutes.formatted(.number.precision(.fractionLength(0)))) min recorded. Recording stopped.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(NX.ink(0.62))
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
             if let date = summary.nextDate {
-                Text("Repeats \(date.formatted(date: .abbreviated, time: .omitted))")
+                // As the tray's "“…” rolls to Wed 30".
+                Text("Rolls to \(NXFormat.dueLabel(date))")
                     .font(.system(size: 11.5))
                     .foregroundStyle(NX.ink(0.45))
                     .padding(.top, 4)

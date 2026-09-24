@@ -297,7 +297,7 @@ check(ActivityEvent.recordedDetail(.scheduled, detail: "", change: rescheduled, 
       == "Tomorrow → \(NXFormat.dueLabel(noon(2026, 6, 30), now: midYear)) 09:00",
       "A rescheduled day reads as the row's due chips, its time 24-hour")
 check(ActivityEvent.recordedDetail(.scheduled, detail: "", change: rescheduled)
-      == "\(ActivityEvent.systemDateText(noon(2026, 6, 16), includesTime: false)) → \(ActivityEvent.systemDateText(rescheduled.after!.dueDate!, includesTime: true))",
+      == "\(ActivityEvent.appDateText(noon(2026, 6, 16), includesTime: false)) → \(ActivityEvent.appDateText(rescheduled.after!.dueDate!, includesTime: true))",
       "Without the app's words, history keeps the system's")
 var completion = TaskActivityChange(before: state(noon(2025, 12, 20), timed: false), after: state(noon(2027, 6, 30), timed: false))
 completion.completionID = UUID()

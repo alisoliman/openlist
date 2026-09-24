@@ -320,38 +320,10 @@ struct NextSidebar: View {
         .onDrag { DragPayload.list.provider(for: list.id) }
         // Past three levels the title keeps its room.
         .padding(.leading, CGFloat(min(depth, 3)) * 14)
-        .contextMenu { listMenu(list, nested: depth > 0) }
+        .contextMenu { NXListMenu(list: list, surface: .sidebar, rename: { startRename(.list(list.id), draft: list.title) }) }
         .dropDestination(for: NXSidebarDrop.self) { items, _ in
             drop(items.map(\.value), on: list, nested: depth > 0)
         } isTargeted: { setDropTarget(list.id, $0) }
-    }
-
-    @ViewBuilder
-    private func listMenu(_ list: TaskList, nested: Bool) -> some View {
-        Button("Open") { workbench.go(workbench.route(for: list)) }
-        Button("Rename List…") { startRename(.list(list.id), draft: list.title) }
-        Button("Move List…") { env.listPendingMove = list }
-        Button("New Child List") { workbench.createChildList(in: list) }
-        CopyItemLinkButton(target: .list(list.id))
-        Picker("Hours", selection: Binding(get: { workbench.hours(for: list) },
-                                           set: { workbench.setHours($0, for: list.id) })) {
-            ForEach(AvailabilityCategory.allCases) { Text("\($0.title) Hours").tag($0) }
-        }
-        // As the list's own … menu names it; the list opens to show it.
-        Toggle("Show Tasks Only", isOn: Binding(get: { env.navigator.listViewMode(for: list.id) == .tasks }, set: {
-            env.navigator.setListViewMode($0 ? .tasks : .document, for: list.id)
-            workbench.go(workbench.route(for: list))
-        }))
-        Divider()
-        Button("Duplicate") { workbench.duplicateList(list) }
-        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
-        Button("Export as Markdown…") { workbench.exportMarkdown(list) }
-        // A nested list shows under its parent whether pinned or not.
-        if !nested {
-            Button("Remove from Sidebar") { workbench.setPinned(false, for: list) }
-        }
-        Divider()
-        Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
     }
 
     // MARK: Drag and drop

@@ -32,8 +32,10 @@ struct NextSettingsScreen: View {
                                       default: "System default"
                                       }
                                   })
-                    NXSettingToggle(label: "Quick Add from anywhere", hint: "⇧⌥Space opens capture over any app",
-                                    isOn: $settings.quickCaptureHotKeyEnabled)
+                    // On but not registered, it says why rather than promise the key.
+                    let hotKeyFailure = settings.quickCaptureHotKeyEnabled ? QuickCaptureHotKey.shared.failure : nil
+                    NXSettingToggle(label: "Quick Add from anywhere", hint: Self.quickAddHint(hotKeyFailure),
+                                    isError: hotKeyFailure != nil, isOn: $settings.quickCaptureHotKeyEnabled)
                         .onChange(of: settings.quickCaptureHotKeyEnabled) { _, enabled in
                             if enabled {
                                 QuickCaptureHotKey.shared.register()
@@ -169,6 +171,16 @@ struct NextSettingsScreen: View {
         let hours = minutes / 60, rest = minutes % 60
         guard hours > 0 else { return "\(minutes) min" }
         return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
+    }
+
+    /// The design's hint, or why ⇧⌥Space does nothing: turning the switch
+    /// off and on tries it again.
+    private static func quickAddHint(_ failure: QuickCaptureHotKey.Failure?) -> String {
+        switch failure {
+        case nil: "⇧⌥Space opens capture over any app"
+        case .taken: "⇧⌥Space is in use by another app. Free it there, then turn this off and on again."
+        case .failed: "⇧⌥Space could not be turned on. Turn this off and on again to retry."
+        }
     }
 
     private var weekStartTitle: String {
@@ -416,10 +428,12 @@ struct NXSettingToggle: View {
     @Environment(\.isEnabled) private var isEnabled
     let label: String
     let hint: String
+    /// Shows the hint as a failure, like a hot key another app holds.
+    var isError = false
     @Binding var isOn: Bool
 
     var body: some View {
-        NXSettingRow(label: label, hint: hint) {
+        NXSettingRow(label: label, hint: hint, hintColor: isError ? NX.redText : NX.ink(0.48)) {
             // A button, so Tab reaches the switch and Space flips it.
             Button { isOn.toggle() } label: { NXSwitch(isOn: isOn) }
                 .buttonStyle(NXBareButtonStyle(radius: 10))

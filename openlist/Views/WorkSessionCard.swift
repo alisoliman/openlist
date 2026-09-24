@@ -80,13 +80,14 @@ struct WorkSessionCard: View {
                             caption("\(minutes(env.calendar.recordedMinutes(for: previous))) recorded in the last session")
                         }
                         if let plan {
-                            detail("\(plan.start.formatted(date: .abbreviated, time: .shortened))–\(plan.end.formatted(date: .omitted, time: .shortened)) · \(Int(plan.durationMinutes)) min",
+                            // The Calendar's 24-hour times, as the inspector's "In the calendar today, 10:00–11:30".
+                            detail("\(NXFormat.moment(plan.start, now: context.date))–\(NXFormat.clock(plan.end)) · \(Int(plan.durationMinutes)) min",
                                    icon: "calendar")
                         } else {
                             caption("\(minutes(estimate)) estimated")
                         }
                         if let due = task.dueDate {
-                            caption("Due \(due.formatted(date: .abbreviated, time: task.includesTime ? .shortened : .omitted))")
+                            caption("Due \(NXFormat.moment(due, includesTime: task.includesTime, inSentence: true, now: context.date))")
                         }
                         // Hours and busy time shape the plan; they never stop you starting.
                         if !env.calendar.isWithinAvailability(reference, now: context.date) {
@@ -96,7 +97,7 @@ struct WorkSessionCard: View {
                         }
                         if let quiet, quiet > context.date {
                             HStack(spacing: 10) {
-                                caption("Reminder quiet until \(quiet.formatted(date: .omitted, time: .shortened))")
+                                caption("Reminder quiet until \(NXFormat.clock(quiet))")
                                 NXWorkLink("Undo") { env.calendar.undoQuietWork(reference) }
                             }
                         }
@@ -156,25 +157,12 @@ struct WorkSessionCard: View {
 
     private func minutes(_ value: Double) -> String { "\(value.formatted(.number.precision(.fractionLength(0)))) min" }
 
-    /// Why the work paused, in a sentence: plain for a Pause, and for work a
-    /// completion's Undo, or its cancelled dwell, gives back paused; else what
-    /// paused it.
+    /// Why the work paused, in a sentence, as Work history words it: plain
+    /// for a Pause and for work that ended with its task, since this card
+    /// offers to resume it (a completion's Undo, or its cancelled dwell,
+    /// gives such work back paused); else what paused it.
     private static func pausedDetail(_ reason: String?) -> String {
-        let why: String = switch reason {
-        case nil, "Paused", "Completed": "Paused."
-        case "Switched task": "Paused when you switched tasks."
-        case "Stopped working": "Paused when you stopped working."
-        case "Mac slept": "Paused while the Mac was asleep."
-        case "Screen slept": "Paused while the screen was asleep."
-        case "Mac locked": "Paused while the Mac was locked."
-        case "Mac was unavailable": "Paused while the Mac was away."
-        case "Openlist closed", "Openlist restarted", "Recovered before starting": "Paused when Openlist closed."
-        case "Deferred": "Paused when the task was deferred."
-        case "List unavailable": "Paused while its list was unavailable."
-        case let reason? where reason.hasPrefix("Library restored"): "Paused when the library was restored."
-        case let reason?: "Paused — \(reason)."
-        }
-        return why + " No time is being recorded."
+        WorkSession.resumableStopText(reason) + ". No time is being recorded."
     }
 
     private func start() { env.calendar.requestWork(WorkTaskReference(task)) }

@@ -141,6 +141,8 @@ final class Workbench {
     var captureForToday = false
     /// The label screen capture opened on; the new task gets that label.
     var captureLabelID: UUID?
+    /// Why Return couldn't add the capture, on its card until the text changes.
+    var captureNotice: NXCaptureNotice?
     var paletteQuery = ""
     var paletteIndex = 0
     var searchQuery = ""

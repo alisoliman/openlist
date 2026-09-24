@@ -35,7 +35,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   inspector overlay (360), tray, selection bar, capture/search/palette overlays, work notch.
 - Modal flags reuse `navigator.isSearchOpen` and `navigator.isCommandPaletteOpen`; ⌘N goes
   through `env.presentTaskCapture()`, which opens the workbench capture
-  (`workbench.openCapture`), so menu commands keep working.
+  (`workbench.openCapture`), so menu commands keep working. Over an open capture ⌘N, ⌘F
+  and ⌘, stand down and its draft stays, as the design's keys do; only ⌘K's palette
+  replaces it. Capture aims at the list on show only while it takes tasks: on an archived
+  list's page, a native one, it aims at Inbox, as Quick Add does. A save that fails says so
+  on the card, as Quick Add's does, not in the tray under the backdrop.
 - The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
   and runs the Workbench's actions on the tasks its commands reach (in a list document the
   line being written, else the workbench targets in that list); its titles read every
@@ -95,7 +99,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   and Reminder popovers) darken instead, since nothing else shows their hover.
 - Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking
   space in every text field, so a global hot key on it would take that from every app. The
-  Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space. A task it adds goes
+  Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space; held by another
+  app, Settings' hint says so in red and the menu bar drops its key cap. A task it adds goes
   on the window's undo stack and in Changes as the window's capture does ("Added to …"),
   but raises no tray: its own card says what it added, usually over another app.
 - Capture's chips follow the typed tokens in order, a typed day as "Fri 25 · in 2 days",
@@ -182,6 +187,17 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   and Create last, only for a name no label has; Return picks the highlighted row, the best
   match, which ↑/↓ and the pointer move. Move List…'s parent search does the same: typing
   chooses the first match and ↑/↓ step through the rows, so Return moves under one on show.
+  A list's menus (the sidebar's, a Lists card's, a nested list row's and the page's "…")
+  share one set of commands in one order (`NXListMenu`), native extras all: Open, Show
+  Tasks Only and Hours, Rename (the sidebar's, in place), Move and New Child List, Copy
+  Link, Copy as Markdown and Export, Duplicate and Use as Template…, Pin and Archive, then
+  Delete; the "…" menu adds the page's Sort, Completed Tasks, Icon & Colour…, description
+  and cover after Hours, and has no Open. Copy as Markdown, beside Export as Markdown…, puts
+  the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and says
+  "Copied “List” as Markdown" in the tray, as Export says "Exported “List” as Markdown" once
+  written. A list menu's Hours picks the Work or Personal hours Plan and Start working use
+  for the list, which the design takes from its section; the list page's subtitle stays the
+  design's "N open · Section".
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists and the
@@ -189,12 +205,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   there, a heading or text too, with the move's tray and Undo; a screen row, like a grip,
   drags the rows selected with it, and rows all in that list already are refused, as is any
   line but a task on the Inbox while it shows as triage, which draws only tasks), and search
-  reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
-  puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
-  says "Copied “List” as Markdown" in the tray, as Export says "Exported “List” as Markdown"
-  once written. Its Hours picks the Work or Personal hours Plan and Start working use for
-  the list, which the design takes from its section; the header's subtitle stays the
-  design's "N open · Section". Open notes are remembered per task on this Mac.
+  reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
 - Today's, a list's and a label's Completed groups fold as one, as the design's
   `completedOpen`: the last fold shows on every screen (`NXCompletedFold`). Until the user
   folds one, each opens as its setting says: a list's own Completed Tasks (a native extra),
@@ -294,6 +305,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   "Not planned yet" takes tasks due from a week back to the end of the week around today
   (the settings week, as Plan searches it), or four days out when that is later: the
   design's −7…+4, whose +4 is its Sunday.
+- The Work panel, Work history, the inspector's Full history and Settings › Data, native
+  extras, write a moment as the pills and the Calendar do: "Today 10:00", "Fri 25 10:00",
+  with the year only when it isn't this one (`MomentText`); a planned slot reads "Today
+  10:00–11:30 · 90 min". Work history words a session's pause as the Work panel does, and
+  the panel's completion reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
@@ -335,7 +351,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   sheet too (`NXLinkSheet`; Return applies, Esc cancels), and Trash's hold-to-erase asks
   VoiceOver, which can't hold, in the confirmation sheet. Deviation: the only system alerts
   left are the window's shown when the library can't open, which has no shell, tray or
-  notices.
+  notices; their buttons keep the system's Title Case, where that window's own buttons are
+  in sentence case.
 - Activity › Changes › This session is the log, with the saved history it didn't write
   merged in (MCP, another Mac). What a list document line saves to its task while it's
   written (the new task at Return, its title as typed, the line itself when it goes)
