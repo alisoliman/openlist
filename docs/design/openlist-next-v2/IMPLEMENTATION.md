@@ -40,6 +40,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   only shortens the slides.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
+- Quick Add from anywhere is ⇧⌥Space, not the design's ⌥Space: ⌥Space types a non-breaking
+  space in every text field, so a global hot key on it would take that from every app. The
+  Settings hint, menu bar, shortcuts sheet and README all name ⇧⌥Space.
+- Trash keeps one entry per trashed task or list, not a row per subtask: the subtasks
+  restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
+  counts entries.
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
   `OutlineEditor` engine under its `.nextDocument` policy, tasks on `NXTaskRowChrome` (the
   Next row's chrome with the live text as its title) and the other kinds in the same

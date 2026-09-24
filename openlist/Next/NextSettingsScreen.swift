@@ -18,7 +18,7 @@ struct NextSettingsScreen: View {
     var body: some View {
         @Bindable var settings = env.settings
         NXPage {
-            NXScreenHeader(tile: .icon("gearshape"), color: NX.grey, title: "Settings", subtitle: "Preferences for this Mac")
+            NXScreenHeader(tile: .icon("gearshape.fill"), color: NX.grey, title: "Settings", subtitle: "Preferences for this Mac")
             VStack(alignment: .leading, spacing: 18) {
                 NXSettingsGroup(title: "Tasks") {
                     NXSettingToggle(label: "Show completed tasks", hint: "Lists and Today expand their Completed section by default",

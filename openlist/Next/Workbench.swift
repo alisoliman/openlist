@@ -241,6 +241,8 @@ final class Workbench {
         didSet { if oldValue !== undoManager { observeUndo() } }
     }
     @ObservationIgnored private var batchCounter = 0
+    /// The newest batch Clear all activity history took out of the log.
+    @ObservationIgnored private var clearedBatch = 0
     /// Completions still in their dwell, oldest first.
     @ObservationIgnored private var completions: [CompletionBatch] = []
     /// Trashes whose rows are still flying out.
@@ -459,6 +461,17 @@ final class Workbench {
 
     func entries(for taskID: UUID) -> [ChangeEntry] { log.filter { $0.taskID == taskID } }
 
+    /// Settings' Clear all activity history: the saved history, then, once it's
+    /// gone, the log, so Changes and each task's Activity start over. The undo
+    /// stack keeps its steps; redoing one from before the clear logs it anew.
+    func clearActivityHistory() {
+        store.clearActivity()
+        guard store.persistenceError == nil else { return }
+        log.removeAll()
+        clearedBatch = batchCounter
+        undoRevision += 1
+    }
+
     private func record(_ label: String, icon: String, tone: TrayTone, ids: [UUID]) -> LogMark {
         batchCounter += 1
         let now = Date.now
@@ -545,6 +558,17 @@ final class Workbench {
     }
 
     private func relog(_ mark: LogMark) {
+        // A batch the clear took out doesn't come back with its old time: the
+        // Redo writes it now, so it's logged now, as the newest batch.
+        if mark.batch <= clearedBatch {
+            batchCounter += 1
+            mark.batch = batchCounter
+            let now = Date.now
+            for index in mark.entries.indices {
+                mark.entries[index].batch = batchCounter
+                mark.entries[index].at = now
+            }
+        }
         insert(mark.entries)
         noteLogWrite(mark)
         undoRevision += 1
@@ -980,7 +1004,8 @@ final class Workbench {
 /// Ties a log batch to the undo entry that made it, so undoing that entry
 /// removes exactly this batch, whatever the entry is called.
 private final class LogMark {
-    let batch: Int
+    /// Renumbered when a Redo logs it again after Clear all activity history.
+    var batch: Int
     let label: String
     /// What Redo puts back in the log; rows cancelled mid-dwell drop out.
     var entries: [ChangeEntry]

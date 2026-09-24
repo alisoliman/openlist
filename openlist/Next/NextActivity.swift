@@ -216,7 +216,6 @@ private struct NXHeatCell: View {
             .animation(.easeOut(duration: 0.15), value: selected)
             .contentShape(shape)
             .onTapGesture { if day != nil { action() } }
-            .help(day?.accessibilityDescription ?? "")
             .accessibilityElement()
             .accessibilityLabel(day?.accessibilityDescription ?? "Future day")
             .accessibilityAddTraits(day == nil ? [] : [.isButton])
@@ -239,6 +238,7 @@ private struct NXActivityDayPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(selected == today ? "Today" : selected.formatted(.dateTime.weekday(.wide).day().month(.wide)))
                 .font(NX.serif(22))
+                .padding(.vertical, NX.serifLeading(22, lineHeight: 1.1))
                 .foregroundStyle(NX.ink)
             Text(items.isEmpty ? "No completions recorded" : "\(items.count) \(items.count == 1 ? "task" : "tasks") completed")
                 .font(.system(size: 11.5, weight: .medium))

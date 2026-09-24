@@ -29,8 +29,11 @@ extension Store {
             for file in attachments where file.blockID.map(ids.contains) == true {
                 media[file.filename] = file.contentData?.count ?? file.byteCount
             }
+            let root = members.first { $0.id == id }
+            let subtasks = root?.isTask == true ? members.filter { $0.isTask && $0.id != id }.count : 0
             return TrashEntry(id: id, title: title, isList: isList, metadata: metadata,
-                blockCount: members.count, byteCount: media.values.reduce(0, +), listCount: lists.filter { $0.trashID == id }.count)
+                blockCount: members.count, byteCount: media.values.reduce(0, +), listCount: lists.filter { $0.trashID == id }.count,
+                subtaskCount: subtasks)
         }
         return (lists.filter { $0.trashID == $0.id }.map {
             entry(id: $0.id, title: $0.displayTitle, isList: true, metadata: $0.trashMetadata)

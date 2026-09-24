@@ -336,8 +336,11 @@ extension Workbench {
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(delay))
             guard let self else { return }
+            // Written first, as a trash lands: the row leaves Trash as it
+            // stops flying, and one that stays comes back.
+            let restored = self.store.restoreTrash(ids: [entry.id])
             self.flying.remove(entry.id)
-            guard self.store.restoreTrash(ids: [entry.id]) else {
+            guard restored else {
                 self.showTray(self.store.trashError ?? "This item could not be restored.", icon: "exclamationmark.triangle", tone: .red)
                 return
             }
