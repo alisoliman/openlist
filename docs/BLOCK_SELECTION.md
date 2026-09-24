@@ -50,9 +50,9 @@ matching single-row drag; arbitrary strings and malformed internal payloads are
 rejected, never inserted as text. Drop handlers recheck the target model before
 dispatching a mutation, so a target deleted during payload loading produces an
 unavailable-target notice and no partial drop. Both app manifests export
-`app.openlist.block-drag` and `app.openlist.inbox-order` as `public.data`;
-`Tools/verify-drag-types.py` checks both manifests, and the Dev and Release
-verifiers run it on the built Info.plist.
+`app.openlist.block-drag` as `public.data`; `Tools/verify-drag-types.py` checks
+both manifests, and the Dev and Release verifiers run it on the built
+Info.plist.
 
 ## Checks
 
