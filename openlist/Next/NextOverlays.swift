@@ -201,8 +201,10 @@ private struct NXFieldScroll: NSViewRepresentable {
             // The field editor's clip view moves its bounds as it scrolls.
             observers.append(center.addObserver(forName: NSView.boundsDidChangeNotification, object: nil,
                                                 queue: .main) { [weak self] note in
+                // Delivered on the main queue; only the posting object crosses in.
+                nonisolated(unsafe) let object = note.object
                 MainActor.assumeIsolated {
-                    guard let self, let clip = note.object as? NSClipView, clip.window === self.window,
+                    guard let self, let clip = object as? NSClipView, clip.window === self.window,
                           let editor = clip.documentView as? NSTextView, editor.isFieldEditor,
                           let field = editor.delegate as? NSTextField, self.covers(field) else { return }
                     self.report(clip.bounds.minX)
@@ -211,8 +213,9 @@ private struct NXFieldScroll: NSViewRepresentable {
             // Once it stops editing, the field draws its text from the start again.
             observers.append(center.addObserver(forName: NSControl.textDidEndEditingNotification, object: nil,
                                                 queue: .main) { [weak self] note in
+                nonisolated(unsafe) let object = note.object
                 MainActor.assumeIsolated {
-                    guard let self, let field = note.object as? NSTextField, self.covers(field) else { return }
+                    guard let self, let field = object as? NSTextField, self.covers(field) else { return }
                     self.report(0)
                 }
             })
