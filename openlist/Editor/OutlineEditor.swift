@@ -1417,15 +1417,26 @@ final class OutlineEditor {
     /// otherwise is named for `edit` and reported to the host.
     @discardableResult
     private func editorEdit<T>(_ name: String, edit: OutlineEdit? = nil, joiningLine: Bool = true, _ body: () -> T) -> T {
+        // Named before it runs, while a line it deletes still has its text.
+        let name = edit.flatMap(hooks.nameEdit) ?? name
+        return editorEdit(joiningLine: joiningLine, naming: { (edit, name) }, body)
+    }
+
+    /// As ``editorEdit(_:edit:joiningLine:_:)``, with the edit and its name
+    /// read once `body` has run, so what it did names the step.
+    @discardableResult
+    private func editorEdit<T>(joiningLine: Bool = true, naming step: @escaping () -> (edit: OutlineEdit?, name: String),
+                               _ body: () -> T) -> T {
         defer { drawnRows = nil }
         if joiningLine, let line = openLine(for: focus.blockID) {
             line.isStructural = true
             return env.store.recordInEditorSession(line.session, body)
         }
-        let name = edit.flatMap(hooks.nameEdit) ?? name
-        let didRegister = edit.map { edit in { [self] in hooks.didRecordEdit(edit, name) } }
-        return env.store.undoableEditorEdit(in: document.listID, name: name, undoManager: undoManager,
-                                            didRegister: didRegister, body)
+        return env.store.undoableEditorEdit(in: document.listID, name: step().name, undoManager: undoManager,
+                                            didRegister: { [self] in
+                                                let step = step()
+                                                if let edit = step.edit { hooks.didRecordEdit(edit, step.name) }
+                                            }, body)
     }
 
     private var undoManager: UndoManager? { windowUndoManager() }
@@ -1706,7 +1717,15 @@ final class OutlineEditor {
         defer { drawnRows = nil }
         let structural: [EditorCommand] = [.indent, .outdent, .moveUp, .moveDown]
         if let command = env.pendingCommand, structural.contains(command) {
-            editorEdit("Edit outline", edit: outlineEdit(for: command, on: commandTargets.map(\.id))) { handleCommand() }
+            // A move is named for the rows that went, once they have, so
+            // one held back isn't in its step or the Changes log.
+            var ids = commandTargets.map(\.id)
+            editorEdit(naming: { [self] in
+                let edit = outlineEdit(for: command, on: ids)
+                return (edit, edit.flatMap(hooks.nameEdit) ?? "Edit outline")
+            }) {
+                if let moved = handleCommand() { ids = moved }
+            }
         } else {
             // A task command comes after the line being written, as it would
             // after a click away from it, so neither step takes in the other.
@@ -1743,13 +1762,16 @@ final class OutlineEditor {
     /// titles, enabled state and Workbench items read the same targets.
     var commandTaskIDs: [UUID] { commandTargets.filter(\.isTask).map(\.id) }
 
-    private func handleCommand() {
-        guard let command = env.consumeCommand() else { return }
+    /// Runs the pending command; for a move, the targets that went, each
+    /// row that did and the ones selected under it.
+    @discardableResult
+    private func handleCommand() -> [UUID]? {
+        guard let command = env.consumeCommand() else { return nil }
         let targets = commandTargets
-        guard !SelectionCommandPolicy.reject(command, selectedCount: env.navigator.selection.count, store: env.store) else { return }
+        guard !SelectionCommandPolicy.reject(command, selectedCount: env.navigator.selection.count, store: env.store) else { return nil }
         if sorting != .manual, [.moveUp, .moveDown, .indent, .outdent].contains(command) {
             env.store.refuse("Switch to manual order before rearranging rows.")
-            return
+            return nil
         }
 
         // Task commands are the host's, which runs them through its own
@@ -1759,7 +1781,7 @@ final class OutlineEditor {
                 focus.request(nil)
                 env.navigator.selection.removeAll()
             }
-            return
+            return nil
         }
 
         switch command {
@@ -1770,7 +1792,11 @@ final class OutlineEditor {
             env.store.batch { for block in topmost(targets).reversed() { _ = outdentLine(block) } }
 
         case .moveUp, .moveDown:
-            moveLines(topmost(targets), up: command == .moveUp)
+            let moved = Set(moveLines(topmost(targets), up: command == .moveUp))
+            let current = blocks
+            return targets.filter { target in
+                moved.contains(target.id) || BlockTree.ancestors(of: target, in: current).contains { moved.contains($0.id) }
+            }.map(\.id)
 
         case .expandAll, .collapseAll:
             // Every line, the ones folded away too.
@@ -1793,6 +1819,7 @@ final class OutlineEditor {
         default:
             break
         }
+        return nil
     }
 
     /// Move Up and Move Down: the line, with what's under it, goes past the
@@ -1808,31 +1835,37 @@ final class OutlineEditor {
     /// nothing is recorded.
     ///
     /// Rows selected together move together, as their drag does: each goes
-    /// past the nearest line beside it that isn't moving, the nearest to the
-    /// way they go first, so they keep their order and the gaps between
-    /// them, and one held back by a selected line that can't go stays by it.
-    private func moveLines(_ lines: [Block], up: Bool) {
+    /// past the nearest line beside it that shows, the nearest to the way
+    /// they go first, unless that line is moving too or holds a row that
+    /// is, so they keep their order. One that can't go holds back only the
+    /// rows that would pass it, and the rest still go, closing up to it.
+    /// Returns the rows that went.
+    private func moveLines(_ lines: [Block], up: Bool) -> [UUID] {
         let drawn = rows.map(\.id)
         let shown = Set(drawn)
         let order = Dictionary(drawn.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         let lines = lines.filter { shown.contains($0.id) }.sorted { order[$0.id, default: 0] < order[$1.id, default: 0] }
-        guard !lines.isEmpty else { return }
+        guard !lines.isEmpty else { return [] }
         let moving = Set(lines.map(\.id))
+        // A move keeps each line's parent, so this holds as the lines go.
         let index = BlockTree.childIndex(of: blocks)
         func shows(_ sibling: Block) -> Bool {
             shown.contains(sibling.id) || BlockTree.descendants(of: sibling.id, using: index).contains { shown.contains($0.id) }
         }
+        func carries(_ sibling: Block) -> Bool {
+            moving.contains(sibling.id) || BlockTree.descendants(of: sibling.id, using: index).contains { moving.contains($0.id) }
+        }
         let folded = foldedSections()
+        var moved: [UUID] = []
         env.store.batch {
             for block in up ? lines : lines.reversed() {
                 let siblings = env.store.orderedSiblings(of: block)
                 guard let position = siblings.firstIndex(where: { $0.id == block.id }) else { continue }
                 if up {
-                    guard let past = siblings[..<position].last(where: shows), !moving.contains(past.id) else { continue }
-                    env.store.move(block, toParent: block.parentID, above: past, in: document.listID)
+                    guard let past = siblings[..<position].last(where: shows), !carries(past) else { continue }
+                    if env.store.move(block, toParent: block.parentID, above: past, in: document.listID) { moved.append(block.id) }
                 } else {
-                    guard let past = siblings[(position + 1)...].firstIndex(where: shows),
-                          !moving.contains(siblings[past].id) else { continue }
+                    guard let past = siblings[(position + 1)...].firstIndex(where: shows), !carries(siblings[past]) else { continue }
                     var end = past + 1
                     // A top-level heading ends the section of one at its level or
                     // below, so past a folded one it lands after that section rather
@@ -1843,13 +1876,14 @@ final class OutlineEditor {
                             ?? siblings.endIndex
                         if !siblings[end..<bound].contains(where: shows) { end = bound }
                     }
-                    env.store.move(block, toParent: block.parentID, above: siblings.indices.contains(end) ? siblings[end] : nil,
-                                   in: document.listID)
+                    if env.store.move(block, toParent: block.parentID, above: siblings.indices.contains(end) ? siblings[end] : nil,
+                                      in: document.listID) { moved.append(block.id) }
                 }
             }
             let opening = foldedSections().filter { heading, lines in !lines.isSubset(of: folded[heading] ?? []) }.keys
             for id in opening { if let heading = env.store.block(id: id) { env.store.setCollapsed(false, for: heading) } }
         }
+        return moved
     }
 
     /// The lines each folded top-level heading's section holds, when the

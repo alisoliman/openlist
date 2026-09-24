@@ -161,9 +161,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   at a folded one's level or above, moving down, goes past it and its section, which stays
   folded, so each press moves it on screen and one with nothing there records nothing.
   Rows selected together (⌘/⇧-click, X, ⌘A) move together, as Indent and Outdent and
-  their drag take them all: each past the nearest line beside it that isn't moving, so
-  they keep their order and gaps, one held at the top or bottom holding back the rest,
-  as one step ("Moved 3 lines down").
+  their drag take them all, as one step named and logged for the rows that went ("Moved
+  3 lines down"): each past the nearest line beside it that shows, unless that line is
+  moving too or holds a row that is, so they keep their order. One that can't go (at the
+  top or bottom) holds back only the rows that would pass it; the rest still go, closing
+  up to it.
   `Navigator.documentListID` (any list, and the Inbox shown as a document) and
   `documentOwnsEditorCommands` replace `hasDocumentEditor`.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask

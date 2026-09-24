@@ -457,9 +457,8 @@ private struct NXLineGrip: View {
             context.editor.edit(row.id)
         } else {
             // A divider or image takes no caret: as a click on the line, it
-            // leaves the line being written.
-            NXDocumentEditing.end()
-            env.workbench.focusID = nil
+            // leaves whatever holds the keys.
+            NXDocumentEditing.leaveFields(env.workbench)
         }
     }
 }
@@ -945,10 +944,9 @@ private struct NXDocumentBlock: View {
         .contentShape(Rectangle())
         .onTapGesture {
             guard !block.kind.isVoid else {
-                // A divider or image takes no caret: the click leaves the line
-                // being written, as one on the page does.
-                NXDocumentEditing.end()
-                env.workbench.focusID = nil
+                // A divider or image takes no caret: the click leaves whatever
+                // holds the keys, as one on the page does.
+                NXDocumentEditing.leaveFields(env.workbench)
                 return
             }
             context.editor.edit(row.id)
@@ -1101,7 +1099,10 @@ private struct NXDocumentImage: View {
                 .accessibilityLabel(block.mediaCaption.isEmpty ? "Add a caption" : "Caption: \(block.mediaCaption)")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Edits the image's caption")
-                .accessibilityAction { editing = true }
+                .accessibilityAction {
+                    NXDocumentEditing.end()
+                    editing = true
+                }
         }
     }
 
@@ -1235,6 +1236,17 @@ enum NXDocumentEditing {
         guard let window = NSApp.keyWindow,
               window.firstResponder is BlockNSTextView || window.firstResponder is NXNoteTextView else { return }
         window.makeFirstResponder(nil)
+    }
+
+    /// A click on a line that takes no caret, a divider or image: as one on
+    /// the page, it leaves any field holding the keys, a caption being
+    /// written or the Tasks bar's query too, and the task focus, but it
+    /// keeps the inspector open.
+    @MainActor
+    static func leaveFields(_ workbench: Workbench) {
+        workbench.focusID = nil
+        workbench.tasksQueryFocused = false
+        NSApp.keyWindow?.makeFirstResponder(nil)
     }
 }
 

@@ -2610,6 +2610,25 @@ check(groupStored() == ["B", "A", "C", "E", "D"] && groupSub.parentID == groupLi
 groupCommand(.moveDown, [groupLines[3], groupLines[4]])
 check(groupStored() == ["B", "A", "C", "E", "D"] && groupRecorded.count == 3,
     "At the bottom, the selected rows stay together")
+// The step is named and logged for the rows that went, once they have.
+groupEditor.hooks.nameEdit = { edit in
+    guard case let .moved(ids, up) = edit else { return nil }
+    return "Moved \(ids.count) \(up ? "up" : "down")"
+}
+groupCommand(.moveUp, [groupLines[1], groupLines[2]])
+check(groupStored() == ["B", "C", "A", "E", "D"] && groupRecorded.last == .moved([groupLines[2].id], up: true)
+        && groupUndo.undoActionName == "Moved 1 up",
+    "A row held at the top holds back only the ones against it: the one apart goes, and only it is named and logged")
+groupCommand(.moveUp, [groupSub, groupLines[3]])
+check(groupStored() == ["B", "C", "A", "E", "D"] && groupRecorded.count == 4,
+    "A row doesn't pass a task whose selected subtask is held, so the rows keep their order")
+let groupSub2 = store.insertChild(kind: .task, text: "E2", of: groupLines[4], at: .last)
+store.save()
+groupCommand(.moveUp, [groupSub2, groupLines[3]])
+check(store.orderedSiblings(of: groupSub2).map(\.text) == ["E2", "E1"] && groupStored() == ["B", "C", "A", "E", "D"]
+        && groupRecorded.last == .moved([groupSub2.id], up: true),
+    "A selected subtask goes up within its task, and the row after it stays rather than pass it")
+groupEditor.hooks.nameEdit = { _ in nil }
 
 // Next to a folded heading, a moved line doesn't go into the fold unseen:
 // the heading whose section it, or a moved heading's lines, land in opens,
