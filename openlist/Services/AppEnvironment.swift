@@ -206,15 +206,15 @@ final class AppEnvironment {
 
     /// ⌘N and the screens' Add buttons. The capture lives on the workbench, so
     /// a main window opened for it shows the capture as soon as it appears.
-    /// On Calendar the workbench plans the task for today by itself.
+    /// On Today the task it makes is due today.
     func presentTaskCapture(text: String = "") {
         workbench.openCapture(text: text)
     }
 
+    /// The copy on its list's screen, the Inbox's being triage, in the inspector.
     func showCopiedTask(id: UUID, listID: UUID) {
-        navigator.go(to: .list(listID))
-        navigator.selection = [id]
-        navigator.openTask(id)
+        if let list = store.list(id: listID) { workbench.go(workbench.route(for: list)) }
+        workbench.inspect(id)
     }
 
     func consumeCommand() -> EditorCommand? {

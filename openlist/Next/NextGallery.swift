@@ -268,7 +268,7 @@ private struct NXTrashRow: View {
         let workbench = env.workbench
         let flying = workbench.flying.contains(entry.id)
         HStack(spacing: 11) {
-            Image(systemName: entry.isList ? "square.stack" : "circle")
+            Image(systemName: entry.isList ? "square.2.layers.3d" : "circle")
                 .font(.system(size: 15))
                 .foregroundStyle(NX.ink(0.3))
                 .frame(width: 18)

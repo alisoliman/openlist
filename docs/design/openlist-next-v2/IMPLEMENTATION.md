@@ -23,6 +23,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Modal flags reuse `navigator.isSearchOpen` and `navigator.isCommandPaletteOpen`; ⌘N goes
   through `env.presentTaskCapture()`, which opens the workbench capture
   (`workbench.openCapture`), so menu commands keep working.
+- The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
+  and runs the Workbench's actions; its key equivalents all carry a modifier (⌘D Mark as
+  Done or Reopen, ⌃T/⌃M due today/tomorrow, ⇧⌘S Star), since a bare letter would fire while
+  typing. Help ▸ Keyboard Shortcuts (⌘/) lists the design's single keys with the keys the
+  list document and menus handle. Work ▸ Stop and Complete run `workbench.stopWork` and
+  `finishWork`, as the notch's ✕ and ✓ do.
+- Too narrow for the whole toolbar, the crumb truncates first, then the Undo label, which
+  at last leaves only its icon; Actions and New task keep their labels.
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the

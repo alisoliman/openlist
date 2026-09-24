@@ -140,7 +140,7 @@ struct DueDatePicker: View {
             presetPill("Today", symbol: "sun.max", detail: shortWeekday(0), day: day(0)) {
                 env.store.setDueToday(block)
             }
-            presetPill("Tomorrow", symbol: "sunrise", detail: shortWeekday(1), day: day(1)) {
+            presetPill("Tomorrow", symbol: "sun.horizon", detail: shortWeekday(1), day: day(1)) {
                 env.store.setDueTomorrow(block)
             }
             presetPill("This weekend", symbol: "beach.umbrella", detail: weekendDetail, day: weekendDate) {

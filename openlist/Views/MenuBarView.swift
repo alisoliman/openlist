@@ -245,12 +245,15 @@ struct MenuBarTaskRow: View {
                            tone: offset < 0 ? .over : .accent, fill: offset < 0)
     }
 
+    /// As a search hit opens a task: on its list's screen, the Inbox's being
+    /// triage, focused and in the inspector.
     private func open() {
         openWindow(id: WindowID.main)
         NSApp.activate(ignoringOtherApps: true)
-        if let listID = block.listID {
-            env.navigator.go(to: .list(listID))
-        }
-        env.navigator.openTask(block.id)
+        let workbench = env.workbench
+        let id = block.id
+        if let list = env.store.list(id: block.listID) { workbench.go(workbench.route(for: list)) }
+        // Once the new screen is up, so it scrolls to the row.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { workbench.inspect(id) }
     }
 }

@@ -669,7 +669,7 @@ struct NXTaskMenu: View {
             }
         }
         Button("Due Today", systemImage: "calendar") { workbench.schedule(ids, offset: 0) }
-        Button("Due Tomorrow", systemImage: "sunset") { workbench.schedule(ids, offset: 1) }
+        Button("Due Tomorrow", systemImage: "sun.horizon") { workbench.schedule(ids, offset: 1) }
         Button("Plan for Today", systemImage: "calendar.badge.clock") { workbench.plan(ids) }
         Button("Find a Slot", systemImage: "sparkles") { ids.forEach(workbench.fit) }
         Button("Star", systemImage: "star") { workbench.star(ids) }

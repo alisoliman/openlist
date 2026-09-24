@@ -745,7 +745,7 @@ private struct NXSearchRow: View {
         HStack(spacing: 11) {
             Group {
                 if let emoji = hit.emoji { Text(emoji).font(.system(size: NXListGlyph.emojiPointSize(14))) }
-                else { Image(systemName: hit.symbol ?? "square.stack") }
+                else { Image(systemName: hit.symbol ?? "square.2.layers.3d") }
             }
             .font(.system(size: 14))
             .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
@@ -837,7 +837,7 @@ enum NXPalette {
             (.today, "sun.max", "Go to Today", "G T"),
             (.calendar, "calendar", "Go to Calendar", "G C"),
             (.tasks, "checklist", "Go to Tasks", "G A"),
-            (.lists, "square.stack", "Go to Lists", "G L"),
+            (.lists, "square.2.layers.3d", "Go to Lists", "G L"),
             (.activity, "square.grid.2x2", "Go to Activity", "G H"),
             (.trash, "trash", "Go to Trash", ""),
             (.settings, "gearshape", "Open Settings", "⌘,"),
@@ -847,7 +847,7 @@ enum NXPalette {
                       run: act { workbench.complete($0) }),
             NXCommand(id: "today", icon: "calendar", label: "Due today", key: "T", needsTarget: true,
                       run: act { workbench.schedule($0, offset: 0) }),
-            NXCommand(id: "tomorrow", icon: "sunrise", label: "Due tomorrow", key: "M", needsTarget: true,
+            NXCommand(id: "tomorrow", icon: "sun.horizon", label: "Due tomorrow", key: "M", needsTarget: true,
                       run: act { workbench.schedule($0, offset: 1) }),
             NXCommand(id: "plan", icon: "calendar.badge.clock", label: "Plan for today", key: "P", needsTarget: true,
                       run: act { workbench.plan($0) }),
@@ -875,7 +875,7 @@ enum NXPalette {
             NXCommand(id: "go-\(label)", icon: icon, label: label, key: key, navigates: true) { workbench.go(route) }
         }
         all += library.destinations.map { list in
-            NXCommand(id: "open-\(list.id)", icon: "square.stack", label: "Open \(list.displayTitle)", navigates: true) {
+            NXCommand(id: "open-\(list.id)", icon: "square.2.layers.3d", label: "Open \(list.displayTitle)", navigates: true) {
                 workbench.go(.list(list.id))
             }
         }
