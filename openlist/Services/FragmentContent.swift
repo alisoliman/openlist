@@ -2,7 +2,7 @@ import AppKit
 import SwiftData
 
 enum FragmentContent {
-    static func capture(_ selection: [UUID], store: Store, includingMedia: Bool = true) throws -> DocumentFragment {
+    static func capture(_ selection: [UUID], store: Store) throws -> DocumentFragment {
         guard !selection.isEmpty, let first = store.block(id: selection[0]), let listID = first.listID else {
             throw CopyError.unavailable
         }
@@ -100,12 +100,10 @@ enum FragmentContent {
             record.schedulingEstimateMinutes = block.schedulingEstimateMinutes
             record.keepsSessionsTogether = block.keepsSessionsTogether
             record.tracksAwayFromMac = block.tracksAwayFromMac
-            if includingMedia {
-                if let filename = block.mediaFilename {
-                    record.image = try readMedia(filename: filename, data: block.mediaData)
-                } else if block.mediaData != nil {
-                    throw FragmentError.invalid("A source image has no filename.")
-                }
+            if let filename = block.mediaFilename {
+                record.image = try readMedia(filename: filename, data: block.mediaData)
+            } else if block.mediaData != nil {
+                throw FragmentError.invalid("A source image has no filename.")
             }
             record.mediaWidth = block.mediaWidth
             record.mediaHeight = block.mediaHeight
@@ -116,8 +114,7 @@ enum FragmentContent {
                 sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.createdAt)]))
                 .filter { !$0.isDeleted }.map {
                     FragmentAttachment(displayName: $0.displayName, contentType: $0.contentType,
-                        media: includingMedia ? try readMedia(filename: $0.filename, data: $0.contentData)
-                            : FragmentMedia(fileExtension: "", data: Data()))
+                        media: try readMedia(filename: $0.filename, data: $0.contentData))
                 }
             return record
         }

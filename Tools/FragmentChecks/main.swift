@@ -230,10 +230,6 @@ attachment.filename = "not-present-on-disk.txt"
 attachment.contentData = nil
 rejects("Missing source file rejects clipboard copy before replacing clipboard") { try FragmentClipboard.copy([root.id], store: store, to: clipboard) }
 check(try FragmentClipboard.read(from: clipboard) == fragment, "Failed copy keeps the prior clipboard payload intact")
-let markdownBoard = NSPasteboard(name: .init(UUID().uuidString))
-try FragmentClipboard.copy([root.id], store: store, markdownOnly: true, to: markdownBoard)
-check(markdownBoard.data(forType: FragmentClipboard.type) == nil && markdownBoard.string(forType: .string)?.contains("file not included") == true, "Markdown-only copy stays readable with missing media and never claims embedded bytes")
-markdownBoard.releaseGlobally()
 attachment.filename = missingFilename
 attachment.contentData = blob
 try store.persistChanges()
