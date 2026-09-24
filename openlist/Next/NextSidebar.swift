@@ -416,10 +416,7 @@ struct NextSidebar: View {
                             workbench.go(.label(label.id))
                         }
                         .contextMenu {
-                            Button("Delete Label", role: .destructive) {
-                                if route == .label(label.id) { env.navigator.replace(with: .tasks) }
-                                env.store.deleteLabel(label)
-                            }
+                            Button("Delete Label", role: .destructive) { workbench.deleteLabel(label) }
                         }
                     }
                 }

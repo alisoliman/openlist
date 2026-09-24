@@ -104,9 +104,10 @@ choose which label to keep. Nothing merges until you confirm.
 
 Merging updates labels on all tasks, including nested, completed, and archived
 work, while retaining the destination identity/color and historical activity
-names. **Undo merge** stays available at the top of the main window after
-navigation, until dismissed, another merge, or app restart. Task content and
-unrelated label edits made afterward are preserved by undo. The central merge
+names. The merge reports in the tray with **Undo**, and ⌘Z takes it back too, in
+turn with the window's other changes: changes made after it are undone first.
+Undo brings the merged label back on each task that had it; label edits that reach
+those tasks meanwhile from elsewhere, like sync or MCP, are kept. The central merge
 path includes all stored blocks without a visibility filter; future retained
 Trash records must use that path or extend it if stored separately.
 
@@ -141,10 +142,10 @@ existing behavior without Undo. Clipboard copying keeps its separate semantics.
 
 ### Document content on the clipboard
 
-In a block's context menu, **Copy content and descendants** copies its complete
+In a task's context menu, **Copy Content and Subtasks** copies its complete
 subtree, including hidden/completed descendants, notes, supported inline formatting,
-images, and files. **Copy subtree as Markdown** exports just that subtree as readable
-text; images/files are described by name, without private local file URLs.
+images, and files. Other apps receive it as readable Markdown, with images/files
+described by name, without private local file URLs.
 
 Use **Paste content after this block** at a destination row, or **Paste content**
 in the blank document area's context menu. ⌘V in an empty outline row also inserts

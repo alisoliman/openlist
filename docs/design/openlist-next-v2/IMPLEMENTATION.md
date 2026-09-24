@@ -105,6 +105,27 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   slot this week"), then goes on into the next week, as a deferral past it gets its own. A
   block landing past the days shown moves the Calendar's range there, and the header's
   ‹ Today › steps the range a day, three days or a week at a time.
+- The tray is the one passing feedback, as in the design, and VoiceOver hears each message
+  (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
+  (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
+  completion entry. One-off refusals (`Store.refuse`: a drop the document's rules don't
+  allow, rearranging a sorted list) pass there; what needs dealing with (saving, sync,
+  links, label maintenance, Trash failures, failed undos) stays a notice card, all of them
+  in one place under the toolbar.
+- Native extras that snap like the design's actions, with Undo and a log entry: Delete List
+  (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), Delete Label (sidebar and
+  Settings; Undo puts it back where it sat on each task), Merge labels, a list's Icon &
+  Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
+  Copy Content and Subtasks (for Paste in an empty document line) only copy. An Undo or
+  Redo of a label or list change that fails says so in the tray, keeps the log as it was
+  and leaves the stack. Deviation: a merge undoes in turn on the window's stack, by ⌘Z or
+  the tray, where the old "Undo merge" card took back the latest merge out of order,
+  keeping later changes. Deviation: "Confirm before deleting a list" stays a preference
+  (on by default), asked in a Next sheet; the design asks nothing, as Undo covers it.
+- A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
+  empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
+  or text line (only native data gives those notes) shows that note under the line as the
+  design's note block, the match in the accent.
 
 ## Status checklist
 

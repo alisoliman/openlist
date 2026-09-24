@@ -60,8 +60,8 @@ struct BlockDragAndDrop: ViewModifier {
                         activeLegacyID: { env.navigator.activeLegacyBlockDragID },
                         onMove: onMove,
                         onDropText: onDropText,
-                        onInvalid: { env.store.editorNotice = "This internal drag is invalid or belongs to another library. No rows were changed." },
-                        onUnavailable: { env.store.editorNotice = "The drop target is no longer available. No rows were changed." }
+                        onInvalid: { env.store.refuse("This internal drag is invalid or belongs to another library. No rows were changed.") },
+                        onUnavailable: { env.store.refuse("The drop target is no longer available. No rows were changed.") }
                     )
                 )
         } else {

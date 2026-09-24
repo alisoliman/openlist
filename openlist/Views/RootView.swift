@@ -7,7 +7,7 @@ import SwiftData
 import SwiftUI
 
 /// The main window. `NextShell` draws everything; this view owns the window
-/// wiring: sheets, alerts, notices, menu commands and the Dock badge.
+/// wiring: sheets, menu commands and the Dock badge.
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.openWindow) private var openWindow
@@ -35,21 +35,7 @@ struct RootView: View {
             ShortcutsSheet()
         }
         .sheet(item: $captureEnvironment.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
-        .alert(
-            "Delete “\(env.listPendingDeletion?.displayTitle ?? "")”?",
-            isPresented: Binding(
-                get: { env.listPendingDeletion != nil },
-                set: { if !$0 { env.listPendingDeletion = nil } }
-            )
-        ) {
-            Button("Cancel", role: .cancel) { env.listPendingDeletion = nil }
-            Button("Delete", role: .destructive) {
-                if let list = env.listPendingDeletion { env.performDeleteList(list) }
-            }
-        } message: {
-            Text("This moves the list and its child documents, tasks, notes, and files to Trash as one restorable unit. You can restore them later. With iCloud enabled, this change also syncs to your other Macs.")
-        }
-        .overlay(alignment: .top) { statusNotices.padding(.top, 52) }
+        .sheet(item: $captureEnvironment.listPendingDeletion) { list in DeleteListSheet(list: list).environment(env) }
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
@@ -161,32 +147,6 @@ struct RootView: View {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private var statusNotices: some View {
-        VStack(spacing: 6) {
-            if let notice = env.store.editorNotice {
-                NXNoticeCard(icon: "info.circle", message: notice) {
-                    Button("Dismiss") { env.store.editorNotice = nil }
-                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
-                }
-            }
-            if let error = env.store.persistenceError {
-                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
-                    Button("Retry saving") { env.store.save() }
-                        .buttonStyle(NXPanelButtonStyle(kind: .link))
-                }
-            }
-            if let warning = syncWarning {
-                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
-            }
-        }
-        // They float over the screen, so they lift off it like the design's menus.
-        .shadow(color: NX.shadowWarm.opacity(0.18), radius: 20, y: 16)
-        .frame(maxWidth: 560)
-        .padding(.horizontal, 20)
-        // Drawn over the shell, outside its style.
-        .environment(\.nextStyle, env.workbench.style)
-    }
-
     // MARK: - Commands outside a document
 
     /// This window, or a popover shown from it (a child window). Quick Add,
@@ -204,11 +164,6 @@ struct RootView: View {
         guard let window else { return }
         env.workbench.undoManager = window.undoManager
         env.workbench.installCompletionUndo()
-    }
-
-    private var syncWarning: String? {
-        env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
-            ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
     }
 
     /// Runs menu commands on the Next screens, where the targets are the
@@ -279,145 +234,68 @@ struct RootView: View {
     }
 }
 
-/// Shown when a route points at something that has since been deleted.
+/// The window's editor, saving and sync notices. They sit under the toolbar
+/// with the link, label and Trash notices, in line with the screen's content.
+/// A refusal that changed nothing passes in the tray instead; see `Store.refuse`.
+struct NXStatusNotices: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        if let notice = env.store.editorNotice {
+            NXNoticeCard(icon: "info.circle", message: notice) {
+                Button("Dismiss") { env.store.editorNotice = nil }
+                    .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+            }
+            .nxNoticePlacement()
+        }
+        if let error = env.store.persistenceError {
+            NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
+                Button("Retry saving") { env.store.save() }
+                    .buttonStyle(NXPanelButtonStyle(kind: .link))
+            }
+            .nxNoticePlacement()
+        }
+        if let warning = syncWarning {
+            NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
+                .nxNoticePlacement()
+        }
+    }
+
+    private var syncWarning: String? {
+        env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
+            ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
+    }
+}
+
+/// Shown when a route points at something that has since been deleted, like
+/// a list Back returns to after it went to Trash: the design's dashed empty
+/// box on the page, and a way on.
 struct MissingContentView: View {
+    @Environment(AppEnvironment.self) private var env
     let message: String
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "questionmark.folder")
-                .font(.system(size: 30))
-                .foregroundStyle(Theme.tertiaryText)
-            Text(message)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.secondaryText)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvas)
-    }
-}
-
-/// Standard page scaffold: big title, optional subtitle and trailing controls,
-/// then scrolling content constrained to a comfortable measure.
-struct ScreenScaffold<Header: View, Content: View>: View {
-    @Environment(AppEnvironment.self) private var env
-    @State private var scrollPosition = ScrollPosition(idType: UUID.self)
-    @State private var scrollRoute: AppRoute?
-    @State private var hasRestoredScroll = false
-    @State private var visibleNoteRevealID: UUID?
-    var maxContentWidth: CGFloat = 820
-    /// Gap between the title block and the content below it.
-    var headerSpacing: CGFloat = 14
-    @ViewBuilder var header: () -> Header
-    @ViewBuilder var content: () -> Content
-
-    private var readyRevealID: UUID? {
-        guard !env.navigator.isSearchOpen, let request = env.navigator.contentReveal,
-              request.taskID == nil, env.navigator.route == .list(request.listID) else { return nil }
-        return request.id
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let gutter = min(Theme.Spacing.documentGutter, max(16, geometry.size.width * 0.045))
-            ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    header()
-                        .padding(.bottom, headerSpacing)
-                        .id(ContentReveal.Anchor.pageHeader)
-                    content()
-                }
-                .frame(maxWidth: maxContentWidth, alignment: .leading)
-                .padding(.horizontal, gutter)
-                .padding(.top, 24)
-                .padding(.bottom, 60)
-                .frame(maxWidth: .infinity, alignment: .top)
+        let workbench = env.workbench
+        let way = destination
+        NXPage {
+            VStack(spacing: 12) {
+                NXDashedEmpty(text: way.route == .trash ? "This list is in Trash." : message)
+                Button(way.label) { workbench.go(way.route) }
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
             }
-            .scrollPosition($scrollPosition)
-            .onChange(of: env.navigator.rowSelection.focusID) { _, id in
-                guard env.navigator.isSelectingRows, let id,
-                      env.activeDocument?.rootBlockID == nil,
-                      NSApp.keyWindow?.firstResponder is RowSelectionNSControl else { return }
-                if env.activeDocument == nil { proxy.scrollTo(TaskSelectionScrollID.first(id)) }
-                else { proxy.scrollTo(id) }
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y
-            } action: { _, offset in
-                guard hasRestoredScroll, let scrollRoute, scrollRoute == env.navigator.route else { return }
-                env.navigator.rememberScrollOffset(offset, for: scrollRoute)
-            }
-            .onAppear {
-                scrollRoute = env.navigator.route
-                if readyRevealID == nil {
-                    if let offset = env.navigator.scrollOffset(for: env.navigator.route) {
-                        scrollPosition.scrollTo(y: offset)
-                    } else {
-                        scrollPosition.scrollTo(edge: .top)
-                    }
-                }
-                hasRestoredScroll = true
-            }
-            .task(id: readyRevealID) {
-                guard readyRevealID != nil, let request = env.navigator.contentReveal else { return }
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                if request.revealsSummary(for: request.listID) {
-                    proxy.scrollTo(ContentReveal.Anchor.listSummary(request.listID), anchor: .center)
-                } else if let id = request.blockID, request.field == .note,
-                          visibleNoteRevealID == request.id {
-                    proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
-                } else if let id = request.blockID { scrollPosition.scrollTo(id: id, anchor: .center) }
-                else { proxy.scrollTo(ContentReveal.Anchor.pageHeader, anchor: .top) }
-            }
-            .onPreferenceChange(ContentRevealNoteReadyKey.self) { requestID in
-                visibleNoteRevealID = requestID
-                guard let requestID, requestID == readyRevealID,
-                      let id = env.navigator.contentReveal?.blockID else { return }
-                // The first scroll materializes the row. Only then does its
-                // nested note anchor exist in the lazy document.
-                proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
-            }
-            .background(Theme.canvas)
-            }
+            .padding(.top, 8)
         }
     }
-}
 
-/// Empty-state placeholder used across the smart views.
-struct EmptyStateView: View {
-    let icon: String
-    let title: String
-    var message: String = ""
-    var actionTitle: String?
-    var action: (() -> Void)?
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.tertiaryText)
-
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-
-            if !message.isEmpty {
-                Text(message)
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
-            }
-
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 4)
-            }
+    /// Trash for a list that's there, else where lists or labels are found.
+    private var destination: (label: String, route: AppRoute) {
+        switch env.navigator.route {
+        case let .list(id):
+            let lists = (try? env.store.context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id }))) ?? []
+            return lists.contains { $0.trashID != nil } ? ("Open Trash", .trash) : ("Open Lists", .lists)
+        default:
+            return ("Open Tasks", .tasks)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 56)
     }
 }
 

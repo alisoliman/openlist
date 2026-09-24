@@ -258,6 +258,47 @@ store.toggleLabel(id: sourceID, on: restored)
 check(restored.labelIDs == [destinationID], "retained picker can add the surviving label again")
 check(store.undoLabelMerge(), "merge undo remains available after editor navigation and undo")
 
+// The window's Undo keeps each merge's own plan, so an older merge still
+// undoes once a later one has.
+let beforeErrands = Dictionary(uniqueKeysWithValues: try blocks().map { ($0.id, $0.labelIDs) })
+let errand = TaskLabel(name: "Errand", accent: .teal, sortIndex: 5)
+let errandCopy = TaskLabel(name: "errand", accent: .orange, sortIndex: 6)
+for label in [errand, errandCopy] { store.context.insert(label) }
+let errandID = errand.id, errandCopyID = errandCopy.id
+open.labelIDs.insert(errandID, at: 1)
+unrelated.labelIDs += [errandCopyID, errandID]
+try store.persistChanges()
+let olderMerge = try store.labelMergePlan(sourceID: duplicateID, destinationID: destinationID)
+try store.mergeLabels(olderMerge)
+let laterMerge = try store.labelMergePlan(sourceID: errandCopyID, destinationID: errandID)
+try store.mergeLabels(laterMerge)
+check(store.undoLabelMerge(laterMerge) && store.labelMergeUndo == nil, "the later merge undoes by its own plan")
+check(store.undoLabelMerge(olderMerge) && exactLabel(duplicateID) != nil, "an older merge undoes by its own plan after a later one")
+check(unrelated.labelIDs == [extraID, errandCopyID, errandID], "undoing both merges restores their references")
+
+// Deleting a label takes it off every task; Undo puts it back where it sat,
+// under its own identity, and a label of the same name made since stands in.
+let beforeDeletion = Dictionary(uniqueKeysWithValues: try blocks().map { ($0.id, $0.labelIDs) })
+let errandState = LabelMergePlan.LabelState(errand)
+let deletion = store.deleteLabel(errand)!
+let afterDeletion = try blocks()
+check(exactLabel(errandID) == nil && !afterDeletion.contains { $0.labelIDs.contains(errandID) }, "a deleted label leaves every task")
+check(deletion.positions == [open.id: 1, unrelated.id: 2] && deletion.label == errandState, "deletion keeps the label and where it sat")
+check(store.restoreDeletedLabel(deletion) == errandID, "undo brings a deleted label back under its own id, beside an older duplicate")
+check(LabelMergePlan.LabelState(exactLabel(errandID)!) == errandState, "undo restores the label's name, colour and order")
+for block in try blocks() { check(block.labelIDs == beforeDeletion[block.id], "undo puts the label back where it sat: \(block.text)") }
+check(!store.context.hasChanges, "a restored label is saved")
+let redeletion = store.deleteLabel(exactLabel(errandID)!)!
+let remade = TaskLabel(name: "ERRAND", accent: .pink)
+store.context.insert(remade)
+try store.persistChanges()
+check(store.restoreDeletedLabel(redeletion) == remade.id && exactLabel(errandID) == nil,
+      "undo reuses a label of the same name made since rather than a second one")
+check(open.labelIDs[1] == remade.id && unrelated.labelIDs.last == remade.id, "the stand-in takes the deleted label's place")
+store.deleteLabel(remade)
+store.deleteLabel(exactLabel(errandCopyID)!)
+for block in try blocks() { check(block.labelIDs == beforeErrands[block.id], "deleting the fixtures leaves the tasks as they were: \(block.text)") }
+
 // A real read-only store fails after all mutations have been attempted.
 let readonly = try ModelContainer(for: schema, configurations: [
     ModelConfiguration(schema: schema, url: url, allowsSave: false, cloudKitDatabase: .none)

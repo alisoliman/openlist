@@ -328,13 +328,11 @@ extension AppEnvironment {
         }
     }
 
-    /// Deletes for real, and steps off the list if it is the one on screen.
+    /// Moves the list to Trash as one change with Undo in the tray, stepping
+    /// off it if it is the one on screen.
     func performDeleteList(_ list: TaskList) {
-        let ownedIDs = Set(store.listHierarchy().subtree(of: list.id).map(\.id))
-        let wasOpen = navigator.route.listID.map(ownedIDs.contains) == true
-        guard store.deleteList(list) else { return }
-        if wasOpen { navigator.replace(with: .today) }
         listPendingDeletion = nil
+        workbench.trashList(list)
     }
 
     /// Opens a task's detail panel with one of its pickers already showing.

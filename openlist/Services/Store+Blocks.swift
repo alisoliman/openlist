@@ -457,7 +457,7 @@ extension Store {
             || (previous.reminderAt != nil && block.reminderAt != nil && previous.reminderAt != block.reminderAt)
             || (previous.recurrenceData != nil && block.recurrenceData != nil && previous.recurrenceData != block.recurrenceData)
         guard !(hasTaskPayload && !previous.isTask), !conflicts, !hasCalendarPayload else {
-            editorNotice = "These rows have different task details. Review their status and dates before merging, or keep them as separate rows."
+            refuse("These rows have different task details. Review their status and dates before merging, or keep them as separate rows.")
             return .noop
         }
 

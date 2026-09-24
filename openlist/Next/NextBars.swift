@@ -100,38 +100,6 @@ struct NXSelectionBar: View {
     }
 }
 
-/// The Store's completion Undo for tasks completed outside Next's rows: the
-/// menu bar, calendar, notifications and MCP. Completions made here already
-/// report in the tray, so their Store action stays quiet.
-struct NXOutsideCompletionFeedback: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
-
-    var body: some View {
-        let workbench = env.workbench
-        // The same bottom slot as the selection bar, so the same rule.
-        if workbench.tray == nil, NXSelectionBar.selected(workbench).isEmpty,
-           let action = env.store.completionUndo, !isReported(action) {
-            CalendarCompletionFeedback()
-        }
-    }
-
-    /// Whether the change log already holds this completion or reopen of the
-    /// same tasks. Next writes a completion once its dwell ends, so the Store's
-    /// action arrives up to the dwell (plus the row stagger) after its entry.
-    private func isReported(_ action: CompletionUndoAction) -> Bool {
-        guard let change = env.store.completionUndoChanges[action.id] else { return false }
-        let roots = Set([change.rootTaskID] + change.additionalRootTaskIDs)
-        let window = style.dwell + 5 + Double(roots.count) * style.ms(75) / 1000
-        let since = action.createdAt.addingTimeInterval(-window)
-        // Newest first, so only the recent entries are read.
-        return env.workbench.log.lazy.prefix { $0.at >= since }.contains { entry in
-            guard let id = entry.taskID, roots.contains(id) else { return false }
-            return action.isReopening ? entry.icon == "arrow.uturn.backward" : entry.tone == .green
-        }
-    }
-}
-
 /// The short-lived confirmation with Undo and an optional destination link.
 /// It stays up as one message follows another: the text changes in place and
 /// only the drain starts over.
@@ -261,6 +229,14 @@ struct NXBottomBars: View {
         .animation(style.ease(220), value: hasSelection)
         .animation(style.ease(200), value: workbench.tray == nil)
         .padding(.bottom, 26)
+        // The tray rises and drains away without a sound, so VoiceOver hears
+        // each message, even one a selection bar keeps off screen.
+        .onChange(of: workbench.tray?.id) {
+            guard let tray = workbench.tray, NSApp.isActive else { return }
+            let undo = tray.undoable && workbench.canUndo ? ". Undo with Command-Z" : ""
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                userInfo: [.announcement: tray.text + undo, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }
     }
 
     static let barTransition = AnyTransition.asymmetric(

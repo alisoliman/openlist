@@ -121,7 +121,9 @@ private struct NextMain: View {
         ZStack(alignment: .topLeading) {
             VStack(spacing: 0) {
                 NextToolbar(crumb: crumb)
+                // Clear of the inspector, which would cover their buttons.
                 NextNotices()
+                    .padding(.trailing, inspected == nil ? 0 : 360)
                 NextRoutedScreen()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .clipped()
@@ -144,12 +146,6 @@ private struct NextMain: View {
                 .padding(.trailing, inspected == nil ? 0 : 360)
                 .allowsHitTesting(workbench.tray != nil || !workbench.selection.isEmpty)
                 .zIndex(35)
-
-            // Only draws while showing a completion made outside Next's rows.
-            NXOutsideCompletionFeedback()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.trailing, inspected == nil ? 0 : 360)
-                .zIndex(34)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(NX.paper)
@@ -164,7 +160,8 @@ private struct NextMain: View {
             let section = library.sectionTitle(for: list)
             return section.isEmpty ? list.displayTitle : "\(section) › \(list.displayTitle)"
         case let .label(id):
-            return "Labels › #\(library.label(id)?.name ?? "")"
+            guard let label = library.label(id) else { return "Labels" }
+            return "Labels › #\(label.name)"
         case .inbox: return "Inbox"
         case .today: return "Today"
         case .calendar: return "Calendar"
@@ -177,14 +174,16 @@ private struct NextMain: View {
     }
 }
 
-/// Library and link notices that used to sit above the content.
+/// The window's notices, in one place under the toolbar: errors and warnings
+/// that stay until dealt with. Everything else reports in the tray.
 private struct NextNotices: View {
     @Environment(AppEnvironment.self) private var env
 
     var body: some View {
         VStack(spacing: 0) {
+            NXStatusNotices()
             if env.localLinks.error != nil { LocalLinkNotice() }
-            if env.store.labelMergeUndo != nil || env.store.labelMaintenanceError != nil { LabelMergeNotice() }
+            if env.store.labelMaintenanceError != nil { LabelMergeNotice() }
             ReminderNavigationNotice()
             // Successful trash and restore report in the tray; only failures stay pinned here.
             if env.store.trashError != nil { TrashNotice() }
