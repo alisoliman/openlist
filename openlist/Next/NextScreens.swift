@@ -125,9 +125,14 @@ struct NextTodayScreen: View {
             Image(systemName: "sun.max.fill").font(.system(size: 34)).foregroundStyle(NX.today)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Today is clear").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
+                // The design's 13/1.45: the extra leading between lines and,
+                // halved, above the first and below the last.
+                let leading = 13 * 1.45 - NXStrikeText.glyphLineHeight(13)
                 Text("\(done) finished today. Nothing is overdue, due, planned or starred.")
                     .font(.system(size: 13))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.56))
+                    .padding(.vertical, leading / 2)
             }
             Spacer(minLength: 8)
             // In Day view, or on the week's last day, the range moves to it.

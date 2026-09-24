@@ -418,10 +418,8 @@ final class Workbench {
         let id = visibleIDs[next]
         navigator.releaseRevealSelection()
         if extending {
-            withAnimation(style.ease(180)) {
-                if let focusID { selection.insert(focusID) }
-                selection.insert(id)
-            }
+            if let focusID { selection.insert(focusID) }
+            selection.insert(id)
         }
         focusID = id
         if navigator.openTaskID != nil { navigator.openTask(id) }
@@ -431,20 +429,19 @@ final class Workbench {
     /// row takes the selected tint, not the focused card, and one clicked
     /// off again leaves the keys nothing of its own to act on.
     func toggleSelection(_ id: UUID) {
-        withAnimation(style.ease(180)) {
-            if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
-        }
+        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
     }
 
     func selectAllVisible() {
-        withAnimation(style.ease(180)) { selection = Set(visibleIDs) }
+        selection = Set(visibleIDs)
     }
 
-    /// Like every selection change here, clearing animates, so the rows'
-    /// marks and tint ease out rather than snap.
+    /// Like every selection change here, a plain change, as the design's: the
+    /// rows' checks go at once and their chips move back, while each row's
+    /// tint and ring ease out through their own animations.
     func clearSelection() {
         guard !selection.isEmpty else { return }
-        withAnimation(style.ease(180)) { selection = [] }
+        selection = []
     }
 
     /// A plain click: focus, and follow along if the inspector is open.
@@ -901,15 +898,18 @@ final class Workbench {
             closingTasks[id]?.cancel()
             // The first row pops in this turn, so a screen that drops closing
             // rows, like the Inbox triage card, never shows it open again.
+            // A plain change, as the design's: a row eases its pop, dim, fill
+            // and tick through its own animations, while what drops a closing
+            // task, like the Calendar's Planned now banner, goes at once.
             if index == 0 {
-                withAnimation(style.spring(260)) { closing[id] = false }
+                closing[id] = false
                 pulseCheck(id)
             }
             closingTasks[id] = Task { [weak self] in
                 if index > 0 {
                     try? await Task.sleep(for: .milliseconds(stagger))
                     guard !Task.isCancelled, let self else { return }
-                    withAnimation(self.style.spring(260)) { self.closing[id] = false }
+                    self.closing[id] = false
                 }
                 try? await Task.sleep(for: .milliseconds(strike))
                 guard !Task.isCancelled, let self else { return }
@@ -963,7 +963,11 @@ final class Workbench {
         for id in ids { closingTasks.removeValue(forKey: id)?.cancel() }
         write(ids.compactMap { store.block(id: $0) }, on: completion.changes, at: completion.date, activity: completion.activity)
         noteLogWrite(completion.mark)
-        withAnimation(style.ease(320)) { for id in ids { closing[id] = nil } }
+        // A plain change, as the design's settle: the row leaves its group at
+        // once, the page closes up under it and the counts change without
+        // rolling. What stays on screen, like a done subtask in the document,
+        // eases through its own animations, and the header's bar through its 560ms.
+        for id in ids { closing[id] = nil }
         undoRevision += 1
     }
 

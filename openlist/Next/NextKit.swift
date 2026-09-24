@@ -187,7 +187,8 @@ struct NXSwitch: View {
 // MARK: - Hover
 
 /// A plain button whose background appears on hover. `rest` is the fill at
-/// rest; the hover fill replaces it, as the design's style-hover does.
+/// rest; the hover fill replaces it, as the design's style-hover does: at
+/// once, with no transition, and with no pressed state, as it has none.
 struct NXHoverButtonStyle: ButtonStyle {
     var hover: Color = NX.ink(0.06)
     var rest: Color = .clear
@@ -211,10 +212,8 @@ struct NXHoverButtonStyle: ButtonStyle {
                 .foregroundStyle(hovering ? (style.hoverForeground ?? style.foreground) : style.foreground)
                 .background(hovering || configuration.isPressed ? style.hover : style.rest,
                             in: RoundedRectangle(cornerRadius: style.radius, style: .continuous))
-                .opacity(configuration.isPressed ? 0.8 : 1)
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.12), value: hovering)
         }
     }
 }

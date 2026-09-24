@@ -340,8 +340,8 @@ struct NXInspectorParentCrumb: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Its hover shows at once, as the design's style-hover.
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.14), value: hovering)
         .help("Show “\(parent.displayTitle)”")
         .accessibilityLabel("Subtask of \(parent.displayTitle)")
         // The design's -4 above and -8 below, so it sits close over the title.

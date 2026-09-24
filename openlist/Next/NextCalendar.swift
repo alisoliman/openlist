@@ -617,7 +617,9 @@ private struct NXCalendarBlock: View {
             HStack(alignment: .top, spacing: 5) {
                 ZStack {
                     if done {
-                        Circle().fill(closing ? style.accent : NX.green)
+                        // The design's `background 200ms ease`, from the accent to
+                        // green as the completion settles.
+                        Circle().animation(NX.cssEase(200)) { $0.foregroundStyle(closing ? style.accent : NX.green) }
                         Image(systemName: "checkmark").font(.system(size: 7, weight: .bold)).foregroundStyle(.white)
                     } else {
                         Circle().strokeBorder(working ? .white : color, lineWidth: 1.3)
@@ -782,10 +784,12 @@ private struct NXUnplannedColumn: View {
                 .padding(.vertical, hintLeading / 2)
                 .padding(EdgeInsets(top: 0, leading: 2, bottom: 4, trailing: 2))
             ForEach(tasks) { task in
-                // Each card plays the design's liftIn as it appears, the Calendar opening too.
+                // Each card plays the design's liftIn as it appears, the Calendar
+                // opening too. A planned one goes at once and the cards under
+                // it close up at once, as the design's list re-renders.
                 card(task)
                     .modifier(NXLiftIn(animation: NX.cssEase(220)))
-                    .transition(.asymmetric(insertion: .identity, removal: .opacity.combined(with: .scale(scale: 0.96))))
+                    .transition(.identity)
             }
             if tasks.isEmpty {
                 Text("Everything due this week has a slot.")
@@ -800,7 +804,7 @@ private struct NXUnplannedColumn: View {
                         .strokeBorder(NX.ink(0.16), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
         }
-        .animation(NX.ease(220), value: tasks.map(\.id))
+        .transaction(value: tasks.map(\.id)) { $0.animation = nil }
     }
 
     private var unplanned: [Block] {
