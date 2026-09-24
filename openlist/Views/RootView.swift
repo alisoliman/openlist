@@ -230,31 +230,52 @@ struct RootView: View {
     }
 }
 
-/// The window's editor, saving and sync notices. They sit under the toolbar
-/// with the link, label and Trash notices, in line with the screen's content.
-/// A refusal that changed nothing passes in the tray instead; see `Store.refuse`.
+/// The window's editor, failure, saving and sync notices. They sit under the
+/// toolbar with the link, label and Trash notices, in line with the screen's
+/// content. A refusal that changed nothing passes in the tray instead; see
+/// `Store.refuse`.
 struct NXStatusNotices: View {
     @Environment(AppEnvironment.self) private var env
 
     var body: some View {
-        if let notice = env.store.editorNotice {
-            NXNoticeCard(icon: "info.circle", message: notice) {
-                Button("Dismiss") { env.store.editorNotice = nil }
-                    .buttonStyle(NXPanelButtonStyle(kind: .quiet))
-            }
-            .nxNoticePlacement()
-        }
-        if let error = env.store.persistenceError {
-            NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
-                Button("Retry saving") { env.store.save() }
-                    .buttonStyle(NXPanelButtonStyle(kind: .link))
-            }
-            .nxNoticePlacement()
-        }
-        if let warning = syncWarning {
-            NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
+        VStack(spacing: 0) {
+            if let notice = env.store.editorNotice {
+                NXNoticeCard(icon: "info.circle", message: notice) {
+                    Button("Dismiss") { env.store.editorNotice = nil }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
                 .nxNoticePlacement()
+            }
+            if let error = env.store.actionError {
+                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: error) {
+                    Button("Dismiss") { env.store.actionError = nil }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
+            }
+            if let error = env.store.persistenceError {
+                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
+                    Button("Retry saving") { env.store.save() }
+                        .buttonStyle(NXPanelButtonStyle(kind: .link))
+                }
+                .nxNoticePlacement()
+            }
+            if let warning = syncWarning {
+                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
+                    .nxNoticePlacement()
+            }
         }
+        // What the user's own action set off appears without a sound, so
+        // VoiceOver hears it, as it hears the tray; at the tray's priority, so
+        // a failed Undo's tray line and its reason are both heard.
+        .onChange(of: env.store.editorNotice) { _, notice in announce(notice) }
+        .onChange(of: env.store.actionError) { _, error in announce(error) }
+    }
+
+    private func announce(_ message: String?) {
+        guard let message, NSApp.isActive else { return }
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
     private var syncWarning: String? {

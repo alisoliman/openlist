@@ -198,7 +198,7 @@ enum MarkdownExporter {
             try write(list: list, store: store, to: url)
             return true
         } catch {
-            store.editorNotice = "“\(list.displayTitle)” could not be exported. \(error.localizedDescription)"
+            store.actionError = "“\(list.displayTitle)” could not be exported. \(error.localizedDescription)"
             return false
         }
     }
@@ -216,7 +216,7 @@ enum MarkdownExporter {
             pasteboard.setString(content, forType: .string)
             return true
         } catch {
-            store.editorNotice = "“\(list.displayTitle)” could not be copied as Markdown. \(error.localizedDescription)"
+            store.actionError = "“\(list.displayTitle)” could not be copied as Markdown. \(error.localizedDescription)"
             return false
         }
     }

@@ -390,7 +390,7 @@ private struct NXListOptions: View {
     /// A cover change that fails says why in the window's notice, as its
     /// Undo's failure does.
     private func perform(_ operation: () throws -> Void) {
-        do { try operation() } catch { env.store.editorNotice = "The cover could not be changed. \(error.localizedDescription)" }
+        do { try operation() } catch { env.store.actionError = "The cover could not be changed. \(error.localizedDescription)" }
     }
 
     /// The list's document on the clipboard, as Export writes it, said in the tray.

@@ -61,6 +61,10 @@ final class Store {
     @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
     var persistenceError: String?
     var editorNotice: String?
+    /// Why the last export, Copy as Markdown, cover change, image or file
+    /// failed, where a system alert said so before. It stays, red, under the
+    /// toolbar until dismissed; VoiceOver hears it as it appears.
+    var actionError: String?
     /// Takes what ``refuse(_:)`` reports; the window shows it in its tray.
     @ObservationIgnored var onRefusal: ((String) -> Void)?
     /// Why the last Trash change failed. Successes report in the tray.

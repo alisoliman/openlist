@@ -67,9 +67,9 @@ struct AttachmentRow: View {
         guard attachment.modelContext != nil, !attachment.isDeleted else { return }
         let failure = "“\(attachment.displayName)” could not be opened."
         do {
-            if !NSWorkspace.shared.open(try attachment.fileURL()) { env.store.editorNotice = failure }
+            if !NSWorkspace.shared.open(try attachment.fileURL()) { env.store.actionError = failure }
         } catch {
-            env.store.editorNotice = "\(failure) \(error.localizedDescription)"
+            env.store.actionError = "\(failure) \(error.localizedDescription)"
         }
     }
 }

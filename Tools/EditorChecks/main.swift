@@ -212,6 +212,30 @@ coordinator.apply(changedMeanwhile, to: native, kind: .task, isCompleted: false)
 linkPrompt?.answer(.apply("example.org"))
 check(native.textStorage?.attribute(.link, at: 0, effectiveRange: nil) == nil,
     "An answer for text that changed while the sheet was up links nothing")
+// The Format menu sends its actions on to the window under a sheet, where the
+// line that asked keeps its selection: it neither formats nor asks again there.
+_ = NSApplication.shared
+let sheetHost = NSWindow(contentRect: CGRect(x: -10000, y: -10000, width: 320, height: 200), styleMask: .borderless, backing: .buffered, defer: false)
+let linkSheetWindow = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 100), styleMask: .titled, backing: .buffered, defer: false)
+let underSheet = BlockNSTextView(frame: CGRect(x: 0, y: 0, width: 320, height: 40))
+underSheet.textStorage?.setAttributedString(NSAttributedString(string: "Remote", attributes: RichTextCodec.baseAttributes(for: .task)))
+sheetHost.contentView?.addSubview(underSheet)
+underSheet.setSelectedRange(NSRange(location: 0, length: 6))
+let isBoldUnderSheet = {
+    (underSheet.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        .map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == true
+}
+let boldItem = NSMenuItem(title: "Bold", action: #selector(BlockNSTextView.toggleBold(_:)), keyEquivalent: "")
+sheetHost.beginSheet(linkSheetWindow) { _ in }
+linkPrompt = nil
+underSheet.toggleBold(nil)
+underSheet.promptForLink(nil)
+check(!isBoldUnderSheet() && linkPrompt == nil && !underSheet.validateUserInterfaceItem(boldItem),
+    "Under a sheet, the Format menu neither formats the selection behind it nor asks for a link again")
+sheetHost.endSheet(linkSheetWindow)
+underSheet.toggleBold(nil)
+check(isBoldUnderSheet() && underSheet.validateUserInterfaceItem(boldItem), "Once the sheet has gone, the Format menu formats the line again")
+underSheet.removeFromSuperview()
 BlockNSTextView.linkPrompter = nil
 coordinator.apply(plain, to: native, kind: .task, isCompleted: false)
 

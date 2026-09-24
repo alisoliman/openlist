@@ -481,7 +481,7 @@ struct NXTaskFiles {
         for url in urls {
             do { try attach(url: url, to: block) } catch { failures.append((url.lastPathComponent, error)) }
         }
-        if let notice = Self.notice(for: failures) { store.editorNotice = notice }
+        if let notice = Self.notice(for: failures) { store.actionError = notice }
     }
 
     private func attach(url: URL, to block: Block) throws {

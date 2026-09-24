@@ -494,7 +494,7 @@ final class OutlineEditor {
         } catch {
             env.store.changeKind(block, to: .paragraph)
             env.store.save()
-            env.store.editorNotice = "“\(url.lastPathComponent)” could not be added as an image. \(error.localizedDescription)"
+            env.store.actionError = "“\(url.lastPathComponent)” could not be added as an image. \(error.localizedDescription)"
         }
     }
 

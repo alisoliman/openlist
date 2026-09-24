@@ -796,6 +796,7 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘B — sent from the Format menu via the responder chain.
     @objc func toggleBold(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleTrait(.boldFontMask, in: storage, range: range, kind: self.blockKind)
         }
@@ -803,6 +804,7 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘I
     @objc func toggleItalic(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleTrait(.italicFontMask, in: storage, range: range, kind: self.blockKind)
         }
@@ -810,6 +812,7 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘⇧X
     @objc func toggleStrikethrough(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleStrikethrough(in: storage, range: range)
         }
@@ -817,6 +820,7 @@ final class BlockNSTextView: NSTextView {
 
     /// ⌘E
     @objc func toggleInlineCode(_ sender: Any?) {
+        guard !isUnderSheet else { return }
         applyFormatting { storage, range in
             RichTextCodec.toggleInlineCode(in: storage, range: range, kind: self.blockKind)
         }
@@ -829,7 +833,7 @@ final class BlockNSTextView: NSTextView {
     /// ⌘L — asks for a URL, then links the selection.
     @objc func promptForLink(_ sender: Any?) {
         let range = selectedRange()
-        guard range.length > 0, let storage = textStorage, let prompter = Self.linkPrompter else { return }
+        guard range.length > 0, !isUnderSheet, let storage = textStorage, let prompter = Self.linkPrompter else { return }
 
         let existing = storage.attribute(.link, at: range.location, effectiveRange: nil)
         let currentURL = (existing as? URL)?.absoluteString ?? (existing as? String) ?? ""
@@ -867,6 +871,12 @@ final class BlockNSTextView: NSTextView {
         return URL(string: text)
     }
 
+    /// Whether a sheet is over this line's window, as Add Link…'s is. The
+    /// Format menu sends its actions on to the window under a sheet whose
+    /// field doesn't take them, and this line keeps its selection there, so
+    /// the menu would format, or ask again, behind the sheet.
+    private var isUnderSheet: Bool { window?.attachedSheet != nil }
+
     /// Mutates the selected range and pushes the result back to the model.
     private func applyFormatting(_ body: (NSMutableAttributedString, NSRange) -> Void) {
         guard let storage = textStorage else { return }
@@ -892,7 +902,7 @@ final class BlockNSTextView: NSTextView {
              #selector(toggleStrikethrough(_:)),
              #selector(toggleInlineCode(_:)),
              #selector(promptForLink(_:)):
-            return selectedRange().length > 0
+            return selectedRange().length > 0 && !isUnderSheet
         default:
             return super.validateUserInterfaceItem(item)
         }
