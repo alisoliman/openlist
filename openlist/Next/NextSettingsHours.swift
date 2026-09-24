@@ -156,20 +156,17 @@ private struct NXOverrideEditor: View {
                 Text("\(category.title) hours on")
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(NX.ink)
-                Button { picksDate = true } label: {
-                    NXValuePill(text: NXFormat.dayLabel(draft.date))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Date")
-                .accessibilityValue(draft.date.formatted(date: .complete, time: .omitted))
-                .popover(isPresented: $picksDate, arrowEdge: .bottom) {
-                    CalendarMonthPicker(selection: draft.date, calendar: env.settings.calendar) { date in
-                        draft.date = date
-                        picksDate = false
+                // The shared date pill, which darkens under the pointer as
+                // the From and To pills beside it do.
+                NXDatePill(label: "Date", date: draft.date, isOpen: picksDate) { picksDate.toggle() }
+                    .popover(isPresented: $picksDate, arrowEdge: .bottom) {
+                        CalendarMonthPicker(selection: draft.date, calendar: env.settings.calendar) { date in
+                            draft.date = date
+                            picksDate = false
+                        }
+                        .frame(width: 260)
+                        .padding(12)
                     }
-                    .frame(width: 260)
-                    .padding(12)
-                }
             }
             NXWindowsEditor(title: "Available", windows: $draft.windows)
             NXWindowsEditor(title: "Breaks", windows: $draft.breaks)

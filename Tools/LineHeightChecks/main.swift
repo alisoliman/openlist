@@ -24,6 +24,12 @@ func height<V: View>(_ view: V) -> CGFloat {
     NSHostingView(rootView: view.fixedSize()).fittingSize.height
 }
 
+/// How tall SwiftUI lays `view` out, in fractions of a point.
+@MainActor
+func exactHeight<V: View>(_ view: V) -> CGFloat {
+    NSHostingController(rootView: view.fixedSize()).sizeThatFits(in: CGSize(width: 1000, height: 1000)).height
+}
+
 func lines(_ count: Int) -> String { Array(repeating: "Hg", count: count).joined(separator: "\n") }
 
 MainActor.assumeIsolated {
@@ -67,6 +73,40 @@ MainActor.assumeIsolated {
             check(text == stacked.rounded(.up), "\(count) lines of \(size)/\(lineHeight)", "\(text) against \(stacked)")
         }
     }
+
+    // Lists, Activity, Trash and Settings, boxed as their views box them:
+    // each is the design's CSS height, unrounded.
+    let settingsLabel = 13 * 1.25 - NX.lineHeight(13), settingsHint = 11.5 * 1.35 - NX.lineHeight(11.5)
+    let settingsRow = exactHeight(VStack(alignment: .leading, spacing: 3) {
+        Text("Hg").font(.system(size: 13, weight: .medium)).lineSpacing(settingsLabel).padding(.vertical, settingsLabel / 2)
+        Text("Hg").font(.system(size: 11.5)).lineSpacing(settingsHint).padding(.vertical, settingsHint / 2)
+    }.padding(.vertical, 12))
+    check(abs(settingsRow - (12 + 16.25 + 3 + 15.525 + 12)) < 0.001, "settings row 13/1.25 over 11.5/1.35", "\(settingsRow)")
+    let caps = exactHeight(Text("HG").font(.system(size: 10.5, weight: .semibold)).kerning(0.735)
+        .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2))
+    check(caps == 10.5, "caps title 600 10.5/1", "\(caps)")
+    // A leading under SwiftUI's own line can't close its lines up, so one
+    // line takes it as padding: a card name's one line is 17.4.
+    let cardName = exactHeight(Text("Hg").font(.system(size: 14.5, weight: .semibold))
+        .padding(.vertical, (14.5 * 1.2 - NX.lineHeight(14.5)) / 2))
+    check(abs(cardName - 17.4) < 0.001, "card name 600 14.5/1.2", "\(cardName)")
+    let dayRow = exactHeight(HStack(spacing: 9) {
+        Image(systemName: "checkmark.circle.fill").font(.system(size: 13))
+        Text("Hg").font(.system(size: 12.5)).padding(.vertical, (12.5 * 1.3 - NX.lineHeight(12.5)) / 2)
+        Text("09:41").font(.system(size: 10.5, weight: .medium, design: .monospaced))
+    }.padding(.vertical, 7).padding(.top, 0.5))
+    check(abs(dayRow - 30.75) < 0.001, "day panel row", "\(dayRow)")
+    // Buttons with an icon box as their views give it, whatever the symbol's own height.
+    @MainActor func button(_ icon: String?, symbol: CGFloat, box: CGFloat, label size: CGFloat, padding: CGFloat) -> CGFloat {
+        exactHeight(HStack(spacing: 5) {
+            if let icon { Image(systemName: icon).font(.system(size: symbol)).frame(height: box) }
+            Text("Hg").padding(.vertical, (size - NX.lineHeight(size)) / 2)
+        }.font(.system(size: size, weight: .semibold)).padding(.vertical, padding))
+    }
+    check(button("trash.slash", symbol: 13.5, box: 14, label: 11.5, padding: 7) == 28, "Hold to empty Trash is 28")
+    check(button("arrow.up.bin", symbol: 12, box: 13, label: 11, padding: 6) == 25, "Restore is 25")
+    check(button(nil, symbol: 0, box: 0, label: 11, padding: 6) == 23, "Hold to erase is 23")
+    check(button(nil, symbol: 0, box: 0, label: 10.5, padding: 5) == 20.5, "Changes' Undo is 20.5")
 }
 
 print(failures == 0 ? "✅ \(checks) line-height checks passed" : "❌ \(failures)/\(checks) failed")
