@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import WidgetKit
 
 /// Something a widget button or checkbox asked Openlist to do.
 nonisolated struct WidgetAction: Codable, Equatable, Identifiable, Sendable {
@@ -12,8 +13,9 @@ nonisolated struct WidgetAction: Codable, Equatable, Identifiable, Sendable {
         /// moved past does nothing, rather than the opposite.
         case complete, reopen, startWork, pauseWork, resumeWork, finishWork
 
-        /// Answers the timer as the widget showed it.
-        var isWork: Bool { self == .startWork || self == .pauseWork || self == .resumeWork || self == .finishWork }
+        /// Start, Pause and Resume answer the timer as the widget showed it.
+        /// Done completes the task whatever the timer has done since, as a tick does.
+        var answersTimer: Bool { self == .startWork || self == .pauseWork || self == .resumeWork }
     }
 
     var id = UUID()
@@ -55,7 +57,7 @@ nonisolated struct WidgetAction: Codable, Equatable, Identifiable, Sendable {
 ///
 /// Inside the app the environment registers a performer that applies the action
 /// straight away. In the widget extension there is none, so the action is queued
-/// for the app, and the widget shows it as done in the meantime.
+/// for the app, and the widgets show it as done in the meantime.
 @MainActor
 enum WidgetActionDispatcher {
     static var performer: ((WidgetAction) async -> Void)?
@@ -65,6 +67,10 @@ enum WidgetActionDispatcher {
             await performer(action)
         } else {
             WidgetActionQueue.enqueue(action)
+            // The system reloads only the widget that was tapped. Every other
+            // one showing the task lays the queue over the snapshot too, as
+            // they all change together when the app publishes.
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 }

@@ -279,11 +279,15 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   row's circle is its toggle, so a tap elsewhere can't tick a task the widget can't undo;
   while the tick's intent runs the system dims the rows beside their circles
   (`invalidatableContent`) in place of the design's faded, struck-through row. A tick made
-  while Openlist is quit shows done straight away, from the rows the app last published: a
-  list's first 12 open tasks, Today's first 10 overdue and 15 a day, and Inbox's newest 8,
-  spares past the rows a widget draws, so once queued ticks outnumber the spares the rows
-  thin out, the counts still right, until the app opens again, where the design always
-  moves the next open tasks up. A tick and its untick made while it's quit cancel out, so
+  while Openlist is quit, and Up Next's Done, shows done straight away in every widget,
+  from the rows the app last published: a list's first 12 open tasks, Today's first 10
+  overdue and 15 a day, and Inbox's newest 8, spares past the rows a widget draws, so once
+  queued ticks outnumber the spares the rows thin out, the counts still right, until the
+  app opens again, where the design always moves the next open tasks up. Before macOS 27
+  the system may run Up Next's Start, Pause and Resume in the widget, which queues them;
+  one Openlist finds over 2 minutes later, after the timer it answered, is dropped with a
+  notice in the tray, where the design's always acts. A tick and its untick made while
+  it's quit cancel out, so
   the task keeps its place, its slot and any paused work (the design's tick ends the work);
   a task the app published done, reopened in the widget, leaves the Agenda, as a reopened
   task leaves the calendar, and goes after the list's open rows until the app opens again,

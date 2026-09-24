@@ -169,5 +169,24 @@ store.save()
 let waitingInbox = publisher.buildSnapshot()
 check(waitingInbox.inboxCount == 10 && waitingInbox.inboxItems.map(\.title) == (2...9).reversed().map { "Waiting \($0)" },
       "The Inbox carries its newest \(WidgetSnapshot.inboxRows) open rows, newest first: \(waitingInbox.inboxItems.map(\.title))")
+// "Filed later", due today, is older than those: its Today row says it's an
+// Inbox task, so a tick queued on it counts the Inbox down all the same.
+check(waitingInbox.todayItems.first { $0.id == filed.id }?.isInbox == true && !waitingInbox.inboxItems.contains { $0.id == filed.id }
+      && waitingInbox.todayItems.first { $0.id == mango.id }?.isInbox == false, "A row says whether it's an Inbox task")
+
+// A repeat done today rolls on rather than sit done: today's done tasks leave
+// it out, as the app's Today does, and the heatmap counts it today, as the
+// Activity screen does.
+let daily = Block(kind: .task, text: "Water the planters", listID: list.id, sortIndex: 60)
+daily.dueDate = today
+daily.recurrence = .daily
+store.context.insert(daily)
+store.save()
+let beforeRepeat = publisher.buildSnapshot()
+store.toggleCompletion(daily)
+let afterRepeat = publisher.buildSnapshot()
+check(afterRepeat.completedTodayCount == beforeRepeat.completedTodayCount
+      && afterRepeat.activity?.counts.last == (beforeRepeat.activity?.counts.last ?? -1) + 1,
+      "A repeat done today counts on the heatmap's today, not among today's done tasks")
 
 print("Passed \(checks) widget publisher checks")

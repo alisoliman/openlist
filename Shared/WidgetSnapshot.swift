@@ -43,6 +43,9 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         var hasRepeat: Bool
         /// Raw value of `TaskPriority`.
         var priority: Int = 0
+        /// An Inbox task: one ticked in Today while the app is quit leaves the
+        /// Inbox's count too, carried among `inboxItems` or not.
+        var isInbox = false
     }
 
     /// How many open tasks fall due on one day: enough to count overdue and
@@ -127,12 +130,35 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         var items: [AgendaItem]
     }
 
-    /// Completions per day for the heatmap.
+    /// Completions per day for the heatmap, as the Activity screen counts them.
     struct Activity: Codable, Equatable, Sendable {
         /// The first day `counts` covers.
         var start: Date
-        /// One count per day from `start` to the day the snapshot was built.
+        /// One count per day from `start` to the day the snapshot was built,
+        /// that day's included.
         var counts: [Int]
+
+        /// The count on `date`'s day; 0 on a day `counts` doesn't cover.
+        func count(on date: Date, calendar: Calendar) -> Int {
+            let index = index(of: date, calendar: calendar)
+            return counts.indices.contains(index) ? counts[index] : 0
+        }
+
+        /// Counts `change` more completions on `date`'s day, or fewer. A day
+        /// after the last one covered is added, with any before it at 0.
+        mutating func count(on date: Date, by change: Int, calendar: Calendar) {
+            let index = index(of: date, calendar: calendar)
+            guard index >= 0 else { return }
+            if index >= counts.count {
+                guard change > 0 else { return }
+                counts += Array(repeating: 0, count: index + 1 - counts.count)
+            }
+            counts[index] = max(0, counts[index] + change)
+        }
+
+        private func index(of date: Date, calendar: Calendar) -> Int {
+            calendar.dateComponents([.day], from: calendar.startOfDay(for: start), to: calendar.startOfDay(for: date)).day ?? -1
+        }
     }
 
     var version = Self.currentVersion
@@ -273,7 +299,8 @@ nonisolated extension WidgetSnapshot.Item {
                   completedAt: c.value(.completedAt, or: nil),
                   isStarred: c.value(.isStarred, or: false),
                   hasRepeat: c.value(.hasRepeat, or: false),
-                  priority: c.value(.priority, or: 0))
+                  priority: c.value(.priority, or: 0),
+                  isInbox: c.value(.isInbox, or: false))
     }
 }
 

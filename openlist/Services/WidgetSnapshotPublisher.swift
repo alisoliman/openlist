@@ -130,7 +130,8 @@ final class WidgetSnapshotPublisher {
                 completedAt: task.completedAt,
                 isStarred: task.isStarred,
                 hasRepeat: task.recurrenceData != nil,
-                priority: task.priorityRaw
+                priority: task.priorityRaw,
+                isInbox: inbox.includes(task)
             )
         }
 
