@@ -139,8 +139,9 @@ extension EnvironmentValues {
 
 extension NextAccent {
     /// The accent as one of the editor's shared colours. It stays the same
-    /// instance across renders, so it can be a `BlockTextView.strikeColor`
-    /// where `NSColor(style.accent)` would restyle the text on every update.
+    /// instance across renders, so as a `BlockTextView.caretColor` it's set
+    /// on the text view only when it changes, where `NSColor(style.accent)`
+    /// would be a new colour on every update.
     var editorColor: NSColor {
         switch self {
         case .violet: NXEditor.accentViolet

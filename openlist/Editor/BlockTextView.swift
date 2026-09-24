@@ -34,8 +34,8 @@ struct BlockEditorCallbacks {
     /// resigned first responder, so the next key reaches the window.
     var onEscape: () -> Void = {}
     /// The `/` menu query changed. `nil` means the menu should close.
-    /// `range` covers the trigger and its query, so the outline can remove
-    /// exactly that span rather than assuming it sits at the end of the line.
+    /// `range` covers the "/" and its query, so the outline removes exactly
+    /// that span, and only while the line still holds it.
     var onSlashQuery: (_ query: String?, _ range: NSRange, _ caretRect: CGRect, _ viewport: CGRect) -> Void = { _, _, _, _ in }
     /// A block-kind change requested by a markdown prefix such as `## `.
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
@@ -72,17 +72,8 @@ struct BlockTextView: NSViewRepresentable {
     let blockID: UUID
     let kind: BlockKind
     let isCompleted: Bool
-    /// Draws the completion strike whatever `isCompleted` says, so a renderer
-    /// can strike a task during its completion dwell, before the store marks
-    /// it done. `nil` follows `isCompleted`.
-    var struck: Bool? = nil
-    /// The strike's colour while `struck` draws it, such as the accent while
-    /// a task is closing. `nil` uses the editor's strike ink. Pass a stable
-    /// instance: the colour is part of the content signature, so one made per
-    /// render would restyle the text, and reset the caret, on every update.
-    var strikeColor: NSColor? = nil
-    /// Whether the strike also fades the text to the completed ink. A task
-    /// struck during its completion dwell keeps its ink, as the design's does.
+    /// Whether a completed line fades to the completed ink. A done task
+    /// being written keeps its ink, as the design's input does.
     var dimsStruck = true
     /// Whether the text itself is struck through. A renderer that draws the
     /// strike over the text, as the list document draws the design's across
@@ -149,8 +140,7 @@ struct BlockTextView: NSViewRepresentable {
         view.linkTextAttributes = linkAttributes
 
         context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
-                                  struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck,
-                                  drawsStrike: drawsStrike)
+                                  dimsStruck: dimsStruck, drawsStrike: drawsStrike)
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
@@ -181,30 +171,27 @@ struct BlockTextView: NSViewRepresentable {
     // MARK: - Coordinator
 
     /// What the text storage was last built from. `attributedText` is always
-    /// the model's form, never a struck-through presentation of it, so the
-    /// model's echo of a local edit matches without a restyle.
+    /// the model's form, never a restyled presentation of it, so the model's
+    /// echo of a local edit matches without a restyle.
     struct ContentSignature: Equatable {
         let attributedText: NSAttributedString
         let kind: BlockKind
         let isCompleted: Bool
-        let struck: Bool
-        let strikeColor: NSColor?
         let dimsStruck: Bool
         let drawsStrike: Bool
 
         init(attributedText: NSAttributedString, kind: BlockKind, isCompleted: Bool,
-             struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true, drawsStrike: Bool = true) {
+             dimsStruck: Bool = true, drawsStrike: Bool = true) {
             self.attributedText = NSAttributedString(attributedString: attributedText)
             self.kind = kind
             self.isCompleted = isCompleted
-            self.struck = struck ?? isCompleted
-            self.strikeColor = self.struck && drawsStrike ? strikeColor : nil
-            self.dimsStruck = self.struck ? dimsStruck : true
-            self.drawsStrike = self.struck ? drawsStrike : true
+            self.dimsStruck = isCompleted ? dimsStruck : true
+            self.drawsStrike = isCompleted ? drawsStrike : true
         }
 
-        /// Whether the storage shows a strike state other than the model's.
-        var overridesCompletion: Bool { struck != isCompleted || strikeColor != nil || !dimsStruck || !drawsStrike }
+        /// Whether the storage shows a completed line other than as the model
+        /// decodes it: unfaded, or with its strike drawn over it.
+        var overridesCompletion: Bool { !dimsStruck || !drawsStrike }
     }
 
     @MainActor
@@ -224,7 +211,6 @@ struct BlockTextView: NSViewRepresentable {
         /// Length before the current edit, so `textDidChange` can tell an
         /// insertion from a deletion.
         private var previousLength = 0
-        private var dismissedSlashIndex: Int?
 
         init(_ parent: BlockTextView) {
             self.parent = parent
@@ -248,13 +234,11 @@ struct BlockTextView: NSViewRepresentable {
             // Only touch the storage when something actually changed underneath
             // us, otherwise every keystroke would reset the caret.
             let current = ContentSignature(attributedText: parent.attributedText, kind: parent.kind,
-                                           isCompleted: parent.isCompleted, struck: parent.struck,
-                                           strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck,
+                                           isCompleted: parent.isCompleted, dimsStruck: parent.dimsStruck,
                                            drawsStrike: parent.drawsStrike)
             if signature != current || consumeRestyleRequest() {
                 apply(parent.attributedText, to: view, kind: parent.kind, isCompleted: parent.isCompleted,
-                      struck: parent.struck, strikeColor: parent.strikeColor, dimsStruck: parent.dimsStruck,
-                      drawsStrike: parent.drawsStrike)
+                      dimsStruck: parent.dimsStruck, drawsStrike: parent.drawsStrike)
             }
         }
 
@@ -266,21 +250,18 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func apply(_ attributed: NSAttributedString, to view: BlockNSTextView, kind: BlockKind, isCompleted: Bool,
-                   struck: Bool? = nil, strikeColor: NSColor? = nil, dimsStruck: Bool = true, drawsStrike: Bool = true) {
+                   dimsStruck: Bool = true, drawsStrike: Bool = true) {
             isApplyingExternalChange = true
             defer { isApplyingExternalChange = false }
 
             let applied = ContentSignature(attributedText: attributed, kind: kind, isCompleted: isCompleted,
-                                           struck: struck, strikeColor: strikeColor, dimsStruck: dimsStruck,
-                                           drawsStrike: drawsStrike)
+                                           dimsStruck: dimsStruck, drawsStrike: drawsStrike)
             let previousSelection = view.selectedRange()
             view.textStorage?.setAttributedString(applied.overridesCompletion
-                ? RichTextCodec.restylingCompletion(of: attributed, kind: kind, struck: applied.struck,
-                                                    strikeColor: applied.strikeColor, dimsCompleted: applied.dimsStruck,
-                                                    strikes: applied.drawsStrike)
+                ? RichTextCodec.restylingCompletion(of: attributed, kind: kind, struck: isCompleted,
+                                                    dimsCompleted: applied.dimsStruck, strikes: applied.drawsStrike)
                 : attributed)
-            view.typingAttributes = RichTextCodec.baseAttributes(for: kind, isCompleted: applied.struck,
-                                                                 strikeColor: applied.strikeColor,
+            view.typingAttributes = RichTextCodec.baseAttributes(for: kind, isCompleted: isCompleted,
                                                                  dimsCompleted: applied.dimsStruck,
                                                                  strikes: applied.drawsStrike)
             view.blockKind = kind
@@ -299,11 +280,10 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         /// Records a local edit, so the model's echo of it is not mistaken for
-        /// an outside change. A struck presentation is recorded in the model's
-        /// form, which is what the echo will carry.
+        /// an outside change. A restyled presentation is recorded in the
+        /// model's form, which is what the echo will carry.
         func recordLocalEdit(_ storage: NSAttributedString, kind: BlockKind) {
             let current = ContentSignature(attributedText: storage, kind: kind, isCompleted: parent.isCompleted,
-                                           struck: parent.struck, strikeColor: parent.strikeColor,
                                            dimsStruck: parent.dimsStruck, drawsStrike: parent.drawsStrike)
             guard current.overridesCompletion else {
                 signature = current
@@ -311,8 +291,7 @@ struct BlockTextView: NSViewRepresentable {
             }
             signature = ContentSignature(
                 attributedText: RichTextCodec.restylingCompletion(of: storage, kind: kind, struck: parent.isCompleted),
-                kind: kind, isCompleted: parent.isCompleted, struck: parent.struck, strikeColor: parent.strikeColor,
-                dimsStruck: parent.dimsStruck, drawsStrike: parent.drawsStrike
+                kind: kind, isCompleted: parent.isCompleted, dimsStruck: parent.dimsStruck, drawsStrike: parent.drawsStrike
             )
         }
 
@@ -395,10 +374,9 @@ struct BlockTextView: NSViewRepresentable {
 
             recordLocalEdit(storage, kind: parent.kind)
             reportEdit(NSAttributedString(attributedString: storage))
-            // As the design's next change does, typing in a line that still
-            // starts with "/" brings back the card Escape put away.
-            dismissedSlashIndex = nil
-            updateSlashQuery(in: view)
+            // As the design's change does, a line that starts with "/" brings
+            // the card up, the one Escape put away too.
+            updateSlashQuery(in: view, textChanged: true)
             view.invalidateIntrinsicContentSize()
         }
 
@@ -508,45 +486,29 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
-        /// Recomputes the `/` query from the text immediately before the caret.
-        func suppressCurrentSlash(in view: BlockNSTextView) {
-            dismissedSlashIndex = MarkdownInputRules.slashTriggerIndex(in: view.string as NSString, caret: view.selectedRange().location)
-        }
-
         func dismissSlash(in view: BlockNSTextView) {
-            suppressCurrentSlash(in: view)
             view.slashMenuCommand?(.dismiss)
         }
 
-        func updateSlashQuery(in view: BlockNSTextView) {
-            let selection = view.selectedRange()
-            guard selection.length == 0, let storage = view.textStorage else {
+        /// The design's Turn into card is up while the line starts with "/",
+        /// from the change that writes it there until Escape, a pick or the
+        /// "/" going, and filters by everything after the "/", spaces and all,
+        /// wherever the caret is. A change to the text reports the query; the
+        /// caret or the page moving only follows a card that's up.
+        func updateSlashQuery(in view: BlockNSTextView, textChanged: Bool = false) {
+            guard textChanged || view.isSlashMenuOpen, let storage = view.textStorage else { return }
+            let text = storage.string as NSString
+            guard !view.hasMarkedText(), parent.kind != .code, text.hasPrefix("/") else {
                 parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
                 return
             }
-
-            let text = storage.string as NSString
-            let caret = min(selection.location, text.length)
-            guard !view.hasMarkedText(), parent.kind != .code,
-                  let slashIndex = MarkdownInputRules.slashTriggerIndex(in: text, caret: caret),
-                  slashIndex == 0 else {
-                dismissedSlashIndex = nil
-                if view.isSlashMenuOpen {
-                    parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
-                }
-                return
-            }
-
-            guard slashIndex != dismissedSlashIndex else { return }
-            let range = NSRange(location: slashIndex, length: caret - slashIndex)
-            let query = text.substring(with: NSRange(location: slashIndex + 1, length: caret - slashIndex - 1))
-            let rect = view.caretRectLocal(at: caret)
+            let rect = view.caretRectLocal(at: min(view.selectedRange().location, text.length))
             let viewport = view.editorViewport
             if view.window != nil, !viewport.intersects(rect) {
                 if view.isSlashMenuOpen { dismissSlash(in: view) }
                 return
             }
-            parent.callbacks.onSlashQuery(query, range, rect, viewport)
+            parent.callbacks.onSlashQuery(text.substring(from: 1), NSRange(location: 0, length: text.length), rect, viewport)
         }
     }
 }
@@ -572,11 +534,7 @@ final class BlockNSTextView: NSTextView {
         }
     }
     /// Set by the outline while the `/` menu is visible so key handling defers to it.
-    var isSlashMenuOpen = false {
-        didSet {
-            if oldValue && !isSlashMenuOpen { coordinator?.suppressCurrentSlash(in: self) }
-        }
-    }
+    var isSlashMenuOpen = false
     var slashMenuCommand: ((SlashMenuCommand) -> Void)?
 
     private var cachedHeight: (width: CGFloat, height: CGFloat)?
@@ -747,34 +705,93 @@ final class BlockNSTextView: NSTextView {
 
     // MARK: Paste
 
-    /// Splits a multi-line paste into blocks instead of one run of text.
+    /// Pastes as the design's lines take it, one line each.
     ///
-    /// A pasted markdown list should become a list. Single-line pastes fall
-    /// through to AppKit so ordinary paste — including styled text — is
-    /// untouched.
+    /// With nothing selected, Openlist content goes in after the line, whole,
+    /// and several lines of text become lines of their own, after this one
+    /// or filling it while it's empty. Over a selection, Openlist content
+    /// goes in as the text of its lines, a space between them. Anything else
+    /// is AppKit's paste, styled text included, with each line break it
+    /// brings made a space, as the design's single-line inputs take a paste.
+    /// A code line, one of the editor's own kinds, keeps the breaks.
     private(set) var isPasting = false
 
     override func paste(_ sender: Any?) {
+        paste(from: .general) { super.paste(sender) }
+    }
+
+    /// Paste and Match Style reads Openlist content as the text it carries.
+    override func pasteAsPlainText(_ sender: Any?) {
+        paste(from: .general, structured: false) { super.pasteAsPlainText(sender) }
+    }
+
+    /// Pastes what `pasteboard` holds, with `native` as AppKit's paste of it.
+    func paste(from pasteboard: NSPasteboard, structured: Bool = true, native: () -> Void) {
         isPasting = true
         defer { isPasting = false }
-        if selectedRange().length > 0 {
-            super.paste(sender)
+        let fragment = NSPasteboard.PasteboardType("solimanali.openlist.document-fragment")
+        if selectedRange().length == 0 {
+            let callbacks = coordinator?.parent.callbacks
+            if structured, pasteboard.availableType(from: [fragment]) != nil, callbacks?.onPasteFragment() == true { return }
+            // One line with a break at its end is still one line.
+            if blockKind != .code, let text = pasteboard.string(forType: .string),
+               text.trimmingCharacters(in: .newlines).rangeOfCharacter(from: .newlines) != nil,
+               callbacks?.onPasteMultiline(text) == true { return }
+        } else if blockKind != .code, let data = pasteboard.data(forType: fragment),
+                  let content = try? DocumentFragment.decode(data) {
+            // Its Markdown would write list markers and indents into the line.
+            insertText(Self.lineTexts(of: content), replacementRange: selectedRange())
             return
         }
-        let hasFragment = NSPasteboard.general.availableType(from: [.init("solimanali.openlist.document-fragment")]) != nil
-        if hasFragment {
-            // Existing text selections and inline insertions remain native.
-            // Only an empty document row opts ordinary Paste into structure.
-            if string.isEmpty, selectedRange().length == 0,
-               coordinator?.parent.callbacks.onPasteFragment() == true { return }
-            super.paste(sender)
-            return
+        native()
+    }
+
+    /// The text of Openlist content's lines, in order, a space between them.
+    static func lineTexts(of fragment: DocumentFragment) -> String {
+        let byID = Dictionary(fragment.blocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let children = Dictionary(grouping: fragment.blocks, by: \.parentID)
+        var stack = Array(fragment.roots.reversed())
+        var texts: [String] = []
+        while let id = stack.popLast(), let block = byID[id] {
+            texts += block.text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            stack += (children[id] ?? []).reversed().map(\.id)
         }
-        let text = NSPasteboard.general.string(forType: .string)
-        if let text, text.contains("\n"), coordinator?.parent.callbacks.onPasteMultiline(text) == true {
-            return
+        return texts.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    /// Every paste and text drop into the line reads through here, so each
+    /// line break it brings becomes a space.
+    override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        let range = rangeForUserTextChange
+        let length = textStorage?.length ?? 0
+        guard super.readSelection(from: pboard, type: type) else { return false }
+        guard blockKind != .code, range.location != NSNotFound, let storage = textStorage else { return true }
+        let pasted = NSRange(location: range.location, length: range.length + storage.length - length)
+        guard pasted.length > 0, NSMaxRange(pasted) <= storage.length else { return true }
+        let text = storage.attributedSubstring(from: pasted)
+        let joined = Self.joiningLines(text)
+        guard joined.string != text.string, shouldChangeText(in: pasted, replacementString: joined.string) else { return true }
+        storage.replaceCharacters(in: pasted, with: joined)
+        didChangeText()
+        setSelectedRange(NSRange(location: pasted.location + joined.length, length: 0))
+        return true
+    }
+
+    /// `text` with each line break a space, "\r\n" as one, as a single-line
+    /// input takes pasted lines. Its styling stays.
+    static func joiningLines(_ text: NSAttributedString) -> NSAttributedString {
+        let joined = NSMutableAttributedString(attributedString: text)
+        let characters = joined.mutableString
+        characters.replaceOccurrences(of: "\r\n", with: " ", options: .literal,
+                                      range: NSRange(location: 0, length: characters.length))
+        var found = characters.rangeOfCharacter(from: .newlines)
+        while found.location != NSNotFound {
+            characters.replaceCharacters(in: found, with: " ")
+            let next = found.location + 1
+            found = characters.rangeOfCharacter(from: .newlines, options: [],
+                                                range: NSRange(location: next, length: characters.length - next))
         }
-        super.paste(sender)
+        return joined
     }
 
     // MARK: Formatting actions

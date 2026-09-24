@@ -156,16 +156,32 @@ enum BlockTree {
 
     /// The done top-level tasks with a task still open somewhere below them,
     /// which a document hiding its done top-level tasks keeps on show, or
-    /// that open task would go with it.
-    static func completedTasksHoldingOpenTasks(in blocks: [Block]) -> Set<UUID> {
+    /// that open task would go with it. `atTaskLevel` takes every done task
+    /// with no task above it, the top level of the Tasks presentation.
+    static func completedTasksHoldingOpenTasks(in blocks: [Block], atTaskLevel: Bool = false) -> Set<UUID> {
         let index = childIndex(of: blocks)
+        let byID = atTaskLevel ? Dictionary(blocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
+        let tops = atTaskLevel ? blocks.filter { $0.isTask && $0.isCompleted && !hasTaskAncestor($0) { byID[$0] } }
+            : index[nil] ?? []
         var result: Set<UUID> = []
-        for top in index[nil] ?? [] where top.isTask && top.isCompleted {
+        for top in tops where top.isTask && top.isCompleted {
             if descendants(of: top.id, using: index).contains(where: { $0.isTask && !$0.isCompleted }) {
                 result.insert(top.id)
             }
         }
         return result
+    }
+
+    /// Whether a task sits anywhere above `block`, each parent looked up
+    /// with `parent`. A task with none is a top-level task among the tasks.
+    static func hasTaskAncestor(_ block: Block, parent: (UUID) -> Block?) -> Bool {
+        var seen: Set<UUID> = [block.id]
+        var next = block.parentID
+        while let id = next, seen.insert(id).inserted, let ancestor = parent(id) {
+            if ancestor.isTask { return true }
+            next = ancestor.parentID
+        }
+        return false
     }
 
     // MARK: - Heading sections

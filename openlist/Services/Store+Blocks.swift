@@ -86,23 +86,6 @@ extension Store {
         return block
     }
 
-    /// Creates a task at the top of a document, the way ⌘N behaves in Today
-    /// and Inbox where the newest item should be immediately visible.
-    @discardableResult
-    func prependTask(text: String = "", to document: DocumentContext) -> Block {
-        let listID = resolvedListID(document.listID) ?? document.listID
-        let siblings = children(of: document.rootBlockID, listID: listID)
-        let block = Block(
-            kind: .task,
-            text: text,
-            listID: listID,
-            parentID: document.rootBlockID,
-            sortIndex: BlockTree.index(after: nil, before: siblings.first?.sortIndex)
-        )
-        context.insert(block)
-        return block
-    }
-
     /// Copies the complete subtree with independent media ownership.
     @discardableResult
     func duplicateBlock(_ block: Block) -> Block {

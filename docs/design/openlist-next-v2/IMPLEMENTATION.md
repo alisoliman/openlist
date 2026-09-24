@@ -131,8 +131,19 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   goes only when it was new or emptied in its edit and holds nothing but text (Backspace
   also takes one that was already empty); a line's undo step leaves alone what anything
   else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
-  heading or task folds it away. Headings and text take no key focus after Escape, as in
-  the design; Return writes them again and J/K step to the tasks beside them.
+  heading or task folds it away, and so does a task captured into the list from anywhere,
+  the folded headings it goes in at the end of (Undo folds them again). Headings and text
+  take no key focus after Escape, as in the design; Return writes them again and J/K step
+  to the tasks beside them.
+- A line turned into a heading or text keeps the lines under it, as the design's convert
+  leaves their depth alone: they still draw a level in under it, Tab on the task or list
+  item after them takes it in as the last of them, as the design's indent goes by the line
+  right above, and turned back into a task or list item it holds them again. In the Tasks
+  presentation a task under one, with no task above it, is a top-level task, so done it goes
+  to Completed. Deviation, of the tree the document is stored as: a nested line so turned
+  takes the lines under it out a level with it, so one two levels in ends one level in,
+  where the design keeps it two; and Return on such a heading opens its new line after them,
+  where the design's opens it right under the heading.
 - Inbox triage skips a subtask while an open task above it waits, as that task's card
   carries it; one under done tasks only is triaged as its own card.
 - Widgets (`OpenlistWidget/`) depart from `widgets/` where WidgetKit sets the terms. Only a
@@ -191,7 +202,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Settings; Undo puts it back where it sat on each task), Settings' Add, rename and colour
   of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
-  Copy Content and Subtasks (for Paste in an empty document line) and every Copy Link
+  Copy Content and Subtasks (for Paste in a document line) and every Copy Link
   only copy, saying so in the tray. An Undo or Redo of a label or list change, or of a
   Restore, that fails says so in the tray, keeps the log as it was and leaves the stack.
   An edit logged while the tray still shows an earlier change, like a new section's name,
@@ -239,6 +250,16 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   `_italic_`, `~~strike~~` and `` `code` `` rules still style it, as the Format menu does.
   ⇧↩ types a soft break only in a code line, and a code line keeps its indent where the
   others are stored trimmed, as the design's commit does, once the caret leaves them.
+  A paste keeps a line to one line, as the design's input does: over a selection, or as a
+  drop into the line, each break it brings becomes a space, and Openlist content goes in
+  as the text of its lines, a space between them. Native extras, with nothing selected:
+  Openlist content goes in whole after the line, and several lines of text become lines of
+  their own after it (filling it while it's empty), under the document's rules: `> ` makes
+  text, or right under a pasted task that task's note; a line nests only under a pasted task
+  or list item, two levels deep at most; a heading or text line comes out to the top, as a
+  line turned into one does. Text that doesn't read as Markdown comes in as a trimmed text
+  line for each of its lines, a fenced block as one code line. A code line takes a paste as
+  it is.
   The card opens above its line when it wouldn't fit under it on the visible page, and a
   row the pointer moves onto takes the highlight.
 

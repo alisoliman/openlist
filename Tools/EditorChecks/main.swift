@@ -181,33 +181,7 @@ coordinator.textDidChange(Notification(name: NSText.didChangeNotification, objec
 let typingEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
 check(coordinator.signature == BlockTextView.ContentSignature(attributedText: typingEcho, kind: .task, isCompleted: false), "Ordinary typing still produces a matching model echo without resetting native editing")
 
-// A renderer strikes a task during its completion dwell, before the store
-// marks it done. The strike is presentation only.
 let unstruckParent = coordinator.parent
-let closingAccent = NSColor.systemPurple
-let closing = RichTextCodec.decode(nil, plainText: "Closing task", kind: .task)
-coordinator.parent = BlockTextView(blockID: UUID(), kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent,
-    attributedText: closing, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
-coordinator.apply(closing, to: native, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent)
-let struckAttributes = native.textStorage!.attributes(at: 0, effectiveRange: nil)
-check(struckAttributes[.strikethroughStyle] as? Int == NSUnderlineStyle.single.rawValue
-    && struckAttributes[.strikethroughColor] as? NSColor === closingAccent
-    && struckAttributes[.foregroundColor] as? NSColor === NXEditor.completedInk, "A closing task is struck in the accent before it is stored as done")
-check(coordinator.signature == BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent),
-    "A struck presentation keeps the model's content in its signature")
-check(coordinator.signature != BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false),
-    "Starting or cancelling the dwell strike restyles the native editor")
-native.textStorage?.append(NSAttributedString(string: "!", attributes: native.typingAttributes))
-native.setSelectedRange(NSRange(location: native.string.utf16.count, length: 0))
-coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
-let struckEcho = RichTextCodec.decode(editedArchive, plainText: native.string, kind: .task)
-check(native.string == "Closing task!" && struckEcho.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) == nil,
-    "The dwell strike never reaches stored rich text")
-check(coordinator.signature == BlockTextView.ContentSignature(attributedText: struckEcho, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent),
-    "Typing during the dwell matches the model's echo without resetting native editing")
-coordinator.parent = unstruckParent
-coordinator.apply(struckEcho, to: native, kind: .task, isCompleted: false)
-check(native.textStorage?.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) == nil, "Cancelling the dwell removes the strike")
 let completedTitle = RichTextCodec.decode(nil, plainText: "Done", kind: .quote, isCompleted: true)
 check(RichTextCodec.restylingCompletion(of: completedTitle, kind: .quote, struck: true).isEqual(to: completedTitle)
     && RichTextCodec.restylingCompletion(of: completedTitle, kind: .quote, struck: false).isEqual(to: RichTextCodec.decode(nil, plainText: "Done", kind: .quote)),
@@ -320,33 +294,118 @@ check(wrappedCaret.minY > input.caretRectLocal(at: 0).minY && wrappedCaret.heigh
 check(!input.isOnFirstLine(trigger) && input.isOnLastLine(wrapped.length), "Arrow boundaries use visual lines")
 var lastQuery: String?
 var queryRange = NSRange()
-coordinator.parent.callbacks.onSlashQuery = { query, range, _, _ in lastQuery = query; queryRange = range }
+var slashReports = 0
+coordinator.parent.callbacks.onSlashQuery = { query, range, _, _ in lastQuery = query; queryRange = range; slashReports += 1 }
 input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
-coordinator.updateSlashQuery(in: input)
-check(lastQuery == nil, "A slash after a space mid-line stays as typed; only one that starts the line opens Turn into")
-let slashLine = RichTextCodec.decode(nil, plainText: "/h2 then a suffix", kind: .task)
-coordinator.apply(slashLine, to: input, kind: .task, isCompleted: false)
-input.setSelectedRange(NSRange(location: 3, length: 0))
-coordinator.updateSlashQuery(in: input)
-check(lastQuery == "h2" && queryRange == NSRange(location: 0, length: 3), "Slash query removes only its trigger and filter before a suffix")
+input.insertText("x", replacementRange: input.selectedRange())
+check(slashReports == 1 && lastQuery == nil, "A slash mid-line stays as typed; only one that starts the line opens Turn into")
+// As the design's, the card is up while the line starts with "/", and its
+// query is the whole line after it, spaces and later slashes too, however
+// long, wherever the caret is.
+func typeSlashLine(_ text: String, into existing: String = "", at caret: Int = 0) {
+    coordinator.apply(RichTextCodec.decode(nil, plainText: existing, kind: .task), to: input, kind: .task, isCompleted: false)
+    input.setSelectedRange(NSRange(location: caret, length: 0))
+    for character in text { input.insertText(String(character), replacementRange: input.selectedRange()) }
+}
+typeSlashLine("/turn into/usr")
+check(lastQuery == "turn into/usr" && queryRange == NSRange(location: 0, length: 14),
+    "The Turn into query holds a space and a later slash, and covers the whole line")
+typeSlashLine("/" + String(repeating: "x", count: 30))
+check(lastQuery == String(repeating: "x", count: 30), "A query past 24 letters keeps the card up")
+typeSlashLine("/", into: "Milk")
+check(lastQuery == "Milk" && queryRange == NSRange(location: 0, length: 5) && OutlineSlashOption.matching("Milk").isEmpty,
+    "A “/” typed before a line's text filters by all of it, as the design's, so nothing matches")
 input.isSlashMenuOpen = true
-coordinator.dismissSlash(in: input)
-lastQuery = nil
-coordinator.updateSlashQuery(in: input)
-check(lastQuery == nil, "Escape suppresses the same slash trigger during subsequent selection or layout updates")
-input.insertText("x", replacementRange: NSRange(location: 3, length: 0))
-check(lastQuery == "h2x", "Typing in the line after Escape brings the card back, as the design's next change does")
-coordinator.apply(slashLine, to: input, kind: .task, isCompleted: false)
-input.isSlashMenuOpen = false
-input.setSelectedRange(NSRange(location: 0, length: 0))
-coordinator.updateSlashQuery(in: input)
 input.setSelectedRange(NSRange(location: 3, length: 0))
-coordinator.updateSlashQuery(in: input)
-check(lastQuery == "h2", "Moving away from a dismissed trigger allows a later command session")
-coordinator.parent = BlockTextView(blockID: UUID(), kind: .code, isCompleted: false, attributedText: slashLine, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
-lastQuery = nil
-coordinator.updateSlashQuery(in: input)
+check(lastQuery == "Milk", "Moving the caret leaves the query as it is")
+input.setSelectedRange(NSRange(location: 1, length: 3))
+check(lastQuery == "Milk", "So does a selection")
+coordinator.dismissSlash(in: input)
+input.isSlashMenuOpen = false
+let reportsAfterEscape = slashReports
+input.setSelectedRange(NSRange(location: 5, length: 0))
+input.setSelectedRange(NSRange(location: 1, length: 0))
+check(slashReports == reportsAfterEscape, "After Escape, moving the caret doesn't bring the card back")
+input.insertText("x", replacementRange: input.selectedRange())
+check(lastQuery == "xMilk", "Typing in the line after Escape brings the card back, as the design's next change does")
+input.isSlashMenuOpen = true
+input.insertText("", replacementRange: NSRange(location: 0, length: 1))
+check(input.string == "xMilk" && lastQuery == nil, "Once the line doesn't start with “/”, the card closes")
+input.isSlashMenuOpen = false
+let reportsBeforeArrival = slashReports
+coordinator.apply(RichTextCodec.decode(nil, plainText: "/usr/bin", kind: .task), to: input, kind: .task, isCompleted: false)
+input.setSelectedRange(NSRange(location: 8, length: 0))
+check(slashReports == reportsBeforeArrival, "The caret arriving in a line that starts with “/” opens no card until it changes, as the design's")
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .code, isCompleted: false, attributedText: input.attributedString(),
+                                   isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
+lastQuery = "open"
+coordinator.updateSlashQuery(in: input, textChanged: true)
 check(lastQuery == nil, "Code blocks keep slash characters literal")
+coordinator.parent = editor
+
+// Paste, as the design's single-line inputs take it: several lines with
+// nothing selected become lines of their own, Openlist content goes in
+// after the line, and any other paste puts a space for each line break it
+// brings. A code line keeps them.
+let styledLines = NSMutableAttributedString(string: "One\r\nTwo\nThree\u{2028}Four", attributes: RichTextCodec.baseAttributes(for: .task))
+RichTextCodec.toggleTrait(.boldFontMask, in: styledLines, range: NSRange(location: 5, length: 3), kind: .task)
+let joinedLines = BlockNSTextView.joiningLines(styledLines)
+func isBold(_ text: NSAttributedString, at index: Int) -> Bool {
+    (text.attribute(.font, at: index, effectiveRange: nil) as? NSFont).map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == true
+}
+check(joinedLines.string == "One Two Three Four" && isBold(joinedLines, at: 4) && !isBold(joinedLines, at: 0),
+    "Pasted line breaks become spaces, “\\r\\n” one, the styling kept")
+let pasteBoard = NSPasteboard(name: NSPasteboard.Name("openlist.editor-checks.\(UUID().uuidString)"))
+defer { pasteBoard.releaseGlobally() }
+let fragmentType = NSPasteboard.PasteboardType("solimanali.openlist.document-fragment")
+let fragmentParent = FragmentBlock(id: UUID(), parentID: nil, kind: "task", text: "Parent")
+var fragmentChild = FragmentBlock(id: UUID(), parentID: fragmentParent.id, kind: "task", text: "Child")
+fragmentChild.note = "note"
+let fragmentCode = FragmentBlock(id: UUID(), parentID: fragmentParent.id, kind: "code", text: "let a = 1\n  let b = 2")
+let fragmentData = try DocumentFragment(roots: [fragmentParent.id], blocks: [fragmentParent, fragmentChild, fragmentCode],
+                                        labels: []).encoded()
+var pastedLines: [String] = []
+var pastedFragments = 0
+let pastingCallbacks = coordinator.parent.callbacks
+func paste(_ text: String, into line: String, selecting selection: NSRange, kind: BlockKind = .task,
+           fragment: Bool = false, matchingStyle: Bool = false, rich: NSAttributedString? = nil) {
+    var callbacks = pastingCallbacks
+    callbacks.onPasteMultiline = { pastedLines.append($0); return true }
+    callbacks.onPasteFragment = { pastedFragments += 1; return true }
+    coordinator.parent = BlockTextView(blockID: UUID(), kind: kind, isCompleted: false, attributedText: NSAttributedString(),
+                                       isFocused: false, focusToken: 0, callbacks: callbacks)
+    coordinator.apply(RichTextCodec.decode(nil, plainText: line, kind: kind), to: input, kind: kind, isCompleted: false)
+    input.setSelectedRange(selection)
+    pasteBoard.clearContents()
+    pasteBoard.setString(text, forType: .string)
+    if fragment { pasteBoard.setData(fragmentData, forType: fragmentType) }
+    if let rich { pasteBoard.setData(rich.rtf(from: NSRange(location: 0, length: rich.length), documentAttributes: [:]), forType: .rtf) }
+    input.paste(from: pasteBoard, structured: !matchingStyle) { _ = input.readSelection(from: pasteBoard) }
+}
+paste("Eggs\nBread", into: "Buy ", selecting: NSRange(location: 4, length: 0))
+check(pastedLines == ["Eggs\nBread"] && input.string == "Buy ", "Several lines pasted with nothing selected go to the outline, as lines")
+paste("Eggs\nBread", into: "Buy Milk", selecting: NSRange(location: 4, length: 4))
+check(pastedLines.count == 1 && input.string == "Buy Eggs Bread" && input.selectedRange() == NSRange(location: 14, length: 0),
+    "Several lines pasted over a selection go in its place, a space for each break")
+paste("Milk\n", into: "Buy ", selecting: NSRange(location: 4, length: 0))
+check(pastedLines.count == 1 && input.string == "Buy Milk ", "One line with a break at its end pastes into the line, the break a space")
+let fragmentMarkdown = "- [ ] Parent\n  - [ ] Child\n    > note"
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: true)
+check(pastedFragments == 1 && input.string == "Groceries", "Openlist content pasted in a line with text goes in after it, whole")
+paste(fragmentMarkdown, into: "", selecting: NSRange(location: 0, length: 0), fragment: true)
+check(pastedFragments == 2 && input.string.isEmpty, "So does content pasted in an empty line")
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: true)
+check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2" && input.selectedRange() == NSRange(location: 32, length: 0),
+    "Openlist content pasted over a selection goes in as the text of its lines, a space between them, with no Markdown")
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: true, matchingStyle: true)
+check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2", "So does Paste and Match Style over a selection")
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: true, matchingStyle: true)
+check(pastedFragments == 2 && pastedLines.last == fragmentMarkdown, "Paste and Match Style reads Openlist content as its lines of text")
+paste("\nlet b = 2", into: "let a = 1", selecting: NSRange(location: 9, length: 0), kind: .code)
+check(pastedLines.count == 2 && input.string == "let a = 1\nlet b = 2", "A code line keeps a paste's breaks")
+let richLines = NSAttributedString(string: "Bold\nline", attributes: [.font: NSFont.boldSystemFont(ofSize: 13)])
+paste(richLines.string, into: "Plain", selecting: NSRange(location: 0, length: 5), rich: richLines)
+check(input.string == "Bold line" && isBold(input.attributedString(), at: 0), "Styled text pasted in a line keeps its style, its breaks spaces")
 coordinator.parent = editor
 
 let selectedText = RichTextCodec.decode(nil, plainText: "Before DELETE After", kind: .task)
@@ -580,16 +639,15 @@ check(taskAttributes[.foregroundColor] as? NSColor === NXEditor.ink
     && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === NXEditor.strikeInk
     && NXEditor.link === NXEditor.accentViolet,
     "Editor colours are shared ink and accent tokens, so content signatures stay equal")
-let closingTitle = RichTextCodec.restylingCompletion(of: RichTextCodec.decode(nil, plainText: "Closing", kind: .task), kind: .task,
-                                                     struck: true, strikeColor: NXEditor.accentBlue, dimsCompleted: false)
-check(closingTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink
-    && closingTitle.attribute(.strikethroughColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.accentBlue
-    && closingTitle.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) != nil,
-    "A task struck during its dwell keeps its ink under the accent strike")
-check(BlockTextView.ContentSignature(attributedText: closingTitle, kind: .task, isCompleted: false, struck: true,
-                                     strikeColor: NXEditor.accentBlue, dimsStruck: false).overridesCompletion
-    && !BlockTextView.ContentSignature(attributedText: closingTitle, kind: .task, isCompleted: false, dimsStruck: false).overridesCompletion,
-    "Keeping the ink only matters while the strike shows")
+let writtenTitle = RichTextCodec.restylingCompletion(of: RichTextCodec.decode(nil, plainText: "Written", kind: .task), kind: .task,
+                                                     struck: true, dimsCompleted: false)
+check(writtenTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink
+    && writtenTitle.attribute(.strikethroughColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.strikeInk
+    && writtenTitle.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) != nil,
+    "A done line that keeps its ink is struck in the strike ink")
+check(BlockTextView.ContentSignature(attributedText: writtenTitle, kind: .task, isCompleted: true, dimsStruck: false).overridesCompletion
+    && !BlockTextView.ContentSignature(attributedText: writtenTitle, kind: .task, isCompleted: false, dimsStruck: false).overridesCompletion,
+    "Keeping the ink only matters for a done line")
 let styledHeading = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Title", kind: .heading1))
 RichTextCodec.toggleTrait(.italicFontMask, in: styledHeading, range: NSRange(location: 0, length: 5), kind: .heading1)
 let headingEcho = RichTextCodec.decode(RichTextCodec.encode(styledHeading, kind: .heading1), plainText: "Title", kind: .heading1)
@@ -1010,6 +1068,8 @@ check(nextEditor.slashKinds(matching: "s") == [.task, .heading2] && nextEditor.s
     "A letter brings up no kind for its search words alone")
 check("abcdefghijklmnopqrstuvwxyz0123456789".allSatisfy { nextEditor.slashKinds(matching: String($0)) == designSlashKinds(String($0)) },
     "Every letter filters Turn into as the design's slashOpts does")
+check(["task ", " ", "he llo", "sub/"].allSatisfy { nextEditor.slashKinds(matching: $0).isEmpty && designSlashKinds($0).isEmpty },
+    "A query the design's matches nothing for, a space or a later slash in it, matches nothing")
 check(nextEditor.slashKinds(matching: "todo") == [.task] && nextEditor.slashKinds(matching: "hr") == [.divider]
     && nextEditor.slashKinds(matching: "co") == [.code],
     "From the second letter the editor's search words and the other kinds' names come in")
@@ -1392,7 +1452,8 @@ check(fixActions(foldHeading).onReturn(5, content(foldHeading)) && fixShows(fixE
     "Return inside a folded heading keeps it whole and opens a line that shows")
 fixEditor.commitLine()
 
-// A line turned into a kind that doesn't nest takes what was under it out beside it.
+// A line turned into a kind that doesn't nest keeps what was under it, as
+// the design's convert leaves the depth of the lines under it alone.
 let packing = store.appendBlock(kind: .task, text: "Pack", to: fixDocument)
 let packedSocks = store.insertChild(kind: .task, text: "Socks", of: packing, at: .last)
 let adapters = store.insertChild(kind: .task, text: "Adapters", of: packing, at: .last)
@@ -1400,20 +1461,84 @@ let typeA = store.insertChild(kind: .task, text: "Type A", of: adapters, at: .la
 store.save()
 fixActions(packing).onFocus()
 fixActions(packing).onMarkdownPrefix(.heading1)
+func fixDepths(_ blocks: [Block]) -> [Int?] { blocks.map { block in fixRows().first { $0.id == block.id }?.depth } }
+check(packing.kind == .heading1 && packing.parentID == nil && packedSocks.parentID == packing.id && adapters.parentID == packing.id
+    && typeA.parentID == adapters.id && fixDepths([packing, packedSocks, adapters, typeA]) == [0, 1, 1, 2],
+    "“# ” on a task with subtasks makes a heading with them still a level in under it")
 let packed = fixRows().map(\.id)
-check(packing.kind == .heading1 && packing.parentID == nil && packedSocks.parentID == nil && adapters.parentID == nil
-    && typeA.parentID == adapters.id, "“# ” on a task with subtasks makes a heading with them beside it, a level up")
 check(packed.firstIndex(of: packedSocks.id) == packed.firstIndex(of: packing.id)! + 1
     && packed.firstIndex(of: adapters.id) == packed.firstIndex(of: packedSocks.id)! + 1, "They follow the heading in their order")
+fixActions(packing).onMarkdownPrefix(.task)
+check(packing.kind == .task && packedSocks.parentID == packing.id && fixDepths([packing, packedSocks, adapters, typeA]) == [0, 1, 1, 2],
+    "Turned back into a task, it holds them as its subtasks again")
 fixEditor.commitLine()
+fixEditor.turn(packing.id, into: .paragraph)
+check(packing.kind == .paragraph && fixDepths([packing, packedSocks, adapters, typeA]) == [0, 1, 1, 2],
+    "A line's Turn Into text keeps them under it too")
+fixEditor.turn(packing.id, into: .task)
 let groceries = store.appendBlock(kind: .task, text: "Groceries", to: fixDocument)
 let market = store.insertChild(kind: .bullet, text: "Market", of: groceries, at: .last)
 let yuba = store.insertChild(kind: .task, text: "Yuba", of: market, at: .last)
+let afterMarket = store.insertChild(kind: .bullet, text: "Nishiki", of: groceries, at: .last)
 store.save()
 fixActions(market).onFocus()
 check(fixActions(market).onBackspaceAtStart(content(market)) && market.kind == .paragraph && market.parentID == nil
-    && yuba.parentID == nil, "Backspace on a nested list item makes text at the top, with what was under it beside it")
+    && yuba.parentID == market.id && afterMarket.parentID == market.id && fixDepths([market, yuba, afterMarket]) == [0, 1, 1],
+    "Backspace on a nested list item makes text at the top, with the lines under it and after it still a level in")
 fixEditor.commitLine()
+
+// Tab on the line after a heading's kept lines takes it in after them, as the
+// design's indent goes by the line right above.
+let keptList = store.createList(title: "Kept lines")
+let keptDocument = DocumentContext(listID: keptList.id)
+let keptEditor = OutlineEditor(env: outlineEnv, document: keptDocument)
+func keptRows() -> [BlockRow] { keptEditor.visibleRows(in: store.blocks(inList: keptList.id)) }
+func keptActions(_ block: Block) -> BlockRowActions { keptEditor.actions(for: keptRows().first { $0.id == block.id }!) }
+let keptTrip = store.appendBlock(kind: .task, text: "Pack", to: keptDocument)
+let keptSocks = store.insertChild(kind: .task, text: "Socks", of: keptTrip, at: .last)
+let keptPassport = store.insertChild(kind: .task, text: "Passport", of: keptTrip, at: .last)
+let keptAfter = store.appendBlock(kind: .task, text: "After", to: keptDocument)
+let bareHeading = store.appendBlock(kind: .heading2, text: "Bare", to: keptDocument)
+let keptLone = store.appendBlock(kind: .task, text: "Lone", to: keptDocument)
+store.save()
+keptActions(keptTrip).onFocus()
+keptActions(keptTrip).onMarkdownPrefix(.heading1)
+keptEditor.commitLine()
+keptActions(keptAfter).onFocus()
+check(keptActions(keptAfter).onTab(false, 0) && keptAfter.parentID == keptTrip.id
+    && keptRows().map(\.id) == [keptTrip, keptSocks, keptPassport, keptAfter, bareHeading, keptLone].map(\.id)
+    && keptRows().map(\.depth) == [0, 1, 1, 1, 0, 0],
+    "Tab on the task after a heading's kept lines takes it in as the last of them")
+check(keptActions(keptAfter).onTab(true, 0) && keptAfter.parentID == nil && keptRows().map(\.depth) == [0, 1, 1, 0, 0, 0],
+    "⇧Tab takes it back out")
+keptEditor.commitLine()
+keptActions(keptLone).onFocus()
+check(keptActions(keptLone).onTab(false, 0) && keptLone.parentID == nil,
+    "A heading holding no lines takes none in, as the design's indent after a heading")
+keptEditor.commitLine()
+
+// The Tasks presentation's top level is the tasks': a done task a heading
+// holds, with no task above it, leaves it as a done top-level task does.
+keptPassport.isCompleted = true
+keptPassport.completedAt = .now
+store.save()
+check(keptRows().contains { $0.id == keptPassport.id && $0.depth == 1 },
+    "In the document a done task a heading holds stays struck in place, as the design's done subtasks")
+keptEditor.tasksOnly = true
+check(keptRows().map(\.id) == [keptSocks, keptAfter, keptLone].map(\.id) && keptRows().allSatisfy { $0.depth == 0 },
+    "In the Tasks presentation it leaves, as a done top-level task")
+let keptVisa = store.insertChild(kind: .task, text: "Visa", of: keptPassport, at: .last)
+store.save()
+check(keptRows().map(\.id) == [keptSocks, keptPassport, keptVisa, keptAfter, keptLone].map(\.id)
+    && keptRows().map(\.depth) == [0, 0, 1, 0, 0],
+    "One with a task still open under it stays, as a done top-level task does")
+let keptBlocks = store.blocks(inList: keptList.id)
+func keptParent(_ id: UUID) -> Block? { keptBlocks.first { $0.id == id } }
+check(!BlockTree.hasTaskAncestor(keptPassport, parent: keptParent) && BlockTree.hasTaskAncestor(keptVisa, parent: keptParent)
+    && BlockTree.completedTasksHoldingOpenTasks(in: keptBlocks, atTaskLevel: true) == [keptPassport.id]
+    && BlockTree.completedTasksHoldingOpenTasks(in: keptBlocks).isEmpty,
+    "A done task with no task above it is a top-level task for the Completed group of the Tasks presentation")
+keptEditor.tasksOnly = false
 
 // Something else changing the line's task isn't the line's edit.
 fixRecorded.removeAll()
@@ -1723,5 +1848,83 @@ caretEditor.turn(caretItem.id, into: .heading1)
 check(caretItem.kind == .heading1 && caretItem.isCollapsed && !caretRows().contains(caretUnderItem.id),
     "A folded heading turned into another heading stays folded, as the design's convert keeps it")
 outlineEnv.activeDocument = nil
+
+// Pasted lines each become a line of their own, as a line holds one line.
+let pastedList = store.createList(title: "Pasted lines")
+let pastedDocument = DocumentContext(listID: pastedList.id)
+let pastedEditor = OutlineEditor(env: outlineEnv, document: pastedDocument)
+func pastedTexts() -> [String] { pastedEditor.visibleRows(in: store.blocks(inList: pastedList.id)).map(\.block.text) }
+let pasteTarget = store.appendBlock(kind: .task, text: "Shopping", to: pastedDocument)
+store.save()
+let pasteActions = pastedEditor.actions(for: pastedEditor.visibleRows(in: store.blocks(inList: pastedList.id))[0])
+check(pasteActions.onPasteMultiline("- [ ] Milk\n- [ ] Eggs\n") && pastedTexts() == ["Shopping", "Milk", "Eggs"]
+    && store.blocks(inList: pastedList.id).allSatisfy(\.isTask), "Copied lines ending in a break paste as tasks after the line")
+check(pasteActions.onPasteMultiline("- [ ] Bread\r\n- [ ] Tea") && pastedTexts() == ["Shopping", "Bread", "Tea", "Milk", "Eggs"]
+    && store.blocks(inList: pastedList.id).allSatisfy(\.isTask), "So do lines that end in “\\r\\n”")
+check(pasteActions.onPasteMultiline("first\n\n  last line \t\nend")
+    && Array(pastedTexts().prefix(4)) == ["Shopping", "first", "last line", "end"]
+    && store.blocks(inList: pastedList.id).filter { !$0.isTask }.map(\.kind) == [.paragraph, .paragraph, .paragraph]
+    && !pastedTexts().contains { $0.rangeOfCharacter(from: .newlines) != nil },
+    "Text that doesn't read as lines of Markdown goes in a text line for each of its lines, trimmed as the design's commit trims")
+pastedEditor.commitLine()
+check(pasteTarget.text == "Shopping", "The line pasted after keeps its text")
+
+// A fenced block comes in as one code line, the kind that keeps its breaks
+// and indent; the text around it as trimmed text lines.
+check(MarkdownInputRules.pasteLines("Run:\n```swift\n  let a = 1\n\n  let b = 2\n```\n  indented tail ").map(\.kind) == [.paragraph, .code, .paragraph]
+    && MarkdownInputRules.pasteLines("Run:\n```swift\n  let a = 1\n\n  let b = 2\n```\n  indented tail ").map(\.text)
+        == ["Run:", "  let a = 1\n\n  let b = 2", "indented tail"],
+    "A fenced block pastes as one code line between trimmed text lines")
+check(MarkdownInputRules.pasteLines("  ~~~\n    code\n  ~~~~\nafter").map(\.text) == ["  code", "after"],
+    "An indented fence's code loses only the fence's indent, and a longer fence closes it")
+check(MarkdownInputRules.pasteLines("Intro\n```\nopen to the end\n  still code").map(\.text) == ["Intro", "open to the end\n  still code"],
+    "A fence left open runs to the end")
+check(MarkdownInputRules.pasteLines("```a``` inline\nnext  ").map(\.kind) == [.paragraph, .paragraph]
+    && MarkdownInputRules.pasteLines("```\n```\nafter").map(\.text) == ["after"],
+    "Backticks inside a line open no fence, and an empty block is no line")
+let fencedTarget = store.appendBlock(kind: .task, text: "Setup", to: pastedDocument)
+store.save()
+func pastedRows() -> [BlockRow] { pastedEditor.visibleRows(in: store.blocks(inList: pastedList.id)) }
+func pastedActions(_ block: Block) -> BlockRowActions { pastedEditor.actions(for: pastedRows().first { $0.id == block.id }!) }
+check(pastedActions(fencedTarget).onPasteMultiline("Run:\n```\n  let a = 1\n```\n  indented tail ")
+    && pastedRows().suffix(4).map(\.block.kind) == [.task, .paragraph, .code, .paragraph]
+    && pastedRows().suffix(4).map(\.block.text) == ["Setup", "Run:", "  let a = 1", "indented tail"],
+    "Pasted, it's a code line, keeping its indent, between trimmed text lines")
+pastedEditor.commitLine()
+
+// Pasted lines keep to the document's rules: "> " makes text, or right under
+// a pasted task its note, as Openlist content's Markdown writes one; lines
+// nest only under pasted tasks and list items, two levels deep at most.
+let nestedList = store.createList(title: "Nested paste")
+let nestedDocument = DocumentContext(listID: nestedList.id)
+let nestedEditor = OutlineEditor(env: outlineEnv, document: nestedDocument)
+func nestedRows() -> [BlockRow] { nestedEditor.visibleRows(in: store.blocks(inList: nestedList.id)) }
+func nestedActions(_ block: Block) -> BlockRowActions { nestedEditor.actions(for: nestedRows().first { $0.id == block.id }!) }
+func nestedShape() -> [String] { nestedRows().map { "\($0.depth) \($0.block.kind.rawValue) \($0.block.text)" } }
+let nestedTarget = store.appendBlock(kind: .task, text: "Trip", to: nestedDocument)
+store.save()
+check(nestedActions(nestedTarget).onPasteMultiline("- [ ] Parent\n  - [ ] Child\n    > note 2\\.5 kg\n    > second line\n- [ ] Next\n> Aside")
+    && nestedShape() == ["0 task Trip", "0 task Parent", "1 task Child", "0 task Next", "0 paragraph Aside"]
+    && nestedRows()[2].block.note == "note 2.5 kg\nsecond line" && nestedRows()[3].block.parentID == nil,
+    "A note under a pasted task comes back as its note, a line back at the top goes there, and “> ” makes text")
+nestedEditor.commitLine()
+let nestedNext = nestedRows()[3].block
+check(nestedActions(nestedNext).onPasteMultiline("- Bullet\n  > quoted\n  # Inner\n  - [ ] Under\n  - [ ] More\n    - [ ] Deep\n      - [ ] Deeper")
+    && Array(nestedShape().dropFirst(3).prefix(8)) == ["0 task Next", "0 bullet Bullet", "0 paragraph quoted", "0 heading1 Inner",
+                                           "0 task Under", "0 task More", "1 task Deep", "2 task Deeper"],
+    "Text and a heading pasted a level in go at the top, the lines after them beside them, side by side as pasted")
+nestedEditor.commitLine()
+check(nestedActions(nestedRows().last!.block).onPasteMultiline("- [ ] a\n  - [ ] b\n    - [ ] c\n      - [ ] d\n    - [ ] e")
+    && Array(nestedShape().suffix(6)) == ["0 paragraph Aside", "0 task a", "1 task b", "2 task c", "2 task d", "2 task e"],
+    "Nothing pasted goes past two levels")
+nestedEditor.commitLine()
+let nestedChild = nestedRows()[2].block
+let nestedLater = store.insertChild(kind: .task, text: "Later", of: nestedRows()[1].block, at: .last)
+store.save()
+check(nestedActions(nestedChild).onPasteMultiline("# Section\n- [ ] Item")
+    && Array(nestedShape().prefix(6)) == ["0 task Trip", "0 task Parent", "1 task Child", "0 heading1 Section", "1 task Item", "1 task Later"]
+    && nestedLater.parentID == nestedRows()[3].id,
+    "A heading pasted after a nested line comes out to the top, keeping what follows it under it, as a line turned into one does")
+nestedEditor.commitLine()
 
 print("✅ \(checks) editor/store checks passed")

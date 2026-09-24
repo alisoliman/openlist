@@ -185,7 +185,7 @@ struct NextListScreen: View {
         let open = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
         let groups = Self.completedGroups(tasks, in: list.id, workbench: workbench,
                                           showsCompleted: list.showsCompleted(default: env.settings.showsCompletedTasks),
-                                          inDocument: Set(documentRowIDs))
+                                          inDocument: Set(documentRowIDs), tasksOnly: tasksOnly)
         let section = library.sectionTitle(for: list)
         let archived = library.archived.contains { $0.id == list.id }
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
@@ -238,12 +238,17 @@ struct NextListScreen: View {
     /// The Completed group under a list's document: the tasks done at its top
     /// level once they've settled. As the design's list branch, done subtasks
     /// stay struck in place. A done task the document still draws, with a
-    /// task under it still open, isn't listed twice.
+    /// task under it still open, isn't listed twice. In the Tasks
+    /// presentation the top level is the tasks', so a done task a heading,
+    /// list item or text line holds, with no task above it, is listed too.
     @MainActor
     static func completedGroups(_ tasks: [Block], in listID: UUID, workbench: Workbench, showsCompleted: Bool,
-                                inDocument: Set<UUID> = []) -> [NXGroup] {
+                                inDocument: Set<UUID> = [], tasksOnly: Bool = false) -> [NXGroup] {
+        let byID = tasksOnly ? Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
         let done = tasks.filter {
-            $0.isCompleted && workbench.closing[$0.id] == nil && $0.parentID == nil && !inDocument.contains($0.id)
+            $0.isCompleted && workbench.closing[$0.id] == nil && !inDocument.contains($0.id)
+                && ($0.parentID == nil
+                    || tasksOnly && !BlockTree.hasTaskAncestor($0) { byID[$0] ?? workbench.store.block(id: $0) })
         }
             .sorted(by: Block.byCompletionDate)
         guard !done.isEmpty else { return [] }

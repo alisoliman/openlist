@@ -20,8 +20,11 @@ struct CaptureSnapshot {
 extension Store {
     /// Save a capture atomically. Failure rolls back only this capture;
     /// existing editor changes are flushed before starting the transaction.
-    func saveCapture(_ snapshot: CaptureSnapshot, destinationID: UUID?, selectedForDay: Date? = nil,
-                     appendToRoot: Bool = false) throws -> Block {
+    /// The task goes at the end of its list's document, as the design's
+    /// capture, which gives it no place of its own, sorts it after every line.
+    /// A folded heading whose section it goes in opens, so the task shows
+    /// wherever the list is opened.
+    func saveCapture(_ snapshot: CaptureSnapshot, destinationID: UUID?, selectedForDay: Date? = nil) throws -> Block {
         guard !snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CaptureError.emptyTitle
         }
@@ -32,8 +35,12 @@ extension Store {
         isSavingSuspended = true
         defer { isSavingSuspended = false }
         do {
-            let document = DocumentContext(listID: destination.id)
-            let block = appendToRoot ? appendBlock(kind: .task, to: document) : prependTask(to: document)
+            let folded = foldedSections(atEndOf: destination.id)
+            let block = appendBlock(kind: .task, to: DocumentContext(listID: destination.id))
+            for heading in folded {
+                heading.isCollapsed = false
+                heading.touch()
+            }
             setPlainText(block, snapshot.title)
             block.dueDate = snapshot.date
             block.selectedForDay = selectedForDay.map { Calendar.current.startOfDay(for: $0) }
@@ -48,6 +55,18 @@ extension Store {
             context.rollback()
             pendingActivity.removeAll()
             throw error
+        }
+    }
+
+    /// The folded top-level headings whose sections run to the end of the
+    /// list's document, where a capture goes: the last one's, and each of a
+    /// higher level above it.
+    func foldedSections(atEndOf listID: UUID) -> [Block] {
+        let rows = BlockTree.flatten(blocks(inList: listID), respectCollapse: false)
+        return BlockTree.sections(in: rows).compactMap { id, section in
+            guard section.endIndex == rows.endIndex, let heading = rows.first(where: { $0.id == id })?.block,
+                  heading.isCollapsed else { return nil }
+            return heading
         }
     }
 

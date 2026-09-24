@@ -106,7 +106,7 @@ enum NXEditor {
     /// The strike through completed task text.
     nonisolated static let strikeInk = inkColor(0.36)
 
-    /// Next's accents, for the document's caret and any `BlockTextView.strikeColor`.
+    /// Next's accents, for the document's caret and links.
     /// `NextAccent.editorColor` picks the one the settings choose.
     nonisolated static let accentViolet = NSColor(srgbRed: 0x7C / 255, green: 0x4D / 255, blue: 0xF0 / 255, alpha: 1)
     nonisolated static let accentBlue = NSColor(srgbRed: 0x2F / 255, green: 0x6F / 255, blue: 0xE0 / 255, alpha: 1)
