@@ -28,7 +28,7 @@ struct WorkCompletionView: View {
                 .padding(.top, 4)
             if let date = summary.nextDate {
                 // As the tray's "“…” rolls to Wed 30".
-                Text("Rolls to \(NXFormat.moment(date, includesTime: false, inSentence: true))")
+                Text("Rolls to \(NXFormat.dueLabel(date))")
                     .font(.system(size: 11.5))
                     .foregroundStyle(NX.ink(0.45))
                     .padding(.top, 4)

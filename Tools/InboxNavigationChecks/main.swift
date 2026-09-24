@@ -299,6 +299,9 @@ check(revealing.listViewMode(for: revealInbox.id) == .tasks, "Leaving the Inbox 
 
 // A line revealed in an Inbox this Mac shows as Document, reached as triage
 // through the widget's link, lasts the visit; the saved Document stays.
+// This pins Navigator's own contract; the round-6 bug was a view's second,
+// per-visit set that saved Tasks on leaving, which the script's source
+// guard keeps out.
 let visitSuite = "openlist-reveal-visit-checks-\(UUID().uuidString)"
 let visitDefaults = UserDefaults(suiteName: visitSuite)!
 defer { visitDefaults.removePersistentDomain(forName: visitSuite) }

@@ -187,8 +187,14 @@ check(MomentText.clock(momentLastYear) == "07:30" && MomentText.day(momentLastYe
       "the pills' day and the clock stay the design's, with no year")
 check(WorkSession.stopText("Mac was unavailable") == "Paused while the Mac was away" && WorkSession.stopText(nil) == "Paused"
           && WorkSession.stopText("Library restored; paused at last recorded time") == "Paused when the library was restored"
-          && WorkSession.stopText("Changed to a note") == "Ended when the task was turned into text",
+          && WorkSession.stopText("Changed to a note") == "Ended when the task was turned into text"
+          && WorkSession.stopText("Completion undone") == "Paused when the completion was undone"
+          && WorkSession.stopText("Completion restored") == "Ended when the task was done",
       "Work history words each saved pause reason as the Work panel does, older reasons included")
+check(["Completed", "Completion restored", "Reopened", "Next occurrence"].allSatisfy { WorkSession.resumableStopText($0) == "Paused" }
+          && WorkSession.resumableStopText("Completion undone") == "Paused when the completion was undone"
+          && WorkSession.resumableStopText("Mac slept") == "Paused while the Mac was asleep",
+      "The Work panel's paused card, beside Resume working, never says the work ended")
 
 // Debounced fallback persists even without Return; it never inserts a row per key.
 let beforeDebounce = try history(task).count

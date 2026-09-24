@@ -158,10 +158,11 @@ struct WorkSessionCard: View {
     private func minutes(_ value: Double) -> String { "\(value.formatted(.number.precision(.fractionLength(0)))) min" }
 
     /// Why the work paused, in a sentence, as Work history words it: plain
-    /// for a Pause, and for work a completion's Undo, or its cancelled dwell,
-    /// gives back paused; else what paused it.
+    /// for a Pause and for work that ended with its task, since this card
+    /// offers to resume it (a completion's Undo, or its cancelled dwell,
+    /// gives such work back paused); else what paused it.
     private static func pausedDetail(_ reason: String?) -> String {
-        WorkSession.stopText(reason == "Completed" ? nil : reason) + ". No time is being recorded."
+        WorkSession.resumableStopText(reason) + ". No time is being recorded."
     }
 
     private func start() { env.calendar.requestWork(WorkTaskReference(task)) }

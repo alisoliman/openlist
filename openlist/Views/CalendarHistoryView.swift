@@ -60,7 +60,7 @@ struct CalendarHistoryView: View {
                     }
                 }
             } else {
-                Text(occurrenceID == nil ? "Each time a repeating task is done shows here on its own." : "What was recorded the time this task was done, with the title it had then.")
+                Text(occurrenceID == nil ? "Every completion is listed on its own, so a repeating task shows each time it was done." : "What was recorded when this task was done, under the title it had then.")
                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
@@ -75,7 +75,7 @@ struct CalendarHistoryView: View {
                                     Text(record.title).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
                                     Group {
                                         Text(NXFormat.moment(record.completedAt))
-                                        if record.wasRecurring { Label("Repeat", systemImage: "repeat") }
+                                        if record.wasRecurring { Label("Repeating task", systemImage: "repeat") }
                                     }
                                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                                     if !record.plannedIntervals.isEmpty {

@@ -120,7 +120,7 @@ struct openlistApp: App {
                         }
                     }
                     if (try? recoveryStorage.selection())?.generation != nil {
-                        Button("Return to Original and Quit") {
+                        Button("Return to original and quit") {
                             let alert = NSAlert()
                             alert.messageText = "Return to the original library?"
                             alert.informativeText = "Open Openlist again after it quits. The original library will be verified before opening; this restored library's files will be retained for recovery."
