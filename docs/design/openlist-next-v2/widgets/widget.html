@@ -1,0 +1,260 @@
+
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20,400..600,0..1,0"/>
+<style>
+  .ms { font-family:'Material Symbols Rounded'; font-weight:400; font-style:normal; line-height:1; letter-spacing:normal; text-transform:none; display:inline-block; white-space:nowrap; direction:ltr; font-feature-settings:'liga'; -webkit-font-smoothing:antialiased; font-variation-settings:'FILL' 0,'wght' 500,'GRAD' 0,'opsz' 20; }
+  .ms.f { font-variation-settings:'FILL' 1,'wght' 500,'GRAD' 0,'opsz' 20; }
+  @keyframes wBreathe { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.72); } }
+  @keyframes wIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+  <sc-if value="{{ noModel }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1; display:flex; align-items:center; justify-content:center; text-align:center; font:500 11px/1.4 -apple-system,sans-serif; color:var(--faint);">Preview inside “Openlist - Widgets”</div>
+  </sc-if>
+
+  <sc-if value="{{ todaySide }}" hint-placeholder-val="{{ false }}">
+    <div style="width:98px; flex:none; display:flex; flex-direction:column; padding-right:14px; margin-right:14px; border-right:0.5px solid var(--line);">
+      <span style="font:700 10px/1 -apple-system,sans-serif; letter-spacing:0.08em; text-transform:uppercase; color:var(--orange);">{{ dow }}</span>
+      <span style="font:400 50px/0.9 'Instrument Serif',Georgia,serif; color:var(--ink); padding-top:8px;">{{ dayNum }}</span>
+      <span style="flex:1;"></span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" style="flex:none;"><circle cx="12" cy="12" r="10" fill="none" stroke-width="3" style="stroke:var(--track);"></circle><circle cx="12" cy="12" r="10" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="62.83" stroke-dashoffset="{{ ringOff }}" transform="rotate(-90 12 12)" style="stroke:var(--green); transition:stroke-dashoffset 600ms cubic-bezier(0.2,0.8,0.2,1);"></circle></svg>
+        <div style="display:flex; flex-direction:column; gap:4px; min-width:0;">
+          <span style="font:600 11px/1 -apple-system,sans-serif; color:var(--ink); white-space:nowrap;">{{ doneText }}</span>
+          <span style="{{ lateStyle }}">{{ lateText }}</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <div style="flex:1; min-width:0; display:flex; flex-direction:column; position:relative;">
+
+    <sc-if value="{{ todayHead }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; align-items:center; gap:6px; flex:none;">
+        <span class="ms f" style="font-size:14px; color:var(--orange);">wb_sunny</span>
+        <span style="{{ todayTitleStyle }}">{{ todayTitle }}</span>
+        <span style="flex:1;"></span>
+        <span style="{{ lateStyle }}">{{ lateText }}</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" style="flex:none;"><circle cx="12" cy="12" r="10" fill="none" stroke-width="3.2" style="stroke:var(--track);"></circle><circle cx="12" cy="12" r="10" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="62.83" stroke-dashoffset="{{ ringOff }}" transform="rotate(-90 12 12)" style="stroke:var(--green); transition:stroke-dashoffset 600ms cubic-bezier(0.2,0.8,0.2,1);"></circle></svg>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; align-items:center; gap:10px; flex:none;">
+        <span style="{{ listTileStyle }}">{{ listEmoji }}</span>
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; align-items:baseline; gap:6px;">
+            <span style="font:700 13px/1.1 -apple-system,sans-serif; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ listName }}</span>
+            <span style="flex:1;"></span>
+            <span style="font:500 10.5px/1 -apple-system,sans-serif; color:var(--sub); white-space:nowrap; font-variant-numeric:tabular-nums;">{{ listMeta }}</span>
+          </div>
+          <div style="height:3px; border-radius:2px; background:var(--track); overflow:hidden;"><div style="{{ listBarStyle }}"></div></div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ false }}">
+      <div style="{{ rowsWrapStyle }}">
+        <sc-for list="{{ rows }}" as="r" hint-placeholder-count="3">
+          <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ r.headStyle }}">{{ r.title }}</div>
+          </sc-if>
+          <sc-if value="{{ r.isRow }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ r.wrapStyle }}">
+              <div onClick="{{ r.onToggle }}" style="{{ r.boxStyle }}"><span class="ms" style="{{ r.checkStyle }}">check</span></div>
+              <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+                <span style="{{ r.titleStyle }}">{{ r.title }}</span>
+                <sc-if value="{{ r.hasMeta }}" hint-placeholder-val="{{ false }}"><span style="{{ r.metaStyle }}">{{ r.meta }}</span></sc-if>
+              </div>
+              <sc-if value="{{ r.star }}" hint-placeholder-val="{{ false }}"><span class="ms f" style="font-size:11px; color:var(--amber); padding-top:2px;">star</span></sc-if>
+              <sc-if value="{{ r.hasSide }}" hint-placeholder-val="{{ false }}"><span style="{{ r.sideStyle }}">{{ r.side }}</span></sc-if>
+            </div>
+          </sc-if>
+        </sc-for>
+        <sc-if value="{{ hasMore }}" hint-placeholder-val="{{ false }}"><span style="font:500 10.5px/1 -apple-system,sans-serif; color:var(--faint); padding-left:23px;">{{ moreText }}</span></sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ rowsEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; animation:wIn 320ms ease;">
+        <div style="width:30px; height:30px; border-radius:50%; background:var(--green); display:flex; align-items:center; justify-content:center;"><span class="ms" style="font-size:18px; color:var(--onacc); font-variation-settings:'wght' 700;">check</span></div>
+        <span style="font:400 21px/1 'Instrument Serif',Georgia,serif; color:var(--ink);">{{ emptyTitle }}</span>
+        <span style="font:500 10.5px/1.3 -apple-system,sans-serif; color:var(--sub); text-align:center;">{{ emptySub }}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasFooter }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; align-items:center; gap:8px; padding-top:9px; margin-top:auto; border-top:0.5px solid var(--line); flex:none;">
+        <div onClick="{{ onCapture }}" style="display:flex; align-items:center; gap:5px; padding:5px 9px 5px 6px; border-radius:8px; background:var(--chip); cursor:pointer; font:600 11px/1 -apple-system,sans-serif; color:var(--ink); white-space:nowrap;"><span class="ms" style="font-size:14px; color:var(--acc);">add</span>{{ footerAdd }}</div>
+        <span style="flex:1;"></span>
+        <span style="font:500 10.5px/1 -apple-system,sans-serif; color:var(--sub); white-space:nowrap;">{{ footerNote }}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isUpnext }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; height:100%; gap:14px;">
+        <div style="{{ unMainStyle }}">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="{{ unDotStyle }}"></span>
+            <span style="font:700 10px/1 -apple-system,sans-serif; letter-spacing:0.08em; text-transform:uppercase; color:var(--acc);">{{ unLabel }}</span>
+            <span style="flex:1;"></span>
+            <span style="font:500 10px/1 ui-monospace,Menlo,monospace; color:var(--sub); white-space:nowrap;">{{ unTime }}</span>
+          </div>
+          <span style="font:600 15px/1.25 -apple-system,sans-serif; color:var(--ink); padding-top:10px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; text-wrap:pretty;">{{ unTitle }}</span>
+          <span style="font:500 10.5px/1.2 -apple-system,sans-serif; color:var(--sub); padding-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ unList }}</span>
+          <span style="flex:1;"></span>
+          <div style="display:flex; align-items:flex-end; gap:8px;">
+            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:6px;">
+              <span style="{{ unElapsedStyle }}">{{ unElapsed }}</span>
+              <div style="height:3px; border-radius:2px; background:var(--track); overflow:hidden;"><div style="{{ unBarStyle }}"></div></div>
+            </div>
+            <sc-if value="{{ unIdle }}" hint-placeholder-val="{{ false }}">
+              <div onClick="{{ onStart }}" style="width:32px; height:32px; flex:none; border-radius:50%; background:var(--acc); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 5px 12px var(--accshadow);"><span class="ms f" style="font-size:19px; color:var(--onacc);">play_arrow</span></div>
+            </sc-if>
+            <sc-if value="{{ unWorking }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; gap:5px; flex:none;">
+                <div onClick="{{ onPause }}" style="width:32px; height:32px; border-radius:50%; background:var(--chip); display:flex; align-items:center; justify-content:center; cursor:pointer;"><span class="ms f" style="font-size:17px; color:var(--ink);">{{ unPauseIcon }}</span></div>
+                <div onClick="{{ onDone }}" style="width:32px; height:32px; border-radius:50%; background:var(--green); display:flex; align-items:center; justify-content:center; cursor:pointer;"><span class="ms" style="font-size:18px; color:var(--onacc); font-variation-settings:'wght' 700;">check</span></div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+        <sc-if value="{{ unHasLater }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:9px; padding-left:14px; border-left:0.5px solid var(--line);">
+            <span style="font:700 10px/1 -apple-system,sans-serif; letter-spacing:0.08em; text-transform:uppercase; color:var(--faint);">Later today</span>
+            <sc-for list="{{ unLater }}" as="l" hint-placeholder-count="4">
+              <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                <span style="font:500 10px/1 ui-monospace,Menlo,monospace; color:var(--sub); width:32px; flex:none;">{{ l.time }}</span>
+                <span style="{{ l.barStyle }}"></span>
+                <span style="{{ l.titleStyle }}">{{ l.title }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCapture }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; height:100%; gap:14px;">
+        <div onClick="{{ onCapture }}" style="{{ capMainStyle }}">
+          <div style="width:46px; height:46px; border-radius:15px; background:var(--acc); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 18px var(--accshadow);"><span class="ms" style="font-size:28px; color:var(--onacc);">add</span></div>
+          <span style="flex:1;"></span>
+          <span style="font:600 14px/1.2 -apple-system,sans-serif; color:var(--ink);">New task</span>
+          <span style="font:500 11px/1.35 -apple-system,sans-serif; color:var(--sub); padding-top:3px;">{{ capSub }}</span>
+        </div>
+        <sc-if value="{{ capHasInbox }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:9px; padding-left:14px; border-left:0.5px solid var(--line);">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="ms f" style="font-size:13px; color:var(--blue);">inbox</span>
+              <span style="font:700 12px/1 -apple-system,sans-serif; color:var(--ink);">Inbox</span>
+              <span style="font:500 11px/1 -apple-system,sans-serif; color:var(--sub);">{{ capCount }}</span>
+              <span style="flex:1;"></span>
+              <span onClick="{{ onTriage }}" style="font:600 10.5px/1 -apple-system,sans-serif; color:var(--blue); background:var(--bluechip); padding:5px 8px; border-radius:6px; cursor:pointer;">Triage</span>
+            </div>
+            <sc-for list="{{ capItems }}" as="c" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                <span style="width:5px; height:5px; border-radius:50%; background:var(--faint); flex:none;"></span>
+                <span style="font:500 11.5px/1.3 -apple-system,sans-serif; color:var(--ink); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.title }}</span>
+                <span style="font:500 10px/1 -apple-system,sans-serif; color:var(--faint); white-space:nowrap;">{{ c.age }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSummary }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; height:100%; gap:16px;">
+        <div style="{{ sumMainStyle }}">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="ms f" style="font-size:13px; color:var(--acc);">check_circle</span>
+            <span style="font:700 12px/1 -apple-system,sans-serif; color:var(--ink);">Openlist</span>
+          </div>
+          <div style="flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px 10px; align-content:end;">
+            <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+              <div style="display:flex; flex-direction:column; gap:3px; min-width:0;">
+                <span style="{{ s.numStyle }}">{{ s.value }}</span>
+                <span style="font:500 10px/1.1 -apple-system,sans-serif; color:var(--sub); white-space:nowrap;">{{ s.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <sc-if value="{{ sumHasWeek }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; padding-left:16px; border-left:0.5px solid var(--line);">
+            <div style="display:flex; align-items:baseline; gap:6px;">
+              <span style="font:700 10px/1 -apple-system,sans-serif; letter-spacing:0.08em; text-transform:uppercase; color:var(--faint);">This week</span>
+              <span style="flex:1;"></span>
+              <span style="font:600 11px/1 -apple-system,sans-serif; color:var(--ink);">{{ weekTotal }}</span>
+            </div>
+            <div style="flex:1; display:flex; align-items:flex-end; gap:6px; padding-top:8px;">
+              <sc-for list="{{ weekBars }}" as="b" hint-placeholder-count="7">
+                <div style="flex:1; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:5px;">
+                  <span style="{{ b.numStyle }}">{{ b.num }}</span>
+                  <div style="{{ b.barStyle }}"></div>
+                  <span style="{{ b.dayStyle }}">{{ b.day }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isActivity }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; height:100%;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="ms f" style="font-size:13px; color:var(--acc);">grid_view</span>
+          <span style="font:700 12px/1 -apple-system,sans-serif; color:var(--ink);">Activity</span>
+          <span style="flex:1;"></span>
+          <span style="font:600 11px/1 -apple-system,sans-serif; color:var(--ink); white-space:nowrap;">{{ streakText }}</span>
+        </div>
+        <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+          <div style="display:flex; gap:3px;">
+            <sc-for list="{{ heat }}" as="w" hint-placeholder-count="10">
+              <div style="display:flex; flex-direction:column; gap:3px;">
+                <sc-for list="{{ w.cells }}" as="c" hint-placeholder-count="7"><span style="{{ c.style }}"></span></sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; font:500 10.5px/1 -apple-system,sans-serif; color:var(--sub); white-space:nowrap;">
+          <sc-for list="{{ actStats }}" as="a" hint-placeholder-count="2">
+            <span style="display:flex; gap:4px; align-items:baseline;"><span style="font:700 11px/1 -apple-system,sans-serif; color:var(--ink);">{{ a.value }}</span>{{ a.label }}</span>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAgenda }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; height:100%;">
+        <div style="display:flex; align-items:baseline; gap:8px; padding-bottom:10px; flex:none;">
+          <span style="font:400 23px/1 'Instrument Serif',Georgia,serif; color:var(--ink);">{{ agTitle }}</span>
+          <span style="font:500 10.5px/1 -apple-system,sans-serif; color:var(--sub); white-space:nowrap;">{{ agSub }}</span>
+        </div>
+        <sc-if value="{{ agWeek }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid; grid-template-columns:30px repeat(7, minmax(0,1fr)); padding-bottom:6px; flex:none;">
+            <span></span>
+            <sc-for list="{{ agDays }}" as="d" hint-placeholder-count="7"><span style="{{ d.headStyle }}">{{ d.label }}</span></sc-for>
+          </div>
+        </sc-if>
+        <div style="{{ agGridStyle }}">
+          <div style="position:relative;">
+            <sc-for list="{{ agHours }}" as="h" hint-placeholder-count="5"><span style="{{ h.style }}">{{ h.label }}</span></sc-for>
+          </div>
+          <sc-for list="{{ agCols }}" as="col" hint-placeholder-count="1">
+            <div style="{{ col.style }}">
+              <sc-for list="{{ col.items }}" as="it" hint-placeholder-count="3">
+                <div style="{{ it.style }}"><span style="{{ it.titleStyle }}">{{ it.title }}</span><span style="{{ it.timeStyle }}">{{ it.time }}</span></div>
+              </sc-for>
+              <sc-if value="{{ col.isToday }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ agNowStyle }}"><div style="position:absolute; left:-3px; top:-2.25px; width:6px; height:6px; border-radius:50%; background:var(--red);"></div></div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</div>
