@@ -383,9 +383,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   since still shows there with its list, as the design's does, and one erased since with
   the list it was done in; only one still in the library opens. Its counts are of what is
   still done, as the design's: a completion taken back by Undo or Reopen leaves the day,
-  total and streak, and one done again counts on that day. Deviation: a repeat's subtask
-  reopened keeps its cycle's count, since the repeat rolling on reopens it too. A Changes
-  row whose list is gone since shows it with the icon it had, as the day panel does.
+  total and streak, and one done again counts on that day. A Changes row whose list is
+  gone since shows it with the icon it had, as the day panel does.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the

@@ -241,6 +241,11 @@ check(try FragmentClipboard.read(from: clipboard) == fragment, "Failed copy keep
 attachment.filename = missingFilename
 attachment.contentData = blob
 try store.persistChanges()
+let knownLabels = root.labelIDs
+root.labelIDs = [UUID()]
+do { _ = try FragmentContent.capture([root.id], store: store); preconditionFailure("A missing label must stop the copy") }
+catch { check(error.localizedDescription.hasPrefix("Content was not copied. A label on it"), "A copy that fails says it wasn't copied, not pasted") }
+root.labelIDs = knownLabels
 
 let mediaFolder = media.url(for: "drain").deletingLastPathComponent()
 let attributes = try FileManager.default.attributesOfItem(atPath: mediaFolder.path)

@@ -14,8 +14,8 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
     var recordedAt: Date
     var title: String
     var listTitle: String
-    /// The list it was done in, and that list's icon then (empty in older
-    /// history), which still show once the task is trashed or erased.
+    /// The list it was done in, and that list's icon then (empty for one
+    /// with none), which still show once the task is trashed or erased.
     var listID: UUID?
     var listIcon = ""
     var hasConflictingDetails = false
@@ -95,9 +95,14 @@ nonisolated struct ActivityReversal: Equatable, Sendable {
     var taskID: UUID?
     /// The completion record an Undo removed.
     var completionID: UUID?
-    /// The unadvanced cycle a reopened task with a rule of its own takes
-    /// back. Other tasks have none: their reopen takes back their one count.
+    /// The cycle a reopened task takes back: its own rule's unadvanced one,
+    /// or the repeat's above it. An ordinary task has none, its reopen taking
+    /// back its one count, and neither has a subtask a repeat resets as it
+    /// rolls on, which keeps its cycle's count.
     var cycleID: UUID?
+    /// The occurrence a reopen took back, which finds its completion when
+    /// that counted otherwise, like a task done before it had a rule.
+    var occurrenceID: UUID?
     var date: Date
 
     @MainActor init?(event: ActivityEvent) {
@@ -107,6 +112,7 @@ nonisolated struct ActivityReversal: Equatable, Sendable {
             completionID = record
         case .reopened:
             cycleID = event.change?.completionCycleID
+            occurrenceID = event.change?.before?.occurrenceID
         default:
             return nil
         }
@@ -114,10 +120,11 @@ nonisolated struct ActivityReversal: Equatable, Sendable {
         date = event.timestamp
     }
 
-    init(taskID: UUID?, completionID: UUID? = nil, cycleID: UUID? = nil, date: Date) {
+    init(taskID: UUID?, completionID: UUID? = nil, cycleID: UUID? = nil, occurrenceID: UUID? = nil, date: Date) {
         self.taskID = taskID
         self.completionID = completionID
         self.cycleID = cycleID
+        self.occurrenceID = occurrenceID
         self.date = date
     }
 }

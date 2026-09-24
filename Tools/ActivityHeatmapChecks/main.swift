@@ -123,7 +123,15 @@ let takenChild = ActivityCompletion(taskID: takenChildID, occurrenceID: UUID(), 
 check(ActivityHeatmap(completions: [takenChild], reversals: [ActivityReversal(taskID: takenChildID, date: second)],
                       now: now, calendar: calendar).total == 1, "a repeat's subtask reset as the repeat rolls on keeps its cycle's count")
 check(ActivityHeatmap(completions: [takenChild], reversals: [ActivityReversal(taskID: takenChildID, cycleID: takenCycle, date: second)],
-                      now: now, calendar: calendar).total == 0, "a task reopened in its own rule's unadvanced cycle leaves the count")
+                      now: now, calendar: calendar).total == 0, "a task reopened in the cycle it counted in, its own rule's or a repeat's, leaves the count")
+let takenLaterID = UUID()
+let takenLaterOccurrence = UUID()
+let takenLater = ActivityCompletion(taskID: takenLaterID, occurrenceID: takenLaterOccurrence, wasRecurring: false, date: first)
+check(ActivityHeatmap(completions: [takenLater], reversals: [ActivityReversal(taskID: takenLaterID, cycleID: takenLaterOccurrence,
+                                                                              occurrenceID: takenLaterOccurrence, date: second)],
+                      now: now, calendar: calendar).total == 0, "a reopen whose cycle counted nothing takes back the occurrence it reopened")
+check(ActivityHeatmap(completions: [takenLater], reversals: [ActivityReversal(taskID: takenLaterID, cycleID: UUID(), occurrenceID: UUID(), date: second)],
+                      now: now, calendar: calendar).total == 1, "a reopen of another cycle and occurrence takes nothing back")
 let duplicateID = UUID()
 let incompleteDuplicate = ActivityCompletion(id: duplicateID, taskID: repeatID, completionID: recordID, wasRecurring: nil, date: first)
 let completeDuplicate = ActivityCompletion(id: duplicateID, taskID: repeatID, completionID: recordID, occurrenceID: occurrence, wasRecurring: true, date: first)
@@ -378,6 +386,34 @@ check(try takenBackCount() == beforeTakenBack, "the reopen's Redo takes it back 
 batchStore.toggleCompletion(takenBack, now: third)
 check(try takenBackCount() == beforeTakenBack + 1 && takenBackDay() == calendar.startOfDay(for: third),
       "a reopened task done again counts once, on the day it was done again")
+// A repeat's subtask reopened leaves its cycle's count, as any reopened task
+// does; the repeat rolling on with it ticked resets it and keeps the count.
+let takenRepeat = batchStore.appendBlock(kind: .task, text: "Water the planters", to: .init(listID: batchList.id))
+batchStore.setDueDate(first, for: takenRepeat)
+batchStore.setRecurrence(.daily, for: takenRepeat)
+let takenSubtask = batchStore.insertChild(text: "Fill the can", of: takenRepeat)
+try batchStore.persistChanges()
+let beforeSubtask = try takenBackCount()
+batchStore.toggleCompletion(takenSubtask, now: first)
+check(try takenBackCount() == beforeSubtask + 1, "a repeat's ticked subtask counts")
+batchStore.toggleCompletion(takenSubtask, now: first)
+check(try takenBackCount() == beforeSubtask && batchStore.taskActivity(for: takenSubtask.id).first { $0.kind == .reopened }?.change?.completionCycleID != nil,
+      "a repeat's subtask reopened names its cycle and leaves the count")
+batchStore.toggleCompletion(takenSubtask, now: second)
+batchStore.toggleCompletion(takenRepeat, now: second)
+check(try takenBackCount() == beforeSubtask + 2 && !takenSubtask.isCompleted
+        && batchStore.taskActivity(for: takenSubtask.id).first { $0.kind == .reopened }?.change?.completionCycleID == nil,
+      "the repeat rolling on resets its ticked subtask naming no cycle, and both keep their counts")
+// A task done before it had a rule counted as an ordinary task; its reopen,
+// which names the rule's cycle, takes back the occurrence it reopened.
+let takenRuleLater = batchStore.appendBlock(kind: .task, text: "Renew the pass", to: .init(listID: batchList.id))
+try batchStore.persistChanges()
+let beforeRuleLater = try takenBackCount()
+batchStore.toggleCompletion(takenRuleLater, now: first)
+batchStore.setRecurrence(.daily, for: takenRuleLater)
+check(try takenBackCount() == beforeRuleLater + 1 && takenRuleLater.isCompleted, "a task done and then given a rule still counts")
+batchStore.toggleCompletion(takenRuleLater, now: second)
+check(try takenBackCount() == beforeRuleLater && !takenRuleLater.isCompleted, "reopening a task done before it had a rule leaves the count")
 batchStore.onCompletionUndoAvailable = nil
 
 // Failed writes stay retryable, but a fresh history reader sees committed facts.

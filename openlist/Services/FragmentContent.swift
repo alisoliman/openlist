@@ -19,7 +19,7 @@ enum FragmentContent {
             var parent = byID[id]?.parentID
             while let ancestor = parent {
                 guard visited.insert(ancestor).inserted, let block = byID[ancestor] else {
-                    throw FragmentError.invalid("The source has an incomplete or cyclic outline.")
+                    throw FragmentError.uncopied("Its outline is incomplete. Let the library finish syncing and try again.")
                 }
                 if selected.contains(ancestor) { roots.remove(id) }
                 parent = block.parentID
@@ -50,7 +50,7 @@ enum FragmentContent {
         var seen = Set<UUID>()
         while let block = stack.popLast() {
             guard seen.insert(block.id).inserted, seen.count <= 10_000 else {
-                throw FragmentError.invalid("The source is cyclic or contains more than 10,000 lines.")
+                throw FragmentError.uncopied("It holds more than 10,000 lines.")
             }
             originals.append(block)
             stack += (children[block.id] ?? []).reversed()
@@ -59,7 +59,7 @@ enum FragmentContent {
         let wantedLabels = Set(originals.flatMap(\.labelIDs))
         let availableLabels = labels.filter { wantedLabels.contains($0.id) }
         guard Set(availableLabels.map(\.id)) == wantedLabels else {
-            throw FragmentError.invalid("A source label is unavailable. Let the library finish syncing and try again.")
+            throw FragmentError.uncopied("A label on it is unavailable. Let the library finish syncing and try again.")
         }
         var totalMediaBytes = 0
         func readMedia(filename: String, data: Data?) throws -> FragmentMedia {
@@ -88,7 +88,7 @@ enum FragmentContent {
             record.reminderAt = block.reminderAt
             record.recurrence = block.recurrence
             if block.recurrenceData != nil, record.recurrence == nil {
-                throw FragmentError.invalid("A source repeat rule cannot be read.")
+                throw FragmentError.uncopied("A repeat rule on it cannot be read.")
             }
             record.recurrence?.completedOccurrences = 0
             record.selectedForDay = block.selectedForDay
@@ -103,7 +103,7 @@ enum FragmentContent {
             if let filename = block.mediaFilename {
                 record.image = try readMedia(filename: filename, data: block.mediaData)
             } else if block.mediaData != nil {
-                throw FragmentError.invalid("A source image has no filename.")
+                throw FragmentError.uncopied("An image in it has no file name.")
             }
             record.mediaWidth = block.mediaWidth
             record.mediaHeight = block.mediaHeight
@@ -120,19 +120,24 @@ enum FragmentContent {
         }
         let value = DocumentFragment(roots: orderedRoots, blocks: records,
             labels: availableLabels.map { FragmentLabel(id: $0.id, name: $0.name, accent: $0.accentRaw) })
-        try value.validate()
+        try copying(value.validate)
         return value
+    }
+
+    /// What the paste side checks, worded for the copy that failed it.
+    private static func copying(_ validate: () throws -> Void) throws {
+        do { try validate() } catch FragmentError.invalid(let reason) { throw FragmentError.uncopied(reason) }
     }
 
     private static func media(filename: String, data: Data?) throws -> FragmentMedia {
         guard !filename.isEmpty, filename != ".", filename != "..", (filename as NSString).lastPathComponent == filename else {
-            throw FragmentError.invalid("A source file has an invalid path.")
+            throw FragmentError.uncopied("A file in it has an invalid path.")
         }
         let size = try data?.count ?? (FileManager.default.attributesOfItem(atPath: MediaStore.shared.url(for: filename).path)[.size] as? NSNumber)?.intValue ?? 0
         guard size <= DocumentFragment.maximumAssetBytes else { throw FragmentError.tooLarge }
         let value = FragmentMedia(fileExtension: (filename as NSString).pathExtension,
             data: try data ?? MediaStore.shared.readFile(filename: filename))
-        try value.validate()
+        try copying(value.validate)
         return value
     }
 

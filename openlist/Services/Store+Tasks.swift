@@ -90,7 +90,10 @@ extension Store {
     }
 
     func reopen(_ block: Block) {
-        let unadvancedCycle = block.recurrence == nil ? nil : recurringCompletionCycle(for: block)
+        // The cycle its completion counted in, its own rule's or the repeat's
+        // above it, which Activity takes back. A repeat rolling on resets its
+        // subtasks with none, so they keep their cycle's count.
+        let unadvancedCycle = recurringCompletionCycle(for: block)
         discardTaskSchedule(for: block, reason: "Reopened")
         block.occurrenceID = UUID()
         pendingReopenedCycleIDs[block.occurrenceID] = unadvancedCycle

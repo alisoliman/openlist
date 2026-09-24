@@ -45,6 +45,7 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
         // merged entry, so its Redo stands for it again.
         var actions: [String: [ActivityHeatmapAction]] = [:]
         var keyByRecord: [UUID: String] = [:]
+        var keyByOccurrence: [String: String] = [:]
         for copies in byRecord.values {
             let entry = ActivityCompletion.mergingDuplicates(copies)
             guard !entry.hasConflictingDetails, let taskID = entry.taskID, let recurring = entry.wasRecurring,
@@ -55,17 +56,23 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
             }
             let key = recurring ? "\(taskID):\(entry.cycleID ?? entry.occurrenceID!)" : "\(taskID):task"
             if let record = entry.completionID { keyByRecord[record] = key }
+            if let occurrence = entry.occurrenceID { keyByOccurrence["\(taskID):\(occurrence)"] = key }
             for copy in copies { actions[key, default: []].append(ActivityHeatmapAction(at: copy.recordedAt, id: copy.id, entry: entry)) }
         }
         // An Undo takes back the record it removed. A reopen takes back an
-        // ordinary task's count, or its own rule's unadvanced cycle; a subtask
-        // of a repeat keeps its cycle's, since the repeat rolling on reopens it too.
+        // ordinary task's count, or the cycle it counted in, its own rule's or
+        // a repeat's above it, else the count of the occurrence it reopened;
+        // a subtask the repeat resets as it rolls on names no cycle, so keeps
+        // its cycle's count.
         for reversal in reversals where reversal.date.timeIntervalSinceReferenceDate.isFinite {
             let key: String?
             if let record = reversal.completionID {
                 key = keyByRecord[record]
+            } else if let task = reversal.taskID, let cycle = reversal.cycleID {
+                let own = "\(task):\(cycle)"
+                key = actions[own] != nil ? own : reversal.occurrenceID.flatMap { keyByOccurrence["\(task):\($0)"] }
             } else {
-                key = reversal.taskID.map { task in reversal.cycleID.map { "\(task):\($0)" } ?? "\(task):task" }
+                key = reversal.taskID.map { "\($0):task" }
             }
             guard let key, actions[key] != nil else { continue }
             actions[key]?.append(ActivityHeatmapAction(at: reversal.date, id: nil, entry: nil))

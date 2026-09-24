@@ -66,11 +66,13 @@ nonisolated struct DocumentFragment: Codable, Equatable, Sendable {
 }
 
 nonisolated enum FragmentError: LocalizedError {
-    case version(Int), invalid(String), tooLarge, destination, clipboard
+    /// `invalid` is a paste's, `uncopied` a copy's.
+    case version(Int), invalid(String), uncopied(String), tooLarge, destination, clipboard
     var errorDescription: String? {
         switch self {
         case .version(let version): "This content was copied in a format this Openlist cannot paste (version \(version)). Update Openlist or paste its text instead."
         case .invalid(let reason): "Content was not pasted. \(reason)"
+        case .uncopied(let reason): "Content was not copied. \(reason)"
         case .tooLarge: "This content is too large. Copy fewer lines (64 MB clipboard data, 40 MB total media, and 32 MB per file)."
         case .destination: "The list or line it was pasted into is no longer available. Try again in a list that’s still there."
         case .clipboard: "Openlist could not write the content to the clipboard."

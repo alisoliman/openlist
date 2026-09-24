@@ -21,15 +21,20 @@ counts once by task UUID across all retained history. A recurring task or a
 subtask in a recurring cycle counts once per task UUID and completed occurrence
 cycle UUID. As in the design, only a completion that still stands counts: its
 Undo (the `completionUndone` event names the record it removed) or reopening
-the task (an ordinary task's count, or the unadvanced cycle of a task with its
-own rule) takes it back, and with no completion saved after that it leaves the
-day, the total and the streak. The first countable completion since the last one
-taken back supplies the day and saved title, so a task reopened and done again
-counts once, on the later day; Redo, or a reopen's Undo, puts the same completion
-back on its own day. A subtask of a repeat keeps its cycle's count when reopened,
-since the repeat rolling on to its next date reopens it too. The task Activity
-timeline still lists every performed action. Deduplication happens before
-restricting the visible date range.
+the task takes it back, and with no completion saved after that it leaves the
+day, the total and the streak. A reopen takes back an ordinary task's count, or
+the cycle the task counted in, which its `reopened` event names: its own rule's
+unadvanced cycle, or the cycle of the repeat above it for a subtask. When nothing
+counted in that cycle, as for a task done before it was given a rule, it takes
+back the completion of the occurrence it reopened. A repeat rolling on to its
+next date resets its ticked subtasks with `reopened` events that name no cycle,
+so they keep their cycle's count. The first countable completion since the last
+one taken back supplies the day and saved title, so a task reopened and done
+again counts once, on the later day; Redo, or a reopen's Undo, puts the same
+completion back on its own day. Reopen history saved before subtask reopens named
+their cycle leaves those subtasks counted. The task Activity timeline still lists
+every performed action. Deduplication happens before restricting the visible date
+range.
 
 New completion events capture the exact completed occurrence UUID, counting
 cycle UUID, and recurrence status inside the existing optional Codable `changeData` payload.

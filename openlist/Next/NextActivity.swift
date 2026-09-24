@@ -294,10 +294,10 @@ private struct NXActivityDayPanel: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if let list {
                             NXListGlyph(list: list, size: 10.5).help(list.displayTitle)
-                        } else if !item.listIcon.isEmpty {
-                            NXListGlyph.text(item.listIcon, size: 10.5).foregroundStyle(NX.ink(0.42)).help(item.listTitle)
-                        } else if !item.listTitle.isEmpty {
-                            Text(item.listTitle).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.42)).lineLimit(1)
+                        } else if !item.listIcon.isEmpty || !item.listTitle.isEmpty {
+                            // 📋 for one that had no icon, as its glyph.
+                            NXListGlyph.text(item.listIcon.isEmpty ? "📋" : item.listIcon, size: 10.5)
+                                .foregroundStyle(NX.ink(0.42)).help(item.listTitle)
                         }
                         Text(NXFormat.clock(item.date)).font(NX.mono(10.5)).foregroundStyle(NX.ink(0.4))
                     }
@@ -611,9 +611,11 @@ private struct NXChangeItem: Identifiable {
     var label: String
     var detail: String?
     var list: TaskList?
-    /// A list since gone, as the row last knew it: its title and icon.
+    /// A list since gone, as the row last knew it: its title and icon, or
+    /// the list itself while the session still holds it, in Trash.
     var listTitle: String
     var listIcon = ""
+    var goneList: TaskList?
     var at: Date
     var canUndo = false
 }
@@ -681,7 +683,7 @@ private struct NXChangesSection: View {
             // A list since gone draws by its title and icon, as Earlier's do.
             let live = list.flatMap { library.list($0.id) }
             items.append(NXChangeItem(id: "s\(entry.id)", icon: Self.outline(entry.icon), tone: entry.tone, label: entry.label,
-                                      list: live, listTitle: list?.displayTitle ?? "", listIcon: list?.glyph ?? "", at: entry.at,
+                                      list: live, listTitle: list?.displayTitle ?? "", goneList: live == nil ? list : nil, at: entry.at,
                                       canUndo: items.isEmpty && entry.batch == workbench.latestBatch && workbench.canUndo))
         }
         var rest = sessionSaved().map(item)[...]
@@ -780,9 +782,14 @@ private struct NXChangeRow: View {
                     .foregroundStyle(NX.ink(0.4))
                     .lineLimit(1)
                 } else if !item.listTitle.isEmpty {
-                    // A list since gone, with the icon it had, as the day panel draws it.
+                    // A list since gone, with the icon it had, as the day panel
+                    // draws it: the session's own as the live row draws it, a
+                    // saved one's symbol in the row's ink, since the log keeps
+                    // no colour, and 📋 for one that had no icon, as its glyph.
                     HStack(spacing: 4) {
-                        if !item.listIcon.isEmpty { NXListGlyph.text(item.listIcon, size: 11).accessibilityHidden(true) }
+                        (item.goneList.map { NXListGlyph.text($0, size: 11) }
+                            ?? NXListGlyph.text(item.listIcon.isEmpty ? "📋" : item.listIcon, size: 11))
+                            .accessibilityHidden(true)
                         Text(item.listTitle)
                     }
                     .font(.system(size: 11, weight: .medium))

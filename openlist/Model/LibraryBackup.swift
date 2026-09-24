@@ -112,7 +112,7 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
             return result
         }
         let listIDs = try unique(lists.map(\.id), "list")
-        let blockIDs = try unique(blocks.map(\.id), "block")
+        let blockIDs = try unique(blocks.map(\.id), "line")
         let sectionIDs = try unique(sections.map(\.id), "section")
         let labelIDs = try unique(labels.map(\.id), "label")
         _ = try unique(attachments.map(\.id), "attachment")
