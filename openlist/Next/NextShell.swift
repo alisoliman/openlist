@@ -397,11 +397,12 @@ private struct NXScrollRestoration: ViewModifier {
 }
 
 /// Section title used on Lists, Activity, Settings, the inspector and the
-/// Inbox's triage card: the design's 600 10.5/1.
+/// Inbox's triage card: the design's 600 10.5/1. VoiceOver reads it as a heading.
 struct NXCapsTitle: View {
     let text: String
     var body: some View {
         Text(text)
+            .accessibilityAddTraits(.isHeader)
             .font(.system(size: 10.5, weight: .semibold))
             .kerning(0.735)
             .textCase(.uppercase)

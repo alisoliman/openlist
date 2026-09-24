@@ -155,10 +155,12 @@ struct NXPanelRowStyle: ButtonStyle {
             HStack(spacing: 9) {
                 configuration.label
                     .frame(maxWidth: .infinity, alignment: .leading)
+                // Only the check fades, the design's `opacity 120ms ease`; the
+                // row's fill changes at once.
                 Image(systemName: "checkmark")
                     .font(.system(size: 11.5, weight: .bold))
                     .foregroundStyle(style.accent)
-                    .opacity(isOn ? 1 : 0)
+                    .animation(NX.cssEase(120)) { $0.opacity(isOn ? 1 : 0) }
                     .accessibilityHidden(true)
             }
             .foregroundStyle(NX.ink)
@@ -169,7 +171,6 @@ struct NXPanelRowStyle: ButtonStyle {
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: isOn)
         }
     }
 }

@@ -22,7 +22,6 @@ struct ListAppearancePicker: View {
         let style = env.workbench.style
         VStack(alignment: .leading, spacing: 10) {
             NXCapsTitle(text: "Icon")
-                .accessibilityAddTraits(.isHeader)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 4), count: 10), spacing: 4) {
                 ForEach(Self.emoji, id: \.self) { symbol in
                     let isOn = list.icon == symbol
@@ -41,7 +40,6 @@ struct ListAppearancePicker: View {
             Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
                 .padding(.vertical, 2)
             NXCapsTitle(text: "Colour")
-                .accessibilityAddTraits(.isHeader)
             HStack(spacing: 2) {
                 ForEach(ListAccent.allCases) { accent in
                     let isOn = list.accent == accent

@@ -248,6 +248,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the setting now says (the design keeps an opened fold open when it goes off). A list's new
   Completed Tasks shows on that list at once; Today, labels and other lists keep the fold
   until the next one.
+- Today's open groups, a label's open tasks and Tasks keep the order the lists show their
+  tasks in (lists in sidebar order, each in its document's order), the native counterpart
+  of the design's task order, and none sorts by date; a new task sits where its list put it,
+  where the design's goes after every other.
 - A repeat reads in macOS sentence case ("Every day", "Every weekday"; a day's name keeps
   its capital, "Every Wednesday"), where the design title-cases a captured one ("Every
   Day"). The same words show in the inspector, the tray, Markdown export and MCP.

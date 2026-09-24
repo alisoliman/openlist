@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -32,24 +33,26 @@ struct NXGroupsStack: View {
     }
 }
 
-enum NXSort {
-    /// Due first, then undated, then capture order.
-    static func byDue(_ a: Block, _ b: Block) -> Bool {
-        switch (a.dueDate, b.dueDate) {
-        case let (x?, y?) where x != y: return x < y
-        case (_?, nil): return true
-        case (nil, _?): return false
-        default: return a.createdAt < b.createdAt
-        }
-    }
-}
-
 // MARK: - Today
 
 struct NextTodayScreen: View {
+    @Environment(\.nextLibrary) private var library
+    /// Every document block, for the order the lists show their tasks in.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
+
+    var body: some View {
+        // Ordered here, where neither the clock nor the workbench is read, so
+        // they don't walk every outline again.
+        NXTodayPage(tasks: NextTasksScreen.outlineOrder(library: library, blocks: blocks))
+    }
+}
+
+/// Today for tasks already in outline order, which its groups keep, as the
+/// design's keep its tasks' own order.
+private struct NXTodayPage: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
-    @Environment(\.nextLibrary) private var library
+    let tasks: [Block]
 
     var body: some View {
         // The design's 20s clock: done-ago chips, the date and the buckets
@@ -57,7 +60,7 @@ struct NextTodayScreen: View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
             let now = context.date
             let workbench = env.workbench
-            let model = Self.model(library: library, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
+            let model = Self.model(tasks: tasks, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
                                    accent: style.accent, now: now) { !workbench.placedTaskIDs().contains($0) }
             NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
                 NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
@@ -78,18 +81,20 @@ struct NextTodayScreen: View {
         var clear: Bool
     }
 
+    /// Today's groups from the library's tasks in outline order. Each open
+    /// group keeps that order, as the design's are plain filters of its tasks.
     @MainActor
-    static func model(library: NextLibrary, workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
+    static func model(tasks: [Block], workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
                       isUnplaced: @escaping (UUID) -> Bool) -> Model {
-        let visible = library.tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
+        let visible = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
         func offset(_ task: Block) -> Int? { task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
         // By day, as the design: Overdue is earlier days only, so a timed
         // task whose time has passed stays in Due today.
-        let overdue = visible.filter { (offset($0) ?? 0) < 0 }.sorted(by: NXSort.byDue)
-        let due = visible.filter { offset($0) == 0 }.sorted(by: NXSort.byDue)
-        let planned = visible.filter { workbench.isPlanned($0) && (offset($0) ?? 1) > 0 }.sorted(by: NXSort.byDue)
-        let starred = visible.filter { $0.isStarred && (offset($0) ?? 1) > 0 && !workbench.isPlanned($0) }.sorted(by: NXSort.byDue)
-        let doneToday = library.tasks
+        let overdue = visible.filter { (offset($0) ?? 0) < 0 }
+        let due = visible.filter { offset($0) == 0 }
+        let planned = visible.filter { workbench.isPlanned($0) && (offset($0) ?? 1) > 0 }
+        let starred = visible.filter { $0.isStarred && (offset($0) ?? 1) > 0 && !workbench.isPlanned($0) }
+        let doneToday = tasks
             .filter { $0.isCompleted && $0.completedAt.map { NXFormat.dayOffset($0, now: now) == 0 } == true }
             .sorted(by: Block.byCompletionDate)
 
@@ -127,7 +132,7 @@ struct NextTodayScreen: View {
                 Text("Today is clear").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
                 // The design's 13/1.45: the extra leading between lines and,
                 // halved, above the first and below the last.
-                let leading = 13 * 1.45 - NXStrikeText.glyphLineHeight(13)
+                let leading = 13 * 1.45 - NX.lineHeight(13)
                 Text("\(done) finished today. Nothing is overdue, due, planned or starred.")
                     .font(.system(size: 13))
                     .lineSpacing(leading)
@@ -136,12 +141,16 @@ struct NextTodayScreen: View {
             }
             Spacer(minLength: 8)
             // In Day view, or on the week's last day, the range moves to it.
-            Button("Look at tomorrow") { env.workbench.showOnCalendar(NXFormat.day(offset: 1)) }
-                .font(.system(size: 12, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, rest: NX.card, radius: 8,
-                                                padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
-                                                foreground: NX.ink(0.7)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NX.ink(0.14), lineWidth: 0.5))
+            // The design's 600 12/1, so the button is its 28pt: 8 + 12 + 8.
+            Button { env.workbench.showOnCalendar(NXFormat.day(offset: 1)) } label: {
+                Text("Look at tomorrow")
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
+            }
+            .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, rest: NX.card, radius: 8,
+                                            padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
+                                            foreground: NX.ink(0.7)))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NX.ink(0.14), lineWidth: 0.5))
         }
         .padding(.vertical, 30)
         .padding(.horizontal, 28)
@@ -417,7 +426,7 @@ private struct NXListDescription: View {
 
     var body: some View {
         // The design's 1.45 line box, as the rows' titles have it.
-        let leading = max(0, 13.8 * 1.45 - NXStrikeText.glyphLineHeight(13.8))
+        let leading = max(0, 13.8 * 1.45 - NX.lineHeight(13.8))
         VStack(alignment: .leading, spacing: 0) {
             if editing || !list.summary.isEmpty || revealsSummary {
                 Group {
@@ -510,6 +519,9 @@ private struct NXChildLists: View {
                         .foregroundStyle(NX.ink(0.38))
                         .monospacedDigit()
                 }
+                // One heading to VoiceOver, as a group's head.
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
                 .padding(.vertical, 6)
                 .padding(.horizontal, 10)
                 VStack(alignment: .leading, spacing: 1) {
@@ -542,7 +554,7 @@ private struct NXChildListRow: View {
                 .font(.system(size: 13.8))
                 .foregroundStyle(NX.ink)
                 .lineLimit(1)
-                .padding(.vertical, max(0, 13.8 * 1.45 - NXStrikeText.glyphLineHeight(13.8)) / 2)
+                .padding(.vertical, max(0, 13.8 * 1.45 - NX.lineHeight(13.8)) / 2)
             Spacer(minLength: 8)
             if count > 0 {
                 Text("\(count)")
@@ -567,14 +579,28 @@ private struct NXChildListRow: View {
 }
 
 struct NextLabelScreen: View {
-    @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
+    /// Every document block, for the order the lists show their tasks in.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
     let label: TaskLabel
 
     var body: some View {
+        // Ordered here, where the workbench isn't read, so it doesn't walk every outline again.
+        NXLabelPage(label: label, tasks: NextTasksScreen.outlineOrder(library: library, blocks: blocks))
+    }
+}
+
+/// A label's tasks, already in outline order, which its open group keeps,
+/// as the design's keeps its tasks' own order.
+private struct NXLabelPage: View {
+    @Environment(AppEnvironment.self) private var env
+    let label: TaskLabel
+    let tasks: [Block]
+
+    var body: some View {
         let workbench = env.workbench
-        let mine = library.tasks.filter { $0.labelIDs.contains(label.id) }
-        let open = mine.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }.sorted(by: NXSort.byDue)
+        let mine = tasks.filter { $0.labelIDs.contains(label.id) }
+        let open = mine.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
         let done = mine.filter { $0.isCompleted && workbench.closing[$0.id] == nil }.sorted(by: Block.byCompletionDate)
         let groups = NextListScreen.groups(open: open, done: done, showsCompleted: env.settings.showsCompletedTasks)
         NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {

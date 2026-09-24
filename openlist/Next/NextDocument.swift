@@ -587,16 +587,20 @@ private struct NXDocumentTask: View {
                     NXDocumentEditing.end()
                     workbench.toggleNote(id)
                 } label: {
-                    Image(systemName: "text.alignleft").font(.system(size: 12.5, weight: .medium))
+                    // The design's 15 pt icon box inside its 3 pt padding, as the open icon's.
+                    Image(systemName: "text.alignleft").font(.system(size: 11, weight: .medium))
+                        .frame(width: 15, height: 15)
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: noteOpen ? style.accent : NX.ink(0.45), hoverForeground: NX.ink))
                 .onHover { noteHovering = $0 }
                 // Full strength under the pointer, as the design's hover has it.
-                .opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : 0.2)
-                .animation(.easeOut(duration: 0.14), value: noteOpen)
-                .animation(.easeOut(duration: 0.14), value: noteHovering)
+                // Only the fade is animated, its `opacity 140ms ease`, as the
+                // open icon's: the colour and hover fill change at once.
+                .animation(NX.cssEase(140)) {
+                    $0.opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : 0.2)
+                }
                 .help("Note · Space")
                 .accessibilityLabel(noteOpen ? "Hide note" : "Show note")
             }
@@ -936,7 +940,7 @@ private struct NXDocumentBlock: View {
         // The design's editing fill, which a heading goes without.
         .background(editing && !heading ? NX.ink(0.035) : .clear,
                     in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .animation(.easeOut(duration: 0.18), value: editing)
+        .animation(NX.cssEase(180), value: editing)
         .zIndex(editing ? 4 : 0)
         .contentShape(Rectangle())
         .onTapGesture {

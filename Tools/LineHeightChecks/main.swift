@@ -43,6 +43,9 @@ MainActor.assumeIsolated {
     check(NX.lineHeight(9.5) == 12 && NX.lineHeight(10) == 13 && NX.lineHeight(10.5) == 13
           && NX.lineHeight(11) == 14 && NX.lineHeight(12) == 15 && NX.lineHeight(13) == 16
           && NX.lineHeight(16) == 19 && NX.lineHeight(22) == 26, "SwiftUI's whole-point lines")
+    // The screen header's sans title, bold 27, past the half points above.
+    let header = height(Text("Hg").font(.system(size: 27, weight: .bold)))
+    check(header == NX.lineHeight(27) && header == 32, "27pt bold header line", "SwiftUI \(header), helper \(NX.lineHeight(27))")
     check(abs(22 * 1.3 - NX.lineHeight(22) - 2.6) < 0.001, "triage title 22/1.3 leads 2.6")
     check(abs(10.5 * 1.4 - NX.lineHeight(10.5) - 1.7) < 0.001, "triage hint 10.5/1.4 leads 1.7")
     check(abs(13 * 1.45 - NX.lineHeight(13) - 2.85) < 0.001, "triage summary 13/1.45 leads 2.85")
@@ -54,6 +57,33 @@ MainActor.assumeIsolated {
         let box = height(Text("Hg").font(.system(size: size)).padding(.vertical, (size - NX.lineHeight(size)) / 2))
         check(box == size.rounded(.up), "\(size)/1 label box", "\(box)")
     }
+
+    // One box's height is rounded up, which hides a line off by a fraction of
+    // a point, so ten of each are stacked: the rows' titles and notes, their
+    // chips, the empty text, add row, pills and tabs, and the sans header
+    // title, each padded to the design's size × line-height.
+    let boxes: [(size: CGFloat, lineHeight: CGFloat, weight: Font.Weight, name: String)] = [
+        (13.8, 1.45, .regular, "row title"), (12, 1.4, .regular, "row note"), (11, 1.2, .semibold, "chip"),
+        (11.5, 1.2, .medium, "quiet chip"), (12.5, 1.4, .regular, "empty text"), (13, 1.45, .regular, "Today is clear text"),
+        (13.5, 1.3, .regular, "add row"), (12, 1, .medium, "query pill"), (11, 1, .semibold, "group action"),
+        (13.5, 1, .semibold, "tab"), (9.5, 1, .semibold, "pill caption"), (10.5, 1.3, .medium, "pill footer"),
+        (27, 1.1, .bold, "sans header title"),
+    ]
+    for box in boxes {
+        let pad = (box.size * box.lineHeight - NX.lineHeight(box.size)) / 2
+        let stack = height(VStack(spacing: 0) {
+            ForEach(0..<10, id: \.self) { _ in Text("Hg").font(.system(size: box.size, weight: box.weight)).padding(.vertical, pad) }
+        })
+        let design = (10 * box.size * box.lineHeight - 0.001).rounded(.up)
+        check(stack == design, "\(box.name) ×10 at \(box.size)/\(box.lineHeight)", "\(stack) against \(design)")
+    }
+    // The add row's N: SF Mono 10/1 inside 2 pt padding, 14 pt.
+    let keys = height(VStack(spacing: 0) {
+        ForEach(0..<10, id: \.self) { _ in
+            Text("N").font(.system(size: 10, weight: .medium, design: .monospaced)).padding(.vertical, 2 + (10 - NX.lineHeight(10)) / 2)
+        }
+    })
+    check(keys == 140, "key cap ×10 at 10/1", "\(keys)")
 
     // A paragraph's leading goes between its lines only, so with half of it
     // above and below, n lines stack at the design's n × size × line-height.

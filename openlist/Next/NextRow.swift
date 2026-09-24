@@ -40,7 +40,7 @@ struct NextTaskRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         // The design's 1.4 line box, its leading split above and below.
-                        .padding(.vertical, max(0, 12 * 1.4 - NXStrikeText.glyphLineHeight(12)) / 2)
+                        .padding(.vertical, max(0, 12 * 1.4 - NX.lineHeight(12)) / 2)
                 }
             }
         }
@@ -140,15 +140,18 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                     NXDocumentEditing.end()
                     workbench.inspect(task.id)
                 } label: {
+                    // The design's 15 pt icon box inside its 3 pt padding: a
+                    // 21 pt button, the chip column's tallest, so a row is 32.
                     Image(systemName: "sidebar.right")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(width: 15, height: 15)
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
                 .onHover { openHovering = $0 }
                 // Only the fade is animated, so the icon never trails a reflow.
-                .animation(.easeOut(duration: 0.14)) {
+                .animation(NX.cssEase(140)) {
                     $0.opacity(focused || opensOnHover && openHovering ? 1 : options.quiet ? 0 : 0.22)
                 }
                 .help("Open details (↩)")
@@ -161,7 +164,8 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         .padding(.vertical, style.rowVerticalPadding)
         .padding(.horizontal, 10)
         .background(alignment: .leading) {
-            if closing != nil { NXDrainRail(duration: style.dwell) }
+            // Gone at once when the dwell ends or is cancelled, as the design's.
+            if closing != nil { NXDrainRail(duration: style.dwell).transition(.identity) }
         }
         .background {
             let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -169,14 +173,15 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
             let fill = editing ? NX.ink(0.035) : background(focused: focused, selected: selected, fresh: fresh, restored: restored)
             let ring = card ? style.accent.opacity(0.25) : selected && !editing ? style.accent.opacity(0.19) : Color.clear
             // As the design: the fill eases over 700ms, the focus shadow and ring
-            // over 180ms. Each animation covers only its colour or opacity, so a
-            // row that resizes in the same update never drags its background.
+            // over 180ms, all on CSS ease. Each animation covers only its colour
+            // or opacity, so a row that resizes in the same update never drags
+            // its background.
             ZStack {
                 NXRowShadow()
-                    .animation(.easeOut(duration: 0.18)) { $0.opacity(card ? 1 : 0) }
-                shape.animation(.easeOut(duration: editing ? 0.18 : 0.7)) { $0.foregroundStyle(fill) }
+                    .animation(NX.cssEase(180)) { $0.opacity(card ? 1 : 0) }
+                shape.animation(NX.cssEase(editing ? 180 : 700)) { $0.foregroundStyle(fill) }
                 shape.strokeBorder(lineWidth: 1)
-                    .animation(.easeOut(duration: 0.18)) { $0.foregroundStyle(ring) }
+                    .animation(NX.cssEase(180)) { $0.foregroundStyle(ring) }
             }
         }
         .contentShape(Rectangle())
@@ -317,8 +322,8 @@ struct NXStrikeText: View {
     var body: some View {
         // The design's 1.45 line height: the extra leading goes between lines
         // and, halved, above the first and below the last, as CSS places it.
-        let glyphLine = Self.glyphLineHeight(size)
-        let leading = max(0, size * 1.45 - glyphLine)
+        let line = NX.lineHeight(size)
+        let leading = max(0, size * 1.45 - line)
         Text(text)
             .font(.system(size: size))
             .lineSpacing(leading)
@@ -326,23 +331,27 @@ struct NXStrikeText: View {
             .fixedSize(horizontal: false, vertical: true)
             .overlay(alignment: .topLeading) {
                 GeometryReader { geo in
-                    // The strike's top edge sits at 52% of the first line's glyph box.
-                    Capsule()
+                    // The strike's top edge sits at 52% of the first line. Only
+                    // its width moves, as the design's: its colour changes at
+                    // once, so a row reopened in its dwell undraws in grey.
+                    Rectangle()
                         .fill(closing ? style.accent : NX.ink(0.36))
-                        .frame(width: struck ? geo.size.width + 2 : 0, height: 1.5)
-                        .offset(y: min(geo.size.height, glyphLine) * 0.52)
-                        .animation(.timingCurve(0.3, 0.8, 0.2, 1, duration: style.ms(340) / 1000), value: struck)
+                        .frame(width: geo.size.width + 2, height: 1.5)
+                        .mask(alignment: .leading) {
+                            Capsule()
+                                .frame(width: struck ? geo.size.width + 2 : 0)
+                                .animation(.timingCurve(0.3, 0.8, 0.2, 1, duration: style.ms(340) / 1000), value: struck)
+                        }
+                        .offset(y: min(geo.size.height, line) * 0.52)
                 }
                 .allowsHitTesting(false)
             }
             .padding(.vertical, leading / 2)
     }
 
-    /// The height SwiftUI gives one line of the system font at `size`.
-    static func glyphLineHeight(_ size: CGFloat) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: size)
-        return font.ascender - font.descender + font.leading
-    }
+    /// Kept for call sites not yet moved to `NX.lineHeight`, SwiftUI's own
+    /// line, which it now returns.
+    static func glyphLineHeight(_ size: CGFloat) -> CGFloat { NX.lineHeight(size) }
 
     /// The width `text` needs to sit on one line at `size`.
     static func lineWidth(_ text: String, size: CGFloat = 13.8) -> CGFloat {
@@ -618,7 +627,7 @@ struct NXGroupView: View {
                     if group.rows.isEmpty, !group.emptyText.isEmpty {
                         // The design's 12.5/1.4: the extra leading between lines
                         // and, halved, above the first and below the last.
-                        let leading = 12.5 * 1.4 - NXStrikeText.glyphLineHeight(12.5)
+                        let leading = 12.5 * 1.4 - NX.lineHeight(12.5)
                         Text(group.emptyText)
                             .font(.system(size: 12.5))
                             .foregroundStyle(NX.ink(0.4))
@@ -635,7 +644,8 @@ struct NXGroupView: View {
 
     private func head(open: Bool) -> some View {
         HStack(spacing: 7) {
-            // VoiceOver reads the title and count as one, a button that folds the group.
+            // VoiceOver reads the title and count as one heading, a button
+            // that folds the group when it folds.
             HStack(spacing: 7) {
                 Group {
                     if let glyph = group.glyph {
@@ -669,14 +679,18 @@ struct NXGroupView: View {
                 }
             }
             .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
             .modifier(NXFoldAccessibility(isEnabled: group.collapsible, open: open, toggle: toggle))
             Spacer(minLength: 8)
             if let label = group.actionLabel, let action = group.action {
-                Button(label, action: action)
-                    .font(.system(size: 11, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), rest: style.accent.opacity(0.08), radius: 6,
-                                                    padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
-                                                    foreground: style.accent))
+                Button(action: action) {
+                    // The design's 600 11/1, so the button is 21 pt and the head 33.
+                    Text(label).padding(.vertical, (11 - NX.lineHeight(11)) / 2)
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), rest: style.accent.opacity(0.08), radius: 6,
+                                                padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
+                                                foreground: style.accent))
             }
         }
         .padding(.vertical, 6)
@@ -723,11 +737,12 @@ struct NXAddRow: View {
             // 400 13.5/1.3, as the document's add row.
             Text(text)
                 .font(.system(size: 13.5))
-                .padding(.vertical, (13.5 * 1.3 - NXStrikeText.glyphLineHeight(13.5)) / 2)
+                .padding(.vertical, (13.5 * 1.3 - NX.lineHeight(13.5)) / 2)
+            // The design's 500 10/1 key inside 2/5 padding, so the cap is 14 pt.
             Text("N")
                 .font(NX.mono(10))
                 .padding(.horizontal, 5)
-                .padding(.vertical, 2)
+                .padding(.vertical, 2 + (10 - NX.lineHeight(10)) / 2)
                 .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4))
             Spacer()
         }

@@ -240,8 +240,9 @@ private struct NXHeatCell: View {
                     shape.strokeBorder(NX.ink(0.07), lineWidth: 1)
                 }
             }
-            .animation(.easeOut(duration: 0.5), value: count)
-            .animation(.easeOut(duration: 0.15), value: selected)
+            // The design's `background 500ms ease, box-shadow 150ms ease`.
+            .animation(NX.cssEase(500), value: count)
+            .animation(NX.cssEase(150), value: selected)
             .contentShape(shape)
             .onTapGesture { if day != nil { action() } }
             .accessibilityElement()
@@ -269,6 +270,7 @@ private struct NXActivityDayPanel: View {
                 .font(NX.serif(22))
                 .padding(.vertical, NX.serifLeading(22, lineHeight: 1.1))
                 .foregroundStyle(NX.ink)
+                .accessibilityAddTraits(.isHeader)
             // The design's 500 11.5/1.
             Text(items.isEmpty ? "No completions recorded" : "\(items.count) \(items.count == 1 ? "task" : "tasks") completed")
                 .font(.system(size: 11.5, weight: .medium))
