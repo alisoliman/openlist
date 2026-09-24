@@ -972,12 +972,40 @@ final class OutlineEditor {
     /// The last caret move a row's text view carried out, or a click ended.
     @ObservationIgnored private(set) var appliedFocusToken = 0
 
+    /// The name of the step the line being written commits as, which an
+    /// Undo that finishes the line first takes back, as `commitLine` would
+    /// name it. nil with none open, or when finishing it registers nothing,
+    /// as a new line left empty or one the caret only arrived at does, so
+    /// Undo names the step it will take back instead.
+    var lineStepName: String? {
+        guard let edit = line, let block = env.store.block(id: edit.blockID) else { return nil }
+        var change: OutlineEdit = edit.isNew ? .added(block.id) : .edited(block.id)
+        if !block.kind.isVoid, Self.isBlank(block.text), removes(block, in: edit, explicitly: false) {
+            // A new line goes with it, and leaves only what else its edit changed.
+            guard !edit.isNew || env.store.editorSessionHasChanges(edit.session, excluding: [block.id]) else { return nil }
+            change = .removedEmptyLine(block.id)
+        } else if !env.store.editorSessionHasChanges(edit.session) {
+            return nil
+        }
+        return hooks.nameEdit(change) ?? change.defaultName
+    }
+
+    /// Whether a line is being written, whose typing the stack holds on top.
+    var isWritingLine: Bool { line != nil }
+
+    /// The step the stack held under the line being written as the caret
+    /// arrived, which Undo takes back when finishing the line registers none.
+    var stepUnderLine: String? { line?.stepBelow }
+
     // MARK: - Line edits
 
     /// The edit of one line, from the caret arriving to it leaving, undone
     /// as one step.
     private final class LineEdit {
         let blockID: UUID
+        /// The name of the stack's top step as the caret arrived, under the
+        /// line's typing, if there was one.
+        var stepBelow: String?
         /// Added by this edit, so taking it out again leaves nothing to undo.
         var isNew: Bool
         /// Changed more than the line's text.
@@ -1032,6 +1060,7 @@ final class OutlineEditor {
                             session: env.store.beginEditorSession(in: document.listID, covering: [id]))
         line = edit
         observeUndo()
+        edit.stepBelow = undoStepName
         return edit
     }
 
@@ -1045,6 +1074,7 @@ final class OutlineEditor {
         env.store.save()
         line = LineEdit(blockID: created.id, isNew: true, arrivedText: "", session: session)
         observeUndo()
+        line?.stepBelow = undoStepName
         unfold(toShow: created.id)
         env.activeDocument = document
         focus.request(created.id, caret: 0)
@@ -1269,6 +1299,7 @@ final class OutlineEditor {
                     guard let edit = self.line, !self.undoTypedInLine else { return }
                     self.env.store.rebaseEditorSession(edit.session)
                     edit.isNew = false
+                    edit.stepBelow = self.undoStepName
                 }
             })
         }
@@ -1303,6 +1334,12 @@ final class OutlineEditor {
     }
 
     private var undoManager: UndoManager? { NSApp?.keyWindow?.undoManager }
+
+    /// The name of the step Undo would take back now, if any.
+    private var undoStepName: String? {
+        guard let undoManager, undoManager.canUndo else { return nil }
+        return undoManager.undoActionName.isEmpty ? "Undo" : undoManager.undoActionName
+    }
 
     func move(_ draggedIDs: [UUID], relativeTo target: BlockRow, position: DropPosition) {
         guard sorting == .manual else { return }

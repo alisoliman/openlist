@@ -78,7 +78,7 @@ final class AppEnvironment {
     var listPendingDeletion: TaskList?
     var listPendingMove: TaskList?
 
-    /// Which picker the inspector should pop open, set by ⌃D / ⌃L.
+    /// Which picker the inspector should pop open, set by ⇧⌘D / ⇧⌘L.
     var requestedPicker: DetailPicker?
 
     /// The document menu commands apply to: the list document on show, which

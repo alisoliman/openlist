@@ -120,6 +120,14 @@ let activation = navigator.searchActivation
 navigator.closeTask()
 check(navigator.contentReveal == nil && navigator.searchActivation == activation, "closing inspector ends temporary reveal")
 navigator.reveal(reveal)
+navigator.finishReveal()
+check(navigator.contentReveal == nil && navigator.selection.isEmpty && navigator.route == .list(list.id),
+      "finishing a line reveal in place lets its line go and stays on the page")
+navigator.reveal(reveal)
+navigator.selection = [completed.id]
+navigator.finishReveal()
+check(navigator.contentReveal == nil && navigator.selection == [completed.id], "finishing a reveal keeps a selection that moved on")
+navigator.reveal(reveal)
 navigator.go(to: .today)
 check(navigator.contentReveal == nil, "navigation ends temporary expansion")
 navigator.goBack()

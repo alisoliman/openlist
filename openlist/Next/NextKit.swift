@@ -420,6 +420,7 @@ struct NXSegmented<Value: Hashable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == value ? .isSelected : [])
             }
         }
         .padding(2)

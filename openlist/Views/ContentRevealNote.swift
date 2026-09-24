@@ -19,7 +19,6 @@ struct ContentRevealNote: View {
     let requestID: UUID?
     @State private var hasAppeared = false
     @State private var showsFullNote = false
-    @FocusState private var isFocused: Bool
     @AccessibilityFocusState private var isAccessibilityFocused: Bool
 
     var body: some View {
@@ -55,8 +54,8 @@ struct ContentRevealNote: View {
         .background(NX.ink(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Search result in note")
-        .focusable()
-        .focused($isFocused)
+        // VoiceOver goes to the match; the keyboard stays with the page's
+        // keys, and no focus ring is drawn around a card the design has none on.
         .accessibilityFocused($isAccessibilityFocused)
         .preference(key: ContentRevealNoteReadyKey.self, value: hasAppeared ? requestID : nil)
         .onAppear { hasAppeared = true }
@@ -65,7 +64,6 @@ struct ContentRevealNote: View {
             guard requestID != nil else { return }
             await Task.yield()
             guard !Task.isCancelled else { return }
-            isFocused = true
             isAccessibilityFocused = true
         }
     }

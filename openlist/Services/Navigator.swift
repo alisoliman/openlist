@@ -47,8 +47,9 @@ final class Navigator {
     /// Set by the app once the store is ready; nil in standalone checks.
     var inboxListID: UUID?
 
-    /// The list a reveal opened as a document for this visit only. Leaving the
-    /// list or choosing a presentation ends it; it is never saved.
+    /// The list a reveal opened as a document for this visit only, the Inbox
+    /// among them. Leaving the list or choosing a presentation ends it; it is
+    /// never saved.
     private var revealedDocumentListID: UUID?
 
     /// The Inbox shown as triage for this visit only, as the widget's Triage
@@ -59,7 +60,7 @@ final class Navigator {
     /// Lists open as their document, and the Inbox as triage, until this Mac
     /// chooses otherwise for them.
     func listViewMode(for listID: UUID) -> ListViewMode {
-        if listID == revealedDocumentListID, route == .list(listID) { return .document }
+        if listID == revealedDocumentListID, shows(listID) { return .document }
         if isTriageVisit, listID == inboxListID, route == .inbox { return .tasks }
         return listViewModes[listID] ?? defaultViewMode(for: listID)
     }
@@ -70,6 +71,7 @@ final class Navigator {
         guard route == .inbox, let inboxListID else { return }
         let shown = listViewMode(for: inboxListID)
         isTriageVisit = true
+        if revealedDocumentListID == inboxListID { revealedDocumentListID = nil }
         guard shown != .tasks else { return }
         contentReveal = nil
         clearSelection()
@@ -100,10 +102,21 @@ final class Navigator {
                           forKey: Self.listViewModesKey)
         }
         guard shown != mode else { return }
-        if route == .list(listID) || (route == .inbox && listID == inboxListID) {
+        if shows(listID) {
             contentReveal = nil
             clearSelection()
         }
+    }
+
+    /// Whether the page on show is the list's: its own, or the Inbox's.
+    func shows(_ listID: UUID) -> Bool {
+        route == .list(listID) || (route == .inbox && listID == inboxListID)
+    }
+
+    /// Where a list's content is shown: the Inbox's on the Inbox, as
+    /// everywhere else in the app, and any other list's on its page.
+    func route(showing listID: UUID) -> AppRoute {
+        listID == inboxListID ? .inbox : .list(listID)
     }
 
     /// The list whose document is on show: any list, drawn as the Next list
@@ -157,18 +170,27 @@ final class Navigator {
     func reveal(_ request: ContentReveal) {
         // Revealing a target is an editing action, including in the same list.
         clearSelection()
-        go(to: .list(request.listID))
+        go(to: route(showing: request.listID))
         // Exact-content navigation must reveal notes and collapsed hierarchy,
         // including when this list was last viewed as a task-only queue. The
         // document is for this visit: the list's saved presentation stays.
-        revealedDocumentListID = request.listID
+        // The Inbox shows as this Mac shows it for a task, which opens in the
+        // inspector, or for the Inbox itself; only a line needs its document.
+        let revealsLine = request.blockID != nil && request.taskID == nil
+        revealedDocumentListID = request.listID != inboxListID || revealsLine ? request.listID : nil
         openTaskID = request.taskID
         selection = request.blockID.map { [$0] } ?? []
         contentReveal = request
         searchActivation &+= 1
     }
 
-    func finishReveal() { contentReveal = nil }
+    /// Ends a reveal in place: what it exposed folds back, and the line it
+    /// selected lets go, unless the selection has moved on. The document a
+    /// reveal opened lasts the visit.
+    func finishReveal() {
+        if let id = contentReveal?.blockID, selection == [id] { clearSelection() }
+        contentReveal = nil
+    }
 
     /// A page in the history, and where it was scrolled to when it was left.
     private struct Visit {

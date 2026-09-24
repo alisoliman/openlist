@@ -37,19 +37,29 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   line being written, else the workbench targets in that list); its titles read every
   target, as the row menu's do, so both say Reopen or Unstar when every target is done or
   starred (the palette and bulk bar keep the design's Star). Its key equivalents all carry
-  a modifier, since a bare letter would fire while typing: ⌘D Mark as Done or Reopen (kept
-  as the one key that completes a task while its line is being written), ⌃T/⌃M due
-  today/tomorrow, ⇧⌘S Star. Help ▸ Keyboard Shortcuts (⌘/) lists the design's single keys
-  with the keys the list document and menus handle. Work ▸ Start Selected Task, Stop and
-  Complete run `workbench.startWork`, `stopWork` and `finishWork`, as Task ▸ Start Working
-  and the notch's ✕ and ✓ do. View ▸ Collapse All folds only what the design's carets fold
-  (tasks with lines under them, headings with a section); Expand All opens every fold, one
-  an older list left on a list item too. A line that becomes a heading, or stops being one,
-  opens, so such a fold never hides a new heading's section (the design keeps a block's
-  flag, which folds a heading turned into a block and back again).
+  ⌘, since a bare letter would fire while typing and a ⌃ letter would take the text
+  system's own (⌃T transposes, ⌃D deletes forward, ⌃L centres the line): ⌘D Mark as Done
+  or Reopen (kept as the one key that completes a task while its line is being written),
+  ⇧⌘T/⇧⌘M due today/tomorrow, ⇧⌘D and ⇧⌘L the due and label pickers (⌥⇧⌘ clears them),
+  ⇧⌘S Star. Help ▸ Keyboard Shortcuts (⌘/) lists the design's single keys with the keys
+  the list document and menus handle. Work ▸ Start Selected Task, Stop, Pause or Resume and
+  Complete run `workbench.startWork`, `stopWork`, `toggleWorkPause` and `finishWork`, as
+  Task ▸ Start Working and the notch's buttons do. View ▸ Collapse All folds only what the
+  design's carets fold (tasks with lines under them, headings with a section); Expand All
+  opens every fold, one an older list left on a list item too. A line that becomes a
+  heading, or stops being one, opens, so such a fold never hides a new heading's section
+  (the design keeps a block's flag, which folds a heading turned into a block and back
+  again).
 - Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
   then the Undo label, which at last leaves only its icon; Actions and New task keep their
   labels.
+- Typing is on the window's undo stack natively, where the design keeps it out of Undo
+  until a line commits. While a list document line holds typing, the toolbar's Undo names
+  the step the line commits as ("Edited “…”", "Added “…”", "Removed an empty line"), which
+  it takes back after finishing the line (the design drops the typing and undoes the step
+  before), or, when finishing registers none, as for a new line left empty, the step under
+  its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
+  Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
   bars and the overlay cards in rather than sliding them, as its hint says, where the design
   only shortens the slides.
@@ -177,12 +187,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Settings; Undo puts it back where it sat on each task), Settings' Add, rename and colour
   of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
-  Copy Content and Subtasks (for Paste in an empty document line) only copy. An Undo or
-  Redo of a label or list change, or of a Restore, that fails says so in the tray, keeps
-  the log as it was and leaves the stack. An edit logged while the tray still shows an
-  earlier change, like a new section's name, takes that tray's Undo away. Deviation: a
-  merge undoes in turn on the window's stack, by ⌘Z or the tray, where the old "Undo
-  merge" card took back the latest merge out of order, keeping later changes. Deviation: "Confirm before deleting a list" stays a preference
+  Copy Content and Subtasks (for Paste in an empty document line) and every Copy Link
+  only copy, saying so in the tray. An Undo or Redo of a label or list change, or of a
+  Restore, that fails says so in the tray, keeps the log as it was and leaves the stack.
+  An edit logged while the tray still shows an earlier change, like a new section's name,
+  takes that tray's Undo away. Deviation: a merge undoes in turn on the window's stack, by
+  ⌘Z or the tray, where the old "Undo merge" card took back the latest merge out of order,
+  keeping later changes. Deviation: "Confirm before deleting a list" stays a preference
   (on by default), asked in a Next sheet; the design asks nothing, as Undo covers it.
   Settings' own confirmations, for what no Undo takes back (Clear all activity history,
   Delete everything, Return to original library, Reset access token), are Next sheets too,
@@ -200,7 +211,18 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the
-  design's note block, the match in the accent.
+  design's note block, the match in the accent. Deviation: that "Matched note" card stays
+  where the reveal notices went, as the only place such a note reads.
+- Reminders, item links (Copy Link, widget rows) and search hits land as the design's
+  search does, with no notice: on the task's list or the Inbox, its row focused and the
+  inspector open. A hit on a line past the design's (heading, text, a note, a list
+  description) opens that list's document for the visit, the Inbox's too, puts the caret at
+  the match and takes the tint of the design's fresh rows (`A+1C`, held 1.2 s, fading as their
+  700 ms background transition), a native extra: the design's search lands only on tasks,
+  and its line with the caret would drop the tint. Such a reveal keeps folded and done lines
+  on its path shown until the page is left, a revealed parent is folded, or Esc, with no
+  details, selection or focus left to close, ends it in place; the document lasts the visit.
+  Only a target that can't open says so, in a notice.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
   Image) are a native extra: their lines draw and edit in the document, the Turn into
   card brings them up for their names after "/" (with no query it shows the design's

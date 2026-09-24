@@ -138,7 +138,7 @@ private struct NXOverlayBackdrop<Card: View>: View {
                 .padding(.horizontal, 20)
                 .padding(.top, top)
                 .scaleEffect(settled ? 1 : 0.97, anchor: .top)
-                .offset(y: settled ? 0 : -6)
+                .offset(y: settled ? 0 : -4)
                 .opacity(shown ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -656,6 +656,8 @@ private struct NXSearchCard: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let overlays: NXOverlayState
+    /// The result the pointer just moved the highlight to.
+    @State private var pointedID: SearchDestination?
 
     var body: some View {
         @Bindable var workbench = env.workbench
@@ -681,6 +683,9 @@ private struct NXSearchCard: View {
                     .background(workbench.searchIncludesCompleted ? style.accent : NX.ink(0.06),
                                 in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .fixedSize()
+                    // The design's on/off pill.
+                    .accessibilityAddTraits(.isToggle)
+                    .accessibilityValue(workbench.searchIncludesCompleted ? "On" : "Off")
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
@@ -690,9 +695,14 @@ private struct NXSearchCard: View {
                 ForEach(Array(hits.enumerated()), id: \.element.id) { offset, hit in
                     NXSearchRow(hit: hit, needle: session.hitsOptions.needle, isOn: offset == index)
                         .id(hit.id)
-                        .onHover { if $0 { workbench.searchIndex = offset } }
+                        .onHover { inside in
+                            guard inside, offset != index else { return }
+                            pointedID = hit.id
+                            workbench.searchIndex = offset
+                        }
                         // The row clicked opens, even while a newer query is searched.
                         .onTapGesture { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
+                        .accessibilityAction { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
                 }
                 Text(footer(hits, session: session, typed: options))
                     .font(.system(size: 12.5))
@@ -704,6 +714,9 @@ private struct NXSearchCard: View {
             .modifier(NXScrollToIndex(ids: hits.map(\.id), index: index))
         }
         .frame(maxWidth: 640)
+        .modifier(NXAnnounceHighlight(id: hits.indices.contains(index) ? hits[index].id : nil,
+                                      spoken: hits.indices.contains(index) ? NXSearchRow.spoken(hits[index]) : nil,
+                                      pointed: $pointedID))
         .background { NXSearchCorpus(session: session) }
         .onChange(of: options, initial: true) { _, updated in
             overlays.searchUnavailable = nil
@@ -777,6 +790,16 @@ private struct NXSearchRow: View {
         .background(isOn ? style.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(isOn ? style.accent.opacity(0.2) : .clear, lineWidth: 1))
         .contentShape(Rectangle())
+        // One result, which Return opens while it's highlighted.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.spoken(hit))
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// The title, the matched passage and where it is, as VoiceOver reads them.
+    static func spoken(_ hit: SearchHit) -> String {
+        let context = hit.context + (hit.dueDate.map { ", " + NXFormat.dueLabel($0) } ?? "")
+        return [hit.title, hit.snippet, context].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     /// Where the hit is, after its list's icon, as the design's `emoji + " " + name`.
@@ -913,6 +936,8 @@ private struct NXPaletteCard: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let overlays: NXOverlayState
+    /// The command the pointer just moved the highlight to.
+    @State private var pointedID: String?
 
     var body: some View {
         @Bindable var workbench = env.workbench
@@ -948,13 +973,40 @@ private struct NXPaletteCard: View {
             NXOverlayList {
                 ForEach(Array(commands.enumerated()), id: \.element.id) { offset, command in
                     NXPaletteRow(command: command, isOn: offset == index)
-                        .onHover { if $0 { workbench.paletteIndex = offset } }
+                        .onHover { inside in
+                            guard inside, offset != index else { return }
+                            pointedID = command.id
+                            workbench.paletteIndex = offset
+                        }
                         .onTapGesture { NXPalette.run(command, env: env, overlays: overlays) }
+                        .accessibilityAction { NXPalette.run(command, env: env, overlays: overlays) }
                 }
             }
             .modifier(NXScrollToIndex(ids: commands.map(\.id), index: index))
         }
         .frame(maxWidth: 560)
+        .modifier(NXAnnounceHighlight(id: commands.indices.contains(index) ? commands[index].id : nil,
+                                      spoken: commands.indices.contains(index) ? commands[index].label : nil,
+                                      pointed: $pointedID))
+    }
+}
+
+/// Tells VoiceOver which row Return now runs, from the field: after ↑ or ↓,
+/// or when typing brings a new row to the top. A row the pointer highlighted
+/// isn't read out, as the pointer following VoiceOver's cursor would have it
+/// spoken twice.
+private struct NXAnnounceHighlight<ID: Hashable>: ViewModifier {
+    let id: ID?
+    let spoken: String?
+    @Binding var pointed: ID?
+
+    func body(content: Content) -> some View {
+        content.onChange(of: id) { _, id in
+            let byPointer = id != nil && id == pointed
+            pointed = nil
+            guard !byPointer, id != nil, let spoken else { return }
+            AccessibilityNotification.Announcement(spoken).post()
+        }
     }
 }
 
@@ -993,6 +1045,10 @@ private struct NXPaletteRow: View {
         .padding(.horizontal, 10)
         .background(isOn ? style.accent : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
+        // One command, which Return runs while it's highlighted.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(command.label)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .id(command.id)
     }
 }

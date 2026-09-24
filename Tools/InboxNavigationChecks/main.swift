@@ -220,4 +220,48 @@ check(inspecting.openTaskID == inspected, "The Inbox's document is the Next docu
 inspecting.replace(with: .today)
 check(inspecting.openTaskID == nil, "Stepping off a deleted list closes the inspector")
 
+// A reminder, a link or a search hit on Inbox content lands on the Inbox, as
+// everywhere else, never on the Inbox drawn as an ordinary list page.
+let revealing = Navigator()
+let revealInbox = TaskList(title: "Inbox", isSystemInbox: true)
+revealing.inboxListID = revealInbox.id
+let inboxLine = Block(kind: .heading1, text: "Errands", listID: revealInbox.id)
+let inboxTask = Block(kind: .task, text: "Buy stamps", listID: revealInbox.id)
+let inboxBlocks = [inboxLine, inboxTask]
+revealing.go(to: .today)
+let lineReveal = try ContentReveal.resolve(.block(inboxLine.id), query: "errands", blocks: inboxBlocks, lists: [revealInbox])
+revealing.reveal(lineReveal)
+check(revealing.route == .inbox && revealing.shows(revealInbox.id) && !revealing.shows(UUID())
+      && revealing.listViewMode(for: revealInbox.id) == .document && revealing.documentListID == revealInbox.id
+      && revealing.contentReveal == lineReveal && revealing.selection == [inboxLine.id],
+      "A line in the Inbox reveals in the Inbox's document for that visit, even where it shows as triage")
+revealing.goBack()
+check(revealing.route == .today && revealing.contentReveal == nil, "Back leaves the reveal for the page it came from")
+revealing.goForward()
+check(revealing.route == .inbox && revealing.listViewMode(for: revealInbox.id) == .tasks,
+      "Back on the Inbox, it shows as this Mac chose again")
+revealing.go(to: .today)
+revealing.reveal(lineReveal)
+revealing.showInboxTriage()
+check(revealing.listViewMode(for: revealInbox.id) == .tasks && revealing.contentReveal == nil,
+      "The widget's Triage link turns a revealed Inbox back to triage")
+revealing.go(to: .today)
+let taskReveal = try ContentReveal.resolve(.block(inboxTask.id), blocks: inboxBlocks, lists: [revealInbox])
+revealing.reveal(taskReveal)
+check(revealing.route == .inbox && revealing.listViewMode(for: revealInbox.id) == .tasks
+      && revealing.openTaskID == inboxTask.id && revealing.contentReveal == taskReveal,
+      "An Inbox task opens in the inspector over the Inbox as this Mac shows it")
+revealing.go(to: .today)
+let inboxReveal = try ContentReveal.resolve(.list(revealInbox.id), blocks: inboxBlocks, lists: [revealInbox])
+revealing.reveal(inboxReveal)
+check(revealing.route == .inbox && revealing.listViewMode(for: revealInbox.id) == .tasks,
+      "A link to the Inbox opens the Inbox as this Mac shows it")
+let otherList = TaskList(title: "Other")
+let otherLine = Block(kind: .paragraph, text: "Notes", listID: otherList.id)
+revealing.setListViewMode(.tasks, for: otherList.id)
+revealing.reveal(try ContentReveal.resolve(.block(otherLine.id), blocks: [otherLine], lists: [otherList]))
+check(revealing.route == .list(otherList.id) && revealing.listViewMode(for: otherList.id) == .document
+      && revealing.shows(otherList.id) && !revealing.shows(revealInbox.id),
+      "Any other list's content reveals on its own page")
+
 print("\(checks) Inbox navigation checks passed")

@@ -66,7 +66,7 @@ enum OpenlistMCPTool: String, CaseIterable {
                 "list_id": listID,
                 "query": MCPField.text("Case-insensitive title or task-note search.", max: 1_000),
                 "status": MCPField.choice(["open", "completed", "all"], "Completion filter. Default open."),
-                "view": MCPField.choice(["all", "today", "overdue", "starred"], "Default all. Today includes open overdue/due-today/starred tasks and completed-today tasks when status includes completed, matching the app."),
+                "view": MCPField.choice(["all", "today", "overdue", "starred"], "Default all. Today includes open overdue, due-today, planned-for-today and starred tasks, and completed-today tasks when status includes completed, matching the app."),
                 "include_archived": MCPField.boolean("Include tasks in archived lists. Default false."),
                 "label_id": MCPField.uuid("Filter by an existing label ID."),
             ]) { _, new in new }

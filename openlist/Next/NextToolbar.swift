@@ -34,6 +34,7 @@ struct NextToolbar: View {
                                                 foreground: env.navigator.canGoBack ? NX.ink(0.6) : NX.ink(0.2)))
                 .disabled(!env.navigator.canGoBack)
                 .help("Back (⌘[)")
+                .accessibilityLabel("Back")
 
                 // While you work the crumb gives the notch its room past 200 pt.
                 // Its first 80 pt outlast the Undo label.
@@ -68,6 +69,7 @@ struct NextToolbar: View {
                     }
                 } action: { env.navigator.isCommandPaletteOpen.toggle() }
                 .fixedSize()
+                .accessibilityLabel("Actions")
 
                 Button { workbench.openCapture() } label: {
                     HStack(spacing: 5) {
@@ -87,6 +89,7 @@ struct NextToolbar: View {
                 .buttonStyle(.plain)
                 .fixedSize()
                 .help("New task (N)")
+                .accessibilityLabel("New task")
             }
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { trailingWidth = $0 }
             // The buttons keep their room; the crumb truncates first, down to its floor.
@@ -299,6 +302,8 @@ struct NXWorkNotch: View {
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8, padding: EdgeInsets(), foreground: color,
                                         hoverForeground: color == NX.green ? NX.green : NX.ink))
         .help(help)
+        // Named as the design's titles name them, not by the symbol.
+        .accessibilityLabel(help)
     }
 }
 

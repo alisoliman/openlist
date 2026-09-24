@@ -90,7 +90,10 @@ final class MCPStoreAdapter {
                 default: break
                 }
                 switch args.string("view") ?? "all" {
-                case "today": return task.isCompleted ? task.isCompletedToday : task.isDueOnOrBeforeToday || task.isStarred
+                case "today":
+                    // The app's Today: overdue, due today, planned for today and starred.
+                    return task.isCompleted ? task.isCompletedToday
+                        : task.isDueOnOrBeforeToday || task.isStarred || isPlannedForToday(task)
                 case "overdue": return task.isOverdue
                 case "starred": return task.isStarred
                 default: return true
@@ -246,6 +249,13 @@ final class MCPStoreAdapter {
             "next_offset": end < items.count ? .int(end) : .null,
             "time_zone": .string(TimeZone.current.identifier),
         ]
+    }
+
+    /// Planned for a day that has come, as the app's Today and its Dock badge
+    /// count a task.
+    private func isPlannedForToday(_ task: Block) -> Bool {
+        let calendar = Calendar.current
+        return task.selectedForDay.map { calendar.startOfDay(for: $0) <= calendar.startOfDay(for: .now) } ?? false
     }
 
     private func matches(_ query: String?, in fields: [String]) -> Bool {
@@ -427,6 +437,7 @@ private struct Snapshot {
                 "includes_time": .bool(block.includesTime),
                 "reminder_at": block.reminderAt.map { .string(MCPDates.timestamp($0)) } ?? .null,
                 "starred": .bool(block.isStarred), "priority": .int(block.priorityRaw),
+                "planned_for": block.selectedForDay.map { .string(MCPDates.day($0)) } ?? .null,
                 "label_ids": .array(block.labelIDs.map { .string($0.uuidString) }),
                 "recurrence": recurrenceValue(block.recurrence),
             ]
