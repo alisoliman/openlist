@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 
 /// How a screen wants its rows drawn.
@@ -85,6 +86,12 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
     private var workbench: Workbench { env.workbench }
 
     var body: some View {
+        // A row's own update can come after its task is deleted, as a new
+        // line's Escape takes it away, and before its list has dropped it.
+        if task.modelContext != nil, !task.isDeleted { row }
+    }
+
+    @ViewBuilder private var row: some View {
         let id = task.id
         let closing = workbench.closing[id]
         let flying = workbench.flying.contains(id)
