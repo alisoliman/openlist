@@ -1,8 +1,11 @@
 # Row selection and bulk actions
 
 On Next screens (Today, Tasks, labels, a list's Completed group and the Inbox's
-groups), ⌘-click or ⇧-click adds a row to the selection or takes it out, **X**
-toggles the focused row, and ⌘A selects every visible row. Plain click focuses a
+groups), and on the task lines of a list document or the Inbox's, ⌘-click or
+⇧-click adds a row to the selection or takes it out, **X** toggles the focused
+row, and ⌘A selects every visible row. In a document the click can be on a task
+line's text, beside it or on its grip; the page publishes its task lines as its
+visible rows, so the same selection and bar act on them. Plain click focuses a
 row and clears the selection; Escape clears it too. A task's round checkbox
 still means completion.
 
@@ -13,16 +16,19 @@ tray with Undo. A row drags onto a list in the sidebar, or onto a line of a list
 document, to move there; a selected row takes the rows selected alongside it, in
 screen order.
 
-In a list document the line being written is the document's own selection,
-scoped to that document, which its menu commands act on. A line's grip drags it
-with the rows selected alongside it.
+Apart from that row selection, a list document keeps a scoped selection of its
+own in the Navigator: the line being written, or the lines a reveal or a paste
+leaves selected, which the Format and Task menus act on first until the caret or
+focus moves on. It never feeds the selection bar. A line's grip drags it with the
+rows selected alongside it.
 
 ## Files
 
-`Next/Workbench.swift` owns the screens' selection, focus and visible row order;
-`Next/NextBars.swift` draws the selection bar and `Next/NextRow.swift` the rows,
-their clicks and drags. `Model/BlockSelection.swift`, through
-`Services/Navigator.swift`, holds the list document's selection and its scope.
+`Next/Workbench.swift` owns the row selection, focus and visible row order, a
+document's task lines included; `Next/NextBars.swift` draws the selection bar,
+`Next/NextRow.swift` the rows, and `Next/NextDocument.swift` a document line's
+clicks and grip. `Model/BlockSelection.swift`, through
+`Services/Navigator.swift`, holds the list document's scoped line selection.
 `Services/DragPayload.swift` carries and validates multi-root drags, and
 `Next/NextSidebar.swift` accepts them.
 

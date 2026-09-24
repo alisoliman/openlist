@@ -126,10 +126,14 @@ private struct NXListCard: View {
                     .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
                     .lineLimit(2)
+                // The design's 500 11.5/1.3, its extra leading between lines and, halved, around them.
+                let metaLeading = max(0, 11.5 * 1.3 - NXStrikeText.glyphLineHeight(11.5))
                 Text(path.isEmpty ? stats : "In \(path) · \(stats)")
                     .font(.system(size: 11.5, weight: .medium))
+                    .lineSpacing(metaLeading)
                     .foregroundStyle(NX.ink(0.5))
                     .lineLimit(2)
+                    .padding(.vertical, metaLeading / 2)
                 Capsule().fill(NX.ink(0.07))
                     .frame(height: 4)
                     .overlay(alignment: .leading) {
@@ -142,11 +146,14 @@ private struct NXListCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(peek) { task in
                         HStack(spacing: 7) {
-                            Circle().strokeBorder(NX.ink(0.28), lineWidth: 1.3).frame(width: 9, height: 9)
+                            // The design's 9px ring inside its 1.3px border.
+                            Circle().strokeBorder(NX.ink(0.28), lineWidth: 1.3).frame(width: 11.6, height: 11.6)
+                            // 400 12/1.3.
                             Text(task.displayTitle)
                                 .font(.system(size: 12))
                                 .foregroundStyle(NX.ink(0.62))
                                 .lineLimit(1)
+                                .padding(.vertical, max(0, 12 * 1.3 - NXStrikeText.glyphLineHeight(12)) / 2)
                         }
                     }
                 }
@@ -250,11 +257,16 @@ private struct NXTrashEmpty: View {
     @State private var shown = false
 
     var body: some View {
+        // The design's 400 13/1.5, its leading halved around the line, in
+        // 34pt of padding inside a 1pt border.
+        let leading = max(0, 13 * 1.5 - NXStrikeText.glyphLineHeight(13))
         Text("Trash is empty.")
             .font(.system(size: 13))
+            .lineSpacing(leading)
             .foregroundStyle(NX.ink(0.45))
+            .padding(.vertical, leading / 2)
             .frame(maxWidth: .infinity)
-            .padding(34)
+            .padding(35)
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(NX.ink(0.14), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .padding(.top, 6)

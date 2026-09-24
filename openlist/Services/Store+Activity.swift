@@ -15,19 +15,23 @@ extension TaskActivityState {
 }
 
 extension Store {
-    /// A fresh reader publishes only committed completion actions, including
-    /// after a failed write leaves retryable models in the live context.
+    /// A fresh reader publishes only committed completion actions, and the
+    /// Undo and reopen actions that took one back, including after a failed
+    /// write leaves retryable models in the live context.
     func activityHeatmap(now: Date = .now, calendar: Calendar = .current, weeks: Int = 12) throws -> ActivityHeatmap {
         let reader = ModelContext(context.container)
         reader.autosaveEnabled = false
-        let events = try reader.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.kindRaw == "completed" }))
+        let saved = try reader.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate {
+            $0.kindRaw == "completed" || $0.kindRaw == "completionUndone" || $0.kindRaw == "reopened"
+        }))
+        let events = saved.filter { $0.kindRaw == "completed" }
         let needed = Array(Set(events.filter { $0.change?.completionWasRecurring == nil || $0.change?.completedOccurrenceID == nil }
             .compactMap { $0.change?.completionID }))
         let records = needed.isEmpty ? [] : try reader.fetch(FetchDescriptor<CompletionRecord>(predicate: #Predicate { needed.contains($0.id) }))
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ActivityHeatmap(completions: events.map {
             ActivityCompletion(event: $0, matchingRecord: $0.change?.completionID.flatMap { byID[$0] })
-        }, now: now, calendar: calendar, weeks: weeks)
+        }, reversals: saved.compactMap(ActivityReversal.init(event:)), now: now, calendar: calendar, weeks: weeks)
     }
 
     /// Existing one-way note/star entries must still describe a committed

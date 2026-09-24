@@ -12,6 +12,8 @@ struct NXAgentSettings: View {
     @Environment(AppEnvironment.self) private var env
     @State private var format = MCPIntegration.ClientFormat.stdio
     @State private var port = ""
+    /// A port typed outside the range, said on its row until it's changed.
+    @State private var portError: String?
     @State private var confirmsTokenReset = false
 
     var body: some View {
@@ -56,22 +58,21 @@ struct NXAgentSettings: View {
                 NXSettingMenu(label: "Client configuration", hint: "Merge it into your client’s MCP settings and reconnect",
                               value: format.title,
                               entries: nxChoices(MCPIntegration.ClientFormat.allCases, selection: $format, title: \.title))
-                NXSettingRow(label: "Connection details",
-                             hint: mcp.notice ?? "This includes a private token: never share or commit it.") {
+                NXSettingRow(label: "Connection details", hint: "This includes a private token: never share or commit it.") {
                     HStack(spacing: 6) {
                         Button("Copy configuration") {
-                            copy { try mcp.configuration(for: format) }
+                            copy("Copied the client configuration") { try mcp.configuration(for: format) }
                         }
                         Button("Copy token") {
-                            copy { try mcp.accessToken() }
+                            copy("Copied the access token") { try mcp.accessToken() }
                         }
                     }
                     .disabled(!mcp.isRunning)
                 }
-                NXSettingRow(label: "Port", hint: "From 1024 to 65535") {
+                NXSettingRow(label: "Port", hint: portError ?? "From 1024 to 65535", hintColor: portError == nil ? NX.ink(0.48) : NX.redText) {
                     HStack(spacing: 6) {
-                        NXSettingField(placeholder: "Port", text: $port, width: 72, monospaced: true) { mcp.setPort(port) }
-                        Button("Apply") { mcp.setPort(port) }
+                        NXSettingField(placeholder: "Port", text: $port, width: 72, monospaced: true, onSubmit: applyPort)
+                        Button("Apply", action: applyPort)
                             .disabled(Int(port) == settings.mcpPort)
                     }
                 }
@@ -85,6 +86,7 @@ struct NXAgentSettings: View {
         }
         .onAppear { port = String(settings.mcpPort) }
         .onChange(of: settings.mcpPort) { _, value in port = String(value) }
+        .onChange(of: port) { portError = nil }
         .sheet(isPresented: $confirmsTokenReset) {
             NXConfirmationSheet(title: "Reset the MCP access token?",
                                 message: "Existing client configurations will stop working. Copy a new configuration for every client you still want to allow.",
@@ -92,17 +94,25 @@ struct NXAgentSettings: View {
         }
     }
 
-    private func copy(_ value: () throws -> String) {
+    private func applyPort() {
+        guard !env.mcp.setPort(port) else { return }
+        let error = "Choose a port from 1024 to 65535."
+        portError = error
+        AccessibilityNotification.Announcement(error).post()
+    }
+
+    /// Said in the tray, as every other copy is; one that fails is the red card.
+    private func copy(_ feedback: String, _ value: () throws -> String) {
         do {
             let text = try value()
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setString(text, forType: .string) else {
-                env.mcp.notice = "The connection details could not be copied. Try again."
+                env.store.actionError = "The connection details could not be copied. Try again."
                 return
             }
-            env.mcp.notice = "Copied. The clipboard now contains your private MCP access token."
+            env.workbench.showTray(feedback, icon: "doc.on.clipboard")
         } catch {
-            env.mcp.notice = error.localizedDescription
+            env.store.actionError = error.localizedDescription
         }
     }
 }

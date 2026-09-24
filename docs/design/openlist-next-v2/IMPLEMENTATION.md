@@ -330,12 +330,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (the settings week, as Plan searches it), or four days out when that is later: the
   design's −7…+4, whose +4 is its Sunday.
 - The Work panel, Work history, the inspector's Full history, Changes' details, Merge
-  labels and Settings › Data, native extras, write a moment as the pills and the Calendar
-  do: "Today 10:00", "Fri 25 10:00", with the year only when it isn't this one, and the
-  Schedule popover's day pills a day so; one helper writes them all (`MomentText`, through
-  `NXFormat.moment` and `dayLabel`). A planned slot reads "Today
-  10:00–11:30 · 90 min". Work history words a session's pause as the Work panel does, and
-  the panel's completion reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
+  labels, Settings › Data and Notifications, native extras, write a moment as the pills and
+  the Calendar do: "Today 10:00", "Fri 25 10:00", with the year only when it isn't this
+  one, and the Schedule popover's day pills a day so; one helper writes them all
+  (`MomentText`, through `NXFormat.moment` and `dayLabel`). A planned slot reads "Today
+  10:00–11:30 · 90 min", and the hours editor names an override's day as the pills do.
+  Work history words a session's pause as the Work panel does, and the panel's completion
+  reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
@@ -359,9 +360,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Settings; Undo puts it back where it sat on each task), Settings' Add, rename and colour
   of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
-  Copy Content and Subtasks (for Paste in a document line) and every Copy Link
-  only copy, saying so in the tray. An Undo or Redo of a label or list change, or of a
-  Restore, that fails says so in the tray, keeps the log as it was and leaves the stack.
+  Copy Content and Subtasks (for Paste in a document line), every Copy Link and AI
+  Agents' Copy configuration and Copy token only copy, saying so in the tray. An Undo or
+  Redo of a label or list change, or of a Restore, that fails says so in the tray, keeps
+  the log as it was and leaves the stack.
   An edit logged while the tray still shows an earlier change, like a new section's name,
   takes that tray's Undo away. Deviation: a merge undoes in turn on the window's stack, by
   ⌘Z or the tray, where the old "Undo merge" card took back the latest merge out of order,
@@ -400,7 +402,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   only, and Earlier's "archived list" is of the list as it is now. History saved before
   this shows as it was recorded. The day panel lists saved completions, so a task trashed
   since still shows there with its list, as the design's does, and one erased since with
-  the list it was done in; only one still in the library opens.
+  the list it was done in; only one still in the library opens. Its counts are of what is
+  still done, as the design's: a completion taken back by Undo or Reopen leaves the day,
+  total and streak, and one done again counts on that day. A Changes row whose list is
+  gone since shows it with the icon it had, as the day panel does.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the

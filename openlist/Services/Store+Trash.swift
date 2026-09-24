@@ -196,7 +196,7 @@ extension Store {
         guard !arrivingLists.isEmpty || !arrivingBlocks.isEmpty else { return true }
         let groups = Set(arrivingLists.compactMap { hierarchy.retainedGroup(for: $0.id) }
             + arrivingBlocks.compactMap { $0.listID.flatMap { hierarchy.retainedGroup(for: $0) } })
-        return trashTransaction("Synced child documents could not be retained in Trash") {
+        return trashTransaction("Synced nested lists could not be kept in Trash") {
             for group in groups {
                 guard let root = lists.first(where: { $0.id == group && $0.trashID == group }),
                       var metadata = root.trashMetadata else { throw TrashError.invalidRetention }

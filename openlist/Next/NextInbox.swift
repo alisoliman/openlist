@@ -316,15 +316,9 @@ private struct NXTriageCard: View {
     }
 
     private func caps(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5, weight: .semibold))
-            .kerning(0.74)
-            .textCase(.uppercase)
-            .foregroundStyle(NX.ink(0.36))
+        NXCapsTitle(text: text)
             // Wraps, as the design's does, when the column is narrow.
             .fixedSize(horizontal: false, vertical: true)
-            // The design's 600 10.5/1.
-            .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
             .padding(.bottom, 8)
     }
 

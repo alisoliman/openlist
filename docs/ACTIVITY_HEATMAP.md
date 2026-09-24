@@ -19,10 +19,22 @@ The source is committed `ActivityEvent` completion history, independent of the
 recent events **Changes** reads and of today's task state. An ordinary task
 counts once by task UUID across all retained history. A recurring task or a
 subtask in a recurring cycle counts once per task UUID and completed occurrence
-cycle UUID. The first countable recorded completion supplies the day and saved title. Reopening
-an ordinary task does not add another count. Undo keeps the historical performed
-action, as in the task Activity timeline; Redo does not add another count.
-Deduplication happens before restricting the visible date range.
+cycle UUID. As in the design, only a completion that still stands counts: its
+Undo (the `completionUndone` event names the record it removed) or reopening
+the task takes it back, and with no completion saved after that it leaves the
+day, the total and the streak. A reopen takes back an ordinary task's count, or
+the cycle the task counted in, which its `reopened` event names: its own rule's
+unadvanced cycle, or the cycle of the repeat above it for a subtask. When nothing
+counted in that cycle, as for a task done before it was given a rule, it takes
+back the completion of the occurrence it reopened. A repeat rolling on to its
+next date resets its ticked subtasks with `reopened` events that name no cycle,
+so they keep their cycle's count. The first countable completion since the last
+one taken back supplies the day and saved title, so a task reopened and done
+again counts once, on the later day; Redo, or a reopen's Undo, puts the same
+completion back on its own day. Reopen history saved before subtask reopens named
+their cycle leaves those subtasks counted. The task Activity timeline still lists
+every performed action. Deduplication happens before restricting the visible date
+range.
 
 New completion events capture the exact completed occurrence UUID, counting
 cycle UUID, and recurrence status inside the existing optional Codable `changeData` payload.
@@ -73,6 +85,6 @@ their multi-root Undo/Redo. A failed atomic bulk action rolls back its pending
 cycle metadata along with its task changes.
 
 Run `./Tools/run-activity-heatmap-checks.sh` for legend bands, date boundaries,
-DST/time-zone grouping, repeated toggles, recurring children, Undo/Redo, committed reads,
+DST/time-zone grouping, repeated toggles, recurring children, Undo/Redo, reopening, committed reads,
 failed writes/clear, old payload decoding, backup roundtrip, Trash retention,
 and process relaunch coverage.

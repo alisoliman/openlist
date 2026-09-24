@@ -81,7 +81,7 @@ struct NXICloudDetails: View {
 struct NXDataSettings: View {
     @Environment(AppEnvironment.self) private var env
 
-    /// Nothing in Trash counts, a trashed list's blocks included, as with the lists.
+    /// Nothing in Trash counts, a trashed list's lines included, as with the lists.
     @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
     @Query(filter: TaskList.availablePredicate) private var lists: [TaskList]
 
@@ -93,7 +93,7 @@ struct NXDataSettings: View {
         let completed = tasks.filter(\.isCompleted).count
         NXSettingsGroup(title: "Data") {
             NXSettingRow(label: "Your data",
-                         hint: "\(Self.count(lists.count, "list")) · \(Self.count(tasks.count, "task")), \(completed) completed · \(Self.count(blocks.count - tasks.count, "other block"))")
+                         hint: "\(Self.count(lists.count, "list")) · \(Self.count(tasks.count, "task")), \(completed) completed · \(Self.count(blocks.count - tasks.count, "other line"))")
             NXSettingRow(label: "Export every list as Markdown",
                          hint: "Writes one Markdown file per list, its images and attachments in an assets folder beside it. A list with nested lists becomes one folder holding them all. Existing files are kept.") {
                 Button("Export…") { exportAll() }
@@ -300,7 +300,7 @@ private struct LibraryRestorePreview: View {
                 row("Archived lists", "\(preview.snapshot.lists.filter { $0.isArchived && $0.trashID == nil && $0.mergedIntoID == nil }.count)")
                 row("Trash items", "\(preview.snapshot.lists.filter { $0.trashID == $0.id }.count + preview.snapshot.blocks.filter { $0.trashID == $0.id }.count)")
                 row("Tasks (including Trash)", "\(preview.snapshot.taskCount)")
-                row("Notes and other blocks", "\(preview.snapshot.blocks.count - preview.snapshot.taskCount)")
+                row("Other lines (including Trash)", "\(preview.snapshot.blocks.count - preview.snapshot.taskCount)")
                 row("Labels", "\(preview.snapshot.labels.count)")
                 row("Activity entries", "\(preview.snapshot.activity.count)")
                 row("Calendar records", "\(preview.snapshot.workSessions.count + preview.snapshot.completions.count + preview.snapshot.placements.count)")

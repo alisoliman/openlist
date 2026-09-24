@@ -112,7 +112,7 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
             return result
         }
         let listIDs = try unique(lists.map(\.id), "list")
-        let blockIDs = try unique(blocks.map(\.id), "block")
+        let blockIDs = try unique(blocks.map(\.id), "line")
         let sectionIDs = try unique(sections.map(\.id), "section")
         let labelIDs = try unique(labels.map(\.id), "label")
         _ = try unique(attachments.map(\.id), "attachment")
@@ -135,15 +135,15 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
         let byID = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0) })
         for block in blocks {
             if block.trashID == nil {
-                try reference(block.listID, in: listIDs, "block list")
-                try reference(block.parentID, in: blockIDs, "parent block")
+                try reference(block.listID, in: listIDs, "list for a line")
+                try reference(block.parentID, in: blockIDs, "parent line")
             }
             if let parentID = block.parentID, let parent = byID[parentID], parent.listID != block.listID, block.trashID == nil {
-                throw LibraryBackupError.invalid("A parent block belongs to a different list.")
+                throw LibraryBackupError.invalid("A parent line belongs to a different list.")
             }
             if block.trashID == nil { for id in block.labelIDs { try reference(id, in: labelIDs, "task label") } }
             guard BlockKind(rawValue: block.kindRaw) != nil, TaskPriority(rawValue: block.priorityRaw) != nil else {
-                throw LibraryBackupError.invalid("Unsupported block kind or priority.")
+                throw LibraryBackupError.invalid("Unsupported line kind or priority.")
             }
         }
         let listsByID = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, $0) })
@@ -162,10 +162,10 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
         }
         for list in lists {
             if list.isSystemInbox && list.parentListID != nil {
-                throw LibraryBackupError.invalid("The Inbox cannot be a child document.")
+                throw LibraryBackupError.invalid("The Inbox cannot be a nested list.")
             }
             if list.parentListID.flatMap({ listsByID[$0] })?.isSystemInbox == true {
-                throw LibraryBackupError.invalid("The Inbox cannot own child documents.")
+                throw LibraryBackupError.invalid("The Inbox cannot hold nested lists.")
             }
             if let group = list.trashID, group != list.id {
                 var next = list.parentListID, seen: Set<UUID> = [list.id]
@@ -175,7 +175,7 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
                     next = parent.parentListID
                 }
                 guard reachedRoot, trashMetadata[group] != nil else {
-                    throw LibraryBackupError.invalid("A retained child document has no owning Trash root.")
+                    throw LibraryBackupError.invalid("A nested list kept in Trash has no Trash entry of its own.")
                 }
             }
         }
@@ -198,7 +198,7 @@ nonisolated struct LibraryBackup: Codable, Equatable, Sendable {
                 } else if block.id != group {
                     guard block.listID == byID[group]?.listID, let parentID = block.parentID,
                           byID[parentID]?.trashID == group else {
-                        throw LibraryBackupError.invalid("A retained subtree has a missing or unrelated parent.")
+                        throw LibraryBackupError.invalid("Content kept in Trash has a missing or unrelated parent.")
                     }
                 }
                 let retainedLabels = Set(metadata.labels.map(\.id))

@@ -83,10 +83,11 @@ struct NXHoursEditor: View {
     }
 
     private func override(_ item: AvailabilityOverride) -> some View {
-        let date = item.date.formatted(date: .abbreviated, time: .omitted)
+        // Named as the pills name a day, spoken in full.
+        let date = item.date.formatted(date: .complete, time: .omitted)
         return HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(date).font(.system(size: 12.5, weight: .medium)).foregroundStyle(NX.ink)
+                Text(NXFormat.dayLabel(item.date)).font(.system(size: 12.5, weight: .medium)).foregroundStyle(NX.ink)
                 Text(NXWindows.summary(item.windows)).font(.system(size: 11.5)).monospacedDigit().foregroundStyle(NX.ink(0.48))
             }
             Spacer(minLength: 8)
@@ -156,7 +157,7 @@ private struct NXOverrideEditor: View {
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(NX.ink)
                 Button { picksDate = true } label: {
-                    NXValuePill(text: draft.date.formatted(date: .abbreviated, time: .omitted))
+                    NXValuePill(text: NXFormat.dayLabel(draft.date))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Date")
