@@ -8,46 +8,6 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// The fields a design action can change, captured so Undo can put them back.
-private struct TaskFields {
-    var id: UUID
-    var dueDate: Date?
-    var includesTime: Bool
-    var reminderAt: Date?
-    var isStarred: Bool
-    var priorityRaw: Int
-    var labelIDs: [UUID]
-    var selectedForDay: Date?
-    var deferredUntil: Date?
-    var estimate: Int
-
-    init(_ block: Block) {
-        id = block.id
-        dueDate = block.dueDate
-        includesTime = block.includesTime
-        reminderAt = block.reminderAt
-        isStarred = block.isStarred
-        priorityRaw = block.priorityRaw
-        labelIDs = block.labelIDs
-        selectedForDay = block.selectedForDay
-        deferredUntil = block.deferredUntil
-        estimate = block.schedulingEstimateMinutes
-    }
-
-    func apply(to block: Block) {
-        block.dueDate = dueDate
-        block.includesTime = includesTime
-        block.reminderAt = reminderAt
-        block.isStarred = isStarred
-        block.priorityRaw = priorityRaw
-        block.labelIDs = labelIDs
-        block.selectedForDay = selectedForDay
-        block.deferredUntil = deferredUntil
-        block.schedulingEstimateMinutes = estimate
-        block.touch()
-    }
-}
-
 /// A calendar placement, kept by value so Undo and Redo can rebuild a task's set.
 private struct PlacementSpan {
     var start: Date
@@ -77,15 +37,17 @@ extension Workbench {
         // One save for the whole selection, not one per task.
         store.batch { for task in tasks { change(task) } }
         let after = tasks.compactMap { store.block(id: $0.id) }.map(TaskFields.init)
-        registerUndo(label, undo: { $0.restore(before) }, redo: { $0.restore(after) })
+        registerUndo(label, undo: { $0.restore(before, over: after) }, redo: { $0.restore(after, over: before) })
         snap(label, icon: icon, tone: tone, ids: tasks.map(\.id))
         if chip { flash(\.freshChip, tasks.map(\.id), for: 700) }
     }
 
-    private func restore(_ fields: [TaskFields]) {
+    /// Puts back `fields` where they differ from `replaced`, as the step being
+    /// undone or redone left them, so only what the step changed goes back.
+    private func restore(_ fields: [TaskFields], over replaced: [TaskFields]) {
         for field in fields {
             guard let block = store.block(id: field.id) else { continue }
-            field.apply(to: block)
+            field.apply(to: block, replacing: replaced.first { $0.id == field.id })
             store.scheduleReminderIfNeeded(for: block)
         }
         store.save()
@@ -256,6 +218,90 @@ extension Workbench {
         }
     }
 
+    // The Schedule and label popovers are native extras; their changes go
+    // through here like the design's pills, each with its tray and Undo.
+
+    /// A day picked in the month, a time, or a typed phrase, which may also
+    /// set the repeat. Named for where the task lands, as `schedule` is.
+    func setDue(_ id: UUID, date: Date, includesTime: Bool, recurrence: Recurrence? = nil) {
+        guard let task = store.block(id: id), task.isTask else { return }
+        var label = "\(describe([task])) → \(NXFormat.dueLabel(date))" + (includesTime ? " \(NXFormat.clock(date))" : "")
+        if let recurrence { label += " · \(recurrence.displayText)" }
+        edit([task], label: label, icon: "calendar", tone: .accent) { task in
+            store.setDueDate(date, includesTime: includesTime, for: task)
+            if let recurrence { store.setRecurrence(recurrence, for: task) }
+        }
+    }
+
+    func setReminder(_ id: UUID, at date: Date?) {
+        guard let task = store.block(id: id), task.isTask, task.reminderAt != date else { return }
+        let label = date.map { "Reminder \(NXFormat.dueLabel($0)) \(NXFormat.clock($0)) · \(describe([task]))" }
+            ?? "Removed reminder · \(describe([task]))"
+        edit([task], label: label, icon: "bell", tone: .accent) { task in
+            store.setReminder(date, for: task)
+        }
+    }
+
+    /// A repeat rule, or none. Choosing the rule the task already has changes nothing.
+    func setRecurrence(_ id: UUID, _ rule: Recurrence?) {
+        guard let task = store.block(id: id), task.isTask else { return }
+        // Stored anchored to the due date, which a repeat without one gets today.
+        let stored = rule?.anchored(to: task.dueDate ?? NXFormat.day(offset: 0))
+        guard stored != task.recurrence || (rule != nil && task.dueDate == nil) else { return }
+        let label = stored.map { rule in
+            "Repeats \(rule.displayText.prefix(1).lowercased() + rule.displayText.dropFirst()) · \(describe([task]))"
+        } ?? "Stopped repeating · \(describe([task]))"
+        edit([task], label: label, icon: "repeat", tone: .accent) { task in
+            store.setRecurrence(rule, for: task)
+        }
+    }
+
+    /// The label picker's Return: adds the label named `name`, making it
+    /// first when there's none. Undo takes back a label it made, while
+    /// nothing else uses it, and Redo brings back the same one.
+    func addLabel(named name: String, to id: UUID) {
+        let name = TaskLabel.normalize(name)
+        guard !name.isEmpty, let task = store.block(id: id), task.isTask else { return }
+        if let existing = store.matchingLabels(named: name).first {
+            if !task.labelIDs.contains(existing.id) { toggleLabel(id, labelID: existing.id) }
+            return
+        }
+        document?.commitLine()
+        let label = "Added #\(name) · \(describe([task]))"
+        let add = {
+            guard let created = self.store.findOrCreateLabel(named: name) else { return }
+            self.store.addLabel(created, to: task)
+        }
+        guard let listID = task.listID else { add(); return }
+        store.undoableEditorEdit(in: listID, name: label, undoManager: undoManager, includingNewLabels: true,
+                                 didRegister: { self.snap(label, icon: "tag", tone: .accent, ids: [id]) }, add)
+        flash(\.freshChip, [id], for: 700)
+    }
+
+    // MARK: Inspector text
+
+    /// The inspector's title and note, written as the list document writes
+    /// a line: one Undo step, logged with the design's name and no tray.
+    /// `task` may be in Trash, where what was typed goes with it, no step.
+    func setTitle(_ text: String, of task: Block) {
+        guard task.text != text else { return }
+        let label = "Edited \(NXFormat.quoted(text))"
+        recordEdit(label, of: task) { store.setText(text, for: task) }
+    }
+
+    func setNote(_ note: String, of task: Block) {
+        guard task.note != note else { return }
+        let label = "Edited note on \(describe([task]))"
+        recordEdit(label, of: task) { store.setNote(note, for: task) }
+    }
+
+    private func recordEdit(_ label: String, of task: Block, _ change: () -> Void) {
+        guard task.trashID == nil, let listID = task.listID else { return change() }
+        let id = task.id
+        store.undoableEditorEdit(in: listID, name: label, undoManager: undoManager,
+                                 didRegister: { self.logEdit(label, ids: [id]) }, change)
+    }
+
     func setEstimate(_ id: UUID, delta: Int) {
         guard let task = store.block(id: id) else { return }
         let current = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
@@ -320,8 +366,10 @@ extension Workbench {
         let taskIDs = tasks.map(\.id)
         // A row still in its dwell goes to Trash instead of completing.
         cancelClosing(taskIDs, restoresWork: false)
-        // The Undo the tray offers is on the stack from the start; the rows fly
+        // The Undo the tray offers is on the stack from the start, as a step of
+        // its own after the line or inspector draft saved for it; the rows fly
         // out before the Store writes the trash.
+        separateUndoStep()
         beginTrash(taskIDs, label: "Moved \(describe(tasks)) to Trash")
         selection = []
         focusID = nil
@@ -405,6 +453,35 @@ extension Workbench {
                 _ = workbench.store.restoreTrash(ids: [id])
             }
         })
+    }
+
+    /// A list's title renamed in place, in its header or the sidebar: one
+    /// Undo step, logged as an edit is.
+    func renameList(_ id: UUID, to title: String) {
+        guard let list = store.list(id: id), list.title != title else { return }
+        let previous = list.title
+        let apply: @MainActor (Workbench, String) -> Void = { workbench, title in
+            guard let list = workbench.store.list(id: id) else { return }
+            workbench.store.rename(list, to: title)
+        }
+        apply(self, title)
+        let label = "Renamed list to \(NXFormat.quoted(title))"
+        registerUndo(label, undo: { apply($0, previous) }, redo: { apply($0, title) })
+        logEdit(label, ids: [id])
+    }
+
+    /// A list's description, written under its title: one Undo step, logged.
+    func setListDescription(_ id: UUID, to summary: String) {
+        guard let list = store.list(id: id), list.summary != summary else { return }
+        let previous = list.summary
+        let apply: @MainActor (Workbench, String) -> Void = { workbench, summary in
+            guard let list = workbench.store.list(id: id) else { return }
+            workbench.store.setSummary(summary, for: list)
+        }
+        apply(self, summary)
+        let label = "Edited description on \(NXFormat.quoted(list.displayTitle))"
+        registerUndo(label, undo: { apply($0, previous) }, redo: { apply($0, summary) })
+        logEdit(label, ids: [id])
     }
 
     /// The hours Plan and Start working use for a list's tasks.
@@ -628,12 +705,14 @@ extension Workbench {
             .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
         let planned = [PlacementSpan(start: start, end: end, isPinned: true)]
         setPlacements(of: id, occurrenceID: occurrenceID, to: planned)
+        // Planning also selects the task for its day when no day is; Undo puts back only what it changed.
+        let placed = store.block(id: id).map { [TaskFields($0)] } ?? fields
         let label = "Planned \(NXFormat.quoted(task.displayTitle)) · \(dayOffset == 0 ? "Today" : NXFormat.dueLabel(start)) \(NXFormat.clock(start))"
         // Both directions rebuild the occurrence's whole placement set, so any
         // number of Undo and Redo steps leaves exactly one set.
         registerUndo(label, undo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: previous)
-            workbench.restore(fields)
+            workbench.restore(fields, over: placed)
             workbench.calendar.replan()
         }, redo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: planned)
@@ -674,10 +753,11 @@ extension Workbench {
         let occurrenceID = reopened.occurrenceID
         let fields = [TaskFields(reopened)]
         setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
+        let placed = store.block(id: id).map { [TaskFields($0)] } ?? fields
         // Grouped with the reopen, so Undo takes the slots back before the task closes again.
         registerUndo("Reopened \(describe([reopened]))", undo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: [])
-            workbench.restore(fields)
+            workbench.restore(fields, over: placed)
             workbench.calendar.replan()
         }, redo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)

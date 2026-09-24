@@ -234,7 +234,7 @@ struct NextListScreen: View {
                            rename: list.isSystemInbox ? nil : NXTitleRename(isEditing: $renaming,
                                                                            value: naming ? "" : list.title,
                                                                            placeholder: "Untitled list") { name in
-                               env.store.rename(list, to: name)
+                               workbench.renameList(list.id, to: name)
                            }) {
                 // A list archived through its parent unarchives with the parent.
                 if list.isArchived {
@@ -495,7 +495,7 @@ private struct NXListDescription: View {
         guard editing else { return }
         editing = false
         let summary = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if summary != list.summary { env.store.setSummary(summary, for: list) }
+        if summary != list.summary { env.workbench.setListDescription(list.id, to: summary) }
         selection = nil
     }
 }

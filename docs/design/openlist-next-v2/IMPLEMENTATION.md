@@ -13,8 +13,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   tray, session change log, inbox triage (kept/reviewed), G-prefix.
 - `Workbench+Actions` — every design action (done, today, tomorrow, star, plan, priority,
   labels, move, trash, restore, keep, schedule, fit) goes through here: mutation via Store,
-  undo registered on the window UndoManager (snapshot-based where Store has none),
-  change-log entry, tray.
+  undo registered on the window UndoManager (snapshot-based where Store has none, putting
+  back only the fields the step changed), change-log entry, tray. So do the native extras
+  that edit the same things: the inspector's Schedule, Repeat, Reminder and label popovers
+  (with tray), its title and note, and a list's title and description (edits: logged, no tray).
 - Completion dwell defers the real `store.toggleCompletion` until dwell+300ms; Undo during
   dwell cancels. Pending closings flush on termination.
 - `NextKeyMonitor` — NSEvent local monitor implementing the global key model when not typing.
@@ -56,10 +58,17 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
   writes the new line in the list document (`Workbench.addSubtask`,
   `OutlineEditor.appendSubtask`). The Inbox's document mode is the same list document under
-  the Inbox header. Native extras on the list page: the "…" options menu, the title renamed
-  in place, the description, cover and nested lists, a drag grip on every line (drops go
-  through `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and
-  search reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
+  the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
+  Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
+  the Inbox as its document. Native inspector extras: the title and note are edited in place
+  and files kept with the task. As the design, the note shows only when there is one; until
+  then a quiet "Add a note" row stands in, with "Attach a file" beside it until the task has
+  files, when Files shows. Files dropped anywhere on the panel are attached. The Schedule
+  popover fits its section, up to 510pt, and its date and time controls are Next pills.
+  Native extras on the list page: the "…" options menu, the title renamed in place, the
+  description, cover and nested lists, a drag grip on every line (drops go through
+  `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and search
+  reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
 - Where the list document departs from the design, to keep native data safe: a done
   top-level task stays in the document while a task under it is open; a line left empty
   goes only when it was new or emptied in its edit and holds nothing but text (Backspace

@@ -181,9 +181,11 @@ struct NXHoverButtonStyle: ButtonStyle {
     }
 }
 
-/// The grey minus or plus of the inspector's estimate stepper.
+/// The grey minus or plus of the inspector's estimate stepper. `label` is
+/// what VoiceOver reads for it, not the symbol's name.
 struct NXStepButton: View {
     let icon: String
+    let label: String
     let action: () -> Void
 
     var body: some View {
@@ -193,6 +195,7 @@ struct NXStepButton: View {
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
                                         padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                         foreground: NX.ink(0.6)))
+        .accessibilityLabel(label)
     }
 }
 

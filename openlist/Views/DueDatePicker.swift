@@ -7,7 +7,8 @@ import SwiftData
 import SwiftUI
 
 /// Quick presets plus a calendar and optional time, matching how Superlist
-/// lets you type or tap a due date.
+/// lets you type or tap a due date. Each change goes through the workbench,
+/// as the inspector's due pills do: one Undo step, with its tray.
 struct DueDatePicker: View {
     let block: Block
 
@@ -58,16 +59,16 @@ struct DueDatePicker: View {
                 .onTapGesture { includesTimeBinding.wrappedValue.toggle() }
                 .accessibilityHidden(true)
                 if includesTime {
-                    DatePicker("Due time", selection: timeBinding, displayedComponents: .hourAndMinute)
-                        .labelsHidden()
-                        .frame(width: 90)
+                    NXTimePill(label: "Due time", minute: CalendarMonthGrid.minute(of: timeValue, calendar: calendar)) { minute in
+                        timeBinding.wrappedValue = CalendarMonthGrid.date(timeValue, atMinute: minute, calendar: calendar)
+                    }
                 }
                 NXToggle(isOn: includesTime, label: "Include a time") { includesTimeBinding.wrappedValue.toggle() }
             }
 
             if block.dueDate != nil {
                 Button("Clear due date") {
-                    env.store.setDueDate(nil, for: block)
+                    env.workbench.schedule([block.id], offset: nil)
                     load()
                 }
                 .buttonStyle(NXPanelButtonStyle(kind: .destructive, size: .small))
@@ -125,10 +126,7 @@ struct DueDatePicker: View {
     private func applyTypedPhrase() {
         let parsed = DateParser.parse(typedPhrase)
         guard let date = parsed.date else { return }
-        env.store.setDueDate(date, includesTime: parsed.includesTime, for: block)
-        if let recurrence = parsed.recurrence {
-            env.store.setRecurrence(recurrence, for: block)
-        }
+        env.workbench.setDue(block.id, date: date, includesTime: parsed.includesTime, recurrence: parsed.recurrence)
         typedPhrase = ""
         load()
     }
@@ -137,20 +135,21 @@ struct DueDatePicker: View {
 
     private var presets: some View {
         NXFlow(spacing: 4) {
+            // As the inspector's pills: a timed task keeps its time.
             presetPill("Today", symbol: "sun.max", detail: shortWeekday(0), day: day(0)) {
-                env.store.setDueToday(block)
+                env.workbench.schedule([block.id], offset: 0)
             }
             presetPill("Tomorrow", symbol: "sun.horizon", detail: shortWeekday(1), day: day(1)) {
-                env.store.setDueTomorrow(block)
+                env.workbench.schedule([block.id], offset: 1)
             }
             presetPill("This weekend", symbol: "beach.umbrella", detail: weekendDetail, day: weekendDate) {
                 if let date = weekendDate {
-                    env.store.setDueDate(date, for: block)
+                    env.workbench.schedule([block.id], offset: NXFormat.dayOffset(date))
                 }
             }
             presetPill("Next week", symbol: "calendar", detail: shortWeekday(NXFormat.nextWeekOffset()),
                        day: day(NXFormat.nextWeekOffset())) {
-                env.store.setDueNextWeek(block)
+                env.workbench.schedule([block.id], offset: NXFormat.nextWeekOffset())
             }
         }
     }
@@ -195,7 +194,8 @@ struct DueDatePicker: View {
     private func load() {
         selectedDate = block.dueDate ?? calendar.startOfDay(for: .now)
         includesTime = block.includesTime
-        timeValue = block.dueDate ?? calendar.date(bySettingHour: 9, minute: 0, second: 0, of: .now) ?? .now
+        // A date without a time starts its time at 9:00, not at midnight.
+        timeValue = block.includesTime ? (block.dueDate ?? .now) : CalendarMonthGrid.date(.now, atMinute: 9 * 60, calendar: calendar)
     }
 
     // Hydration writes only the state above. Bindings persist actual control
@@ -214,6 +214,6 @@ struct DueDatePicker: View {
             let time = calendar.dateComponents([.hour, .minute], from: timeValue)
             result = calendar.date(bySettingHour: time.hour ?? 9, minute: time.minute ?? 0, second: 0, of: result) ?? result
         }
-        env.store.setDueDate(result, includesTime: includesTime, for: block)
+        env.workbench.setDue(block.id, date: result, includesTime: includesTime)
     }
 }

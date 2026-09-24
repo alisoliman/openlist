@@ -298,4 +298,84 @@ for paste in [false, true] {
     check(!fixture.edits.consume(for: block), "A later Open Details action cannot reparse committed capture")
     window.contentView = nil
 }
+
+// The inspector's title, note and a label made in its picker go through the
+// workbench as editor edits: Undo puts back only what the edit changed, and a
+// label the edit made leaves with it and comes back, the same one, on Redo.
+do {
+    let undo = UndoManager()
+    undo.groupsByEvent = false
+    func edit(_ name: String, labels: Bool = false, _ body: () -> Void) {
+        undo.beginUndoGrouping()
+        store.undoableEditorEdit(in: list.id, name: name, undoManager: undo, includingNewLabels: labels, body)
+        undo.endUndoGrouping()
+    }
+    let task = store.appendBlock(kind: .task, text: "Book flights", to: .init(listID: list.id))
+    store.save()
+    edit("Edited “Book trains”") { store.setText("Book trains", for: task) }
+    // A popover schedules it meanwhile.
+    store.setDueDate(.now, for: task)
+    undo.undo()
+    check(store.block(id: task.id)?.text == "Book flights", "Undoing an inspector title edit puts the title back")
+    check(store.block(id: task.id)?.dueDate != nil, "Undoing an inspector title edit leaves a date set since")
+    edit("Edited note on “Book flights”") { store.setNote("Window seat", for: task) }
+    store.setPriority(.high, for: task)
+    undo.undo()
+    check(store.block(id: task.id)?.note == "", "Undoing an inspector note edit puts the note back")
+    check(store.block(id: task.id)?.priority == .high, "Undoing an inspector note edit leaves a priority set since")
+    edit("Added #travel · “Book flights”", labels: true) {
+        if let label = store.findOrCreateLabel(named: "travel") { store.addLabel(label, to: task) }
+    }
+    let created = store.matchingLabels(named: "travel").first
+    check(created.map { store.block(id: task.id)?.labelIDs.contains($0.id) == true } == true, "The picker's new label is on the task")
+    undo.undo()
+    check(store.matchingLabels(named: "travel").isEmpty, "Undo takes back the label the picker made")
+    check(store.block(id: task.id)?.labelIDs.isEmpty == true, "Undo takes the new label off the task")
+    undo.redo()
+    check(store.matchingLabels(named: "travel").first?.id == created?.id, "Redo brings back the same label")
+    check(created.map { store.block(id: task.id)?.labelIDs == [$0.id] } == true, "Redo puts the label back on the task")
+}
+
+// A design action's snapshot Undo and Redo, as the workbench runs them, write
+// back only the fields the step changed: an estimate, label or due date set
+// outside the undo stack meanwhile stays, and a repeat rule round-trips.
+do {
+    let task = store.appendBlock(kind: .task, text: "Water the plants", to: .init(listID: list.id))
+    let monday = Calendar.current.date(byAdding: .day, value: 4, to: Calendar.current.startOfDay(for: .now))!
+    store.setDueDate(monday, for: task)
+    store.setTaskEstimate(30, for: task)
+    let before = TaskFields(task)
+    store.setPriority(.high, for: task)
+    store.setRecurrence(.weekly, for: task)
+    let after = TaskFields(task)
+    let rule = task.recurrenceData
+    // Meanwhile, with no step of their own: the estimate stepper, a label and a date.
+    store.setTaskEstimate(45, for: task)
+    let garden = store.findOrCreateLabel(named: "garden")!
+    store.addLabel(garden, to: task)
+    let friday = Calendar.current.date(byAdding: .day, value: 8, to: monday)!
+    store.setDueDate(friday, for: task)
+    before.apply(to: task, replacing: after)
+    check(task.priority == .none && task.recurrence == nil, "Undo takes back the priority and repeat the step set")
+    check(task.schedulingEstimateMinutes == 45 && task.labelIDs == [garden.id] && task.dueDate == friday,
+          "Undo leaves the estimate, label and date set since")
+    after.apply(to: task, replacing: before)
+    check(task.priority == .high && task.recurrenceData == rule, "Redo puts back the priority and the same repeat rule")
+    check(task.schedulingEstimateMinutes == 45 && task.labelIDs == [garden.id] && task.dueDate == friday,
+          "Redo leaves the estimate, label and date set since")
+
+    // Planning selects a task for its day; its Undo takes back only that.
+    let plant = store.appendBlock(kind: .task, text: "Repot the fern", to: .init(listID: list.id))
+    store.setTaskEstimate(30, for: plant)
+    let unplanned = TaskFields(plant)
+    let start = Calendar.current.date(byAdding: .hour, value: 10, to: monday)!
+    store.setPlacement(for: plant, start: start, end: start.addingTimeInterval(1800), isPinned: true)
+    let placed = TaskFields(plant)
+    check(plant.selectedForDay != nil, "A placement selects an unselected task for its day")
+    store.setTaskEstimate(60, for: plant)
+    unplanned.apply(to: plant, replacing: placed)
+    check(plant.selectedForDay == nil, "Undoing the plan takes back the day it selected")
+    check(plant.schedulingEstimateMinutes == 60, "Undoing the plan leaves an estimate stepped since")
+    store.save()
+}
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

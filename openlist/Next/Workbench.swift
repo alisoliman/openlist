@@ -171,7 +171,8 @@ final class Workbench {
 
     /// The inspector's Add subtask, as the design's: goes to the task's list
     /// document, opening it if needed, where the task unfolds and a new
-    /// subtask line at the end of its subtasks takes the caret.
+    /// subtask line at the end of its subtasks takes the caret. The Inbox
+    /// shows as its document from then on, the one place it has to write it.
     func addSubtask(to id: UUID) {
         guard let task = store.block(id: id), task.isTask, let list = store.list(id: task.listID) else { return }
         document?.commitLine()
@@ -179,8 +180,14 @@ final class Workbench {
             document.appendSubtask(to: id)
             return
         }
+        if list.id == navigator.inboxListID, navigator.listViewMode(for: list.id) != .document {
+            navigator.setListViewMode(.document, for: list.id)
+        }
         pendingSubtaskParentID = id
         go(route(for: list))
+        // Only that list's document takes it up; kept for a later one, it
+        // would write a line nobody asked for then.
+        if navigator.documentListID != list.id { pendingSubtaskParentID = nil }
     }
 
     /// Space, or a task's note button: shows or hides its note under it. A
@@ -619,6 +626,17 @@ final class Workbench {
         }
         undoManager.setActionName(label)
         undoRevision += 1
+    }
+
+    /// Closes the window's undo group, which holds everything registered in
+    /// this event, so the change about to be made is a step of its own rather
+    /// than undone with, say, a draft just saved for it. Only right before a
+    /// change that is sure to register: a group left empty stays on the stack.
+    func separateUndoStep() {
+        guard let undoManager, undoManager.groupingLevel > 0,
+              !undoManager.isUndoing, !undoManager.isRedoing else { return }
+        undoManager.endUndoGrouping()
+        undoManager.beginUndoGrouping()
     }
 
     private func observeUndo() {

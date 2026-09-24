@@ -1,7 +1,8 @@
 import SwiftData
 import SwiftUI
 
-/// Attach existing labels or create a new one inline.
+/// Attach existing labels or create a new one inline, through the workbench,
+/// as the inspector's label chips do: one Undo step, with its tray.
 struct LabelPicker: View {
     let block: Block
 
@@ -31,7 +32,7 @@ struct LabelPicker: View {
                             let labelID = label.id
                             let isOn = block.labelIDs.contains(label.id)
                             Button {
-                                env.store.toggleLabel(id: labelID, on: block)
+                                env.workbench.toggleLabel(block.id, labelID: labelID)
                             } label: {
                                 HStack(spacing: 9) {
                                     Circle()
@@ -95,8 +96,8 @@ struct LabelPicker: View {
     }
 
     private func createFromQuery() {
-        guard let label = env.store.findOrCreateLabel(named: query) else { return }
-        env.store.addLabel(label, to: block)
+        guard !TaskLabel.normalize(query).isEmpty else { return }
+        env.workbench.addLabel(named: query, to: block.id)
         query = ""
     }
 }

@@ -74,4 +74,49 @@ for firstWeekday in [1, 2, 7] {
         }
     }
 }
+// The Next date and time pills: days before the earliest can't be picked, and
+// a time lands on the wall clock of its day, never before the earliest.
+calendar.firstWeekday = 2
+let earliest = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 14, minute: 37))!
+let dayBefore = calendar.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 23, minute: 59))!
+expect(CalendarMonthGrid.isBefore(dayBefore, earliest: earliest, calendar: calendar), "The day before the earliest can't be picked")
+expect(!CalendarMonthGrid.isBefore(calendar.startOfDay(for: earliest), earliest: earliest, calendar: calendar),
+       "The earliest's own day can be picked, from its midnight")
+expect(!CalendarMonthGrid.isBefore(dayBefore, earliest: nil, calendar: calendar), "Without an earliest every day can be picked")
+expect(CalendarMonthGrid.minute(of: earliest, calendar: calendar) == 14 * 60 + 37, "A time reads as minutes after midnight")
+let nine = CalendarMonthGrid.date(earliest, atMinute: 9 * 60, calendar: calendar)
+expect(calendar.isDate(nine, inSameDayAs: earliest) && CalendarMonthGrid.minute(of: nine, calendar: calendar) == 540,
+       "A time lands on its own day")
+expect(CalendarMonthGrid.date(earliest, atMinute: 9 * 60, notBefore: earliest, calendar: calendar) == earliest,
+       "A time earlier than the earliest becomes the earliest")
+// Arrow keys stop at the earliest day, a cell of its month's grid, and never
+// take focus, or the month shown, before it.
+@MainActor func moved(_ day: Date, _ amount: Int, earliest: Date?) -> Date? {
+    CalendarMonthGrid.day(day, movedBy: amount, earliest: earliest, calendar: calendar)
+}
+let earliestDay = calendar.startOfDay(for: earliest)
+expect(moved(earliestDay, -1, earliest: earliest) == earliestDay, "Left from the earliest day stays on it")
+expect(CalendarMonthGrid.days(in: earliest, calendar: calendar).contains(earliestDay),
+       "The earliest day focus stops at is one of the grid's own cells")
+let monday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 28))!
+expect(moved(monday, -7, earliest: earliest) == earliestDay, "Up past the earliest day stops on it")
+expect(moved(earliestDay, 1, earliest: earliest) == calendar.date(byAdding: .day, value: 1, to: earliestDay),
+       "Right from the earliest day moves on")
+expect(moved(earliestDay, -1, earliest: nil) == calendar.date(byAdding: .day, value: -1, to: earliestDay),
+       "Without an earliest the arrows go back freely")
+let firstOfOctober = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 9))!
+let thirdOfOctober = calendar.date(from: DateComponents(year: 2026, month: 10, day: 3))!
+expect(moved(thirdOfOctober, -7, earliest: firstOfOctober).map {
+    calendar.isDate($0, equalTo: firstOfOctober, toGranularity: .month)
+} == true, "Up from the earliest month's first week stays in that month")
+let later = CalendarMonthGrid.date(earliest, atMinute: 16 * 60, notBefore: earliest, calendar: calendar)
+expect(CalendarMonthGrid.minute(of: later, calendar: calendar) == 960, "A time after the earliest stays as picked")
+// Amsterdam skips 02:00–03:00 on 29 March 2026.
+let springForward = calendar.date(from: DateComponents(year: 2026, month: 3, day: 29))!
+let skipped = CalendarMonthGrid.date(springForward, atMinute: 2 * 60 + 30, calendar: calendar)
+expect(calendar.isDate(skipped, inSameDayAs: springForward) && CalendarMonthGrid.minute(of: skipped, calendar: calendar) >= 180,
+       "A time the clock skips becomes the next one there is, that day")
+let fallBack = calendar.date(from: DateComponents(year: 2026, month: 10, day: 25))!
+expect(CalendarMonthGrid.minute(of: CalendarMonthGrid.date(fallBack, atMinute: 23 * 60 + 45, calendar: calendar), calendar: calendar) == 1425,
+       "A late time on the long day stays on the wall clock")
 print("Calendar layout: \(checks) checks passed")

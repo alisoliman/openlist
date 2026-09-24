@@ -26,10 +26,9 @@ struct TaskDeferralPicker: View {
                     .foregroundStyle(NX.ink(0.5))
                     .lineLimit(2)
             }
-            DatePicker(selection: $date, in: Calendar.current.startOfDay(for: .now)..., displayedComponents: .date) {
-                Text("Resume planning on")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(NX.ink)
+            VStack(alignment: .leading, spacing: 8) {
+                NXCapsTitle(text: "Resume planning on")
+                CalendarMonthPicker(selection: date, calendar: env.settings.calendar, earliest: .now) { date = $0 }
             }
             Text("Remaining work will use the next available time on or after this day. The due date stays the same.")
                 .font(.system(size: 11.5))

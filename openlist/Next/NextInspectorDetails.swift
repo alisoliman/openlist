@@ -40,6 +40,34 @@ private struct NXInspectorLink: View {
     }
 }
 
+/// A quiet action row, like the design's "Add subtask": ink 0.42, ink on hover.
+struct NXInspectorQuietAction: View {
+    let icon: String
+    let title: String
+    /// Takes the row's width, as Add subtask does under the subtasks.
+    var fills = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 15, height: 15)
+                    .accessibilityHidden(true)
+                // 500 12.5/1.
+                Text(title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .padding(.vertical, (12.5 - NXStrikeText.glyphLineHeight(12.5)) / 2)
+                if fills { Spacer(minLength: 0) }
+            }
+        }
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.04), radius: 8,
+                                        padding: EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8),
+                                        foreground: NX.ink(0.42), hoverForeground: NX.ink))
+    }
+}
+
 /// A chevron toggle for a part of a section the inspector builds only when open.
 private struct NXInspectorDisclosure: View {
     @Environment(\.nextStyle) private var style
@@ -195,10 +223,13 @@ struct NXInspectorSubtasks: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     let task: Block
+    /// Whether the section shows for a task with no subtasks yet.
+    let showsEmpty: Bool
     @Query private var blocks: [Block]
 
-    init(task: Block) {
+    init(task: Block, showsEmpty: Bool = true) {
         self.task = task
+        self.showsEmpty = showsEmpty
         _blocks = OutlineEditor.blocksQuery(for: DocumentContext(listID: task.listID ?? UUID()))
     }
 
@@ -207,7 +238,14 @@ struct NXInspectorSubtasks: View {
         let rows = Self.subtasks(of: task.id, in: blocks)
         let done = rows.filter { $0.block.isCompleted || workbench.closing[$0.id] != nil }.count
         let fraction = rows.isEmpty ? 0 : CGFloat(done) / CGFloat(rows.count)
-        VStack(alignment: .leading, spacing: 2) {
+        if showsEmpty || !rows.isEmpty {
+            section(rows: rows, done: done, fraction: fraction)
+        }
+    }
+
+    private func section(rows: [BlockRow], done: Int, fraction: CGFloat) -> some View {
+        let workbench = env.workbench
+        return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
                 Text("Subtasks")
                     .font(.system(size: 10.5, weight: .semibold))
@@ -236,7 +274,8 @@ struct NXInspectorSubtasks: View {
             ForEach(rows) { row in
                 NXInspectorSubtaskRow(row: row)
             }
-            NXInspectorAddSubtask { workbench.addSubtask(to: task.id) }
+            NXInspectorQuietAction(icon: "plus", title: "Add subtask", fills: true) { workbench.addSubtask(to: task.id) }
+                .help("Add a subtask in the list")
         }
     }
 
@@ -249,7 +288,7 @@ struct NXInspectorSubtasks: View {
 }
 
 /// One subtask: 15pt checkbox, 13pt title, struck once done, and a chevron.
-/// A click inspects it.
+/// A click inspects it. As the design, an untitled one shows blank.
 private struct NXInspectorSubtaskRow: View {
     @Environment(AppEnvironment.self) private var env
     let row: BlockRow
@@ -267,7 +306,7 @@ private struct NXInspectorSubtaskRow: View {
                 workbench.toggle(task.id)
             }
             // 400 13/1.3.
-            Text(task.displayTitle)
+            Text(task.text.trimmingCharacters(in: .whitespacesAndNewlines))
                 .font(.system(size: 13))
                 .foregroundStyle(filled ? NX.ink(0.42) : NX.ink)
                 .strikethrough(filled, color: NX.ink(0.42))
@@ -300,37 +339,6 @@ private struct NXInspectorSubtaskRow: View {
     }
 }
 
-/// The design's "Add subtask" under the subtasks.
-private struct NXInspectorAddSubtask: View {
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 15, height: 15)
-            // 500 12.5/1.
-            Text("Add subtask")
-                .font(.system(size: 12.5, weight: .medium))
-                .padding(.vertical, (12.5 - NXStrikeText.glyphLineHeight(12.5)) / 2)
-            Spacer(minLength: 0)
-        }
-        .foregroundStyle(hovering ? NX.ink : NX.ink(0.42))
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .background(hovering ? NX.ink(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
-        .help("Add a subtask in the list")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Add subtask")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { action() }
-    }
-}
-
 /// "Subtask of" the task above, over the inspector's title, with that
 /// task's progress. A click inspects it.
 struct NXInspectorParentCrumb: View {
@@ -357,7 +365,8 @@ struct NXInspectorParentCrumb: View {
                 Text("Subtask of")
                     .font(.system(size: 11.5, weight: .medium))
                     .fixedSize()
-                Text(parent.displayTitle)
+                // As the design, the parent's text as written, blank when it has none.
+                Text(parent.text.trimmingCharacters(in: .whitespacesAndNewlines))
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
                     .lineLimit(1)
@@ -390,37 +399,50 @@ struct NXInspectorParentCrumb: View {
 
 // MARK: - Files
 
-/// Files kept with the task. Attach with the button or drop them on the section.
+/// Files kept with the task. The design has none, so the section shows only
+/// once there are some; until then "Attach a file" sits by "Add a note",
+/// while that stands in for the note. Files dropped anywhere on the panel
+/// are attached too.
 struct NXInspectorFiles: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let task: Block
-    @State private var dropTargeted = false
+    /// Opens the note, while "Add a note" stands in for it.
+    var addsNote: (() -> Void)?
 
     var body: some View {
         let attachments = env.store.attachments(for: task.id)
-        VStack(alignment: .leading, spacing: 4) {
-            NXInspectorHeading(title: "Files") {
-                Button { presentFilePicker() } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "paperclip").font(.system(size: 10.5, weight: .semibold))
-                        Text("Attach")
-                    }
-                    .font(.system(size: 11, weight: .semibold))
+        let files = NXTaskFiles(store: env.store)
+        if addsNote != nil || attachments.isEmpty {
+            HStack(spacing: 2) {
+                if let addsNote {
+                    NXInspectorQuietAction(icon: "text.alignleft", title: "Add a note", action: addsNote)
                 }
-                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                                padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                                foreground: NX.ink(0.6), hoverForeground: NX.ink))
-                .padding(.trailing, -5)
-                .help("Attach files")
-                .accessibilityLabel("Attach files to task")
+                if attachments.isEmpty {
+                    NXInspectorQuietAction(icon: "paperclip", title: "Attach a file") { files.choose(for: task) }
+                        .help("Attach files, or drop them on the panel")
+                }
             }
-            if attachments.isEmpty {
-                Text("Drop files here to keep them with the task")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(NX.ink(0.36))
-                    .padding(.vertical, 4)
-            } else {
+            // The icons line up with the panel's edge.
+            .padding(.leading, -8)
+            .padding(.vertical, -6)
+        }
+        if !attachments.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                NXInspectorHeading(title: "Files") {
+                    Button { files.choose(for: task) } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "paperclip").font(.system(size: 10.5, weight: .semibold))
+                            Text("Attach")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
+                                                    padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
+                                                    foreground: NX.ink(0.6), hoverForeground: NX.ink))
+                    .padding(.trailing, -5)
+                    .help("Attach files, or drop them on the panel")
+                    .accessibilityLabel("Attach files to task")
+                }
                 ForEach(attachments) { attachment in
                     AttachmentRow(attachment: attachment) {
                         env.store.removeEditorMedia(filename: attachment.filename)
@@ -430,45 +452,43 @@ struct NXInspectorFiles: View {
                 }
             }
         }
-        .padding(6)
-        .background(dropTargeted ? style.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            if dropTargeted {
-                RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(style.accent.opacity(0.5), lineWidth: 1)
-            }
-        }
-        .padding(-6)
-        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-            // The provider calls back off the main actor, so carry the id
-            // rather than the model object itself.
-            let blockID = task.id
-            for provider in providers {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
-                    Task { @MainActor in
-                        guard let target = env.store.block(id: blockID) else { return }
-                        attach(url: url, to: target)
-                    }
-                }
-            }
-            return true
-        }
     }
+}
 
-    private func presentFilePicker() {
+/// Keeps files with a task, chosen in the Open panel or dropped.
+struct NXTaskFiles {
+    let store: Store
+
+    func choose(for block: Block) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
-            attach(url: url, to: task)
+            attach(url: url, to: block)
         }
     }
 
-    private func attach(url: URL, to block: Block) {
+    func drop(_ providers: [NSItemProvider], on blockID: UUID) -> Bool {
+        // The provider calls back off the main actor, so carry the id rather
+        // than the model object itself.
+        let store = store
+        for provider in providers {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                Task { @MainActor in
+                    guard let target = store.block(id: blockID) else { return }
+                    NXTaskFiles(store: store).attach(url: url, to: target)
+                }
+            }
+        }
+        return true
+    }
+
+    func attach(url: URL, to block: Block) {
         do {
             let media = try MediaStore.shared.importFile(at: url)
-            let existing = env.store.attachments(for: block.id)
+            let existing = store.attachments(for: block.id)
             let attachment = Attachment(
                 blockID: block.id,
                 filename: media.filename,
@@ -478,8 +498,8 @@ struct NXInspectorFiles: View {
                 sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep,
                 contentData: media.data
             )
-            env.store.context.insert(attachment)
-            env.store.save()
+            store.context.insert(attachment)
+            store.save()
         } catch {
             MarkdownExporter.presentError(error, operation: "Import attachment")
         }
@@ -499,7 +519,7 @@ struct NXInspectorHistory: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             NXInspectorDisclosure(title: "Full history", isExpanded: $expanded)
-                .help("Newest first. Clear History in Updates also clears task activity.")
+                .help("Newest first. Clearing activity history in Settings › Data also clears this.")
             // Queried only when open, like the legacy Activity disclosure.
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {

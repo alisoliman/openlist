@@ -378,7 +378,7 @@ struct NextSidebar: View {
         let name = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         switch target {
         case let .list(id):
-            if let list = library.list(id), !name.isEmpty, name != list.title { env.store.rename(list, to: name) }
+            if let list = library.list(id), !name.isEmpty, name != list.title { env.workbench.renameList(id, to: name) }
         case let .section(id):
             if let section = library.sections.first(where: { $0.id == id }), !section.isDeleted, section.modelContext != nil {
                 env.store.rename(section, to: name)
