@@ -1,18 +1,20 @@
 # Local item links
 
 Copy Link in a task menu or inspector, a list menu, gallery card, or sidebar
-copies a URL for that identity. Openlist resolves the current task/list when
+copies a URL for that identity and says "Link copied" in the tray. Openlist resolves the current task/list when
 the link is opened, so renaming a task or moving it to another list does not
 change its link. Duplicating a task/list gives the copy fresh item IDs; old
 links continue to open the original.
 
 Links work on the same Mac and in the same local library. They do not share
 content, grant access, contact a server, or locate a library on another Mac.
-An archived target opens with an explicit archived notice and stays archived.
-A completed or nested task uses the same temporary exact-content reveal as
-search, without rewriting completion visibility or collapsed ancestors.
-Finish ends the temporary reveal. Missing, deleted, changed-to-text, and
-wrong-library targets explain why they cannot open. Tasks and lists in Trash
+A link lands as a search result does: a task opens on its list, or the Inbox,
+with its row focused and its inspector open, and a list opens at its top. An
+archived target opens on its list page, which says it is archived, and stays
+archived. A completed or nested task uses the same temporary exact-content
+reveal as search, without rewriting completion visibility or collapsed
+ancestors; leaving the page or closing the task ends it. Missing, deleted,
+changed-to-text, and wrong-library targets explain why they cannot open. Tasks and lists in Trash
 stay unavailable until explicitly restored from Trash or through deletion Undo.
 The same saved link then works again. Following a link never restores content,
 and restoring content does not replay a previously rejected link.

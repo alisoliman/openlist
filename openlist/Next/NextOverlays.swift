@@ -138,7 +138,7 @@ private struct NXOverlayBackdrop<Card: View>: View {
                 .padding(.horizontal, 20)
                 .padding(.top, top)
                 .scaleEffect(settled ? 1 : 0.97, anchor: .top)
-                .offset(y: settled ? 0 : -6)
+                .offset(y: settled ? 0 : -4)
                 .opacity(shown ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -681,6 +681,9 @@ private struct NXSearchCard: View {
                     .background(workbench.searchIncludesCompleted ? style.accent : NX.ink(0.06),
                                 in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .fixedSize()
+                    // The design's on/off pill.
+                    .accessibilityAddTraits(.isToggle)
+                    .accessibilityValue(workbench.searchIncludesCompleted ? "On" : "Off")
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
@@ -693,6 +696,7 @@ private struct NXSearchCard: View {
                         .onHover { if $0 { workbench.searchIndex = offset } }
                         // The row clicked opens, even while a newer query is searched.
                         .onTapGesture { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
+                        .accessibilityAction { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
                 }
                 Text(footer(hits, session: session, typed: options))
                     .font(.system(size: 12.5))
@@ -704,6 +708,11 @@ private struct NXSearchCard: View {
             .modifier(NXScrollToIndex(ids: hits.map(\.id), index: index))
         }
         .frame(maxWidth: 640)
+        // ↑ and ↓ move the highlight from the field, so VoiceOver hears where it went.
+        .onChange(of: index) { _, index in
+            guard hits.indices.contains(index) else { return }
+            AccessibilityNotification.Announcement(NXSearchRow.spoken(hits[index])).post()
+        }
         .background { NXSearchCorpus(session: session) }
         .onChange(of: options, initial: true) { _, updated in
             overlays.searchUnavailable = nil
@@ -777,6 +786,16 @@ private struct NXSearchRow: View {
         .background(isOn ? style.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(isOn ? style.accent.opacity(0.2) : .clear, lineWidth: 1))
         .contentShape(Rectangle())
+        // One result, which Return opens while it's highlighted.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.spoken(hit))
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// The title, the matched passage and where it is, as VoiceOver reads them.
+    static func spoken(_ hit: SearchHit) -> String {
+        let context = hit.context + (hit.dueDate.map { ", " + NXFormat.dueLabel($0) } ?? "")
+        return [hit.title, hit.snippet, context].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     /// Where the hit is, after its list's icon, as the design's `emoji + " " + name`.
@@ -950,11 +969,17 @@ private struct NXPaletteCard: View {
                     NXPaletteRow(command: command, isOn: offset == index)
                         .onHover { if $0 { workbench.paletteIndex = offset } }
                         .onTapGesture { NXPalette.run(command, env: env, overlays: overlays) }
+                        .accessibilityAction { NXPalette.run(command, env: env, overlays: overlays) }
                 }
             }
             .modifier(NXScrollToIndex(ids: commands.map(\.id), index: index))
         }
         .frame(maxWidth: 560)
+        // ↑ and ↓ move the highlight from the field, so VoiceOver hears where it went.
+        .onChange(of: index) { _, index in
+            guard commands.indices.contains(index) else { return }
+            AccessibilityNotification.Announcement(commands[index].label).post()
+        }
     }
 }
 
@@ -993,6 +1018,10 @@ private struct NXPaletteRow: View {
         .padding(.horizontal, 10)
         .background(isOn ? style.accent : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
+        // One command, which Return runs while it's highlighted.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(command.label)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .id(command.id)
     }
 }

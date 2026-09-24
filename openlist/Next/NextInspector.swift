@@ -87,6 +87,7 @@ struct NextInspector: View {
                                                 padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
                 .help("Close (Esc)")
+                .accessibilityLabel("Close details")
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
@@ -95,9 +96,6 @@ struct NextInspector: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        if let reveal {
-                            ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
-                        }
                         let ancestors = lineage.ancestors(of: task, store: env.store)
                         if let parent = ancestors.first(where: \.isTask) {
                             NXInspectorParentCrumb(parent: parent)
@@ -130,7 +128,10 @@ struct NextInspector: View {
                 }
                 .scrollIndicators(.automatic)
                 .task(id: readyRevealID) {
-                    guard readyRevealID != nil, let reveal else { return }
+                    // A reminder or a link opens the task as the design's
+                    // search does, its row keeping the focus for the keys;
+                    // only a match is shown in its field.
+                    guard readyRevealID != nil, let reveal, !reveal.query.isEmpty else { return }
                     await Task.yield()
                     guard !Task.isCancelled else { return }
                     if reveal.field == .note {
@@ -283,19 +284,14 @@ struct NextInspector: View {
         note.reset(to: target.note)
     }
 
-    /// ⌃D and ⌃L open their popover on the inspected task.
+    /// ⇧⌘D and ⇧⌘L open their popover on the inspected task.
     private func adoptRequestedPicker() {
         guard let requested = env.requestedPicker else { return }
         env.requestedPicker = nil
         openPicker(requested)
     }
 
-    private func copyLink() {
-        // An earlier link's error would otherwise hide this copy's result.
-        env.localLinks.error = nil
-        env.copyLink(to: .task(task.id))
-        if env.localLinks.error == nil { workbench.showTray("Link copied", icon: "link") }
-    }
+    private func copyLink() { env.copyLink(to: .task(task.id)) }
 
     // MARK: Title
 
@@ -374,7 +370,7 @@ struct NextInspector: View {
                         } label: {
                             Text(option.label)
                         }
-                        if custom { pill.help("Date and time (⌃D)") } else { pill }
+                        if custom { pill.help("Date and time (⇧⌘D)") } else { pill }
                     }
                     // Native addition: the design has no picker. It wraps with the
                     // pills, as the design's row already does at this width.
@@ -384,7 +380,7 @@ struct NextInspector: View {
                             if task.includesTime, let due = task.dueDate { Text(NXFormat.clock(due)).monospacedDigit() }
                         }
                     }
-                    .help("Date and time (⌃D)")
+                    .help("Date and time (⇧⌘D)")
                     .accessibilityLabel("Due date and time")
                 }
                 .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
@@ -448,7 +444,7 @@ struct NextInspector: View {
                             if library.labels.isEmpty { Text("Add label") }
                         }
                     }
-                    .help("Find or create a label (⌃L)")
+                    .help("Find or create a label (⇧⌘L)")
                     .accessibilityLabel("Edit labels")
                     .popover(isPresented: pickerBinding(.labels), arrowEdge: .bottom) {
                         LabelPicker(block: task).id(task.id).environment(env)

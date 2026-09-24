@@ -829,8 +829,10 @@ check(nextActions(item).onTab(false, 0) && item.parentID == nil, "A list item un
 check(nextActions(confirm).onTab(true, 0) && confirm.parentID == book.id && nextDepth(confirm) == 1, "Shift-Tab steps a line out")
 _ = nextActions(confirm).onTab(false, 0)
 // Tab keeps the caret in its line, so the indents join that line's edit.
+check(nextEditor.lineStepName == "Edited", "The toolbar's Undo names the step the line being written commits as")
 nextEditor.commitLine()
 check(!recorded.isEmpty && recorded.allSatisfy { $0.name == "Edited" }, "Indenting the line being written is part of its edit")
+check(nextEditor.lineStepName == nil, "With no line being written, Undo names the stack's own step")
 recorded.removeAll()
 
 // Return, as the design's onEditKey.

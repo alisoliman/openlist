@@ -639,13 +639,25 @@ final class Workbench {
     // MARK: Undo
 
     /// The label the toolbar's Undo button shows, or nil when nothing can be undone.
-    /// It names the entry on top of the stack, which is what Undo will take back.
+    /// It names what Undo will take back: the entry on top of the stack, or,
+    /// while a list document line has typing there, the step the line
+    /// commits as, since Undo finishes the line first. The text system's
+    /// name for that typing would read "Typing" whenever a line is written.
     var undoLabel: String? {
         _ = undoRevision
         guard let undoManager, undoManager.canUndo else { return nil }
         let name = undoManager.undoActionName
+        if Self.textActionNames.contains(name), let line = document?.lineStepName { return line }
         return name.isEmpty ? "Undo" : name
     }
+
+    /// The names AppKit's text system files its own undo entries under
+    /// (typing, paste, drag…), in the app's language.
+    private static let textActionNames: Set<String> = {
+        let bundle = Bundle(for: NSTextView.self)
+        return Set(["Typing", "Paste", "Cut", "Drag", "Suggestion", "Change Attributes", "Set Font", "Set Color"]
+            .map { bundle.localizedString(forKey: $0, value: $0, table: "Undo") })
+    }()
 
     /// Whether Undo would take back the newest logged change, so the tray and
     /// Changes only offer Undo for the change they describe.

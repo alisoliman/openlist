@@ -161,10 +161,8 @@ Completed content remains completed and follows the destination's visibility/sor
 
 Content paste keeps text, formatting, links, notes, hierarchy, completion/date,
 collapse, stars, priority, estimates, and planning preferences. **Dates, reminders,
-repeating rules, selected day, and deferral are cleared.** `Store.pasteFragment`
-can also retain those scheduling values, reconciling only eligible future
-reminders after a successful save. Repeat progress, occurrence IDs, calendar
-placements, work sessions, and prior history never transfer.
+repeating rules, selected day, and deferral are cleared.** Repeat progress,
+occurrence IDs, calendar placements, work sessions, and prior history never transfer.
 Every pasted task gets a fresh Created event; Undo/Redo records Deleted/Restored.
 Links retain their original destinations rather than being rewritten to the new IDs.
 
@@ -267,8 +265,9 @@ pins a task into its next free slot, and **Move planned time…** in the Work pa
 saves a preference. Deadline coverage distinguishes **Scheduled**, **Cannot fit
 before deadline**, and **Outside planning horizon**.
 
-The **Work** menu and command palette (⌘K) offer Show work, Start selected task,
-Stop current session, Resume task, and Complete current task. Existing selected-task
+The **Work** menu offers Show Work, Start Selected Task, Stop Current Session,
+Pause or Resume Task, and Complete Current Task, acting in place as the notch's
+buttons do; the command palette (⌘K) has **Start working**. Existing selected-task
 shortcuts keep their meaning. Optional background work notifications are turned
 on with **Notify me about planned work** in Settings → Notifications; reminder
 suppression survives replanning and restarting.
@@ -311,9 +310,9 @@ The [list Tasks guide](docs/LIST_TASKS.md) covers the presentation and its check
 
 ### Capture and navigation
 
-⌘K quick command (creates tasks, jumps to lists, runs commands), ⌘F search across
-tasks, notes and lists, ⇧⌥Space global quick-add from any app, and a menu bar
-popover. ⌘/ shows the full shortcut reference.
+⌘K command palette (task actions, New task, and going to screens and lists),
+⌘F search across tasks, notes and lists, ⇧⌥Space global quick-add from any app,
+and a menu bar popover. ⌘/ shows the full shortcut reference.
 
 Capture keeps the destination visible and previews detected dates, repeats,
 labels, priority and estimates as you type. Date detection follows Settings →
@@ -340,11 +339,13 @@ rest. **Include completed** adds finished tasks. Matching ignores case, accents
 and character width, and results include their list, ancestor path and a
 matching passage when needed.
 
-Opening a result resolves its current identity. Tasks open their inspector and
-reveal the matching title or note; other blocks open their owning list, scroll
-to the exact result and temporarily expose collapsed/completed ancestors.
-**Finish** or leaving the page ends this temporary reveal without changing stored
-collapse, archive or completion settings. Missing results show an unavailable message.
+Opening a result resolves its current identity. Tasks open on their list, or the
+Inbox, with their row focused and their inspector open; in an archived list the
+match is selected in the title or note. Other blocks open their owning list's
+document (the Inbox's too), scroll to the exact result, tint it briefly and
+temporarily expose collapsed/completed ancestors. Leaving the page ends this
+temporary reveal without changing stored collapse, archive or completion
+settings. Missing results show an unavailable message.
 Escape closes search. No index or query history is persisted.
 
 **Copy Link** in task and list menus copies a stable reference to that item in

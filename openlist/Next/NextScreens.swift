@@ -444,6 +444,8 @@ private struct NXListDescription: View {
     @Binding var editing: Bool
     @State private var draft = ""
     @State private var selection: TextSelection?
+    /// The reveal whose description is lit, until it fades.
+    @State private var litRevealID: UUID?
     @FocusState private var focused: Bool
 
     private var revealsSummary: Bool { env.navigator.contentReveal?.revealsSummary(for: list.id) == true }
@@ -490,12 +492,13 @@ private struct NXListDescription: View {
                 .foregroundStyle(NX.ink(list.summary.isEmpty && !editing ? 0.32 : 0.62))
                 .padding(.vertical, leading / 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay {
-                    if revealsSummary {
+                .background {
+                    // Where a search hit landed, in the design's fresh tint, as a revealed line has it.
+                    if revealsSummary, litRevealID != nil, litRevealID == env.navigator.contentReveal?.id {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(style.accent, lineWidth: 1.5)
+                            .fill(style.accent.opacity(0.11))
                             .padding(-5)
-                            .allowsHitTesting(false)
+                            .transition(.opacity)
                     }
                 }
                 .id(ContentReveal.Anchor.listSummary(list.id))
@@ -503,6 +506,13 @@ private struct NXListDescription: View {
                 .padding(.leading, 56)
                 .padding(.top, 12)
             }
+        }
+        .task(id: readyRevealID) {
+            litRevealID = readyRevealID
+            guard readyRevealID != nil else { return }
+            try? await Task.sleep(for: .milliseconds(1400))
+            guard !Task.isCancelled else { return }
+            withAnimation(style.ease(400)) { litRevealID = nil }
         }
         .task(id: readyRevealID) {
             guard readyRevealID != nil, let reveal = env.navigator.contentReveal else { return }

@@ -431,11 +431,13 @@ extension Workbench {
         pulse(list: listID)
     }
 
-    /// The task menu's Copy Text: the task's text, as written, on the pasteboard.
+    /// The task menu's Copy Text: the task's text, as written, on the
+    /// pasteboard, said in the tray as Copy Content and Subtasks says its own.
     func copyText(_ id: UUID) {
         guard let task = store.block(id: id) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(task.text, forType: .string)
+        showTray("Copied \(describe([task]))", icon: "doc.on.clipboard")
     }
 
     /// The task menu's Copy Content and Subtasks: the task with everything

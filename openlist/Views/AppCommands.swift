@@ -35,8 +35,9 @@ struct AppCommands: Commands {
                 env.workbench.stopWork()
             }
                 .disabled(env.workbench.workTask == nil)
-            Button("Resume Task") { env.calendar.resume() }
-                .disabled(env.calendar.activeSession != nil || env.calendar.resumableTask == nil)
+            // As the notch's ⏸ and ▶: in place, a failure in the tray.
+            Button(env.workbench.isWorkPaused ? "Resume Task" : "Pause Task") { env.workbench.toggleWorkPause() }
+                .disabled(env.workbench.workTask == nil)
             Button("Complete Current Task") {
                 env.calendar.isWorkPanelPresented = false
                 env.workbench.finishWork()
@@ -122,7 +123,10 @@ struct AppCommands: Commands {
         // palette and the row menu name it. Items that open one task's
         // details need exactly one; the rest take every target. The design's
         // single keys (E, T, M, P, F, D) stay off the menu, since a menu key
-        // equivalent would fire while typing; ⌘/ lists them.
+        // equivalent would fire while typing; ⌘/ lists them. The keys here
+        // carry ⌘ for the same reason: AppKit matches them before the text
+        // view, and ⌃T, ⌃D or ⌃L would take its transpose, delete forward
+        // and centre-the-line keys from the line being written.
         CommandMenu("Task") {
             Button(reopens ? "Reopen" : "Mark as Done") { env.send(.toggleCompletion) }
                 .keyboardShortcut("d", modifiers: .command)
@@ -134,16 +138,16 @@ struct AppCommands: Commands {
             Divider()
 
             Button("Due Today") { env.send(.setDueToday) }
-                .keyboardShortcut("t", modifiers: .control)
+                .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(targets.isEmpty)
             Button("Due Tomorrow") { act { env.workbench.schedule($0, offset: 1) } }
-                .keyboardShortcut("m", modifiers: .control)
+                .keyboardShortcut("m", modifiers: [.command, .shift])
                 .disabled(targets.isEmpty)
             Button("Add Due Date…") { env.send(.pickDueDate) }
-                .keyboardShortcut("d", modifiers: .control)
+                .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(single == nil)
             Button("Clear Due Date") { env.send(.clearDueDate) }
-                .keyboardShortcut("d", modifiers: [.control, .shift])
+                .keyboardShortcut("d", modifiers: [.command, .option, .shift])
                 .disabled(targets.isEmpty)
 
             Divider()
@@ -158,10 +162,10 @@ struct AppCommands: Commands {
             Divider()
 
             Button("Add Label…") { env.send(.pickLabel) }
-                .keyboardShortcut("l", modifiers: .control)
+                .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(single == nil)
             Button("Clear Labels") { env.send(.clearLabels) }
-                .keyboardShortcut("l", modifiers: [.control, .shift])
+                .keyboardShortcut("l", modifiers: [.command, .option, .shift])
                 .disabled(targets.isEmpty)
             Button(unstars ? "Unstar" : "Star") { env.send(.toggleStar) }
                 .keyboardShortcut("s", modifiers: [.command, .shift])

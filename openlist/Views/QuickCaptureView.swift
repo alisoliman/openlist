@@ -26,8 +26,9 @@ struct QuickCaptureView: View {
         // The card reads lists and labels; task counts aren't shown here.
         let library = NextLibrary(lists: allLists, sections: sections, labels: labels, tasks: [])
         let style = env.workbench.style
-        // The design's popIn; with Reduce Motion or restrained motion it only fades.
-        let settled = shown || !style.lively
+        // The design's popIn, as the window's capture card plays it; with
+        // Reduce Motion it only fades.
+        let settled = shown || !style.slides
         NXCaptureCard(draft: draft, notice: notice, add: { add(keepOpen: $0) })
             .frame(width: 600)
             .nxOverlayCard()

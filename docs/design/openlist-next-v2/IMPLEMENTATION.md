@@ -32,15 +32,24 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
   and runs the Workbench's actions on the tasks its commands reach (in a list document the
   line being written, else the workbench targets in that list); its titles read every
-  target, as the row menu's do. Its key equivalents all carry a modifier, since a bare letter
-  would fire while typing: ⌘D Mark as Done or Reopen (kept as the one key that completes a
-  task while its line is being written), ⌃T/⌃M due today/tomorrow, ⇧⌘S Star. Help ▸
-  Keyboard Shortcuts (⌘/) lists the design's single keys with the keys the list document
-  and menus handle. Work ▸ Start Selected Task, Stop and Complete run `workbench.startWork`,
-  `stopWork` and `finishWork`, as Task ▸ Start Working and the notch's ✕ and ✓ do.
+  target, as the row menu's do. Its key equivalents all carry ⌘, since a bare letter would
+  fire while typing and a ⌃ letter would take the text system's own (⌃T transposes, ⌃D
+  deletes forward, ⌃L centres the line): ⌘D Mark as Done or Reopen (kept as the one key that
+  completes a task while its line is being written), ⇧⌘T/⇧⌘M due today/tomorrow, ⇧⌘D and
+  ⇧⌘L the due and label pickers (⌥⇧⌘ clears them), ⇧⌘S Star. Help ▸ Keyboard Shortcuts
+  (⌘/) lists the design's single keys with the keys the list document and menus handle.
+  Work ▸ Start Selected Task, Stop, Pause or Resume and Complete run `workbench.startWork`,
+  `stopWork`, `toggleWorkPause` and `finishWork`, as Task ▸ Start Working and the notch's
+  buttons do.
 - Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
   then the Undo label, which at last leaves only its icon; Actions and New task keep their
   labels.
+- Typing is on the window's undo stack natively, where the design keeps it out of Undo
+  until a line commits. While a list document line holds typing, the toolbar's Undo names
+  the step the line commits as ("Edited “…”", "Added “…”"), which it takes back after
+  finishing the line (the design drops the typing and undoes the step before); the tray's
+  and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
+  Undo does, since that is what it takes back.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
   bars and the overlay cards in rather than sliding them, as its hint says, where the design
   only shortens the slides.
@@ -127,8 +136,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
   (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), Delete Label (sidebar and
   Settings; Undo puts it back where it sat on each task), Merge labels, a list's Icon &
-  Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and
-  Copy Content and Subtasks (for Paste in an empty document line) only copy. An Undo or
+  Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text, Copy
+  Content and Subtasks (for Paste in an empty document line) and every Copy Link only
+  copy, saying so in the tray. An Undo or
   Redo of a label or list change that fails says so in the tray, keeps the log as it was
   and leaves the stack. Deviation: a merge undoes in turn on the window's stack, by ⌘Z or
   the tray, where the old "Undo merge" card took back the latest merge out of order,
@@ -138,6 +148,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the
   design's note block, the match in the accent.
+- Reminders, item links (Copy Link, widget rows) and search hits land as the design's
+  search does, with no notice: on the task's list or the Inbox, its row focused and the
+  inspector open. A hit on a line past the design's (heading, text, a note, a list
+  description) opens that list's document for the visit, the Inbox's too, and takes the
+  design's fresh tint for 1.4 s. Only a target that can't open says so, in a notice.
 - The editor's kinds past the design's five (Heading 3, Numbered, Quote, Code, Divider,
   Image) are a native extra: their lines draw and edit in the document, the Turn into
   card brings them up for their names after "/" (with no query it shows the design's

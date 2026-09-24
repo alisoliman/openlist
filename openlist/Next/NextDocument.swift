@@ -37,6 +37,8 @@ private struct NXDocumentLines: View {
     @Query private var fetched: [Block]
     @State private var editor: OutlineEditor
     @State private var contents = NXContentCache()
+    /// The reveal whose line is lit, until it fades.
+    @State private var litRevealID: UUID?
     let list: TaskList
     let tasksOnly: Bool
 
@@ -71,13 +73,10 @@ private struct NXDocumentLines: View {
             drawnIDs: rows.map(\.id),
             reveal: reveal,
             readyRevealID: editor.readyRevealID,
+            lightsReveal: reveal != nil && litRevealID == reveal?.id,
             tasksOnly: tasksOnly)
 
         return LazyVStack(alignment: .leading, spacing: 1) {
-            if let reveal {
-                ContentRevealNotice(request: reveal, finish: env.navigator.finishReveal)
-                    .padding(.bottom, 8)
-            }
             ForEach(rows) { row in
                 if row.block.modelContext != nil, !row.block.isDeleted {
                     NXDocumentRow(row: row, context: context)
@@ -118,6 +117,15 @@ private struct NXDocumentLines: View {
         }
         .onDisappear { if workbench.document === editor { workbench.document = nil } }
         .onChange(of: blocks.map(\.id)) { _, ids in contents.retain(Set(ids)) }
+        // The line a search hit or link lands on lights up as the design's
+        // fresh rows do, then fades, once search has stepped aside.
+        .task(id: editor.readyRevealID) {
+            litRevealID = editor.readyRevealID
+            guard litRevealID != nil else { return }
+            try? await Task.sleep(for: .milliseconds(1400))
+            guard !Task.isCancelled else { return }
+            withAnimation(style.ease(400)) { litRevealID = nil }
+        }
     }
 
     /// Where the design's document defers to the workbench: the inspector,
@@ -225,6 +233,8 @@ private struct NXLineContext {
     /// A search hit or link shown in the document.
     let reveal: ContentReveal?
     let readyRevealID: UUID?
+    /// The revealed line is still lit.
+    let lightsReveal: Bool
     /// Only the document's tasks are drawn.
     let tasksOnly: Bool
 }
@@ -285,12 +295,12 @@ private struct NXDocumentRow: View {
                     NXDocumentBlock(row: row, context: context)
                 }
             }
-            .overlay {
-                // Where a search hit or link landed.
-                if revealed {
+            .background {
+                // Where a search hit or link landed, in the design's fresh tint.
+                if revealed, context.lightsReveal {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(style.accent, lineWidth: 1.5)
-                        .allowsHitTesting(false)
+                        .fill(style.accent.opacity(0.11))
+                        .transition(.opacity)
                 }
             }
             // A note found on a line that isn't a task, which has no inspector.

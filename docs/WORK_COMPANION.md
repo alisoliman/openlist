@@ -3,7 +3,7 @@
 Work has one stable place in the window: while a task is recording, or paused
 with work that can resume, a work notch drops from the toolbar with its title,
 elapsed time, **Done** and **Stop**. Clicking its title opens the **Work** panel,
-as do **Work → Show Work** and the command palette. Suggestions never open the
+as does **Work → Show Work**. Suggestions never open the
 panel or begin recording by themselves.
 
 The Work panel shows the task's planned slot, estimate, recorded time,

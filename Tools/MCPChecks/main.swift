@@ -112,6 +112,15 @@ if phase == "prepare" {
     check(store.block(id: literalID)!.listID == inbox.id, "omitted list defaults to Inbox")
     _ = try call(.setTaskCompleted, ["task_id": uuid(literalID), "completed": true])
     check(try call(.listTasks, ["view": "today", "status": "completed"])["tasks"]!.arrayValue!.count == 1, "Today includes tasks completed today even without a due date")
+    let plannedID = id(try call(.createTask, ["title": "Planned for today"]), "task")
+    let laterID = id(try call(.createTask, ["title": "Planned for tomorrow"]), "task")
+    let startOfToday = Calendar.current.startOfDay(for: .now)
+    store.block(id: plannedID)!.selectedForDay = startOfToday
+    store.block(id: laterID)!.selectedForDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfToday)
+    let todayTasks = try call(.listTasks, ["view": "today"])["tasks"]!.arrayValue!
+    check(todayTasks.contains { $0.objectValue?["id"] == uuid(plannedID) && $0.objectValue?["planned_for"] == .string(MCPDates.day(startOfToday)) }
+          && !todayTasks.contains { $0.objectValue?["id"] == uuid(laterID) },
+          "Today includes open tasks planned for today, as the app's does, and says the day they're planned for")
     let rootID = id(try call(.createTask, [
         "title": "Build prototype", "list_id": uuid(workID),
         "due_date": "2030-03-10", "note": "Fixture note",

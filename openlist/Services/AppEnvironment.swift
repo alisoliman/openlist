@@ -78,7 +78,7 @@ final class AppEnvironment {
     var listPendingDeletion: TaskList?
     var listPendingMove: TaskList?
 
-    /// Which picker the inspector should pop open, set by ⌃D / ⌃L.
+    /// Which picker the inspector should pop open, set by ⇧⌘D / ⇧⌘L.
     var requestedPicker: DetailPicker?
 
     /// The document menu commands apply to: the list document on show, which
@@ -290,12 +290,17 @@ final class AppEnvironment {
 // MARK: - Convenience
 
 extension AppEnvironment {
+    /// Every Copy Link: the link on the pasteboard, said in the tray, or why
+    /// it couldn't be made in the link notice.
     func copyLink(to target: LocalLink.Target) {
+        // An earlier link's error would otherwise hide this copy's result.
+        localLinks.error = nil
         do {
             let url = try localLinks.link(to: target)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.writeObjects([url as NSURL])
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            workbench.showTray("Link copied", icon: "link")
         } catch {
             localLinks.error = error as? LocalLinkError ?? .targetUnavailable
         }

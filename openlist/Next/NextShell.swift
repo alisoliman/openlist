@@ -57,6 +57,19 @@ struct NextShell: View {
             settleRevealedLists()
         }
         .onChange(of: revealedDocuments) { settleRevealedLists() }
+        .onChange(of: env.navigator.searchActivation) { landReveal() }
+    }
+
+    /// A reminder, a link or a search hit that opens a task lands as the
+    /// design's search does: its row takes the focus, once the new screen is
+    /// up so it scrolls there, and the task stays open in the inspector.
+    private func landReveal() {
+        let navigator = env.navigator, workbench = env.workbench
+        guard let taskID = navigator.contentReveal?.taskID else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+            guard navigator.contentReveal?.taskID == taskID else { return }
+            workbench.inspect(taskID)
+        }
     }
 
     /// The library the window draws, its lists left on the workbench for
@@ -75,7 +88,7 @@ struct NextShell: View {
         for id in overlays.revealedDocuments {
             if navigator.listViewMode(for: id) != .document {
                 overlays.revealedDocuments.remove(id)
-            } else if navigator.route != .list(id) {
+            } else if !navigator.shows(id) {
                 overlays.revealedDocuments.remove(id)
                 navigator.setListViewMode(.tasks, for: id)
             }
@@ -266,11 +279,11 @@ struct NXPage<Content: View>: View {
     /// The reveal whose note card has laid out, so the page can scroll to it.
     @State private var visibleNoteRevealID: UUID?
 
-    /// A reveal in the list on show, once search has stepped aside. Tasks
-    /// reveal in the inspector instead.
+    /// A reveal in the list on show, the Inbox too, once search has stepped
+    /// aside. Tasks reveal in the inspector instead.
     private var readyRevealID: UUID? {
         guard !env.navigator.isSearchOpen, let request = env.navigator.contentReveal,
-              request.taskID == nil, env.navigator.route == .list(request.listID) else { return nil }
+              request.taskID == nil, env.navigator.shows(request.listID) else { return nil }
         return request.id
     }
 

@@ -959,6 +959,14 @@ final class OutlineEditor {
     /// The last caret move a row's text view carried out, or a click ended.
     @ObservationIgnored private(set) var appliedFocusToken = 0
 
+    /// The name of the step the line being written commits as, which an
+    /// Undo that finishes the line first takes back; nil with none open.
+    var lineStepName: String? {
+        guard let edit = line else { return nil }
+        let change: OutlineEdit = edit.isNew ? .added(edit.blockID) : .edited(edit.blockID)
+        return hooks.nameEdit(change) ?? change.defaultName
+    }
+
     // MARK: - Line edits
 
     /// The edit of one line, from the caret arriving to it leaving, undone
