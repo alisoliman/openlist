@@ -37,7 +37,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   task while its line is being written), ⌃T/⌃M due today/tomorrow, ⇧⌘S Star. Help ▸
   Keyboard Shortcuts (⌘/) lists the design's single keys with the keys the list document
   and menus handle. Work ▸ Start Selected Task, Stop and Complete run `workbench.startWork`,
-  `stopWork` and `finishWork`, as Task ▸ Start Working and the notch's ✕ and ✓ do.
+  `stopWork` and `finishWork`, as Task ▸ Start Working and the notch's ✕ and ✓ do. View ▸
+  Collapse All folds only what the design's carets fold (tasks with lines under them,
+  headings with a section); Expand All opens every fold, one an older list left on a list
+  item too.
 - Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
   then the Undo label, which at last leaves only its icon; Actions and New task keep their
   labels.
@@ -73,7 +76,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   popover fits its section, up to 510pt, and its date and time controls are Next pills.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
-  `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and search
+  `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists, which drag
+  on the same private type and are refused on a line), and search
   reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
   puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
   says "Copied “List” as Markdown" in the tray. Open notes are remembered per task on this Mac.
@@ -146,8 +150,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the editor's search words bring kinds up too, so `/h1`, `/todo` or `/hr` find Heading,
   Task or Divider, and a query can list a kind whose label doesn't hold it. Only the
   design's prefixes (`# `, `## `, `- `, `* `, `[ ] `, `[] `, `> `) convert a line as it's
-  typed; the editor's inline `**bold**`, `_italic_`, `~~strike~~` and `` `code` `` rules
-  still style it, as the Format menu does. ⇧↩ types a soft break only in a code line.
+  typed, and only the design's five show one in the card; the editor's inline `**bold**`,
+  `_italic_`, `~~strike~~` and `` `code` `` rules still style it, as the Format menu does.
+  ⇧↩ types a soft break only in a code line, and a code line keeps its indent where the
+  others are stored trimmed, as the design's commit does, once the caret leaves them.
   The card opens above its line when it wouldn't fit under it on the visible page, and a
   row the pointer moves onto takes the highlight.
 

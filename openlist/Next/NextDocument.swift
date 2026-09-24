@@ -511,6 +511,10 @@ private struct NXDocumentTask: View {
         let hint = !editing && !noteOpen && !noteEditing && !task.note.isEmpty
             ? NXNoteHint.placement(after: context.contents.content(of: task, store: env.store), width: titleWidth)
             : nil
+        let closing = workbench.closing[id]
+        let struck = closing ?? task.isCompleted
+        let strikeWidth = struck ? NXTextMeasure.usedWidth(of: context.contents.content(of: task, store: env.store),
+                                                           width: titleWidth) : 0
         // The design's 20s clock, so a done subtask's chip moves on from
         // "just now", and a due or late chip turns with the time.
         TimelineView(.periodic(from: .now, by: 20)) { clock in
@@ -527,6 +531,9 @@ private struct NXDocumentTask: View {
                 VStack(alignment: .leading, spacing: 0) {
                     NXLineText(row: row, context: context, editing: editing)
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
+                        .overlay(alignment: .topLeading) {
+                            NXDocumentStrike(struck: struck, closing: closing != nil, width: strikeWidth)
+                        }
                         // A hint with no room after the last line takes the next,
                         // as the design's inline icon wraps.
                         .padding(.bottom, hint?.wraps == true ? NXNoteHint.linePitch : 0)
@@ -606,6 +613,31 @@ private struct NXNoteHint: View {
     }
 }
 
+/// The design's strike across a task line's title, as `NXStrikeText` draws
+/// it on the other screens: 1.5pt at 52% of the first line's glyph box,
+/// drawn across as the task closes, in the accent until it settles, and
+/// back as it reopens or the close is taken back.
+private struct NXDocumentStrike: View {
+    @Environment(\.nextStyle) private var style
+    let struck: Bool
+    let closing: Bool
+    /// The title's text as wide as it's laid out.
+    let width: CGFloat
+
+    var body: some View {
+        // The glyph box sits in the task's line box as the text view's
+        // inset centres it.
+        let glyph = NXStrikeText.glyphLineHeight(NXEditor.bodyPointSize)
+        Capsule()
+            .fill(closing ? style.accent : NX.ink(0.36))
+            .frame(width: struck ? width + 2 : 0, height: 1.5)
+            .offset(y: (NXEditor.lineHeight(for: .task) - glyph) / 2 + glyph * 0.52)
+            .animation(.timingCurve(0.3, 0.8, 0.2, 1, duration: style.ms(340) / 1000), value: struck)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 /// Where a line's text ends, laid out by TextKit as its text view lays it.
 private enum NXTextMeasure {
     static func end(of content: NSAttributedString, width: CGFloat) -> (x: CGFloat, baseline: CGFloat) {
@@ -620,6 +652,19 @@ private enum NXTextMeasure {
         let last = max(0, layout.numberOfGlyphs - 1)
         let line = layout.lineFragmentUsedRect(forGlyphAt: last, effectiveRange: nil)
         return (line.maxX, line.minY + layout.location(forGlyphAt: last).y)
+    }
+
+    /// How wide the text is laid out at `width`: its widest line's.
+    static func usedWidth(of content: NSAttributedString, width: CGFloat) -> CGFloat {
+        guard content.length > 0, width > 1 else { return 0 }
+        let storage = NSTextStorage(attributedString: content)
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
+        layout.ensureLayout(for: container)
+        return layout.usedRect(for: container).width
     }
 }
 
@@ -975,7 +1020,6 @@ private struct NXLineText: View {
         let block = row.block
         let workbench = env.workbench
         let id = row.id
-        let closing = block.isTask ? workbench.closing[id] : nil
         let editor = context.editor
         var callbacks = editor.actions(for: row).editorCallbacks
         callbacks.onInactiveClick = { event in
@@ -1013,9 +1057,9 @@ private struct NXLineText: View {
             blockID: id,
             kind: block.kind,
             isCompleted: block.isCompleted,
-            struck: closing,
-            strikeColor: closing != nil ? env.settings.accent.editorColor : nil,
-            dimsStruck: closing == nil,
+            // A task's strike is drawn over its text, to draw across it as
+            // the design's does.
+            drawsStrike: !block.isTask,
             verticalInset: NXEditor.lineBoxInset(for: block.kind),
             attributedText: context.contents.content(of: block, store: env.store),
             placeholder: editing ? Self.placeholder(for: block.kind) : "",

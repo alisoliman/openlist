@@ -24,6 +24,18 @@ nonisolated enum DragPayload {
         return UUID(uuidString: String(value.dropFirst(prefix.count)))
     }
 
+    /// The drag of `id`, on the private type rows travel on, so neither a
+    /// line's text nor another app ever reads it as text.
+    func provider(for id: UUID) -> NSItemProvider {
+        let payload = encode(id)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: Self.blockTypeIdentifier, visibility: .ownProcess) { load in
+            load(Data(payload.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
     enum BlockDrop: Equatable {
         case blocks([UUID])
         case text(String)

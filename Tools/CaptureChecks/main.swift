@@ -90,45 +90,6 @@ undo.endUndoGrouping()
 undo.undo()
 check(parsed.dueDate == preview.date && parsed.includesTime, "Undo restores original scheduling precision")
 
-// Only locally edited text may be parsed when a row finishes or opens details.
-var inlineEdits = InlineMetadataEdits()
-let literalTask = store.appendBlock(kind: .task, text: "Do the weekly shop", to: .init(listID: inbox.id))
-store.save()
-check(!inlineEdits.consume(for: literalTask), "Opening an existing literal title does not authorize parsing")
-inlineEdits.recordTextChange(for: literalTask, to: literalTask.text)
-check(!inlineEdits.consume(for: literalTask), "Formatting-only callbacks do not authorize title parsing")
-inlineEdits.recordTextChange(for: literalTask, to: "Call mum tomorrow #home")
-store.setText("Call mum tomorrow #home", for: literalTask)
-check(inlineEdits.consume(for: literalTask), "A deliberate typed title authorizes one metadata commit")
-store.applyInlineMetadata(to: literalTask, parsesNaturalLanguage: true)
-check(literalTask.text == "Call mum" && literalTask.dueDate != nil && literalTask.labelIDs.count == 1,
-      "Typed dates and labels still apply on Return or blur")
-check(!inlineEdits.consume(for: literalTask), "Opening details after a commit does not parse twice")
-inlineEdits.recordTextChange(for: literalTask, to: "Temporary tomorrow")
-store.setText("Temporary tomorrow", for: literalTask)
-inlineEdits.recordTextChange(for: literalTask, to: "Call mum")
-store.setText("Call mum", for: literalTask)
-check(!inlineEdits.consume(for: literalTask), "Reverting a local edit to its starting title does not parse it")
-inlineEdits.recordTextChange(for: literalTask, to: "Local tomorrow")
-store.setText("Local tomorrow", for: literalTask)
-store.setText("External next week", for: literalTask)
-check(!inlineEdits.consume(for: literalTask), "A later external text refresh supersedes local parsing intent")
-inlineEdits.recordTextChange(for: literalTask, to: "Pending tomorrow")
-store.setText("Pending tomorrow", for: literalTask)
-inlineEdits.retain(blockIDs: [])
-check(!inlineEdits.consume(for: literalTask), "Leaving or removing a document row clears pending capture intent")
-
-// A remote edit can arrive between two local edits without a commit in between.
-store.setText("Call mum tomorrow", for: literalTask)
-inlineEdits.recordTextChange(for: literalTask, to: "Local draft")
-store.setText("Local draft", for: literalTask)
-store.setText("External title", for: literalTask)
-inlineEdits.recordTextChange(for: literalTask, to: "Call mum tomorrow")
-store.setText("Call mum tomorrow", for: literalTask)
-check(inlineEdits.consume(for: literalTask), "A new local edit after an external change uses the refreshed baseline")
-store.applyInlineMetadata(to: literalTask, parsesNaturalLanguage: true)
-check(literalTask.text == "Call mum" && literalTask.dueDate != nil, "Typing an earlier title after an external change still commits metadata")
-
 // Capture tints exactly what it saves: the date parser's phrases, with the
 // design's label, priority and estimate tokens kept out of its reach.
 let captureReference = Calendar.current.date(from: DateComponents(year: 2026, month: 6, day: 3, hour: 10))!

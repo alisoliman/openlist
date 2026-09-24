@@ -162,8 +162,11 @@ enum RichTextCodec {
     ///     from the editor's strike ink.
     ///   - dimsCompleted: whether completed text fades to the completed ink.
     ///     A task struck during its completion dwell keeps its ink.
+    ///   - strikes: whether completed text is struck through, where a
+    ///     renderer draws no strike over it of its own.
     static func baseAttributes(for kind: BlockKind, isCompleted: Bool = false,
-                               strikeColor: NSColor? = nil, dimsCompleted: Bool = true) -> [NSAttributedString.Key: Any] {
+                               strikeColor: NSColor? = nil, dimsCompleted: Bool = true,
+                               strikes: Bool = true) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         let font = NXEditor.nsFont(for: kind)
         // Keep the first and last line at the font's natural height. A line
@@ -180,7 +183,7 @@ enum RichTextCodec {
         ]
         if kind == .heading1 { attributes[.kern] = NXEditor.heading1Kern }
 
-        if isCompleted {
+        if isCompleted, strikes {
             attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
             attributes[.strikethroughColor] = strikeColor ?? NXEditor.strikeInk
         }
@@ -194,16 +197,20 @@ enum RichTextCodec {
     ///
     /// Restyling decoded content to its own completion state returns it
     /// unchanged, which is what lets the editor compare against the model.
+    /// With `strikes` false, struck text only fades, for a renderer that
+    /// draws the strike over it.
     static func restylingCompletion(of attributed: NSAttributedString, kind: BlockKind, struck: Bool,
-                                    strikeColor: NSColor? = nil, dimsCompleted: Bool = true) -> NSAttributedString {
+                                    strikeColor: NSColor? = nil, dimsCompleted: Bool = true,
+                                    strikes: Bool = true) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: attributed)
         let full = NSRange(location: 0, length: result.length)
-        let base = baseAttributes(for: kind, isCompleted: struck, strikeColor: strikeColor, dimsCompleted: dimsCompleted)
+        let base = baseAttributes(for: kind, isCompleted: struck, strikeColor: strikeColor, dimsCompleted: dimsCompleted,
+                                  strikes: strikes)
         attributed.enumerateAttributes(in: full) { attributes, range, _ in
             if attributes[.link] == nil, let color = base[.foregroundColor] {
                 result.addAttribute(.foregroundColor, value: color, range: range)
             }
-            if struck || (attributes[.openlistStrikethrough] as? Bool) == true {
+            if (struck && strikes) || (attributes[.openlistStrikethrough] as? Bool) == true {
                 result.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             } else {
                 result.removeAttribute(.strikethroughStyle, range: range)
