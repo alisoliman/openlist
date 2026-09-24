@@ -103,8 +103,10 @@ enum WidgetSampleData {
                            bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11]))
     }
 
-    /// The design's data around `now`. The week is laid out with today as its
-    /// third day, as the design has it on a Wednesday.
+    /// The design's data around `now`, in the week `now` falls in. Today has
+    /// the design's day, its Wednesday; the week's other days have the
+    /// design's others, in order around it, so on a Wednesday it is the
+    /// design's own week.
     static func snapshot(now: Date = referenceDate, fixture: Fixture = .default, calendar base: Calendar = .current) -> WidgetSnapshot {
         let clock = WidgetClock(now: now, firstWeekday: firstWeekday, calendar: base)
         let calendar = clock.calendar
@@ -112,7 +114,7 @@ enum WidgetSampleData {
         let completed: Set<String> = fixture == .session ? ["q4"] : []
         func isDone(_ task: Task) -> Bool { task.isDone || completed.contains(task.key) }
         func list(_ key: String) -> List { lists.first { $0.key == key }! }
-        func at(_ day: Date, hour: Double) -> Date { day.addingTimeInterval(hour * 3600) }
+        func at(_ day: Date, hour: Double) -> Date { clock.date(hour: hour, on: day) }
         func hour(_ time: String) -> Double {
             let parts = time.split(separator: ":").compactMap { Double($0) }
             return parts[0] + parts[1] / 60
@@ -153,10 +155,13 @@ enum WidgetSampleData {
                                               doneItems: done.prefix(6).map(item))
         }
 
-        // The design's week starts on the Monday before its Wednesday.
-        let weekStart = clock.day(offset: -2)
-        snapshot.agenda = (0..<7).map { index in
-            let day = clock.day(offset: index, from: weekStart)
+        // The week the Agenda and Summary draw, from its first day.
+        let weekStart = clock.weekStart()
+        let todayIndex = -clock.dayOffset(weekStart)
+        let others = events.indices.filter { $0 != 2 }
+        snapshot.agenda = (0..<7).map { column in
+            let day = clock.day(offset: column, from: weekStart)
+            let index = column == todayIndex ? 2 : others[column < todayIndex ? column : column - 1]
             let meetings = events[index].enumerated().map { number, event in
                 WidgetSnapshot.AgendaItem(id: "m\(index)-\(number)", kind: .meeting, title: event.2, start: at(day, hour: event.0),
                                           end: at(day, hour: event.1), isCompleted: false, isActive: false, isFlexible: false)
@@ -175,8 +180,8 @@ enum WidgetSampleData {
         // The design's `cnt(i)`: a fixed pseudo-random count per day of a
         // 21-week grid that ends in today's week, lighter at weekends.
         let gridStart = clock.day(offset: -140, from: weekStart)
-        let todayIndex = calendar.dateComponents([.day], from: gridStart, to: today).day ?? 0
-        snapshot.activity = WidgetSnapshot.Activity(start: gridStart, counts: (0..<todayIndex).map { day in
+        let gridToday = calendar.dateComponents([.day], from: gridStart, to: today).day ?? 0
+        snapshot.activity = WidgetSnapshot.Activity(start: gridStart, counts: (0..<gridToday).map { day in
             let value = sin(Double(day + 1) * 12.9898) * 43758.5453
             let rr = abs(value).truncatingRemainder(dividingBy: 1)
             return Int((rr * rr * (day % 7 >= 5 ? 4 : 9)).rounded(.down))

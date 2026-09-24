@@ -31,6 +31,11 @@ final class WidgetSnapshotPublisher {
 
     /// Weeks of history the medium Activity widget draws.
     static let activityWeeks = 21
+    /// Today's rows kept for each day: the oldest overdue ones, then today's
+    /// and tomorrow's, each with room of its own. Large Today draws up to 3
+    /// overdue rows and 5 in all, as the design's; the rest are spares for
+    /// ticks queued in the widget and, after midnight, tomorrow's rows.
+    static let todayRows = (overdue: 10, perDay: 15)
 
     convenience init(store: Store) {
         self.init(store: store, libraryID: nil)
@@ -162,12 +167,18 @@ final class WidgetSnapshotPublisher {
         }
         snapshot.dueDays = WidgetSnapshot.dueDays(dueDates, calendar: calendar)
 
-        snapshot.todayItems = soon.sorted { a, b in
+        let sorted = soon.sorted { a, b in
             let aDay = calendar.startOfDay(for: a.dueDate!), bDay = calendar.startOfDay(for: b.dueDate!)
             if aDay != bDay { return aDay < bDay }
             if a.includesTime != b.includesTime { return a.includesTime }
             return Block.byDueDate(a, b)
-        }.prefix(40).map(item)
+        }
+        // By day, so however much is overdue, today's and tomorrow's rows still come.
+        let overdue = sorted.prefix { $0.dueDate! < todayStart }
+        let dueToday = sorted.dropFirst(overdue.count).prefix { $0.dueDate! < tomorrowStart }
+        let dueTomorrow = sorted.dropFirst(overdue.count + dueToday.count)
+        snapshot.todayItems = (overdue.prefix(Self.todayRows.overdue) + dueToday.prefix(Self.todayRows.perDay)
+            + dueTomorrow.prefix(Self.todayRows.perDay)).map(item)
 
         snapshot.inboxCount = inboxOpen.count
         snapshot.inboxItems = inboxOpen.sorted { $0.createdAt > $1.createdAt }.prefix(4).map {

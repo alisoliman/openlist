@@ -44,8 +44,9 @@ enum SnapshotSource {
 enum WidgetCadence {
     /// Today, List, Summary and Activity: the day rolling over.
     case daily
-    /// Quick Add: Inbox ages move by the hour.
-    case hourly
+    /// Quick Add: as each Inbox age shown moves on, by the minute in an
+    /// item's first hour, then by the hour and the day.
+    case inboxAges
     /// Agenda: the now line, every quarter of an hour until midnight.
     case quarterHourly
     /// Up Next: "N min left", its bar and the next block, by the minute.
@@ -58,8 +59,8 @@ enum WidgetCadence {
         switch self {
         case .daily:
             dates += [midnight, calendar.date(byAdding: .day, value: 1, to: midnight) ?? midnight]
-        case .hourly:
-            dates += (1...24).map { now.addingTimeInterval(Double($0) * 3600) }
+        case .inboxAges:
+            dates += (snapshot.map { CaptureModel.ageChanges($0, after: now) } ?? []) + [now.addingTimeInterval(86_400)]
         case .quarterHourly:
             let quarter: TimeInterval = 15 * 60
             var next = Date(timeIntervalSinceReferenceDate: (now.timeIntervalSinceReferenceDate / quarter).rounded(.down) * quarter + quarter)

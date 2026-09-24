@@ -36,7 +36,8 @@ struct NXChip: View {
         self.chip = chip
         self.fresh = fresh
         self.quiet = quiet
-        _appeared = State(initialValue: !fresh)
+        // Quiet chips have no chipIn: the design's only change colour.
+        _appeared = State(initialValue: !fresh || quiet)
     }
 
     var body: some View {
@@ -60,15 +61,18 @@ struct NXChip: View {
             }
         }
         .lineLimit(1)
-        .foregroundStyle(quiet ? quietColor(fg) : fg)
+        // The design's 200ms colour transition, as a chip changes tone in place.
+        .animation(NX.cssEase(200)) { $0.foregroundStyle(quiet ? quietColor(fg) : fg) }
         .padding(.horizontal, quiet ? 0 : 7)
         .padding(.vertical, quiet ? 0 : 3)
-        .background(quiet ? Color.clear : bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .animation(NX.cssEase(200)) {
+            $0.background(quiet ? Color.clear : bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
         .fixedSize()
         .scaleEffect(appeared ? 1 : 0.85)
         .offset(y: appeared ? 0 : 3)
         .opacity(appeared ? 1 : 0)
-        .onChange(of: fresh, initial: true) { _, isFresh in if isFresh { pop() } }
+        .onChange(of: fresh, initial: true) { _, isFresh in if isFresh, !quiet { pop() } }
     }
 
     private var isLabel: Bool { if case .label = chip.tone { true } else { false } }
@@ -234,41 +238,113 @@ struct NXScreenHeader<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12))
-                switch tile {
-                case let .icon(name):
-                    Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
-                case let .emoji(emoji):
-                    Text(emoji).font(.system(size: 24))
-                case let .list(list):
-                    NXListGlyph(list: list, size: 24)
+        NXHeaderFlow(gap: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12))
+                    switch tile {
+                    case let .icon(name):
+                        Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
+                    case let .emoji(emoji):
+                        Text(emoji).font(.system(size: 24))
+                    case let .list(list):
+                        NXListGlyph(list: list, size: 24)
+                    }
                 }
-            }
-            .frame(width: 44, height: 44)
+                .frame(width: 44, height: 44)
 
-            VStack(alignment: .leading, spacing: 5) {
-                if let rename {
-                    NXHeaderTitleField(title: title, rename: rename)
-                } else {
-                    NXHeaderTitle(text: title)
+                VStack(alignment: .leading, spacing: 5) {
+                    if let rename {
+                        NXHeaderTitleField(title: title, rename: rename)
+                    } else {
+                        NXHeaderTitle(text: title)
+                    }
+                    // Wraps, as the design's, rather than cut off in a narrow window.
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(NX.ink(0.48))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.numericText())
                 }
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(NX.ink(0.48))
-                    .lineLimit(1)
-                    .contentTransition(.numericText())
             }
-            .layoutPriority(1)
-            // The design's flex spacer: the row's gaps alone keep the title
-            // and what trails it apart.
-            Spacer(minLength: 0)
             if let progress, progress.total > 0 {
                 NXProgress(done: progress.done, total: progress.total)
             }
             trailing()
         }
+    }
+}
+
+/// The design's header row, which wraps: the tile and title lead, and the
+/// progress and any controls sit on the same line's trailing edge, the flex
+/// spacer's two gaps from the title at least. When they don't all fit beside
+/// the title, they flow onto lines of their own below it, from the leading
+/// edge, one gap apart and one gap down, and the title takes the whole width.
+private struct NXHeaderFlow: Layout {
+    var gap: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(width: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for placement in arrange(width: bounds.width, subviews: subviews).placements {
+            subviews[placement.index].place(at: CGPoint(x: bounds.minX + placement.origin.x, y: bounds.minY + placement.origin.y),
+                                            proposal: ProposedViewSize(placement.size))
+        }
+    }
+
+    private struct Placement { var index: Int; var origin: CGPoint; var size: CGSize }
+
+    private func arrange(width proposed: CGFloat?, subviews: Subviews) -> (placements: [Placement], size: CGSize) {
+        guard let lead = subviews.first else { return ([], .zero) }
+        let trail = Array(subviews.indices.dropFirst())
+        let ideals = trail.map { subviews[$0].sizeThatFits(.unspecified) }
+        let trailWidth = ideals.reduce(0) { $0 + $1.width } + gap * CGFloat(max(0, ideals.count - 1))
+        let oneLine = lead.sizeThatFits(.unspecified).width + (trail.isEmpty ? 0 : 2 * gap + trailWidth)
+        let width = proposed.flatMap { $0.isFinite ? $0 : nil } ?? oneLine
+
+        if trail.isEmpty || oneLine <= width {
+            // One line: what trails ends at the trailing edge, and the title
+            // has all that's left, as a title being renamed fills it.
+            let leadWidth = trail.isEmpty ? width : width - 2 * gap - trailWidth
+            let leadSize = lead.sizeThatFits(ProposedViewSize(width: leadWidth, height: nil))
+            let height = max(leadSize.height, ideals.map(\.height).max() ?? 0)
+            var placements = [Placement(index: 0, origin: CGPoint(x: 0, y: (height - leadSize.height) / 2), size: leadSize)]
+            var x = width - trailWidth
+            for (index, size) in zip(trail, ideals) {
+                placements.append(Placement(index: index, origin: CGPoint(x: x, y: (height - size.height) / 2), size: size))
+                x += size.width + gap
+            }
+            return (placements, CGSize(width: width, height: height))
+        }
+
+        let leadSize = lead.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        var placements = [Placement(index: 0, origin: .zero, size: leadSize)]
+        var y = leadSize.height + gap
+        var line: [(index: Int, size: CGSize)] = []
+        var x: CGFloat = 0
+        func endLine() {
+            let height = line.map(\.size.height).max() ?? 0
+            var left: CGFloat = 0
+            for item in line {
+                placements.append(Placement(index: item.index, origin: CGPoint(x: left, y: y + (height - item.size.height) / 2),
+                                            size: item.size))
+                left += item.size.width + gap
+            }
+            y += height + gap
+            line = []
+            x = 0
+        }
+        for (index, ideal) in zip(trail, ideals) {
+            // No wider than the header, so the progress can drop its count.
+            let size = ideal.width > width ? subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil)) : ideal
+            if !line.isEmpty, x + size.width > width { endLine() }
+            line.append((index, size))
+            x += size.width + gap
+        }
+        endLine()
+        return (placements, CGSize(width: width, height: y - gap))
     }
 }
 
@@ -365,7 +441,7 @@ struct NXProgress: View {
     let total: Int
 
     var body: some View {
-        // Narrow windows drop the count, then the bar, before the title truncates.
+        // Wrapped under the title and still too narrow, it drops the count, then the bar.
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
                 Text("\(done) of \(total) done")

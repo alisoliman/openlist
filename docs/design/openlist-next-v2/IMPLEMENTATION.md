@@ -53,6 +53,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - Too narrow for the whole toolbar, the crumb truncates first, down to its first 80 pt,
   then the Undo label, which at last leaves only its icon; Actions and New task keep their
   labels.
+- A screen header's progress and controls wrap under its title when they don't fit beside
+  it, as the design's; a title too long for its line wraps beside the tile, where the
+  design's would drop under it.
 - Typing is on the window's undo stack natively, where the design keeps it out of Undo
   until a line commits. While a list document line holds typing, the toolbar's Undo names
   the step the line commits as ("Edited “…”", "Added “…”", "Removed an empty line"), which
@@ -148,7 +151,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Quick Add as Today's own add row does, an undated task due today, so it shows in the
   widget; the design's footer is plain Quick Add. A List widget whose chosen list is gone
   shows the first list, as an unconfigured one does; with no list besides Inbox it reads
-  "No lists" and opens Lists, where the design always has a list.
+  "No lists" and opens Lists, where the design always has a list. Quick Add counts an Inbox
+  task's first hour in minutes ("12m"), a native extra: the design's ages start at "2h". The
+  gallery's sample week is the one today falls in: today has the design's Wednesday, the
+  other days the design's others in order, so it is the design's own week on a Wednesday.
 - Calendar: running work past its slot follows the design's overrun (the slot grows to the
   next quarter plus 15 min, later placements that day move out of its way, saved and
   undoable, stopping only at meetings and breaks; Undo still moves them back after Pause,
