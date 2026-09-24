@@ -143,6 +143,16 @@ check(plan([task(1)], preferences: overridePreferences).blocks[0].start == date(
 overridePreferences.work.overrides = [AvailabilityOverride(date: now, windows: [.init(startMinute: 600, endMinute: 720)], breaks: [.init(startMinute: 630, endMinute: 660)])]
 let overridden = plan([task(1, minutes: 60)], preferences: overridePreferences)
 check(overridden.blocks.map(\.start) == [ten, eleven], "Date override replaces weekly hours and breaks")
+// The calendar grid hatches the breaks the planner uses: a date override's, else the weekday's.
+let lunch = AvailabilityWindow(startMinute: 720, endMinute: 780)
+check(AvailabilityProfile.workDefault.breaks(on: now, calendar: calendar) == [lunch], "A day without an override has its weekday's break")
+var movedLunch = AvailabilityProfile.workDefault
+movedLunch.overrides = [AvailabilityOverride(date: now, windows: [.init(startMinute: 540, endMinute: 1020)], breaks: [.init(startMinute: 780, endMinute: 840)])]
+check(movedLunch.breaks(on: now, calendar: calendar) == [.init(startMinute: 780, endMinute: 840)], "A moved break is hatched where the override puts it")
+check(movedLunch.breaks(on: tomorrow, calendar: calendar) == [lunch], "Another day keeps the weekly break")
+var dayOff = AvailabilityProfile.workDefault
+dayOff.overrides = [AvailabilityOverride(date: now, windows: [])]
+check(dayOff.breaks(on: now, calendar: calendar).isEmpty && dayOff.windows(on: now, calendar: calendar).isEmpty, "A day off has no hours and no break to hatch")
 let deferred = plan([task(1, earliest: tomorrow)])
 check(deferred.blocks[0].start == date("2026-09-15T09:00:00+02:00"), "Deferred task cannot return earlier than chosen day")
 
@@ -261,4 +271,36 @@ let mixed = plan(mixedTasks, busy: [meeting])
 verifyConservation(mixed, tasks: mixedTasks)
 let reversed = plan(mixedTasks.reversed(), busy: [meeting])
 check(mixed.blocks.map(\.id) == reversed.blocks.map(\.id) && mixed.blocks.map(\.start) == reversed.blocks.map(\.start), "Planning is deterministic under input reordering")
+
+// The Calendar's week follows "Week starts on", and Plan and "Not planned yet" use the same days.
+let wednesday = date("2026-09-23T10:40:00+02:00")
+var mondayWeek = calendar
+mondayWeek.firstWeekday = 2
+var sundayWeek = calendar
+sundayWeek.firstWeekday = 1
+@MainActor
+func dayNumbers(_ days: [Date]) -> [Int] { days.map { calendar.component(.day, from: $0) } }
+check(dayNumbers(CalendarWeek.days(count: 7, from: wednesday, calendar: mondayWeek)) == Array(21...27), "A Monday week around Wednesday 23 runs 21 to 27, as the design's")
+check(dayNumbers(CalendarWeek.days(count: 7, from: wednesday, calendar: sundayWeek)) == Array(20...26), "A Sunday week starts on the Sunday before")
+check(dayNumbers(CalendarWeek.days(count: 7, from: date("2026-09-27T09:00:00+02:00"), calendar: mondayWeek)) == Array(21...27), "On the week's last day, today is the last column")
+check(dayNumbers(CalendarWeek.days(count: 7, from: date("2026-09-21T09:00:00+02:00"), calendar: mondayWeek)) == Array(21...27), "On the week's first day, today is the first column")
+check(dayNumbers(CalendarWeek.days(count: 3, from: wednesday, calendar: mondayWeek)) == [23, 24, 25]
+      && dayNumbers(CalendarWeek.days(count: 1, from: wednesday, calendar: mondayWeek)) == [23], "Day and 3 days start today")
+let shownWeek = CalendarWeek.span(from: wednesday, calendar: mondayWeek)
+check(shownWeek.start == date("2026-09-21T00:00:00+02:00") && shownWeek.end == date("2026-09-28T00:00:00+02:00"), "Plan searches no further than the Week view's last day")
+@MainActor
+func shownBlock(_ number: Int, _ start: String, _ end: String, active: Bool = false, done: Bool = false) -> PlannedBlock {
+    PlannedBlock(id: "\(number)", taskID: task(number).taskID, occurrenceID: task(number).occurrenceID, start: date(start), end: date(end),
+                 isPinned: true, placementID: UUID(), conflicts: [], isActive: active, completionID: done ? UUID() : nil)
+}
+let placedNow = CalendarWeek.placedTaskIDs([
+    shownBlock(1, "2026-09-14T10:00:00+02:00", "2026-09-14T10:30:00+02:00"),
+    shownBlock(2, "2026-09-22T14:00:00+02:00", "2026-09-22T14:30:00+02:00"),
+    shownBlock(3, "2026-09-25T10:00:00+02:00", "2026-09-25T11:00:00+02:00"),
+    shownBlock(4, "2026-09-23T09:00:00+02:00", "2026-09-23T09:30:00+02:00", done: true),
+    shownBlock(5, "2026-09-18T09:00:00+02:00", "2026-09-18T09:30:00+02:00", active: true)
+], now: wednesday, calendar: mondayWeek)
+check(!placedNow.contains(task(1).taskID), "A slot missed before the Week view's week no longer keeps its task out of Not planned yet")
+check(placedNow.contains(task(2).taskID) && placedNow.contains(task(3).taskID), "Yesterday's carried-forward slot and a later one still count as placed")
+check(!placedNow.contains(task(4).taskID) && placedNow.contains(task(5).taskID), "A done block doesn't count, running work does")
 print("Scheduling checks passed: \(count)")

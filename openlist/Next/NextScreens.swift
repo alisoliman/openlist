@@ -58,7 +58,7 @@ struct NextTodayScreen: View {
             let now = context.date
             let workbench = env.workbench
             let model = Self.model(library: library, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
-                                   accent: style.accent, now: now) { env.store.placements(taskID: $0).isEmpty }
+                                   accent: style.accent, now: now) { !workbench.placedTaskIDs().contains($0) }
             NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
                 NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
                                subtitle: now.formatted(.dateTime.weekday(.wide).day().month(.wide)),

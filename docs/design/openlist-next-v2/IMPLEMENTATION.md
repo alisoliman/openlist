@@ -46,6 +46,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
   heading or task folds it away. Headings and text take no key focus after Escape, as in
   the design; Return writes them again and J/K step to the tasks beside them.
+- Calendar: running work past its slot follows the design's overrun (the slot grows to the
+  next quarter plus 15 min, later placements that day move out of its way, saved and
+  undoable, stopping only at meetings and breaks). Where it departs, to keep the list's
+  hours: the block also stops growing at their end, and a moved task stays inside its own
+  list's hours that day (the design allows up to 21:00), or where it is when none are left.
+  Work with no slot is drawn from when it started, up to its estimate or the next placed
+  task. Busy holds of 20 h or more (Out of office) aren't drawn as meetings but still keep
+  Plan and the planner away, so the day's header names them.
 
 ## Status checklist
 

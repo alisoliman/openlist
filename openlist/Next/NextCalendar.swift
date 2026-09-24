@@ -16,7 +16,8 @@ struct NextCalendarScreen: View {
             // The range comes from the timeline's date, so a screen left open
             // overnight moves to the new day with its header.
             TimelineView(.everyMinute) { context in
-                let dates = Self.dates(count: days, from: context.date)
+                // Week is the settings week around today, as Plan searches it.
+                let dates = CalendarWeek.days(count: days, from: context.date, calendar: env.settings.calendar)
                 VStack(alignment: .leading, spacing: 0) {
                     NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates)) {
                         NXSegmented(options: [(1, "Day"), (3, "3 days"), (7, "Week")], selection: days) { value in
@@ -28,12 +29,6 @@ struct NextCalendarScreen: View {
                 }
             }
         }
-    }
-
-    /// The week starts two days back so yesterday's misses stay in view.
-    static func dates(count: Int, from now: Date = .now) -> [Date] {
-        let first = NXFormat.day(offset: count == 7 ? -2 : 0, now: now)
-        return (0..<count).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: first) }
     }
 
     static func rangeText(_ dates: [Date]) -> String {
@@ -57,6 +52,7 @@ private struct NXCalendarBody: View {
     @Environment(\.nextLibrary) private var library
     let dates: [Date]
     let now: Date
+    @State private var meetings = NXCalendarMeetings()
 
     var body: some View {
         let range = hourRange
@@ -96,11 +92,21 @@ private struct NXCalendarBody: View {
         return env.calendar.visibleBlocks.filter { $0.end > span.start && $0.start < span.end }
     }
 
-    private var events: [FixedBusyTime] {
+    /// Busy time in the days shown, earlier ones in the week included, where
+    /// the planner's own range, from today, doesn't reach.
+    private var busy: [FixedBusyTime] {
         guard let span else { return [] }
-        return env.calendar.externalCalendars.busyTimes.filter {
-            $0.end > span.start && $0.start < span.end && $0.end.timeIntervalSince($0.start) < 20 * 3600
-        }
+        return meetings.busyTimes(in: span, from: env.calendar.externalCalendars)
+    }
+
+    private var events: [FixedBusyTime] {
+        busy.filter { $0.end.timeIntervalSince($0.start) < 20 * 3600 }
+    }
+
+    /// Holds of 20 hours or more, like Out of office: no meeting to draw, but
+    /// Plan keeps clear of them, so the day's header names them.
+    private var holds: [FixedBusyTime] {
+        busy.filter { $0.end.timeIntervalSince($0.start) >= 20 * 3600 }
     }
 
     private var plannedNow: PlannedBlock? {
@@ -162,12 +168,15 @@ private struct NXCalendarBody: View {
         let cal = Calendar.current
         let blocksByDay = Dictionary(grouping: blocks) { cal.startOfDay(for: $0.start) }
         let eventsByDay = Dictionary(grouping: events) { cal.startOfDay(for: $0.start) }
+        let holds = self.holds
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Color.clear.frame(width: NXCal.gutter, height: 1)
                 ForEach(dates, id: \.self) { date in
                     let day = cal.startOfDay(for: date)
-                    NXDayHead(date: date, now: now, load: Self.hours(blocksByDay[day] ?? [], eventsByDay[day] ?? []))
+                    let next = cal.date(byAdding: .day, value: 1, to: day) ?? day
+                    NXDayHead(date: date, now: now, load: Self.hours(blocksByDay[day] ?? [], eventsByDay[day] ?? []),
+                              holds: holds.filter { $0.end > day && $0.start < next }, reservesHold: !holds.isEmpty)
                 }
             }
             .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.09)).frame(height: 0.5) }
@@ -190,6 +199,21 @@ private struct NXCalendarBody: View {
         let seconds = blocks.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
             + events.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
         return seconds / 3600
+    }
+}
+
+/// The days' busy time, read again only when the days or the calendars change.
+private final class NXCalendarMeetings {
+    private var key: [Double] = []
+    private var busy: [FixedBusyTime] = []
+
+    func busyTimes(in span: DateInterval, from source: ExternalCalendarSource) -> [FixedBusyTime] {
+        let key = [span.start.timeIntervalSinceReferenceDate, span.end.timeIntervalSinceReferenceDate, Double(source.revision)]
+        if key != self.key {
+            self.key = key
+            busy = source.busyTimes(in: span)
+        }
+        return busy
     }
 }
 
@@ -233,6 +257,10 @@ private struct NXDayHead: View {
     let date: Date
     let now: Date
     let load: Double
+    /// The day's all-day holds, and whether any day shown has one, so every
+    /// header keeps the same height.
+    let holds: [FixedBusyTime]
+    let reservesHold: Bool
 
     var body: some View {
         let cal = Calendar.current
@@ -261,11 +289,33 @@ private struct NXDayHead: View {
                         .lineLimit(1)
                 }
             }
+            if reservesHold {
+                hold.frame(height: 16)
+            }
         }
         .padding(EdgeInsets(top: 9, leading: 9, bottom: 8, trailing: 9))
         .frame(minWidth: NXCal.minColumn, maxWidth: .infinity, alignment: .leading)
         .background(isToday ? style.accent.opacity(0.04) : .clear)
         .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.07)).frame(width: 0.5) }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var hold: some View {
+        let names = holds.map { $0.title.isEmpty ? "Busy" : $0.title }
+        if let first = names.first {
+            Text(names.count > 1 ? "\(first) +\(names.count - 1)" : first)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(NX.ink(0.55))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 5)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .help(names.joined(separator: ", "))
+                .accessibilityLabel(names.joined(separator: ", ") + ", all day")
+        } else {
+            Color.clear
+        }
     }
 }
 
@@ -403,11 +453,11 @@ private struct NXDayColumn: View {
         return Dictionary(placements.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// Break windows (lunch) from the work hours profile.
+    /// Break windows (lunch) from the work hours, where the planner has them:
+    /// a date override's when it sets them, else the weekday's.
     private var breaks: [(start: Date, end: Date)] {
         let day = Calendar.current.startOfDay(for: date)
-        let weekday = Calendar.current.component(.weekday, from: date)
-        return (env.calendar.preferences.profile(for: .work).breaks[weekday] ?? []).map {
+        return env.calendar.preferences.profile(for: .work).breaks(on: day, calendar: .current).map {
             (day.addingTimeInterval(TimeInterval($0.startMinute * 60)), day.addingTimeInterval(TimeInterval($0.endMinute * 60)))
         }
     }
@@ -426,20 +476,26 @@ private struct NXDayColumn: View {
         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .help(event.title)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(event.title.isEmpty ? "Busy" : event.title)
+        .accessibilityValue("\(NXFormat.clock(event.start)) to \(NXFormat.clock(event.end))")
     }
 }
 
-/// The 135° stripes used for breaks.
+/// The 135° stripes used for breaks: 4pt wide and 8pt apart measured across
+/// them, as the design's repeating gradient runs.
 private nonisolated struct NXHatch: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let step: CGFloat = 8
+        // Measured along the rows, the stripes are √2 times wider and further apart.
+        let step: CGFloat = 8 * 2.squareRoot()
+        let width: CGFloat = 4 * 2.squareRoot()
         var x = -rect.height
         while x < rect.width {
             path.move(to: CGPoint(x: x, y: rect.maxY))
             path.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
-            path.addLine(to: CGPoint(x: x + rect.height + 4, y: rect.minY))
-            path.addLine(to: CGPoint(x: x + 4, y: rect.maxY))
+            path.addLine(to: CGPoint(x: x + rect.height + width, y: rect.minY))
+            path.addLine(to: CGPoint(x: x + width, y: rect.maxY))
             path.closeSubpath()
             x += step
         }
@@ -468,14 +524,20 @@ private struct NXCalendarBlock: View {
         let color = library.list(task?.listID)?.nxColor ?? style.accent
         let closing = workbench.closing[block.taskID] != nil
         let done = block.isCompleted || task?.isCompleted == true || closing
-        let missed = (isPastDay || (isToday && block.end <= now)) && !done
-        let working = block.isActive
+        let running = block.isActive
+        // Paused work keeps its block drawn as the work, as the design's does.
+        let paused = env.calendar.pausedBlockID == block.id
+        let working = running || paused
+        // Work still running is never carried forward.
+        let missed = !running && (isPastDay || (isToday && block.end <= now)) && !done
         let isNow = isToday && block.start <= now && now < block.end
+        let meta = note(missed: missed, running: running, working: working, isNow: isNow)
         let focused = env.navigator.openTaskID == block.taskID
         let fg: Color = working ? .white : done ? NX.ink(0.5) : NX.ink
         let background: Color = working ? color : done ? NX.green.opacity(0.1) : missed ? NX.card.opacity(0.7) : color.opacity(0.12)
         let ring: Color = working ? .clear : done ? NX.green.opacity(0.28) : missed ? NX.red.opacity(0.35) : color.opacity(0.25)
         let fresh = workbench.freshBlockTaskID == block.taskID
+        let title = task?.displayTitle ?? block.titleSnapshot ?? "Task"
 
         VStack(alignment: .leading, spacing: 1) {
             HStack(alignment: .top, spacing: 5) {
@@ -490,11 +552,8 @@ private struct NXCalendarBlock: View {
                 .frame(width: 12, height: 12)
                 .padding(.top, 1)
                 .contentShape(Circle())
-                .onTapGesture {
-                    // A done block reopens its task where it was, unless a repeat has moved on since.
-                    if block.isCompleted { workbench.reopen(block: block) } else { workbench.toggle(block.taskID) }
-                }
-                Text(task?.displayTitle ?? block.titleSnapshot ?? "Task")
+                .onTapGesture(perform: check)
+                Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
                     .strikethrough(done)
                     .foregroundStyle(fg)
@@ -502,7 +561,7 @@ private struct NXCalendarBlock: View {
                     .truncationMode(.tail)
             }
             if height >= 34 {
-                Text(meta(missed: missed, working: working, isNow: isNow))
+                Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.ink(0.5))
                     .lineLimit(1)
@@ -534,10 +593,7 @@ private struct NXCalendarBlock: View {
         .opacity(entered ? 1 : 0)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture {
-            workbench.focusID = nil
-            env.navigator.openTask(block.taskID)
-        }
+        .onTapGesture(perform: open)
         .animation(.easeOut(duration: 0.24), value: done)
         .animation(.easeOut(duration: 0.24), value: working)
         .onChange(of: fresh, initial: true) { _, isFresh in
@@ -555,6 +611,25 @@ private struct NXCalendarBlock: View {
             if !Task.isCancelled { shifted = false }
         }
         .help(task?.displayTitle ?? "")
+        // One element: the title, its time and state, opened by default, with its check as an action.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(spokenState(done: done, missed: missed, paused: paused, note: meta))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, open)
+        .accessibilityAction(named: done ? "Reopen" : "Complete", check)
+    }
+
+    private var time: String { "\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))" }
+
+    private func open() {
+        env.workbench.focusID = nil
+        env.navigator.openTask(block.taskID)
+    }
+
+    /// A done block reopens its task where it was, unless a repeat has moved on since.
+    private func check() {
+        if block.isCompleted { env.workbench.reopen(block: block) } else { env.workbench.toggle(block.taskID) }
     }
 
     private func enter() {
@@ -564,20 +639,24 @@ private struct NXCalendarBlock: View {
         Task { @MainActor in withAnimation(style.ease(380)) { entered = true } }
     }
 
-    /// The slot, with one note in the design's order of precedence.
-    private func meta(missed: Bool, working: Bool, isNow: Bool) -> String {
-        let time = "\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))"
-        if missed { return time + " · carried forward" }
+    /// The note after the slot, in the design's order of precedence. Work that
+    /// can grow no further runs into what stopped it for as long as it runs.
+    private func note(missed: Bool, running: Bool, working: Bool, isNow: Bool) -> String? {
+        if missed { return "carried forward" }
         if working {
-            // In its last minute, work cut short by a meeting runs into it.
-            if block.end.timeIntervalSince(now) <= 60,
-               let meeting = env.calendar.externalCalendars.busyTimes.first(where: { abs($0.start.timeIntervalSince(block.end)) < 1 }) {
-                return time + " · runs into " + (meeting.title.isEmpty ? "busy time" : meeting.title)
+            if running, let conflict = env.calendar.workConflict, conflict.occurrenceID == block.occurrenceID {
+                return "runs into " + env.workbench.conflictName(conflict)
             }
-            return time + (env.calendar.workExtension?.occurrenceID == block.occurrenceID ? " · extended" : " · working")
+            return running && env.calendar.workExtension?.occurrenceID == block.occurrenceID ? "extended" : "working"
         }
-        if shifted { return time + " · rescheduled" }
-        return isNow ? time + " · now" : time
+        if shifted { return "rescheduled" }
+        return isNow ? "now" : nil
+    }
+
+    private func spokenState(done: Bool, missed: Bool, paused: Bool, note: String?) -> String {
+        let time = "\(NXFormat.clock(block.start)) to \(NXFormat.clock(block.end))"
+        let state = done ? "done" : missed ? "missed, carried forward" : paused ? "paused" : note
+        return [time, state].compactMap { $0 }.joined(separator: ", ")
     }
 }
 
@@ -622,8 +701,9 @@ private struct NXUnplannedColumn: View {
 
     private var unplanned: [Block] {
         let workbench = env.workbench
-        // Only a placement (or running work) gives a task its block, as Today's Fit into calendar counts it.
-        let placed = Set(env.calendar.visibleBlocks.filter { !$0.isCompleted }.map(\.taskID))
+        // A block on the calendar keeps a task out, as Today's Fit into calendar counts it:
+        // running or paused work, or a slot this week or later.
+        let placed = workbench.placedTaskIDs(now: now)
         return library.open.filter { task in
             guard !placed.contains(task.id), workbench.closing[task.id] == nil else { return false }
             if let due = task.dueDate, (-7...4).contains(NXFormat.dayOffset(due, now: now)) { return true }

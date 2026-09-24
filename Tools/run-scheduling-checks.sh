@@ -7,5 +7,6 @@ trap 'rm -rf "$OUT"' EXIT
 xcrun swiftc -swift-version 6 -O -o "$OUT/scheduling-checks" \
     openlist/Model/CalendarTypes.swift \
     openlist/Services/AdaptiveScheduler.swift \
+    openlist/Services/CalendarWeek.swift \
     Tools/SchedulingChecks/main.swift
 "$OUT/scheduling-checks"

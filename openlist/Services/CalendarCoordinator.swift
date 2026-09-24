@@ -13,10 +13,13 @@ final class CalendarCoordinator {
     private(set) var completedBlocks: [PlannedBlock] = []
     /// What the calendar draws. Only explicit planning puts a task there: its
     /// placements at their saved times, past ones included, the running work,
-    /// and completed occurrences that had a slot or recorded work. The plan's
-    /// flexible blocks only drive Start nudges, suggestions and what more time
-    /// for the running work would move.
+    /// paused work where it was, and completed occurrences that had a slot or
+    /// recorded work. The plan's flexible blocks only drive Start nudges,
+    /// suggestions and what more time for the running work would move.
     private(set) var visibleBlocks: [PlannedBlock] = []
+    /// The block in `visibleBlocks` that paused work keeps, drawn as the work
+    /// while it can resume.
+    private(set) var pausedBlockID: String?
     private(set) var startNudge: CalendarStartNudge? {
         didSet { if oldValue != startNudge { onNudgesChanged?() } }
     }
@@ -24,11 +27,11 @@ final class CalendarCoordinator {
         didSet { if oldValue != overrunNudge { onNudgesChanged?() } }
     }
     private(set) var rescheduleSummary: CalendarRescheduleSummary?
-    /// Extra time the running work has been given past its estimate, and the
-    /// flexible tasks its latest extension moved.
+    /// Extra time the running work has been given past its slot or estimate,
+    /// and the placed tasks its latest extension moved.
     private(set) var workExtension: CalendarWorkExtension?
-    /// The fixed event the running work ran into once its block could grow no
-    /// further. Recording carries on through it.
+    /// The meeting or break the running work ran into once its block could
+    /// grow no further. Recording carries on through it.
     private(set) var workConflict: CalendarWorkConflict?
     @ObservationIgnored var onNudgesChanged: (() -> Void)?
     /// Runs each time the Mac reports you back: waking, the screen, unlocking.
@@ -57,20 +60,24 @@ final class CalendarCoordinator {
     private var timer: Timer?
     private var isUpdating = false
     private var hasStarted = false
-    /// Where the running work's block has to stop growing: the next fixed event
-    /// or the end of the hours it started in. Nil for work started outside them,
+    /// Where the running work's block has to stop growing: the next meeting or
+    /// the end of the hours it started in. Nil for work started outside them,
     /// which records like any other but has no block to grow.
     private var activeBoundary: Date?
     /// While the Mac is away and the running work tracks away: where that time
-    /// stops counting, the next fixed event or the end of the list's hours. At
-    /// the Mac, work records through them.
+    /// stops counting, the next fixed event, another task's pinned time or the
+    /// end of the list's hours. At the Mac, work records through them.
     private var awayLimit: Date?
     private var lastObservedAt: Date?
     private var lastCalendarRefresh: Date = .distantPast
-    /// Where the running work's block ends, its estimate plus any extensions,
-    /// before `activeBoundary` caps it.
+    /// Where the running work's block ends, the end of the slot it works
+    /// through (or its estimate) plus any extensions, before `activeBoundary`
+    /// caps it.
     private var approvedWorkEnd: Date?
+    /// Where the running work's estimate runs out, to notice it changing.
     private var estimatedWorkEnd: Date?
+    /// Where the running work's block was when it paused, kept while it can resume.
+    private var pausedWork: (occurrenceID: UUID, start: Date, end: Date)?
     /// The running work's extensions, newest last, and those Undo took back.
     private var extensionSteps: [WorkExtensionStep] = []
     private var undoneExtensionSteps: [WorkExtensionStep] = []
@@ -251,7 +258,7 @@ final class CalendarCoordinator {
         let boundary = nextBoundary(for: task, at: now)
         let baseline = baselineEnd(for: session, task: task, now: now)
         estimatedWorkEnd = baseline
-        approvedWorkEnd = baseline
+        approvedWorkEnd = plannedWorkEnd(for: session, task: task, estimate: baseline)
         resetExtensions()
         showedFinishHeadsUp = false
         overrunNudge = nil
@@ -261,6 +268,7 @@ final class CalendarCoordinator {
         lastObservedAt = now
         resumeTaskID = nil
         resumeOccurrenceID = nil
+        pausedWork = nil
         persistResume()
         workCompletion = nil
         workSelection = WorkTaskReference(task)
@@ -273,6 +281,8 @@ final class CalendarCoordinator {
         guard let session = activeSession else { return }
         let wasUpdating = isUpdating
         isUpdating = true
+        // Where its block is now, kept in place once it's paused.
+        let drawn = workingBlock(placed: store.calendarPlannedBlocks, now: now)
         // Records up to `now`: the click for Pause, or the last observed time
         // after a clock gap. Only time away from the Mac past where it stops
         // counting ends earlier.
@@ -286,6 +296,7 @@ final class CalendarCoordinator {
             resumeTaskID = task.id
             resumeOccurrenceID = task.occurrenceID
             workSelection = WorkTaskReference(task)
+            pausedWork = drawn.map { ($0.occurrenceID, $0.start, $0.end) }
             persistResume()
         }
         activeSessionID = nil
@@ -334,9 +345,11 @@ final class CalendarCoordinator {
     func dismissResume() {
         resumeTaskID = nil
         resumeOccurrenceID = nil
+        pausedWork = nil
         persistResume()
         workSelection = nil
         notice = nil
+        refreshVisibleBlocks(now: .now)
     }
 
     /// Offers paused work again after a caller dismissed it, as long as the
@@ -347,6 +360,7 @@ final class CalendarCoordinator {
         resumeOccurrenceID = reference.occurrenceID
         persistResume()
         workSelection = reference
+        refreshVisibleBlocks(now: .now)
     }
 
     func move(block: PlannedBlock, to start: Date, isPinned: Bool = false, now: Date = .now) {
@@ -428,9 +442,9 @@ final class CalendarCoordinator {
     func handleMacUnavailable(reason: String, now: Date = .now) {
         guard let session = activeSession, let task = store.block(id: session.taskID) else { return }
         // Work that tracks away keeps recording while you're gone, up to the
-        // next fixed event or the end of the list's hours. Away outside them,
-        // it pauses like any other.
-        if task.tracksAwayFromMac, let limit = awayLimit ?? nextBoundary(for: task, at: now) {
+        // next fixed event, another task's pinned time or the end of the
+        // list's hours. Away outside them, it pauses like any other.
+        if task.tracksAwayFromMac, let limit = awayLimit ?? nextBoundary(for: task, at: now, stopsAtPins: true) {
             awayLimit = limit
             return
         }
@@ -476,7 +490,7 @@ final class CalendarCoordinator {
             } else if let task = store.block(id: session.taskID) {
                 let gap = checkClockGap ? lastObservedAt.flatMap { now.timeIntervalSince($0) > 75 ? $0 : nil } : nil
                 // A gap in the timer is time away too, for work that tracks away.
-                let awayEnd = awayLimit ?? (task.tracksAwayFromMac ? gap.flatMap { nextBoundary(for: task, at: $0) } : nil)
+                let awayEnd = awayLimit ?? (task.tracksAwayFromMac ? gap.flatMap { nextBoundary(for: task, at: $0, stopsAtPins: true) } : nil)
                 if store.list(id: task.listID)?.isEffectivelyArchived != false {
                     pause(reason: "List unavailable", now: now)
                 } else if let last = gap, awayEnd == nil {
@@ -510,15 +524,16 @@ final class CalendarCoordinator {
 
     func dismissRescheduleSummary() { rescheduleSummary = nil }
 
-    /// Keeps recording past the estimate, as the design does. A minute before the
-    /// block ends it grows to the next quarter hour plus 15 minutes, never past
-    /// the next fixed event, and later flexible work moves out of its way. When
-    /// that event leaves no room, work carries on and the conflict is marked.
-    /// The end of the list's hours only stops the block growing. Nothing grows
-    /// while the Mac is away.
+    /// Keeps recording past the slot, as the design's overrun does. A minute
+    /// before the block ends it grows to the next quarter hour plus 15 minutes,
+    /// never past the next meeting or break: the slot it works through grows
+    /// with it, and the tasks placed after it today move out of its way. When
+    /// the meeting or break leaves no room, work carries on and the conflict is
+    /// marked. The end of the list's hours only stops the block growing.
+    /// Nothing grows while the Mac is away.
     private func extendActiveWork(task: Block, now: Date) {
         guard !extensionsHeld, awayLimit == nil, workConflict?.occurrenceID != task.occurrenceID,
-              let sessionID = activeSessionID, let boundary = activeBoundary, let approved = approvedWorkEnd else { return }
+              let session = activeSession, let boundary = activeBoundary, let approved = approvedWorkEnd else { return }
         let end = min(approved, boundary)
         guard now >= end.addingTimeInterval(-60) else { return }
         let quarter = TimeInterval(15 * 60)
@@ -535,20 +550,102 @@ final class CalendarCoordinator {
         let previousPlan = plan
         let previousGrant = workExtension
         let previousSummary = rescheduleSummary
+        let slot = workingSlot(for: session, until: end)
+        let moved = reflow(from: min(slot?.start ?? session.startedAt, session.startedAt), to: proposed,
+                           working: session.occurrenceID, now: now)
+        let grown = slot.flatMap { slot in
+            slot.end < proposed ? PlacementMove(id: slot.id, taskID: task.id, from: DateInterval(start: slot.start, end: slot.end),
+                                                to: DateInterval(start: slot.start, end: proposed)) : nil
+        }
+        let moves = (grown.map { [$0] } ?? []) + moved
+        move(moves)
         approvedWorkEnd = proposed
         overrunNudge = nil
         replan(now: now)
-        let moved = summarizeMoves(from: previousPlan, message: "Made room for continued work.", excluding: task.id)
+        let flexible = summarizeMoves(from: previousPlan, message: "Made room for continued work.", excluding: task.id)
+        var placed: [UUID] = []
+        for move in moved where !placed.contains(move.taskID) { placed.append(move.taskID) }
+        if !placed.isEmpty {
+            report(Set(flexible + placed).sorted { $0.uuidString < $1.uuidString }, message: "Made room for continued work.")
+        }
         let earlier = previousGrant.flatMap { $0.occurrenceID == task.occurrenceID ? $0.minutes : nil } ?? 0
         let grant = CalendarWorkExtension(taskID: task.id, occurrenceID: task.occurrenceID, end: proposed,
                                           minutes: earlier + Int((proposed.timeIntervalSince(end) / 60).rounded(.up)),
-                                          movedTaskIDs: moved)
+                                          movedTaskIDs: placed)
         workExtension = grant
         let saved = WorkExtensionStep.SavedPlans(previous: previousPlan, next: plan,
                                                  previousSummary: previousSummary, summary: rescheduleSummary)
-        extensionSteps.append(WorkExtensionStep(sessionID: sessionID, grant: grant, previousGrant: previousGrant,
-                                                previousEnd: approved, saved: saved))
+        extensionSteps.append(WorkExtensionStep(sessionID: session.id, grant: grant, previousGrant: previousGrant,
+                                                previousEnd: approved, moves: moves, saved: saved))
         undoneExtensionSteps = []
+    }
+
+    /// Where the running work growing to `end` moves the placements after its
+    /// start today, as the design reflows the day: in time order, each one the
+    /// work or a task moved before it now runs over goes to the next free
+    /// quarter hour in its list's hours, clear of meetings and the other
+    /// blocks. One with no room left today stays where it is.
+    private func reflow(from start: Date, to end: Date, working occurrenceID: UUID, now: Date) -> [PlacementMove] {
+        let day = calendar.startOfDay(for: now)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: day) else { return [] }
+        let today = livePlacements().filter { $0.start >= day && $0.start < dayEnd }
+        let pending = today.filter { $0.occurrenceID != occurrenceID && $0.start >= start }
+        var spans = Dictionary(today.map { ($0.id, DateInterval(start: $0.start, end: $0.end)) }, uniquingKeysWith: { first, _ in first })
+        let fixed = externalCalendars.busyTimes.filter { $0.end > day && $0.start < dayEnd }.map { DateInterval(start: $0.start, end: $0.end) }
+            + visibleBlocks.filter { $0.isCompleted && $0.end > day && $0.start < dayEnd }.map { DateInterval(start: $0.start, end: $0.end) }
+            + [DateInterval(start: start, end: end)]
+        let quarter = TimeInterval(15 * 60)
+        var moves: [PlacementMove] = []
+        var cursor = end
+        for (index, placement) in pending.enumerated() {
+            guard let span = spans[placement.id] else { continue }
+            if span.start >= cursor {
+                cursor = max(cursor, span.end)
+                continue
+            }
+            guard let owner = store.block(id: placement.taskID) else { continue }
+            // Around the tasks already settled, not the ones still to come.
+            let later = Set(pending[(index + 1)...].map(\.id))
+            let busy = fixed + spans.filter { $0.key != placement.id && !later.contains($0.key) }.map(\.value)
+            let hours = availability(for: owner, on: now)
+            var candidate = Date(timeIntervalSinceReferenceDate: (cursor.timeIntervalSinceReferenceDate / quarter).rounded(.up) * quarter)
+            while candidate.addingTimeInterval(span.duration) <= dayEnd {
+                let target = DateInterval(start: candidate, duration: span.duration)
+                if hours.contains(where: { $0.start <= target.start && $0.end >= target.end }),
+                   !busy.contains(where: { $0.start < target.end && target.start < $0.end }) {
+                    moves.append(PlacementMove(id: placement.id, taskID: placement.taskID, from: span, to: target))
+                    spans[placement.id] = target
+                    cursor = target.end
+                    break
+                }
+                candidate = candidate.addingTimeInterval(quarter)
+            }
+        }
+        return moves
+    }
+
+    /// Puts placements where `moves` take them, or with `back` where they came
+    /// from, in one save. One changed since is left alone. False when any was.
+    @discardableResult
+    private func move(_ moves: [PlacementMove], back: Bool = false) -> Bool {
+        guard !moves.isEmpty else { return true }
+        let placements = Dictionary(store.placements().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var complete = true
+        let wasUpdating = isUpdating
+        // The save isn't another change for the plan to follow; the caller plans.
+        isUpdating = true
+        for move in moves {
+            let (from, to) = back ? (move.to, move.from) : (move.from, move.to)
+            guard let placement = placements[move.id], placement.start == from.start, placement.end == from.end else {
+                complete = false
+                continue
+            }
+            placement.start = to.start
+            placement.end = to.end
+        }
+        store.save()
+        isUpdating = wasUpdating
+        return complete
     }
 
     /// Whether Undo can still take `grant` back: the work it was given to is
@@ -563,7 +660,7 @@ final class CalendarCoordinator {
     }
 
     /// Takes back the running work's latest extension: its block ends where it
-    /// did and the tasks moved for it return to their blocks, or, once another
+    /// did and the tasks moved for it return to their slots, or, once another
     /// change has replaced those, are planned afresh around it. Work keeps
     /// recording, but the block isn't grown again until Redo or the next start.
     @discardableResult
@@ -576,7 +673,9 @@ final class CalendarCoordinator {
         workExtension = step.previousGrant
         workConflict = nil
         extensionsHeld = true
-        if let saved = step.saved, showsBlocks(of: saved.next) {
+        // A placement moved again since stays where it is now.
+        let restored = move(step.moves, back: true)
+        if restored, let saved = step.saved, showsBlocks(of: saved.next) {
             rescheduleSummary = saved.previousSummary
             publish(saved.previous, now: now)
         } else {
@@ -597,7 +696,8 @@ final class CalendarCoordinator {
         approvedWorkEnd = grant.end
         workExtension = grant
         extensionsHeld = false
-        if let saved = step.saved, showsBlocks(of: saved.previous) {
+        let applied = move(step.moves)
+        if applied, let saved = step.saved, showsBlocks(of: saved.previous) {
             rescheduleSummary = saved.summary
             publish(saved.next, now: now)
         } else {
@@ -624,16 +724,17 @@ final class CalendarCoordinator {
         extensionsHeld = false
     }
 
-    /// A quiet heads-up two minutes before the estimate runs out, for the
+    /// A quiet heads-up two minutes before the block runs out, for the
     /// background notification. The block then grows by itself.
     private func updateFinishNudge(task: Block, now: Date) {
-        guard !showedFinishHeadsUp, workExtension == nil, let end = estimatedWorkEnd, let boundary = activeBoundary,
-              end < boundary, now >= end.addingTimeInterval(-2 * 60) else { return }
+        guard !showedFinishHeadsUp, workExtension == nil, let session = activeSession, let end = approvedWorkEnd,
+              let boundary = activeBoundary, end < boundary, now >= end.addingTimeInterval(-2 * 60) else { return }
         showedFinishHeadsUp = true
         let proposed = min(end.addingTimeInterval(15 * 60), boundary)
+        let start = min(workingSlot(for: session, until: end)?.start ?? session.startedAt, session.startedAt)
+        let moved = Set(reflow(from: start, to: proposed, working: task.occurrenceID, now: now).map(\.taskID))
         overrunNudge = CalendarOverrunNudge(taskID: task.id, occurrenceID: task.occurrenceID,
-            estimatedEnd: end, proposedEnd: proposed,
-            movedTaskCount: displacedTaskIDs(from: end, to: proposed, excluding: task.occurrenceID).count)
+            estimatedEnd: end, proposedEnd: proposed, movedTaskCount: moved.count)
     }
 
     private func targetEnd(for session: WorkSession, task: Block, now: Date) -> Date {
@@ -647,13 +748,33 @@ final class CalendarCoordinator {
         return session.startedAt.addingTimeInterval((remaining > 0 ? remaining : 15) * 60)
     }
 
+    /// Where the running work's block ends until it overruns: the end of the
+    /// slot it works through, which keeps its planned time as in the design,
+    /// or else where its estimate runs out, short of the next task placed
+    /// after it starts.
+    private func plannedWorkEnd(for session: WorkSession, task: Block, estimate: Date) -> Date {
+        if let slot = workingSlot(for: session, until: estimate) { return slot.end }
+        let next = otherPlacements(than: task).map(\.start).filter { $0 > session.startedAt }.min()
+        return min(estimate, next ?? estimate)
+    }
+
+    /// The occurrence's placement the running work takes on the calendar: the
+    /// first one it's in or reaches before `end`.
+    private func workingSlot(for session: WorkSession, until end: Date) -> SchedulePlacement? {
+        store.placements(taskID: session.taskID).first {
+            $0.occurrenceID == session.occurrenceID && $0.end > $0.start && $0.start < end && $0.end > session.startedAt
+        }
+    }
+
     private func refreshActiveEstimate(now: Date) {
         guard let session = activeSession, let task = store.block(id: session.taskID),
               session.endedAt == nil, task.occurrenceID == session.occurrenceID else { return }
         let baseline = baselineEnd(for: session, task: task, now: now)
         guard baseline != estimatedWorkEnd else { return }
         estimatedWorkEnd = baseline
-        approvedWorkEnd = max(now, baseline)
+        // Working through a slot, the slot sets where the block ends, not the estimate.
+        guard workingSlot(for: session, until: max(baseline, approvedWorkEnd ?? baseline)) == nil else { return }
+        approvedWorkEnd = max(now, plannedWorkEnd(for: session, task: task, estimate: baseline))
         showedFinishHeadsUp = false
         overrunNudge = nil
         // The new estimate replaces any time given past the old one.
@@ -713,6 +834,20 @@ final class CalendarCoordinator {
             blocks.removeAll { $0.id == working.id }
             blocks.append(working)
         }
+        // Paused work keeps its block where it was, drawn as the work while it
+        // can resume: its slot, or where it ran when it had none.
+        var paused: String?
+        if activeSession == nil, let task = resumableTask, let span = pausedSpan(of: task) {
+            if let slot = blocks.first(where: { $0.occurrenceID == task.occurrenceID && $0.start < span.end && $0.end > span.start }) {
+                paused = slot.id
+            } else if span.end > span.start {
+                let block = PlannedBlock(id: "\(task.occurrenceID.uuidString)-active", taskID: task.id, occurrenceID: task.occurrenceID,
+                                         start: span.start, end: span.end, isPinned: false, placementID: nil, conflicts: [])
+                blocks.append(block)
+                paused = block.id
+            }
+        }
+        pausedBlockID = paused
         let recurring = Set(store.completionRecords().filter(\.wasRecurring).map(\.id))
         blocks += completedBlocks.filter { block in
             // A tick with neither a slot nor recorded work leaves nothing to draw.
@@ -727,18 +862,31 @@ final class CalendarCoordinator {
 
     /// The running work, from the start of the slot it's working through (or
     /// from when it started, if that's earlier or it has none) to where the
-    /// plan lets it run. It takes that slot's place on the calendar.
+    /// plan lets it run. It takes that slot's place on the calendar. Past what
+    /// it has been given, the block holds its end, as the design's does at a
+    /// meeting it runs into; only work outside its hours, with none to give,
+    /// is drawn up to now.
     private func workingBlock(placed: [PlannedBlock], now: Date) -> PlannedBlock? {
         guard let session = activeSession, session.endedAt == nil, let task = store.block(id: session.taskID),
               task.occurrenceID == session.occurrenceID, !task.isCompleted else { return nil }
+        let target = targetEnd(for: session, task: task, now: now)
         let end = plan.blocks.first { $0.isActive && $0.occurrenceID == session.occurrenceID }?.end
-            ?? max(now, min(targetEnd(for: session, task: task, now: now), activeBoundary ?? .distantFuture))
+            ?? activeBoundary.map { min(target, $0) } ?? max(now, target)
         let slot = placed.first { $0.occurrenceID == session.occurrenceID && $0.start < end && $0.end > session.startedAt }
         let start = min(slot?.start ?? session.startedAt, session.startedAt)
         guard end > start else { return nil }
         return PlannedBlock(id: slot?.id ?? "\(session.occurrenceID.uuidString)-active", taskID: task.id,
                             occurrenceID: session.occurrenceID, start: start, end: end, isPinned: slot?.isPinned ?? false,
                             placementID: slot?.placementID, conflicts: [], isActive: true)
+    }
+
+    /// Where paused work's block was: as it paused, or after a relaunch,
+    /// where its last session ran.
+    private func pausedSpan(of task: Block) -> (start: Date, end: Date)? {
+        if let pausedWork, pausedWork.occurrenceID == task.occurrenceID { return (pausedWork.start, pausedWork.end) }
+        guard let session = store.workSessions(taskID: task.id).first(where: { $0.occurrenceID == task.occurrenceID && $0.endedAt != nil }),
+              let end = session.endedAt else { return nil }
+        return (session.startedAt, end)
     }
 
     /// The timer, Pause, checkbox completion and displayed elapsed time share
@@ -813,11 +961,6 @@ final class CalendarCoordinator {
         publish(CalendarPlan(start: plan.start, end: plan.end, blocks: blocks, assessments: assessments), now: now)
     }
 
-    private func displacedTaskIDs(from start: Date, to end: Date, excluding occurrence: UUID) -> [UUID] {
-        Set(plan.blocks.filter { !$0.isPinned && !$0.isActive && $0.occurrenceID != occurrence && $0.start < end && $0.end > start }.map(\.taskID))
-            .sorted { $0.uuidString < $1.uuidString }
-    }
-
     /// Reports the flexible tasks that moved since `previous`, and returns them.
     @discardableResult
     private func summarizeMoves(from previous: CalendarPlan, message: String, excluding taskID: UUID? = nil) -> [UUID] {
@@ -827,10 +970,15 @@ final class CalendarCoordinator {
                   task.occurrenceID == block.occurrenceID, store.list(id: task.listID)?.isEffectivelyArchived == false else { return false }
             return !plan.blocks.contains { $0.occurrenceID == block.occurrenceID && $0.start == block.start && $0.end == block.end }
         }.map(\.taskID)).sorted { $0.uuidString < $1.uuidString }
-        guard !moved.isEmpty else { return [] }
+        report(moved, message: message)
+        return moved
+    }
+
+    /// Tells the Work panel which tasks just moved, and why.
+    private func report(_ moved: [UUID], message: String) {
+        guard !moved.isEmpty else { return }
         rescheduleSummary = CalendarRescheduleSummary(message: "\(moved.count) \(moved.count == 1 ? "task" : "tasks") rescheduled.",
             movedTaskCount: moved.count, taskIDs: moved, reason: message)
-        return moved
     }
 
     /// Store saves also happen for notes, titles and editor selections. Those
@@ -946,7 +1094,9 @@ final class CalendarCoordinator {
     /// The occurrence's next slot as the calendar draws it. Flexible work isn't
     /// planned until it's placed, so it has none.
     func plannedWork(_ reference: WorkTaskReference, now: Date = .now) -> PlannedBlock? {
-        visibleBlocks.first { $0.occurrenceID == reference.occurrenceID && !$0.isActive && !$0.isCompleted && $0.end > now }
+        visibleBlocks.first {
+            $0.occurrenceID == reference.occurrenceID && $0.placementID != nil && !$0.isActive && !$0.isCompleted && $0.end > now
+        }
     }
 
     func workPlanSource(_ task: Block) -> String {
@@ -1028,19 +1178,22 @@ final class CalendarCoordinator {
         defaults.set(resumeOccurrenceID?.uuidString, forKey: "work.resumeOccurrenceID")
     }
 
-    private func nextBoundary(for task: Block, at now: Date) -> Date? {
+    /// Where work on `task` running at `now` has to stop: the next meeting or
+    /// the end of the hours it's in, and with `stopsAtPins`, the next time
+    /// another task is pinned. Nil outside those hours or during one of them.
+    private func nextBoundary(for task: Block, at now: Date, stopsAtPins: Bool = false) -> Date? {
         let intervals = availability(for: task, on: now)
         guard let interval = intervals.first(where: { $0.start <= now && $0.end > now }) else { return nil }
         let fixed = externalCalendars.busyTimes.map { DateInterval(start: $0.start, end: $0.end) }
-            + otherPins(than: task).map { DateInterval(start: $0.start, end: $0.end) }
+            + (stopsAtPins ? otherPlacements(than: task).filter(\.isPinned).map { DateInterval(start: $0.start, end: $0.end) } : [])
         guard !fixed.contains(where: { $0.start <= now && $0.end > now }) else { return nil }
         return min(interval.end, fixed.filter { $0.start > now }.map(\.start).min() ?? interval.end)
     }
 
-    /// The first fixed thing at or after `date` that planned work on `task` has
-    /// to stop at: a meeting, another task's pinned time, a break or, with no
-    /// kind as it is no conflict, the end of the list's hours. Nil once `date`
-    /// is outside the list's hours.
+    /// The first fixed thing at or after `date` that running work on `task`
+    /// has to stop at: a meeting, a break or, with no kind as it is no
+    /// conflict, the end of the list's hours. Tasks placed later move out of
+    /// its way instead. Nil once `date` is outside the list's hours.
     private func nextStop(for task: Block, at date: Date) -> (start: Date, kind: CalendarWorkConflict.Kind?, title: String)? {
         let intervals = availability(for: task, on: date)
         guard let window = intervals.first(where: { $0.start <= date && date <= $0.end }) else { return nil }
@@ -1050,10 +1203,7 @@ final class CalendarCoordinator {
         ]
         stops += externalCalendars.busyTimes.filter { $0.end > date && $0.end > $0.start }
             .map { (max($0.start, date), .event, $0.title) }
-        stops += otherPins(than: task).filter { $0.end > date }
-            .compactMap { pin in store.block(id: pin.taskID).map { (max(pin.start, date), .task, $0.displayTitle) } }
-        // A meeting that starts with a break, another pin or the end of the
-        // hours is the one named.
+        // A meeting that starts with a break or the end of the hours is the one named.
         func rank(_ kind: CalendarWorkConflict.Kind?) -> Int { kind?.rawValue ?? .max }
         return stops.min { $0.start == $1.start ? rank($0.kind) < rank($1.kind) : $0.start < $1.start }
     }
@@ -1065,20 +1215,23 @@ final class CalendarCoordinator {
         return AdaptiveScheduler.availabilityIntervals(for: category, preferences: preferences, from: day, to: end, calendar: calendar)
     }
 
-    /// Other open tasks' pinned times, which work on `task` has to stop at.
-    private func otherPins(than task: Block) -> [SchedulePlacement] {
+    /// Placements the calendar draws: open tasks', at their current occurrence.
+    private func livePlacements() -> [SchedulePlacement] {
         store.placements().filter { placement in
-            guard placement.isPinned, placement.occurrenceID != task.occurrenceID,
-                  let owner = store.block(id: placement.taskID), owner.isTask, !owner.isCompleted,
-                  owner.occurrenceID == placement.occurrenceID,
-                  store.list(id: owner.listID)?.isEffectivelyArchived == false else { return false }
-            return placement.end > placement.start
+            guard placement.end > placement.start, let owner = store.block(id: placement.taskID),
+                  owner.occurrenceID == placement.occurrenceID else { return false }
+            return validWorkTask(WorkTaskReference(owner)) != nil
         }
+    }
+
+    /// Other open tasks' placements.
+    private func otherPlacements(than task: Block) -> [SchedulePlacement] {
+        livePlacements().filter { $0.occurrenceID != task.occurrenceID }
     }
 }
 
-/// More time given to the running work past its estimate, and the flexible
-/// tasks moved for it.
+/// More time given to the running work past its slot or estimate, and the
+/// placed tasks moved for it.
 struct CalendarWorkExtension: Equatable, Sendable {
     var taskID: UUID
     var occurrenceID: UUID
@@ -1086,7 +1239,7 @@ struct CalendarWorkExtension: Equatable, Sendable {
     var end: Date
     /// The extra minutes this session has been given in all.
     var minutes: Int
-    /// The tasks the latest extension moved, if any.
+    /// The tasks whose placements the latest extension moved, in time order.
     var movedTaskIDs: [UUID]
 }
 
@@ -1094,17 +1247,24 @@ struct CalendarWorkExtension: Equatable, Sendable {
 /// Recording carries on through it. The end of the list's hours only stops
 /// the block growing, so it is never one.
 struct CalendarWorkConflict: Equatable, Sendable {
-    /// In the order a tie is named: a meeting before a pin before a break.
+    /// In the order a tie is named: a meeting before a break.
     enum Kind: Int, Equatable, Sendable {
-        case event, task, breakTime
+        case event, breakTime
     }
     var taskID: UUID
     var occurrenceID: UUID
     var kind: Kind
-    /// The meeting's or the other task's title; for a break, whose hours it
-    /// interrupts: Work or Personal.
+    /// The meeting's title; for a break, whose hours it interrupts: Work or Personal.
     var title: String
     var start: Date
+}
+
+/// A placement an extension moved, or the slot it grew.
+private struct PlacementMove {
+    var id: UUID
+    var taskID: UUID
+    var from: DateInterval
+    var to: DateInterval
 }
 
 /// One extension of the running work, kept so Undo and Redo can take it back
@@ -1114,6 +1274,8 @@ private struct WorkExtensionStep {
     var grant: CalendarWorkExtension
     var previousGrant: CalendarWorkExtension?
     var previousEnd: Date
+    /// The slot it grew and the placements it moved.
+    var moves: [PlacementMove]
     /// The plan on either side of the extension, so Undo and Redo put exactly
     /// those blocks back. Nil once another change has replaced them.
     var saved: SavedPlans?

@@ -566,8 +566,8 @@ extension Workbench {
 
     // MARK: Calendar
 
-    /// The earliest free slot inside the list's hours in the week from now, or
-    /// from the task's deferral, avoiding busy time.
+    /// The earliest free slot inside the list's hours, avoiding busy time: in
+    /// the week the Calendar shows, or in the week from a deferral past it.
     func fit(_ id: UUID) {
         guard let task = store.block(id: id), !task.isCompleted else { return }
         let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
@@ -585,8 +585,11 @@ extension Workbench {
         // and follow the wall clock across DST.
         let from = max(now, task.deferredUntil ?? now)
         let earliest = Date(timeIntervalSinceReferenceDate: (from.timeIntervalSinceReferenceDate / quarter).rounded(.up) * quarter)
-        // A week of searching, counted from when the task may start.
-        let weekEnd = cal.date(byAdding: .day, value: 7, to: cal.startOfDay(for: earliest)) ?? earliest
+        // As far as the Week view's last day, as the design's Plan, so the block
+        // is never out of sight; a deferral past it gets a week of its own.
+        let shown = CalendarWeek.span(from: now, calendar: cal)
+        let inShownWeek = earliest < shown.end
+        let weekEnd = inShownWeek ? shown.end : cal.date(byAdding: .day, value: 7, to: cal.startOfDay(for: earliest)) ?? earliest
         let windows = AdaptiveScheduler.availabilityIntervals(for: category, preferences: calendar.preferences,
                                                               from: earliest, to: weekEnd, calendar: cal)
         for window in windows {
@@ -600,8 +603,14 @@ extension Workbench {
                 start = start.addingTimeInterval(quarter)
             }
         }
-        let week = from > now ? "in the week from \(NXFormat.dueLabel(from))" : "this week"
+        let week = inShownWeek ? "this week" : "in the week from \(NXFormat.dueLabel(from))"
         showTray("No free slot \(week) — try a shorter estimate", icon: "calendar.badge.exclamationmark", tone: .neutral)
+    }
+
+    /// The tasks the Calendar gives a block, which "Not planned yet" and
+    /// Today's Fit into calendar leave out.
+    func placedTaskIDs(now: Date = .now) -> Set<UUID> {
+        CalendarWeek.placedTaskIDs(calendar.visibleBlocks, now: now, calendar: settings.calendar)
     }
 
     private func place(_ task: Block, start: Date, end: Date, dayOffset: Int) {
@@ -890,7 +899,7 @@ extension Workbench {
         Task { @MainActor [weak self] in self?.pruneWorkUndos() }
     }
 
-    /// Reports the fixed event the running work ran into. It keeps recording.
+    /// Reports the meeting or break the running work ran into. It keeps recording.
     private func announceConflict(_ conflict: CalendarWorkConflict) {
         guard let task = store.block(id: conflict.taskID) else { return }
         showTray("\(NXFormat.quoted(task.displayTitle)) is running into \(conflictLabel(conflict, inSentence: true))",
@@ -905,11 +914,10 @@ extension Workbench {
     }
 
     /// What running work ran into, for the working block's "runs into". As in
-    /// the design, a meeting is named bare and a task in quotes.
+    /// the design, a meeting is named bare.
     func conflictName(_ conflict: CalendarWorkConflict, inSentence: Bool = false) -> String {
         switch conflict.kind {
         case .event: conflict.title.isEmpty ? (inSentence ? "busy time" : "Busy time") : conflict.title
-        case .task: NXFormat.quoted(conflict.title)
         case .breakTime: inSentence ? "a break" : "Break"
         }
     }
