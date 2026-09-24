@@ -88,10 +88,8 @@ final class CalendarNotificationBridge {
             // In the main window, over whatever was up there, as a reminder
             // lands: the task opens as its block on the Calendar opens it.
             openMainWindow?()
-            workbench.go(.calendar)
             // On the slot's day, whichever range the Calendar was stepped or moved to.
-            workbench.revealOnCalendar(CalendarWeek.nudgedDay(of: taskID, occurrenceID: occurrenceID, in: calendar.visibleBlocks,
-                                                              now: .now, calendar: workbench.settings.calendar))
+            workbench.showOnCalendar(slotOf: taskID, occurrenceID: occurrenceID)
             workbench.navigator.isShortcutSheetOpen = false
             if let task = store.block(id: taskID), task.occurrenceID == occurrenceID {
                 workbench.focusID = nil

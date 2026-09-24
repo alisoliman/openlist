@@ -1051,6 +1051,22 @@ extension Workbench {
         calendarAnchor = CalendarWeek.anchor(showing: day, count: calendarDays, now: now, calendar: cal)
     }
 
+    /// Opens the Calendar on a range that shows `day`, whichever range it was
+    /// stepped or moved to, so a tray's Show or a Work panel link lands on what
+    /// it points at, as the design's Calendar, always around today, does.
+    func showOnCalendar(_ day: Date = .now) {
+        go(.calendar)
+        revealOnCalendar(day)
+    }
+
+    /// Opens the Calendar on the day of the occurrence's slot, as a calendar
+    /// nudge's click and the Work panel's View plan do: the one
+    /// `CalendarWeek.nudgedDay` names.
+    func showOnCalendar(slotOf taskID: UUID, occurrenceID: UUID) {
+        showOnCalendar(CalendarWeek.nudgedDay(of: taskID, occurrenceID: occurrenceID, in: calendar.visibleBlocks,
+                                              now: .now, calendar: settings.calendar))
+    }
+
     /// The tasks the Calendar gives a block, which "Not planned yet" and
     /// Today's Fit into calendar leave out.
     func placedTaskIDs(now: Date = .now) -> Set<UUID> {
@@ -1102,8 +1118,9 @@ extension Workbench {
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
             workbench.calendar.replan()
         })
+        // Show finds the block there even once the range has been stepped away.
         snap(label, icon: icon, tone: .accent, ids: [id],
-             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar))
+             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar, day: start))
         // A block past the days the Calendar shows, next week or after a
         // deferral, moves its range there, so the block is never out of sight.
         revealOnCalendar(start)

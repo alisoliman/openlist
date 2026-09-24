@@ -436,6 +436,14 @@ check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: da
 check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday,
                                                                      now: date("2026-09-27T09:00:00+02:00"), calendar: mondayWeek), calendar: mondayWeek))
         == [21, 22, 23, 24, 25, 26, 27], "On Sunday it gives way to the week around today")
+// Day view moved to tomorrow by Plan: the running work's Show, revealing today, brings the range back to today's.
+let plannedTomorrow = CalendarWeek.anchor(showing: date("2026-09-24T09:00:00+02:00"), count: 1, now: wednesday, calendar: mondayWeek)
+let later = date("2026-09-23T11:45:00+02:00")
+let shownDay = { (anchor: Date?) in
+    dayNumbers(CalendarWeek.days(count: 1, from: CalendarWeek.start(anchor: anchor, setAt: wednesday, now: later, calendar: mondayWeek), calendar: mondayWeek))
+}
+check(shownDay(plannedTomorrow) == [24] && shownDay(CalendarWeek.anchor(showing: later, count: 1, now: later, calendar: mondayWeek)) == [23],
+      "Show for today's work brings a Day view moved to tomorrow back to today")
 
 // "Not planned yet" takes tasks due from a week back to the end of the week around today (the settings week, as Plan searches it), or four days out when that's later.
 @MainActor

@@ -254,7 +254,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   block landing past the days shown moves the Calendar's range there, and the header's
   ‹ Today › steps the range a day, three days or a week at a time. A range stepped or moved
   to holds only that day: from the next, the Calendar shows the range around today, as the
-  design's always does; a calendar nudge's click brings it back to the nudged slot's day.
+  design's always does. What opens the Calendar on something brings the range back to it,
+  as the design's Show always lands there: a calendar nudge's click and the Work panel's
+  View plan to the slot's day, Plan's Show to its block's, the Show of the work trays
+  (running into, extended, paused) and the Work panel's Review plan and Open calendar to
+  today's. Today's Look at tomorrow moves it to tomorrow, where the design's Day view
+  stays on today.
   "Not planned yet" takes tasks due from a week back to the end of the week around today
   (the settings week, as Plan searches it), or four days out when that is later: the
   design's −7…+4, whose +4 is its Sunday.
