@@ -216,7 +216,7 @@ private struct NXLibraryBackupRows: View {
             // A second sheet, on a view of its own.
             Color.clear.sheet(isPresented: $confirmsReturn) {
                 NXConfirmationSheet(title: "Return to the original library?",
-                                    message: "Open Openlist again after it quits. The original library and its preferences will return, including its previous iCloud behavior. This restored copy will be retained separately; its changes are not merged into the original.",
+                                    message: "Open Openlist again after it quits. The original library and its preferences will return, including its previous iCloud behaviour. This restored copy will be retained separately; its changes are not merged into the original.",
                                     confirm: "Return to Original and Quit", isDestructive: false) {
                     Task { await library.returnToOriginal() }
                 }
@@ -225,15 +225,19 @@ private struct NXLibraryBackupRows: View {
     }
 }
 
-/// A confirmation in a Next sheet, as Delete List's is, for Settings' own
-/// and for Trash's hold-to-erase when VoiceOver, which can't hold, erases:
-/// the question, what it does, and Cancel beside the button that does it.
-/// What it confirms can't be undone, so Return presses neither; Escape cancels.
+/// A confirmation in a Next sheet: Settings' own, Delete List's, and
+/// Trash's hold-to-erase when VoiceOver, which can't hold, erases. The
+/// question, what it does, a quieter `detail` if any, and Cancel beside the
+/// button that does it. Escape cancels. Return presses the button only when
+/// `returnConfirms`, for what Undo takes back; what can't be undone, as
+/// Settings' and Trash's, it presses neither.
 struct NXConfirmationSheet: View {
     let title: String
     let message: String
+    var detail: String?
     let confirm: String
     var isDestructive = true
+    var returnConfirms = false
     let action: () -> Void
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
@@ -242,11 +246,18 @@ struct NXConfirmationSheet: View {
         let style = env.workbench.style
         VStack(alignment: .leading, spacing: 16) {
             NXPanelTitle(title)
-            Text(message)
-                .font(.system(size: 12.5))
-                .lineSpacing(2)
-                .foregroundStyle(NX.ink(0.7))
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message)
+                    .foregroundStyle(NX.ink(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .foregroundStyle(NX.ink(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(.system(size: 12.5))
+            .lineSpacing(2)
             HStack(spacing: 8) {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -256,6 +267,7 @@ struct NXConfirmationSheet: View {
                     dismiss()
                     action()
                 }
+                .keyboardShortcut(returnConfirms ? KeyboardShortcut.defaultAction : nil)
                 .buttonStyle(NXPanelButtonStyle(kind: isDestructive ? .destructive : .primary))
             }
         }

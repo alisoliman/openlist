@@ -84,37 +84,6 @@ extension BlockRowActions {
     }
 }
 
-/// The editing rules an outline follows, the list document's from the
-/// design. Only tasks and list items indent, two levels deep at most, and
-/// never under a heading or text, though a line turned into one keeps what
-/// was under it and takes a line indented after that; Return and Backspace
-/// step a line out or convert it instead of merging; `> ` makes text; done
-/// top-level tasks leave the document; and a line's whole edit, from the
-/// caret arriving to it leaving, is one undo step. A line left empty is
-/// removed.
-enum OutlinePolicy {
-    /// Kinds that nest under a line of their own family.
-    static func nests(_ kind: BlockKind) -> Bool {
-        kind == .task || kind == .bullet || kind == .numbered
-    }
-
-    /// Kinds whose lines, folded, hide the lines under them: only tasks, as
-    /// in the design. A heading folds its section instead, and a list item
-    /// or text line, which draws no caret, never folds, whatever an older
-    /// list or a kind change left set on it.
-    static func folds(_ kind: BlockKind) -> Bool {
-        kind == .task
-    }
-
-    /// The deepest a line can be indented.
-    static let maximumDepth = 2
-
-    /// Whether a line takes lines dropped into it.
-    static func holdsDrops(_ row: BlockRow) -> Bool {
-        nests(row.block.kind) && row.depth < maximumDepth
-    }
-}
-
 /// An outline change a host can name and log.
 enum OutlineEdit: Equatable {
     /// A line added and written, from the caret arriving to it leaving.
@@ -192,19 +161,18 @@ struct OutlineSlashOption: Identifiable, Equatable {
     }
 }
 
-/// Host policy an outline defers to. Each default leaves the outline, the
-/// store or the navigator to act, so a host sets only what it does itself.
+/// Host policy an outline defers to. Each default leaves the outline to act,
+/// or does nothing, so a host sets only what it does itself.
 struct OutlineHooks {
-    /// Shows a task's details. `nil` opens it in the navigator's inspector.
-    var openDetails: ((UUID) -> Void)?
     /// A block took the caret. It can fire more than once for one click.
     var didFocus: (UUID) -> Void = { _ in }
     /// Escape left a block. The text view has already resigned first
     /// responder and the outline has let go of the caret, which the host's
     /// keys can put back with ``OutlineEditor/resumeEditing()``.
     var didEscape: (UUID) -> Void = { _ in }
-    /// Offered each menu command and its targets before the store's shared
-    /// task commands and the outline's own. Return `true` to claim it.
+    /// Offered each menu command and its targets before the outline's own.
+    /// Return `true` to claim it. Task commands, which the outline doesn't
+    /// run, are the host's: one it declines does nothing.
     var taskCommand: (EditorCommand, [UUID]) -> Bool = { _, _ in false }
     /// What a menu command acts on when no row holds the caret and the
     /// navigator has no selection, such as the host's focused row.
@@ -635,10 +603,6 @@ final class OutlineEditor {
                 drawnRows = nil
             }
         )
-    }
-
-    private func openDetails(_ block: Block) {
-        if let open = hooks.openDetails { open(block.id) } else { env.navigator.openTask(block.id) }
     }
 
     // MARK: - Key handling
@@ -1413,39 +1377,39 @@ final class OutlineEditor {
 
     /// Pasted lines go in after `block` under the document's rules: `> `
     /// makes text, or right under a pasted task that task's note, as
-    /// Openlist content's Markdown writes one; a line goes under a pasted
-    /// task or list item only, two levels deep at most, and a line of a kind
-    /// that doesn't nest comes out to the top, as a line turned into one does.
+    /// Openlist content's Markdown writes one; a line goes under the one it
+    /// was pasted under only when both are tasks or list items and it stays
+    /// two levels deep at most, counting where the paste lands. Otherwise it
+    /// goes beside that line, stepping out as far as it must, after the lines
+    /// already under it, so the pasted lines keep their order, lines pasted
+    /// side by side stay side by side, and the document's lines keep their
+    /// places.
     private func insertPastedText(_ text: String, after block: Block) {
         var lines = MarkdownInputRules.pasteLines(text)
         guard !lines.isEmpty else { return }
-
-        var previous = block
-        // The last line placed at each depth under the paste's first ones,
-        // with the depth it was pasted at, deeper along the path.
-        var path: [(block: Block, pasted: Int)] = []
         // The task a `> ` line one level in writes the note of, while it's the last line pasted.
         var noteTask: (block: Block, pasted: Int)?
-        var unnested: [Block] = []
-        let room = OutlinePolicy.maximumDepth - BlockTree.ancestors(of: block, in: blocks).count
-        func place(_ created: Block, at depth: Int, pasted: Int) {
-            path = Array(path.prefix(depth)) + [(created, pasted)]
-            noteTask = created.isTask ? (created, pasted) : nil
-            if !OutlinePolicy.nests(created.kind) { unnested.append(created) }
-            previous = created
-        }
+        // The indent of the line `block` holds: the first line's, when it takes it.
+        var blockPasted = 0
 
         // Pasting into an empty block fills it, rather than leaving a blank
-        // line above the pasted content.
+        // line above the pasted content. A kind that doesn't nest takes it to
+        // the top level, as typing its prefix does.
         if block.text.isEmpty, !block.kind.isVoid {
             let first = lines.removeFirst()
-            env.store.changeKind(block, to: first.kind == .quote ? .paragraph : first.kind)
+            convert(block, to: first.kind == .quote ? .paragraph : first.kind)
             env.store.setPlainText(block, first.text)
             block.isCompleted = first.isCompleted
             block.completedAt = first.isCompleted ? .now : nil
-            place(block, at: 0, pasted: first.depth)
+            blockPasted = first.depth
+            noteTask = block.isTask ? (block, first.depth) : nil
         }
 
+        // The lines from the document root to the last one placed, with the
+        // indent each was pasted at: the paste's own lines at theirs, `block`
+        // at the first line's, and the lines above it under every indent.
+        var path: [(block: Block, pasted: Int)] = BlockTree.ancestors(of: block, in: blocks).reversed().map { ($0, -1) }
+            + [(block, blockPasted)]
         for line in lines {
             if line.kind == .quote, let task = noteTask, line.depth == task.pasted + 1 {
                 let note = Self.unescapingMarkdown(line.text)
@@ -1453,25 +1417,22 @@ final class OutlineEditor {
                 continue
             }
             let kind = line.kind == .quote ? .paragraph : line.kind
-            // Under the nearest line it was pasted under that's still on the
-            // path, so lines pasted side by side stay side by side.
-            var depth = OutlinePolicy.nests(kind) ? max(0, min(path.prefix { $0.pasted < line.depth }.count, room)) : 0
-            while depth > 0, !OutlinePolicy.nests(path[depth - 1].block.kind) { depth -= 1 }
-            let created = depth > 0
-                ? env.store.insertChild(kind: kind, text: line.text, of: path[depth - 1].block, at: .last)
-                : env.store.insertBlock(kind: kind, text: line.text, after: path.first?.block ?? block)
+            // Under the lines on the path it was pasted under.
+            var depth = min(path.prefix { $0.pasted < line.depth }.count, OutlinePolicy.maximumDepth)
+            while depth > 0, !(OutlinePolicy.nests(kind) && OutlinePolicy.nests(path[depth - 1].block.kind)) {
+                depth -= 1
+            }
+            let created = depth < path.count
+                ? env.store.insertBlock(kind: kind, text: line.text, after: path[depth].block)
+                : env.store.insertChild(kind: kind, text: line.text, of: path[depth - 1].block, at: .last)
             created.isCompleted = line.isCompleted
             if line.isCompleted { created.completedAt = .now }
-            place(created, at: depth, pasted: line.depth)
-        }
-        // Pasted under a nested line, a heading or text line comes out to
-        // the top where it stands, keeping what follows it under it.
-        for line in unnested {
-            while canOutdent(line), env.store.outdent(line) {}
+            path = Array(path.prefix(depth)) + [(created, line.depth)]
+            noteTask = created.isTask ? (created, line.depth) : nil
         }
 
         env.store.save()
-        focus.request(previous.id, caret: -1)
+        focus.request(path.last?.block.id, caret: -1)
     }
 
     /// Markdown's backslash escapes read back, as a note's text is written
@@ -1564,11 +1525,9 @@ final class OutlineEditor {
             return
         }
 
-        // Anything that is just "act on these blocks" is defined once on the
-        // store, unless the host claims it; only the cases that need the
-        // outline or the caret stay here.
-        if hooks.taskCommand(command, targets.map(\.id))
-            || env.store.perform(command, on: targets, undoManager: NSApp?.keyWindow?.undoManager) {
+        // Task commands are the host's, which runs them through its own
+        // action layer; only the cases that need the outline stay here.
+        if hooks.taskCommand(command, targets.map(\.id)) {
             if command == .deleteSelection {
                 focus.request(nil)
                 env.navigator.selection.removeAll()
@@ -1577,21 +1536,6 @@ final class OutlineEditor {
         }
 
         switch command {
-        case .openDetails:
-            if let first = targets.first(where: \.isTask) {
-                openDetails(first)
-            }
-
-        case .pickDueDate:
-            if let first = targets.first(where: \.isTask) {
-                env.openTask(first.id, showing: .due)
-            }
-
-        case .pickLabel:
-            if let first = targets.first(where: \.isTask) {
-                env.openTask(first.id, showing: .labels)
-            }
-
         case .indent:
             env.store.batch { for block in topmost(targets) { _ = indentLine(block) } }
 

@@ -110,8 +110,8 @@ final class NextKeyHandler {
             return true
         }
 
-        // The in-window Settings page, wherever focus is and over any overlay,
-        // never the Settings window.
+        // The in-window Settings page, wherever focus is and over any
+        // overlay: there is no Settings window.
         if flags == .command && chars == "," {
             overlays.willNavigate()
             if workbench.captureOpen { workbench.closeCapture() }

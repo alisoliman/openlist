@@ -66,10 +66,10 @@ struct LabelMergeSheet: View {
                             .foregroundStyle(NX.ink(0.5))
                     }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Surviving label: \(plan.destination.name), color: \(plan.destination.accent.title)")
+                    .accessibilityLabel("Surviving label: \(plan.destination.name), colour: \(plan.destination.accent.title)")
                     Text("This updates \(plan.affectedTaskCount) \(plan.affectedTaskCount == 1 ? "task" : "tasks"), including completed, nested, and archived tasks. The surviving label will be used by \(plan.resultingTaskCount) \(plan.resultingTaskCount == 1 ? "task" : "tasks") in total.")
                         .foregroundStyle(NX.ink(0.7))
-                    Text("The existing label keeps its color. Tasks using both labels keep one copy. Undo (⌘Z) takes the merge back.")
+                    Text("The existing label keeps its colour. Tasks using both labels keep one copy. Undo (⌘Z) takes the merge back.")
                         .foregroundStyle(NX.ink(0.5))
                 }
                 .font(.system(size: 12.5))
@@ -100,7 +100,7 @@ struct LabelMergeSheet: View {
         .fixedSize(horizontal: false, vertical: true)
         .presentationBackground(NX.card)
         .tint(style.accent)
-        // Presented from the Settings window, outside the Next shell's style.
+        // A sheet over the Settings page, outside the Next shell's style.
         .environment(\.nextStyle, style)
         .onAppear {
             destinationID = destinations.first?.id

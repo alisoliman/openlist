@@ -145,7 +145,7 @@ final class MCPStoreAdapter {
             } else {
                 throw MCPToolFailure.missing("Inbox is unavailable. Finish opening Openlist first.")
             }
-            try snapshot.checkDestination(list, parent: parent)
+            try snapshot.checkDestination(list, parent: parent, placing: .task)
             let task = store.appendBlock(kind: .task, text: title, to: .init(listID: list.id, rootBlockID: parent?.id))
             store.log(.created, title: task.displayTitle, block: task, list: list)
             patch.apply(to: task, store: store)
@@ -179,10 +179,10 @@ final class MCPStoreAdapter {
             try checkVersion(args, updatedAt: task.updatedAt)
             let list = try snapshot.list(args.requireUUID("list_id"))
             let parent = try args.uuid("parent_id").map { try snapshot.block($0) }
-            try snapshot.checkDestination(list, parent: parent)
             if let parent, parent.id == task.id || BlockTree.isDescendant(parent.id, of: task.id, in: snapshot.blocks(in: task.listID)) {
                 throw MCPToolFailure.invalid("A task cannot move inside itself or its descendants.")
             }
+            try snapshot.checkDestination(list, parent: parent, placing: .task, height: snapshot.height(of: task))
             if task.listID != list.id || task.parentID != parent?.id {
                 let descendants = BlockTree.descendants(of: task.id, in: snapshot.blocks(in: task.listID))
                 if parent == nil {
@@ -200,10 +200,10 @@ final class MCPStoreAdapter {
         case .appendBlock:
             let list = try snapshot.list(args.requireUUID("list_id"))
             let parent = try args.uuid("parent_id").map { try snapshot.block($0) }
-            try snapshot.checkDestination(list, parent: parent)
             guard let kind = BlockKind(rawValue: args.string("kind") ?? "paragraph") else {
                 throw MCPToolFailure.invalid("Unknown block kind.")
             }
+            try snapshot.checkDestination(list, parent: parent, placing: kind)
             let text = args.string("text") ?? ""
             if kind == .divider {
                 guard text.isEmpty else { throw MCPToolFailure.invalid("A divider cannot contain text.") }
@@ -384,16 +384,32 @@ private struct Snapshot {
 
     func blocks(in listID: UUID?) -> [Block] { blocks.filter { $0.listID == listID } }
 
-    func checkDestination(_ list: TaskList, parent: Block?) throws {
+    /// Checks that a `kind` of line, with `height` levels of lines under it,
+    /// can go under `parent` in `list`, by the list document's own rules
+    /// (`OutlinePolicy`): anything at the root; under a line, only a task or
+    /// list item, and only under a task or list item, two levels deep at most.
+    func checkDestination(_ list: TaskList, parent: Block?, placing kind: BlockKind, height: Int = 0) throws {
         guard !list.isEffectivelyArchived else { throw MCPToolFailure.invalid("Restore the archived destination list first.") }
         guard let parent else { return }
-        guard parent.listID == list.id, parent.kind.acceptsChildren else {
-            throw MCPToolFailure.invalid("The parent must be a text or task block in the destination list.")
+        guard parent.listID == list.id, OutlinePolicy.nests(parent.kind) else {
+            throw MCPToolFailure.invalid("The parent must be a task or list item in the destination list.")
         }
-        let ancestors = BlockTree.ancestors(of: parent, in: blocks(in: list.id)) + [parent]
-        guard !ancestors.contains(where: { $0.isTask && $0.isCompleted }) else {
+        guard OutlinePolicy.nests(kind) else {
+            throw MCPToolFailure.invalid("Only tasks and list items go under a task or list item. Omit parent_id to add this block at the document root.")
+        }
+        let ancestors = BlockTree.ancestors(of: parent, in: blocks(in: list.id))
+        guard ancestors.count + 1 + height <= OutlinePolicy.maximumDepth else {
+            let moved = height > 0 ? ", counting the lines under the task being moved" : ""
+            throw MCPToolFailure.invalid("Lines nest two levels deep at most\(moved). Choose a parent nearer the document root.")
+        }
+        guard !(ancestors + [parent]).contains(where: { $0.isTask && $0.isCompleted }) else {
             throw MCPToolFailure.invalid("Reopen the completed parent task before adding or moving content under it.")
         }
+    }
+
+    /// How many levels of lines sit under `block`: 0 for none.
+    func height(of block: Block) -> Int {
+        BlockTree.flatten(blocks(in: block.listID), root: block.id, respectCollapse: false).map { $0.depth + 1 }.max() ?? 0
     }
 
     func listValue(_ list: TaskList) -> MCPValue {

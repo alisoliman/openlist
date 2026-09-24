@@ -74,7 +74,9 @@ enum BlockKind: String, Codable, CaseIterable, Sendable {
     /// Blocks that can never hold text.
     var isVoid: Bool { self == .divider || self == .image }
 
-    /// Blocks the user can nest children under.
+    /// Blocks the stored tree can hold children under, which bulk moves and
+    /// their Undo check to keep the tree whole. Where the list document lets
+    /// a line nest is narrower: `OutlinePolicy`'s rules.
     var acceptsChildren: Bool { !isVoid }
 
     /// Keywords used to filter this kind inside the slash menu.

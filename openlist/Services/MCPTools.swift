@@ -32,7 +32,7 @@ enum OpenlistMCPTool: String, CaseIterable {
         let title = MCPField.text("Literal title; dates and #labels are not parsed.", min: 1, max: 1_000)
         let listID = MCPField.uuid("List ID returned by openlist_list_lists.")
         let taskID = MCPField.uuid("Task ID returned by a read tool.")
-        let parentID = MCPField.uuid("Optional parent block in the destination list; null means the document root.", nullable: true)
+        let parentID = MCPField.uuid("Optional parent task or list item in the destination list, as the list document nests lines: two levels deep at most. Null means the document root.", nullable: true)
         let note = MCPField.text("Plain-text task note. An empty string clears it.", max: 100_000)
         let labelIDs = MCPField.array(MCPField.uuid("An existing label ID."), max: 100)
         let expected = MCPField.text("Optional updated_at value from a read. Rejects a stale edit; recommended when completing a repeating task.", max: 40)
@@ -75,7 +75,7 @@ enum OpenlistMCPTool: String, CaseIterable {
         case .getTask:
             properties = MCPField.page.merging(["task_id": taskID]) { _, new in new }
             required = ["task_id"]
-            description = "Read a task's title, note, scheduling, labels, recurrence and detail-document descendants, including collapsed or completed content. Follow next_offset for remaining descendants."
+            description = "Read a task's title, note, scheduling, labels, recurrence and descendants (the subtasks and list items under it in its list document), including collapsed or completed content. Follow next_offset for remaining descendants."
         case .listLabels:
             properties = MCPField.page
             required = []
@@ -98,7 +98,7 @@ enum OpenlistMCPTool: String, CaseIterable {
         case .createTask:
             properties = taskFields.merging(["list_id": listID, "parent_id": parentID]) { _, new in new }
             required = ["title"]
-            description = "Create a task with literal text and explicit metadata. Omitted list_id uses Inbox (or the parent's list when parent_id is supplied). Optional parent_id creates a subtask. Archived destinations and completed ancestors are rejected."
+            description = "Create a task with literal text and explicit metadata. Omitted list_id uses Inbox (or the parent's list when parent_id is supplied). Optional parent_id creates a subtask under a task or list item, two levels deep at most. Archived destinations, completed ancestors and deeper nesting are rejected."
         case .updateTask:
             properties = taskFields.merging(["task_id": taskID, "expected_updated_at": expected]) { _, new in new }
             required = ["task_id"]
@@ -116,15 +116,15 @@ enum OpenlistMCPTool: String, CaseIterable {
                 "expected_updated_at": expected,
             ]
             required = ["task_id", "list_id"]
-            description = "Move a task and all its descendants to the end of a destination list, or under parent_id. Omit parent_id to move to the root. Rejects cycles, archived destinations and completed ancestors."
+            description = "Move a task and all its descendants to the end of a destination list, or under parent_id, a task or list item. Omit parent_id to move to the root. Rejects cycles, archived destinations, completed ancestors, and a parent that would put the task or the lines under it more than two levels deep."
         case .appendBlock:
             properties = [
                 "list_id": listID, "parent_id": parentID,
                 "text": MCPField.text("Literal block text; may be empty only for a divider.", max: 100_000),
-                "kind": MCPField.choice(["paragraph", "heading1", "heading2", "heading3", "bullet", "numbered", "quote", "code", "divider"], "Default paragraph. Use openlist_create_task for tasks."),
+                "kind": MCPField.choice(["paragraph", "heading1", "heading2", "heading3", "bullet", "numbered", "quote", "code", "divider"], "Default paragraph. Use openlist_create_task for tasks. Under a parent_id, only bullet or numbered."),
             ]
             required = ["list_id", "text"]
-            description = "Append a text block to a list or task detail document. Supports paragraphs, headings, bullets, quotes, code and dividers. Does not read or write attachment files."
+            description = "Append a block to a list document, or a list item under a task or list item. Supports paragraphs, headings, bullets, numbered items, quotes, code and dividers at the document root; under a parent, only bullets and numbered items, two levels deep at most, as the list document nests them. Does not read or write attachment files."
         case .createLabel:
             properties = ["name": MCPField.text("Label name, optionally prefixed with #.", min: 1, max: 80)]
             required = ["name"]

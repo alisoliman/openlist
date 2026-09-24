@@ -788,25 +788,38 @@ listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
 listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onFocus()
 check(listEditor.escapedBlockID == nil, "Clicking into any row ends the wait to resume")
 
-// Hooks replace host policy; without one, the store or navigator acts.
-var openedIDs: [UUID] = []
-listEditor.hooks.openDetails = { openedIDs.append($0) }
-outlineEnv.pendingCommand = .openDetails
-listEditor.receiveCommand()
-check(openedIDs == [secondSubtask.id] && outlineEnv.navigator.openTaskID == nil, "A details hook opens the task in the navigator's place")
+// Task commands are the host's; the outline runs only its own.
 var claimed: [(EditorCommand, [UUID])] = []
 listEditor.hooks.taskCommand = { command, ids in
     claimed.append((command, ids))
     return command == .toggleStar
 }
+outlineEnv.pendingCommand = .openDetails
+listEditor.receiveCommand()
+check(claimed.last?.0 == .openDetails && claimed.last?.1 == [secondSubtask.id] && outlineEnv.navigator.openTaskID == nil,
+    "Details are the host's to open, never the navigator's behind its back")
 listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 outlineEnv.pendingCommand = .toggleStar
 listEditor.receiveCommand()
 check(claimed.last?.0 == .toggleStar && claimed.last?.1 == [firstSubtask.id] && !firstSubtask.isStarred,
-    "A host claims task commands for the command targets before the store")
+    "A host claims task commands for the command targets")
 outlineEnv.pendingCommand = .setDueToday
 listEditor.receiveCommand()
-check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate != nil, "Commands a host declines fall back to the store")
+check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate == nil, "A task command the host declines does nothing, with no second path through the store")
+store.setDueDate(Calendar.current.startOfDay(for: .now), includesTime: false, for: firstSubtask)
+// Lines a paste left selected refuse a line command in the tray, not a
+// notice card, and reach no host.
+var refusals: [String] = []
+store.onRefusal = { refusals.append($0) }
+let claimsBeforeRefusal = claimed.count
+store.editorNotice = nil
+outlineEnv.navigator.selection = [firstSubtask.id, secondSubtask.id]
+outlineEnv.pendingCommand = .toggleStar
+listEditor.receiveCommand()
+check(refusals.count == 1 && store.editorNotice == nil && claimed.count == claimsBeforeRefusal && !firstSubtask.isStarred,
+    "A task command on several selected lines is refused in the tray")
+store.onRefusal = nil
+outlineEnv.navigator.selection = [firstSubtask.id]
 let menuElsewhere = store.createList(title: "Menu targets elsewhere")
 outlineEnv.activeDocument = DocumentContext(listID: menuElsewhere.id)
 outlineEnv.pendingCommand = .clearDueDate
@@ -952,6 +965,35 @@ for _ in 0..<2 {
     pasteUndo.undo()
     pasteEditor.blocksDidChange(pasteBlocks().map(\.id))
 }
+
+// Markdown pasted or dropped as lines keeps to the document's nesting: a
+// line goes under the one its indent names only when both are tasks or list
+// items, two levels deep at most, counting where it lands, and otherwise
+// beside it, in its order.
+func pastedLines(_ markdown: String, after target: (DocumentContext) -> Block) -> [String] {
+    let list = store.createList(title: "Pasted lines")
+    let document = DocumentContext(listID: list.id)
+    let anchor = target(document)
+    store.save()
+    OutlineEditor(env: outlineEnv, document: document).dropText(markdown, after: anchor)
+    return BlockTree.flatten(store.blocks(inList: list.id), respectCollapse: false).map { "\($0.depth) \($0.block.text)" }
+}
+func packing(_ document: DocumentContext) -> (pack: Block, socks: Block) {
+    let pack = store.appendBlock(kind: .task, text: "Pack", to: document)
+    let socks = store.insertChild(kind: .task, text: "Socks", of: pack, at: .last)
+    _ = store.insertChild(kind: .task, text: "Shoes", of: pack, at: .last)
+    return (pack, socks)
+}
+check(pastedLines("- a\n  # b\n  - c") { packing($0).socks } == ["0 Pack", "1 Socks", "1 a", "1 Shoes", "0 b", "0 c"],
+    "A pasted heading never goes under a line, and a list item never under a heading")
+check(pastedLines("- [ ] one\n  - [ ] two\n    - [ ] three\n      - [ ] four") { packing($0).socks }
+    == ["0 Pack", "1 Socks", "1 one", "2 two", "2 three", "2 four", "1 Shoes"],
+    "Pasted lines nest two levels deep at most, counting the line they're pasted after")
+check(pastedLines("- a\n  - b\n- c") { store.appendBlock(kind: .task, text: "Start", to: $0) } == ["0 Start", "0 a", "1 b", "0 c"],
+    "A pasted line back at the first line's indent goes beside it again")
+check(pastedLines("Notes\n- [ ] Call") { store.insertChild(kind: .task, text: "", of: packing($0).pack, at: .last) }
+    == ["0 Pack", "1 Socks", "1 Shoes", "0 Notes", "0 Call"],
+    "Text pasted into an empty nested line takes it to the top, as typing does")
 
 // The list document's rules, from the design.
 let nextList = store.createList(title: "List document")
@@ -1980,9 +2022,9 @@ let nestedChild = nestedRows()[2].block
 let nestedLater = store.insertChild(kind: .task, text: "Later", of: nestedRows()[1].block, at: .last)
 store.save()
 check(nestedActions(nestedChild).onPasteMultiline("# Section\n- [ ] Item")
-    && Array(nestedShape().prefix(6)) == ["0 task Trip", "0 task Parent", "1 task Child", "0 heading1 Section", "1 task Item", "1 task Later"]
-    && nestedLater.parentID == nestedRows()[3].id,
-    "A heading pasted after a nested line comes out to the top, keeping what follows it under it, as a line turned into one does")
+    && Array(nestedShape().prefix(6)) == ["0 task Trip", "0 task Parent", "1 task Child", "1 task Later", "0 heading1 Section", "0 task Item"]
+    && nestedLater.parentID == nestedRows()[1].id,
+    "A heading pasted after a nested line goes to the top after that line's task, which keeps its lines, and nothing goes under it")
 nestedEditor.commitLine()
 
 print("✅ \(checks) editor/store checks passed")

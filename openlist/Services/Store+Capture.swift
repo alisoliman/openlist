@@ -193,44 +193,7 @@ extension Store {
         return list
     }
 
-    // MARK: - Command dispatch
-
-    /// Runs a command that only needs a set of blocks.
-    ///
-    /// Both the outline and the cross-list screens issue the same task
-    /// commands; keeping the bodies here means there is one definition of what
-    /// ⌘D or ⌃T does, rather than one per screen.
-    ///
-    /// - Returns: `false` for commands that need an outline and so cannot be
-    ///   served from a set of blocks alone.
-    @discardableResult
-    func perform(_ command: EditorCommand, on targets: [Block], undoManager: UndoManager? = nil) -> Bool {
-        switch command {
-        case .toggleCompletion:
-            batch { for block in targets where block.isTask { toggleCompletion(block) } }
-
-        case .setDueToday:
-            batch { for block in targets where block.isTask { setDueToday(block) } }
-
-        case .clearDueDate:
-            batch { for block in targets where block.isTask { setDueDate(nil, for: block) } }
-
-        case .clearLabels:
-            batch { for block in targets where block.isTask { clearLabels(on: block) } }
-
-        case .toggleStar:
-            batch { for block in targets where block.isTask { toggleStar(block) } }
-
-        case .deleteSelection:
-            return trashBlocks(targets, undoManager: undoManager)
-
-        case .newTask, .openDetails, .pickDueDate, .pickLabel,
-             .indent, .outdent, .moveUp, .moveDown, .expandAll, .collapseAll:
-            // Needs an editor, a picker, or a destination the store cannot pick.
-            return false
-        }
-        return true
-    }
+    // MARK: - Batching
 
     /// Runs `body` with saving suspended, then saves once.
     ///

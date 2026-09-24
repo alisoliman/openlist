@@ -105,7 +105,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   writes the new line in the list document (`Workbench.addSubtask`,
   `OutlineEditor.appendSubtask`), after the task's last line and at its depth, as the
   design's does, but never past two levels and only under a task or list item, which
-  older outlines can break. The Inbox's document mode is the same list document under
+  older outlines can break. MCP's create, move and append tools place lines by the same
+  rules (`OutlinePolicy`), refusing a heading or text under a line, or a third level.
+  Markdown pasted or dropped as several lines (a native extra) keeps to them too: a line
+  its indent can't put under the one above goes beside it, as far out as it must.
+  The Inbox's document mode is the same list document under
   the Inbox header, so unlike the design (whose Inbox has no document) an Inbox task lists
   Subtasks while the Inbox shows as its document, or once it has some; its Add subtask shows
   the Inbox as its document. Native inspector extras: the title and note are edited in place
@@ -227,12 +231,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
   completion entry, and so does Settings' Export… ("Exported N lists as Markdown"). One-off
   refusals (`Store.refuse`: a drop the document's rules don't allow, rearranging a sorted
-  list) pass there; what needs dealing with (saving, sync, links, label maintenance, Trash
-  failures, failed undos) stays a notice card, all of them in one place under the toolbar.
-  So does an export, Copy as Markdown, cover change or image that fails, and a file that
-  can't be attached or opened, where system alerts were: a red card (`Store.actionError`),
-  one for files that fail together. VoiceOver hears that card, and the editor's grey one,
-  as each appears.
+  list, a line command on the lines a paste left selected) pass there; what needs dealing
+  with (saving, sync, links, label maintenance, Trash failures, failed undos) stays a
+  notice card, all of them in one place under the toolbar. So does an export, Copy as
+  Markdown, cover change or image that fails, and a file that can't be attached or opened,
+  where system alerts were: a red card (`Store.actionError`), one for files that fail
+  together. VoiceOver hears that card, and the editor's grey one, as each appears.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
   (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), a list's Duplicate, Use as
   Template… (the copy opens; Undo takes it to Trash) and Move List…, a list dragged in the
@@ -309,9 +313,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   as the text of its lines, a space between them. Native extras, with nothing selected:
   Openlist content goes in whole after the line, and several lines of text become lines of
   their own after it (filling it while it's empty), under the document's rules: `> ` makes
-  text, or right under a pasted task that task's note; a line nests only under a pasted task
-  or list item, two levels deep at most; a heading or text line comes out to the top, as a
-  line turned into one does. Text that doesn't read as Markdown comes in as a trimmed text
+  text, or right under a pasted task that task's note; a line nests under the line it was
+  pasted under only when both are tasks or list items, two levels deep at most, and
+  otherwise goes beside it, stepping out after the lines already under it, so a heading or
+  text line pasted under a nested line comes to the top after that line's task and the
+  document's lines keep their places. Text that doesn't read as Markdown comes in as a trimmed text
   line for each of its lines, a fenced block as one code line. A code line takes a paste as
   it is.
   The card opens above its line when it wouldn't fit under it on the visible page, and a

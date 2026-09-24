@@ -178,11 +178,11 @@ private struct NXLabelSwatch: View {
         .overlay { NXMenuPress(action: choose) }
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Color for label \(label.name)")
+        .accessibilityLabel("Colour for label \(label.name)")
         .accessibilityValue(label.accent.title)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { choose() }
-        .help("Change color for \(label.name)")
+        .help("Change colour for \(label.name)")
     }
 
     private func choose() {
