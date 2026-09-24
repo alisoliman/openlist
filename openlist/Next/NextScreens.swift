@@ -236,8 +236,9 @@ struct NextListScreen: View {
         }
         .onAppear {
             env.store.markOpened(list)
-            // A list just made opens ready to be named.
-            if workbench.namingListID == list.id || list.title.isEmpty, !list.isSystemInbox {
+            // A list just made opens ready to be named, but not under an
+            // open capture, whose card keeps the keys.
+            if workbench.namingListID == list.id || list.title.isEmpty, !list.isSystemInbox, !workbench.captureOpen {
                 workbench.namingListID = nil
                 naming = true
                 renaming = true

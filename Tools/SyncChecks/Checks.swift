@@ -236,15 +236,16 @@ import SwiftData
         let retained = Block(kind: .task, text: "Not selected", listID: inbox.id)
         for block in [first, second, retained] { store.context.insert(block) }
         store.save()
-        store.deleteBlocks([first, second])
-        check(store.blocks(inList: inbox.id).map(\.id) == [retained.id], "Selecting both sides of a projected cycle deletes them without skipping both roots")
+        store.trashBlocks([first, second])
+        check(store.blocks(inList: inbox.id).map(\.id) == [retained.id], "Selecting both sides of a projected cycle trashes them without skipping both roots")
 
         let orphan = Block(kind: .task, text: "Missing imported parent", listID: inbox.id, parentID: UUID())
         let child = Block(kind: .task, text: "Orphan's child", listID: inbox.id, parentID: orphan.id)
         for block in [orphan, child] { store.context.insert(block) }
         store.save()
-        store.deleteBlocks(store.blocks(inList: inbox.id))
-        check(store.blocks(inList: inbox.id).isEmpty, "Reset's bulk deletion removes orphaned Inbox subtrees as well as stored roots")
+        store.permanentlyResetLibrary()
+        check(store.blocks(inList: inbox.id).isEmpty && (try? store.trashEntries())?.isEmpty == true,
+              "Delete everything removes orphaned Inbox subtrees as well as stored roots")
     }
 
     @MainActor static func validateRemoteDrafts() {

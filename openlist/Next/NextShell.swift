@@ -17,7 +17,6 @@ struct NextShell: View {
     @State private var overlays = NXOverlayState()
     @State private var chrome = NXWindowChrome()
     @State private var width: CGFloat = 0
-    @State private var sidebarFrame: CGRect = .zero
 
     var body: some View {
         let library = drawnLibrary()
@@ -27,7 +26,7 @@ struct NextShell: View {
             // Folded or hidden, the sidebar stays mounted with no width, so a
             // rename in progress keeps its draft and commits as it loses focus.
             NextSidebar()
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { sidebarFrame = $0 }
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { overlays.sidebarFrame = $0 }
                 .frame(width: showsSidebar ? nil : 0, alignment: .trailing)
                 .clipped()
                 .disabled(!showsSidebar)
@@ -104,11 +103,7 @@ struct NextShell: View {
     /// Ends a rename in the sidebar as it folds, so the name is saved rather
     /// than left in a field nobody can see.
     private func endSidebarEditing() {
-        guard sidebarFrame.width > 0, let window = overlays.host?.window,
-              let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
-              let field = editor.delegate as? NSView else { return }
-        let x = field.convert(field.bounds, to: nil).midX
-        if x >= sidebarFrame.minX && x <= sidebarFrame.maxX { window.makeFirstResponder(nil) }
+        if overlays.editsSidebarField() { overlays.host?.window?.makeFirstResponder(nil) }
     }
 }
 

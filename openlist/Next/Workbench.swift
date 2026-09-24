@@ -1200,7 +1200,7 @@ final class Workbench {
     /// Trashes the list through the Store, leaving its page, or a nested
     /// list's, for Today as it goes. As the design's trash does, its tasks
     /// leave the inspector, the focus and the selection with it.
-    private func moveToTrash(_ list: TaskList) -> Bool {
+    func moveToTrash(_ list: TaskList) -> Bool {
         let owned = store.listHierarchy().subtree(of: list.id).map(\.id)
         let wasOpen = navigator.route.listID.map(Set(owned).contains) == true
         let blockIDs = Set(owned.flatMap { store.blocks(inList: $0).map(\.id) })

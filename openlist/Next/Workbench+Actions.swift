@@ -662,21 +662,25 @@ extension Workbench {
         registerListCreationUndo(label, listID: id)
         snap(label, icon: "plus.circle", tone: .accent, ids: [id])
         pulse(list: id)
-        namingListID = id
+        namesNewList(id)
         go(.list(id))
     }
 
     /// Undo takes a new list back with no Trash entry while it's still empty,
     /// and Redo brings back the same list. Once it holds anything it goes to
-    /// Trash instead, so nothing added to it is lost.
+    /// Trash instead, so nothing added to it is lost. Either way a window on
+    /// the list, which making it opened, goes to Today, as Delete List's
+    /// does, rather than stay on a page that is gone.
     func registerListCreationUndo(_ label: String, listID id: UUID) {
         let taken = CreationUndo()
         registerUndo(label, undo: { workbench in
             let store = workbench.store
             if let list = store.discardCreatedList(id: id) {
                 taken.list = list
+                // Discarded only while it holds nothing, nested lists included.
+                if workbench.navigator.route == .list(id) { workbench.navigator.replace(with: .today) }
             } else if let list = store.list(id: id) {
-                _ = store.trashList(list)
+                _ = workbench.moveToTrash(list)
             }
         }, redo: { workbench in
             if let list = taken.list {
@@ -861,29 +865,29 @@ extension Workbench {
     // MARK: Capture
 
     // Reading and saving the draft (`captureParse`, `capturePreview`,
-    // `saveCapture`) is `NXCaptureDraft`'s, shared with the Quick Add panel.
+    // `saveCapture`, `addCapture`) is `NXCaptureDraft`'s, shared with the
+    // Quick Add panel.
 
     @discardableResult
     func createFromCapture(keepOpen: Bool) -> Block? {
-        let parse = captureParse()
-        guard !parse.title.isEmpty else { return nil }
         // The task goes at the end of its list's document, where the add row
         // sits, wherever it was captured from, as the design's does. A folded
         // heading it goes under opens, and folds again on Undo.
-        let saved: (block: Block, opened: [UUID])
-        do {
-            saved = try saveCapture(parse)
-        } catch {
+        let block: Block, opened: [UUID]
+        switch addCapture() {
+        case .untitled:
+            return nil
+        case let .failed(notice):
             // On the card, as Quick Add's says it: the tray would pass dimmed
             // under the capture's backdrop.
-            let notice = NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
-                                         failed: true)
             captureNotice = notice
             AccessibilityNotification.Announcement(notice.text).post()
             return nil
+        case let .saved(saved, headings):
+            block = saved
+            opened = headings
         }
         captureNotice = nil
-        let block = saved.block
         let list = store.list(id: block.listID)
         let here: Bool = {
             switch navigator.route {
@@ -896,7 +900,7 @@ extension Workbench {
             }
         }()
         let name = list?.displayTitle ?? "Inbox"
-        registerCreationUndo("Added to \(name)", taskID: block.id, opened: saved.opened)
+        registerCreationUndo("Added to \(name)", taskID: block.id, opened: opened)
         snap("Added to \(name)", icon: "plus.circle", tone: .accent, ids: [block.id],
              destination: here || list == nil ? nil : TrayDestination(label: "Show", route: route(for: list!)))
         flash(\.fresh, [block.id], for: 1200)
@@ -962,7 +966,7 @@ extension Workbench {
     /// It aims at the list on show, or the one asked for, only while that
     /// list takes tasks, as Quick Add's does: on an archived list's page, or
     /// one left in Trash, it aims at Inbox, so a chip is always lit.
-    func openCapture(text: String = "", listID: UUID? = nil, forToday: Bool? = nil) {
+    func openCapture(listID: UUID? = nil, forToday: Bool? = nil) {
         guard !captureOpen else { return }
         let routeListID: UUID? = if case let .list(id) = navigator.route { id } else { nil }
         let chosen = store.list(id: listID ?? routeListID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
@@ -970,7 +974,7 @@ extension Workbench {
         captureNotice = nil
         captureForToday = forToday == true || navigator.route == .today || settings.defaultDestination == .today
         if case let .label(id) = navigator.route { captureLabelID = id } else { captureLabelID = nil }
-        captureText = text
+        captureText = ""
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
         withAnimation(style.spring(260)) { captureOpen = true }

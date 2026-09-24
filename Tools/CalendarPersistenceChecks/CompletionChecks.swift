@@ -55,7 +55,8 @@ extension CalendarPersistenceChecks {
         check(actual.first?.end == nine.addingTimeInterval(720) && actual.last?.end == completedAt, "Later time corrections update actual completed calendar intervals")
         check(trackedRecord.plannedIntervals == originalTrackedPlan, "Correcting recorded time never changes original planned-slot history")
         tracked.text = "Changed live title"
-        store.deleteBlocks([tracked])
+        store.deleteBlock(tracked)
+        store.save()
         check(store.completedCalendarBlocks().filter { $0.completionID == trackedRecord.id }.allSatisfy { $0.titleSnapshot == "Tracked calendar snapshot" && $0.isTimeTracked }, "Deleting or renaming the task preserves immutable completed titles and actual work")
 
         let inSlot = store.appendBlock(kind: .task, text: "Worked inside its slot", to: .init(listID: list.id))
@@ -149,7 +150,8 @@ extension CalendarPersistenceChecks {
         let latestOccurrence = parent.occurrenceID
         check(!store.undoCompletion(oldAction.id) && parent.occurrenceID == latestOccurrence && store.completionRecords(taskID: parent.id).count == 2, "Undo rejects stale recurring actions after a later occurrence was completed")
         let deletedAction = store.completionUndo!
-        store.deleteBlocks([parent])
+        store.deleteBlock(parent)
+        store.save()
         check(!store.undoCompletion(deletedAction.id) && store.block(id: parent.id) == nil, "Completion Undo never resurrects a deleted task")
         let failureTask = store.appendBlock(kind: .task, text: "Undo save failure", to: .init(listID: list.id))
         store.setPlacement(for: failureTask, start: nine, end: completedAt, isPinned: true)

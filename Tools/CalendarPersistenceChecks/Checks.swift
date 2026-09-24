@@ -99,12 +99,13 @@ import SwiftData
             check(store.workSessions(taskID: clone.id).isEmpty && store.completionRecords(taskID: clone.id).isEmpty && clone.selectedForDay == nil, "Duplicates inherit no work history or selection")
 
             let undo = UndoManager()
-            store.undoableEditorEdit(in: list.id, name: "Delete selected task", undoManager: undo) { store.deleteBlocks([plain]) }
+            store.undoableEditorEdit(in: list.id, name: "Delete selected task", undoManager: undo) { store.deleteBlock(plain); store.save() }
             undo.undo()
             let restored = store.block(id: plain.id)!
             check(restored.deferredUntil == tomorrow && restored.selectedForDay == tomorrow && restored.occurrenceID == plain.occurrenceID, "Native structural undo restores planning metadata and occurrence")
             let deletedID = parent.id
-            store.deleteBlocks([parent])
+            store.deleteBlock(parent)
+            store.save()
             check(store.block(id: deletedID) == nil && store.completionRecords(taskID: deletedID).count == 2 && !store.workSessions(taskID: deletedID).isEmpty, "Deleting a task preserves occurrence and session history")
 
             let priorTask = store.appendBlock(kind: .task, text: "Prior active task", to: .init(listID: list.id))
@@ -161,12 +162,12 @@ import SwiftData
             let active = store.allLists().flatMap { store.blocks(inList: $0.id) }.first { $0.text == "Standalone task" }!
             check(active.deferredUntil != nil && active.selectedForDay == active.deferredUntil, "Deferred selection survives restart")
             runCompletionReopenChecks(store: store)
-            store.clearCalendarHistory()
-            check(store.workSessions().isEmpty && store.completionRecords().isEmpty && store.placements().isEmpty, "Explicit reset clears all calendar history and placements")
-            check(store.block(id: legacyID) != nil && store.persistenceError == nil, "Calendar reset preserves live task data")
+            check(store.permanentlyResetLibrary(), "Delete everything finishes on a migrated library")
+            check(store.workSessions().isEmpty && store.completionRecords().isEmpty && store.placements().isEmpty, "Delete everything clears all calendar history and placements")
+            check(store.block(id: legacyID) == nil && store.persistenceError == nil, "Delete everything takes the tasks with their history")
         } else if phase == "verify-reset" {
             check(store.workSessions().isEmpty && store.completionRecords().isEmpty && store.placements().isEmpty, "History reset remains durable after separate-process reopening")
-            check(store.block(id: legacyID) != nil, "Calendar reset does not erase existing task content")
+            check(store.block(id: legacyID) == nil, "Delete everything stays erased after reopening")
         } else if phase == "legacy-completion" {
             let record = store.completionRecords().first!
             check(record.title == "Pre-snapshot recurring completion" && record.wasRecurring && record.estimateMinutes == 45 && record.dueDate == Date(timeIntervalSince1970: 1_749_999_000), "Existing completion snapshots survive additive interval migration")

@@ -164,11 +164,20 @@ extension Store {
 
     /// Task history is independent of `recentActivity`, which Changes reads.
     func taskActivity(for taskID: UUID, limit: Int = 50, offset: Int = 0) throws -> [ActivityEvent] {
-        let excluded = Array(uncommittedActivityIDs)
+        try context.fetch(Self.taskActivityDescriptor(for: taskID, excluding: Array(uncommittedActivityIDs),
+                                                      limit: limit, offset: offset))
+    }
+
+    /// A task's saved history, newest first: the query the inspector's Full
+    /// history runs and `taskActivity` fetches. What `excluded` names (the
+    /// uncommitted events of a failed save) goes before the limit applies,
+    /// so it can't use up a page.
+    static func taskActivityDescriptor(for taskID: UUID, excluding excluded: [UUID], limit: Int,
+                                       offset: Int = 0) -> FetchDescriptor<ActivityEvent> {
         var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == taskID && !excluded.contains($0.id) },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
         descriptor.fetchLimit = max(1, limit)
         descriptor.fetchOffset = max(0, offset)
-        return try context.fetch(descriptor)
+        return descriptor
     }
 }

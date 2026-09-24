@@ -92,8 +92,9 @@ if phase == "prepare" {
     let removeImage = try image("delete-block.png", parent: removeBlock)
     _ = try attach("delete-block.txt", to: removeImage)
     let removedIDs = [removeBlock.id, removeImage.id]
-    store.deleteBlocks([removeBlock, removeImage])
-    check(removedIDs.allSatisfy { store.block(id: $0) == nil }, "Overlapping parent-child block deletion removes subtree once")
+    store.deleteBlock(removeBlock)
+    store.save()
+    check(removedIDs.allSatisfy { store.block(id: $0) == nil }, "Deleting a block removes the subtree under it")
     check(store.attachments(for: removeImage.id).isEmpty && media.fileContents(filename: "delete-block.txt") == nil && media.fileContents(filename: "delete-block.png") == nil, "Subtree deletion removes all owned attachment records and files")
     check(store.block(id: keepImage.id)?.parentID == keepTask.id, "Subtree deletion preserves unrelated child relationship")
 

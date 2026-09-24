@@ -62,27 +62,23 @@ struct QuickCaptureView: View {
         }
     }
 
+    /// The window's capture's Return, from the same `addCapture`: tokens
+    /// alone add nothing, as there, and a failed save says why on the card.
     private func add(keepOpen: Bool) {
-        let parse = draft.captureParse()
-        guard !parse.title.isEmpty else {
-            // Tokens alone would make an untitled task; say so rather than doing nothing.
-            if !parse.text.trimmingCharacters(in: .whitespaces).isEmpty {
-                show(NXCaptureNotice(text: "Type a title as well as the date, label, priority or estimate.", failed: true))
-            }
+        let block: Block, opened: [UUID]
+        switch draft.addCapture() {
+        case .untitled:
             return
-        }
-        let saved: (block: Block, opened: [UUID])
-        do {
-            saved = try draft.saveCapture(parse)
-        } catch {
-            show(NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
-                                 failed: true))
+        case let .failed(notice):
+            show(notice)
             return
+        case let .saved(saved, headings):
+            block = saved
+            opened = headings
         }
-        let block = saved.block
         // The main window takes the task in as it does its own captures,
         // Undo and Changes included, folding again what the capture opened.
-        env.workbench.didQuickAdd(block, opened: saved.opened)
+        env.workbench.didQuickAdd(block, opened: opened)
         let added = "Added to \(env.store.list(id: block.listID)?.displayTitle ?? "Inbox")"
         if !keepOpen {
             AccessibilityNotification.Announcement(added).post()

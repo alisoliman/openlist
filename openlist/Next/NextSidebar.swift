@@ -193,6 +193,8 @@ struct NextSidebar: View {
             row.dropDestination(for: NXSidebarRowDrop.self) { items, _ in
                 dropRows(items.map(\.value), on: inbox.id)
             } isTargeted: { setDropTarget(inbox.id, $0) }
+            // The Inbox's list commands, those a system list has.
+            .contextMenu { NXListMenu(list: inbox, surface: .sidebar) }
         } else {
             row
         }
@@ -246,7 +248,9 @@ struct NextSidebar: View {
                 .background(dropTargetID == section.id ? style.accent.opacity(0.12) : .clear,
                             in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contextMenu {
+                    // Its name field would take the keys from an open capture's card.
                     Button("Rename Section…") { startRename(.section(section.id), draft: section.title) }
+                        .disabled(workbench.captureOpen)
                     Button("New List in Section") { workbench.createList(in: section) }
                     if !section.isDefault {
                         Divider()

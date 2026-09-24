@@ -11,7 +11,9 @@ import SwiftUI
 /// extra: the design has no list menus. A surface leaves out only what it
 /// can't do (Open, on the list's own page) and adds only its own: the
 /// sidebar's Rename in place, and the "…" menu's options for the page on
-/// show, after the list's presentation and hours.
+/// show, after the list's presentation and hours. The Inbox, in the
+/// sidebar, has those a system list can: its presentation, hours, link,
+/// copy and export.
 struct NXListMenu<Options: View>: View {
     enum Surface { case sidebar, gallery, page, childRow }
 
@@ -31,8 +33,10 @@ struct NXListMenu<Options: View>: View {
         if surface != .page {
             Button("Open") { workbench.go(workbench.route(for: list)) }
         }
-        // Away from the page, the list opens to show it.
-        Toggle("Show Tasks Only", isOn: Binding(get: { navigator.listViewMode(for: list.id) == .tasks }, set: {
+        // Away from the page, the list opens to show it. The Inbox's tasks
+        // presentation is its triage.
+        Toggle(list.isSystemInbox ? "Show as Triage" : "Show Tasks Only",
+               isOn: Binding(get: { navigator.listViewMode(for: list.id) == .tasks }, set: {
             navigator.setListViewMode($0 ? .tasks : .document, for: list.id)
             if surface != .page { workbench.go(workbench.route(for: list)) }
         }))
@@ -41,7 +45,10 @@ struct NXListMenu<Options: View>: View {
         options
         if !list.isSystemInbox {
             Divider()
-            if let rename { Button("Rename List…", action: rename) }
+            // Over an open capture, beside the sidebar, the name field and
+            // the save panel stand down, as File ▸'s do, so the card keeps
+            // the keys and its draft.
+            if let rename { Button("Rename List…", action: rename).disabled(workbench.captureOpen) }
             Button("Move List…") { env.listPendingMove = list }
             Button("New Child List") { workbench.createChildList(in: list) }
                 .disabled(archived)
@@ -51,6 +58,7 @@ struct NXListMenu<Options: View>: View {
         // Native extras: the design has neither copy nor export.
         Button("Copy as Markdown", action: copyMarkdown)
         Button("Export as Markdown…") { workbench.exportMarkdown(list) }
+            .disabled(workbench.captureOpen)
         if !list.isSystemInbox {
             Divider()
             Button("Duplicate") { workbench.duplicateList(list) }

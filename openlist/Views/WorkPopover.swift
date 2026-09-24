@@ -66,8 +66,12 @@ struct WorkPopover: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                     HStack(spacing: 8) {
-                        NXWorkButton("Choose a task", prominent: true, action: chooseTask)
-                        NXWorkButton("Open calendar", action: openCalendar)
+                        Button("Choose a task", action: chooseTask)
+                            .buttonStyle(NXPanelButtonStyle(kind: .primary))
+                            .fixedSize()
+                        Button("Open calendar", action: openCalendar)
+                            .buttonStyle(NXPanelButtonStyle())
+                            .fixedSize()
                     }
                     .padding(.top, 14)
                 }
@@ -107,35 +111,9 @@ struct WorkPopover: View {
     private func openCalendar() { close(); env.workbench.showOnCalendar() }
 }
 
-/// A Work panel button: filled with the accent for the main action, grey otherwise.
-struct NXWorkButton: View {
-    @Environment(\.nextStyle) private var style
-    let title: String
-    var prominent = false
-    let action: () -> Void
-
-    init(_ title: String, prominent: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.prominent = prominent
-        self.action = action
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: prominent ? style.accentHover : NX.ink(0.1),
-                                        rest: prominent ? style.accent : NX.ink(0.05), radius: 8,
-                                        padding: EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 12),
-                                        foreground: prominent ? .white : NX.ink(0.72),
-                                        hoverForeground: prominent ? .white : NX.ink))
-        .fixedSize()
-    }
-}
-
-/// A quiet text action in the accent, for the Work panel's secondary choices.
+/// A quiet text action in the accent, for the Work panel's secondary
+/// choices: the panels' link button, its text lined up with the copy above.
 struct NXWorkLink: View {
-    @Environment(\.nextStyle) private var style
     let title: String
     let action: () -> Void
 
@@ -145,14 +123,10 @@ struct NXWorkLink: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.1), radius: 6,
-                                        padding: EdgeInsets(top: 3, leading: 5, bottom: 3, trailing: 5),
-                                        foreground: style.accent))
-        // The text lines up with the copy above; the hover fill reaches past it.
-        .padding(.horizontal, -5)
-        .fixedSize()
+        Button(title, action: action)
+            .buttonStyle(NXPanelButtonStyle(kind: .link))
+            // The hover fill reaches past the text.
+            .padding(.horizontal, -5)
+            .fixedSize()
     }
 }
