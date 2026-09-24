@@ -249,9 +249,7 @@ editorUndo.undo()
 let restored = store.block(id: deletedID)!
 check(restored.labelIDs == [destinationID], "pre-merge deletion undo resolves and deduplicates the old source identity")
 check(cleared.labelIDs == [destinationID], "pre-merge clear-label undo restores the surviving identity")
-let captured = store.captureTask(text: "Captured from an old label context", in: active,
-                                defaults: CaptureDefaults(parsesNaturalLanguage: false, labelIDs: [sourceID, destinationID]))
-check(captured.labelIDs == [destinationID], "pre-merge capture defaults resolve to one surviving label")
+check(store.resolvedLabelIDs([sourceID, destinationID]) == [destinationID], "pre-merge label identities resolve to one surviving label")
 store.toggleLabel(id: sourceID, on: restored)
 check(restored.labelIDs.isEmpty, "retained picker selection toggles the destination instead of resurrecting source")
 store.toggleLabel(id: sourceID, on: restored)

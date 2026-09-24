@@ -69,7 +69,6 @@ struct ListHierarchy {
     var inboxIDs: Set<UUID> { Set(records.values.filter { $0.isSystemInbox && activeIDs.contains($0.id) }.map(\.id)) }
 
     func isArchived(_ id: UUID) -> Bool { availableIDs.contains(id) && !activeIDs.contains(id) }
-    func isAvailable(_ id: UUID) -> Bool { availableIDs.contains(id) }
     func parent(of id: UUID) -> TaskList? { displayParents[id].flatMap { records[$0] } }
 
     func ancestors(of id: UUID) -> [TaskList] {

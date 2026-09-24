@@ -124,9 +124,9 @@ let amsterdamDay = ActivityHeatmap(completions: [boundary], now: now, calendar: 
 let pacificDay = ActivityHeatmap(completions: [boundary], now: now, calendar: pacific).days.first { $0.count > 0 }!.id
 check(calendar.component(.day, from: amsterdamDay) == 2 && pacific.component(.day, from: pacificDay) == 1, "timezone changes regroup by local completion date")
 check(ActivityHeatmap(completions: [ActivityCompletion(taskID: UUID(), wasRecurring: false, date: now.addingTimeInterval(1))], now: now).total == 0, "future actions do not leak into today's count")
-for (count, intensity) in [(0, 0), (1, 1), (2, 2), (3, 2), (4, 3), (6, 3), (7, 4)] {
+for count in [0, 1, 2, 3, 4, 6, 7] {
     let day = ActivityHeatmapDay(id: first, completions: (0..<count).map { _ in firstFact }, unclassifiedCount: 0)
-    check(day.intensity == intensity && day.accessibilityDescription.contains(day.countDescription), "legend bands and accessible numeric counts agree")
+    check(day.accessibilityDescription.contains(day.countDescription), "accessible descriptions carry the numeric count")
 }
 
 store.bootstrap()

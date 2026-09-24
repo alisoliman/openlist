@@ -6,18 +6,6 @@
 import Foundation
 import SwiftData
 
-/// Everything a freshly captured task should inherit from where it was typed.
-struct CaptureDefaults {
-    /// Whether typed phrases like "tomorrow at 6pm" should be read as a date.
-    var parsesNaturalLanguage: Bool = true
-    /// When the text carries no date of its own, start it due today.
-    var dueTodayWhenUndated: Bool = false
-    /// Labels applied on top of anything the text names with `#`.
-    var labelIDs: [UUID] = []
-    /// Insert at the top of the destination rather than the bottom.
-    var prepend: Bool = true
-}
-
 /// What an interactive capture saves: the title, and the date, repeat and
 /// labels its tokens named, as the capture card's chips previewed them.
 /// Building one never creates model records.
@@ -187,39 +175,6 @@ extension Store {
     }
 
     // MARK: - Capture
-
-    /// Creates a task from free text, applying everything the text implies.
-    ///
-    /// Used by raw-text integrations and inline editor workflows. Interactive
-    /// capture reads its text as it is typed (`CaptureParse`) and saves the
-    /// snapshot its chips previewed with `saveCapture`, so nothing it didn't
-    /// show is parsed into the task.
-    @discardableResult
-    func captureTask(
-        text: String,
-        in list: TaskList,
-        defaults: CaptureDefaults = CaptureDefaults()
-    ) -> Block {
-        let document = DocumentContext(listID: list.id)
-        let block = defaults.prepend
-            ? prependTask(to: document)
-            : appendBlock(kind: .task, to: document)
-
-        block.labelIDs = resolvedLabelIDs(defaults.labelIDs)
-        setPlainText(block, text.trimmingCharacters(in: .whitespacesAndNewlines))
-
-        // Parsing runs against the stored text so it also strips the phrase.
-        applyInlineMetadata(to: block, parsesNaturalLanguage: defaults.parsesNaturalLanguage)
-
-        if block.dueDate == nil, defaults.dueTodayWhenUndated {
-            block.dueDate = Calendar.current.startOfDay(for: .now)
-        }
-
-        log(.created, title: block.displayTitle, block: block, list: list)
-        scheduleReminderIfNeeded(for: block)
-        save()
-        return block
-    }
 
     /// Pulls dates, repeat rules and `#labels` out of a task's own text.
     ///

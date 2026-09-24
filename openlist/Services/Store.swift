@@ -542,10 +542,6 @@ final class Store {
         save()
     }
 
-    func setShowsCompleted(_ shows: Bool, for list: TaskList) {
-        setCompletedVisibility(shows ? .show : .hide, for: list)
-    }
-
     func setCompletedVisibility(_ visibility: TaskList.CompletedVisibility, for list: TaskList) {
         let list = self.list(id: list.id) ?? list
         list.completedVisibility = visibility

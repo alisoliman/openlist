@@ -11,7 +11,6 @@ enum AppRoute: Hashable, Codable {
     case inbox
     case today
     case calendar
-    case updates
     case activity
     case tasks
     case lists
@@ -20,13 +19,6 @@ enum AppRoute: Hashable, Codable {
     case completed
     case trash
     case settings
-
-    var isSmartView: Bool {
-        switch self {
-        case .list: false
-        default: true
-        }
-    }
 
     var listID: UUID? {
         if case let .list(id) = self { return id }

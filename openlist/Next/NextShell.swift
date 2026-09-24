@@ -167,7 +167,7 @@ private struct NextMain: View {
         case .calendar: return "Calendar"
         case .tasks, .completed: return "Tasks"
         case .lists: return "Lists"
-        case .activity, .updates: return "Activity"
+        case .activity: return "Activity"
         case .trash: return "Trash"
         case .settings: return "Settings"
         }
@@ -213,7 +213,7 @@ private struct NextRoutedScreen: View {
             case .tasks: NextTasksScreen()
             case .completed:
                 NextTasksScreen().onAppear { workbench.tasksStatus = .done }
-            case .updates, .activity: NextActivityScreen()
+            case .activity: NextActivityScreen()
             case .lists: NextListsGallery()
             case .trash: NextTrashScreen()
             case .settings: NextSettingsScreen()

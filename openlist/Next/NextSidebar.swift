@@ -131,7 +131,7 @@ struct NextSidebar: View {
     }
 
     private func navRow(_ item: NavItem) -> some View {
-        let on = route == item.route || (item.route == .activity && route == .updates)
+        let on = route == item.route
         let pulsing = item.route == .inbox && workbench.pulseListID != nil && workbench.pulseListID == library.inbox?.id
         let count = count(for: item.route)
         return NXSidebarRow(on: on, pulsing: pulsing, height: 29, title: item.label,

@@ -452,7 +452,7 @@ struct ActivityModel: Equatable {
         monthName = clock.format(clock.now, .dateTime.month(.wide))
     }
 
-    /// The design's opacity steps, on `ActivityHeatmapDay.intensity`'s thresholds.
+    /// The design's opacity steps, on the Activity screen heatmap's thresholds.
     static func opacity(_ count: Int) -> Double {
         switch count {
         case ...0: 0

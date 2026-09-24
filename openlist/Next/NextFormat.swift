@@ -30,14 +30,6 @@ enum NXFormat {
         dayOffset(Store.nextWeekDay(from: now, calendar: calendar), now: now)
     }
 
-    /// The app's overdue rule (`Block.isOverdue`, TasksProjection): a timed task is late once its
-    /// time passes, an all-day task once its day ends. Ignores completion, so a task still closing
-    /// keeps its place; callers decide where finished tasks go.
-    static func isPastDue(_ task: Block, now: Date = .now) -> Bool {
-        guard let due = task.dueDate else { return false }
-        return due < (task.includesTime ? now : calendar.startOfDay(for: now))
-    }
-
     /// "Today", "Tomorrow", "Yesterday", "Fri 25" within the week, else "3 Oct".
     static func dueLabel(_ date: Date?, now: Date = .now) -> String {
         guard let date else { return "No date" }
@@ -201,8 +193,6 @@ struct CaptureParse {
     func first(_ kind: Kind) -> Mark? { marks.first { $0.kind == kind } }
 
     var labels: [String] { marks.filter { $0.kind == .label }.map { String($0.raw.dropFirst()).lowercased() } }
-
-    var hasPriority: Bool { priority != nil }
 
     /// `!high`/`!3`, `!med`/`!medium`/`!2` and `!low`/`!1`; nil without a token.
     var priority: TaskPriority? {

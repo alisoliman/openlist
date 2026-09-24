@@ -26,8 +26,6 @@ final class QuickCaptureHotKey {
 
     private init() {}
 
-    var isRegistered: Bool { hotKeyRef != nil }
-
     func register() {
         guard hotKeyRef == nil else { return }
 
