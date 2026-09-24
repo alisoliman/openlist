@@ -223,9 +223,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   block landing past the days shown moves the Calendar's range there, and the header's
   ‹ Today › steps the range a day, three days or a week at a time. A range stepped or moved
   to holds only that day: from the next, the Calendar shows the range around today, as the
-  design's always does. "Not planned yet" takes tasks due from a week back to the end of
-  the week around today (the settings week, as Plan searches it), or four days out when
-  that is later: the design's −7…+4, whose +4 is its Sunday.
+  design's always does; a calendar nudge's click brings it back to the nudged slot's day.
+  "Not planned yet" takes tasks due from a week back to the end of the week around today
+  (the settings week, as Plan searches it), or four days out when that is later: the
+  design's −7…+4, whose +4 is its Sunday.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
   (with "Undo with Command-Z" when it offers Undo). Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's

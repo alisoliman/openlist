@@ -124,6 +124,16 @@ enum CalendarWeek {
         if let missed = placed.max(by: { $0.start < $1.start }) { return missed }
         return drawn.filter(\.isCompleted).max { $0.start < $1.start }
     }
+
+    /// The day a calendar nudge's click brings the Calendar's range to: that
+    /// of the block `shownSlot` names, or today while that block is under way,
+    /// as today's column draws it too even from before midnight; else today.
+    static func nudgedDay(of taskID: UUID, occurrenceID: UUID, in blocks: [PlannedBlock], now: Date,
+                          calendar: Calendar) -> Date {
+        guard let slot = shownSlot(of: taskID, occurrenceID: occurrenceID, in: blocks, now: now, calendar: calendar),
+              !slot.isActive, !(slot.start <= now && now < slot.end) else { return now }
+        return slot.start
+    }
 }
 
 /// Where Plan put a task, or how far it looked for a free slot.

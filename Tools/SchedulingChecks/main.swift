@@ -333,6 +333,19 @@ check(shownSlot(8, [shownBlock(8, "2026-09-23T10:15:00+02:00", "2026-09-23T10:30
 check(shownSlot(6, [tomorrowSlot], occurrence: UUID()) == nil, "Another occurrence's slot isn't this one's")
 check(shownSlot(9, [tomorrowSlot]) == nil, "Another task's slot isn't this one's")
 
+// A nudge's click brings the Calendar to the day of that block, today while it's under way.
+@MainActor
+func nudgedDay(_ number: Int, _ blocks: [PlannedBlock]) -> Int {
+    calendar.component(.day, from: CalendarWeek.nudgedDay(of: task(number).taskID, occurrenceID: task(number).occurrenceID,
+                                                          in: blocks, now: wednesday, calendar: mondayWeek))
+}
+check(nudgedDay(6, [tomorrowSlot]) == 24 && nudgedDay(6, [missedYesterday]) == 22, "A nudge's click shows its slot's day")
+var overnight = shownBlock(6, "2026-09-22T23:30:00+02:00", "2026-09-23T11:00:00+02:00")
+overnight.id = "6-overnight"
+check(nudgedDay(6, [tomorrowSlot, nowSlot]) == 23 && nudgedDay(6, [running]) == 23 && nudgedDay(6, [overnight]) == 23,
+      "A nudge's click on a slot under way, or running work, shows today, even for a slot from before midnight")
+check(nudgedDay(9, [tomorrowSlot]) == 23, "A nudge's click with no slot drawn shows today")
+
 // Plan keeps to the week around today while it has hours long enough for the task, then goes on into the next.
 @MainActor
 func planSlot(at when: String, minutes: Double = 30, category: AvailabilityCategory = .work, deferred: Date? = nil,
