@@ -87,6 +87,20 @@ check(triaging.documentListID == triageInbox && triaging.documentOwnsEditorComma
 triaging.showInboxTriage()
 triaging.replace(with: .inbox)
 check(triaging.documentListID == triageInbox, "Replacing the route ends the triage visit")
+triaging.showInboxTriage()
+// The widget's Inbox link, as RootView takes it, while the triage visit is on show.
+triaging.selection = [UUID()]
+triaging.openTask(triageInspected)
+triaging.go(to: .inbox)
+triaging.followInboxPresentation()
+check(triaging.route == .inbox && triaging.documentListID == triageInbox && triaging.documentOwnsEditorCommands
+      && triaging.selection.isEmpty && triaging.openTaskID == triageInspected,
+      "The Inbox link after Triage follows this Mac's choice again, dropping triage's selection")
+let documentSelection: Set<UUID> = [UUID()]
+triaging.selection = documentSelection
+triaging.followInboxPresentation()
+check(triaging.documentListID == triageInbox && triaging.selection == documentSelection,
+      "The Inbox link leaves the Inbox's document as it is")
 triaging.setListViewMode(.tasks, for: triageInbox)
 triaging.showInboxTriage()
 check(triaging.listViewMode(for: triageInbox) == .tasks && triaging.documentListID == nil, "Where the Inbox is triage already, it stays triage")

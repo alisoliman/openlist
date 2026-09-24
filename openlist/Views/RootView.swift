@@ -146,7 +146,10 @@ struct RootView: View {
             QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, plansForToday: forToday,
                                                                         appendsToList: listID != nil))
             return
-        case .inbox: env.workbench.go(.inbox)
+        // This Mac's choice for the Inbox, even straight after a triage visit.
+        case .inbox:
+            env.workbench.go(.inbox)
+            env.navigator.followInboxPresentation()
         // Triage even where this Mac shows the Inbox as a document, for this visit.
         case .triage:
             env.workbench.go(.inbox)

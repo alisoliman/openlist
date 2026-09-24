@@ -192,76 +192,22 @@ struct Hairline: View {
     }
 }
 
-// MARK: - Rows
+// MARK: - Checkbox
 
-/// A task line in Today and List (`mkRow` in the design). The row is its
-/// checkbox's toggle, so a tick runs its intent and at once gives the whole
-/// row the design's closing look; the row itself leaves on the reload that
-/// follows.
-struct TaskRowView: View {
-    let row: WidgetRow
-    /// Small Today: a two-line title with the due text beneath it.
-    var compact = false
-    var showsMeta = true
-    /// Where the title opens: the task, in medium and large widgets.
-    var link: URL?
-    @Environment(\.widgetPalette) private var palette
-
-    var body: some View {
-        Toggle(isOn: row.isDone, intent: SetTaskCompletionIntent(taskID: row.id, occurrenceID: row.occurrenceID)) {
-            Text(row.isDone ? "Reopen \(row.title)" : "Complete \(row.title)")
-        }
-        .toggleStyle(TaskRowStyle(row: row, compact: compact, showsMeta: showsMeta, palette: palette))
-        // Beside the circle, the row opens its link.
-        .overlay {
-            if let link {
-                WidgetLink(destination: link) { Color.clear.contentShape(Rectangle()) }
-                    .padding(.leading, 23)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// Draws a task row from its toggle's state. Only the circle takes a tap:
-/// the rest of the row leaves it to the row's link, or the widget's own.
-private struct TaskRowStyle: ToggleStyle {
-    let row: WidgetRow
-    let compact: Bool
-    let showsMeta: Bool
+/// The row's circle. The checkbox is a toggle so a tick runs its intent and
+/// fills at once; the row itself leaves on the reload that follows. Only the
+/// circle is the toggle, so a tap anywhere else in the row can't tick the
+/// task: the widget has no undo.
+struct CheckToggleStyle: ToggleStyle {
+    let ring: Color
+    /// Already completed in the snapshot: green. Ticked just now: the design's
+    /// closing look, the accent a touch larger.
+    let isCompleted: Bool
     let palette: WidgetPalette
 
     func makeBody(configuration: Configuration) -> some View {
         let filled = configuration.isOn
-        // Ticked just now rather than completed in the snapshot: the accent
-        // circle a touch larger, and the row faded.
-        let closing = filled && !row.isDone
-        HStack(alignment: .top, spacing: 8) {
-            checkbox(filled: filled, closing: closing).padding(.top, 1)
-            Group {
-                text(filled: filled)
-                if !compact && row.isStarred {
-                    WidgetSymbol(name: "star.fill", size: 8, weight: .regular, color: palette.amber)
-                        .frame(width: 11, height: 11)
-                        .padding(.top, 2)
-                }
-                if !compact && !row.dueText.isEmpty {
-                    Text(row.dueText)
-                        .monospacedDigit()
-                        .css(.sans(10, .medium), line: 1.3)
-                        .foregroundStyle(row.isLate ? palette.red : palette.sub)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .padding(.top, 1)
-                }
-            }
-            .allowsHitTesting(false)
-        }
-        .opacity(closing ? 0.55 : 1)
-    }
-
-    /// Completed: green. Ticked just now: the accent.
-    private func checkbox(filled: Bool, closing: Bool) -> some View {
+        let closing = filled && !isCompleted
         ZStack {
             Group {
                 if filled {
@@ -278,6 +224,18 @@ private struct TaskRowStyle: ToggleStyle {
         .scaleEffect(closing ? 1.12 : 1)
         .contentShape(Circle())
     }
+}
+
+struct TaskCheckbox: View {
+    let row: WidgetRow
+    @Environment(\.widgetPalette) private var palette
+
+    var body: some View {
+        Toggle(isOn: row.isDone, intent: SetTaskCompletionIntent(taskID: row.id, occurrenceID: row.occurrenceID)) {
+            Text(row.isDone ? "Reopen \(row.title)" : "Complete \(row.title)")
+        }
+        .toggleStyle(CheckToggleStyle(ring: ring, isCompleted: row.isDone, palette: palette))
+    }
 
     /// Red when late or high priority, amber at medium, else the list's colour.
     private var ring: Color {
@@ -285,13 +243,59 @@ private struct TaskRowStyle: ToggleStyle {
         if row.priority == 2 { return palette.amber }
         return palette.col(row.accent)
     }
+}
 
-    private func text(filled: Bool) -> some View {
+// MARK: - Rows
+
+/// A task line in Today and List (`mkRow` in the design).
+struct TaskRowView: View {
+    let row: WidgetRow
+    /// Small Today: a two-line title with the due text beneath it.
+    var compact = false
+    var showsMeta = true
+    /// Where the title opens: the task, in medium and large widgets.
+    var link: URL?
+    @Environment(\.widgetPalette) private var palette
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            TaskCheckbox(row: row).padding(.top, 1)
+            Group {
+                if let link {
+                    WidgetLink(destination: link) { text }
+                } else {
+                    text
+                }
+                if !compact && row.isStarred {
+                    WidgetSymbol(name: "star.fill", size: 8, weight: .regular, color: palette.amber)
+                        .frame(width: 11, height: 11)
+                        .padding(.top, 2)
+                }
+                if !compact && !row.dueText.isEmpty {
+                    Text(row.dueText)
+                        .monospacedDigit()
+                        .css(.sans(10, .medium), line: 1.3)
+                        .foregroundStyle(row.isLate ? palette.red : palette.sub)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.top, 1)
+                }
+            }
+            // While a tick's intent runs, the system dims the rows beside
+            // their circles until the reload takes the ticked one away. The
+            // design fades only that row and strikes its title, which would
+            // put the row inside the circle's toggle.
+            .invalidatableContent()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var text: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(row.title)
-                .strikethrough(filled)
+                .strikethrough(row.isDone)
                 .css(.sans(compact ? 11.5 : 12, .medium), line: 1.3)
-                .foregroundStyle(filled ? palette.sub : palette.ink)
+                .foregroundStyle(row.isDone ? palette.sub : palette.ink)
                 .lineLimit(compact ? 2 : 1)
                 .truncationMode(.tail)
             if showsMeta {

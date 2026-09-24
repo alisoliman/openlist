@@ -84,6 +84,17 @@ final class Navigator {
         clearSelection()
     }
 
+    /// Ends a triage visit on show, so the Inbox follows this Mac's choice
+    /// again, as the widget's Inbox link asks.
+    func followInboxPresentation() {
+        guard isTriageVisit, let inboxListID else { return }
+        let shown = listViewMode(for: inboxListID)
+        isTriageVisit = false
+        guard listViewMode(for: inboxListID) != shown else { return }
+        contentReveal = nil
+        clearSelection()
+    }
+
     private func defaultViewMode(for listID: UUID) -> ListViewMode {
         listID == inboxListID ? .tasks : .document
     }

@@ -46,6 +46,16 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   else changed in its task meanwhile (`EditorEditSession`); a new line opens whatever
   heading or task folds it away. Headings and text take no key focus after Escape, as in
   the design; Return writes them again and J/K step to the tasks beside them.
+- Widgets (`OpenlistWidget/`) depart from `widgets/` where WidgetKit sets the terms. Only a
+  row's circle is its toggle, so a tap elsewhere can't tick a task the widget can't undo;
+  while the tick's intent runs the system dims the rows beside their circles
+  (`invalidatableContent`) in place of the design's faded, struck-through row. In medium and
+  large a row's title and list line open the task; a small widget takes only its own link,
+  so small Today's titles open Today. Quick Add's Triage link shows the Inbox as triage for
+  that visit even where this Mac shows it as a document; its Inbox link follows this Mac's
+  choice. macOS may make Openlist active as it opens a widget's link, bringing its window
+  forward behind Quick Add's card; the card then gives focus back to the app you were in,
+  and hides Openlist again if it was hidden, when it closes.
 
 ## Status checklist
 
