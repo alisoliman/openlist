@@ -83,7 +83,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Inbox's done card, Planned now, Not planned yet) rather than raising them, and eases the
   tick and switch knobs without their overshoot, as its hint says, where the design shortens
   the inspector's slide and plays the others unchanged. Each fade takes as long as that
-  slide or rise.
+  slide or rise. Task rows and calendar blocks keep the design's rowIn slide there, as the
+  design plays it (a task row's shortened, a calendar block's at its fixed 380ms).
 - New route `.settings` for the in-window Settings page: the design's groups, then every
   other preference. ⌘, and Openlist ▸ Settings… open it; there is no Settings window.
   Library › Back up library keeps the design's "Keeps 14 daily snapshots" (or why the last
@@ -122,8 +123,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   one undo step with the design's label and a change-log entry. The Tasks presentation is
   the same document showing only its tasks, where a line turns into no kind it wouldn't
   draw (a native extra): the design's prefixes stay as typed or pasted, "/" opens no Turn
-  into card, a heading pasted into an empty task goes in after it, and the hints, add row
-  and task placeholder offer only ⇥ Subtask, ⇧↩ Note and Space Show note ("Add to …").
+  into card, a heading pasted or dropped into an empty task goes in after it as a step of
+  its own (a new task left empty going once a pasted task takes the caret, as one left
+  empty does), and the hints, add row and task placeholder offer only ⇥ Subtask, ⇧↩ Note
+  and Space Show note ("Add to …").
   Return there opens a first subtask only under a task whose tasks show, as the design's
   does under a subtree that shows. `Navigator.documentListID` (any list, and the
   Inbox shown as a document) and `documentOwnsEditorCommands` replace `hasDocumentEditor`.
@@ -138,8 +141,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   beside it, as far out as it must, and copied content steps out beside the lines it was
   pasted under until what it holds fits, anything an older outline holds deeper coming up
   to the second level. Text dropped from another app on a line's row, beside its text,
-  goes in before, after or inside that line as the drop's indicator shows it (inside only
-  where its lines can nest there, otherwise after it, as a line dragged there does), or,
+  goes in before, after or inside that line as the drop's indicator shows it (before the
+  line holding it when the first can't go that deep, inside only where its lines can nest
+  there, otherwise after it, as a line dragged there does), or,
   on the line being written while it's still empty, fills it in that line's step. Openlist
   content pasted after a line, and text dropped on a row, are each a step of their own,
   after the line being written, named for the lines they put in at their top level

@@ -562,8 +562,7 @@ final class OutlineEditor {
                 editorEdit("Change block type") { applyMarkdownPrefix(kind, to: block) }
             },
             onPasteMultiline: { [self] text in
-                editorEdit("Paste blocks") { insertPastedLines(MarkdownInputRules.pasteLines(text), at: block) }
-                return true
+                paste(MarkdownInputRules.pasteLines(text), in: block)
             },
             onPasteFragment: { [self] in
                 // What was written in a line with text is a step of its own,
@@ -571,11 +570,11 @@ final class OutlineEditor {
                 // as the caret moves on to what was pasted.
                 if let current = env.store.block(id: blockID), !Self.isBlank(current.text) { commitLine() }
                 editorEditFragment(after: blockID)
+                leaveEmptyLine(blockID)
                 return true
             },
             onPasteLines: { [self] lines in
-                editorEdit("Paste blocks") { insertPastedLines(lines, at: block) }
-                return true
+                paste(lines, in: block)
             },
             onEndEditing: { [self] storage in
                 // The text view a kind change replaced, not the line being left.
@@ -1292,27 +1291,68 @@ final class OutlineEditor {
     /// own named for them. Inside, they go under the line as its first lines
     /// where they can nest there, and otherwise after it, as a line dragged
     /// there does. Dropped on the line being written while it's still empty,
-    /// they fill it, as a paste there does, in that line's step.
+    /// they fill it, as a paste there does, in that line's step, or, when it
+    /// can't take the first of them, go in beside it as a paste does.
     func dropText(_ text: String, on target: Block, position: DropPosition) {
         guard env.store.block(id: target.id) != nil, target.listID == document.listID else { return }
         let lines = MarkdownInputRules.pasteLines(text)
         guard !lines.isEmpty else { return }
         if line?.blockID == target.id, focus.blockID == target.id, Self.isBlank(target.text), !target.kind.isVoid {
-            editorEdit("Edit line") { insertPastedLines(lines, at: target) }
+            if fills(target, with: lines) {
+                editorEdit("Edit line") { insertPastedLines(lines, at: target) }
+            } else {
+                // None go under it, as it goes once the caret moves on to them.
+                insertBeside(emptyLine: target, lines, position: position == .inside ? .after : position)
+            }
             return
         }
         // The drop is a step of its own, after the line being written.
         commitLine()
         guard env.store.block(id: target.id) != nil else { return }
         separateUndoStep()
-        pasteEdit {
-            let placed = insertPastedLines(lines, at: target, position: position, filling: false)
-            // As a line dragged into a folded task opens it.
-            if position == .inside, target.isCollapsed, placed.contains(where: { $0.parentID == target.id }) {
-                env.store.setCollapsed(false, for: target)
-            }
-            return topmost(placed).map(\.id)
+        pasteEdit { topmost(insertPastedLines(lines, at: target, position: position, filling: false)).map(\.id) }
+    }
+
+    /// Lines pasted in `block`, the line being written: after it, or filling
+    /// it while it's empty, in its step. An empty line that can't take the
+    /// first of them, as one showing only tasks can't take a line that isn't
+    /// a task, stays for them to go in after it, as a step of their own.
+    /// `false`, pasting nothing, when there are no lines.
+    private func paste(_ lines: [MarkdownInputRules.ParsedLine], in block: Block) -> Bool {
+        guard !lines.isEmpty else { return false }
+        if Self.isBlank(block.text), !block.kind.isVoid, !fills(block, with: lines) {
+            insertBeside(emptyLine: block, lines, position: .after)
+        } else {
+            editorEdit("Paste blocks") { insertPastedLines(lines, at: block) }
         }
+        return true
+    }
+
+    /// Whether pasted `lines` fill `block`, an empty line, rather than going
+    /// in beside it. Showing only tasks, only a task does, as the line would
+    /// turn into a kind that isn't drawn.
+    private func fills(_ block: Block, with lines: [MarkdownInputRules.ParsedLine]) -> Bool {
+        Self.isBlank(block.text) && !block.kind.isVoid && (!tasksOnly || lines.first?.kind == .task)
+    }
+
+    /// Lines pasted or dropped beside `block`, the empty line being written,
+    /// which doesn't take the first of them: a step of their own, named for
+    /// them and logged, rather than part of that line's edit, which a new
+    /// line left empty ends with nothing to undo.
+    private func insertBeside(emptyLine block: Block, _ lines: [MarkdownInputRules.ParsedLine], position: DropPosition) {
+        pasteEdit { topmost(insertPastedLines(lines, at: block, position: position, filling: false)).map(\.id) }
+        leaveEmptyLine(block.id)
+    }
+
+    /// Leaves `id`, the empty line being written, once lines pasted beside it
+    /// as a step of their own have taken the caret, as the caret moving on
+    /// would: a new one goes with nothing to undo, and a step it does commit
+    /// comes after theirs rather than taking them in. With none of them
+    /// showing, it keeps the caret.
+    private func leaveEmptyLine(_ id: UUID) {
+        guard line?.blockID == id, focus.blockID != id else { return }
+        if lineStepName != nil { separateUndoStep() }
+        commitLine(leaving: true)
     }
 
     /// Runs a structural change as one undo step. The change joins the edit
@@ -1336,6 +1376,10 @@ final class OutlineEditor {
     /// The window's undo manager. Checks, which have no key window, stand in
     /// one of their own.
     @ObservationIgnored var windowUndoManager: () -> UndoManager? = { NSApp?.keyWindow?.undoManager }
+
+    /// The pasteboard ⌘V reads Openlist content from. Checks stand in one of
+    /// their own, leaving the user's clipboard alone.
+    @ObservationIgnored var pasteboard: () -> NSPasteboard = { .general }
 
     /// Closes the undo group holding what this event has registered so far,
     /// as the line being written just committed, so the change about to be
@@ -1444,9 +1488,10 @@ final class OutlineEditor {
     /// goes beside that line, stepping out as far as it must, after the lines
     /// already under it, so the pasted lines keep their order, lines pasted
     /// side by side stay side by side, and the document's lines keep their
-    /// places. A drop can put them before `block` instead, or inside it, as
-    /// its first lines. Returns the lines they went in as, `block` among
-    /// them when the first one fills it.
+    /// places. A drop can put them before `block` instead, the first one
+    /// that can't go as deep before the line holding it, or inside it, as
+    /// its first lines, opening it. Returns the lines they went in as,
+    /// `block` among them when the first one fills it.
     @discardableResult
     private func insertPastedLines(_ pasted: [MarkdownInputRules.ParsedLine], at block: Block,
                                    position: DropPosition = .after, filling: Bool = true) -> [Block] {
@@ -1462,7 +1507,7 @@ final class OutlineEditor {
         // line above the pasted content. A kind that doesn't nest takes it to
         // the top level, as typing its prefix does. Showing only tasks, only
         // a task fills it, as a line turns into no kind that isn't drawn.
-        if filling, position == .after, Self.isBlank(block.text), !block.kind.isVoid, !tasksOnly || lines[0].kind == .task {
+        if filling, position == .after, fills(block, with: lines) {
             let first = lines.removeFirst()
             convert(block, to: first.kind == .quote ? .paragraph : first.kind)
             env.store.setPlainText(block, first.text)
@@ -1498,16 +1543,21 @@ final class OutlineEditor {
                 depth -= 1
             }
             let created: Block
-            if depth < path.count {
+            if position == .before, placed.isEmpty {
+                // In the place of `block`, or of the line holding it as deep
+                // as this one can go, which stays after the lines dropped there.
+                let place = depth < path.count ? path[depth].block : block
+                created = env.store.insertBlock(kind: kind, text: line.text, after: place)
+                env.store.move(created, toParent: place.parentID, above: place, in: document.listID)
+            } else if depth < path.count {
                 created = env.store.insertBlock(kind: kind, text: line.text, after: path[depth].block)
-            } else if position == .before, placed.isEmpty {
-                // In `block`'s place, which stays after the lines dropped there.
-                created = env.store.insertBlock(kind: kind, text: line.text, after: block)
-                env.store.move(created, toParent: block.parentID, above: block, in: document.listID)
             } else {
                 let parent = path[depth - 1].block
-                created = env.store.insertChild(kind: kind, text: line.text, of: parent,
-                                                at: position == .inside && parent.id == block.id ? .first : .last)
+                let first = position == .inside && parent.id == block.id
+                created = env.store.insertChild(kind: kind, text: line.text, of: parent, at: first ? .first : .last)
+                // As a line dragged into a folded task opens it, so the
+                // caret has the lines to land in.
+                if first, block.isCollapsed { env.store.setCollapsed(false, for: block) }
             }
             created.isCompleted = line.isCompleted
             if line.isCompleted { created.completedAt = .now }
@@ -1550,7 +1600,7 @@ final class OutlineEditor {
     /// ⌘V of Openlist content after `blockID`, as a step of its own.
     private func editorEditFragment(after blockID: UUID) {
         let fragment: DocumentFragment
-        do { fragment = try FragmentClipboard.read() } catch {
+        do { fragment = try FragmentClipboard.read(from: pasteboard()) } catch {
             env.store.actionError = error.localizedDescription
             return
         }

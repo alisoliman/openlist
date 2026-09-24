@@ -546,6 +546,15 @@ check(pastedLines.count == linesBeforeTask && pastedContent.count == 3 && input.
     "So does one pasted in a line with text, after it")
 paste("# x", into: "", selecting: NSRange(location: 0, length: 0), kind: .code, fragment: try taskContent.encoded(), matchingStyle: true)
 check(pastedLines.count == linesBeforeTask && pastedContent.count == 3 && input.string == "# x", "A code line takes it as it is")
+// Content of only images has no lines of text: its text goes in as other
+// text does, rather than the paste going nowhere.
+let imageContent = DocumentFragment(roots: [fragmentParent.id], blocks: [
+    FragmentBlock(id: fragmentParent.id, parentID: nil, kind: "image", text: ""),
+], labels: [])
+paste(FragmentMarkdown.render(imageContent), into: "", selecting: NSRange(location: 0, length: 0),
+      fragment: try imageContent.encoded(), matchingStyle: true)
+check(pastedContent.count == 3 && pastedLines.count == linesBeforeTask && input.string == FragmentMarkdown.render(imageContent),
+    "Content of only images pasted with Paste and Match Style goes in as its text")
 // A text dropped into a line reads as a paste does: its breaks become spaces,
 // and one at the start that leaves the line starting with a prefix converts
 // it. Text dragged within the line itself stays as dropped.
@@ -2250,10 +2259,18 @@ check(dropShape() == ["0 Pack", "1 Charger", "2 Cable", "1 Passport", "1 Socks",
         && dropPack.isCollapsed && dropRecorded.last?.name == "Added 2 lines",
     "Lines that can't nest there land after the line and what's under it, as a line dragged there does")
 dropped("- [ ] Umbrella", on: dropPack, .inside)
-check(dropShape().prefix(2) == ["0 Pack", "1 Umbrella"] && !dropPack.isCollapsed,
-    "A folded task a drop goes inside opens")
+check(dropShape().prefix(2) == ["0 Pack", "1 Umbrella"] && !dropPack.isCollapsed && dropEditor.focus.blockID == dropID("Umbrella"),
+    "A folded task a drop goes inside opens, and the caret ends the line dropped")
 dropped("- [ ] First", on: dropPack, .before)
 check(dropShape().first == "0 First" && dropShape()[1] == "0 Pack", "One dropped above the first line goes at the top")
+// Lines that can't go as deep as the line they're dropped above go above
+// the line holding it, so they still land above it.
+dropped("# Section\nPlain text", on: dropSocks, .before)
+check(dropShape().prefix(5) == ["0 First", "0 Section", "0 Plain text", "0 Pack", "1 Umbrella"]
+        && dropShape().filter { $0.hasSuffix("Socks") } == ["1 Socks"] && dropRecorded.last?.name == "Added 2 lines",
+    "A heading dropped above a subtask goes above its task")
+dropUndo.undo()
+check(dropID("Section") == nil && dropID("Plain text") == nil && dropShape().prefix(2) == ["0 First", "0 Pack"], "Undo takes it back")
 dropped("Pack light", on: dropLater, .after)
 check(dropShape().suffix(2) == ["0 Later", "0 Pack light"], "One dropped below a line lands below it")
 dropUndo.undo()
@@ -2287,8 +2304,26 @@ let onlyList = store.createList(title: "Tasks presentation")
 let onlyDocument = DocumentContext(listID: onlyList.id)
 let onlyEditor = OutlineEditor(env: outlineEnv, document: onlyDocument)
 onlyEditor.tasksOnly = true
+let onlyUndo = UndoManager()
+onlyUndo.groupsByEvent = false
+onlyEditor.windowUndoManager = { onlyUndo }
+var onlyRecorded: [(edit: OutlineEdit, name: String)] = []
+onlyEditor.hooks.nameEdit = { edit in
+    switch edit {
+    case let .pasted(ids): ids.count == 1 ? "Added \(store.block(id: ids[0])?.text ?? "")" : "Added \(ids.count) lines"
+    default: nil
+    }
+}
+onlyEditor.hooks.didRecordEdit = { onlyRecorded.append(($0, $1)) }
 func onlyRows() -> [BlockRow] { onlyEditor.visibleRows(in: store.blocks(inList: onlyList.id)) }
 func onlyActions(_ id: UUID) -> BlockRowActions { onlyEditor.actions(for: onlyRows().first { $0.id == id }!) }
+func onlyID(_ text: String) -> UUID? { store.blocks(inList: onlyList.id).first { $0.text == text }?.id }
+// One event's changes, as the window's undo manager groups them.
+func onlyStep(_ body: () -> Void) {
+    onlyUndo.beginUndoGrouping()
+    body()
+    onlyUndo.endUndoGrouping()
+}
 let onlyTrip = store.appendBlock(kind: .task, text: "Trip", to: onlyDocument)
 let onlyNotes = store.insertChild(kind: .bullet, text: "Notes", of: onlyTrip, at: .last)
 let onlyShop = store.appendBlock(kind: .task, text: "Shop", to: onlyDocument)
@@ -2299,23 +2334,112 @@ onlyEditor.appendTask()
 let onlyNew = onlyEditor.focus.blockID!
 onlyActions(onlyNew).onSlashQuery("", NSRange(location: 0, length: 1), .zero, .zero)
 check(onlyEditor.slash == nil, "Showing only tasks, “/” opens no Turn into card")
-check(onlyActions(onlyNew).onPasteMultiline("# Packing\n- [ ] Socks")
-        && store.block(id: onlyNew)?.kind == .task && onlyRows().map(\.block.text).suffix(2) == ["", "Socks"]
-        && onlyEditor.focus.blockID == onlyRows().last?.id,
-    "A heading pasted into an empty task leaves it a task, and the caret ends the last pasted line that shows")
-onlyEditor.commitLine(leaving: true)
-check(store.block(id: onlyNew) == nil && store.blocks(inList: onlyList.id).contains { $0.kind == .heading1 && $0.text == "Packing" },
-    "The pasted heading stays in the list, for its document")
-_ = onlyActions(onlyTrip.id).onReturn(4, store.attributedContent(of: onlyTrip))
+// A heading pasted into an empty task goes in after it, as a step of its
+// own: the new task goes once a pasted task takes the caret, as a new line
+// left empty does, with nothing to undo.
+var onlyPasted = false
+onlyStep { onlyPasted = onlyActions(onlyNew).onPasteMultiline("# Packing\n- [ ] Socks") }
+let onlyPacking = onlyID("Packing"), onlySocks = onlyID("Socks")
+check(onlyPasted && onlyPacking.flatMap(store.block(id:))?.kind == .heading1 && onlySocks.flatMap(store.block(id:))?.isTask == true
+        && store.block(id: onlyNew) == nil && onlyEditor.focus.blockID == onlySocks && onlyRows().last?.id == onlySocks,
+    "A heading pasted into an empty task goes in after it, and the task goes as the caret ends the pasted task")
+check(onlyRecorded.map(\.edit) == [.pasted([onlyPacking!, onlySocks!])] && onlyRecorded.map(\.name) == ["Added 2 lines"]
+        && onlyUndo.undoActionName == "Added 2 lines",
+    "The paste is a step of its own, named for its lines and logged, not the empty line's removal")
+onlyUndo.undo()
+check(onlyID("Packing") == nil && onlyID("Socks") == nil && store.block(id: onlyNew) == nil && !onlyUndo.canUndo,
+    "Its Undo takes back the pasted lines, with no empty task to bring back")
+// With none of the pasted lines showing, the empty task keeps the caret.
+onlyEditor.appendTask()
+let onlyKept = onlyEditor.focus.blockID!
+onlyRecorded.removeAll()
+onlyStep { _ = onlyActions(onlyKept).onPasteMultiline("# Later\nSome text") }
+check(store.block(id: onlyKept)?.kind == .task && onlyEditor.focus.blockID == onlyKept && onlyID("Later") != nil
+        && onlyRecorded.map(\.name) == ["Added 2 lines"],
+    "With none of them showing, the empty task keeps the caret, the paste still a step of its own")
+onlyStep { onlyEditor.commitLine(leaving: true) }
+check(store.block(id: onlyKept) == nil && onlyRecorded.count == 1, "Left empty, the task then goes with nothing to undo")
+// So does text dropped on the empty task being written.
+onlyEditor.appendTask()
+let onlyTarget = onlyEditor.focus.blockID!
+onlyRecorded.removeAll()
+onlyStep { onlyEditor.dropText("# Gear\n- [ ] Tent", on: store.block(id: onlyTarget)!, position: .inside) }
+check(onlyID("Gear") != nil && onlyEditor.focus.blockID == onlyID("Tent") && store.block(id: onlyTarget) == nil
+        && onlyRows().last?.id == onlyID("Tent") && onlyRecorded.map(\.name) == ["Added 2 lines"],
+    "Dropped on the empty task being written, a heading and task go in after it as a step of their own, and the task goes")
+onlyStep { _ = onlyActions(onlyTrip.id).onReturn(4, store.attributedContent(of: onlyTrip)) }
 let afterTrip = store.block(id: onlyEditor.focus.blockID!)!
 check(afterTrip.parentID == nil && afterTrip.id != onlyNotes.id && onlyRows().firstIndex { $0.id == afterTrip.id } == 1,
     "Return on a task with only a list item under it adds a task beside it, as none shows under it")
-onlyEditor.commitLine(leaving: true)
-_ = onlyActions(onlyShop.id).onReturn(4, store.attributedContent(of: onlyShop))
+onlyStep { onlyEditor.commitLine(leaving: true) }
+onlyStep { _ = onlyActions(onlyShop.id).onReturn(4, store.attributedContent(of: onlyShop)) }
 let underShop = store.block(id: onlyEditor.focus.blockID!)!
 check(underShop.parentID == onlyShop.id && onlyRows().firstIndex { $0.id == underShop.id }
         == onlyRows().firstIndex { $0.id == onlyShop.id }.map { $0 + 1 } && onlyTenugui.parentID == onlyShops.id,
     "Return on one whose tasks show opens a first subtask")
-onlyEditor.commitLine(leaving: true)
+onlyStep { onlyEditor.commitLine(leaving: true) }
+
+// ⌘V of Openlist content after a line being written is a step of its own,
+// after the line's edit, named for the lines it put in and logged.
+let contentList = store.createList(title: "Content paste")
+let contentDocument = DocumentContext(listID: contentList.id)
+let contentEditor = OutlineEditor(env: outlineEnv, document: contentDocument)
+let contentUndo = UndoManager()
+contentUndo.groupsByEvent = false
+contentEditor.windowUndoManager = { contentUndo }
+let contentBoard = NSPasteboard(name: NSPasteboard.Name("openlist.editor-checks.content.\(UUID().uuidString)"))
+defer { contentBoard.releaseGlobally() }
+contentEditor.pasteboard = { contentBoard }
+var contentRecorded: [(edit: OutlineEdit, name: String)] = []
+contentEditor.hooks.nameEdit = { edit in
+    switch edit {
+    case let .pasted(ids): ids.count == 1 ? "Added “\(store.block(id: ids[0])?.text ?? "")”" : "Added \(ids.count) lines"
+    case let .edited(id): "Edited “\(store.block(id: id)?.text ?? "")”"
+    default: nil
+    }
+}
+contentEditor.hooks.didRecordEdit = { contentRecorded.append(($0, $1)) }
+func contentActions(_ id: UUID) -> BlockRowActions {
+    contentEditor.actions(for: contentEditor.visibleRows(in: store.blocks(inList: contentList.id)).first { $0.id == id }!)
+}
+func contentShape() -> [String] {
+    BlockTree.flatten(store.blocks(inList: contentList.id), respectCollapse: false).map { "\($0.depth) \($0.block.text)" }
+}
+func contentStep(_ body: () -> Void) {
+    contentUndo.beginUndoGrouping()
+    body()
+    contentUndo.endUndoGrouping()
+}
+let contentMilk = store.appendBlock(kind: .task, text: "Milk", to: contentDocument)
+let contentSource = store.createList(title: "Content source")
+let sourceTent = store.appendBlock(kind: .task, text: "Tent", to: DocumentContext(listID: contentSource.id))
+store.insertChild(kind: .task, text: "Pegs", of: sourceTent, at: .last)
+store.save()
+try FragmentClipboard.copy([sourceTent.id], store: store, to: contentBoard)
+contentActions(contentMilk.id).onFocus()
+contentActions(contentMilk.id).onChange(NSAttributedString(string: "Oat milk"))
+var contentPasted = false
+contentStep { contentPasted = contentActions(contentMilk.id).onPasteFragment() }
+let contentTent = store.blocks(inList: contentList.id).first { $0.text == "Tent" }
+check(contentPasted && contentShape() == ["0 Oat milk", "0 Tent", "1 Pegs"] && contentEditor.focus.blockID == contentTent?.id
+        && contentEditor.focus.caret == 0,
+    "⌘V of Openlist content goes in after the line, and its first line takes the caret")
+check(contentRecorded.map(\.name) == ["Edited “Oat milk”", "Added “Tent”"] && contentRecorded.last?.edit == .pasted([contentTent!.id])
+        && contentUndo.undoActionName == "Added “Tent”",
+    "It's a step of its own after the line's edit, named for the line it put in and logged")
+contentUndo.undo()
+check(contentShape() == ["0 Oat milk"] && contentUndo.undoActionName == "Edited “Oat milk”",
+    "Its Undo takes back only the pasted lines")
+contentUndo.undo()
+check(contentShape() == ["0 Milk"], "The line's edit is the step under it")
+// Pasted in a new line left empty, it's the only step: the line goes as the
+// pasted lines take the caret, with nothing to undo.
+contentEditor.appendTask()
+let contentBlank = contentEditor.focus.blockID!
+contentRecorded.removeAll()
+contentStep { _ = contentActions(contentBlank).onPasteFragment() }
+check(store.block(id: contentBlank) == nil && contentShape() == ["0 Milk", "0 Tent", "1 Pegs"]
+        && contentRecorded.map(\.name) == ["Added “Tent”"] && contentUndo.undoActionName == "Added “Tent”",
+    "Pasted in a new empty line, the line goes as the caret moves on, and the paste is the only step")
 
 print("✅ \(checks) editor/store checks passed")

@@ -794,10 +794,13 @@ final class BlockNSTextView: NSTextView {
             // Openlist content is lines even as one, so a copied task stays a
             // task. They're read from the content, not from its Markdown,
             // which is written for other apps: escaped, with a task's star,
-            // labels and files as text.
+            // labels and files as text. Content of only images has no lines
+            // of text: its text goes in as other text does.
             if blockKind != .code, isContent, let data = pasteboard.data(forType: fragment),
-               let content = try? DocumentFragment.decode(data),
-               callbacks?.onPasteLines(MarkdownInputRules.pasteLines(of: content)) == true { return }
+               let content = try? DocumentFragment.decode(data) {
+                let lines = MarkdownInputRules.pasteLines(of: content)
+                if !lines.isEmpty, callbacks?.onPasteLines(lines) == true { return }
+            }
             // One line with a break at its end is still one line.
             if blockKind != .code, let text = pasteboard.string(forType: .string),
                text.trimmingCharacters(in: .newlines).rangeOfCharacter(from: .newlines) != nil,
