@@ -709,10 +709,11 @@ final class BlockNSTextView: NSTextView {
     ///
     /// With nothing selected, Openlist content goes in after the line, whole,
     /// and several lines of text become lines of their own, after this one
-    /// or filling it while it's empty. Anything else is AppKit's paste,
-    /// styled text included, with each line break it brings made a space, as
-    /// the design's single-line inputs take a paste. A code line, one of the
-    /// editor's own kinds, keeps the breaks.
+    /// or filling it while it's empty. Over a selection, Openlist content
+    /// goes in as the text of its lines, a space between them. Anything else
+    /// is AppKit's paste, styled text included, with each line break it
+    /// brings made a space, as the design's single-line inputs take a paste.
+    /// A code line, one of the editor's own kinds, keeps the breaks.
     private(set) var isPasting = false
 
     override func paste(_ sender: Any?) {
@@ -728,16 +729,34 @@ final class BlockNSTextView: NSTextView {
     func paste(from pasteboard: NSPasteboard, structured: Bool = true, native: () -> Void) {
         isPasting = true
         defer { isPasting = false }
+        let fragment = NSPasteboard.PasteboardType("solimanali.openlist.document-fragment")
         if selectedRange().length == 0 {
             let callbacks = coordinator?.parent.callbacks
-            let fragment = NSPasteboard.PasteboardType("solimanali.openlist.document-fragment")
             if structured, pasteboard.availableType(from: [fragment]) != nil, callbacks?.onPasteFragment() == true { return }
             // One line with a break at its end is still one line.
             if blockKind != .code, let text = pasteboard.string(forType: .string),
                text.trimmingCharacters(in: .newlines).rangeOfCharacter(from: .newlines) != nil,
                callbacks?.onPasteMultiline(text) == true { return }
+        } else if blockKind != .code, let data = pasteboard.data(forType: fragment),
+                  let content = try? DocumentFragment.decode(data) {
+            // Its Markdown would write list markers and indents into the line.
+            insertText(Self.lineTexts(of: content), replacementRange: selectedRange())
+            return
         }
         native()
+    }
+
+    /// The text of Openlist content's lines, in order, a space between them.
+    static func lineTexts(of fragment: DocumentFragment) -> String {
+        let byID = Dictionary(fragment.blocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let children = Dictionary(grouping: fragment.blocks, by: \.parentID)
+        var stack = Array(fragment.roots.reversed())
+        var texts: [String] = []
+        while let id = stack.popLast(), let block = byID[id] {
+            texts += block.text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            stack += (children[id] ?? []).reversed().map(\.id)
+        }
+        return texts.filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     /// Every paste and text drop into the line reads through here, so each

@@ -358,6 +358,12 @@ check(joinedLines.string == "One Two Three Four" && isBold(joinedLines, at: 4) &
 let pasteBoard = NSPasteboard(name: NSPasteboard.Name("openlist.editor-checks.\(UUID().uuidString)"))
 defer { pasteBoard.releaseGlobally() }
 let fragmentType = NSPasteboard.PasteboardType("solimanali.openlist.document-fragment")
+let fragmentParent = FragmentBlock(id: UUID(), parentID: nil, kind: "task", text: "Parent")
+var fragmentChild = FragmentBlock(id: UUID(), parentID: fragmentParent.id, kind: "task", text: "Child")
+fragmentChild.note = "note"
+let fragmentCode = FragmentBlock(id: UUID(), parentID: fragmentParent.id, kind: "code", text: "let a = 1\n  let b = 2")
+let fragmentData = try DocumentFragment(roots: [fragmentParent.id], blocks: [fragmentParent, fragmentChild, fragmentCode],
+                                        labels: []).encoded()
 var pastedLines: [String] = []
 var pastedFragments = 0
 let pastingCallbacks = coordinator.parent.callbacks
@@ -372,7 +378,7 @@ func paste(_ text: String, into line: String, selecting selection: NSRange, kind
     input.setSelectedRange(selection)
     pasteBoard.clearContents()
     pasteBoard.setString(text, forType: .string)
-    if fragment { pasteBoard.setData(Data("{}".utf8), forType: fragmentType) }
+    if fragment { pasteBoard.setData(fragmentData, forType: fragmentType) }
     if let rich { pasteBoard.setData(rich.rtf(from: NSRange(location: 0, length: rich.length), documentAttributes: [:]), forType: .rtf) }
     input.paste(from: pasteBoard, structured: !matchingStyle) { _ = input.readSelection(from: pasteBoard) }
 }
@@ -389,8 +395,10 @@ check(pastedFragments == 1 && input.string == "Groceries", "Openlist content pas
 paste(fragmentMarkdown, into: "", selecting: NSRange(location: 0, length: 0), fragment: true)
 check(pastedFragments == 2 && input.string.isEmpty, "So does content pasted in an empty line")
 paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: true)
-check(pastedFragments == 2 && input.string == "- [ ] Parent   - [ ] Child     > note",
-    "Openlist content pasted over a selection goes in as its text, one line")
+check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2" && input.selectedRange() == NSRange(location: 32, length: 0),
+    "Openlist content pasted over a selection goes in as the text of its lines, a space between them, with no Markdown")
+paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 0, length: 9), fragment: true, matchingStyle: true)
+check(pastedFragments == 2 && input.string == "Parent Child let a = 1 let b = 2", "So does Paste and Match Style over a selection")
 paste(fragmentMarkdown, into: "Groceries", selecting: NSRange(location: 9, length: 0), fragment: true, matchingStyle: true)
 check(pastedFragments == 2 && pastedLines.last == fragmentMarkdown, "Paste and Match Style reads Openlist content as its lines of text")
 paste("\nlet b = 2", into: "let a = 1", selecting: NSRange(location: 9, length: 0), kind: .code)
@@ -1479,6 +1487,59 @@ check(fixActions(market).onBackspaceAtStart(content(market)) && market.kind == .
     "Backspace on a nested list item makes text at the top, with the lines under it and after it still a level in")
 fixEditor.commitLine()
 
+// Tab on the line after a heading's kept lines takes it in after them, as the
+// design's indent goes by the line right above.
+let keptList = store.createList(title: "Kept lines")
+let keptDocument = DocumentContext(listID: keptList.id)
+let keptEditor = OutlineEditor(env: outlineEnv, document: keptDocument)
+func keptRows() -> [BlockRow] { keptEditor.visibleRows(in: store.blocks(inList: keptList.id)) }
+func keptActions(_ block: Block) -> BlockRowActions { keptEditor.actions(for: keptRows().first { $0.id == block.id }!) }
+let keptTrip = store.appendBlock(kind: .task, text: "Pack", to: keptDocument)
+let keptSocks = store.insertChild(kind: .task, text: "Socks", of: keptTrip, at: .last)
+let keptPassport = store.insertChild(kind: .task, text: "Passport", of: keptTrip, at: .last)
+let keptAfter = store.appendBlock(kind: .task, text: "After", to: keptDocument)
+let bareHeading = store.appendBlock(kind: .heading2, text: "Bare", to: keptDocument)
+let keptLone = store.appendBlock(kind: .task, text: "Lone", to: keptDocument)
+store.save()
+keptActions(keptTrip).onFocus()
+keptActions(keptTrip).onMarkdownPrefix(.heading1)
+keptEditor.commitLine()
+keptActions(keptAfter).onFocus()
+check(keptActions(keptAfter).onTab(false, 0) && keptAfter.parentID == keptTrip.id
+    && keptRows().map(\.id) == [keptTrip, keptSocks, keptPassport, keptAfter, bareHeading, keptLone].map(\.id)
+    && keptRows().map(\.depth) == [0, 1, 1, 1, 0, 0],
+    "Tab on the task after a heading's kept lines takes it in as the last of them")
+check(keptActions(keptAfter).onTab(true, 0) && keptAfter.parentID == nil && keptRows().map(\.depth) == [0, 1, 1, 0, 0, 0],
+    "⇧Tab takes it back out")
+keptEditor.commitLine()
+keptActions(keptLone).onFocus()
+check(keptActions(keptLone).onTab(false, 0) && keptLone.parentID == nil,
+    "A heading holding no lines takes none in, as the design's indent after a heading")
+keptEditor.commitLine()
+
+// The Tasks presentation's top level is the tasks': a done task a heading
+// holds, with no task above it, leaves it as a done top-level task does.
+keptPassport.isCompleted = true
+keptPassport.completedAt = .now
+store.save()
+check(keptRows().contains { $0.id == keptPassport.id && $0.depth == 1 },
+    "In the document a done task a heading holds stays struck in place, as the design's done subtasks")
+keptEditor.tasksOnly = true
+check(keptRows().map(\.id) == [keptSocks, keptAfter, keptLone].map(\.id) && keptRows().allSatisfy { $0.depth == 0 },
+    "In the Tasks presentation it leaves, as a done top-level task")
+let keptVisa = store.insertChild(kind: .task, text: "Visa", of: keptPassport, at: .last)
+store.save()
+check(keptRows().map(\.id) == [keptSocks, keptPassport, keptVisa, keptAfter, keptLone].map(\.id)
+    && keptRows().map(\.depth) == [0, 0, 1, 0, 0],
+    "One with a task still open under it stays, as a done top-level task does")
+let keptBlocks = store.blocks(inList: keptList.id)
+func keptParent(_ id: UUID) -> Block? { keptBlocks.first { $0.id == id } }
+check(!BlockTree.hasTaskAncestor(keptPassport, parent: keptParent) && BlockTree.hasTaskAncestor(keptVisa, parent: keptParent)
+    && BlockTree.completedTasksHoldingOpenTasks(in: keptBlocks, atTaskLevel: true) == [keptPassport.id]
+    && BlockTree.completedTasksHoldingOpenTasks(in: keptBlocks).isEmpty,
+    "A done task with no task above it is a top-level task for the Completed group of the Tasks presentation")
+keptEditor.tasksOnly = false
+
 // Something else changing the line's task isn't the line's edit.
 fixRecorded.removeAll()
 let ticked = store.appendBlock(kind: .task, text: "Ticked", to: fixDocument)
@@ -1800,12 +1861,70 @@ check(pasteActions.onPasteMultiline("- [ ] Milk\n- [ ] Eggs\n") && pastedTexts()
     && store.blocks(inList: pastedList.id).allSatisfy(\.isTask), "Copied lines ending in a break paste as tasks after the line")
 check(pasteActions.onPasteMultiline("- [ ] Bread\r\n- [ ] Tea") && pastedTexts() == ["Shopping", "Bread", "Tea", "Milk", "Eggs"]
     && store.blocks(inList: pastedList.id).allSatisfy(\.isTask), "So do lines that end in “\\r\\n”")
-check(pasteActions.onPasteMultiline("first\n\n  last line \nend")
-    && Array(pastedTexts().prefix(4)) == ["Shopping", "first", "  last line ", "end"]
+check(pasteActions.onPasteMultiline("first\n\n  last line \t\nend")
+    && Array(pastedTexts().prefix(4)) == ["Shopping", "first", "last line", "end"]
     && store.blocks(inList: pastedList.id).filter { !$0.isTask }.map(\.kind) == [.paragraph, .paragraph, .paragraph]
     && !pastedTexts().contains { $0.rangeOfCharacter(from: .newlines) != nil },
-    "Text that doesn't read as lines of Markdown goes in as written, a text line for each of its lines")
+    "Text that doesn't read as lines of Markdown goes in a text line for each of its lines, trimmed as the design's commit trims")
 pastedEditor.commitLine()
 check(pasteTarget.text == "Shopping", "The line pasted after keeps its text")
+
+// A fenced block comes in as one code line, the kind that keeps its breaks
+// and indent; the text around it as trimmed text lines.
+check(MarkdownInputRules.pasteLines("Run:\n```swift\n  let a = 1\n\n  let b = 2\n```\n  indented tail ").map(\.kind) == [.paragraph, .code, .paragraph]
+    && MarkdownInputRules.pasteLines("Run:\n```swift\n  let a = 1\n\n  let b = 2\n```\n  indented tail ").map(\.text)
+        == ["Run:", "  let a = 1\n\n  let b = 2", "indented tail"],
+    "A fenced block pastes as one code line between trimmed text lines")
+check(MarkdownInputRules.pasteLines("  ~~~\n    code\n  ~~~~\nafter").map(\.text) == ["  code", "after"],
+    "An indented fence's code loses only the fence's indent, and a longer fence closes it")
+check(MarkdownInputRules.pasteLines("Intro\n```\nopen to the end\n  still code").map(\.text) == ["Intro", "open to the end\n  still code"],
+    "A fence left open runs to the end")
+check(MarkdownInputRules.pasteLines("```a``` inline\nnext  ").map(\.kind) == [.paragraph, .paragraph]
+    && MarkdownInputRules.pasteLines("```\n```\nafter").map(\.text) == ["after"],
+    "Backticks inside a line open no fence, and an empty block is no line")
+let fencedTarget = store.appendBlock(kind: .task, text: "Setup", to: pastedDocument)
+store.save()
+func pastedRows() -> [BlockRow] { pastedEditor.visibleRows(in: store.blocks(inList: pastedList.id)) }
+func pastedActions(_ block: Block) -> BlockRowActions { pastedEditor.actions(for: pastedRows().first { $0.id == block.id }!) }
+check(pastedActions(fencedTarget).onPasteMultiline("Run:\n```\n  let a = 1\n```\n  indented tail ")
+    && pastedRows().suffix(4).map(\.block.kind) == [.task, .paragraph, .code, .paragraph]
+    && pastedRows().suffix(4).map(\.block.text) == ["Setup", "Run:", "  let a = 1", "indented tail"],
+    "Pasted, it's a code line, keeping its indent, between trimmed text lines")
+pastedEditor.commitLine()
+
+// Pasted lines keep to the document's rules: "> " makes text, or right under
+// a pasted task its note, as Openlist content's Markdown writes one; lines
+// nest only under pasted tasks and list items, two levels deep at most.
+let nestedList = store.createList(title: "Nested paste")
+let nestedDocument = DocumentContext(listID: nestedList.id)
+let nestedEditor = OutlineEditor(env: outlineEnv, document: nestedDocument)
+func nestedRows() -> [BlockRow] { nestedEditor.visibleRows(in: store.blocks(inList: nestedList.id)) }
+func nestedActions(_ block: Block) -> BlockRowActions { nestedEditor.actions(for: nestedRows().first { $0.id == block.id }!) }
+func nestedShape() -> [String] { nestedRows().map { "\($0.depth) \($0.block.kind.rawValue) \($0.block.text)" } }
+let nestedTarget = store.appendBlock(kind: .task, text: "Trip", to: nestedDocument)
+store.save()
+check(nestedActions(nestedTarget).onPasteMultiline("- [ ] Parent\n  - [ ] Child\n    > note 2\\.5 kg\n    > second line\n- [ ] Next\n> Aside")
+    && nestedShape() == ["0 task Trip", "0 task Parent", "1 task Child", "0 task Next", "0 paragraph Aside"]
+    && nestedRows()[2].block.note == "note 2.5 kg\nsecond line" && nestedRows()[3].block.parentID == nil,
+    "A note under a pasted task comes back as its note, a line back at the top goes there, and “> ” makes text")
+nestedEditor.commitLine()
+let nestedNext = nestedRows()[3].block
+check(nestedActions(nestedNext).onPasteMultiline("- Bullet\n  > quoted\n  # Inner\n  - [ ] Under\n  - [ ] More\n    - [ ] Deep\n      - [ ] Deeper")
+    && Array(nestedShape().dropFirst(3).prefix(8)) == ["0 task Next", "0 bullet Bullet", "0 paragraph quoted", "0 heading1 Inner",
+                                           "0 task Under", "0 task More", "1 task Deep", "2 task Deeper"],
+    "Text and a heading pasted a level in go at the top, the lines after them beside them, side by side as pasted")
+nestedEditor.commitLine()
+check(nestedActions(nestedRows().last!.block).onPasteMultiline("- [ ] a\n  - [ ] b\n    - [ ] c\n      - [ ] d\n    - [ ] e")
+    && Array(nestedShape().suffix(6)) == ["0 paragraph Aside", "0 task a", "1 task b", "2 task c", "2 task d", "2 task e"],
+    "Nothing pasted goes past two levels")
+nestedEditor.commitLine()
+let nestedChild = nestedRows()[2].block
+let nestedLater = store.insertChild(kind: .task, text: "Later", of: nestedRows()[1].block, at: .last)
+store.save()
+check(nestedActions(nestedChild).onPasteMultiline("# Section\n- [ ] Item")
+    && Array(nestedShape().prefix(6)) == ["0 task Trip", "0 task Parent", "1 task Child", "0 heading1 Section", "1 task Item", "1 task Later"]
+    && nestedLater.parentID == nestedRows()[3].id,
+    "A heading pasted after a nested line comes out to the top, keeping what follows it under it, as a line turned into one does")
+nestedEditor.commitLine()
 
 print("✅ \(checks) editor/store checks passed")

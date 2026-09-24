@@ -154,9 +154,10 @@ images, and files. Other apps receive it as readable Markdown, with images/files
 described by name, without private local file URLs.
 
 ⌘V in a line of a list document inserts the internal content after that line;
-over selected text, and in other apps, it pastes as Markdown. A list document's
-lines hold one line each, so a paste over selected text puts a space for each line
-break it brings; a code line keeps them. Ordinary ⌘C still copies the selected text.
+over selected text it pastes the text of the content's lines, a space between them,
+and in other apps it pastes as Markdown. A list document's lines hold one line each,
+so a paste over selected text puts a space for each line break it brings; a code line
+keeps them. Ordinary ⌘C still copies the selected text.
 The insertion has fresh IDs and independent media, and is one editor Undo/Redo
 operation. A blank destination row is retained. Completed content remains completed
 and follows the destination's visibility/sort settings.

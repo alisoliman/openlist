@@ -87,10 +87,11 @@ extension BlockRowActions {
 /// The editing rules an outline follows, the list document's from the
 /// design. Only tasks and list items indent, two levels deep at most, and
 /// never under a heading or text, though a line turned into one keeps what
-/// was under it; Return and Backspace step a line out or convert it instead
-/// of merging; `> ` makes text; done top-level tasks leave the document; and
-/// a line's whole edit, from the caret arriving to it leaving, is one undo
-/// step. A line left empty is removed.
+/// was under it and takes a line indented after that; Return and Backspace
+/// step a line out or convert it instead of merging; `> ` makes text; done
+/// top-level tasks leave the document; and a line's whole edit, from the
+/// caret arriving to it leaving, is one undo step. A line left empty is
+/// removed.
 enum OutlinePolicy {
     /// Kinds that nest under a line of their own family.
     static func nests(_ kind: BlockKind) -> Bool {
@@ -322,22 +323,24 @@ final class OutlineEditor {
     func visibleRows(in blocks: [Block]) -> [BlockRow] {
         let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
         let kept = (reveal?.visiblePath ?? []).union(completedTasksKeptVisible)
-            .union(BlockTree.completedTasksHoldingOpenTasks(in: live))
         // Only tasks fold what's under them: what a heading, list item or
         // text line has folded still shows. A heading folds its section
         // instead, further down.
         let unfolding = Set(live.lazy.filter { !OutlinePolicy.folds($0.kind) && $0.isCollapsed }.map(\.id))
         if tasksOnly {
             // A heading folds nothing here either: its section shows, as
-            // tasks under the tasks above.
-            let rows = projectedRows(of: live, expanding: unfolding)
-            return Self.taskOutline(BlockTree.hidingCompletedTasks(in: rows, revealing: kept))
+            // tasks under the tasks above. Done tasks go by their depth
+            // among the tasks, so one a heading, list item or text line
+            // holds with no task above it leaves, as a top-level task.
+            let rows = Self.taskOutline(projectedRows(of: live, expanding: unfolding))
+            return BlockTree.hidingCompletedTasks(in: rows, revealing: kept
+                .union(BlockTree.completedTasksHoldingOpenTasks(in: live, atTaskLevel: true)))
         }
         let rows = projectedRows(of: live, expanding: unfolding)
         // A revealed line shows through the headings folding it away.
         let unfolded = reveal?.blockID.map { Set(BlockTree.enclosingSections(of: $0, in: rows)) } ?? []
         return BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
-                                              revealing: kept)
+                                              revealing: kept.union(BlockTree.completedTasksHoldingOpenTasks(in: live)))
     }
 
     /// Only the tasks among `rows`, each as deep as the tasks above it.
@@ -772,7 +775,9 @@ final class OutlineEditor {
     /// The design's indent. A task or list item goes one level deeper, under
     /// the nearest line above at its own depth, when that line and the one
     /// right above are tasks or list items too, and never past two levels.
-    /// Headings and text stay at the top.
+    /// Headings and text stay at the top. One holding the lines it kept as
+    /// it was turned takes the line in after them, as the design's indent
+    /// goes by the line right above.
     private func indentLine(_ block: Block) -> Bool {
         guard OutlinePolicy.nests(block.kind) else { return false }
         let current = rows
@@ -781,10 +786,12 @@ final class OutlineEditor {
         let previous = current[index - 1]
         guard depth < OutlinePolicy.maximumDepth, OutlinePolicy.nests(previous.block.kind), previous.depth >= depth,
               let parent = current[..<index].last(where: { $0.depth <= depth }), parent.depth == depth,
-              parent.block.parentID == block.parentID, OutlinePolicy.nests(parent.block.kind),
+              parent.block.parentID == block.parentID,
+              OutlinePolicy.nests(parent.block.kind) || previous.depth > depth,
               env.store.move(block, toParent: parent.id, above: nil, in: document.listID)
         else { return false }
-        parent.block.isCollapsed = false
+        // A heading's fold is its section's, which holds the line either way.
+        if BlockTree.sectionLevel(of: parent.block.kind) == nil { parent.block.isCollapsed = false }
         drawnRows = nil
         return true
     }
@@ -1404,50 +1411,87 @@ final class OutlineEditor {
         BlockTree.flatten(blocks, respectCollapse: false).map { "\($0.id)/\($0.depth)" }
     }
 
+    /// Pasted lines go in after `block` under the document's rules: `> `
+    /// makes text, or right under a pasted task that task's note, as
+    /// Openlist content's Markdown writes one; a line goes under a pasted
+    /// task or list item only, two levels deep at most, and a line of a kind
+    /// that doesn't nest comes out to the top, as a line turned into one does.
     private func insertPastedText(_ text: String, after block: Block) {
-        // A line holds one line, as the design's do, so text kept whole, as
-        // Markdown that doesn't read as lines is, goes in a line at a time.
-        // The breaks around it, as copied lines end with one, aren't lines.
-        let source = text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .newlines)
-        let parsed = MarkdownInputRules.parseClipboard(source)
-        var lines = parsed.flatMap { line -> [MarkdownInputRules.ParsedLine] in
-            guard line.kind != .code, line.text.rangeOfCharacter(from: .newlines) != nil else { return [line] }
-            return line.text.components(separatedBy: .newlines)
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                .map { MarkdownInputRules.ParsedLine(kind: line.kind, text: $0, depth: line.depth, isCompleted: line.isCompleted) }
-        }
+        var lines = MarkdownInputRules.pasteLines(text)
         guard !lines.isEmpty else { return }
 
         var previous = block
-        // Tracks the last block created at each depth so nesting can be rebuilt.
-        var parentAtDepth: [Int: Block] = [:]
+        // The last line placed at each depth under the paste's first ones,
+        // with the depth it was pasted at, deeper along the path.
+        var path: [(block: Block, pasted: Int)] = []
+        // The task a `> ` line one level in writes the note of, while it's the last line pasted.
+        var noteTask: (block: Block, pasted: Int)?
+        var unnested: [Block] = []
+        let room = OutlinePolicy.maximumDepth - BlockTree.ancestors(of: block, in: blocks).count
+        func place(_ created: Block, at depth: Int, pasted: Int) {
+            path = Array(path.prefix(depth)) + [(created, pasted)]
+            noteTask = created.isTask ? (created, pasted) : nil
+            if !OutlinePolicy.nests(created.kind) { unnested.append(created) }
+            previous = created
+        }
 
         // Pasting into an empty block fills it, rather than leaving a blank
         // line above the pasted content.
         if block.text.isEmpty, !block.kind.isVoid {
             let first = lines.removeFirst()
-            env.store.changeKind(block, to: first.kind)
+            env.store.changeKind(block, to: first.kind == .quote ? .paragraph : first.kind)
             env.store.setPlainText(block, first.text)
             block.isCompleted = first.isCompleted
             block.completedAt = first.isCompleted ? .now : nil
-            parentAtDepth[first.depth] = block
+            place(block, at: 0, pasted: first.depth)
         }
 
         for line in lines {
-            let created: Block
-            if line.depth > 0, let parent = parentAtDepth[line.depth - 1] {
-                created = env.store.insertChild(kind: line.kind, text: line.text, of: parent, at: .last)
-            } else {
-                created = env.store.insertBlock(kind: line.kind, text: line.text, after: previous)
+            if line.kind == .quote, let task = noteTask, line.depth == task.pasted + 1 {
+                let note = Self.unescapingMarkdown(line.text)
+                task.block.note = task.block.note.isEmpty ? note : task.block.note + "\n" + note
+                continue
             }
+            let kind = line.kind == .quote ? .paragraph : line.kind
+            // Under the nearest line it was pasted under that's still on the
+            // path, so lines pasted side by side stay side by side.
+            var depth = OutlinePolicy.nests(kind) ? max(0, min(path.prefix { $0.pasted < line.depth }.count, room)) : 0
+            while depth > 0, !OutlinePolicy.nests(path[depth - 1].block.kind) { depth -= 1 }
+            let created = depth > 0
+                ? env.store.insertChild(kind: kind, text: line.text, of: path[depth - 1].block, at: .last)
+                : env.store.insertBlock(kind: kind, text: line.text, after: path.first?.block ?? block)
             created.isCompleted = line.isCompleted
             if line.isCompleted { created.completedAt = .now }
-            parentAtDepth[line.depth] = created
-            previous = created
+            place(created, at: depth, pasted: line.depth)
+        }
+        // Pasted under a nested line, a heading or text line comes out to
+        // the top where it stands, keeping what follows it under it.
+        for line in unnested {
+            while canOutdent(line), env.store.outdent(line) {}
         }
 
         env.store.save()
         focus.request(previous.id, caret: -1)
+    }
+
+    /// Markdown's backslash escapes read back, as a note's text is written
+    /// escaped in Openlist content's Markdown.
+    private static func unescapingMarkdown(_ text: String) -> String {
+        var result = ""
+        var escaped = false
+        for character in text {
+            if !escaped, character == "\\" {
+                escaped = true
+                continue
+            }
+            if escaped, !(character.isASCII && (character.isPunctuation || character.isSymbol)) {
+                result.append("\\")
+            }
+            escaped = false
+            result.append(character)
+        }
+        if escaped { result.append("\\") }
+        return result
     }
 
     private func editorEditFragment(after blockID: UUID) {

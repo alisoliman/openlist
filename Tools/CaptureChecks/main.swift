@@ -34,6 +34,20 @@ let later = try store.saveCapture(CaptureSnapshot(title: "Later capture"), desti
 check(later.parentID == nil && later.sortIndex > appended.sortIndex,
       "Captures follow each other in the order they were made")
 check(task.dueDate == nil && task.recurrence == nil && task.labelIDs.isEmpty, "Capture saves only what its snapshot holds")
+let foldedList = store.createList(title: "Folded end")
+let foldedDocument = DocumentContext(listID: foldedList.id)
+let chapter = store.appendBlock(kind: .heading1, text: "Chapter", to: foldedDocument)
+let earlier = store.appendBlock(kind: .heading2, text: "Earlier", to: foldedDocument)
+let lastSection = store.appendBlock(kind: .heading2, text: "Last", to: foldedDocument)
+_ = store.appendBlock(kind: .task, text: "Inside", to: foldedDocument)
+for heading in [chapter, earlier, lastSection] { heading.isCollapsed = true }
+store.save()
+check(Set(store.foldedSections(atEndOf: foldedList.id).map(\.id)) == [chapter.id, lastSection.id],
+      "The folded headings a capture goes under are the last one's and those of a higher level above it")
+let unfolded = try store.saveCapture(CaptureSnapshot(title: "Shows"), destinationID: foldedList.id)
+check(unfolded.parentID == nil && !chapter.isCollapsed && !lastSection.isCollapsed && earlier.isCollapsed
+      && store.foldedSections(atEndOf: foldedList.id).isEmpty,
+      "A capture under folded headings opens them, so it shows wherever the list is opened, and leaves the others folded")
 let parsed = try store.saveCapture(preview, destinationID: nil)
 check(parsed.listID == inbox.id && parsed.dueDate == preview.date && parsed.includesTime, "Inbox fallback preserves exact preview schedule")
 check(parsed.recurrence != nil && store.labels(for: parsed).map(\.name) == ["home"], "Capture persists labels and recurrence")

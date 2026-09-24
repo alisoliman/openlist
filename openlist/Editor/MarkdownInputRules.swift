@@ -157,6 +157,54 @@ enum MarkdownInputRules {
     /// would lose whitespace, code fences, or unsupported indentation, keep
     /// the complete source as one literal paragraph instead of guessing.
     static func parseClipboard(_ source: String) -> [ParsedLine] {
+        readingAsLines(source) ?? (source.isEmpty ? [] : [ParsedLine(kind: .paragraph, text: source, depth: 0, isCompleted: false)])
+    }
+
+    /// Pasted text as a list document's lines, which hold one line each, as
+    /// the design's do. Markdown that reads as lines comes in as
+    /// `parseClipboard` reads it. Anything else comes in as written, a text
+    /// line for each of its lines, trimmed as the design's commit trims a
+    /// line, and a fenced block as one code line, which keeps its breaks and
+    /// indent. The breaks around the text, as copied lines end with one,
+    /// aren't lines.
+    static func pasteLines(_ text: String) -> [ParsedLine] {
+        let source = text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .newlines)
+        if let lines = readingAsLines(source) { return lines }
+        var result: [ParsedLine] = []
+        // The open fence's character and length, its indent, and the code so far.
+        var fence: (mark: Character, length: Int, indent: Int)?
+        var code: [String] = []
+        func closeFence() {
+            if code.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+                result.append(ParsedLine(kind: .code, text: code.joined(separator: "\n"), depth: 0, isCompleted: false))
+            }
+            fence = nil
+            code = []
+        }
+        for line in source.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let run = trimmed.prefix { $0 == trimmed.first }
+            if let open = fence {
+                if run.first == open.mark, run.count >= open.length, run.count == trimmed.count {
+                    closeFence()
+                } else {
+                    // Code lines lose only the fence's own indent.
+                    code.append(String(line.dropFirst(min(open.indent, line.prefix { $0 == " " }.count))))
+                }
+            } else if let mark = run.first, mark == "`" || mark == "~", run.count >= 3,
+                      mark == "~" || !trimmed.dropFirst(run.count).contains("`") {
+                fence = (mark, run.count, line.prefix { $0 == " " }.count)
+            } else if !trimmed.isEmpty {
+                result.append(ParsedLine(kind: .paragraph, text: trimmed, depth: 0, isCompleted: false))
+            }
+        }
+        // A fence left open runs to the end, as Markdown's does.
+        if fence != nil { closeFence() }
+        return result
+    }
+
+    /// `source` as Markdown lines, or nil when it doesn't read as them.
+    private static func readingAsLines(_ source: String) -> [ParsedLine]? {
         let lines = source.components(separatedBy: .newlines)
         let parsed = parseMarkdown(source)
         let unsupported = source.contains("```") || source.contains("~~~")
@@ -173,10 +221,7 @@ enum MarkdownInputRules {
             return (index == 0 && line.depth != 0) || line.depth > previousDepth + 1
                 || (line.depth > 0 && line.kind == .paragraph)
         }
-        if unsupported || malformedIndent {
-            return source.isEmpty ? [] : [ParsedLine(kind: .paragraph, text: source, depth: 0, isCompleted: false)]
-        }
-        return parsed
+        return unsupported || malformedIndent ? nil : parsed
     }
 
     static func parseMarkdown(_ source: String) -> [ParsedLine] {

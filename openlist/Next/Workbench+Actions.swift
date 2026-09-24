@@ -801,7 +801,10 @@ extension Workbench {
         let parse = captureParse()
         guard !parse.title.isEmpty else { return nil }
         // The task goes at the end of its list's document, where the add row
-        // sits, wherever it was captured from, as the design's does.
+        // sits, wherever it was captured from, as the design's does. A folded
+        // heading it goes under opens, and folds again on Undo.
+        let folded = (store.list(id: captureListID) ?? store.inboxList())
+            .map { store.foldedSections(atEndOf: $0.id).map(\.id) } ?? []
         let block: Block
         do {
             block = try saveCapture(parse)
@@ -821,12 +824,12 @@ extension Workbench {
             }
         }()
         let name = list?.displayTitle ?? "Inbox"
-        registerCreationUndo("Added to \(name)", taskID: block.id)
+        registerCreationUndo("Added to \(name)", taskID: block.id, opened: folded)
         snap("Added to \(name)", icon: "plus.circle", tone: .accent, ids: [block.id],
              destination: here || list == nil ? nil : TrayDestination(label: "Show", route: route(for: list!)))
         flash(\.fresh, [block.id], for: 1200)
         pulse(list: block.listID)
-        // At the end of the document on show, under a folded last heading, it opens.
+        // The document on show lets go of the rows it drew without the task.
         if navigator.documentListID == block.listID, document?.document.listID == block.listID {
             document?.unfold(toShow: block.id)
         }
@@ -837,9 +840,15 @@ extension Workbench {
     /// Undo takes a capture back as though it was never added: no Trash
     /// entry, reminder or history. Redo brings back the same task. One that
     /// has since gained subtasks, files, a plan or work goes to Trash instead,
-    /// so nothing added to it is lost. The closures keep the id, never the model.
-    private func registerCreationUndo(_ label: String, taskID id: UUID) {
+    /// so nothing added to it is lost. The headings the capture `opened`
+    /// fold again, and open again on Redo. The closures keep the id, never the model.
+    private func registerCreationUndo(_ label: String, taskID id: UUID, opened headings: [UUID] = []) {
         let taken = CreationUndo()
+        let fold: @MainActor (Store, Bool) -> Void = { store, folded in
+            for heading in headings.compactMap({ store.block(id: $0) }) where BlockTree.sectionLevel(of: heading.kind) != nil {
+                store.setCollapsed(folded, for: heading)
+            }
+        }
         registerUndo(label, undo: { workbench in
             let store = workbench.store
             if let task = store.discardCapturedTask(id: id) {
@@ -847,6 +856,7 @@ extension Workbench {
             } else if let block = store.block(id: id) {
                 _ = store.trashBlocks([block])
             }
+            fold(store, true)
         }, redo: { workbench in
             if let task = taken.task {
                 taken.task = nil
@@ -854,6 +864,7 @@ extension Workbench {
             } else {
                 _ = workbench.store.restoreTrash(ids: [id])
             }
+            fold(workbench.store, false)
         })
     }
 
