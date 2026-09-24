@@ -22,7 +22,7 @@ struct AppCommands: Commands {
         let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
 
         CommandMenu("Work") {
-            Button("Show Work") { env.calendar.showWork() }
+            Button("Show Work") { inMainWindow { env.calendar.showWork() } }
             // As Task ▸ Start Working, the palette's and the row menu's: the
             // notch shows the work, and a failure the tray.
             Button("Start Selected Task") { act { env.workbench.startWork($0[0]) } }
@@ -52,17 +52,13 @@ struct AppCommands: Commands {
         }
         // File ▸ replaces the template "New Window" with task and list creation.
         CommandGroup(replacing: .newItem) {
-            Button("New Task…") {
-                openWindow(id: WindowID.main)
-                env.presentTaskCapture()
-                NSApp.activate(ignoringOtherApps: true)
-            }
+            Button("New Task…") { inMainWindow { env.presentTaskCapture() } }
                 .keyboardShortcut("n", modifiers: .command)
 
-            Button("New List") { newList() }
+            Button("New List") { inMainWindow(newList) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
 
-            Button("New Section") { env.workbench.createSection() }
+            Button("New Section") { inMainWindow { env.workbench.createSection() } }
                 .keyboardShortcut("n", modifiers: [.command, .option])
 
             Divider()
@@ -81,27 +77,35 @@ struct AppCommands: Commands {
         // Edit ▸ find.
         CommandGroup(after: .textEditing) {
             Divider()
-            Button("Search") { env.navigator.isSearchOpen = true }
+            Button("Search") { inMainWindow { env.navigator.isSearchOpen = true } }
                 .keyboardShortcut("f", modifiers: .command)
 
             // The palette, named as the toolbar names it.
-            Button("Actions…") { env.navigator.isCommandPaletteOpen = true }
+            Button("Actions…") { inMainWindow { env.navigator.isCommandPaletteOpen = true } }
                 .keyboardShortcut("k", modifiers: .command)
         }
 
         // Format ▸ inline styling. These actions travel the responder chain to
         // the focused block editor, which implements the selectors itself.
+        // They style selected text, so they're on only while a line in the
+        // main window has some (SwiftUI's items skip AppKit's validation).
+        let formats = env.isMainWindowKey && InlineFormatting.shared.hasSelection
         CommandMenu("Format") {
             Button("Bold") { sendToResponder("toggleBold:") }
                 .keyboardShortcut("b", modifiers: .command)
+                .disabled(!formats)
             Button("Italic") { sendToResponder("toggleItalic:") }
                 .keyboardShortcut("i", modifiers: .command)
+                .disabled(!formats)
             Button("Strikethrough") { sendToResponder("toggleStrikethrough:") }
                 .keyboardShortcut("x", modifiers: [.command, .shift])
+                .disabled(!formats)
             Button("Inline Code") { sendToResponder("toggleInlineCode:") }
                 .keyboardShortcut("e", modifiers: .command)
+                .disabled(!formats)
             Button("Add Link…") { sendToResponder("promptForLink:") }
                 .keyboardShortcut("l", modifiers: .command)
+                .disabled(!formats)
 
             Divider()
 
@@ -131,9 +135,12 @@ struct AppCommands: Commands {
             Button(reopens ? "Reopen" : "Mark as Done") { env.send(.toggleCompletion) }
                 .keyboardShortcut("d", modifiers: .command)
                 .disabled(targets.isEmpty)
+            // ⌘↩ finishes a note being written in the list document, as the
+            // design's does. A disabled item leaves the key to the note, where
+            // an enabled one would take it first.
             Button("Open Details") { env.send(.openDetails) }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(single == nil)
+                .disabled(single == nil || env.workbench.editingNoteID != nil)
 
             Divider()
 
@@ -195,19 +202,19 @@ struct AppCommands: Commands {
 
         // View ▸ navigation, in sidebar order.
         CommandGroup(before: .sidebar) {
-            Button("Inbox") { env.workbench.go(.inbox) }
+            Button("Inbox") { inMainWindow { env.workbench.go(.inbox) } }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("Today") { env.workbench.go(.today) }
+            Button("Today") { inMainWindow { env.workbench.go(.today) } }
                 .keyboardShortcut("2", modifiers: .command)
-            Button("Calendar") { env.workbench.go(.calendar) }
+            Button("Calendar") { inMainWindow { env.workbench.go(.calendar) } }
                 .keyboardShortcut("3", modifiers: .command)
-            Button("Tasks") { env.workbench.go(.tasks) }
+            Button("Tasks") { inMainWindow { env.workbench.go(.tasks) } }
                 .keyboardShortcut("4", modifiers: .command)
-            Button("Lists") { env.workbench.go(.lists) }
+            Button("Lists") { inMainWindow { env.workbench.go(.lists) } }
                 .keyboardShortcut("5", modifiers: .command)
-            Button("Activity") { env.workbench.go(.activity) }
+            Button("Activity") { inMainWindow { env.workbench.go(.activity) } }
                 .keyboardShortcut("6", modifiers: .command)
-            Button("Trash") { env.workbench.go(.trash) }
+            Button("Trash") { inMainWindow { env.workbench.go(.trash) } }
 
             Divider()
 
@@ -234,7 +241,7 @@ struct AppCommands: Commands {
         }
 
         CommandGroup(replacing: .help) {
-            Button("Keyboard Shortcuts") { env.navigator.isShortcutSheetOpen = true }
+            Button("Keyboard Shortcuts") { inMainWindow { env.navigator.isShortcutSheetOpen = true } }
                 .keyboardShortcut("/", modifiers: .command)
         }
     }
@@ -305,9 +312,18 @@ struct AppCommands: Commands {
     /// The main window's Settings page, over whatever was open. With the main
     /// window key, NextKeyMonitor takes ⌘, before the menu does.
     private func showSettings() {
+        inMainWindow {
+            if env.workbench.captureOpen { env.workbench.closeCapture() }
+            env.workbench.go(.settings)
+        }
+    }
+
+    /// Runs `body` in the main window, opening it again if it was closed, and
+    /// brings Openlist forward: what these items show is that window's, and
+    /// would otherwise wait unseen until it opened again.
+    private func inMainWindow(_ body: () -> Void) {
         openWindow(id: WindowID.main)
-        if env.workbench.captureOpen { env.workbench.closeCapture() }
-        env.workbench.go(.settings)
+        body()
         NSApp.activate(ignoringOtherApps: true)
     }
 

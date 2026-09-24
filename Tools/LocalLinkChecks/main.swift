@@ -106,7 +106,8 @@ check(navigator.selection == [duplicate.id] && navigator.rowSelection.scopeID ==
       "Fixture starts with another line selected in a document")
 links.receive(taskURL)
 check(navigator.rowSelection.scopeID == nil, "Exact task link clears the stale selection's scope")
-check(navigator.selection == [taskID] && navigator.openTaskID == taskID, "Exact task link selects its target for editing")
+check(navigator.selection.isEmpty && navigator.openTaskID == taskID,
+      "Exact task link opens its target in the inspector, with no line left selected, as a search hit lands")
 
 let firstActivation = navigator.searchActivation
 links.windowReady(true)

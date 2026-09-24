@@ -409,6 +409,7 @@ struct BlockTextView: NSViewRepresentable {
                   let view = notification.object as? BlockNSTextView
             else { return }
             updateSlashQuery(in: view)
+            InlineFormatting.shared.update(view, focused: view.window?.firstResponder === view)
         }
 
         func textDidBeginEditing(_ notification: Notification) {
@@ -553,6 +554,25 @@ struct BlockTextView: NSViewRepresentable {
 
 // MARK: - The text view
 
+/// Whether the line being written has text selected, which Format ▸'s inline
+/// styles act on. SwiftUI's menu items take their state only from `.disabled`,
+/// never from AppKit's validation, so the line reports it here.
+@Observable @MainActor
+final class InlineFormatting {
+    static let shared = InlineFormatting()
+    private(set) var hasSelection = false
+    /// The line that last had the keyboard.
+    @ObservationIgnored private weak var line: NSTextView?
+
+    /// `view`'s selection while it has the keyboard. Another line's report
+    /// that it doesn't leaves the one that has it alone.
+    func update(_ view: NSTextView, focused: Bool) {
+        if focused { line = view } else if line == nil || line === view { line = nil } else { return }
+        let selected = focused && view.selectedRange().length > 0
+        if selected != hasSelection { hasSelection = selected }
+    }
+}
+
 /// Commands the outline's slash menu understands while it is on screen.
 enum SlashMenuCommand {
     case next, previous, confirm, dismiss
@@ -603,6 +623,7 @@ final class BlockNSTextView: NSTextView {
             DispatchQueue.main.async { [weak self, weak window] in
                 guard let self, self.window == nil, let storage = self.textStorage else { return }
                 if window?.firstResponder === self { window?.makeFirstResponder(nil) }
+                InlineFormatting.shared.update(self, focused: false)
                 self.coordinator?.parent.callbacks.onEndEditing(storage)
             }
         }
@@ -912,6 +933,7 @@ final class BlockNSTextView: NSTextView {
         if result {
             isContinuousSpellCheckingEnabled = true
             coordinator?.parent.callbacks.onFocus()
+            InlineFormatting.shared.update(self, focused: true)
         }
         return result
     }
@@ -920,6 +942,7 @@ final class BlockNSTextView: NSTextView {
         let result = super.resignFirstResponder()
         if result {
             isContinuousSpellCheckingEnabled = false
+            InlineFormatting.shared.update(self, focused: false)
             // Turning checking off leaves the marks it drew; clear them too.
             if let storage = textStorage, storage.length > 0 {
                 layoutManager?.removeTemporaryAttribute(.spellingState,

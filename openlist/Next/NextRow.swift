@@ -738,7 +738,8 @@ struct NXTaskMenu: View {
         // Star toggles, so it reads every target as Task ▸ does: all starred unstars them.
         let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
         Button(unstars ? "Unstar" : "Star", systemImage: unstars ? "star.slash" : "star") { workbench.star(ids) }
-        Menu("Move to") {
+        // The palette's subdirectory_arrow_right.
+        Menu("Move to", systemImage: "arrow.turn.down.right") {
             ForEach(library.lists, id: \.id) { list in
                 NXListMenuButton(list: list) { workbench.move(ids, to: list.id) }
             }
@@ -747,7 +748,7 @@ struct NXTaskMenu: View {
         if ids.count == 1 {
             Button("Open Details", systemImage: "sidebar.right") { workbench.inspect(ids[0]) }
             Button("Start Working", systemImage: "play") { workbench.startWork(ids[0]) }
-            CopyItemLinkButton(target: .task(ids[0]))
+            CopyItemLinkButton(target: .task(ids[0]), iconed: true)
             Button("Copy Text", systemImage: "doc.on.clipboard") { workbench.copyText(ids[0]) }
             Button("Copy Content and Subtasks", systemImage: "list.bullet.clipboard") { workbench.copyContent(ids[0]) }
             Divider()

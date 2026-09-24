@@ -184,14 +184,14 @@ struct MenuBarView: View {
     }
 
     /// Due on an earlier day, as the design's Overdue group; a time already
-    /// past today stays under Today, its time chip red.
+    /// past today stays under Today, as it does on the rows.
     private static func isOverdue(_ task: Block) -> Bool {
         task.dueDate.map { NXFormat.dayOffset($0) < 0 } ?? false
     }
 }
 
 /// A compact task row inside the menu bar popover, like the inspector's
-/// subtask rows, with the due chip rows show and the rows' density.
+/// subtask rows, with the time and due chips rows show and the rows' density.
 struct MenuBarTaskRow: View {
     let block: Block
 
@@ -220,7 +220,9 @@ struct MenuBarTaskRow: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let chip = dueChip { NXChip(chip: chip) }
+            HStack(spacing: 6) {
+                ForEach(dueChips) { NXChip(chip: $0) }
+            }
         }
         .padding(.vertical, style.rowVerticalPadding)
         .padding(.horizontal, 8)
@@ -231,18 +233,12 @@ struct MenuBarTaskRow: View {
         .accessibilityAction(named: "Open task", open)
     }
 
-    /// A time today, as rows show it: filled, and red once it has passed.
-    /// Otherwise the day, red when it was an earlier one.
-    private var dueChip: NXChipModel? {
-        guard let due = block.dueDate else { return nil }
-        let offset = NXFormat.dayOffset(due)
-        if block.includesTime, offset == 0 {
-            return NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill",
-                               tone: due < .now ? .over : .neutral, fill: true)
-        }
-        return NXChipModel(id: "due", label: NXFormat.dueLabel(due),
-                           icon: offset < 0 ? "exclamationmark.circle.fill" : "calendar",
-                           tone: offset < 0 ? .over : .accent, fill: offset < 0)
+    /// The rows' own time and due chips (`NXRowChips`): a time stays grey
+    /// all day beside the accent Today, and only an earlier day reads as late.
+    private var dueChips: [NXChipModel] {
+        NXRowChips.chips(for: block, options: NXRowOptions(showList: false),
+                         library: NextLibrary(lists: [], sections: [], labels: [], tasks: []), workbench: env.workbench)
+            .filter { $0.id == "time" || $0.id == "due" }
     }
 
     /// As a search hit opens a task: on its list's screen, the Inbox's being

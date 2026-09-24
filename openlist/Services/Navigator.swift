@@ -138,7 +138,7 @@ final class Navigator {
     var openTaskID: UUID?
 
     /// Blocks selected in the current document: the line being written, or
-    /// the one a reveal lands on. The document's menu commands act on them.
+    /// the line a reveal lands on. The document's menu commands act on them.
     var selection: Set<UUID> = []
     private(set) var rowSelection = BlockSelection()
 
@@ -179,7 +179,9 @@ final class Navigator {
         let revealsLine = request.blockID != nil && request.taskID == nil
         revealedDocumentListID = request.listID != inboxListID || revealsLine ? request.listID : nil
         openTaskID = request.taskID
-        selection = request.blockID.map { [$0] } ?? []
+        // Only a line is selected; a task lands on the workbench's focus, as
+        // a search hit does, so the targets follow the focus from there.
+        selection = revealsLine ? request.blockID.map { [$0] } ?? [] : []
         contentReveal = request
         searchActivation &+= 1
     }
@@ -190,6 +192,14 @@ final class Navigator {
     func finishReveal() {
         if let id = contentReveal?.blockID, selection == [id] { clearSelection() }
         contentReveal = nil
+    }
+
+    /// Lets go of the line a reveal selected once the focus moves to a row,
+    /// as the design's targets follow the focus. A line being written keeps
+    /// its selection, which leaving it clears.
+    func releaseRevealSelection() {
+        guard rowSelection.scopeID == nil, !selection.isEmpty else { return }
+        selection.removeAll()
     }
 
     /// A page in the history, and where it was scrolled to when it was left.

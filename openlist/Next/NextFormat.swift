@@ -224,4 +224,66 @@ struct CaptureParse {
             recurrence: schedule?.recurrence,
             labels: Array(Set(labels + extra)).sorted())
     }
+
+    /// The capture card's chips for `preview`, what this text saves, as the
+    /// design's capChips: each token's where it was typed, a typed day as
+    /// "Fri 25 · in 2 days", and Today first when the task is due today with
+    /// no day typed and `forToday`. A time or repeat typed alone shows no day,
+    /// unless the day it saves isn't today: a time already past, or a repeat's
+    /// first day, which the design never saves.
+    func chips(for preview: CaptureSnapshot, forToday: Bool, now: Date = .now) -> [CaptureChip] {
+        var chips: [CaptureChip] = []
+        var showsDay = false, showsTime = false, showsRepeat = false, showsPriority = false
+        let typesDay = first(.date) != nil
+        func day(_ date: Date) -> CaptureChip {
+            let label = "\(NXFormat.dueLabel(date, now: now)) · \(NXFormat.relativeDay(date, now: now))"
+            return CaptureChip(id: "date-\(label)", kind: .day, label: label)
+        }
+        func impliedDay() {
+            guard !typesDay, !showsDay, let date = preview.date, NXFormat.dayOffset(date, now: now) != 0 else { return }
+            chips.append(day(date))
+            showsDay = true
+        }
+        for (index, mark) in marks.enumerated() {
+            let id = "\(index)-\(mark.kind.rawValue)-\(mark.raw.lowercased())"
+            switch mark.kind {
+            case .date:
+                guard !showsDay, let date = preview.date else { continue }
+                chips.append(day(date))
+                showsDay = true
+            case .time:
+                guard !showsTime, preview.includesTime, let date = preview.date else { continue }
+                impliedDay()
+                chips.append(CaptureChip(id: "time", kind: .time, label: NXFormat.clock(date)))
+                showsTime = true
+            case .repeatRule:
+                guard !showsRepeat, preview.recurrence != nil else { continue }
+                impliedDay()
+                chips.append(CaptureChip(id: "repeat", kind: .repeatRule, label: mark.raw))
+                showsRepeat = true
+            case .label:
+                chips.append(CaptureChip(id: id, kind: .label, label: String(mark.raw.dropFirst())))
+            case .priority:
+                // The first one, which is the one Return saves.
+                guard !showsPriority, let priority else { continue }
+                chips.append(CaptureChip(id: "priority", kind: .priority(priority), label: priority.title))
+                showsPriority = true
+            case .estimate:
+                chips.append(CaptureChip(id: id, kind: .estimate, label: "\(mark.raw.dropFirst()) estimate"))
+            }
+        }
+        if forToday, !showsDay, let date = preview.date, NXFormat.dayOffset(date, now: now) == 0 {
+            chips.insert(CaptureChip(id: "date-Today", kind: .day, label: "Today"), at: 0)
+        }
+        return chips
+    }
+}
+
+/// One of the capture card's chips: what it says and what it stands for,
+/// which gives it its icon and tone.
+struct CaptureChip: Equatable {
+    enum Kind: Equatable { case day, time, repeatRule, label, priority(TaskPriority), estimate }
+    let id: String
+    let kind: Kind
+    let label: String
 }

@@ -70,7 +70,6 @@ final class NXOverlayState {
 /// key monitor drives their arrows, Return, Tab and Escape.
 struct NextOverlays: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let overlays: NXOverlayState
 
     var body: some View {
@@ -91,9 +90,11 @@ struct NextOverlays: View {
                 }
             }
         }
-        .animation(style.ease(140), value: workbench.captureOpen)
-        .animation(style.ease(140), value: navigator.isSearchOpen)
-        .animation(style.ease(140), value: navigator.isCommandPaletteOpen)
+        // The design's fadeIn and popIn play at their own speeds whatever the
+        // Motion setting, which paces only rows, screens and the inspector.
+        .animation(NX.cssEase(140), value: workbench.captureOpen)
+        .animation(NX.cssEase(140), value: navigator.isSearchOpen)
+        .animation(NX.cssEase(140), value: navigator.isCommandPaletteOpen)
         // Switching straight from one overlay to another keeps the first
         // remembered responder: the flags only all drop on the final close.
         .onChange(of: workbench.captureOpen || navigator.isSearchOpen || navigator.isCommandPaletteOpen) { wasOpen, isOpen in
@@ -143,7 +144,7 @@ private struct NXOverlayBackdrop<Card: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .transition(.opacity)
-        .onAppear { withAnimation(style.ease(180)) { shown = true } }
+        .onAppear { withAnimation(NX.ease(180)) { shown = true } }
     }
 }
 
@@ -444,34 +445,21 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     }
 
     /// Every token previews as soon as it's typed, from the same parse and
-    /// draft Return saves, so the chips show what it will store.
+    /// draft Return saves, so the chips show what it will store, in the order
+    /// the tokens were typed (`CaptureParse.chips`).
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
-        let preview = draft.capturePreview(parse)
-        var chips: [NXChipModel] = []
-        if let date = preview.date {
-            let due = NXFormat.dueLabel(date)
-            let relative = NXFormat.relativeDay(date)
-            let label = relative.caseInsensitiveCompare(due) == .orderedSame ? due : "\(due) · \(relative)"
-            chips.append(NXChipModel(id: "date-\(label)", label: label, icon: "calendar", tone: .accent))
-            if preview.includesTime {
-                chips.append(NXChipModel(id: "time", label: NXFormat.clock(date), icon: "bell", tone: .accent))
-            }
-        }
-        if let recurrence = preview.recurrence {
-            chips.append(NXChipModel(id: "repeat", label: parse.first(.repeatRule)?.raw ?? recurrence.displayText,
-                                     icon: "repeat", tone: .accent))
-        }
-        for (index, mark) in parse.marks.enumerated() {
-            let id = "\(index)-\(mark.kind.rawValue)-\(mark.raw.lowercased())"
-            switch mark.kind {
+        var chips = parse.chips(for: draft.capturePreview(parse), forToday: draft.captureForToday).map { chip in
+            switch chip.kind {
+            case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent)
+            case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
+            case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
             case .label:
-                let name = String(mark.raw.dropFirst())
-                let color = library.labels.first { $0.name.lowercased() == name.lowercased() }?.nxColor ?? Color(hex: 0x12807F)
-                chips.append(NXChipModel(id: id, label: name, tone: .label(color)))
-            case .estimate:
-                chips.append(NXChipModel(id: id, label: "\(mark.raw.dropFirst()) estimate", icon: "timer", tone: .accent))
-            case .date, .time, .repeatRule, .priority:
-                break
+                NXChipModel(id: chip.id, label: chip.label, tone: .label(
+                    library.labels.first { $0.name.lowercased() == chip.label.lowercased() }?.nxColor ?? Color(hex: 0x12807F)))
+            case let .priority(priority):
+                NXChipModel(id: chip.id, label: chip.label, icon: "exclamationmark", tone: Self.priorityTone(priority),
+                            fill: priority == .high)
+            case .estimate: NXChipModel(id: chip.id, label: chip.label, icon: "timer", tone: .accent)
             }
         }
         // A label screen adds its own label, unless the text names it already.
@@ -479,16 +467,15 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
            !parse.labels.contains(label.name.lowercased()) {
             chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor)))
         }
-        if let priority = parse.priority {
-            let tone: NXTone = switch priority {
-            case .high: .over
-            case .medium: .amber
-            case .low, .none: .neutral
-            }
-            chips.append(NXChipModel(id: "priority", label: priority.title, icon: "exclamationmark", tone: tone,
-                                     fill: priority == .high))
-        }
         return chips
+    }
+
+    private static func priorityTone(_ priority: TaskPriority) -> NXTone {
+        switch priority {
+        case .high: .over
+        case .medium: .amber
+        case .low, .none: .neutral
+        }
     }
 
     private func destination(_ list: TaskList, isOn: Bool) -> some View {
@@ -792,12 +779,15 @@ private struct NXSearchRow: View {
     /// The title, the matched passage and where it is, as VoiceOver reads them.
     static func spoken(_ hit: SearchHit) -> String {
         let context = hit.context + (hit.dueDate.map { ", " + NXFormat.dueLabel($0) } ?? "")
+            + (hit.field == .note ? ", matched in note" : "")
         return [hit.title, hit.snippet, context].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    /// Where the hit is, after its list's icon, as the design's `emoji + " " + name`.
+    /// Where the hit is, after its list's icon, as the design's `emoji + " " + name`,
+    /// then its due day, and "matched in note" when only its note matched.
     private var context: Text {
         let text = hit.context + (hit.dueDate.map { " · " + NXFormat.dueLabel($0) } ?? "")
+            + (hit.field == .note ? " · matched in note" : "")
         guard let icon = hit.listIcon else { return Text(verbatim: text) }
         return Text("\(NXListGlyph.text(icon, size: 11)) \(text)")
     }

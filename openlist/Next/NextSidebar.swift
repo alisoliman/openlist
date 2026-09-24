@@ -22,6 +22,17 @@ private nonisolated struct NXSidebarDrop: Transferable {
     }
 }
 
+/// What the Inbox takes: only rows, as it can't take a list.
+private nonisolated struct NXSidebarRowDrop: Transferable {
+    let value: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.blockTypeIdentifier)) { data in
+            NXSidebarRowDrop(value: String(decoding: data, as: UTF8.self))
+        }
+    }
+}
+
 /// What a sidebar section takes: only a list, so a row dragged over it
 /// marks no drop it would refuse.
 private nonisolated struct NXSidebarListDrop: Transferable {
@@ -154,12 +165,16 @@ struct NextSidebar: View {
         }
     }
 
+    @ViewBuilder
     private func navRow(_ item: NavItem) -> some View {
         let on = route == item.route
-        let pulsing = item.route == .inbox && workbench.pulseListID != nil && workbench.pulseListID == library.inbox?.id
+        // The Inbox is a list too: rows dragged onto it move there, as onto any list.
+        let inbox = item.route == .inbox ? library.inbox : nil
+        let pulsing = inbox != nil && workbench.pulseListID == inbox?.id
         let count = count(for: item.route)
-        return NXSidebarRow(on: on, pulsing: pulsing, height: 29, title: item.label,
-                            value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
+        let row = NXSidebarRow(on: on, pulsing: pulsing, ring: inbox != nil && dropTargetID == inbox?.id ? style.accent.opacity(0.6) : nil,
+                               height: 29, title: item.label,
+                               value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
             // Sized to the design's 16px Material glyphs, which draw about 12pt wide.
             Image(systemName: on ? item.filledIcon : item.icon)
                 .font(.system(size: 12, weight: on ? .medium : .regular))
@@ -172,6 +187,13 @@ struct NextSidebar: View {
             if count > 0 { countText(count, pulsing: pulsing) }
         } action: {
             workbench.go(item.route)
+        }
+        if let inbox {
+            row.dropDestination(for: NXSidebarRowDrop.self) { items, _ in
+                dropRows(items.map(\.value), on: inbox.id)
+            } isTargeted: { setDropTarget(inbox.id, $0) }
+        } else {
+            row
         }
     }
 
@@ -342,15 +364,19 @@ struct NextSidebar: View {
             workbench.moveList(dragged, toSection: sectionID, above: list)
             return true
         }
-        // Rows move only in this library's session payload. A bare row ID,
-        // from another app or library, is not one.
+        return dropRows(items, on: list.id)
+    }
+
+    /// Rows move only in this library's session payload. A bare row ID,
+    /// from another app or library, is not one.
+    private func dropRows(_ items: [String], on listID: UUID) -> Bool {
         let session = env.navigator.blockDragSessionID
         let ids = items.flatMap { item -> [UUID] in
             guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session) else { return [] }
             return ids
         }
         guard !ids.isEmpty else { return false }
-        workbench.move(ids, to: list.id)
+        workbench.move(ids, to: listID)
         return true
     }
 

@@ -111,12 +111,20 @@ struct NextToolbar: View {
         .popover(isPresented: $calendar.isWorkPanelPresented, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
             WorkPopover().environment(env).environment(\.nextStyle, style)
         }
+        // Asked for as the window opened, as Work ▸ Show Work does with it
+        // closed, the panel shows once the bar it hangs from is up.
+        .onAppear {
+            guard calendar.isWorkPanelPresented else { return }
+            calendar.isWorkPanelPresented = false
+            DispatchQueue.main.async { calendar.isWorkPanelPresented = true }
+        }
         .onChange(of: recordingAnnouncement) { _, announcement in
             guard let announcement else { return }
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                 userInfo: [.announcement: announcement, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         }
-        .animation(style.ease(420), value: working)
+        // The design's notchDrop plays at its own speed whatever the Motion setting.
+        .animation(NX.ease(420), value: working)
         .animation(.easeOut(duration: 0.2), value: workbench.undoLabel)
         .zIndex(40)
     }
@@ -130,7 +138,7 @@ struct NextToolbar: View {
         }
         if let session = calendar.activeSession { return "Recording work on \(session.title)." }
         if let summary = calendar.workCompletion { return "Completed \(summary.title). Recording stopped." }
-        if let task = calendar.resumableTask { return "Recording stopped for \(task.displayTitle). The task is still open." }
+        if let task = calendar.resumableTask { return "Paused \(task.displayTitle). No time is being recorded." }
         return nil
     }
 
@@ -178,34 +186,18 @@ struct NXWorkNotch: View {
                                                                                   : env.workbench.defaultEstimate)) * 60
                 let over = elapsed > estimate
                 // The whole notch while the bar has room for it and a few words
-                // of the title; then just the timer and Stop; then nothing,
-                // rather than covering the crumb or the buttons.
+                // of the title; then, as the design's title shrinks to nothing,
+                // the notch without it, then without its chip too; then
+                // nothing, rather than covering the crumb or the buttons.
+                // Pause or Resume, Done and Stop stay while it shows.
                 ViewThatFits(in: .horizontal) {
                     NXNotchIdeal(titleRoom: 60) {
                         // Hugs its content up to 440 pt, and narrows (the title truncating) when the bar has less room.
                         NXWidthCap(440) {
                             HStack(spacing: 10) {
                                 panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: false)
-                                // What the work ran into, in red, takes the place of the time it was given, in amber.
-                                // Paused, the notch reads as the work did when it paused, as its block does.
-                                if let conflict = env.calendar.displayedWorkConflict, conflict.occurrenceID == task.occurrenceID {
-                                    let sentence = workbench.conflictLabel(conflict, inSentence: true)
-                                    extensionChip(workbench.conflictLabel(conflict), color: NX.redText, fill: NX.red.opacity(0.12))
-                                        .help(paused ? "Ran into \(sentence)" : "Still recording. Running into \(sentence)")
-                                        .accessibilityLabel((paused ? "Ran into " : "Running into ") + sentence)
-                                } else if let extended = env.calendar.displayedWorkExtension, extended.occurrenceID == task.occurrenceID {
-                                    extensionChip("+\(extended.minutes)m", color: NX.amberText, fill: NX.amber.opacity(0.16))
-                                        .help("Extended by \(extended.minutes) min")
-                                        .accessibilityLabel("Extended by \(extended.minutes) minutes")
-                                }
-                                controls {
-                                    notchButton(paused ? "play.fill" : "pause.fill", help: paused ? "Resume" : "Pause",
-                                                color: NX.ink(0.6), hover: NX.ink(0.06)) { workbench.toggleWorkPause() }
-                                    notchButton("checkmark", help: "Done", color: NX.green, hover: NX.green.opacity(0.12), weight: .bold) {
-                                        workbench.finishWork()
-                                    }
-                                    notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
-                                }
+                                chip(task, paused: paused)
+                                controls(paused: paused)
                             }
                             .padding(.leading, 14)
                             .padding(.trailing, 5)
@@ -213,17 +205,8 @@ struct NXWorkNotch: View {
                         }
                         .modifier(NXNotchChrome(progress: elapsed / estimate, over: over))
                     }
-                    // The Work panel it opens has pause, Done and the plan.
-                    HStack(spacing: 10) {
-                        panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: true)
-                        controls {
-                            notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
-                        }
-                    }
-                    .padding(.leading, 14)
-                    .padding(.trailing, 5)
-                    .frame(height: 38)
-                    .modifier(NXNotchChrome(progress: elapsed / estimate, over: over))
+                    compactNotch(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, chipped: true)
+                    compactNotch(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, chipped: false)
                     Color.clear.frame(width: 0, height: 0)
                 }
             }
@@ -265,11 +248,50 @@ struct NXWorkNotch: View {
         .accessibilityValue("\(NXFormat.mmss(elapsed)) of \(Int(estimate / 60)) minutes")
     }
 
-    /// The icon buttons after a hairline.
-    private func controls<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 1) { content() }
-            .padding(.leading, 5)
-            .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5, height: 22) }
+    /// The notch without its title, and without its chip unless `chipped`.
+    private func compactNotch(_ task: Block, paused: Bool, elapsed: Double, estimate: Double, over: Bool,
+                              chipped: Bool) -> some View {
+        HStack(spacing: 10) {
+            panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: true)
+            if chipped { chip(task, paused: paused) }
+            controls(paused: paused)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 5)
+        .frame(height: 38)
+        .modifier(NXNotchChrome(progress: elapsed / estimate, over: over))
+    }
+
+    /// What the work ran into, in red, in place of the time it was given, in
+    /// amber. Paused, the notch reads as the work did when it paused, as its block does.
+    @ViewBuilder
+    private func chip(_ task: Block, paused: Bool) -> some View {
+        let workbench = env.workbench
+        if let conflict = env.calendar.displayedWorkConflict, conflict.occurrenceID == task.occurrenceID {
+            let sentence = workbench.conflictLabel(conflict, inSentence: true)
+            extensionChip(workbench.conflictLabel(conflict), color: NX.redText, fill: NX.red.opacity(0.12))
+                .help(paused ? "Ran into \(sentence)" : "Still recording. Running into \(sentence)")
+                .accessibilityLabel((paused ? "Ran into " : "Running into ") + sentence)
+        } else if let extended = env.calendar.displayedWorkExtension, extended.occurrenceID == task.occurrenceID {
+            extensionChip("+\(extended.minutes)m", color: NX.amberText, fill: NX.amber.opacity(0.16))
+                .help("Extended by \(extended.minutes) min")
+                .accessibilityLabel("Extended by \(extended.minutes) minutes")
+        }
+    }
+
+    /// Pause or Resume, Done and Stop, after a hairline.
+    private func controls(paused: Bool) -> some View {
+        let workbench = env.workbench
+        return HStack(spacing: 1) {
+            notchButton(paused ? "play.fill" : "pause.fill", help: paused ? "Resume" : "Pause",
+                        color: NX.ink(0.6), hover: NX.ink(0.06)) { workbench.toggleWorkPause() }
+            notchButton("checkmark", help: "Done", color: NX.green, hover: NX.green.opacity(0.12), weight: .bold) {
+                workbench.finishWork()
+            }
+            notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
+        }
+        .padding(.leading, 5)
+        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5, height: 22) }
     }
 
     private func toggleWorkPanel() {
