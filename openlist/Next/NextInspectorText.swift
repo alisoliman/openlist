@@ -54,9 +54,10 @@ struct NXInspectorText: NSViewRepresentable {
     }
 
     /// Taken away while written, as the panel moves on to another task, the
-    /// view is never told it let the keyboard go; its typing leaves Undo all the same.
+    /// view is never told it let the keyboard go; its typing leaves Undo all
+    /// the same, and it tells the panel so itself.
     static func dismantleNSView(_ view: NXInspectorTextView, coordinator: Coordinator) {
-        view.dropTyping()
+        view.leave(replacedIn: coordinator.parent?.fields)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NXInspectorTextView, context: Context) -> CGSize? {
@@ -92,6 +93,11 @@ final class NXInspectorFields {
         }
     }
 
+    /// Whether the title or the note on screen has the keyboard.
+    fileprivate func isWriting(_ role: NXInspectorText.Role) -> Bool {
+        (role == .title ? title : note)?.isWriting == true
+    }
+
     /// Puts the caret at the end of the title or the note, as the design's
     /// ⇧Tab puts it at the end of the line the note is under.
     func write(_ role: NXInspectorText.Role) {
@@ -105,7 +111,9 @@ final class NXInspectorFields {
 /// document's note keys: Return breaks the line; Esc, Tab and ⌘Return
 /// finish it; ⇧Tab goes back to the title. The title stays one line, as
 /// the design's line input does: Return, Esc and ⇧Tab finish it, Tab goes
-/// on to the note, and a paste's or a drop's line breaks become spaces.
+/// on to the note when one shows, and a paste's or a drop's line breaks
+/// become spaces. At rest either shows its text alone, as the design's
+/// static text: no selection, and no spelling marks.
 final class NXInspectorTextView: NSTextView {
     private(set) var role: NXInspectorText.Role = .note
     var isDone = false {
@@ -116,8 +124,11 @@ final class NXInspectorTextView: NSTextView {
     /// Takes the keyboard as it lands in a window.
     var wantsKeyboard = false
     /// Whether it has the keyboard, and what the panel was last told.
-    private var isWriting = false
+    private(set) var isWriting = false
     private var reportedWriting = false
+    /// The note checks spelling only while it's written; what Edit ▸
+    /// Spelling set then holds for the next time.
+    private var checksSpelling = false
     /// Where its typing goes, still known once it has left the window.
     private weak var typingUndo: UndoManager?
 
@@ -180,11 +191,14 @@ final class NXInspectorTextView: NSTextView {
         view.isHorizontallyResizable = false
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
-        view.isContinuousSpellCheckingEnabled = role == .note
+        view.checksSpelling = role == .note
+        view.isContinuousSpellCheckingEnabled = false
         view.textContainerInset = NSSize(width: 0, height: leading(role) / 2)
         view.typingAttributes = view.attributes
         view.updateDragTypeRegistration()
         view.setAccessibilityLabel(role == .title ? "Task" : "Note")
+        // One line that Return finishes reads as a field; the note, a text area.
+        if role == .title { view.setAccessibilityRole(.textField) }
         view.setAccessibilityPlaceholderValue(view.placeholder)
         return view
     }
@@ -249,6 +263,7 @@ final class NXInspectorTextView: NSTextView {
     override func becomeFirstResponder() -> Bool {
         guard super.becomeFirstResponder() else { return false }
         isWriting = true
+        isContinuousSpellCheckingEnabled = checksSpelling
         typingUndo = undoManager
         updateDragTypeRegistration()
         reportWriting()
@@ -258,10 +273,22 @@ final class NXInspectorTextView: NSTextView {
     override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
         isWriting = false
+        // As a blurred input shows no selection. An overlay that borrows the
+        // keyboard noted it first, and puts it back when it closes.
+        setSelectedRange(NSRange(location: NSMaxRange(selectedRange()), length: 0))
+        stopCheckingSpelling()
         updateDragTypeRegistration()
         dropTyping()
         reportWriting()
         return true
+    }
+
+    /// The marks made while it was written go with the edit.
+    private func stopCheckingSpelling() {
+        checksSpelling = isContinuousSpellCheckingEnabled
+        isContinuousSpellCheckingEnabled = false
+        guard let layoutManager, let textStorage, textStorage.length > 0 else { return }
+        layoutManager.removeTemporaryAttribute(.spellingState, forCharacterRange: NSRange(location: 0, length: textStorage.length))
     }
 
     /// What was typed is saved as one step, which the typing mustn't stay
@@ -271,12 +298,21 @@ final class NXInspectorTextView: NSTextView {
         if let textStorage { (undoManager ?? typingUndo)?.removeAllActions(withTarget: textStorage) }
     }
 
+    /// Taken away while written: it lets the keyboard go without being told,
+    /// so the panel's focus, and Task ▸ Open Details, don't stay on it.
+    func leave(replacedIn fields: NXInspectorFields?) {
+        dropTyping()
+        guard isWriting else { return }
+        isWriting = false
+        reportWriting(replacedIn: fields)
+    }
+
     /// Tells the panel once the change is over, never in the middle of the
-    /// update that took the view away, and only what still holds by then.
-    /// A view taken away while written still says it let the keyboard go.
-    private func reportWriting() {
+    /// update that took the view away, and only what still holds by then:
+    /// not that a view taken away let go, once the one in its place has the keyboard.
+    private func reportWriting(replacedIn fields: NXInspectorFields? = nil) {
         DispatchQueue.main.async { [self] in
-            guard isWriting != reportedWriting else { return }
+            guard isWriting != reportedWriting, fields?.isWriting(role) != true else { return }
             reportedWriting = isWriting
             onFocus?(isWriting)
         }

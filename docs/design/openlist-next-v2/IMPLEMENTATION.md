@@ -189,7 +189,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   (in the design's line boxes, a done title struck through even while written; the note
   with the document note's keys, Return breaking its line, Esc, Tab or ⌘↩ finishing it and
   ⇧Tab going back to the title, and the title kept to one line, as a document line is:
-  Return or Esc finishes it, Tab goes on to the note and a paste's breaks become spaces;
+  Return or Esc finishes it, Tab goes on to the note when one shows, else finishes it, and
+  a paste's breaks become spaces;
   the note saved as the document saves one: trailing space goes, and an emptied note closes
   under its task; a click off the field, on a row, subtask, crumb or pill, ends the edit as
   a browser blurs an input, and the caret never follows to another task, so the keys act on

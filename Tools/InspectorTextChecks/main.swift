@@ -1,6 +1,7 @@
 // Checks the inspector's title and note text views (NXInspectorText): the
 // design's line boxes, a completed title's strike, the note's and the
-// title's keys, and a title kept to one line. Compiled against the real
+// title's keys, a title kept to one line, text at rest shown alone, and the
+// focus a view taken away gives back. Compiled against the real
 // openlist/Next/NextInspectorText.swift by Tools/run-inspector-text-checks.sh.
 
 import AppKit
@@ -147,6 +148,37 @@ MainActor.assumeIsolated {
                                  charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)!
     check(!note.performKeyEquivalent(with: plain), "Return alone is no key equivalent")
 
+    // At rest the text shows alone, as the design's static text: what was
+    // selected, and what was marked misspelled, go with the edit.
+    let rest = view(.note, "Buy mlik")
+    check(!rest.isContinuousSpellCheckingEnabled, "a note at rest checks no spelling")
+    check(window.makeFirstResponder(rest), "the note takes the keyboard to be checked")
+    check(rest.isContinuousSpellCheckingEnabled, "the note checks spelling while written")
+    rest.setSelectedRange(NSRange(location: 0, length: 3))
+    rest.layoutManager?.addTemporaryAttribute(.spellingState, value: 1, forCharacterRange: NSRange(location: 4, length: 4))
+    rest.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+    check(rest.selectedRange() == NSRange(location: 3, length: 0), "Esc leaves no selection showing", "\(rest.selectedRange())")
+    check(rest.layoutManager?.temporaryAttribute(.spellingState, atCharacterIndex: 5, effectiveRange: nil) == nil,
+          "Esc leaves no spelling marks")
+    check(!rest.isContinuousSpellCheckingEnabled, "a finished note checks no spelling")
+    check(window.makeFirstResponder(rest), "the note takes the keyboard to be selected")
+    rest.selectAll(nil)
+    // As a click off the field, or Tab, lets it go.
+    window.makeFirstResponder(nil)
+    check(rest.selectedRange() == NSRange(location: 8, length: 0), "letting go leaves no selection showing", "\(rest.selectedRange())")
+    // Edit ▸ Spelling turned off while written stays off the next time.
+    check(window.makeFirstResponder(rest), "the note takes the keyboard for Edit ▸ Spelling")
+    rest.isContinuousSpellCheckingEnabled = false
+    window.makeFirstResponder(nil)
+    check(window.makeFirstResponder(rest) && !rest.isContinuousSpellCheckingEnabled, "spelling turned off stays off")
+    window.makeFirstResponder(nil)
+    let unchecked = view(.title, "Buy mlik")
+    check(window.makeFirstResponder(unchecked) && !unchecked.isContinuousSpellCheckingEnabled, "the title checks no spelling")
+    window.makeFirstResponder(nil)
+    // One line that Return finishes reads as a field.
+    check(unchecked.accessibilityRole() == .textField, "the title reads as a text field")
+    check(rest.accessibilityRole() == .textArea, "the note reads as a text area")
+
     // What was typed goes as the edit's one step, not as typing under it.
     let undo = view(.note)
     check(window.makeFirstResponder(undo), "a fresh note takes the keyboard")
@@ -184,6 +216,40 @@ MainActor.assumeIsolated {
     check(hosted?.string == "One\nTwo" && hosted?.selectedRange().location == 7, "the note takes the caret at its end")
     hosted?.insertText("!", replacementRange: NSRange(location: NSNotFound, length: 0))
     check(box.text == "One\nTwo!", "typing reaches the draft", box.text)
+    window.makeFirstResponder(nil)
+
+    // Taken away while written, as the panel's title is for another task,
+    // the view says it let the keyboard go, unless the one in its place has
+    // it by then.
+    var titleFocus: [Bool] = []
+    let titleFields = NXInspectorFields()
+    let titleView = { (key: Int) in
+        AnyView(NXInspectorText(role: .title, text: .constant("Task \(key)"), caretColor: .systemPurple, fields: titleFields,
+                                onFocus: { titleFocus.append($0) })
+            .id(key)
+            .frame(width: 300))
+    }
+    let swapping = NSHostingView(rootView: titleView(1))
+    swapping.frame = NSRect(x: 0, y: 0, width: 300, height: 60)
+    host.addSubview(swapping)
+    swapping.layoutSubtreeIfNeeded()
+    titleFields.write(.title)
+    settle()
+    check(titleFocus == [true], "the hosted title says it has the keyboard", "\(titleFocus)")
+    swapping.rootView = titleView(2)
+    swapping.layoutSubtreeIfNeeded()
+    settle()
+    check(titleFocus == [true, false], "a title taken away while written says it let go", "\(titleFocus)")
+    titleFields.write(.title)
+    settle()
+    check((window.firstResponder as? NXInspectorTextView)?.string == "Task 2" && titleFocus == [true, false, true],
+          "the title in its place takes the keyboard", "\(titleFocus)")
+    swapping.rootView = titleView(3)
+    swapping.layoutSubtreeIfNeeded()
+    titleFields.write(.title)
+    settle()
+    check((window.firstResponder as? NXInspectorTextView)?.string == "Task 3" && titleFocus.last == true
+            && titleFocus.count == 4, "one taken away doesn't take the focus from the one in its place", "\(titleFocus)")
 }
 
 print(failures == 0 ? "✅ \(checks) inspector text checks passed" : "❌ \(failures)/\(checks) failed")

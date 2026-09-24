@@ -629,18 +629,16 @@ struct NextInspector: View {
                         Text(task.isStarred ? "Starred" : "Not starred")
                     }
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(task.isStarred ? NX.amberText : NX.ink(0.66))
                     // The design's 13px star sets the line, over its 11.5/1 text.
                     .frame(height: 13)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
-                    .background(task.isStarred ? NX.amber.opacity(0.16) : NX.ink(0.05),
-                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    // Built on the design's pill, it fades as the pill does.
+                    .modifier(NXInspectorPillFade(isOn: task.isStarred, on: (NX.amberText, NX.amber.opacity(0.16)),
+                                                  off: (NX.ink(0.66), NX.ink(0.05))))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                // Built on the design's pill, it fades over its 140ms too.
-                .animation(NX.cssEase(140), value: task.isStarred)
                 .help("Star (F)")
             }
         }
@@ -881,13 +879,37 @@ struct NXInspectorPill<Label: View>: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .lineLimit(1)
                 .frame(height: line)
-                .foregroundStyle(isOn ? .white : NX.ink(0.66))
                 .padding(padding)
-                .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .modifier(NXInspectorPillFade(isOn: isOn, on: (.white, style.accent), off: (NX.ink(0.66), NX.ink(0.05))))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // The design's `background 140ms ease, color 140ms ease`.
-        .animation(NX.cssEase(140), value: isOn)
+    }
+}
+
+/// The design's pill `transition: background 140ms ease, color 140ms ease`:
+/// the text's and the fill's colours fade, while the label, and the width it
+/// takes, change at once, as CSS moves neither. The colours follow in a step
+/// of their own, since an animation scoped to them wouldn't reach the text.
+private struct NXInspectorPillFade: ViewModifier {
+    let isOn: Bool
+    let on: (text: Color, fill: Color)
+    let off: (text: Color, fill: Color)
+    /// The colours shown, `isOn`'s once it has changed.
+    @State private var shown: Bool
+
+    init(isOn: Bool, on: (text: Color, fill: Color), off: (text: Color, fill: Color)) {
+        self.isOn = isOn
+        self.on = on
+        self.off = off
+        _shown = State(initialValue: isOn)
+    }
+
+    func body(content: Content) -> some View {
+        let colors = shown ? on : off
+        content
+            .foregroundStyle(colors.text)
+            .background(colors.fill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .onChange(of: isOn) { _, now in withAnimation(NX.cssEase(140)) { shown = now } }
     }
 }
