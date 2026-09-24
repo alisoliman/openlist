@@ -23,7 +23,7 @@ extension CalendarPersistenceChecks {
         check(untrackedRecord.plannedIntervals == savedIntervals, "Completion durably snapshots every displayed split slot before replanning")
         check(store.workSessions(taskID: untracked.id).isEmpty, "Completing an unstarted planned task invents no recorded work")
         let untrackedBlocks = store.completedCalendarBlocks().filter { $0.completionID == untrackedRecord.id }
-        check(untrackedBlocks.map { CompletionCalendarInterval(start: $0.start, end: $0.end) } == savedIntervals && untrackedBlocks.allSatisfy { $0.isCompleted && !$0.isTimeTracked }, "Untracked completed blocks retain planned times with explicit untracked metadata")
+        check(untrackedBlocks.map { CompletionCalendarInterval(start: $0.start, end: $0.end) } == savedIntervals && untrackedBlocks.allSatisfy { $0.isCompleted && !$0.isTimeTracked && $0.keepsSlot }, "Untracked completed blocks retain planned times with explicit untracked metadata")
         untracked.text = "Renamed after completion"
         store.save()
         check(store.completedCalendarBlocks().filter { $0.completionID == untrackedRecord.id }.allSatisfy { $0.titleSnapshot == "Untracked calendar snapshot" }, "Renaming a task never renames its completed occurrence")
@@ -32,7 +32,7 @@ extension CalendarPersistenceChecks {
         store.toggleCompletion(untracked, now: completedAt.addingTimeInterval(60))
         let secondRecord = store.completionRecords(taskID: untracked.id).first!
         let marker = store.completedCalendarBlocks().first { $0.completionID == secondRecord.id }!
-        check(secondRecord.plannedIntervals.isEmpty && marker.start == secondRecord.completedAt && marker.start == marker.end && !marker.isTimeTracked, "Stale previous-occurrence plan never leaks into a newly completed occurrence")
+        check(secondRecord.plannedIntervals.isEmpty && marker.start == secondRecord.completedAt && marker.start == marker.end && !marker.isTimeTracked && !marker.keepsSlot, "Stale previous-occurrence plan never leaks into a newly completed occurrence")
         let secondUndo = store.completionUndo!
         check(store.undoCompletion(secondUndo.id) && store.completionRecords(taskID: untracked.id).count == 1 && !untracked.isCompleted, "Undo removes only the new completion while normal prior history remains")
 
@@ -47,7 +47,7 @@ extension CalendarPersistenceChecks {
         store.toggleCompletion(tracked, now: completedAt)
         let trackedRecord = store.completionRecords(taskID: tracked.id).first!
         var actual = store.completedCalendarBlocks().filter { $0.completionID == trackedRecord.id }
-        check(actual.count == 2 && actual.allSatisfy(\.isTimeTracked) && actual.map(\.durationMinutes) == [15, 20], "Tracked completions show actual sessions with corrected durations, not their planned estimate")
+        check(actual.count == 2 && actual.allSatisfy { $0.isTimeTracked && !$0.keepsSlot } && actual.map(\.durationMinutes) == [15, 20], "Tracked completions show actual sessions with corrected durations, not their planned estimate")
         check(second.endedAt == completedAt && trackedRecord.plannedIntervals.count == 1, "Completion closes active work and separately retains its original planning snapshot")
         check(first.plannedIntervals == originalTrackedPlan && trackedRecord.plannedIntervals == originalTrackedPlan, "Early Start and active overruns cannot replace the original pre-start planned interval")
         store.correctSession(first, minutes: 12)
@@ -72,7 +72,8 @@ extension CalendarPersistenceChecks {
         check(away.endedAt == elsewhere.addingTimeInterval(600) && settled.allSatisfy(\.isTimeTracked)
                 && settled.map { CompletionCalendarInterval(start: $0.start, end: $0.end) }
                 == [CompletionCalendarInterval(start: nine, end: nine.addingTimeInterval(2_100)),
-                    CompletionCalendarInterval(start: elsewhere, end: elsewhere.addingTimeInterval(600))],
+                    CompletionCalendarInterval(start: elsewhere, end: elsewhere.addingTimeInterval(600))]
+                && settled.map(\.keepsSlot) == [true, false],
               "Work done in a planned slot settles at the slot, stretched past its end, while work elsewhere and an unworked slot keep to what happened")
         store.calendarPlannedBlocks = []
 

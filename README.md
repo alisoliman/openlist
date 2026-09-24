@@ -238,9 +238,11 @@ rewrite documents.
 
 ### Adaptive calendar
 
-Calendar offers **day, 3-day and week** views of a rolling four-week plan. Select
-tasks for today or give them upcoming due dates; undated backlog stays
-unscheduled. Lists inherit separate work or personal hours, with weekly
+Calendar offers **day, 3-day and week** views of the work placed on it. Tasks
+picked for today or due soon wait under **Not planned yet** until **Plan** or
+**Task → Find a Slot** places them; undated backlog stays unscheduled. A rolling
+four-week plan behind it drives the Work panel's suggestion and deadline
+coverage. Lists inherit separate work or personal hours, with weekly
 breaks and date overrides. Estimates start at an editable 30 minutes. Work can
 split into sessions, with a 25-minute minimum by default and a per-task
 **Keep task together** option.
@@ -249,7 +251,7 @@ The **Work** panel (**Work → Show Work**, or the toolbar's work notch while
 working) shows a suggestion's planned time, duration, deadline, and source.
 Suggestions never open the panel or start tracking by themselves. **Later… →
 Remind in 15 minutes** quiets that occurrence without moving the plan; **Later… →
-Move planned time…** previews affected work separately.
+Move planned time…** moves a placed block, listing what the new time would overlap.
 
 Start work explicitly, at any time. The toolbar's work notch shows the active task
 and its elapsed time, with **Done** and **Stop** always available. **Stop
@@ -259,15 +261,18 @@ task switches straight away, saving the old segment, and the tray offers Undo.
 Completion can be undone without restarting a timer.
 
 Recording continues past the estimate: the working block grows in 15-minute steps
-and later flexible work moves out of its way, with Undo in the tray. When a
-meeting, a break or a pinned task leaves no more room, work keeps recording and
-the work notch names what it is running into; at the end of available hours the
-block simply stops growing. Lock and sleep pause work; a task can opt into
-tracking away from the Mac, which still stops at the next meeting, break, pinned
-time or the end of its hours. **Plan** on Calendar's **Not planned yet** column
-pins a task into its next free slot, and **Move planned time…** in the Work panel
-saves a preference. A slot that goes by unworked stays on the calendar as **carried
-forward**, and the task's details show where the calendar has it.
+and later placements that day move out of its way, with Undo in the tray. When a
+meeting or a break leaves no more room, work keeps recording and the work notch
+names what it is running into; at the end of available hours the block simply
+stops growing. Lock and sleep pause work; a task can opt into tracking away from
+the Mac, which still stops at the next meeting, break, pinned time or the end of
+its hours. **Plan** on Calendar's **Not planned yet** column pins a task into its
+next free slot, and **Move planned time…** in the Work panel pins its block at
+another time, each as one change with Undo in the tray. A slot that goes by unworked stays on the
+calendar as **carried forward**, and the task's details show where the calendar
+has it. Deadline coverage
+distinguishes **Scheduled**, **Cannot fit before deadline**, and **Outside
+planning horizon**.
 
 The **Work** menu offers Show Work, Start Selected Task, Stop Current Session,
 Pause or Resume Task, and Complete Current Task, acting in place as the notch's

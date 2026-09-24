@@ -27,10 +27,92 @@ let markers = CalendarOverlapLayout.arrange([
 ])
 expect(markers.allSatisfy { $0.laneCount == 2 }, "Minimum rendered height participates in marker collisions")
 let shortTasks = CalendarOverlapLayout.arrange([
-    Item(id: "one-minute-planned", top: 200, height: 20), Item(id: "following-task", top: 206, height: 20)
+    Item(id: "one-minute-tracked", top: 200, height: 20), Item(id: "following-task", top: 206, height: 20)
 ])
-expect(shortTasks.allSatisfy { $0.laneCount == 2 }, "Readable short-task targets cannot cover the following task")
+expect(shortTasks.allSatisfy { $0.laneCount == 2 }, "Recorded work keeps its drawn box, so the following task cannot cover it")
 expect(shortTasks.map(\.top) == [200, 206], "Readable minimum height does not move the actual start positions")
+// The design's lanes follow the items' times: a 15-minute meeting at 09:30
+// (drawn 16pt from 61) and a task at its 09:45 end (from 71) keep full width,
+// the later one drawn over the meeting's minimum-height bottom.
+let backToBack = CalendarOverlapLayout.arrange([
+    Item(id: "meeting", top: 61, height: 16, end: 71), Item(id: "task", top: 71, height: 18, end: 81)
+])
+expect(backToBack.allSatisfy { $0.lane == 0 && $0.laneCount == 1 }, "An item starting when another's time ends keeps full width")
+expect(backToBack.map(\.height) == [16, 18], "Minimum heights are still drawn over time-based lanes")
+let slots = CalendarOverlapLayout.arrange((0..<3).map {
+    Item(id: "slot-\($0)", top: 41 + Double($0) * 20 / 3, height: 18, end: 41 + Double($0 + 1) * 20 / 3)
+})
+expect(slots.allSatisfy { $0.laneCount == 1 }, "Consecutive 10-minute slots keep full width")
+let minuteOverlap = CalendarOverlapLayout.arrange([
+    Item(id: "long", top: 41, height: 38, end: 81), Item(id: "early", top: 80.4, height: 18, end: 100)
+])
+expect(minuteOverlap.allSatisfy { $0.laneCount == 2 }, "Times that overlap by a minute still share the width")
+let reused = CalendarOverlapLayout.arrange([
+    Item(id: "a", top: 0, height: 18, end: 10), Item(id: "b", top: 0, height: 40, end: 40),
+    Item(id: "c", top: 10, height: 18, end: 20)
+])
+let reusedLanes = Dictionary(uniqueKeysWithValues: reused.map { ($0.id, $0) })
+expect(reused.allSatisfy { $0.laneCount == 2 }, "A time-based group sizes its lanes by overlapping time")
+expect(reusedLanes["b"]?.lane == 0 && reusedLanes["a"]?.lane == 1 && reusedLanes["c"]?.lane == 1,
+       "The longer of two same-start items takes the first lane, and a lane is reused once its time ends")
+// A zero-length item has only its start, as the design's: longer time at the
+// same start goes first and pushes it to another lane, and what comes after
+// it keeps the full width.
+let zeroLength = CalendarOverlapLayout.arrange([
+    Item(id: "instant", top: 100, height: 16, end: 100), Item(id: "task", top: 100, height: 30, end: 130)
+])
+let zeroLengthLanes = Dictionary(uniqueKeysWithValues: zeroLength.map { ($0.id, $0) })
+expect(zeroLength.allSatisfy { $0.laneCount == 2 } && zeroLengthLanes["task"]?.lane == 0,
+       "A zero-length item within another's time takes the next lane")
+let afterInstant = CalendarOverlapLayout.arrange([
+    Item(id: "instant", top: 100, height: 16, end: 100), Item(id: "task", top: 105, height: 30, end: 135)
+])
+expect(afterInstant.allSatisfy { $0.laneCount == 1 }, "What starts after a zero-length item keeps the full width")
+let mixed = CalendarOverlapLayout.arrange([
+    Item(id: "recorded", top: 200, height: 18), Item(id: "planned", top: 203, height: 18, end: 213),
+    Item(id: "after", top: 213, height: 18, end: 223)
+])
+expect(mixed.allSatisfy { $0.laneCount == 2 }, "Recorded work's box and planned time join one group")
+// Items as the day column builds them, with 40pt hours from 08:00.
+let eight = Date(timeIntervalSinceReferenceDate: 800_000_000)
+@MainActor func at(_ hours: Double) -> Date { eight.addingTimeInterval(hours * 3_600) }
+@MainActor func y(_ time: Date) -> Double { time.timeIntervalSince(eight) / 3_600 * 40 }
+@MainActor func block(_ id: String, _ start: Double, _ end: Double, placed: Bool = false, done: Bool = false,
+                      tracked: Bool = false, keepsSlot: Bool = false) -> Item {
+    .block(PlannedBlock(id: id, taskID: UUID(), occurrenceID: UUID(), start: at(start), end: at(end), isPinned: false,
+                        placementID: placed ? UUID() : nil, conflicts: [], completionID: done ? UUID() : nil,
+                        isTimeTracked: tracked, keepsSlot: keepsSlot), y: y)
+}
+@MainActor func event(_ id: String, _ start: Double, _ end: Double) -> Item {
+    .event(FixedBusyTime(id: id, title: id, start: at(start), end: at(end)), y: y)
+}
+@MainActor func widths(_ items: [Item]) -> [String: Int] {
+    Dictionary(uniqueKeysWithValues: CalendarOverlapLayout.arrange(items).map { ($0.id, $0.laneCount) })
+}
+// Two quarter-hour Plan slots in a row, the first worked in and done: its
+// done block keeps the slot's time, as the design's done placement, so the
+// layout doesn't change when the work is done.
+expect(widths([block("working", 1.5, 1.75, placed: true), block("next", 1.75, 2, placed: true)]).values.allSatisfy { $0 == 1 },
+       "Work running in a slot, followed by the next slot, keeps the full width")
+expect(widths([block("done", 1.5, 1.75, done: true, tracked: true, keepsSlot: true),
+               block("next", 1.75, 2, placed: true)]).values.allSatisfy { $0 == 1 },
+       "Tracked work done in a slot, followed by the next slot, keeps the full width")
+expect(widths([block("done", 1.5, 1.75, done: true, keepsSlot: true),
+               block("next", 1.75, 2, placed: true)]).values.allSatisfy { $0 == 1 },
+       "A slot ticked done without tracking, followed by the next slot, keeps the full width")
+expect(widths([block("away", 2, 2.05, done: true, tracked: true), block("next", 2.05, 2.5, placed: true)]).values.allSatisfy { $0 == 2 },
+       "Three minutes tracked outside any slot keep their box beside the work after them")
+expect(widths([block("unslotted", 2, 2.1), block("next", 2.1, 2.5, placed: true)]).values.allSatisfy { $0 == 2 },
+       "Work running or paused with no slot keeps its box beside the work after it")
+expect(widths([event("standup", 1.5, 1.75), block("task", 1.75, 2, placed: true)]).values.allSatisfy { $0 == 1 },
+       "A task at a short meeting's end keeps the full width")
+// A meeting over the same times as a block goes first, as the design lists
+// meetings before blocks, whatever their ids or minimum heights.
+for (start, end) in [(3.0, 3.25), (3.0, 4.0)] {
+    let tie = CalendarOverlapLayout.arrange([block("a-block", start, end, placed: true), event("z-meeting", start, end)])
+    expect(tie.first { $0.id == "z-meeting" }?.lane == 0 && tie.first { $0.id == "a-block" }?.lane == 1,
+           "A meeting takes the first lane over a block with the same times")
+}
 let sameStart = (0..<12).map { Item(id: "item-\($0)", top: 200, height: Double(10 + $0)) }
 let dense = CalendarOverlapLayout.arrange(sameStart)
 expect(dense.allSatisfy { $0.laneCount == 12 }, "Dense history keeps every item in a separate lane")
@@ -53,6 +135,20 @@ for (index, left) in arranged.enumerated() {
     for right in arranged.dropFirst(index + 1) where left.top < right.top + right.height && right.top < left.top + left.height {
         expect(left.lane != right.lane, "Overlapping rectangles have distinct lanes")
         expect(left.laneCount == right.laneCount, "Connected rectangles have matching widths")
+    }
+}
+// The same with time-based ends: no two items whose times overlap share a lane.
+let timed: [Item] = (0..<80).map { index in
+    let top = Double((index * 37) % 600)
+    return Item(id: "timed-\(index)", top: top, height: 18, end: top + Double(1 + (index * 7) % 30))
+}
+let ends = Dictionary(uniqueKeysWithValues: timed.map { ($0.id, $0.end) })
+let arrangedTimes = CalendarOverlapLayout.arrange(timed)
+expect(arrangedTimes == CalendarOverlapLayout.arrange(timed.reversed()), "Time-based layout is independent of fetch order")
+for (index, left) in arrangedTimes.enumerated() {
+    for right in arrangedTimes.dropFirst(index + 1) where left.top < ends[right.id]! && right.top < ends[left.id]! {
+        expect(left.lane != right.lane, "Items whose times overlap have distinct lanes")
+        expect(left.laneCount == right.laneCount, "Items whose times connect have matching widths")
     }
 }
 // The scheduling grid respects first weekday, leap years and local day
