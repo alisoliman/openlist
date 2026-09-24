@@ -4,10 +4,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 
 ## Architecture
 
-- `openlist/Next/` holds the redesigned UI. Existing views remain for features the
-  design doesn't cover (document editor, sheets for list move etc.).
+- `openlist/Next/` holds the UI. `openlist/Editor/` is the list document's engine and its
+  AppKit-backed line text; `openlist/Views/` keeps the sheets, pickers and notices the Next
+  screens host where the design has none of its own (list move and delete, template copy,
+  the shortcuts sheet, due, repeat and reminder pickers).
 - `NextTheme` — tokens (paper #FCFBFA, sidebar #F1EEEA, inspector #F7F5F2, ink #17161A,
   semantic colours), Instrument Serif (bundled, `Shared/Fonts`, so the widget has it too), density, motion.
+  `NXEditor` (`NextEditorTypography.swift`) holds the document text's metrics and ink as
+  NSFonts and NSColors, apart from `NX` so the rich-text codec needs no SwiftUI tokens.
 - `Workbench` (@Observable, on AppEnvironment) — design interaction state: keyboard focus,
   visible order, completion dwell (`closing`), fresh/restored/flying rows, sidebar pulse,
   tray, session change log, inbox triage (kept/reviewed), G-prefix.
@@ -49,7 +53,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   restore and erase with their task, whose row ends "· with N subtasks", and the sidebar
   counts entries.
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
-  `OutlineEditor` engine under its `.nextDocument` policy, tasks on `NXTaskRowChrome` (the
+  `OutlineEditor` engine, which keeps the design's rules (`OutlinePolicy`), tasks on `NXTaskRowChrome` (the
   Next row's chrome with the live text as its title) and the other kinds in the same
   language. Done top-level tasks leave for the Completed group below. Each line's edit is
   one undo step with the design's label and a change-log entry. The Tasks presentation is
@@ -70,7 +74,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists), and search
-  reveal scrolling in `NXPage`. Open notes are remembered per task on this Mac.
+  reveal scrolling in `NXPage`. The "…" menu's Copy as Markdown, beside Export as Markdown…,
+  puts the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and
+  says "Copied “List” as Markdown" in the tray. Open notes are remembered per task on this Mac.
+- Back and Forward, a native extra, return a page to where it was scrolled when it was left:
+  each visit in the navigator's history keeps its own offset, which `NXPage` takes on
+  appearing. Any other arrival (the sidebar, a link, a new visit from the history) opens the
+  page at the top, or on what a search hit or link reveals.
 - Where the list document departs from the design, to keep native data safe: a done
   top-level task stays in the document while a task under it is open; a line left empty
   goes only when it was new or emptied in its edit and holds nothing but text (Backspace

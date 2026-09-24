@@ -96,20 +96,12 @@ struct RootView: View {
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
-            // Editing a subtask on a legacy task page makes it the command
-            // target. Closing the task has to release that or ⌘N stays dead.
+            // An open task holds off the initial-focus clear; closing it off
+            // a document gives the screen that clear, and its commands, back.
             if newValue == nil, !env.navigator.documentOwnsEditorCommands {
                 env.activeDocument = nil
                 focusClearedFor = nil
                 clearInitialFocus(for: env.navigator.route)
-            }
-        }
-        .onChange(of: env.navigator.selection) { _, selection in
-            // Esc in a legacy task page drops its selection but not its
-            // claim. With no row left to act on, the screen takes over: a
-            // list's own document, or the Next screen's targets.
-            if selection.isEmpty, env.activeDocument?.rootBlockID != nil {
-                env.activeDocument = env.navigator.documentListID.map { DocumentContext(listID: $0) }
             }
         }
         .onChange(of: env.commandToken) { _, newValue in

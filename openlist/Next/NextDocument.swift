@@ -3,7 +3,7 @@
 //  openlist
 //
 //  The list as the design's document: every line of it written in place,
-//  over the outline engine the legacy editor shares.
+//  over the outline engine, OutlineEditor.
 //
 
 import AppKit
@@ -46,14 +46,13 @@ private struct NXDocumentLines: View {
         let document = DocumentContext(listID: list.id)
         // SwiftUI keeps the first editor for the view's lifetime and drops the
         // one built on each later init. Building one only assigns its inputs.
-        _editor = State(initialValue: OutlineEditor(env: env, document: document, sorting: list.sorting,
-                                                    policy: .nextDocument))
+        _editor = State(initialValue: OutlineEditor(env: env, document: document, sorting: list.sorting))
         _fetched = OutlineEditor.blocksQuery(for: document)
     }
 
     var body: some View {
         let document = DocumentContext(listID: list.id)
-        editor.configure(document: document, showsCompleted: true, sorting: list.sorting, hooks: hooks)
+        editor.configure(document: document, sorting: list.sorting, hooks: hooks)
         editor.tasksOnly = tasksOnly
         let blocks = fetched.filter { $0.modelContext != nil && !$0.isDeleted }
         let rows = editor.rowsToDraw(in: blocks)
@@ -121,14 +120,13 @@ private struct NXDocumentLines: View {
         .onChange(of: blocks.map(\.id)) { _, ids in contents.retain(Set(ids)) }
     }
 
-    /// Where the design's document defers to the workbench: completion with
-    /// its dwell, the inspector, focus and selection, Task-menu commands, and
-    /// the change log with its names.
+    /// Where the design's document defers to the workbench: the inspector,
+    /// focus and selection, Task-menu commands, and the change log with its
+    /// names.
     private var hooks: OutlineHooks {
         let workbench = env.workbench
         let store = env.store
         var hooks = OutlineHooks()
-        hooks.toggleCompletion = { workbench.toggle($0) }
         hooks.openDetails = { workbench.inspect($0) }
         hooks.didFocus = { id in
             guard let block = store.block(id: id) else { return }
@@ -143,10 +141,9 @@ private struct NXDocumentLines: View {
         }
         // The caret leaves; a task stays focused for the keys. A heading or
         // text line takes no focus, as in the design, and the keys go back
-        // to it from where Escape left it.
+        // to it from where Escape left it: Return and the arrows are the
+        // Next keys' once the caret has left.
         hooks.didEscape = { id in workbench.focusID = store.block(id: id)?.isTask == true ? id : nil }
-        // Return and the arrows are the Next keys' once the caret has left.
-        hooks.resumesAfterEscape = false
         hooks.taskCommand = { command, ids in
             env.performTaskCommand(command, on: ids.filter { store.block(id: $0)?.isTask == true })
         }
@@ -586,12 +583,12 @@ private struct NXNoteHint: View {
     }
 
     /// The pitch of a title's lines.
-    static let linePitch = (Theme.Editor.lineHeight(for: .task) * 2).rounded() / 2
+    static let linePitch = (NXEditor.lineHeight(for: .task) * 2).rounded() / 2
 
     static func placement(after content: NSAttributedString, width: CGFloat) -> Placement {
         let end = NXTextMeasure.end(of: content, width: width)
         // 7pt after the text, its 13pt box 2pt under the baseline.
-        let y = Theme.Editor.lineBoxInset(for: .task) + end.baseline - 11
+        let y = NXEditor.lineBoxInset(for: .task) + end.baseline - 11
         guard width > 1, end.x + 7 + 13 > width else { return Placement(x: end.x + 7, y: y, wraps: false) }
         return Placement(x: 0, y: y + linePitch, wraps: true)
     }
@@ -794,7 +791,7 @@ final class NXNoteTextView: NSTextView {
     static let attributes: [NSAttributedString.Key: Any] = {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = inset * 2
-        return [.font: font, .foregroundColor: Theme.Editor.secondaryInk, .paragraphStyle: paragraph]
+        return [.font: font, .foregroundColor: NXEditor.secondaryInk, .paragraphStyle: paragraph]
     }()
 
     override func keyDown(with event: NSEvent) {
@@ -819,7 +816,7 @@ final class NXNoteTextView: NSTextView {
         super.draw(dirtyRect)
         guard string.isEmpty else { return }
         var attributes = Self.attributes
-        attributes[.foregroundColor] = Theme.Editor.placeholderInk
+        attributes[.foregroundColor] = NXEditor.placeholderInk
         NSAttributedString(string: "Add a note…", attributes: attributes)
             .draw(in: NSRect(origin: textContainerOrigin, size: bounds.size))
     }
@@ -895,7 +892,7 @@ private struct NXDocumentBlock: View {
         case .numbered:
             // The ordinal's baseline on the text's first baseline.
             let font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-            let baseline = Theme.Editor.lineBoxInset(for: .numbered) + Theme.Editor.baselineOffset(for: .numbered)
+            let baseline = NXEditor.lineBoxInset(for: .numbered) + NXEditor.baselineOffset(for: .numbered)
             Text("\(row.ordinal).")
                 .font(.system(size: 12.5, design: .monospaced))
                 .foregroundStyle(NX.ink(0.45))
@@ -1019,16 +1016,13 @@ private struct NXLineText: View {
             struck: closing,
             strikeColor: closing != nil ? env.settings.accent.editorColor : nil,
             dimsStruck: closing == nil,
-            verticalInset: Theme.Editor.lineBoxInset(for: block.kind),
+            verticalInset: NXEditor.lineBoxInset(for: block.kind),
             attributedText: context.contents.content(of: block, store: env.store),
             placeholder: editing ? Self.placeholder(for: block.kind) : "",
             isFocused: editor.isFocused(id),
             pendingCaret: editor.pendingCaret(for: id),
             focusToken: context.focus.token,
             isSlashMenuOpen: context.slashBlockID == id,
-            slashOpensAtStartOnly: true,
-            markdownPrefixes: .design,
-            returnKeepsSelection: true,
             caretColor: env.settings.accent.editorColor,
             onSlashCommand: { editor.handleSlashCommand($0) },
             callbacks: callbacks

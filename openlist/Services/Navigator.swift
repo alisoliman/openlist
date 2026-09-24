@@ -16,7 +16,6 @@ enum AppRoute: Hashable, Codable {
     case lists
     case list(UUID)
     case label(UUID)
-    case completed
     case trash
     case settings
 
@@ -122,61 +121,28 @@ final class Navigator {
     /// targets.
     var documentOwnsEditorCommands: Bool { documentListID != nil }
 
-    /// The task whose detail panel is open, if any.
+    /// The task the inspector shows, if any.
     var openTaskID: UUID?
 
-    /// Blocks selected in the current document, for multi-select actions.
+    /// Blocks selected in the current document: the line being written, or
+    /// the one a reveal lands on. The document's menu commands act on them.
     var selection: Set<UUID> = []
     private(set) var rowSelection = BlockSelection()
-    private(set) var isSelectingRows = false
-    private(set) var rowFocusRequest: UUID?
 
     /// Private drag identity is per environment/library, not a persisted block ID.
     let blockDragSessionID = UUID()
-    var activeLegacyBlockDragID: UUID?
-
-    var orderedSelection: [UUID] { rowSelection.ordered(selection) }
-
-    func selectRow(_ id: UUID, gesture: BlockSelection.Gesture, scope: UUID, visible: [UUID]) {
-        rowFocusRequest = nil
-        selection = rowSelection.select(id, gesture: gesture, in: scope, visible: visible, selected: selection)
-        isSelectingRows = true
-    }
-
-    func stepRowSelection(_ direction: Int, extending: Bool, scope: UUID, visible: [UUID]) {
-        selection = rowSelection.step(direction, extending: extending, in: scope, visible: visible, selected: selection)
-        isSelectingRows = true
-        rowFocusRequest = rowSelection.focusID
-    }
-
-    func finishRowFocusRequest(_ id: UUID) {
-        if rowFocusRequest == id { rowFocusRequest = nil }
-    }
 
     func reconcileSelection(scope: UUID, visible: [UUID]) {
         selection = rowSelection.reconcile(in: scope, visible: visible, selected: selection)
     }
 
     func selectForEditing(_ id: UUID, scope: UUID, visible: [UUID]) {
-        rowFocusRequest = nil
-        selection = rowSelection.select(id, gesture: .replace, in: scope, visible: visible, selected: selection)
-        isSelectingRows = false
+        selection = rowSelection.select(id, in: scope, visible: visible, selected: selection)
     }
 
     func clearSelection() {
         selection.removeAll()
         rowSelection.clear()
-        isSelectingRows = false
-        rowFocusRequest = nil
-    }
-
-    func beginBlockDrag(_ id: UUID, scope: UUID, visible: [UUID]) -> String {
-        if rowSelection.scopeID != scope || !selection.contains(id) {
-            selectRow(id, gesture: .replace, scope: scope, visible: visible)
-        }
-        let ids = orderedSelection
-        activeLegacyBlockDragID = ids.count == 1 ? ids.first : nil
-        return DragPayload.encodeBlocks(ids, session: blockDragSessionID)
     }
 
     // Overlays.
@@ -204,9 +170,19 @@ final class Navigator {
 
     func finishReveal() { contentReveal = nil }
 
-    private var backStack: [AppRoute] = []
-    private var forwardStack: [AppRoute] = []
+    /// A page in the history, and where it was scrolled to when it was left.
+    private struct Visit {
+        var route: AppRoute
+        var scrollOffset: CGFloat?
+    }
+
+    private var backStack: [Visit] = []
+    private var forwardStack: [Visit] = []
+    /// Where each route's page is scrolled to, as the page reports it.
     @ObservationIgnored private var scrollOffsets: [AppRoute: CGFloat] = [:]
+    /// The route Back or Forward just returned to, until its page has taken
+    /// the place it was left at.
+    @ObservationIgnored private var returnedRoute: AppRoute?
 
     func scrollOffset(for route: AppRoute) -> CGFloat? { scrollOffsets[route] }
 
@@ -217,6 +193,15 @@ final class Navigator {
         scrollOffsets[route] = offset
     }
 
+    /// Where a page appearing for `route` should scroll to: where it was
+    /// left, once, when Back or Forward returned to it. `nil` for a new
+    /// visit, which starts at the top.
+    func takeScrollRestoration(for route: AppRoute) -> CGFloat? {
+        guard returnedRoute == route else { return nil }
+        returnedRoute = nil
+        return scrollOffsets[route]
+    }
+
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
 
@@ -225,9 +210,10 @@ final class Navigator {
     /// the window, not to the screen.
     func go(to newRoute: AppRoute) {
         guard newRoute != route else { return }
-        backStack.append(route)
+        backStack.append(Visit(route: route, scrollOffset: scrollOffsets[route]))
         forwardStack.removeAll()
         route = newRoute
+        startVisit(returning: nil)
         revealedDocumentListID = nil
         isTriageVisit = false
         contentReveal = nil
@@ -237,8 +223,9 @@ final class Navigator {
 
     func goBack() {
         guard let previous = backStack.popLast() else { return }
-        forwardStack.append(route)
-        route = previous
+        forwardStack.append(Visit(route: route, scrollOffset: scrollOffsets[route]))
+        route = previous.route
+        startVisit(returning: previous)
         revealedDocumentListID = nil
         isTriageVisit = false
         contentReveal = nil
@@ -247,8 +234,9 @@ final class Navigator {
 
     func goForward() {
         guard let next = forwardStack.popLast() else { return }
-        backStack.append(route)
-        route = next
+        backStack.append(Visit(route: route, scrollOffset: scrollOffsets[route]))
+        route = next.route
+        startVisit(returning: next)
         revealedDocumentListID = nil
         isTriageVisit = false
         contentReveal = nil
@@ -259,6 +247,7 @@ final class Navigator {
     /// list you are viewing is deleted underneath you.
     func replace(with newRoute: AppRoute) {
         route = newRoute
+        startVisit(returning: nil)
         revealedDocumentListID = nil
         isTriageVisit = false
         contentReveal = nil
@@ -272,8 +261,9 @@ final class Navigator {
         let source = AppRoute.label(sourceID)
         let destination = AppRoute.label(destinationID)
         if route == source { route = destination }
-        backStack = backStack.map { $0 == source ? destination : $0 }
-        forwardStack = forwardStack.map { $0 == source ? destination : $0 }
+        backStack = backStack.map { $0.route == source ? Visit(route: destination, scrollOffset: $0.scrollOffset) : $0 }
+        forwardStack = forwardStack.map { $0.route == source ? Visit(route: destination, scrollOffset: $0.scrollOffset) : $0 }
+        if returnedRoute == source { returnedRoute = nil }
     }
 
     func openTask(_ id: UUID?) {
@@ -284,6 +274,13 @@ final class Navigator {
     func closeTask() {
         openTaskID = nil
         if contentReveal?.taskID != nil { contentReveal = nil }
+    }
+
+    /// The page on show is the route's new visit: back where `visit` left it,
+    /// or from the top.
+    private func startVisit(returning visit: Visit?) {
+        scrollOffsets[route] = visit?.scrollOffset
+        returnedRoute = visit?.scrollOffset == nil ? nil : route
     }
 
     private func trimHistory() {

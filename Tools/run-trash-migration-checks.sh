@@ -25,7 +25,7 @@ source = source.replace('Private migration leaves all old membership fields nil'
 Path(sys.argv[1]).write_text(source)
 PY
 xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/trash-restore-checks" \
-  openlist/Model/*.swift Tools/InboxChecks/LegacyInboxMembership.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift openlist/Design/Theme.swift \
+  openlist/Model/*.swift Tools/InboxChecks/LegacyInboxMembership.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift openlist/Next/NextEditorTypography.swift \
   openlist/Services/LibraryBackupPackage.swift openlist/Services/BackupStagedStore.swift openlist/Services/BackupSnapshotReader.swift openlist/Services/LibraryRestoreStorage.swift \
   openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudError.swift \
   -parse-as-library "$OUT/RestoreChecks.swift"

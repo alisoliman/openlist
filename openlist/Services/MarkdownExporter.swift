@@ -208,15 +208,20 @@ enum MarkdownExporter {
         alert.runModal()
     }
 
+    /// Puts the list's document on the clipboard as the Markdown Export
+    /// writes for it. `false`, after saying why, when it couldn't.
     @MainActor
-    static func copyToPasteboard(list: TaskList, store: Store) {
+    @discardableResult
+    static func copyToPasteboard(list: TaskList, store: Store) -> Bool {
         do {
             let content = try markdown(for: list, store: store)
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(content, forType: .string)
+            return true
         } catch {
             presentError(error, operation: "Copy list as Markdown")
+            return false
         }
     }
 }

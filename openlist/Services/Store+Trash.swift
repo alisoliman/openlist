@@ -67,7 +67,6 @@ extension Store {
             guard !rootIDs.isEmpty else { throw TrashError.unavailable }
         }
         if succeeded {
-            trashNotice = nil
             onEditorBlocksRemoved?(removedIDs)
             if let undoManager {
                 undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
@@ -106,10 +105,7 @@ extension Store {
             try retain(members, groupID: list.id)
             log(.listDeleted, title: list.displayTitle, list: list)
         }
-        if succeeded {
-            trashNotice = nil
-            onEditorBlocksRemoved?(removedIDs)
-        }
+        if succeeded { onEditorBlocksRemoved?(removedIDs) }
         return succeeded
     }
 
@@ -203,23 +199,6 @@ extension Store {
         for update in updates { update() }
     }
 
-    /// Preview uses the same ownership checks as restore, before the user acts.
-    func trashRestoreDestination(_ entry: TrashEntry) -> String {
-        if entry.isList {
-            guard let root = try? context.fetch(FetchDescriptor<TaskList>()).first(where: { $0.id == entry.id }) else { return "Restore list" }
-            if let parentID = root.parentListID, list(id: parentID) == nil {
-                return "Restore list and child documents at top level — original parent is unavailable"
-            }
-            return "Restore list and child documents"
-        }
-        let id = entry.id
-        guard let root = try? context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })).first,
-              let owner = list(id: root.listID), root.parentID == nil || block(id: root.parentID)?.listID == owner.id else {
-            return "Restore to Recovered items — original parent or list is unavailable"
-        }
-        return "Restore to \(entry.metadata?.formerLocation ?? owner.displayTitle)"
-    }
-
     /// Whether `id` is still in Trash as an entry of its own. An older Redo
     /// checks first: the entry may have been erased or restored since.
     func isInTrash(_ id: UUID) -> Bool {
@@ -230,11 +209,8 @@ extension Store {
 
     @discardableResult
     func restoreTrash(ids: [UUID]) -> Bool {
-        // Feedback from an earlier restore never describes this one.
-        trashNotice = nil
         guard reconcileRetainedListDescendants() else { return false }
-        var notices: [String] = []
-        let succeeded = trashTransaction("Content could not be restored; it remains in Trash", scope: .groups(Set(ids))) {
+        return trashTransaction("Content could not be restored; it remains in Trash", scope: .groups(Set(ids))) {
             let allBlocks = try context.fetch(FetchDescriptor<Block>())
             let allLists = try context.fetch(FetchDescriptor<TaskList>())
             // Restore lists first so a separately retained child can recover its parent.
@@ -284,7 +260,6 @@ extension Store {
                         for member in members { member.listID = recovery.id }
                         root.parentID = nil
                         metadata.recoveryNote = "Recovered from \(metadata.formerLocation). The original parent or list is unavailable."
-                        notices.append("\(root.displayTitle) restored to Recovered items from \(metadata.formerLocation).")
                     }
                 }
                 var labels = allLabels()
@@ -315,25 +290,13 @@ extension Store {
                 }
                 if let retainedList { retainedList.trashMetadataData = try JSONEncoder().encode(metadata) }
                 else { root?.trashMetadataData = try JSONEncoder().encode(metadata) }
-                if let note = metadata.recoveryNote, notices.isEmpty { notices.append(note) }
-                if notices.isEmpty {
-                    let owner = retainedList ?? root.flatMap { list(id: $0.listID) }
-                    if let owner, owner.isEffectivelyArchived {
-                        notices.append("Restored to archived list “\(owner.displayTitle)”. Open Lists and choose Show Archived to view it.")
-                    } else if let owner {
-                        notices.append("Restored to “\(owner.displayTitle)”.")
-                    }
-                }
             }
         }
-        if succeeded { trashNotice = notices.isEmpty ? "Restored from Trash." : notices.joined(separator: "\n") }
-        return succeeded
     }
 
     /// The UI must confirm this action. No timer or retention period calls it.
     @discardableResult
     func permanentlyEraseTrash(ids: [UUID]) -> Bool {
-        trashNotice = nil
         guard reconcileRetainedListDescendants() else { return false }
         var erasedBlockIDs = Set<UUID>()
         let succeeded = trashTransaction("Permanent deletion failed; the retained content can still be restored", scope: .groups(Set(ids))) {

@@ -61,7 +61,7 @@ do {
 do {
     let text = NSAttributedString(string: "日本語 café 👩🏽‍💻 *literal* [bracket] <tag> #name", attributes: [.font: plain])
     check(export(text) == "日本語 café 👩🏽‍💻 \\*literal\\* \\[bracket\\] \\<tag\\> \\#name", "Unicode and Markdown metacharacters preserved", export(text))
-    let text2 = NSAttributedString(string: "Heading", attributes: [.font: Theme.Editor.nsFont(for: .heading1)])
+    let text2 = NSAttributedString(string: "Heading", attributes: [.font: NXEditor.nsFont(for: .heading1)])
     check(export(text2, kind: .heading1) == "Heading", "heading presentation is not additional emphasis", export(text2, kind: .heading1))
     check(InlineMarkdown.destination("https://example.com/a(b)?x=1&y=2#frag") == "<https://example.com/a(b)?x=1&y=2#frag>", "parentheses and fragments remain valid in link destinations")
     check(InlineMarkdown.destination("assets/pic [1].png") == "<assets/pic%20%5B1%5D.png>", "relative media paths URL-encode reserved characters", InlineMarkdown.destination("assets/pic [1].png"))

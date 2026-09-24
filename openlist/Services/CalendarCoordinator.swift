@@ -373,37 +373,24 @@ final class CalendarCoordinator {
         refreshVisibleBlocks(now: .now)
     }
 
-    func move(block: PlannedBlock, to start: Date, isPinned: Bool = false, now: Date = .now) {
+    /// Saves `start` as the planned work's preferred time, which planning
+    /// honors when it can, and explains in `notice` when it can't.
+    func move(block: PlannedBlock, to start: Date, now: Date = .now) {
         guard let task = store.block(id: block.taskID), task.occurrenceID == block.occurrenceID, !block.isActive else { return }
         let duration = min(block.end.timeIntervalSince(block.start), remainingMinutes(for: task, now: now) * 60)
         let end = start.addingTimeInterval(duration)
-        guard let placement = store.setPlacement(for: task, start: start, end: end,
-                                                 isPinned: isPinned, placementID: block.placementID),
+        guard let placement = store.setPlacement(for: task, start: start, end: end, placementID: block.placementID),
               store.persistenceError == nil else {
             notice = store.persistenceError ?? "The requested time could not be saved. Try again."
             return
         }
         missedPlacementIDs.remove(placement.id)
         replan(now: now)
-        let represented = plan.blocks.filter { $0.placementID == placement.id }
-        let honored = represented.contains {
-            abs($0.start.timeIntervalSince(start)) < 1 && $0.end >= end.addingTimeInterval(-1)
+        let honored = plan.blocks.contains {
+            $0.placementID == placement.id && abs($0.start.timeIntervalSince(start)) < 1 && $0.end >= end.addingTimeInterval(-1)
         }
-        if isPinned {
-            let conflicts = Array(Set(represented.flatMap(\.conflicts))).sorted()
-            if !conflicts.isEmpty {
-                notice = "Pinned time saved. " + conflicts.joined(separator: " ")
-            } else if !honored {
-                notice = "Pinned time saved, but " + moveConstraint(for: task, placement: placement, now: now) + ". Review its planning status."
-            } else {
-                notice = nil
-            }
-        } else if honored {
-            notice = nil
-        } else {
-            notice = "Preferred time saved, but " + moveConstraint(for: task, placement: placement, now: now)
-                + ". Choose another time or use Pin time to keep it fixed and review conflicts."
-        }
+        notice = honored ? nil : "Preferred time saved, but " + moveConstraint(for: task, placement: placement, now: now)
+            + ". Choose another time, or use Find a Slot."
     }
 
     /// Explain an unfulfilled preference using the same availability and fixed
@@ -434,19 +421,6 @@ final class CalendarCoordinator {
             return "it overlaps active work or another pinned time"
         }
         return "other scheduled work or session-length rules prevent that placement"
-    }
-
-    func pin(block: PlannedBlock) {
-        guard let task = store.block(id: block.taskID), task.occurrenceID == block.occurrenceID, !block.isActive else { return }
-        store.setPlacement(for: task, start: block.start, end: block.end, isPinned: true, placementID: block.placementID)
-        replan()
-    }
-
-    func unpin(block: PlannedBlock) {
-        guard let id = block.placementID, let placement = store.placements().first(where: { $0.id == id }) else { return }
-        placement.isPinned = false
-        store.save()
-        replan()
     }
 
     func handleMacUnavailable(reason: String, now: Date = .now) {

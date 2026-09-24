@@ -367,6 +367,8 @@ private struct NXListOptions: View {
                 Button("Move List…") { env.listPendingMove = list }
             }
             CopyItemLinkButton(target: .list(list.id))
+            // A native extra: the design exports, and has no copy.
+            Button("Copy as Markdown") { copyMarkdown() }
             Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
         } label: {
             Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium))
@@ -411,6 +413,12 @@ private struct NXListOptions: View {
 
     private func perform(_ operation: () throws -> Void) {
         do { try operation() } catch { coverError = error.localizedDescription }
+    }
+
+    /// The list's document on the clipboard, as Export writes it, said in the tray.
+    private func copyMarkdown() {
+        guard MarkdownExporter.copyToPasteboard(list: list, store: env.store) else { return }
+        env.workbench.showTray("Copied \(NXFormat.quoted(list.displayTitle)) as Markdown", icon: "doc.on.clipboard")
     }
 
     /// Asks for the image a list's cover should show.

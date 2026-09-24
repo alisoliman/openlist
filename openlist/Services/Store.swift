@@ -7,11 +7,13 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-/// Identifies the document currently being edited: either a list, or a task's
-/// detail page, which behaves like a miniature list rooted at that task.
+/// Identifies a document: a list, or the subtree under one of its tasks,
+/// which behaves like a miniature list rooted at that task. The list
+/// document edits a whole list; the store appends under a task too, as MCP
+/// adds subtasks.
 struct DocumentContext: Hashable {
     var listID: UUID
-    /// `nil` when editing the list itself; a task id when editing its details.
+    /// `nil` for the list itself; a task id for the subtree under it.
     var rootBlockID: UUID?
 
     init(listID: UUID, rootBlockID: UUID? = nil) {
@@ -58,8 +60,8 @@ final class Store {
     var editorNotice: String?
     /// Takes what ``refuse(_:)`` reports; the window shows it in its tray.
     @ObservationIgnored var onRefusal: ((String) -> Void)?
+    /// Why the last Trash change failed. Successes report in the tray.
     var trashError: String?
-    var trashNotice: String?
     @ObservationIgnored var permanentlyErasedBlockIDs: Set<UUID> = []
     @ObservationIgnored var trashMediaRollbacks: [() -> Void] = []
     /// The latest merge, which ``undoLabelMerge(_:)`` takes back when given
@@ -279,11 +281,6 @@ final class Store {
         log(.listCreated, title: list.displayTitle, list: list)
         save()
         return list
-    }
-
-    @discardableResult
-    func deleteList(_ list: TaskList) -> Bool {
-        trashList(list)
     }
 
     func duplicateList(_ list: TaskList) -> TaskList {

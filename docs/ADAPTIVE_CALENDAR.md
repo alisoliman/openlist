@@ -121,7 +121,8 @@ today that have no block. Its **Plan** button, and **Task → Find a Slot**, pla
 the task in the next free slot around meetings and your hours, as one change with
 Undo in the tray. That placement is pinned. In the Work panel, **Later… → Move
 planned time…** saves a preferred placement instead, which can yield to busy time,
-deadlines and changes in remaining work. Neither changes the task’s due date.
+deadlines and changes in remaining work; when it can’t be kept, a notice says
+why. Neither changes the task’s due date.
 
 Pinned conflicts are shown in deadline coverage. Pins can conflict
 with meetings, other pins, active work, availability, breaks, deadlines, or the

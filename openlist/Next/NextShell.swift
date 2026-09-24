@@ -165,7 +165,7 @@ private struct NextMain: View {
         case .inbox: return "Inbox"
         case .today: return "Today"
         case .calendar: return "Calendar"
-        case .tasks, .completed: return "Tasks"
+        case .tasks: return "Tasks"
         case .lists: return "Lists"
         case .activity: return "Activity"
         case .trash: return "Trash"
@@ -197,7 +197,6 @@ private struct NextRoutedScreen: View {
     @Environment(\.nextLibrary) private var library
 
     var body: some View {
-        let workbench = env.workbench
         let navigator = env.navigator
         Group {
             switch navigator.route {
@@ -211,8 +210,6 @@ private struct NextRoutedScreen: View {
             case .today: NextTodayScreen()
             case .calendar: NextCalendarScreen()
             case .tasks: NextTasksScreen()
-            case .completed:
-                NextTasksScreen().onAppear { workbench.tasksStatus = .done }
             case .activity: NextActivityScreen()
             case .lists: NextListsGallery()
             case .trash: NextTrashScreen()
@@ -255,8 +252,9 @@ private struct NXNoRows: ViewModifier {
 // MARK: - Page scaffold
 
 /// The scrolling page every screen sits in: 26/40/120 padding, an 880pt
-/// measure unless wide, a click-to-clear background, scroll-to-focus, and
-/// scrolling to what a search hit or link reveals in a list document.
+/// measure unless wide, a click-to-clear background, scroll-to-focus,
+/// scrolling to what a search hit or link reveals in a list document, and,
+/// as a native extra, the place Back and Forward return it to.
 struct NXPage<Content: View>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
@@ -296,6 +294,7 @@ struct NXPage<Content: View>: View {
                 }
             }
             .scrollIndicators(.automatic)
+            .modifier(NXScrollRestoration(revealing: readyRevealID != nil))
             .background { Color.clear.contentShape(Rectangle()).onTapGesture { clearBackground() } }
             .onChange(of: workbench.focusID) { _, id in
                 guard let id, rowIDs.contains(id) else { return }
@@ -343,6 +342,35 @@ struct NXPage<Content: View>: View {
         workbench.tasksQueryFocused = false
         if env.navigator.openTaskID != nil { env.navigator.closeTask() }
         NSApp.keyWindow?.makeFirstResponder(nil)
+    }
+}
+
+/// Back and Forward return a page to where it was left; any other arrival
+/// opens it at the top, or on what a reveal shows. Its own view, so the
+/// scroll position it keeps never redraws the page's content.
+private struct NXScrollRestoration: ViewModifier {
+    @Environment(AppEnvironment.self) private var env
+    /// A reveal is about to scroll the page to what it shows.
+    let revealing: Bool
+    @State private var position = ScrollPosition()
+    /// The route the page reports its offset for, once it has opened where
+    /// it should.
+    @State private var route: AppRoute?
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, offset in
+                guard let route, route == env.navigator.route else { return }
+                env.navigator.rememberScrollOffset(offset, for: route)
+            }
+            .onAppear {
+                let current = env.navigator.route
+                if let offset = env.navigator.takeScrollRestoration(for: current), !revealing {
+                    position.scrollTo(y: offset)
+                }
+                route = current
+            }
     }
 }
 

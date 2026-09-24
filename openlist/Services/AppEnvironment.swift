@@ -8,7 +8,7 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-/// A picker inside the task detail panel that a keyboard shortcut can summon.
+/// A picker inside the inspector that a keyboard shortcut can summon.
 enum DetailPicker: String, Identifiable {
     case due, repeatRule, reminder, labels
     var id: String { rawValue }
@@ -78,12 +78,12 @@ final class AppEnvironment {
     var listPendingDeletion: TaskList?
     var listPendingMove: TaskList?
 
-    /// Which picker the task detail panel should pop open, set by ⌃D / ⌃L.
+    /// Which picker the inspector should pop open, set by ⌃D / ⌃L.
     var requestedPicker: DetailPicker?
 
-    /// The document menu commands apply to. Several `DocumentView`s can be on
-    /// screen at once — a list plus an open task's detail page — so exactly one
-    /// of them claims each command.
+    /// The document menu commands apply to: the list document on show, which
+    /// claims it, or `nil` on the other screens, whose targets are the
+    /// workbench's.
     var activeDocument: DocumentContext?
 
     /// Whether the main window is key. The Task menu acts on that window's
@@ -129,9 +129,6 @@ final class AppEnvironment {
             if let taskID = navigator.openTaskID, ids.contains(taskID) {
                 requestedPicker = nil
                 navigator.closeTask()
-            }
-            if let rootID = activeDocument?.rootBlockID, ids.contains(rootID) {
-                activeDocument = nil
             }
         }
         store.onDidSave = { [weak widgetPublisher, weak calendar] in
@@ -204,12 +201,6 @@ final class AppEnvironment {
     /// On Today the task it makes is due today.
     func presentTaskCapture(text: String = "") {
         workbench.openCapture(text: text)
-    }
-
-    /// The copy on its list's screen, the Inbox's being triage, in the inspector.
-    func showCopiedTask(id: UUID, listID: UUID) {
-        if let list = store.list(id: listID) { workbench.go(workbench.route(for: list)) }
-        workbench.inspect(id)
     }
 
     func consumeCommand() -> EditorCommand? {
@@ -330,7 +321,7 @@ extension AppEnvironment {
         workbench.trashList(list)
     }
 
-    /// Opens a task's detail panel with one of its pickers already showing.
+    /// Opens a task in the inspector with one of its pickers already showing.
     func openTask(_ id: UUID, showing picker: DetailPicker?) {
         requestedPicker = picker
         navigator.openTask(id)

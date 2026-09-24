@@ -6,10 +6,10 @@
 import AppKit
 import SwiftUI
 
-/// Which way an arrow key was heading when it ran off the end of a block:
-/// ↑ or ↓ off its first or last visual line, or ← or → off its start or end.
+/// Which way an arrow key was heading when it ran off a block: ↑ off its
+/// first visual line, or ↓ off its last.
 enum EditorArrow {
-    case up, down, left, right
+    case up, down
 }
 
 /// Everything the outline needs to hear about from one block's text view.
@@ -18,14 +18,12 @@ enum EditorArrow {
 /// case the text view suppresses its own default behaviour.
 struct BlockEditorCallbacks {
     var onChange: (NSAttributedString) -> Void = { _ in }
-    /// Return pressed. Receives the caret offset so the outline can split.
+    /// Return pressed, with the caret offset and the block's content.
     var onReturn: (Int, NSAttributedString) -> Bool = { _, _ in false }
     /// Tab (or Shift-Tab) pressed.
     var onTab: (_ isBacktab: Bool, _ caret: Int) -> Bool = { _, _ in false }
     /// Backspace with the caret at offset zero and nothing selected.
     var onBackspaceAtStart: (NSAttributedString) -> Bool = { _ in false }
-    /// Forward-delete with the caret at the very end.
-    var onDeleteAtEnd: () -> Bool = { false }
     /// Arrow key that would leave this block.
     var onArrowOut: (_ direction: EditorArrow, _ caret: Int) -> Bool = { _, _ in false }
     var onFocus: () -> Void = {}
@@ -66,8 +64,9 @@ struct BlockEditorCallbacks {
 /// A single editable line of a document, backed by `NSTextView`.
 ///
 /// SwiftUI's `TextEditor` cannot express the key handling an outliner needs —
-/// Return that splits a block, Tab that re-parents it, Backspace that merges
-/// upwards — so each block hosts a bare `NSTextView` and the outline arbitrates.
+/// Return that finishes a line and opens the next, Tab that nests it,
+/// Backspace that steps it out or turns it into text — so each block hosts a
+/// bare `NSTextView` and the outline arbitrates.
 struct BlockTextView: NSViewRepresentable {
     @Environment(\.openURL) private var openURL
     let blockID: UUID
@@ -85,9 +84,9 @@ struct BlockTextView: NSViewRepresentable {
     /// Whether the strike also fades the text to the completed ink. A task
     /// struck during its completion dwell keeps its ink, as the design's does.
     var dimsStruck = true
-    /// Space above and below the text. The legacy document pads a line to
-    /// its gutter; a renderer matching Next's row titles passes 0.
-    var verticalInset: CGFloat = Theme.Editor.textVerticalInset
+    /// Space above and below the text: the list document passes its kind's
+    /// line-box inset, `NXEditor.lineBoxInset(for:)`.
+    var verticalInset: CGFloat = 0
     let attributedText: NSAttributedString
     var placeholder: String = ""
     var isFocused: Bool
@@ -97,15 +96,8 @@ struct BlockTextView: NSViewRepresentable {
     /// never yanks the caret back.
     var focusToken: Int
     /// While the `/` menu is showing it takes over Return, Tab and the arrows.
+    /// Only a `/` that starts the block opens it.
     var isSlashMenuOpen: Bool = false
-    /// Only a `/` that starts the block opens the menu, rather than one
-    /// after any space.
-    var slashOpensAtStartOnly = false
-    /// The typed prefixes that turn the block into another kind.
-    var markdownPrefixes: MarkdownInputRules.BlockPrefixes = .all
-    /// Return leaves a selection as it is, for an outline whose Return
-    /// finishes the whole line rather than splitting it at the caret.
-    var returnKeepsSelection = false
     /// The insertion point's colour. `nil` keeps AppKit's.
     var caretColor: NSColor? = nil
     var onSlashCommand: (SlashMenuCommand) -> Void = { _ in }
@@ -145,7 +137,7 @@ struct BlockTextView: NSViewRepresentable {
         view.isContinuousSpellCheckingEnabled = false
         view.usesFindBar = false
         let linkAttributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: Theme.Editor.link,
+            .foregroundColor: NXEditor.link,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
             .cursor: NSCursor.pointingHand,
         ]
@@ -366,8 +358,7 @@ struct BlockTextView: NSViewRepresentable {
                 in: storage,
                 caret: view.selectedRange().location,
                 wasInsertion: wasInsertion,
-                kind: parent.kind,
-                prefixes: parent.markdownPrefixes
+                kind: parent.kind
             ) {
                 storage.deleteCharacters(in: rule.range)
                 view.setSelectedRange(NSRange(location: 0, length: 0))
@@ -444,12 +435,8 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.confirm)
                     return true
                 }
-                // Return replaces a selection before splitting, just as native
-                // text editing does. Persist the deletion before outline logic.
-                if selection.length > 0, !parent.returnKeepsSelection {
-                    view.insertText("", replacementRange: selection)
-                }
-                return parent.callbacks.onReturn(view.selectedRange().location, NSAttributedString(attributedString: storage))
+                // Return finishes the whole line, so a selection stays as it is.
+                return parent.callbacks.onReturn(selection.location, content)
 
             case #selector(NSResponder.insertLineBreak(_:)):
                 if parent.callbacks.onLineBreak() { return true }
@@ -475,10 +462,6 @@ struct BlockTextView: NSViewRepresentable {
                 guard selection.location == 0, selection.length == 0 else { return false }
                 return parent.callbacks.onBackspaceAtStart(content)
 
-            case #selector(NSResponder.deleteForward(_:)):
-                guard selection.location == storage.length, selection.length == 0 else { return false }
-                return parent.callbacks.onDeleteAtEnd()
-
             case #selector(NSResponder.moveUp(_:)):
                 if view.isSlashMenuOpen {
                     view.slashMenuCommand?(.previous)
@@ -494,14 +477,6 @@ struct BlockTextView: NSViewRepresentable {
                 }
                 guard selection.length == 0, view.isOnLastLine(selection.location) else { return false }
                 return parent.callbacks.onArrowOut(.down, selection.location)
-
-            case #selector(NSResponder.moveLeft(_:)):
-                guard selection.location == 0, selection.length == 0 else { return false }
-                return parent.callbacks.onArrowOut(.left, -1)
-
-            case #selector(NSResponder.moveRight(_:)):
-                guard selection.location == storage.length, selection.length == 0 else { return false }
-                return parent.callbacks.onArrowOut(.right, 0)
 
             case #selector(NSResponder.cancelOperation(_:)):
                 if view.isSlashMenuOpen {
@@ -544,7 +519,7 @@ struct BlockTextView: NSViewRepresentable {
             let caret = min(selection.location, text.length)
             guard !view.hasMarkedText(), parent.kind != .code,
                   let slashIndex = MarkdownInputRules.slashTriggerIndex(in: text, caret: caret),
-                  slashIndex == 0 || !parent.slashOpensAtStartOnly else {
+                  slashIndex == 0 else {
                 dismissedSlashIndex = nil
                 if view.isSlashMenuOpen {
                     parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
@@ -675,7 +650,7 @@ final class BlockNSTextView: NSTextView {
 
         // Size from the same TextKit metrics that place the glyphs. The font's
         // bounding box includes unrelated glyph extents and is not a line box.
-        let minimum = layout.defaultLineHeight(for: Theme.Editor.nsFont(for: blockKind))
+        let minimum = layout.defaultLineHeight(for: NXEditor.nsFont(for: blockKind))
         let textHeight = max(used.maxY, layout.extraLineFragmentRect.maxY, minimum)
         let height = ceil(textHeight) + textContainerInset.height * 2
         cachedHeight = (width, height)
@@ -700,7 +675,7 @@ final class BlockNSTextView: NSTextView {
         guard (textStorage?.length ?? 0) == 0, !placeholderString.isEmpty else { return }
 
         var merged = RichTextCodec.baseAttributes(for: blockKind)
-        merged[.foregroundColor] = Theme.Editor.placeholderInk
+        merged[.foregroundColor] = NXEditor.placeholderInk
 
         NSAttributedString(string: placeholderString, attributes: merged)
             .draw(in: NSRect(origin: textContainerOrigin, size: NSSize(
@@ -731,7 +706,7 @@ final class BlockNSTextView: NSTextView {
             }
             rect.size.width = 1
         } else {
-            rect = CGRect(x: 0, y: 0, width: 1, height: Theme.Editor.nsFont(for: blockKind).boundingRectForFont.height)
+            rect = CGRect(x: 0, y: 0, width: 1, height: NXEditor.nsFont(for: blockKind).boundingRectForFont.height)
         }
         rect.origin.x += textContainerOrigin.x
         rect.origin.y += textContainerOrigin.y

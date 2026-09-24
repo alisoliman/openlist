@@ -15,21 +15,21 @@ enum DropPosition {
     case inside
 }
 
-/// A positional drop target. Dragging starts only in the selection gutter,
-/// leaving native text drags and selected-character copy untouched.
+/// A positional drop target. Dragging starts only at a line's grip, leaving
+/// native text drags and selected-character copy untouched.
 struct BlockDragAndDrop: ViewModifier {
     let row: BlockRow
     /// Reordering is only offered while the stored order is what's on screen —
     /// a sorted view would put the block somewhere other than where it landed.
     var isEnabled: Bool = true
-    /// Whether the middle of the row nests a drop inside it. `nil` offers it
-    /// on every row that can hold children.
-    var holdsDrops: Bool?
-    /// The indicators' colour, indent step, inset past the indent and corner.
-    var accent: Color = Theme.accent
-    var indentStep: CGFloat = Theme.Spacing.indentStep
-    var indicatorInset: CGFloat = 20
-    var radius: CGFloat = Theme.Radius.row
+    /// Whether the middle of the row nests a drop inside it.
+    let holdsDrops: Bool
+    /// The indicators' colour, the document's indent step, their inset past
+    /// the indent, and their corner.
+    let accent: Color
+    var indentStep: CGFloat = 26
+    let indicatorInset: CGFloat
+    let radius: CGFloat
     let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
 
@@ -53,11 +53,10 @@ struct BlockDragAndDrop: ViewModifier {
                     of: [UTType(exportedAs: DragPayload.blockTypeIdentifier), .text, .plainText, .utf8PlainText],
                     delegate: RowDropDelegate(
                         row: row,
-                        holdsDrops: holdsDrops ?? row.block.kind.acceptsChildren,
+                        holdsDrops: holdsDrops,
                         rowHeight: rowHeight,
                         indicator: $indicator,
                         sessionID: env.navigator.blockDragSessionID,
-                        activeLegacyID: { env.navigator.activeLegacyBlockDragID },
                         onMove: onMove,
                         onDropText: onDropText,
                         onInvalid: { env.store.refuse("This internal drag is invalid or belongs to another library. No rows were changed.") },
@@ -97,7 +96,6 @@ private struct RowDropDelegate: DropDelegate {
     let rowHeight: CGFloat
     @Binding var indicator: DropPosition?
     let sessionID: UUID
-    let activeLegacyID: () -> UUID?
     let onMove: ([UUID], DropPosition) -> Void
     let onDropText: (String) -> Void
     let onInvalid: () -> Void
@@ -131,7 +129,6 @@ private struct RowDropDelegate: DropDelegate {
             return false
         }
 
-        let legacyID = activeLegacyID()
         if provider.hasItemConformingToTypeIdentifier(DragPayload.blockTypeIdentifier) {
             provider.loadDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier) { data, _ in
                 Task { @MainActor in
@@ -139,7 +136,7 @@ private struct RowDropDelegate: DropDelegate {
                     // not inspect its kind, ID or position after deletion.
                     guard targetIsAvailable else { onUnavailable(); return }
                     guard let data, let value = String(data: data, encoding: .utf8),
-                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID, activeLegacyID: nil) else {
+                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID) else {
                         onInvalid()
                         return
                     }
@@ -152,7 +149,7 @@ private struct RowDropDelegate: DropDelegate {
             guard let string = value as? String else { return }
             Task { @MainActor in
                 guard targetIsAvailable else { onUnavailable(); return }
-                switch DragPayload.blockDrop(string, session: sessionID, activeLegacyID: legacyID) {
+                switch DragPayload.blockDrop(string, session: sessionID) {
                 case .blocks(let ids): onMove(ids, target)
                 case .text(let text): onDropText(text)
                 case .invalid: onInvalid()

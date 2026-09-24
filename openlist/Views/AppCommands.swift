@@ -235,19 +235,14 @@ struct AppCommands: Commands {
     /// tasks the commands it sends would reach. The Next screens run them on
     /// the workbench targets (selection, focused row, inspected task), as
     /// `RootView.handleGlobalCommand` does; a list document on its own, the
-    /// line being written first; a legacy task page on its single selection.
+    /// line being written first.
     private var taskTargetIDs: [UUID] {
         guard env.isMainWindowKey, !env.workbench.captureOpen, !env.navigator.isCommandPaletteOpen,
               !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return [] }
         guard let active = env.activeDocument else { return env.workbench.targetIDs }
-        if active.rootBlockID == nil {
-            // Only the document that claimed them runs the commands.
-            guard let document = env.workbench.document, document.document == active else { return [] }
-            return document.commandTaskIDs
-        }
-        guard env.navigator.selection.count == 1, let id = env.navigator.selection.first,
-              env.store.block(id: id)?.isTask == true else { return [] }
-        return [id]
+        // Only the document that claimed them runs the commands.
+        guard let document = env.workbench.document, document.document == active else { return [] }
+        return document.commandTaskIDs
     }
 
     /// The only target, when it is a task.
@@ -283,8 +278,8 @@ struct AppCommands: Commands {
         if env.navigator.selection.count == 1, env.navigator.selection.contains(where: { env.store.block(id: $0) != nil }) {
             return true
         }
-        // The Next list document's rows are focused and selected on the workbench.
-        return env.activeDocument?.rootBlockID == nil && !env.workbench.targetIDs.isEmpty
+        // The list document's rows are focused and selected on the workbench.
+        return !env.workbench.targetIDs.isEmpty
     }
 
     private var hasDocumentContext: Bool {

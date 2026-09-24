@@ -23,7 +23,7 @@ xcrun swiftc \
     -o "$OUT/text-checks" \
     openlist/Model/BlockKind.swift \
     Shared/ListAccent.swift \
-    openlist/Design/Theme.swift \
+    openlist/Next/NextEditorTypography.swift \
     openlist/Services/RichTextCodec.swift \
     Tools/TextChecks/main.swift
 

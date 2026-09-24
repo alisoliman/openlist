@@ -144,15 +144,6 @@ extension Store {
         setDueDate(Calendar.current.startOfDay(for: .now), includesTime: false, for: block)
     }
 
-    func setDueTomorrow(_ block: Block) {
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
-        setDueDate(tomorrow, includesTime: false, for: block)
-    }
-
-    func setDueNextWeek(_ block: Block) {
-        setDueDate(Self.nextWeekDay(), includesTime: false, for: block)
-    }
-
     /// "Next week": the coming Monday, whichever day the week starts on here.
     /// When that Monday is tomorrow it's the one after, so it never repeats Tomorrow.
     static func nextWeekDay(from now: Date = .now, calendar: Calendar = .current) -> Date {
@@ -414,16 +405,6 @@ extension Store {
             return date.formatted(.dateTime.day().month(.abbreviated))
         }
         return date.formatted(.dateTime.day().month(.abbreviated).year())
-    }
-
-    /// Short chip text such as "Today", "Tue", "12 Mar", with an optional time.
-    static func dueChipText(for block: Block) -> String {
-        guard let dueDate = block.dueDate else { return "" }
-        var text = relativeDateText(dueDate).capitalizedFirstLetter
-        if block.includesTime {
-            text += " \(dueDate.formatted(date: .omitted, time: .shortened))"
-        }
-        return text
     }
 
     /// Unambiguous "12 Mar 2026, 6:00 PM" form used by pickers and export.

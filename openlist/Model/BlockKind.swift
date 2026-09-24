@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// The type of a block inside a list document or task detail page.
+/// The type of a block inside a list document.
 ///
 /// Superlist treats a list as a rich document: it can hold tasks, paragraphs,
 /// headings, bullets, numbered items, quotes, code, dividers and images all in
@@ -71,35 +71,11 @@ enum BlockKind: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    /// Markdown-ish shorthand shown in the slash menu.
-    var shorthand: String? {
-        switch self {
-        case .task: "[]"
-        case .heading1: "#"
-        case .heading2: "##"
-        case .heading3: "###"
-        case .bullet: "-"
-        case .numbered: "1."
-        case .quote: ">"
-        case .code: "```"
-        case .divider: "---"
-        default: nil
-        }
-    }
-
     /// Blocks that can never hold text.
     var isVoid: Bool { self == .divider || self == .image }
 
     /// Blocks the user can nest children under.
     var acceptsChildren: Bool { !isVoid }
-
-    /// Kinds that continue themselves when the user presses Return.
-    var continuesOnReturn: Bool {
-        switch self {
-        case .task, .bullet, .numbered, .code: true
-        default: false
-        }
-    }
 
     /// Keywords used to filter this kind inside the slash menu.
     var searchTerms: [String] {

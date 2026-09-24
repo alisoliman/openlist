@@ -79,13 +79,13 @@ if phase == "prepare" {
     let doomedIDs = [doomedTask.id, doomedImage.id]
     store.refreshAllReminders()
     store.save()
-    store.deleteList(doomed)
+    store.trashList(doomed)
     check(store.list(id: doomed.id) == nil && doomedIDs.allSatisfy { store.block(id: $0) == nil }, "Deleting a list removes parent and descendant blocks")
     check(store.attachments(for: doomedImage.id).count == 1, "Deleting a list retains descendant attachment records")
     check(media.fileContents(filename: "delete-list.png") != nil && media.fileContents(filename: "delete-list.txt") != nil, "Deleting a list retains image and attachment files")
     check(!NotificationService.shared.scheduled.contains(doomedTask.id), "Deleting a list cancels reminders")
     check(store.block(id: keepTask.id) != nil && media.fileContents(filename: "keep-image.png") != nil, "List deletion preserves unrelated list and media")
-    store.deleteList(inbox)
+    store.trashList(inbox)
     check(store.inboxList()?.id == inbox.id && store.block(id: inboxTask.id) != nil, "System Inbox cannot be deleted")
 
     let removeBlock = store.appendBlock(kind: .task, text: "Delete block", to: .init(listID: keep.id))

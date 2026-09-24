@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Compact metadata wraps as a group without taking width away from typing.
+/// Lays its items out in rows, wrapping onto as many as the width needs, as
+/// the list document's shortcut hints do.
 struct MetadataFlowLayout: Layout {
     var spacing: CGFloat = 5
 

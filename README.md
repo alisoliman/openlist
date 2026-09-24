@@ -74,15 +74,18 @@ Typing drives everything:
 
 | Type | Get |
 |---|---|
-| `/` | block menu, filterable, arrow-key driven |
-| `[]` · `-` · `1.` · `#` · `##` · `###` · `>` · `---` | the matching block |
+| `/` at the start of a line | the Turn into card, filterable, arrow-key driven |
+| `[ ]` · `[]` · `-` · `*` · `#` · `##` | a task, a bullet, a heading or a subheading |
+| `>` | a text line |
 | `**bold**` · `*italic*` · `~~strike~~` · `` `code` `` | inline styling |
 | `#label` | attaches a label |
 | paste of several lines | one block per line, nesting preserved |
 | "tomorrow at 6pm", "every monday", "in 3 days" | due date and repeat rule |
 
-⇥ / ⇧⇥ indent and outdent, ⌫ at the start of a line merges upwards, ⌥⌘↑/↓ move a
-block with its subtree, and blocks drag to reorder or nest.
+⇥ / ⇧⇥ indent and outdent tasks and list items, two levels deep at most; ⌫ at the
+start of a line turns a heading or list item into text, steps a nested line out,
+and takes an empty line away, but never merges lines. ⌥⌘↑/↓ move a line with its
+subtree, and a line's grip drags it to reorder or nest.
 
 ### Tasks
 
@@ -466,12 +469,12 @@ openlist/
                RecurrenceEngine, RichTextCodec, MediaStore, MarkdownExporter,
                NotificationService, QuickCaptureHotKey, WidgetSnapshotPublisher,
                ICloudConfiguration, ICloudSyncMonitor, ICloudSyncState
-  Editor/      BlockTextView (AppKit-backed), OutlineEditor, DocumentView,
-               BlockRowView, SlashMenuView, MarkdownInputRules, BlockDragAndDrop
-  Next/        Openlist Next shell: sidebar, screens, rows, inspector,
-               calendar, overlays, settings, Workbench (shared UI state and actions)
+  Editor/      the list document's engine: OutlineEditor, BlockTextView
+               (AppKit-backed), MarkdownInputRules, BlockDragAndDrop
+  Next/        Openlist Next shell: sidebar, screens, rows, the list document,
+               inspector, calendar, overlays, settings, Workbench (shared UI
+               state and actions), and the design tokens (NextTheme, NXEditor)
   Views/       RootView, menus, the Work panel, calendar history, shared pickers
-  Design/      Theme
 Shared/        ListAccent, WidgetSnapshot, WidgetRoute, WidgetActions,
                WidgetIntents, AppGroup, Fonts   (app + widget)
 OpenlistWidget/  WidgetKit extension
@@ -491,15 +494,15 @@ or reaches the widget.
 
 ### Why the editor is AppKit-backed
 
-SwiftUI's `TextEditor` cannot express what an outliner needs — Return that splits a
-block, ⇥ that re-parents it, ⌫ that merges into the row above, arrow keys that walk
-between blocks. Each block therefore hosts a bare `NSTextView` (explicit TextKit 1,
-so `sizeThatFits` can measure synchronously) and `OutlineEditor` arbitrates the keys.
-`OutlineEditor` owns the caret, the `/` menu and every structural edit, and knows
-nothing about how rows look. `DocumentView` is the legacy renderer over it;
-`NXDocumentOutline` in `Next/` draws every list, and the Inbox shown as a document,
-as the Next design's document, with the engine's `.nextDocument` policy: the
-design's indent, Return, Backspace and drag rules, and one undo step per line edited.
+SwiftUI's `TextEditor` cannot express what an outliner needs — Return that finishes a
+line and opens the next, ⇥ that nests it, ⌫ that steps it out or turns it into text,
+arrow keys that walk between lines. Each line therefore hosts a bare `NSTextView`
+(explicit TextKit 1, so `sizeThatFits` can measure synchronously) and `OutlineEditor`
+arbitrates the keys. `OutlineEditor` owns the caret, the `/` menu and every
+structural edit under the design's rules (`OutlinePolicy`): its indent, Return,
+Backspace and drag rules, and one undo step per line edited. It knows nothing about
+how lines look: `NXDocumentOutline` in `Next/` draws every list, and the Inbox shown
+as a document, as the Next design's document, its text set in `NXEditor`'s metrics.
 Everything else is SwiftUI.
 
 ---
@@ -638,8 +641,8 @@ it does not rewrite the original notes. Archived lists keep their archive state.
 
 **Hold to erase** and **Hold to empty Trash** require confirmation and remove only
 files with no remaining live or retained references. These actions cannot be
-undone. Editor merges and undone captures use structural cleanup and session
-Undo; they do not fill Trash. **Delete everything…** in Settings → Data
+undone. Empty lines the document takes away and undone captures use structural
+cleanup and session Undo; they do not fill Trash. **Delete everything…** in Settings → Data
 permanently removes both active content and Trash. Library backup format 3 includes Trash
 and its media; versions 1 and 2 can still be imported. A restore already staged
 by an older app must be cancelled and prepared again from the original backup.

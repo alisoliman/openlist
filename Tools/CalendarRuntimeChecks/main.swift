@@ -219,8 +219,9 @@ store.deferTask(backlog, to: date(15))
 store.deselectForToday(backlog)
 recovered.replan(now: date())
 check(backlog.deferredUntil == nil && !recovered.plan.assessments.contains { $0.taskID == backlog.id }, "clearing an undated deferral returns work to unscheduled backlog")
-// Manual preferences remain flexible, but an infeasible drop must explain why
-// the visible block moved elsewhere. Explicit pinning retains the requested time.
+// Manual preferences remain flexible, but an infeasible move must explain why
+// the visible block went elsewhere. A pinned placement, as Plan saves, keeps
+// the requested time.
 func checkManualMoveFeedback() throws {
     let moveContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])
     let moveStore = Store(context: moveContainer.mainContext)
@@ -247,12 +248,20 @@ func checkManualMoveFeedback() throws {
     planner.move(block: currentBlock(), to: date(14, 10), now: date())
     check(planner.notice?.contains("Fixture meeting") == true, "busy-time rejection names the conflicting external event")
     check(currentBlock().start != date(14, 10), "preferred move cannot overlap fixed busy time")
+    check(planner.notice?.contains("Find a Slot") == true && planner.notice?.contains("Pin time") == false,
+          "an unhonored move points to Find a Slot, not to a pin control the app lacks")
 
-    planner.move(block: currentBlock(), to: date(14, 10), isPinned: true, now: date())
+    // Plan's path: a pinned placement for the occurrence, then a replan.
+    func pin(at start: Date) {
+        let block = currentBlock()
+        _ = moveStore.setPlacement(for: movedTask, start: start, end: start.addingTimeInterval(block.end.timeIntervalSince(block.start)),
+                                   isPinned: true, placementID: block.placementID)
+        planner.replan(now: date())
+    }
+    pin(at: date(14, 10))
     let pinned = currentBlock()
-    check(pinned.isPinned && pinned.start == date(14, 10), "explicit Pin time preserves an otherwise infeasible requested time")
-    check(pinned.conflicts.contains { $0.contains("Fixture meeting") }, "explicit pinned conflict remains visible on the scheduled block")
-    check(planner.notice?.contains("Pinned time saved.") == true && planner.notice?.contains("Fixture meeting") == true, "pinning confirms the saved time and explains its conflict")
+    check(pinned.isPinned && pinned.start == date(14, 10), "a pinned placement preserves an otherwise infeasible requested time")
+    check(pinned.conflicts.contains { $0.contains("Fixture meeting") }, "a pinned conflict remains visible on the scheduled block")
     movedTask.dueDate = date(14, 16)
     movedTask.includesTime = true
     moveStore.save()
@@ -260,8 +269,9 @@ func checkManualMoveFeedback() throws {
     let coverage = planner.plan.assessments.first { $0.taskID == movedTask.id }!
     check(coverage.status == .cannotFitBeforeDeadline && coverage.beforeDeadlineMinutes == 0, "a meeting-conflicting pin never counts as safe deadline coverage")
 
-    planner.move(block: currentBlock(), to: date(14, 13), isPinned: true, now: date())
-    check(currentBlock().isPinned && currentBlock().conflicts.isEmpty && planner.notice == nil, "moving the pin into free hours clears its previous conflict notice")
+    pin(at: date(14, 13))
+    check(currentBlock().isPinned && currentBlock().start == date(14, 13) && currentBlock().conflicts.isEmpty,
+          "a pin moved into free hours clears its previous conflict")
     planner.move(block: currentBlock(), to: date(14, 16, 30), now: date())
     check(planner.notice?.contains("after the task’s deadline") == true, "after-deadline preferred move has a specific explanation")
 

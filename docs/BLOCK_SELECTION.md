@@ -12,15 +12,16 @@ While rows are selected, the selection bar at the bottom of the window offers
 tray with Undo. A row drags onto a list in the sidebar, or onto a line of a list
 document, to move there.
 
-The list document keeps its own outline selection, scoped to that document, for
-its structural commands and drags.
+In a list document the line being written is the document's own selection,
+scoped to that document, which its menu commands act on. A line's grip drags it
+with the rows selected alongside it.
 
 ## Files
 
 `Next/Workbench.swift` owns the screens' selection, focus and visible row order;
 `Next/NextBars.swift` draws the selection bar and `Next/NextRow.swift` the rows,
 their clicks and drags. `Model/BlockSelection.swift`, through
-`Services/Navigator.swift`, holds the document's outline selection.
+`Services/Navigator.swift`, holds the list document's selection and its scope.
 `Services/DragPayload.swift` carries and validates multi-root drags, and
 `Next/NextSidebar.swift` accepts them.
 
@@ -53,10 +54,9 @@ same save as a positional move. One move Undo/Redo includes that expansion only
 while its expected collapse state remains unchanged; later explicit collapse
 choices are preserved.
 
-Versioned drag payloads carry a per-Navigator session nonce. Legacy single UUID
-payloads are accepted only when the same running Navigator has an active
-matching single-row drag; arbitrary strings and malformed internal payloads are
-rejected, never inserted as text. Drop handlers recheck the target model before
+Versioned drag payloads carry a per-Navigator session nonce. A document line
+and a sidebar list take only those: an older single-row UUID payload and
+malformed internal payloads are rejected, never inserted as text or moved. Drop handlers recheck the target model before
 dispatching a mutation, so a target deleted during payload loading produces an
 unavailable-target notice and no partial drop. Both app manifests export
 `app.openlist.block-drag` as `public.data`; `Tools/verify-drag-types.py` checks
@@ -65,7 +65,7 @@ Info.plist.
 
 ## Checks
 
-`Tools/run-block-selection-checks.sh` covers the outline selection model,
+`Tools/run-block-selection-checks.sh` covers the document selection's scope,
 `Tools/run-drag-payload-checks.sh` malformed, cross-session and manifest cases,
 `Tools/run-bulk-action-checks.sh` bulk completion, moves, `trashSelection`,
 stale selections and destinations, save failures and separate-process

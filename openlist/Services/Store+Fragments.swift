@@ -4,8 +4,9 @@ import SwiftData
 extension Store {
     /// An insertion-only sibling transaction. Live drafts, existing task/list
     /// instances and their pending edits are never rolled back or flushed.
+    /// A paste is new work: the schedules the fragment carries stay behind.
     func pasteFragment(_ fragment: DocumentFragment, in document: DocumentContext,
-                       after anchorID: UUID?, includeSchedules: Bool = false) throws -> [UUID] {
+                       after anchorID: UUID?) throws -> [UUID] {
         try fragment.validate()
         guard let listID = resolvedListID(document.listID), let owningList = list(id: listID),
               !owningList.isDeleted else { throw FragmentError.destination }
@@ -99,14 +100,7 @@ extension Store {
             clone.schedulingEstimateMinutes = source.schedulingEstimateMinutes
             clone.keepsSessionsTogether = source.keepsSessionsTogether
             clone.tracksAwayFromMac = source.tracksAwayFromMac
-            if includeSchedules {
-                clone.dueDate = source.dueDate
-                clone.includesTime = source.includesTime
-                clone.reminderAt = source.reminderAt
-                clone.recurrence = source.recurrence
-                clone.selectedForDay = source.selectedForDay
-                clone.deferredUntil = source.deferredUntil
-            }
+            // Dates, reminders, repeats, day selections and deferrals stay behind.
             // Occurrence IDs, work sessions, placements and prior history are
             // deliberately absent from the clipboard contract.
             if let media = source.image {

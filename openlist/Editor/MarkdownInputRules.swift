@@ -8,9 +8,9 @@ import Foundation
 
 /// Type-to-format rules applied as the user writes.
 ///
-/// Two families: block prefixes (`## `, `- `, `[] `) that change the whole
-/// block's kind, and inline pairs (`**bold**`, `` `code` ``) that restyle a
-/// span the moment the closing delimiter is typed.
+/// Two families: the design's block prefixes (`## `, `- `, `[] `) that change
+/// the whole block's kind, and inline pairs (`**bold**`, `` `code` ``) that
+/// restyle a span the moment the closing delimiter is typed.
 enum MarkdownInputRules {
     struct BlockPrefixMatch {
         /// The characters to delete, including the trailing space.
@@ -18,34 +18,16 @@ enum MarkdownInputRules {
         var kind: BlockKind
     }
 
-    /// Which block prefixes a line converts on.
-    enum BlockPrefixes {
-        /// Every prefix the editor knows.
-        case all
-        /// The design's list document's: `# `, `## `, `- `, `* `, `[ ] `,
-        /// `[] ` and `> `. Anything else stays as typed.
-        case design
-    }
-
-    private static let designPrefixes: Set<String> = ["## ", "# ", "[] ", "[ ] ", "* ", "- ", "> "]
-
-    /// Block-level prefixes, longest first so `###` beats `#`.
+    /// The list document's block prefixes, the design's, longest first so
+    /// `##` beats `#`. Anything else stays as typed.
     private static let blockPrefixes: [(String, BlockKind)] = [
-        ("### ", .heading3),
         ("## ", .heading2),
         ("# ", .heading1),
         ("[] ", .task),
         ("[ ] ", .task),
-        ("- [ ] ", .task),
-        ("- [] ", .task),
         ("* ", .bullet),
         ("- ", .bullet),
-        ("+ ", .bullet),
         ("> ", .quote),
-        ("``` ", .code),
-        ("1. ", .numbered),
-        ("1) ", .numbered),
-        ("--- ", .divider),
     ]
 
     /// Detects a markdown prefix the user just *typed* at the start of a block.
@@ -53,21 +35,20 @@ enum MarkdownInputRules {
     /// Two guards matter. The caret must sit immediately after the prefix, so
     /// pasting a paragraph beginning "- " converts nothing. And the change must
     /// have been an insertion — otherwise backspacing the "x" out of
-    /// `--- xSection` would leave `--- Section`, match the divider rule, and
-    /// silently destroy the rest of the line.
+    /// `# xSection` would leave `# Section`, match the heading rule, and
+    /// turn a line the user was editing into a heading.
     static func matchBlockPrefix(
         in storage: NSTextStorage,
         caret: Int,
         wasInsertion: Bool,
-        kind: BlockKind,
-        prefixes: BlockPrefixes = .all
+        kind: BlockKind
     ) -> BlockPrefixMatch? {
         guard wasInsertion, kind != .code else { return nil }
 
         let text = storage.string as NSString
         guard text.length > 0 else { return nil }
 
-        for (prefix, kind) in blockPrefixes where prefixes == .all || designPrefixes.contains(prefix) {
+        for (prefix, kind) in blockPrefixes {
             let prefixLength = (prefix as NSString).length
             guard caret == prefixLength, text.length >= prefixLength else { continue }
             if text.substring(to: prefixLength).lowercased() == prefix {

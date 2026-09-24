@@ -52,22 +52,21 @@ store.save()
 let undo = UndoManager()
 undo.groupsByEvent = false
 undo.beginUndoGrouping()
-store.undoableEditorEdit(in: list.id, name: "Merge blocks", undoManager: undo) {
-    _ = store.backspaceAtStart(second, content: store.attributedContent(of: second), in: document)
+store.undoableEditorEdit(in: list.id, name: "Delete", undoManager: undo) {
+    store.deleteBlock(second, liftChildren: true)
     store.save()
 }
 undo.endUndoGrouping()
-check(store.block(id: secondID) == nil, "Merge removes second row")
-check(store.block(id: childID)?.parentID == first.id, "Merge adopts child")
-check(first.note == "Keep this note" && first.dueDate == due && first.isStarred, "Merge preserves task details")
-check(store.attachments(for: first.id).first?.id == attachmentID && MediaStore.shared.fileContents(filename: filename) == bytes, "Merge moves attachments without deleting their files")
-check(undo.canUndo, "Merge registers an undo action")
-// A later unrelated metadata edit to the surviving task must not be rolled back.
+check(store.block(id: secondID) == nil, "Deleting a line removes its row")
+check(store.block(id: childID)?.parentID == nil, "What was under the line stays, a level up")
+check(store.attachments(for: secondID).isEmpty && MediaStore.shared.fileContents(filename: filename) == nil, "Deleting a line removes its files")
+check(undo.canUndo, "Deleting registers an undo action")
+// A later unrelated metadata edit to another task must not be rolled back.
 first.mediaCaption = "Unrelated later caption"
 store.save()
 undo.undo()
 let restored = store.block(id: secondID)!
-check(first.text == "First" && restored.text == "Second", "Undo restores separate texts")
+check(first.text == "First" && restored.text == "Second", "Undo restores the line's text")
 check(restored.richData == richData, "Undo restores rich content")
 check(restored.note == "Keep this note" && first.note.isEmpty && first.mediaCaption == "Unrelated later caption", "Undo restores notes without overwriting unrelated fields")
 check(restored.dueDate == due && restored.reminderAt == due.addingTimeInterval(-600), "Undo restores schedule and reminder")
@@ -78,22 +77,22 @@ check(store.attachments(for: secondID).first?.id == attachmentID, "Undo restores
 check(MediaStore.shared.fileContents(filename: filename) == bytes, "Undo restores deleted attachment bytes")
 check(undo.canRedo, "Undo registers redo")
 undo.redo()
-check(store.block(id: secondID) == nil && first.text == "FirstSecond", "Redo reapplies merge")
+check(store.block(id: secondID) == nil && store.block(id: childID)?.parentID == nil, "Redo deletes the line again")
 undo.undo()
 check(store.attachments(for: secondID).first?.filename == filename && MediaStore.shared.fileContents(filename: filename) == bytes, "Repeated undo restores attachment again")
 
 undo.removeAllActions()
 undo.beginUndoGrouping()
-store.undoableEditorEdit(in: list.id, name: "Split block", undoManager: undo) {
-    _ = store.splitBlock(first, at: 2, content: store.attributedContent(of: first))
+store.undoableEditorEdit(in: list.id, name: "Added a line", undoManager: undo) {
+    _ = store.insertBlock(kind: .task, text: "Added", after: first)
     store.save()
 }
 undo.endUndoGrouping()
-let countAfterSplit = store.blocks(inList: list.id).count
+let countAfterAdd = store.blocks(inList: list.id).count
 undo.undo()
-check(first.text == "First" && store.blocks(inList: list.id).count == countAfterSplit - 1, "Split undo restores original block")
+check(first.text == "First" && store.blocks(inList: list.id).count == countAfterAdd - 1, "Undoing an added line removes it")
 undo.redo()
-check(store.blocks(inList: list.id).count == countAfterSplit, "Split redo restores new block")
+check(store.blocks(inList: list.id).count == countAfterAdd, "Redo adds the line again")
 
 undo.removeAllActions()
 let destination = store.createList(title: "Move destination")
@@ -109,19 +108,6 @@ check(store.block(id: secondID)?.listID == list.id && store.block(id: childID)?.
 undo.redo()
 check(store.block(id: secondID)?.listID == destination.id && store.attachments(for: secondID).first?.id == attachmentID, "Cross-list redo retains attachments")
 undo.undo()
-
-let conflictList = store.createList(title: "Conflicting schedules")
-let conflictDocument = DocumentContext(listID: conflictList.id)
-let earlier = store.appendBlock(kind: .task, text: "Earlier", to: conflictDocument)
-earlier.dueDate = due
-let conflict = store.appendBlock(kind: .task, text: "Conflicting", to: conflictDocument)
-conflict.dueDate = due.addingTimeInterval(86_400)
-let conflictID = conflict.id
-let beforeConflict = store.blocks(inList: conflictList.id).count
-_ = store.backspaceAtStart(conflict, content: store.attributedContent(of: conflict), in: conflictDocument)
-check(store.block(id: conflictID) != nil && store.blocks(inList: conflictList.id).count == beforeConflict && store.editorNotice != nil, "Conflicting task schedules do not lose a row")
-_ = store.backspaceAtStart(earlier, content: store.attributedContent(of: earlier), in: conflictDocument)
-check(earlier.isTask && earlier.dueDate == due, "Backspace at first task preserves its kind and schedule")
 
 undo.removeAllActions()
 let image = store.appendBlock(kind: .image, to: document)
@@ -151,7 +137,7 @@ store.undoableEditorEdit(in: removedList.id, name: "New task", undoManager: undo
 }
 undo.endUndoGrouping()
 let removedListID = removedList.id
-store.deleteList(removedList)
+store.trashList(removedList)
 undo.undo()
 check(store.blocks(inList: removedListID).isEmpty && store.editorNotice?.contains("unavailable") == true, "Undo waits for a retained list to be restored before applying its edits")
 
@@ -206,7 +192,7 @@ coordinator.apply(closing, to: native, kind: .task, isCompleted: false, struck: 
 let struckAttributes = native.textStorage!.attributes(at: 0, effectiveRange: nil)
 check(struckAttributes[.strikethroughStyle] as? Int == NSUnderlineStyle.single.rawValue
     && struckAttributes[.strikethroughColor] as? NSColor === closingAccent
-    && struckAttributes[.foregroundColor] as? NSColor === Theme.Editor.completedInk, "A closing task is struck in the accent before it is stored as done")
+    && struckAttributes[.foregroundColor] as? NSColor === NXEditor.completedInk, "A closing task is struck in the accent before it is stored as done")
 check(coordinator.signature == BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false, struck: true, strikeColor: closingAccent),
     "A struck presentation keeps the model's content in its signature")
 check(coordinator.signature != BlockTextView.ContentSignature(attributedText: closing, kind: .task, isCompleted: false),
@@ -232,18 +218,17 @@ check(RichTextCodec.restylingCompletion(of: RichTextCodec.restylingCompletion(of
     "Unstriking a task keeps the user's own strikethrough")
 
 // The list document converts a line only on the design's prefixes.
-func typedPrefix(_ text: String, _ prefixes: MarkdownInputRules.BlockPrefixes) -> BlockKind? {
+func typedPrefix(_ text: String) -> BlockKind? {
     MarkdownInputRules.matchBlockPrefix(in: NSTextStorage(string: text), caret: (text as NSString).length,
-                                        wasInsertion: true, kind: .task, prefixes: prefixes)?.kind
+                                        wasInsertion: true, kind: .task)?.kind
 }
-check(typedPrefix("## ", .design) == .heading2 && typedPrefix("# ", .design) == .heading1 && typedPrefix("- ", .design) == .bullet
-    && typedPrefix("* ", .design) == .bullet && typedPrefix("[ ] ", .design) == .task && typedPrefix("[] ", .design) == .task
-    && typedPrefix("> ", .design) == .quote, "The design's prefixes convert a line")
-check(["### ", "1. ", "1) ", "+ ", "``` ", "--- "].allSatisfy { typedPrefix($0, .design) == nil && typedPrefix($0, .all) != nil },
-    "The editor's other prefixes stay as typed in the list document, and still convert elsewhere")
+check(typedPrefix("## ") == .heading2 && typedPrefix("# ") == .heading1 && typedPrefix("- ") == .bullet
+    && typedPrefix("* ") == .bullet && typedPrefix("[ ] ") == .task && typedPrefix("[] ") == .task
+    && typedPrefix("> ") == .quote, "The design's prefixes convert a line")
+check(["### ", "1. ", "1) ", "+ ", "``` ", "--- "].allSatisfy { typedPrefix($0) == nil },
+    "Other Markdown prefixes stay as typed")
 var prefixedKinds: [BlockKind] = []
 coordinator.parent.callbacks.onMarkdownPrefix = { prefixedKinds.append($0) }
-coordinator.parent.markdownPrefixes = .design
 for typed in ["1. ", "## "] {
     coordinator.apply(NSAttributedString(), to: native, kind: .task, isCompleted: false)
     native.textStorage?.append(NSAttributedString(string: typed, attributes: RichTextCodec.baseAttributes(for: .task)))
@@ -251,7 +236,6 @@ for typed in ["1. ", "## "] {
     coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: native))
 }
 check(prefixedKinds == [.heading2] && native.string.isEmpty, "A line typed “1. ” keeps it; “## ” makes a subheading")
-coordinator.parent.markdownPrefixes = .all
 coordinator.parent.callbacks.onMarkdownPrefix = { _ in }
 
 let inlineRange = NSRange(location: 0, length: 6)
@@ -269,15 +253,7 @@ for (name, edit) in inlineEdits {
     check(signature != plainSignature, "Remote \(name) changes invalidate the editor signature")
     check(signature == BlockTextView.ContentSignature(attributedText: roundTrip, kind: .task, isCompleted: false), "Local \(name) echoes preserve native editing without a redundant restyle")
 }
-// The popup belongs to the actual wrapped caret and the scroll viewport.
-let viewport = CGRect(x: -40, y: -500, width: 420, height: 700)
-let popup = SlashMenuLayout.frame(caret: CGRect(x: 320, y: 170, width: 1, height: 20), viewport: viewport, preferredHeight: 264)!
-check(viewport.contains(popup) && popup.maxY < 170, "Bottom-edge popup opens above the caret within the viewport")
-let narrowViewport = CGRect(x: 0, y: 0, width: 180, height: 140)
-let narrowPopup = SlashMenuLayout.frame(caret: CGRect(x: 140, y: 20, width: 1, height: 18), viewport: narrowViewport, preferredHeight: 264)!
-check(narrowViewport.contains(narrowPopup) && narrowPopup.width == 164 && narrowPopup.height < 264, "Narrow inspectors constrain popup width and scrolling height")
-check(SlashMenuLayout.frame(caret: CGRect(x: 0, y: 800, width: 1, height: 20), viewport: viewport, preferredHeight: 264) == nil, "A caret scrolled outside the viewport does not leave a detached menu")
-// The Next document's Turn into card opens under its line whenever it fits on the page.
+// The list document's Turn into card opens under its line whenever it fits on the page.
 let cardPage = CGRect(x: 0, y: 300, width: 800, height: 600)
 check(!SlashMenuLayout.cardOpensAbove(line: CGRect(x: 40, y: 500, width: 600, height: 20), height: 200, viewport: cardPage),
     "The Turn into card opens under a line with room below it, as the design places it")
@@ -311,7 +287,12 @@ var queryRange = NSRange()
 coordinator.parent.callbacks.onSlashQuery = { query, range, _, _ in lastQuery = query; queryRange = range }
 input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
 coordinator.updateSlashQuery(in: input)
-check(lastQuery == "h2" && queryRange == NSRange(location: trigger, length: 3), "Slash query removes only its trigger and filter before a suffix")
+check(lastQuery == nil, "A slash after a space mid-line stays as typed; only one that starts the line opens Turn into")
+let slashLine = RichTextCodec.decode(nil, plainText: "/h2 then a suffix", kind: .task)
+coordinator.apply(slashLine, to: input, kind: .task, isCompleted: false)
+input.setSelectedRange(NSRange(location: 3, length: 0))
+coordinator.updateSlashQuery(in: input)
+check(lastQuery == "h2" && queryRange == NSRange(location: 0, length: 3), "Slash query removes only its trigger and filter before a suffix")
 input.isSlashMenuOpen = true
 coordinator.dismissSlash(in: input)
 lastQuery = nil
@@ -320,10 +301,10 @@ check(lastQuery == nil, "Escape suppresses the same slash trigger during subsequ
 input.isSlashMenuOpen = false
 input.setSelectedRange(NSRange(location: 0, length: 0))
 coordinator.updateSlashQuery(in: input)
-input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
+input.setSelectedRange(NSRange(location: 3, length: 0))
 coordinator.updateSlashQuery(in: input)
 check(lastQuery == "h2", "Moving away from a dismissed trigger allows a later command session")
-coordinator.parent = BlockTextView(blockID: UUID(), kind: .code, isCompleted: false, attributedText: wrapped, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
+coordinator.parent = BlockTextView(blockID: UUID(), kind: .code, isCompleted: false, attributedText: slashLine, isFocused: false, focusToken: 0, callbacks: coordinator.parent.callbacks)
 lastQuery = nil
 coordinator.updateSlashQuery(in: input)
 check(lastQuery == nil, "Code blocks keep slash characters literal")
@@ -335,29 +316,23 @@ input.setSelectedRange(NSRange(location: 7, length: 7))
 var returnedText = ""
 var returnedCaret = -1
 coordinator.parent.callbacks.onReturn = { caret, content in returnedCaret = caret; returnedText = content.string; return true }
+// The list document's Return finishes the whole line, a selection and all.
 check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertNewline(_:))), "Return is routed to the outline")
-check(returnedText == "Before After" && returnedCaret == 7, "Return replaces selected text before splitting, preserving the suffix")
+check(returnedText == "Before DELETE After" && returnedCaret == 7 && input.string == "Before DELETE After",
+    "Return that finishes the line leaves its selected text in it")
 var tabCaret = -1
 coordinator.parent.callbacks.onTab = { _, caret in tabCaret = caret; return true }
 check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertTab(_:))) && tabCaret == 7, "Indentation receives the original mid-text caret")
 input.setSelectedRange(NSRange(location: 0, length: 2))
 check(!coordinator.textView(input, doCommandBy: #selector(NSResponder.moveUp(_:))), "Up with selected text retains native selection behavior")
-// The list document's Return finishes the whole line, a selection and all.
-coordinator.parent.returnKeepsSelection = true
-coordinator.apply(selectedText, to: input, kind: .task, isCompleted: false)
-input.setSelectedRange(NSRange(location: 7, length: 7))
-check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertNewline(_:)))
-    && returnedText == "Before DELETE After" && input.string == "Before DELETE After",
-    "Return that finishes the line leaves its selected text in it")
-coordinator.parent.returnKeepsSelection = false
-// ← and → off a line's ends say which way they went, apart from ↑ and ↓.
+// ← and → off a line's ends stay in it, as the design's lines are single inputs.
 var arrowsOut: [EditorArrow] = []
-coordinator.parent.callbacks.onArrowOut = { direction, _ in arrowsOut.append(direction); return false }
+coordinator.parent.callbacks.onArrowOut = { direction, _ in arrowsOut.append(direction); return true }
 input.setSelectedRange(NSRange(location: 0, length: 0))
-_ = coordinator.textView(input, doCommandBy: #selector(NSResponder.moveLeft(_:)))
+let leftTaken = coordinator.textView(input, doCommandBy: #selector(NSResponder.moveLeft(_:)))
 input.setSelectedRange(NSRange(location: input.string.utf16.count, length: 0))
-_ = coordinator.textView(input, doCommandBy: #selector(NSResponder.moveRight(_:)))
-check(arrowsOut == [.left, .right], "← at a line's start and → at its end tell the outline they were heading sideways")
+let rightTaken = coordinator.textView(input, doCommandBy: #selector(NSResponder.moveRight(_:)))
+check(!leftTaken && !rightTaken && arrowsOut.isEmpty, "← at a line's start and → at its end never leave the line")
 coordinator.parent.callbacks.onArrowOut = { _, _ in false }
 // ⇧↩ asks the outline first, with the / menu showing too, and types a break only when it declines.
 var lineBreaksAsked = 0
@@ -469,11 +444,11 @@ coordinator.parent.callbacks.onEscape = {}
 
 // The title's visible cap-height center must agree with its row center. A
 // paragraph line-height multiplier previously shifted that baseline downward.
-input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
 for kind: BlockKind in [.task, .paragraph, .heading1, .heading2, .heading3, .code] {
+    input.textContainerInset = NSSize(width: 0, height: NXEditor.lineBoxInset(for: kind))
     coordinator.apply(RichTextCodec.decode(nil, plainText: "Task", kind: kind), to: input, kind: kind, isCompleted: false)
     let singleHeight = input.height(fittingWidth: 180)
-    let font = Theme.Editor.nsFont(for: kind)
+    let font = NXEditor.nsFont(for: kind)
     let baseline = input.layoutManager!.location(forGlyphAt: 0).y + input.textContainerOrigin.y
     let opticalCenter = baseline - font.capHeight / 2
     check(abs(opticalCenter - singleHeight / 2) < 1.5, "\(kind) text is optically centered in its measured editor height")
@@ -487,17 +462,17 @@ check(input.caretRectLocal(at: 5).maxY <= trailingLineHeight, "Balanced insets s
 // One editor typography, the Next list document's. A task title in the
 // document's line box measures and sits like a Next row's title, which
 // SwiftUI sets the way `NXStrikeText` does.
-check(Theme.Editor.nsFont(for: .heading1) == NSFont.systemFont(ofSize: 20, weight: .bold)
-    && Theme.Editor.nsFont(for: .heading2) == NSFont.systemFont(ofSize: 15.5, weight: .semibold)
-    && Theme.Editor.nsFont(for: .heading3) == NSFont.systemFont(ofSize: 13.8, weight: .semibold)
-    && Theme.Editor.nsFont(for: .task) == NSFont.systemFont(ofSize: 13.8)
-    && Theme.Editor.nsFont(for: .bullet) == NSFont.systemFont(ofSize: 13.8)
-    && Theme.Editor.nsFont(for: .paragraph) == NSFont.systemFont(ofSize: 13.5)
-    && Theme.Editor.nsFont(for: .quote) == NSFont.systemFont(ofSize: 13.5)
-    && Theme.Editor.nsFont(for: .code) == NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
+check(NXEditor.nsFont(for: .heading1) == NSFont.systemFont(ofSize: 20, weight: .bold)
+    && NXEditor.nsFont(for: .heading2) == NSFont.systemFont(ofSize: 15.5, weight: .semibold)
+    && NXEditor.nsFont(for: .heading3) == NSFont.systemFont(ofSize: 13.8, weight: .semibold)
+    && NXEditor.nsFont(for: .task) == NSFont.systemFont(ofSize: 13.8)
+    && NXEditor.nsFont(for: .bullet) == NSFont.systemFont(ofSize: 13.8)
+    && NXEditor.nsFont(for: .paragraph) == NSFont.systemFont(ofSize: 13.5)
+    && NXEditor.nsFont(for: .quote) == NSFont.systemFont(ofSize: 13.5)
+    && NXEditor.nsFont(for: .code) == NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
     "Each kind uses the design's document font")
-check(Theme.Editor.lineHeight(for: .task) == 13.8 * 1.45 && Theme.Editor.lineHeight(for: .paragraph) == 13.5 * 1.55
-    && Theme.Editor.lineHeight(for: .heading1) == 20 * 1.3 && Theme.Editor.lineHeight(for: .heading2) == 15.5 * 1.35,
+check(NXEditor.lineHeight(for: .task) == 13.8 * 1.45 && NXEditor.lineHeight(for: .paragraph) == 13.5 * 1.55
+    && NXEditor.lineHeight(for: .heading1) == 20 * 1.3 && NXEditor.lineHeight(for: .heading2) == 15.5 * 1.35,
     "Each kind has the design's line height")
 check(RichTextCodec.baseAttributes(for: .heading1)[.kern] as? CGFloat == -0.2 && RichTextCodec.baseAttributes(for: .task)[.kern] == nil,
     "Heading 1 keeps the design's −0.01em letter-spacing")
@@ -507,7 +482,7 @@ let spacedArchive = RichTextCodec.encode(spacedHeading, kind: .heading1)!
 let storedHeading = try! NSAttributedString(data: spacedArchive, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil)
 check(storedHeading.attribute(.kern, at: 0, effectiveRange: nil) == nil, "Letter-spacing is presentation and never stored")
 func nextTitleMetrics(_ text: String) -> (height: CGFloat, baseline: CGFloat) {
-    let size = Theme.Editor.bodyPointSize
+    let size = NXEditor.bodyPointSize
     let font = NSFont.systemFont(ofSize: size)
     let leading = max(0, size * 1.45 - (font.ascender - font.descender + font.leading))
     let host = NSHostingView(rootView: Text(text).font(.system(size: size)).lineSpacing(leading)
@@ -518,7 +493,7 @@ func nextTitleMetrics(_ text: String) -> (height: CGFloat, baseline: CGFloat) {
     host.layoutSubtreeIfNeeded()
     return (host.frame.height, host.firstBaselineOffsetFromTop)
 }
-input.textContainerInset = NSSize(width: 0, height: Theme.Editor.lineBoxInset(for: .task))
+input.textContainerInset = NSSize(width: 0, height: NXEditor.lineBoxInset(for: .task))
 for (title, next) in [("Task", "Task"), ("Task one\u{2028}Task two", "Task one\nTask two")] {
     coordinator.apply(RichTextCodec.decode(nil, plainText: title, kind: .task), to: input, kind: .task, isCompleted: false)
     input.invalidateIntrinsicContentSize()
@@ -531,36 +506,32 @@ for (title, next) in [("Task", "Task"), ("Task one\u{2028}Task two", "Task one\n
         "A task in its line box shares a Next row title's first baseline (\(baseline) vs \(reference.baseline))")
 }
 for kind: BlockKind in [.task, .bullet, .paragraph, .heading1, .heading2, .heading3] {
-    input.textContainerInset = NSSize(width: 0, height: Theme.Editor.lineBoxInset(for: kind))
+    input.textContainerInset = NSSize(width: 0, height: NXEditor.lineBoxInset(for: kind))
     coordinator.apply(RichTextCodec.decode(nil, plainText: "Line", kind: kind), to: input, kind: kind, isCompleted: false)
     input.invalidateIntrinsicContentSize()
-    check(abs(input.height(fittingWidth: 180) - Theme.Editor.lineHeight(for: kind)) < 0.05,
-        "\(kind) fills the design's line box of \(Theme.Editor.lineHeight(for: kind))pt")
+    check(abs(input.height(fittingWidth: 180) - NXEditor.lineHeight(for: kind)) < 0.05,
+        "\(kind) fills the design's line box of \(NXEditor.lineHeight(for: kind))pt")
     coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}Line", kind: kind), to: input, kind: kind, isCompleted: false)
     input.invalidateIntrinsicContentSize()
-    check(abs(input.height(fittingWidth: 180) - 2 * Theme.Editor.lineHeight(for: kind)) < 0.6,
+    check(abs(input.height(fittingWidth: 180) - 2 * NXEditor.lineHeight(for: kind)) < 0.6,
         "\(kind) wraps onto the design's line pitch")
 }
-input.textContainerInset = NSSize(width: 0, height: Theme.Editor.textVerticalInset)
-coordinator.apply(RichTextCodec.decode(nil, plainText: "Task", kind: .task), to: input, kind: .task, isCompleted: false)
-input.invalidateIntrinsicContentSize()
-check(input.height(fittingWidth: 180) == 20, "The legacy document's default inset still pads a single line to its gutter's 20pt")
 let taskAttributes = RichTextCodec.baseAttributes(for: .task)
-check(taskAttributes[.foregroundColor] as? NSColor === Theme.Editor.ink
+check(taskAttributes[.foregroundColor] as? NSColor === NXEditor.ink
     && RichTextCodec.baseAttributes(for: .task)[.foregroundColor] as? NSColor === taskAttributes[.foregroundColor] as? NSColor
-    && RichTextCodec.baseAttributes(for: .quote)[.foregroundColor] as? NSColor === Theme.Editor.secondaryInk
-    && RichTextCodec.baseAttributes(for: .paragraph)[.foregroundColor] as? NSColor === Theme.Editor.secondaryInk
-    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === Theme.Editor.strikeInk
-    && Theme.Editor.link === Theme.Editor.accentViolet,
+    && RichTextCodec.baseAttributes(for: .quote)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
+    && RichTextCodec.baseAttributes(for: .paragraph)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
+    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === NXEditor.strikeInk
+    && NXEditor.link === NXEditor.accentViolet,
     "Editor colours are shared ink and accent tokens, so content signatures stay equal")
 let closingTitle = RichTextCodec.restylingCompletion(of: RichTextCodec.decode(nil, plainText: "Closing", kind: .task), kind: .task,
-                                                     struck: true, strikeColor: Theme.Editor.accentBlue, dimsCompleted: false)
-check(closingTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === Theme.Editor.ink
-    && closingTitle.attribute(.strikethroughColor, at: 0, effectiveRange: nil) as? NSColor === Theme.Editor.accentBlue
+                                                     struck: true, strikeColor: NXEditor.accentBlue, dimsCompleted: false)
+check(closingTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink
+    && closingTitle.attribute(.strikethroughColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.accentBlue
     && closingTitle.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) != nil,
     "A task struck during its dwell keeps its ink under the accent strike")
 check(BlockTextView.ContentSignature(attributedText: closingTitle, kind: .task, isCompleted: false, struck: true,
-                                     strikeColor: Theme.Editor.accentBlue, dimsStruck: false).overridesCompletion
+                                     strikeColor: NXEditor.accentBlue, dimsStruck: false).overridesCompletion
     && !BlockTextView.ContentSignature(attributedText: closingTitle, kind: .task, isCompleted: false, dimsStruck: false).overridesCompletion,
     "Keeping the ink only matters while the strike shows")
 let styledHeading = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Title", kind: .heading1))
@@ -583,173 +554,137 @@ legacyHeading.addAttribute(.font, value: NSFontManager.shared.convert(legacyBold
 let legacyArchive = legacyHeading.rtf(from: NSRange(location: 0, length: legacyHeading.length),
     documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
 let legacyDecoded = RichTextCodec.decode(legacyArchive, plainText: "Old title", kind: .heading1)
-check(legacyDecoded.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == Theme.Editor.nsFont(for: .heading1),
+check(legacyDecoded.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == NXEditor.nsFont(for: .heading1),
     "An older heading's own bold reads as the heading")
 check(fontTraits(legacyDecoded, at: 4).contains(.italicFontMask), "Italic in an older heading keeps its italic")
 check(RichTextCodec.decode(RichTextCodec.encode(legacyDecoded, kind: .heading1), plainText: "Old title", kind: .heading1).isEqual(to: legacyDecoded),
     "The next save stores an older heading's runs corrected")
 
-// Completion changes presentation, never manual order or parentage.
-let section = Block(kind: .heading1, text: "Section", sortIndex: 0)
-let doneParent = Block(kind: .task, text: "Done parent", sortIndex: 1)
-let attachedNote = Block(kind: .paragraph, text: "Attached note", parentID: doneParent.id, sortIndex: 0)
-let pendingParent = Block(kind: .task, text: "Pending parent", sortIndex: 2)
-let doneChild = Block(kind: .task, text: "Done child", parentID: pendingParent.id, sortIndex: 0)
-let pendingChild = Block(kind: .task, text: "Pending child", parentID: pendingParent.id, sortIndex: 1)
-let secondDone = Block(kind: .task, text: "Second done", sortIndex: 3)
-doneParent.isCompleted = true
-doneChild.isCompleted = true
-secondDone.isCompleted = true
-let completionBlocks = [section, doneParent, attachedNote, pendingParent, doneChild, pendingChild, secondDone]
-let originalCompletionRows = BlockTree.flatten(completionBlocks)
-let projected = BlockTree.prioritizingPendingTasks(in: originalCompletionRows)
-check(projected.map(\.id) == [section.id, pendingParent.id, pendingChild.id, doneChild.id, doneParent.id, attachedNote.id, secondDone.id], "Pending siblings precede completed branches at every outline depth")
-check(projected.first(where: { $0.id == attachedNote.id })?.depth == 1 && attachedNote.parentID == doneParent.id, "A completed task carries its attached note and nesting")
-check(BlockTree.flatten(completionBlocks).map(\.id) == originalCompletionRows.map(\.id) && doneParent.sortIndex == 1, "Completion projection leaves stored manual order unchanged")
-check(BlockTree.prioritizingPendingTasks(in: projected).map(\.id) == projected.map(\.id), "Pending-first projection is stable and idempotent")
-doneParent.isCompleted = false
-check(BlockTree.prioritizingPendingTasks(in: BlockTree.flatten(completionBlocks)).prefix(3).map(\.id) == [section.id, doneParent.id, attachedNote.id], "Reopening restores the original manual position with the whole subtree")
-pendingParent.isCollapsed = true
-let collapsedProjection = BlockTree.prioritizingPendingTasks(in: BlockTree.flatten(completionBlocks))
-check(!collapsedProjection.contains(where: { $0.id == doneChild.id || $0.id == pendingChild.id }), "Completion ordering respects collapsed subtrees")
-check(BlockTree.prioritizingPendingTasks(in: []).isEmpty, "Empty outline has no completion projection")
-check(Set(projected.map(\.id)).count == completionBlocks.count, "Completion ordering never loses or duplicates a block")
-
-// The outline engine behind every document renderer, driven without a view.
+// The outline engine behind the list document, driven without a view.
 let outlineList = store.createList(title: "Outline engine")
 let outlineDocument = DocumentContext(listID: outlineList.id)
-let pageTask = store.appendBlock(kind: .task, text: "Parent", to: outlineDocument)
-let firstSubtask = store.insertChild(kind: .task, text: "First subtask", of: pageTask, at: .last)
-let secondSubtask = store.insertChild(kind: .task, text: "Second subtask", of: pageTask, at: .last)
+let parentTask = store.appendBlock(kind: .task, text: "Parent", to: outlineDocument)
+let firstSubtask = store.insertChild(kind: .task, text: "First subtask", of: parentTask, at: .last)
+let secondSubtask = store.insertChild(kind: .task, text: "Second subtask", of: parentTask, at: .last)
 store.save()
 let outlineEnv = AppEnvironment(store: store)
-let page = DocumentContext(listID: outlineList.id, rootBlockID: pageTask.id)
-let pageEditor = OutlineEditor(env: outlineEnv, document: page)
 let listEditor = OutlineEditor(env: outlineEnv, document: outlineDocument)
 func outlineRow(_ block: Block, in editor: OutlineEditor) -> BlockRow {
     editor.visibleRows(in: store.blocks(inList: outlineList.id)).first { $0.id == block.id }!
 }
-func pageRows() -> [BlockRow] { pageEditor.visibleRows(in: store.blocks(inList: outlineList.id)) }
-check(pageRows().map(\.id) == [firstSubtask.id, secondSubtask.id] && pageRows().allSatisfy { $0.depth == 0 },
-    "A task page projects only its own subtree, from depth 0")
+func listRows() -> [BlockRow] { listEditor.visibleRows(in: store.blocks(inList: outlineList.id)) }
+check(listRows().map(\.id) == [parentTask.id, firstSubtask.id, secondSubtask.id] && listRows().map(\.depth) == [0, 1, 1],
+    "A list document projects the whole list, from depth 0")
 
-// The page's root is a floor: its children never outdent off the page.
-check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).editorCallbacks.onTab(true, 0) && secondSubtask.parentID == pageTask.id,
-    "Shift-Tab on a task page's direct child is consumed and keeps it on the page")
-check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onTab(false, 0) && secondSubtask.parentID == firstSubtask.id,
-    "Tab still nests subtasks on a task page")
-check(pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onTab(true, 0) && secondSubtask.parentID == pageTask.id,
-    "Shift-Tab still outdents nested subtasks up to the page")
+// The list is a floor: its top-level lines never outdent out of it.
+check(listEditor.actions(for: outlineRow(parentTask, in: listEditor)).editorCallbacks.onTab(true, 0) && parentTask.parentID == nil,
+    "Shift-Tab on a top-level line is consumed and keeps it at the top level")
+check(listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onTab(false, 0) && secondSubtask.parentID == firstSubtask.id,
+    "Tab nests a subtask under the one above it")
+check(listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onTab(true, 0) && secondSubtask.parentID == parentTask.id,
+    "Shift-Tab outdents a nested subtask one level")
 var focusedIDs: [UUID] = []
 var escapedIDs: [UUID] = []
-pageEditor.hooks.didFocus = { focusedIDs.append($0) }
-pageEditor.hooks.didEscape = { escapedIDs.append($0) }
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onFocus()
-check(pageEditor.focus.blockID == firstSubtask.id && focusedIDs.last == firstSubtask.id && outlineEnv.activeDocument == page,
+listEditor.hooks.didFocus = { focusedIDs.append($0) }
+listEditor.hooks.didEscape = { escapedIDs.append($0) }
+listEditor.actions(for: outlineRow(parentTask, in: listEditor)).onFocus()
+check(listEditor.focus.blockID == parentTask.id && focusedIDs.last == parentTask.id && outlineEnv.activeDocument == outlineDocument,
     "Focusing a row adopts the caret, claims menu commands and tells the host")
 outlineEnv.pendingCommand = .outdent
-pageEditor.receiveCommand()
-check(firstSubtask.parentID == pageTask.id && outlineEnv.pendingCommand == nil, "The Outdent command keeps a task page's children on the page")
+listEditor.receiveCommand()
+check(parentTask.parentID == nil && outlineEnv.pendingCommand == nil, "The Outdent command keeps a top-level line in the list")
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 
 // Escape lets go of the caret and tells the host which block it left.
 check(outlineEnv.navigator.selection == [firstSubtask.id], "Editing a row makes it the row selection")
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onEscape()
-check(escapedIDs == [firstSubtask.id] && pageEditor.focus.blockID == nil && outlineEnv.navigator.selection.isEmpty,
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
+check(escapedIDs == [firstSubtask.id] && listEditor.focus.blockID == nil && outlineEnv.navigator.selection.isEmpty,
     "Escape releases the caret and selection, then reports the block to the host")
 
-// With the window holding the keyboard, Return or an arrow takes it back.
-check(pageEditor.escapedBlockID == firstSubtask.id, "The outline remembers the block Escape left")
-fixtureWindow.makeFirstResponder(nil)
-check(!pageEditor.resumeEditing(onKey: 125, modifiers: .command, in: fixtureWindow)
-    && !pageEditor.resumeEditing(onKey: 0, modifiers: [], in: fixtureWindow), "Only a plain Return or arrow resumes editing")
-fixtureWindow.makeFirstResponder(input)
-check(!pageEditor.resumeEditing(onKey: 36, modifiers: [], in: fixtureWindow), "A key another view holds is left alone")
-fixtureWindow.makeFirstResponder(nil)
-outlineEnv.activeDocument = outlineDocument
-check(!pageEditor.resumeEditing(onKey: 36, modifiers: [], in: fixtureWindow), "Another document taking commands keeps its keys")
-outlineEnv.activeDocument = page
-let tokenBeforeResume = pageEditor.focus.token
-check(pageEditor.resumeEditing(onKey: 125, modifiers: [.numericPad, .function], in: fixtureWindow)
-    && pageEditor.focus.blockID == firstSubtask.id && pageEditor.focus.caret == nil && pageEditor.focus.token != tokenBeforeResume,
-    "↓ with nothing holding the keyboard puts the caret back where the text view had it")
-check(pageEditor.escapedBlockID == nil && !pageEditor.resumeEditing(), "Resuming lets go of the escaped block")
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onEscape()
-pageEditor.actions(for: outlineRow(secondSubtask, in: pageEditor)).onFocus()
-check(pageEditor.escapedBlockID == nil, "Clicking into any row ends the wait to resume")
+// With the caret gone, the host's keys can put it back.
+check(listEditor.escapedBlockID == firstSubtask.id, "The outline remembers the block Escape left")
+outlineEnv.activeDocument = nil
+let tokenBeforeResume = listEditor.focus.token
+check(listEditor.resumeEditing() && listEditor.focus.blockID == firstSubtask.id && listEditor.focus.caret == nil
+    && listEditor.focus.token != tokenBeforeResume && outlineEnv.activeDocument == outlineDocument,
+    "Resuming puts the caret back where the text view had it, and claims menu commands")
+check(listEditor.escapedBlockID == nil && !listEditor.resumeEditing(), "Resuming lets go of the escaped block")
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
+listEditor.forgetEscape()
+check(!listEditor.resumeEditing() && listEditor.focus.blockID == nil, "Once the host's keys move on, Escape's block is forgotten")
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onEscape()
+listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onFocus()
+check(listEditor.escapedBlockID == nil, "Clicking into any row ends the wait to resume")
 
-// Hooks replace host policy; the defaults are the legacy editor's.
-var toggledIDs: [UUID] = []
-pageEditor.hooks.toggleCompletion = { toggledIDs.append($0) }
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onToggleCompletion()
-check(toggledIDs == [firstSubtask.id] && !firstSubtask.isCompleted, "A completion hook replaces the direct store write")
-listEditor.actions(for: outlineRow(secondSubtask, in: listEditor)).onToggleCompletion()
-check(secondSubtask.isCompleted, "Without a hook, completion writes straight to the store")
+// Hooks replace host policy; without one, the store or navigator acts.
 var openedIDs: [UUID] = []
-pageEditor.hooks.openDetails = { openedIDs.append($0) }
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onOpenDetails()
-check(openedIDs == [firstSubtask.id] && outlineEnv.navigator.openTaskID == nil, "A details hook replaces the navigator's detail panel")
+listEditor.hooks.openDetails = { openedIDs.append($0) }
+outlineEnv.pendingCommand = .openDetails
+listEditor.receiveCommand()
+check(openedIDs == [secondSubtask.id] && outlineEnv.navigator.openTaskID == nil, "A details hook opens the task in the navigator's place")
 var claimed: [(EditorCommand, [UUID])] = []
-pageEditor.hooks.taskCommand = { command, ids in
+listEditor.hooks.taskCommand = { command, ids in
     claimed.append((command, ids))
     return command == .toggleStar
 }
-pageEditor.actions(for: outlineRow(firstSubtask, in: pageEditor)).onFocus()
+listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 outlineEnv.pendingCommand = .toggleStar
-pageEditor.receiveCommand()
+listEditor.receiveCommand()
 check(claimed.last?.0 == .toggleStar && claimed.last?.1 == [firstSubtask.id] && !firstSubtask.isStarred,
     "A host claims task commands for the command targets before the store")
 outlineEnv.pendingCommand = .setDueToday
-pageEditor.receiveCommand()
+listEditor.receiveCommand()
 check(claimed.last?.0 == .setDueToday && firstSubtask.dueDate != nil, "Commands a host declines fall back to the store")
-outlineEnv.activeDocument = outlineDocument
+let menuElsewhere = store.createList(title: "Menu targets elsewhere")
+outlineEnv.activeDocument = DocumentContext(listID: menuElsewhere.id)
 outlineEnv.pendingCommand = .clearDueDate
-pageEditor.receiveCommand()
+listEditor.receiveCommand()
 check(outlineEnv.pendingCommand == .clearDueDate && firstSubtask.dueDate != nil, "Only the active document runs menu commands")
 outlineEnv.pendingCommand = nil
 
 // The Task menu reads the tasks a command sent now would reach.
-check(pageEditor.commandTaskIDs == [firstSubtask.id], "The menu's targets are the task holding the caret")
-let menuNote = store.insertChild(kind: .paragraph, text: "A text line", of: pageTask, at: .last)
-let menuElsewhere = store.createList(title: "Menu targets elsewhere")
+check(listEditor.commandTaskIDs == [firstSubtask.id], "The menu's targets are the task holding the caret")
+let menuNote = store.insertChild(kind: .paragraph, text: "A text line", of: parentTask, at: .last)
 let menuOtherTask = store.appendBlock(kind: .task, text: "Another list's task", to: DocumentContext(listID: menuElsewhere.id))
 store.save()
-pageEditor.hooks.commandTargets = { [secondSubtask.id] }
-pageEditor.actions(for: outlineRow(menuNote, in: pageEditor)).onFocus()
-check(pageEditor.commandTaskIDs.isEmpty, "A text line holding the caret leaves the menu no task, whatever the host targets")
-pageEditor.actions(for: outlineRow(menuNote, in: pageEditor)).onEscape()
-check(pageEditor.commandTaskIDs == [secondSubtask.id], "With no caret, the menu reads the host's targets")
-pageEditor.hooks.commandTargets = { [menuOtherTask.id] }
-check(pageEditor.commandTaskIDs.isEmpty, "The host's targets count only in the document's list")
-pageEditor.hooks.commandTargets = { [] }
+listEditor.hooks.commandTargets = { [secondSubtask.id] }
+listEditor.actions(for: outlineRow(menuNote, in: listEditor)).onFocus()
+check(listEditor.commandTaskIDs.isEmpty, "A text line holding the caret leaves the menu no task, whatever the host targets")
+listEditor.actions(for: outlineRow(menuNote, in: listEditor)).onEscape()
+check(listEditor.commandTaskIDs == [secondSubtask.id], "With no caret, the menu reads the host's targets")
+listEditor.hooks.commandTargets = { [menuOtherTask.id] }
+check(listEditor.commandTaskIDs.isEmpty, "The host's targets count only in the document's list")
+listEditor.hooks = OutlineHooks()
 store.deleteBlock(menuNote)
 store.save()
 
-// Completion visibility is the host's to decide.
-pageEditor.showsCompleted = false
-check(!pageRows().contains { $0.id == secondSubtask.id }, "Hidden completed tasks leave the visible rows")
-pageEditor.completedTasksKeptVisible = [secondSubtask.id]
-check(pageRows().map(\.id) == [firstSubtask.id, secondSubtask.id], "The host can keep a completed task on screen")
-pageEditor.documentDidChange()
-check(pageEditor.completedTasksKeptVisible.isEmpty && pageEditor.focus.blockID == nil,
+// Done tasks at the document's top level are the host's to list apart.
+let doneAtTop = store.appendBlock(kind: .task, text: "Done at the top level", to: outlineDocument)
+doneAtTop.isCompleted = true
+store.save()
+check(!listRows().contains { $0.id == doneAtTop.id }, "A done top-level task leaves the visible rows")
+listEditor.completedTasksKeptVisible = [doneAtTop.id]
+check(listRows().last?.id == doneAtTop.id, "The host can keep a done task on screen")
+listEditor.documentDidChange()
+check(listEditor.completedTasksKeptVisible.isEmpty && listEditor.focus.blockID == nil,
     "A document changing in place forgets the tasks its host kept visible")
-pageEditor.showsCompleted = true
-secondSubtask.isCompleted = false
-let doneFirst = store.insertChild(kind: .task, text: "Done first", of: pageTask, at: .first)
+store.deleteBlock(doneAtTop)
+store.save()
+let doneFirst = store.insertChild(kind: .task, text: "Done first", of: parentTask, at: .first)
 doneFirst.isCompleted = true
-check(pageRows().last?.id == doneFirst.id, "Completed tasks settle below pending siblings")
 
-// The list's floor is the document root: nested rows still outdent there.
+// Nested rows outdent to the list's top level.
 listEditor.actions(for: outlineRow(firstSubtask, in: listEditor)).onFocus()
 outlineEnv.pendingCommand = .outdent
 listEditor.receiveCommand()
-check(firstSubtask.parentID == nil, "A list document still outdents nested rows to its top level")
+check(firstSubtask.parentID == nil, "A list document outdents nested rows to its top level")
 
 // Slash selection and arrows through void rows.
 let noteBlock = store.appendBlock(kind: .paragraph, text: "/div", to: outlineDocument)
 let afterNote = store.appendBlock(kind: .paragraph, text: "After", to: outlineDocument)
 store.save()
 listEditor.actions(for: outlineRow(noteBlock, in: listEditor)).onSlashQuery("div", NSRange(location: 0, length: 4), .zero, .zero)
-check(listEditor.isSlashMenuOpen(on: noteBlock.id), "Typing a slash query opens the menu on its row")
+check(listEditor.slash?.blockID == noteBlock.id, "Typing a slash query opens the menu on its row")
 listEditor.handleSlashCommand(.confirm)
 let dividerRows = listEditor.visibleRows(in: store.blocks(inList: outlineList.id))
 let dividerIndex = dividerRows.firstIndex { $0.id == noteBlock.id }!
@@ -767,13 +702,10 @@ check(rowsBeforeReturn.last?.id == afterNote.id, "The drawn rows end with the la
 check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onReturn(5, store.attributedContent(of: afterNote))
     && listEditor.focus.blockID != afterNote.id && store.block(id: listEditor.focus.blockID)?.kind == .paragraph,
     "Return at the end of a row focuses a new row after it")
-let returned = listEditor.focus.blockID
-check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onArrowOut(.down, 0) && listEditor.focus.blockID == returned,
-    "An edit made here retires the drawn rows, so the next key sees the new row")
-check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onArrowOut(.right, 0) && listEditor.focus.blockID == returned
-    && listEditor.focus.caret == 0, "In the legacy document, → at a line's end starts the next line")
-check(listEditor.actions(for: outlineRow(store.block(id: returned!)!, in: listEditor)).onArrowOut(.left, -1)
-    && listEditor.focus.blockID == afterNote.id && listEditor.focus.caret == -1, "and ← at a line's start ends the line above")
+let returned = listEditor.focus.blockID!
+listEditor.actions(for: outlineRow(store.block(id: returned)!, in: listEditor)).onChange(NSAttributedString(string: "Returned"))
+check(listEditor.actions(for: outlineRow(afterNote, in: listEditor)).onArrowOut(.down, 0) && listEditor.focus.blockID == returned
+    && store.block(id: returned) != nil, "An edit made here retires the drawn rows, so the next key sees the new row")
 
 // Between renders, handlers read the drawn rows rather than the store.
 let drawnBeforeAppend = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
@@ -784,17 +716,75 @@ _ = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
 check(listEditor.actions(for: drawnBeforeAppend.last!).onArrowOut(.down, 0) && listEditor.focus.blockID == undrawn.id,
     "The next render's rows reach the handlers")
 let shownRows = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id))
-let parentRow = shownRows.first { $0.id == pageTask.id }!
-check(shownRows[shownRows.firstIndex { $0.id == pageTask.id }! + 1].id == doneFirst.id, "A completed subtask is drawn under its parent")
-listEditor.showsCompleted = false
-check(listEditor.actions(for: parentRow).onArrowOut(.down, 0) && listEditor.focus.blockID != doneFirst.id && listEditor.focus.blockID != nil,
-    "Hiding completed tasks retires the drawn rows")
-listEditor.showsCompleted = true
+check(shownRows[shownRows.firstIndex { $0.id == parentTask.id }! + 1].id == doneFirst.id, "A completed subtask is drawn under its parent")
+let doneTop = store.appendBlock(kind: .task, text: "Done at the top", to: outlineDocument)
+doneTop.isCompleted = true
+store.save()
+let lastDrawn = listEditor.rowsToDraw(in: store.blocks(inList: outlineList.id)).last!
+check(lastDrawn.id == undrawn.id && !listEditor.actions(for: lastDrawn).onArrowOut(.down, 0), "A done top-level task isn't drawn")
+listEditor.completedTasksKeptVisible = [doneTop.id]
+check(listEditor.actions(for: lastDrawn).onArrowOut(.down, 0) && listEditor.focus.blockID == doneTop.id,
+    "Keeping a done task on screen retires the drawn rows")
+listEditor.completedTasksKeptVisible = []
 
-// The Next list document's rules, from the design.
-let nextList = store.createList(title: "Next document")
+// A renderer keeps the rows it last drew until it draws again, so rows of a
+// pasted subtree outlive the Undo that takes their blocks away. The next
+// render, and every handler on such a row, must cope, and Redo's fresh
+// models draw again.
+let pasteList = store.createList(title: "Retained paste")
+let pasteDocument = DocumentContext(listID: pasteList.id)
+let pasteSource = store.appendBlock(kind: .task, text: "Pasted parent", to: pasteDocument)
+let pasteSourceChild = store.insertChild(kind: .task, text: "Pasted child", of: pasteSource)
+store.save()
+let pastedFragment = try FragmentContent.capture([pasteSource.id], store: store)
+let pasteEditor = OutlineEditor(env: outlineEnv, document: pasteDocument)
+let pasteUndo = UndoManager()
+pasteUndo.groupsByEvent = false
+func pasteBlocks() -> [Block] { store.blocks(inList: pasteList.id) }
+for _ in 0..<2 {
+    pasteUndo.beginUndoGrouping()
+    let pastedID = store.undoableEditorEdit(in: pasteList.id, name: "Paste content", undoManager: pasteUndo, includingNewLabels: true) {
+        try! store.pasteFragment(pastedFragment, in: pasteDocument, after: pasteSource.id)[0]
+    }
+    pasteUndo.endUndoGrouping()
+    let drawn = pasteEditor.rowsToDraw(in: pasteBlocks())
+    let retained = drawn.first { $0.id == pastedID }!
+    check(retained.hasChildren && drawn.count == 4, "The pasted subtree is drawn after its source")
+    pasteEditor.actions(for: retained).onFocus()
+    check(pasteEditor.focus.blockID == pastedID, "The pasted parent takes the caret")
+    pasteUndo.undo()
+    check(store.block(id: pastedID) == nil, "Undo takes the pasted subtree away")
+    check(retained.id == pastedID && Set([retained]).contains(retained), "Retained row identity and hashing require no deleted model reads")
+    // The renderer's query can still hold the models Undo deleted.
+    let redrawn = pasteEditor.rowsToDraw(in: drawn.map(\.block))
+    check(redrawn.map(\.id) == [pasteSource.id, pasteSourceChild.id]
+        && pasteEditor.visibleRows(in: pasteBlocks()).map(\.id) == redrawn.map(\.id),
+        "The next render leaves the undone paste out, even from a query that still holds it")
+    pasteEditor.visibleRowsDidChange(redrawn.map(\.id), from: drawn.map(\.id))
+    pasteEditor.blocksDidChange(pasteBlocks().map(\.id))
+    check(pasteEditor.focus.blockID == nil, "Undo taking the line with the caret lets the caret go")
+    let late = pasteEditor.actions(for: retained)
+    check(!late.onArrowOut(.up, 0) && !late.onArrowOut(.down, 0), "Arrows on a row Undo took away go nowhere")
+    late.onFocus()
+    check(pasteEditor.focus.blockID == nil && !outlineEnv.navigator.selection.contains(pastedID),
+        "A row Undo took away never takes the caret")
+    late.onChange(NSAttributedString(string: "Late edit"))
+    check(store.block(id: pastedID) == nil && pasteSource.text == "Pasted parent", "A late edit on a row Undo took away writes nothing")
+    pasteUndo.redo()
+    let restored = pasteEditor.rowsToDraw(in: pasteBlocks())
+    let fresh = restored.first { $0.id == pastedID }
+    check(restored.count == 4 && fresh?.hasChildren == true && fresh?.block.modelContext != nil,
+        "Redo's fresh models draw again with their subtree")
+    check(pasteEditor.actions(for: fresh!).onArrowOut(.up, 0) && pasteEditor.focus.blockID == pasteSourceChild.id,
+        "A row of Redo's model takes the keys again")
+    pasteUndo.undo()
+    pasteEditor.blocksDidChange(pasteBlocks().map(\.id))
+}
+
+// The list document's rules, from the design.
+let nextList = store.createList(title: "List document")
 let nextDocument = DocumentContext(listID: nextList.id)
-let nextEditor = OutlineEditor(env: outlineEnv, document: nextDocument, policy: .nextDocument)
+let nextEditor = OutlineEditor(env: outlineEnv, document: nextDocument)
 var recorded: [(edit: OutlineEdit, name: String)] = []
 nextEditor.hooks.nameEdit = { edit in
     switch edit {
@@ -940,19 +930,6 @@ check(nextEditor.slashKinds(matching: "code") == [.code] && nextEditor.slashKind
     && nextEditor.slashKinds(matching: "div") == [.divider] && nextEditor.slashKinds(matching: "ima") == [.image],
     "The editor's other kinds come up for their names")
 
-// ← and → stay in a line, as in the design's inputs; ↑ and ↓ leave it.
-nextActions(prose).onFocus()
-let tokenBeforeSideways = nextEditor.focus.token
-check(!nextActions(prose).onArrowOut(.right, 0) && !nextActions(prose).onArrowOut(.left, -1)
-    && nextEditor.focus.blockID == prose.id && nextEditor.focus.token == tokenBeforeSideways,
-    "← and → never leave a list document line")
-nextEditor.appendTask()
-let sidewaysLine = nextEditor.focus.blockID!
-check(!nextEditor.actions(for: nextRows().first { $0.id == sidewaysLine }!).onArrowOut(.right, 0)
-    && store.block(id: sidewaysLine) != nil && nextEditor.focus.blockID == sidewaysLine,
-    "→ in a new empty line keeps the line and its caret")
-nextEditor.commitLine()
-
 // ⇧↩ writes a task's note. The design's other lines hold one line each,
 // and its Turn into card takes ⇧↩ as it takes Return.
 var notesWritten: [UUID] = []
@@ -1097,7 +1074,7 @@ check(BlockTree.enclosingSections(of: otherHeading.id, in: sectionRows) == [oute
 // The inspector's Add subtask writes a line at the end of the task's subtasks.
 let addList = store.createList(title: "Add subtask")
 let addDocument = DocumentContext(listID: addList.id)
-let addEditor = OutlineEditor(env: outlineEnv, document: addDocument, policy: .nextDocument)
+let addEditor = OutlineEditor(env: outlineEnv, document: addDocument)
 var addRecorded: [(edit: OutlineEdit, name: String)] = []
 addEditor.hooks.didRecordEdit = { addRecorded.append(($0, $1)) }
 func addRows() -> [BlockRow] { addEditor.visibleRows(in: store.blocks(inList: addList.id)) }
@@ -1160,7 +1137,7 @@ check(store.children(of: nil, listID: addList.id).map(\.id) == unmoved && addRec
 // levels, or under a line that holds no tasks, has the new one step up.
 let depthList = store.createList(title: "Add subtask depth")
 let depthDocument = DocumentContext(listID: depthList.id)
-let depthEditor = OutlineEditor(env: outlineEnv, document: depthDocument, policy: .nextDocument)
+let depthEditor = OutlineEditor(env: outlineEnv, document: depthDocument)
 func depthRows() -> [BlockRow] { depthEditor.visibleRows(in: store.blocks(inList: depthList.id)) }
 func depthAdded() -> Block? { depthEditor.focus.blockID.flatMap { store.block(id: $0) } }
 let yen = store.appendBlock(kind: .task, text: "Exchange yen", to: depthDocument)
@@ -1189,7 +1166,7 @@ depthEditor.commitLine()
 // A search hit shows through the heading folding it away.
 let revealList = store.createList(title: "Reveal")
 let revealDocument = DocumentContext(listID: revealList.id)
-let revealEditor = OutlineEditor(env: outlineEnv, document: revealDocument, policy: .nextDocument)
+let revealEditor = OutlineEditor(env: outlineEnv, document: revealDocument)
 let foldedHeading = store.appendBlock(kind: .heading1, text: "Before we go", to: revealDocument)
 let foldedText = store.appendBlock(kind: .paragraph, text: "Kasuga replies in about a day", to: revealDocument)
 store.save()
@@ -1208,7 +1185,7 @@ check(!revealRows().contains { $0.id == foldedText.id }, "Finishing the reveal f
 // and a line's undo step is only what the line itself did.
 let fixList = store.createList(title: "Document fixes")
 let fixDocument = DocumentContext(listID: fixList.id)
-let fixEditor = OutlineEditor(env: outlineEnv, document: fixDocument, policy: .nextDocument)
+let fixEditor = OutlineEditor(env: outlineEnv, document: fixDocument)
 var fixRecorded: [OutlineEdit] = []
 fixEditor.hooks.didRecordEdit = { edit, _ in fixRecorded.append(edit) }
 func fixRows() -> [BlockRow] { fixEditor.visibleRows(in: store.blocks(inList: fixList.id)) }
@@ -1350,7 +1327,7 @@ check(store.block(id: turned.id) == nil && store.block(id: underTurned.id) != ni
 // Backspace in an empty first line takes the caret to the line below.
 let firstList = store.createList(title: "Empty first line")
 let firstDocument = DocumentContext(listID: firstList.id)
-let firstEditor = OutlineEditor(env: outlineEnv, document: firstDocument, policy: .nextDocument)
+let firstEditor = OutlineEditor(env: outlineEnv, document: firstDocument)
 let emptyFirst = store.appendBlock(kind: .task, text: "", to: firstDocument)
 let secondLine = store.appendBlock(kind: .task, text: "Second", to: firstDocument)
 store.save()
@@ -1363,7 +1340,7 @@ check(firstEditor.actions(for: firstRows[0]).onBackspaceAtStart(NSAttributedStri
 // Showing only tasks, what headings and list items fold away still shows.
 let tasksList = store.createList(title: "Tasks only")
 let tasksDocument = DocumentContext(listID: tasksList.id)
-let tasksEditor = OutlineEditor(env: outlineEnv, document: tasksDocument, policy: .nextDocument)
+let tasksEditor = OutlineEditor(env: outlineEnv, document: tasksDocument)
 tasksEditor.tasksOnly = true
 let laterSection = store.appendBlock(kind: .heading1, text: "Later", to: tasksDocument)
 let inSection = store.appendBlock(kind: .task, text: "Pack", to: tasksDocument)
@@ -1384,7 +1361,7 @@ check(onlyTasks == [inSection.id, underShops.id, foldedTask.id] && !onlyTasks.co
 // keys typed meanwhile for that line.
 let movingList = store.createList(title: "Caret moves")
 let movingDocument = DocumentContext(listID: movingList.id)
-let movingEditor = OutlineEditor(env: outlineEnv, document: movingDocument, policy: .nextDocument)
+let movingEditor = OutlineEditor(env: outlineEnv, document: movingDocument)
 let movingFirst = store.appendBlock(kind: .task, text: "First", to: movingDocument)
 let movingSecond = store.appendBlock(kind: .task, text: "Second", to: movingDocument)
 store.save()

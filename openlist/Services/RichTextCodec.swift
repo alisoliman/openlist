@@ -38,7 +38,7 @@ enum RichTextCodec {
         // Drop fonts that merely match the block's own base font. A heading is
         // bold because it is a heading, not because the user made it bold —
         // recording that would keep the weight after a change to body text.
-        let baseFont = Theme.Editor.nsFont(for: kind)
+        let baseFont = NXEditor.nsFont(for: kind)
         normalised.enumerateAttribute(.font, in: full) { value, range, _ in
             guard let font = value as? NSFont, font.isEquivalent(to: baseFont) else { return }
             normalised.removeAttribute(.font, range: range)
@@ -74,7 +74,7 @@ enum RichTextCodec {
             if traits.contains(.boldFontMask) { weight = .bold }
             normalised.addAttribute(
                 .font,
-                value: NSFont.monospacedSystemFont(ofSize: Theme.Editor.codePointSize, weight: weight),
+                value: NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: weight),
                 range: range
             )
         }
@@ -105,7 +105,7 @@ enum RichTextCodec {
 
         let result = NSMutableAttributedString(string: stored.string, attributes: base)
         let full = NSRange(location: 0, length: stored.length)
-        let baseFont = Theme.Editor.nsFont(for: kind)
+        let baseFont = NXEditor.nsFont(for: kind)
 
         stored.enumerateAttributes(in: full) { attributes, range, _ in
             var traits: NSFontTraitMask = []
@@ -128,7 +128,7 @@ enum RichTextCodec {
                 let weight: NSFont.Weight = traits.contains(.boldFontMask) ? .bold : .regular
                 result.addAttribute(
                     .font,
-                    value: NSFont.monospacedSystemFont(ofSize: Theme.Editor.codePointSize, weight: weight),
+                    value: NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: weight),
                     range: range
                 )
                 result.addAttribute(.openlistInlineCode, value: true, range: range)
@@ -138,7 +138,7 @@ enum RichTextCodec {
 
             if let link = attributes[.link] {
                 result.addAttribute(.link, value: link, range: range)
-                result.addAttribute(.foregroundColor, value: Theme.Editor.link, range: range)
+                result.addAttribute(.foregroundColor, value: NXEditor.link, range: range)
                 result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
 
@@ -165,24 +165,24 @@ enum RichTextCodec {
     static func baseAttributes(for kind: BlockKind, isCompleted: Bool = false,
                                strikeColor: NSColor? = nil, dimsCompleted: Bool = true) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
-        let font = Theme.Editor.nsFont(for: kind)
+        let font = NXEditor.nsFont(for: kind)
         // Keep the first and last line at the font's natural height. A line
         // height multiplier puts the extra leading before the baseline and
         // makes a single-line title sit low in its selection highlight.
-        paragraph.lineSpacing = Theme.Editor.lineSpacing(for: kind)
+        paragraph.lineSpacing = NXEditor.lineSpacing(for: kind)
         paragraph.lineBreakMode = .byWordWrapping
 
-        let ink = kind == .paragraph || kind == .quote ? Theme.Editor.secondaryInk : Theme.Editor.ink
+        let ink = kind == .paragraph || kind == .quote ? NXEditor.secondaryInk : NXEditor.ink
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .paragraphStyle: paragraph,
-            .foregroundColor: isCompleted && dimsCompleted ? Theme.Editor.completedInk : ink,
+            .foregroundColor: isCompleted && dimsCompleted ? NXEditor.completedInk : ink,
         ]
-        if kind == .heading1 { attributes[.kern] = Theme.Editor.heading1Kern }
+        if kind == .heading1 { attributes[.kern] = NXEditor.heading1Kern }
 
         if isCompleted {
             attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-            attributes[.strikethroughColor] = strikeColor ?? Theme.Editor.strikeInk
+            attributes[.strikethroughColor] = strikeColor ?? NXEditor.strikeInk
         }
         return attributes
     }
@@ -239,13 +239,6 @@ enum RichTextCodec {
 
     // MARK: - Editing helpers
 
-    /// Concatenates two blocks' contents, used when Backspace merges rows.
-    static func merged(_ lhs: NSAttributedString, _ rhs: NSAttributedString) -> NSAttributedString {
-        let result = NSMutableAttributedString(attributedString: lhs)
-        result.append(rhs)
-        return result
-    }
-
     /// Rewrites the text of an attributed string while keeping the styling of
     /// everything that did not change.
     ///
@@ -293,14 +286,6 @@ enum RichTextCodec {
         return result
     }
 
-    /// Splits at `location`, returning the text before and after the caret.
-    static func split(_ source: NSAttributedString, at location: Int) -> (head: NSAttributedString, tail: NSAttributedString) {
-        let clamped = max(0, min(location, source.length))
-        let head = source.attributedSubstring(from: NSRange(location: 0, length: clamped))
-        let tail = source.attributedSubstring(from: NSRange(location: clamped, length: source.length - clamped))
-        return (head, tail)
-    }
-
     /// Toggles a font trait across `range`, matching the behaviour of ⌘B / ⌘I.
     static func toggleTrait(
         _ trait: NSFontTraitMask,
@@ -310,7 +295,7 @@ enum RichTextCodec {
     ) {
         guard range.length > 0 else { return }
         let manager = NSFontManager.shared
-        let baseFont = Theme.Editor.nsFont(for: kind)
+        let baseFont = NXEditor.nsFont(for: kind)
 
         // Turn the trait off only when every character already has it.
         var allHaveTrait = true
@@ -363,12 +348,12 @@ enum RichTextCodec {
 
         if allCode {
             attributed.removeAttribute(.openlistInlineCode, range: range)
-            attributed.addAttribute(.font, value: Theme.Editor.nsFont(for: kind), range: range)
+            attributed.addAttribute(.font, value: NXEditor.nsFont(for: kind), range: range)
         } else {
             attributed.addAttribute(.openlistInlineCode, value: true, range: range)
             attributed.addAttribute(
                 .font,
-                value: NSFont.monospacedSystemFont(ofSize: Theme.Editor.codePointSize, weight: .regular),
+                value: NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: .regular),
                 range: range
             )
         }
@@ -379,12 +364,12 @@ enum RichTextCodec {
         guard range.length > 0 else { return }
         if let url {
             attributed.addAttribute(.link, value: url, range: range)
-            attributed.addAttribute(.foregroundColor, value: Theme.Editor.link, range: range)
+            attributed.addAttribute(.foregroundColor, value: NXEditor.link, range: range)
             attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
         } else {
             attributed.removeAttribute(.link, range: range)
             attributed.removeAttribute(.underlineStyle, range: range)
-            attributed.addAttribute(.foregroundColor, value: Theme.Editor.ink, range: range)
+            attributed.addAttribute(.foregroundColor, value: NXEditor.ink, range: range)
         }
     }
 

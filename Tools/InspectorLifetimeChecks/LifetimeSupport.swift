@@ -1,8 +1,8 @@
 import SwiftUI
 
-// Real label picker, chips, attachment, nested row/text view and menu are
-// hosted. App navigation is isolated; this fixture does not assert its
-// interaction or keyboard behavior.
+// The real label picker, attachment row and block text view are hosted. App
+// navigation is isolated; this fixture does not assert its interaction or
+// keyboard behavior.
 enum DetailPicker: String { case due, repeatRule, reminder, labels }
 @Observable final class AppEnvironment {
     let store: Store
@@ -13,7 +13,6 @@ enum DetailPicker: String { case due, repeatRule, reminder, labels }
     let settings = FixtureSettings()
     let navigator = Navigator()
     let workbench: FixtureWorkbench
-    func showCopiedTask(id: UUID, listID: UUID) {}
     func openTask(_ id: UUID, showing: DetailPicker) { navigator.openTask(id) }
     func consumeCommand() -> EditorCommand? { defer { pendingCommand = nil }; return pendingCommand }
     func copyLink(to target: LocalLink.Target) {}

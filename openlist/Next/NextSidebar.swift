@@ -7,8 +7,8 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// What a list in the sidebar takes: a list or task dragged as text, or the
-/// rows a list document's grip drags, in this library's own payload.
+/// What a list in the sidebar takes: a list dragged as text, or the rows a
+/// task row or a list document's grip drags, in this library's own payload.
 private nonisolated struct NXSidebarDrop: Transferable {
     let value: String
 
@@ -321,10 +321,11 @@ struct NextSidebar: View {
             env.store.move(list: dragged, toSection: sectionID, above: list)
             return true
         }
+        // Rows move only in this library's session payload. A bare row ID,
+        // from another app or library, is not one.
         let session = env.navigator.blockDragSessionID
         let ids = items.flatMap { item -> [UUID] in
-            if let id = DragPayload.block.decode(item) { return [id] }
-            guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session, activeLegacyID: nil) else { return [] }
+            guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session) else { return [] }
             return ids
         }
         guard !ids.isEmpty else { return false }

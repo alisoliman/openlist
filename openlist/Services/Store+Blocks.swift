@@ -66,7 +66,7 @@ extension Store {
         return block
     }
 
-    /// Appends a block to the end of a document or a task's detail page.
+    /// Appends a block to the end of a document, or of the subtree it is rooted at.
     @discardableResult
     func appendBlock(
         kind: BlockKind = .task,
@@ -227,29 +227,7 @@ extension Store {
         setContent(block, attributed: updated)
     }
 
-    // MARK: - Indent / outdent
-
-    /// Makes `block` the last child of its previous sibling.
-    ///
-    /// - Returns: `false` when there is no previous sibling to nest under.
-    @discardableResult
-    func indent(_ block: Block) -> Bool {
-        let siblings = orderedSiblings(of: block)
-        guard
-            let index = siblings.firstIndex(where: { $0.id == block.id }),
-            index > 0
-        else { return false }
-
-        let newParent = siblings[index - 1]
-        guard newParent.kind.acceptsChildren else { return false }
-
-        let existingChildren = children(of: newParent.id, listID: newParent.listID ?? UUID())
-        block.parentID = newParent.id
-        block.sortIndex = (existingChildren.last?.sortIndex ?? 0) + BlockTree.indexStep
-        newParent.isCollapsed = false
-        block.touch()
-        return true
-    }
+    // MARK: - Outdent
 
     /// Moves `block` out one level, becoming the next sibling of its parent.
     ///
@@ -355,155 +333,6 @@ extension Store {
         block.touch()
         respaceIfNeeded(parentID: block.parentID, listID: block.listID)
         return true
-    }
-
-    // MARK: - Split & merge
-
-    /// Splits `block` at `location`, returning the newly created trailing block.
-    ///
-    /// Children stay with the original block, matching how outliners keep a
-    /// parent's subtree attached when its title is split.
-    @discardableResult
-    func splitBlock(_ block: Block, at location: Int, content: NSAttributedString) -> Block {
-        let (head, tail) = RichTextCodec.split(content, at: location)
-        setContent(block, attributed: head)
-
-        // A heading splits into body text; other kinds continue themselves.
-        let newKind: BlockKind
-        switch block.kind {
-        case .heading1, .heading2, .heading3, .quote, .divider, .image:
-            newKind = .paragraph
-        default:
-            newKind = block.kind
-        }
-
-        let hasChildren = !children(of: block.id, listID: block.listID ?? UUID()).isEmpty
-        let created: Block
-        if hasChildren && !block.isCollapsed {
-            // Insert as the first child so the new line stays visually adjacent.
-            created = insertChild(kind: newKind, of: block)
-        } else {
-            created = insertBlock(kind: newKind, after: block)
-        }
-        setContent(created, attributed: tail)
-        return created
-    }
-
-    /// Result of pressing Backspace with the caret at the start of a block.
-    enum BackspaceOutcome {
-        /// The block was promoted one level instead of merging.
-        case outdented
-        /// The block was removed; focus should land on `focus` at `caret`.
-        case merged(into: Block, caret: Int)
-        /// An empty block was removed with nothing to merge into.
-        case removed(focus: Block?)
-        /// Nothing to do — the block is the very first in the document.
-        case noop
-    }
-
-    /// Handles Backspace at offset zero: outdent, merge upwards, or delete.
-    ///
-    /// - Parameter visibleIDs: when the document is hiding completed tasks,
-    ///   the rows actually on screen. Merging into a hidden row would move the
-    ///   caret somewhere the user cannot see.
-    func backspaceAtStart(
-        _ block: Block,
-        content: NSAttributedString,
-        in document: DocumentContext,
-        visibleIDs: Set<UUID>? = nil
-    ) -> BackspaceOutcome {
-        let all = blocks(inList: document.listID)
-        var rows = BlockTree.flatten(all, root: document.rootBlockID)
-        if let visibleIDs {
-            rows = rows.filter { visibleIDs.contains($0.id) }
-        }
-        guard let position = rows.firstIndex(where: { $0.id == block.id }) else { return .noop }
-
-        // A nested block promotes rather than merging into its parent's text.
-        let siblings = BlockTree.children(of: block.parentID, in: all)
-        let isFirstChild = siblings.first?.id == block.id
-        if isFirstChild, block.parentID != document.rootBlockID {
-            return outdent(block) ? .outdented : .noop
-        }
-
-        guard position > 0 else {
-            // First row: demote a styled block back to plain text before giving up.
-            if block.kind != .paragraph, !block.isTask {
-                changeKind(block, to: .paragraph)
-                return .outdented
-            }
-            return .noop
-        }
-
-        let previous = rows[position - 1].block
-        guard !previous.kind.isVoid else {
-            // Backspacing into a divider or image removes that block instead.
-            deleteBlock(previous, liftChildren: true)
-            return .removed(focus: block)
-        }
-
-        // Joining text must not silently discard the removed task's payload.
-        // Conflicting schedules/status need an explicit choice in the inspector.
-        let incomingAttachments = attachments(for: block.id)
-        let hasCalendarPayload = block.schedulingEstimateMinutes != 0 || block.selectedForDay != nil
-            || block.deferredUntil != nil || block.keepsSessionsTogether || block.tracksAwayFromMac
-            || !workSessions(taskID: block.id).isEmpty || !placements(taskID: block.id).isEmpty
-        let hasTaskPayload = block.isCompleted || block.dueDate != nil || block.reminderAt != nil
-            || block.recurrenceData != nil || block.isStarred || block.priorityRaw != 0
-            || !block.labelIDs.isEmpty || !block.note.isEmpty || !incomingAttachments.isEmpty
-        let conflicts = (previous.isTask && block.isTask && previous.isCompleted != block.isCompleted)
-            || (previous.dueDate != nil && block.dueDate != nil
-                && (previous.dueDate != block.dueDate || previous.includesTime != block.includesTime))
-            || (previous.reminderAt != nil && block.reminderAt != nil && previous.reminderAt != block.reminderAt)
-            || (previous.recurrenceData != nil && block.recurrenceData != nil && previous.recurrenceData != block.recurrenceData)
-        guard !(hasTaskPayload && !previous.isTask), !conflicts, !hasCalendarPayload else {
-            refuse("These rows have different task details. Review their status and dates before merging, or keep them as separate rows.")
-            return .noop
-        }
-
-        if previous.isTask {
-            if previous.dueDate == nil, block.dueDate != nil {
-                previous.dueDate = block.dueDate
-                previous.includesTime = block.includesTime
-            }
-            if previous.reminderAt == nil { previous.reminderAt = block.reminderAt }
-            if previous.recurrenceData == nil { previous.recurrenceData = block.recurrenceData }
-            previous.isStarred = previous.isStarred || block.isStarred
-            previous.priorityRaw = max(previous.priorityRaw, block.priorityRaw)
-            previous.labelIDs.append(contentsOf: block.labelIDs.filter { !previous.labelIDs.contains($0) })
-            if !block.note.isEmpty {
-                previous.note = previous.note.isEmpty ? block.note : previous.note + "\n\n" + block.note
-            }
-            var attachmentIndex = (attachments(for: previous.id).last?.sortIndex ?? 0) + BlockTree.indexStep
-            for attachment in incomingAttachments {
-                attachment.blockID = previous.id
-                attachment.sortIndex = attachmentIndex
-                attachmentIndex += BlockTree.indexStep
-            }
-        }
-
-        let previousContent = attributedContent(of: previous)
-        let caret = previousContent.length
-
-        if content.length > 0 {
-            setContent(previous, attributed: RichTextCodec.merged(previousContent, content))
-        }
-
-        // Children of the removed block are adopted by the merge target.
-        let kids = BlockTree.children(of: block.id, in: all)
-        if !kids.isEmpty {
-            let existing = BlockTree.children(of: previous.id, in: all)
-            var next = (existing.last?.sortIndex ?? 0) + BlockTree.indexStep
-            for kid in kids {
-                kid.parentID = previous.id
-                kid.sortIndex = next
-                next += BlockTree.indexStep
-            }
-        }
-
-        deleteBlock(block, liftChildren: false)
-        scheduleReminderIfNeeded(for: previous)
-        return .merged(into: previous, caret: caret)
     }
 
     /// The attributed content for a block, decoded and styled for its kind.
