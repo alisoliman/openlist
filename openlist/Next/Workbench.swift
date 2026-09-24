@@ -898,15 +898,18 @@ final class Workbench {
             closingTasks[id]?.cancel()
             // The first row pops in this turn, so a screen that drops closing
             // rows, like the Inbox triage card, never shows it open again.
+            // A plain change, as the design's: a row eases its pop, dim, fill
+            // and tick through its own animations, while what drops a closing
+            // task, like the Calendar's Planned now banner, goes at once.
             if index == 0 {
-                withAnimation(style.spring(260)) { closing[id] = false }
+                closing[id] = false
                 pulseCheck(id)
             }
             closingTasks[id] = Task { [weak self] in
                 if index > 0 {
                     try? await Task.sleep(for: .milliseconds(stagger))
                     guard !Task.isCancelled, let self else { return }
-                    withAnimation(self.style.spring(260)) { self.closing[id] = false }
+                    self.closing[id] = false
                 }
                 try? await Task.sleep(for: .milliseconds(strike))
                 guard !Task.isCancelled, let self else { return }

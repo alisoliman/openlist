@@ -894,9 +894,10 @@ private struct NXTasksSentenceBar: View {
     /// The bar's width and where each token starts in it, so a menu stays on the page.
     @State private var barWidth: CGFloat = .infinity
     @State private var tokenStarts: [NXTasksMenu: CGFloat] = [:]
-    /// The menu open before this update. The design's is one card, so a menu
-    /// opened straight from another moves to its token without its popIn.
-    @State private var shownMenu: NXTasksMenu?
+    /// Whether the open menu pops in, decided as it opens and kept while it's
+    /// open. The design's is one card, so a menu opened straight from another
+    /// moves to its token without its popIn.
+    @State private var menuPops = true
 
     private nonisolated static let space = "tasks-sentence-bar"
     private static let menuWidth: CGFloat = 250
@@ -978,7 +979,6 @@ private struct NXTasksSentenceBar: View {
         .padding(.bottom, 4)
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
         .onChange(of: env.navigator.route) { _, _ in menu = nil }
-        .onChange(of: menu) { _, now in shownMenu = now }
         .onAppear {
             clicks.install { clicks, event in
                 // A click outside the open menu closes it; the tokens open and close their own.
@@ -1016,6 +1016,7 @@ private struct NXTasksSentenceBar: View {
 
     private func token(_ key: NXTasksMenu, _ label: String, list: TaskList? = nil) -> some View {
         NXSentenceToken(label: label, list: list, isOpen: menu == key) {
+            menuPops = menu == nil
             menu = menu == key ? nil : key
         }
         .nxClickRegion("tokens", in: clicks)
@@ -1033,7 +1034,7 @@ private struct NXTasksSentenceBar: View {
                     // The design's popIn, 160ms whatever the Motion setting,
                     // as it opens; it goes at once.
                     .transition(.asymmetric(
-                        insertion: shownMenu == nil
+                        insertion: menuPops
                             ? .scale(scale: 0.97, anchor: .topLeading).combined(with: .opacity)
                                 .combined(with: .offset(y: -4)).animation(NX.ease(160))
                             : .identity,
@@ -1131,14 +1132,18 @@ private struct NXSentenceToken: View {
         .padding(.vertical, 5)
         .padding(.leading, 7)
         .padding(.trailing, 4)
-        .background(isOpen ? NX.ink(0.07) : hovering ? NX.ink(0.06) : .clear,
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        // The design's `background 140ms ease`, under the pointer and as its
+        // menu opens and closes. Only the fill eases: a pick's new label and
+        // width land at once, as the design's.
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .animation(NX.cssEase(140)) {
+                    $0.foregroundStyle(isOpen ? NX.ink(0.07) : hovering ? NX.ink(0.06) : .clear)
+                }
+        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
-        // The design's `background 140ms ease`, under the pointer and as its menu opens.
-        .animation(.easeOut(duration: 0.14), value: hovering)
-        .animation(.easeOut(duration: 0.14), value: isOpen)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
