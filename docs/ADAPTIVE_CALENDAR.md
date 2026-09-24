@@ -158,7 +158,7 @@ planner, as its sessions do: a task’s details show only where the calendar has
 | --- | --- |
 | Scheduled | All remaining work has enough conflict-free scheduled time, before its deadline when one exists. |
 | Cannot fit before deadline | A deadline within the planning horizon has less safe time than the task needs. Overflow can still be placed after it. |
-| Outside planning horizon | The deadline is beyond the rolling plan, or some remaining work cannot be safely placed within its available capacity. The explanation distinguishes these cases. |
+| Outside planning horizon | The deadline is beyond the rolling plan, or some remaining work cannot be safely placed within its available capacity. The planner's rating tells these cases apart; like the rest of coverage, it isn't shown. |
 
 A task with a distant deadline can be selected for today to schedule it earlier.
 Stepping to a later range does not promise that tasks beyond the horizon have

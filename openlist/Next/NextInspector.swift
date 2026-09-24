@@ -321,7 +321,8 @@ struct NextInspector: View {
                     NXFlow(spacing: 4) {
                         ForEach(library.lists, id: \.id) { option in
                             let current = option.id == task.listID
-                            NXInspectorPill(isOn: current, padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7)) {
+                            // The design's 13/1 glyph in 4/7 padding.
+                            NXInspectorPill(isOn: current, padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7), line: 13) {
                                 if !current { workbench.move([task.id], to: option.id, quiet: true) }
                             } label: {
                                 NXListGlyph(list: option, size: 13)
@@ -406,9 +407,11 @@ struct NextInspector: View {
                         let on = task.labelIDs.contains(label.id)
                         let color = label.nxColor
                         Button { workbench.toggleLabel(task.id, labelID: label.id) } label: {
+                            // 600 11/1, as NXInspectorPill's line.
                             Text("#\(label.name)")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(on ? .white : color)
+                                .frame(height: 11)
                                 .padding(.vertical, 5)
                                 .padding(.horizontal, 8)
                                 .background(on ? color : color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -440,6 +443,8 @@ struct NextInspector: View {
                     }
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(task.isStarred ? NX.amberText : NX.ink(0.66))
+                    // The design's 13px star sets the line, over its 11.5/1 text.
+                    .frame(height: 13)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
                     .background(task.isStarred ? NX.amber.opacity(0.16) : NX.ink(0.05),
@@ -667,6 +672,11 @@ struct NXInspectorPill<Label: View>: View {
     @Environment(\.nextStyle) private var style
     let isOn: Bool
     var padding = EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
+    /// The design's line box, 11.5/1: the label is this tall, and text or a
+    /// symbol running taller overflows it evenly, as CSS lays out line-height 1.
+    /// A fixed box, not half-leading, as SF Symbols stand taller than the
+    /// design's icons (a 10.5pt bell is 13pt).
+    var line: CGFloat = 11.5
     let action: () -> Void
     @ViewBuilder var label: () -> Label
 
@@ -675,6 +685,7 @@ struct NXInspectorPill<Label: View>: View {
             label()
                 .font(.system(size: 11.5, weight: .medium))
                 .lineLimit(1)
+                .frame(height: line)
                 .foregroundStyle(isOn ? .white : NX.ink(0.66))
                 .padding(padding)
                 .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))

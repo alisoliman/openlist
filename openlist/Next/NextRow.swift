@@ -368,8 +368,10 @@ struct NXCheckbox: View {
             }
             .frame(width: size, height: size)
             .scaleEffect(pops && style.lively && closing == false ? 1.18 : 1)
-            .animation(pops ? style.spring(240) : style.ease(200), value: closing)
-            .animation(style.ease(200), value: filled)
+            // Without the pop the fill fades as the design's inspector boxes
+            // do, with CSS's `background 200ms ease`.
+            .animation(pops ? style.spring(240) : style.cssEase(200), value: closing)
+            .animation(pops ? style.ease(200) : style.cssEase(200), value: filled)
             .contentShape(Rectangle().inset(by: -5))
         }
         .buttonStyle(.plain)

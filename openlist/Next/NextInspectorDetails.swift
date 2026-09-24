@@ -534,13 +534,17 @@ private struct NXInspectorHistoryPage: View {
         _events = Query(descriptor)
     }
 
+    /// Activity's 12/1.4, so the saved rows keep the rhythm of the ones above.
+    private var leading: CGFloat { 12 * 1.4 - NXStrikeText.glyphLineHeight(12) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if events.isEmpty {
                 Text("No recorded activity for this task.")
                     .font(.system(size: 12))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.45))
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 5 + leading / 2)
             } else {
                 ForEach(events.prefix(limit)) { event in
                     row(event)
@@ -563,7 +567,9 @@ private struct NXInspectorHistoryPage: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(event.kind.verb) “\(event.title)”")
                     .font(.system(size: 12))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.66))
+                    .padding(.vertical, leading / 2)
                 if !event.recordedDetail.isEmpty {
                     Text(event.recordedDetail)
                         .font(.system(size: 11))
