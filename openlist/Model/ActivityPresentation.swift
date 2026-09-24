@@ -19,7 +19,7 @@ extension ActivityEvent {
         case .completed:
             guard change.completionID != nil else { return "Open → Completed" }
             let completed = change.completedDueDate.map {
-                $0.formatted(date: .abbreviated, time: (after?.includesTime ?? before?.includesTime) == true ? .shortened : .omitted)
+                MomentText.moment($0, includesTime: (after?.includesTime ?? before?.includesTime) == true)
             } ?? "No due date"
             if change.advancesOccurrence {
                 return "Completed occurrence: \(completed). Next occurrence: \(Self.dateText(after))."
@@ -40,10 +40,11 @@ extension ActivityEvent {
         }
     }
 
+    /// A due date as the app's pills write one, with the year when it isn't this one.
     private static func dateText(_ state: TaskActivityState?) -> String {
         guard let state else { return "Not recorded" }
         guard let date = state.dueDate else { return "No due date" }
-        return date.formatted(date: .abbreviated, time: state.includesTime ? .shortened : .omitted)
+        return MomentText.moment(date, includesTime: state.includesTime)
     }
 
     private static func listText(_ state: TaskActivityState?) -> String {

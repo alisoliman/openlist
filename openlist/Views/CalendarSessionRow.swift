@@ -11,8 +11,8 @@ struct CalendarSessionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.title).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
                 Group {
-                    Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
-                    Text(session.endedAt == nil ? (env.calendar.activeSession?.id == session.id ? "Active on this Mac" : "Last recorded on another session") : (session.pauseReason ?? "Paused"))
+                    Text(NXFormat.moment(session.startedAt))
+                    Text(status)
                 }
                 .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
             }
@@ -61,5 +61,14 @@ struct CalendarSessionRow: View {
             .frame(width: 290)
             .presentationBackground(NX.card)
         }
+    }
+
+    /// Why the session stopped, in the Work panel's words, or where it is
+    /// still open: here, on another Mac, or left unfinished by this one.
+    private var status: String {
+        guard session.endedAt == nil else { return WorkSession.stopText(session.pauseReason) }
+        if env.calendar.activeSession?.id == session.id { return "Recording on this Mac" }
+        let elsewhere = env.store.calendarDeviceID.map { $0 != session.deviceID } ?? false
+        return elsewhere ? "Recording on another Mac" : "Not finished"
     }
 }

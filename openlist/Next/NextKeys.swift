@@ -110,11 +110,12 @@ final class NextKeyHandler {
             return true
         }
 
-        // The in-window Settings page, wherever focus is and over any
-        // overlay: there is no Settings window.
+        // The in-window Settings page, wherever focus is and over search or
+        // the palette: there is no Settings window. An open capture keeps
+        // its draft, as the design's keys stand down while it's open.
         if flags == .command && chars == "," {
+            guard !workbench.captureOpen else { return true }
             overlays.willNavigate()
-            if workbench.captureOpen { workbench.closeCapture() }
             if workbench.tasksQueryFocused { blurQuery(window) }
             workbench.go(.settings)
             return true
@@ -122,6 +123,9 @@ final class NextKeyHandler {
 
         if workbench.captureOpen {
             guard !isComposing else { return false }
+            // Edit ▸ Search would close capture and drop the draft. Only ⌘K,
+            // whose palette replaces capture in the design too, gets past it.
+            if flags == .command && chars == "f" { return true }
             if isEnter && !flags.contains(.command) {
                 _ = workbench.createFromCapture(keepOpen: flags.contains(.shift))
                 return true

@@ -7,7 +7,7 @@ import SwiftUI
 
 /// Format ▸ Add Link… (⌘L), for the text selected in a list document line: a
 /// Next sheet like Move List's, with the URL field prefilled with the link it
-/// has, or "https://". Return applies and Esc cancels; Remove Link shows only
+/// has, or "https://". Return applies and Esc cancels; Remove link shows only
 /// when there is a link to remove. A native extra: the design has no links.
 struct NXLinkSheet: View {
     let prompt: LinkPrompt
@@ -35,7 +35,7 @@ struct NXLinkSheet: View {
             }
             HStack(spacing: 8) {
                 if !prompt.currentURL.isEmpty {
-                    Button("Remove Link", role: .destructive) { answer(.remove) }
+                    Button("Remove link", role: .destructive) { answer(.remove) }
                         .buttonStyle(NXPanelButtonStyle(kind: .destructive))
                 }
                 Spacer()

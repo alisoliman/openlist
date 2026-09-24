@@ -306,8 +306,8 @@ private struct NXListCover: View {
 }
 
 /// The list header's options, the native extras the design has no place
-/// for: the Tasks presentation, order, completed tasks, hours, appearance,
-/// description, cover, nesting, moving, linking and exporting.
+/// for: the list's own commands (`NXListMenu`), with the page's order,
+/// completed tasks, appearance, description and cover.
 private struct NXListOptions: View {
     @Environment(AppEnvironment.self) private var env
     let list: TaskList
@@ -316,36 +316,23 @@ private struct NXListOptions: View {
     @State private var appearanceOpen = false
 
     var body: some View {
-        let navigator = env.navigator
         Menu {
-            Toggle("Show Tasks Only", isOn: Binding(get: { navigator.listViewMode(for: list.id) == .tasks },
-                                                    set: { navigator.setListViewMode($0 ? .tasks : .document, for: list.id) }))
-            Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.workbench.setSorting($0, for: list) })) {
-                ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
+            NXListMenu(list: list, surface: .page) {
+                Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.workbench.setSorting($0, for: list) })) {
+                    ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Picker("Completed Tasks", selection: Binding(get: { list.completedVisibility }, set: { visibility in
+                    // The list's new choice shows on it at once, over the Completed groups' last fold.
+                    env.workbench.completedFold?.lapsed.insert(list.id)
+                    env.workbench.setCompletedVisibility(visibility, for: list)
+                })) {
+                    ForEach(TaskList.CompletedVisibility.allCases) { Text($0.title).tag($0) }
+                }
+                Divider()
+                Button("Icon & Colour…") { appearanceOpen = true }
+                Button(list.summary.isEmpty ? "Add Description" : "Edit Description", action: describe)
+                Menu("Cover") { coverItems }
             }
-            Picker("Completed Tasks", selection: Binding(get: { list.completedVisibility }, set: { visibility in
-                // The list's new choice shows on it at once, over the Completed groups' last fold.
-                env.workbench.completedFold?.lapsed.insert(list.id)
-                env.workbench.setCompletedVisibility(visibility, for: list)
-            })) {
-                ForEach(TaskList.CompletedVisibility.allCases) { Text($0.title).tag($0) }
-            }
-            Menu("Hours") { hoursItems }
-                .accessibilityLabel("Hours: \(env.workbench.hours(for: list).title)")
-            Divider()
-            Button("Icon & Colour…") { appearanceOpen = true }
-            Button(list.summary.isEmpty ? "Add Description" : "Edit Description", action: describe)
-            Menu("Cover") { coverItems }
-            Divider()
-            if !list.isSystemInbox {
-                Button("New Child List") { env.workbench.createChildList(in: list) }
-                    .disabled(list.isEffectivelyArchived)
-                Button("Move List…") { env.listPendingMove = list }
-            }
-            CopyItemLinkButton(target: .list(list.id))
-            // Native extras: the design has neither copy nor export.
-            Button("Copy as Markdown") { copyMarkdown() }
-            Button("Export as Markdown…") { env.workbench.exportMarkdown(list) }
         } label: {
             Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium))
         }
@@ -360,22 +347,6 @@ private struct NXListOptions: View {
         .popover(isPresented: $appearanceOpen, arrowEdge: .bottom) {
             ListAppearancePicker(list: list).environment(env)
         }
-    }
-
-    /// Which hours Plan and Start working use for this list, and where they're set.
-    @ViewBuilder
-    private var hoursItems: some View {
-        let workbench = env.workbench
-        Picker("Plan and Start working use", selection: Binding(get: { workbench.hours(for: list) },
-                                                                set: { workbench.setHours($0, for: list.id) })) {
-            ForEach(AvailabilityCategory.allCases) { category in
-                let summary = NXHours.summary(env.calendar.preferences.profile(for: category), calendar: env.settings.calendar)
-                Text("\(category.title) Hours · \(summary)").tag(category)
-            }
-        }
-        .pickerStyle(.inline)
-        Divider()
-        Button("Edit Hours in Settings…") { workbench.go(.settings) }
     }
 
     /// The cover's own choices: a local image, how it shows, and removing it.
@@ -401,12 +372,6 @@ private struct NXListOptions: View {
     /// Undo's failure does.
     private func perform(_ operation: () throws -> Void) {
         do { try operation() } catch { env.store.actionError = "The cover could not be changed. \(error.localizedDescription)" }
-    }
-
-    /// The list's document on the clipboard, as Export writes it, said in the tray.
-    private func copyMarkdown() {
-        guard MarkdownExporter.copyToPasteboard(list: list, store: env.store) else { return }
-        env.workbench.showTray("Copied \(NXFormat.quoted(list.displayTitle)) as Markdown", icon: "doc.on.clipboard")
     }
 
     /// Asks for the image a list's cover should show.
@@ -586,13 +551,7 @@ private struct NXChildListRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { workbench.go(workbench.route(for: list)) }
-        .contextMenu {
-            Button("Open") { workbench.go(workbench.route(for: list)) }
-            Button("Move List…") { env.listPendingMove = list }
-            CopyItemLinkButton(target: .list(list.id))
-            Divider()
-            Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
-        }
+        .contextMenu { NXListMenu(list: list, surface: .childRow) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(list.displayTitle)
         .accessibilityValue("\(count) open")

@@ -297,4 +297,24 @@ check(revealing.route == .inbox && revealing.listViewMode(for: revealInbox.id) =
 revealing.go(to: .today)
 check(revealing.listViewMode(for: revealInbox.id) == .tasks, "Leaving the Inbox ends the visit's document")
 
+// A line revealed in an Inbox this Mac shows as Document, reached as triage
+// through the widget's link, lasts the visit; the saved Document stays.
+let visitSuite = "openlist-reveal-visit-checks-\(UUID().uuidString)"
+let visitDefaults = UserDefaults(suiteName: visitSuite)!
+defer { visitDefaults.removePersistentDomain(forName: visitSuite) }
+let visiting = Navigator(defaults: visitDefaults)
+visiting.inboxListID = revealInbox.id
+visiting.setListViewMode(.document, for: revealInbox.id)
+visiting.go(to: .inbox)
+visiting.showInboxTriage()
+check(visiting.listViewMode(for: revealInbox.id) == .tasks, "The widget's Triage link shows the Inbox as triage")
+visiting.reveal(lineReveal)
+check(visiting.route == .inbox && visiting.listViewMode(for: revealInbox.id) == .document,
+      "A line revealed during the triage visit opens the Inbox's document")
+visiting.go(to: .today)
+let revisited = Navigator(defaults: visitDefaults)
+revisited.inboxListID = revealInbox.id
+check(visiting.listViewMode(for: revealInbox.id) == .document && revisited.listViewMode(for: revealInbox.id) == .document,
+      "Leaving it keeps the Inbox's saved Document, on show and after relaunch")
+
 print("\(checks) Inbox navigation checks passed")

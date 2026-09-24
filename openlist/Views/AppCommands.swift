@@ -47,9 +47,14 @@ struct AppCommands: Commands {
         }
         // Openlist ▸ Settings… opens the Settings page in the main window;
         // there is no Settings window.
+        // Settings… and Search stand down over an open capture, as its keys
+        // do, rather than close it and drop the draft: off while the window
+        // is key, and from elsewhere they only bring the window forward.
+        let keepsCapture = env.isMainWindowKey && env.workbench.captureOpen
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { showSettings() }
                 .keyboardShortcut(",", modifiers: .command)
+                .disabled(keepsCapture)
         }
         // File ▸ replaces the template "New Window" with task and list creation.
         CommandGroup(replacing: .newItem) {
@@ -81,8 +86,9 @@ struct AppCommands: Commands {
         // Edit ▸ find.
         CommandGroup(after: .textEditing) {
             Divider()
-            Button("Search") { inMainWindow { env.navigator.isSearchOpen = true } }
+            Button("Search") { inMainWindow { if !env.workbench.captureOpen { env.navigator.isSearchOpen = true } } }
                 .keyboardShortcut("f", modifiers: .command)
+                .disabled(keepsCapture)
 
             // The palette, named as the toolbar names it.
             Button("Actions…") { inMainWindow { env.navigator.isCommandPaletteOpen = true } }
@@ -316,11 +322,13 @@ struct AppCommands: Commands {
         NSApp.sendAction(Selector((selectorName)), to: nil, from: nil)
     }
 
-    /// The main window's Settings page, over whatever was open. With the main
-    /// window key, NextKeyMonitor takes ⌘, before the menu does.
+    /// The main window's Settings page, over search or the palette. With the
+    /// main window key, NextKeyMonitor takes ⌘, before the menu does. From
+    /// elsewhere, over a capture left open there, it only brings the window
+    /// and its draft forward, as New Task… does.
     private func showSettings() {
         inMainWindow {
-            if env.workbench.captureOpen { env.workbench.closeCapture() }
+            guard !env.workbench.captureOpen else { return }
             env.workbench.go(.settings)
         }
     }

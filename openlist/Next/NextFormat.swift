@@ -33,14 +33,14 @@ enum NXFormat {
     /// "Today", "Tomorrow", "Yesterday", "Fri 25" within the week, else "3 Oct".
     static func dueLabel(_ date: Date?, now: Date = .now) -> String {
         guard let date else { return "No date" }
-        let offset = dayOffset(date, now: now)
-        switch offset {
-        case 0: return "Today"
-        case 1: return "Tomorrow"
-        case -1: return "Yesterday"
-        case 2..<7: return date.formatted(.dateTime.weekday(.abbreviated).day())
-        default: return date.formatted(.dateTime.day().month(.abbreviated))
-        }
+        return MomentText.day(date, now: now)
+    }
+
+    /// A moment in the plan or in history, the day as `dueLabel` names it, with
+    /// the year when it isn't this one, and the clock: "Today 10:00", "Fri 25
+    /// 10:00", "3 Oct 2025 10:00" (`MomentText.moment`).
+    static func moment(_ date: Date, includesTime: Bool = true, inSentence: Bool = false, now: Date = .now) -> String {
+        MomentText.moment(date, includesTime: includesTime, inSentence: inSentence, now: now)
     }
 
     /// A new due date as the tray and Changes name it: its day, and its time
@@ -69,10 +69,7 @@ enum NXFormat {
         return days == 1 ? "yesterday" : "\(days) days ago"
     }
 
-    static func clock(_ date: Date) -> String {
-        let parts = calendar.dateComponents([.hour, .minute], from: date)
-        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
-    }
+    static func clock(_ date: Date) -> String { MomentText.clock(date) }
 
     static func short(_ text: String) -> String {
         text.count > 30 ? String(text.prefix(29)) + "…" : text

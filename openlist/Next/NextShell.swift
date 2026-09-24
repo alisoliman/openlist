@@ -23,7 +23,6 @@ struct NextShell: View {
         let library = drawnLibrary()
         let style = env.workbench.style
         let showsSidebar = env.workbench.showsSidebar
-        let revealedDocuments = overlays.revealedDocuments.filter { env.navigator.listViewMode(for: $0) == .document }
         HStack(spacing: 0) {
             // Folded or hidden, the sidebar stays mounted with no width, so a
             // rename in progress keeps its draft and commits as it loses focus.
@@ -53,11 +52,7 @@ struct NextShell: View {
         .onChange(of: env.navigator.openTaskID) { adaptSidebar() }
         .onChange(of: env.navigator.searchActivation) { landReveal() }
         // Back/Forward, reveals and deletions change the route without `go`.
-        .onChange(of: env.navigator.route) {
-            env.workbench.routeDidChange()
-            settleRevealedLists()
-        }
-        .onChange(of: revealedDocuments) { settleRevealedLists() }
+        .onChange(of: env.navigator.route) { env.workbench.routeDidChange() }
         // Every Completed group opens as the new setting says, and an old
         // fold can't come back when the setting does.
         .onChange(of: env.settings.showsCompletedTasks) { env.workbench.completedFold = nil }
@@ -69,21 +64,6 @@ struct NextShell: View {
         let library = NextLibrary(lists: allLists, sections: sections, labels: labels, tasks: tasks)
         env.workbench.drawnLists = library.lists
         return library
-    }
-
-    /// A search result shows a task list as a document to reveal a note in it.
-    /// Leaving the list turns it back into a task list, unless you picked its
-    /// presentation while there.
-    private func settleRevealedLists() {
-        let navigator = env.navigator
-        for id in overlays.revealedDocuments {
-            if navigator.listViewMode(for: id) != .document {
-                overlays.revealedDocuments.remove(id)
-            } else if !navigator.shows(id) {
-                overlays.revealedDocuments.remove(id)
-                navigator.setListViewMode(.tasks, for: id)
-            }
-        }
     }
 
     /// A reminder, a link or a search hit that opens a task lands as the

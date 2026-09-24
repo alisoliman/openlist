@@ -92,7 +92,7 @@ performance at every maximum.
 
 ## Replace, quit, and recover
 
-Choosing a backup only validates it and displays a preview. **Restore and Quit**
+Choosing a backup only validates it and displays a preview. **Restore and quit**
 is explicit replacement confirmation. Open Openlist again after it quits to
 finish. It builds a separate local-only generation; it does not reset, replace
 or merge the original cloud library. The staged store adopts the original

@@ -17,9 +17,6 @@ final class NXOverlayState {
     /// The search Return was pressed on before its results arrived, with no
     /// listed row chosen: its first result opens once it's in.
     @ObservationIgnored var pendingSearchOpen: SearchOptions?
-    /// Task lists a search result switched to Document to reveal a note or
-    /// heading; the shell switches each back once you leave it.
-    var revealedDocuments: Set<UUID> = []
     /// The shell's key-handling view, whose window the overlays borrow focus from.
     @ObservationIgnored weak var host: NSView?
     @ObservationIgnored private weak var returnView: NSView?
@@ -70,6 +67,7 @@ final class NXOverlayState {
 /// key monitor drives their arrows, Return, Tab and Escape.
 struct NextOverlays: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     let overlays: NXOverlayState
 
     var body: some View {
@@ -78,7 +76,12 @@ struct NextOverlays: View {
         ZStack(alignment: .top) {
             if workbench.captureOpen {
                 NXOverlayBackdrop(top: 96, close: { workbench.closeCapture() }) {
-                    NXCaptureCard(draft: workbench, add: { _ = workbench.createFromCapture(keepOpen: $0) })
+                    NXCaptureCard(draft: workbench, notice: workbench.captureNotice,
+                                  add: { _ = workbench.createFromCapture(keepOpen: $0) })
+                        .animation(style.ease(140), value: workbench.captureNotice)
+                        .onChange(of: workbench.captureText) {
+                            if workbench.captureNotice != nil { workbench.captureNotice = nil }
+                        }
                 }
             } else if navigator.isSearchOpen {
                 NXOverlayBackdrop(top: 72, close: { navigator.isSearchOpen = false }) {
@@ -288,9 +291,14 @@ extension NXCaptureDraft {
     }
 
     /// Tab and Shift-Tab step the destination through Inbox and every list.
+    /// From a list no longer among them, Tab starts at Inbox and Shift-Tab
+    /// at the last list.
     func cycleCaptureDestination(by delta: Int, among ids: [UUID]) {
         guard !ids.isEmpty else { return }
-        let index = ids.firstIndex { $0 == captureListID } ?? 0
+        guard let index = ids.firstIndex(where: { $0 == captureListID }) else {
+            captureListID = delta > 0 ? ids.first : ids.last
+            return
+        }
         captureListID = ids[(index + delta + ids.count) % ids.count]
     }
 }
@@ -585,9 +593,10 @@ enum NXSearch {
 
     /// Tasks open in the inspector on their Next screen and lists on theirs.
     /// Notes, headings, summaries and archived content are revealed in the
-    /// list's document, as the app's search always has; a task list goes back
-    /// to Tasks once you leave it. A listed result opens with the query it
-    /// was found for, even while a newer one is searched.
+    /// list's document, as the app's search always has, for the visit only:
+    /// the list's saved presentation stays (`Navigator.reveal`). A listed
+    /// result opens with the query it was found for, even while a newer one
+    /// is searched.
     @MainActor
     static func open(_ hit: SearchHit, env: AppEnvironment, library: NextLibrary, overlays: NXOverlayState) {
         let workbench = env.workbench
@@ -611,9 +620,7 @@ enum NXSearch {
             // Once the new screen is up, so it scrolls to the row.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { workbench.inspect(taskID) }
         } else {
-            let wasTasks = env.navigator.listViewMode(for: request.listID) == .tasks
             env.navigator.reveal(request)
-            if wasTasks { overlays.revealedDocuments.insert(request.listID) }
         }
     }
 }

@@ -21,7 +21,8 @@ struct CalendarHistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center) {
-                NXPanelTitle(occurrenceID == nil ? "Work history" : "Completed occurrence")
+                // One completion's history is titled by its task.
+                NXPanelTitle(occurrenceID == nil ? "Work history" : completions.first?.title ?? "Work history")
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
@@ -59,7 +60,7 @@ struct CalendarHistoryView: View {
                     }
                 }
             } else {
-                Text(occurrenceID == nil ? "Each recurring occurrence has its own completion record." : "This history belongs to the completed occurrence, including its title and recorded work.")
+                Text(occurrenceID == nil ? "Each time a repeating task is done shows here on its own." : "What was recorded the time this task was done, with the title it had then.")
                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
@@ -73,8 +74,8 @@ struct CalendarHistoryView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(record.title).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
                                     Group {
-                                        Text(record.completedAt.formatted(date: .abbreviated, time: .shortened))
-                                        if record.wasRecurring { Label("Recurring occurrence", systemImage: "repeat") }
+                                        Text(NXFormat.moment(record.completedAt))
+                                        if record.wasRecurring { Label("Repeat", systemImage: "repeat") }
                                     }
                                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                                     if !record.plannedIntervals.isEmpty {
@@ -116,7 +117,7 @@ private struct PlannedIntervalsDisclosure: View {
             NXDisclosureButton("Originally planned", isExpanded: $isExpanded)
             if isExpanded {
                 ForEach(Array(intervals.enumerated()), id: \.offset) { _, interval in
-                    Text("\(interval.start.formatted(date: .abbreviated, time: .shortened)) – \(interval.end.formatted(date: .omitted, time: .shortened))")
+                    Text("\(NXFormat.moment(interval.start))–\(NXFormat.clock(interval.end))")
                         .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                 }
                 .transition(.opacity)

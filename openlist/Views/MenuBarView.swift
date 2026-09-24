@@ -63,11 +63,15 @@ struct MenuBarView: View {
                     .strokeBorder(NX.ink(0.24), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
                     .frame(width: 15, height: 15)
                 Text("New task…").font(.system(size: 13.5))
-                Text("⇧⌥Space")
-                    .font(NX.mono(10))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4))
+                // Only while it opens capture from any app: off, or held by
+                // another app, it would promise a key that does nothing.
+                if QuickCaptureHotKey.shared.isRegistered {
+                    Text("⇧⌥Space")
+                        .font(NX.mono(10))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4))
+                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -76,7 +80,7 @@ struct MenuBarView: View {
                                         padding: EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10),
                                         foreground: NX.ink(0.36), hoverForeground: NX.ink(0.55)))
         .padding(6)
-        .help("Quick Add (⇧⌥Space)")
+        .help(QuickCaptureHotKey.shared.isRegistered ? "Quick Add (⇧⌥Space)" : "Quick Add")
     }
 
     /// A small-caps heading with the design's group count, the first
@@ -100,7 +104,7 @@ struct MenuBarView: View {
             }
             if tasks.count > showing {
                 // In line with the row titles, past the checkbox.
-                Text("\(tasks.count - showing) more")
+                Text("+\(tasks.count - showing) more")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(NX.ink(0.36))
                     .padding(EdgeInsets(top: 3, leading: 32, bottom: 4, trailing: 8))
@@ -108,7 +112,8 @@ struct MenuBarView: View {
         }
     }
 
-    /// The widgets' empty state: a green tick over a serif line.
+    /// The widgets' empty state, in the Today widget's words: a green tick
+    /// over the serif "All clear".
     private func nothingDue(_ style: NextStyle) -> some View {
         VStack(spacing: 6) {
             Image(systemName: "checkmark")
@@ -117,10 +122,10 @@ struct MenuBarView: View {
                 .frame(width: 30, height: 30)
                 .background(NX.green, in: Circle())
                 .accessibilityHidden(true)
-            Text("Nothing due")
+            Text("All clear")
                 .font(style.serifTitles ? NX.serif(21) : .system(size: 16, weight: .semibold))
                 .foregroundStyle(NX.ink)
-            Text("Overdue and today’s tasks show here")
+            Text("Nothing due or overdue today")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(NX.ink(0.45))
         }

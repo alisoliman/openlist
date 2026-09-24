@@ -169,7 +169,26 @@ freshCompletion.dueDate = due
 freshCompletion.includesTime = true
 store.toggleCompletion(freshCompletion, now: due)
 check(try history(freshCompletion).map(\.kind).contains(.created) && history(freshCompletion).map(\.kind).contains(.completed), "create and complete in one transaction retain both real facts")
-check(try history(freshCompletion).first { $0.kind == .completed }?.recordedDetail.contains(due.formatted(date: .abbreviated, time: .shortened)) == true, "create and complete in one transaction retains the known due time")
+check(try history(freshCompletion).first { $0.kind == .completed }?.recordedDetail.contains(MomentText.moment(due)) == true, "create and complete in one transaction retains the known due time")
+// History and the Work panel write a moment as the app's pills and clock do.
+let momentNow = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 9))!
+let momentToday = Calendar.current.date(bySettingHour: 18, minute: 5, second: 0, of: momentNow)!
+let momentLastYear = Calendar.current.date(from: DateComponents(year: 2025, month: 10, day: 3, hour: 7, minute: 30))!
+let momentThisYear = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 7, minute: 30))!
+check(MomentText.moment(momentToday, now: momentNow) == "Today 18:05" && MomentText.moment(momentToday, inSentence: true, now: momentNow) == "today 18:05",
+      "a moment today reads as the design's day and 24-hour clock, lower case in a sentence")
+check(MomentText.moment(momentToday.addingTimeInterval(2 * 86_400), includesTime: false, now: momentNow)
+          == momentToday.addingTimeInterval(2 * 86_400).formatted(.dateTime.weekday(.abbreviated).day()),
+      "a day in the week ahead reads as its weekday and date")
+check(MomentText.moment(momentThisYear, now: momentNow) == "\(momentThisYear.formatted(.dateTime.day().month(.abbreviated))) 07:30"
+          && MomentText.moment(momentLastYear, now: momentNow) == "\(momentLastYear.formatted(.dateTime.day().month(.abbreviated).year())) 07:30",
+      "a moment names its year only when it isn't this one")
+check(MomentText.clock(momentLastYear) == "07:30" && MomentText.day(momentLastYear, now: momentNow) == momentLastYear.formatted(.dateTime.day().month(.abbreviated)),
+      "the pills' day and the clock stay the design's, with no year")
+check(WorkSession.stopText("Mac was unavailable") == "Paused while the Mac was away" && WorkSession.stopText(nil) == "Paused"
+          && WorkSession.stopText("Library restored; paused at last recorded time") == "Paused when the library was restored"
+          && WorkSession.stopText("Changed to a note") == "Ended when the task was turned into text",
+      "Work history words each saved pause reason as the Work panel does, older reasons included")
 
 // Debounced fallback persists even without Return; it never inserts a row per key.
 let beforeDebounce = try history(task).count

@@ -62,8 +62,7 @@ struct NextListsGallery: View {
                             ForEach(shelf.lists) { list in
                                 let tasks = library.tasks(in: list.id)
                                 NXListCard(list: list, tasks: tasks, peek: peek(list, tasks: tasks),
-                                           path: library.hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "),
-                                           isArchived: shelf.id == Shelf.archivedID)
+                                           path: library.hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "))
                             }
                         }
                     }
@@ -102,8 +101,6 @@ private struct NXListCard: View {
     let peek: [Block]
     /// The lists it sits inside, or empty at the top level.
     let path: String
-    /// Archived directly or through a parent.
-    let isArchived: Bool
     @State private var hovering = false
 
     var body: some View {
@@ -171,32 +168,7 @@ private struct NXListCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { env.workbench.go(env.workbench.route(for: list)) }
-        .contextMenu { menu }
-    }
-
-    @ViewBuilder
-    private var menu: some View {
-        let workbench = env.workbench
-        Button("Open") { workbench.go(workbench.route(for: list)) }
-        CopyItemLinkButton(target: .list(list.id))
-        Divider()
-        // Nested lists show under their parent, so only top-level ones can be pinned.
-        if !isArchived && path.isEmpty {
-            Button(list.isPinned ? "Remove from Sidebar" : "Pin to Sidebar") { workbench.setPinned(!list.isPinned, for: list) }
-        }
-        Button("Duplicate") { workbench.duplicateList(list) }
-        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
-        Button("Export as Markdown…") { workbench.exportMarkdown(list) }
-        Button("Move List…") { env.listPendingMove = list }
-        Button("New Child List") { workbench.createChildList(in: list) }
-            .disabled(isArchived)
-        // A list archived with its parent comes back when the parent does.
-        if list.isArchived || !isArchived {
-            Button(list.isArchived ? "Unarchive List" : "Archive List") { workbench.setArchived(!list.isArchived, for: list) }
-                .help("Archived lists stay here and stop contributing tasks or reminders.")
-        }
-        Divider()
-        Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
+        .contextMenu { NXListMenu(list: list, surface: .gallery) }
     }
 }
 
