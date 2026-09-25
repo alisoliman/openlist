@@ -54,7 +54,7 @@ for bundle in "$APP" "$APP/Contents/PlugIns/OpenlistWidget.appex"; do
         fail_bundle "$bundle: architecture must be 'arm64' (found '$architectures')"
     require_metadata "$plist" CFBundleShortVersionString "$VERSION"
     require_metadata "$plist" CFBundleVersion "$BUILD_NUMBER"
-    require_metadata "$plist" LSMinimumSystemVersion 26.5
+    require_metadata "$plist" LSMinimumSystemVersion 27.0
     identifier=solimanali.openlist
     if [[ "$bundle" != "$APP" ]]; then
         identifier=solimanali.openlist.OpenlistWidget
@@ -79,5 +79,5 @@ PY
     if [[ "$bundle" == "$APP" ]]; then
         python3 "$(dirname "$0")/verify-drag-types.py" "$plist" release
     fi
-    echo "Verified arm64, version $VERSION ($BUILD_NUMBER), macOS 26.5: $bundle"
+    echo "Verified arm64, version $VERSION ($BUILD_NUMBER), macOS 27.0: $bundle"
 done

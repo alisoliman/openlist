@@ -34,6 +34,7 @@ zulu.completedAt = date
 let alpha = block(.task, "Alpha", 0, parent: zulu)
 let childNote = block(.paragraph, "Nested note", 1, parent: zulu)
 let delta = block(.task, "Delta", 15)
+let echo = block(.task, "Echo", 17)
 let prose = block(.paragraph, "Prose separating tasks", 20)
 prose.richData = Data("Formatted rich text".utf8)
 prose.note = "Keep attached notes"
@@ -46,37 +47,37 @@ image.mediaWidth = 200
 image.mediaHeight = 100
 alpha.dueDate = date.addingTimeInterval(2 * 86_400)
 beta.dueDate = date
+echo.dueDate = date.addingTimeInterval(-86_400)
 alpha.priority = .medium
 beta.priority = .high
+echo.priority = .low
 store.save()
-let blocks = [image, beta, prose, delta, childNote, alpha, zulu, charlie, heading]
+let blocks = [image, beta, prose, echo, delta, childNote, alpha, zulu, charlie, heading]
 let original = blocks.map(BackupBlock.init)
 let originalList = BackupTaskList(list)
 let outline = BlockTree.flatten(blocks, respectCollapse: false)
-let manual = [charlie, zulu, alpha, delta, beta]
+let manual = [charlie, zulu, alpha, delta, echo, beta]
 
-func projection(_ sorting: ListSorting = .manual, showsCompleted: Bool = true,
-                source: [Block] = blocks) -> ListTasksProjection {
-    ListTasksProjection(blocks: source, listID: list.id, sorting: sorting, showsCompleted: showsCompleted)
+/// A list's tasks in the order its page draws them, as the document, Tasks
+/// mode and the List widget take them: the whole outline, folded branches
+/// included, with the Sort reordering each run of top-level tasks.
+func pageTasks(_ sorting: ListSorting = .manual, source: [Block] = blocks) -> [Block] {
+    BlockTree.sortingTaskRuns(in: BlockTree.flatten(source, respectCollapse: false), by: sorting).map(\.block).filter(\.isTask)
 }
 
-check(ids(projection().tasks) == ids(manual), "Document order includes every descendant once despite collapsed ancestors")
-check(ids(projection(.alphabetical).tasks) == ids([alpha, beta, charlie, delta, zulu]),
-      "Alphabetical sort crosses headings, prose, and task parent boundaries")
-check(ids(projection(.dueDate).tasks) == ids([beta, alpha, charlie, zulu, delta]),
-      "Due-date sort orders dated tasks before stable undated ties")
-check(ids(projection(.priority).tasks) == ids([beta, alpha, charlie, zulu, delta]),
-      "Priority sort compares the complete queue")
-check(ids(projection(.createdAt).tasks) == ids(manual), "Creation-date ties retain original outline order")
-check(ids(projection(.manual, showsCompleted: false).tasks) == ids([charlie, alpha, delta, beta]),
-      "Hide completed filters each task independently and keeps an open child of a completed parent")
+check(ids(pageTasks()) == ids(manual), "Document order includes every descendant once despite collapsed ancestors")
+check(ids(pageTasks(.alphabetical)) == ids([charlie, delta, echo, zulu, alpha, beta]),
+      "Alphabetical sort reorders the run of top-level tasks between the heading and the prose, carrying subtasks")
+check(ids(pageTasks(.dueDate)) == ids([charlie, echo, zulu, alpha, delta, beta]),
+      "Due-date sort puts a dated task first in its run, before stable undated ties")
+check(ids(pageTasks(.priority)) == ids([charlie, echo, zulu, alpha, delta, beta]),
+      "Priority sort puts the higher priority first in its run, and never moves a subtask")
+check(ids(pageTasks(.createdAt)) == ids(manual), "Creation-date ties retain original outline order")
 
 for sorting in ListSorting.allCases {
-    for visible in [true, false] {
-        _ = projection(sorting, showsCompleted: visible)
-        check(blocks.map(BackupBlock.init) == original && BackupTaskList(list) == originalList,
-              "\(sorting) with completion visibility \(visible) never mutates document payload, hierarchy, or indices")
-    }
+    _ = pageTasks(sorting)
+    check(blocks.map(BackupBlock.init) == original && BackupTaskList(list) == originalList,
+          "\(sorting) never mutates document payload, hierarchy, or indices")
 }
 
 // Every actual comparator tie falls back to outline order, never fetch order.
@@ -84,12 +85,13 @@ let firstTie = block(.task, "Same", 50)
 let nestedTie = block(.task, "Same", -1, parent: firstTie)
 let lastTie = block(.task, "Same", 60)
 for sorting in ListSorting.allCases {
-    let result = projection(sorting, source: [lastTie, nestedTie, firstTie]).tasks
+    let result = pageTasks(sorting, source: [lastTie, nestedTie, firstTie])
     check(ids(result) == ids([firstTie, nestedTie, lastTie]), "\(sorting) retains outline order for equal keys")
 }
 
 // The orders Today's and a list's Completed groups, the label screen, the
-// Due date sort and the widget take from the model's comparators.
+// Due date sort and the widget's Today and completed rows take from the
+// model's comparators.
 func loose(_ title: String, due: Date? = nil, priority: TaskPriority = .none, completed: Date? = nil) -> Block {
     let value = Block(kind: .task, text: title, listID: list.id)
     value.dueDate = due
@@ -110,32 +112,26 @@ let undated = loose("Undated", priority: .high)
 check(ids([undated, sameDayLow, sooner, sameDayHigh].sorted(by: Block.byDueDate)) == ids([sooner, sameDayHigh, sameDayLow, undated]),
       "Due-date order breaks a shared date by priority and puts undated tasks last")
 
-let foreign = Block(kind: .task, text: "Other list", listID: UUID())
-check(ids(projection(source: blocks + [foreign, alpha]).tasks) == ids(manual),
-      "A foreign-list block and repeated input cannot duplicate or contaminate the queue")
-let noteOnly = projection(source: [heading, prose, image])
-check(noteOnly.tasks.isEmpty, "A notes-only list projects no tasks")
-check(projection(showsCompleted: false, source: [zulu]).tasks.isEmpty,
-      "A completed-only list has an empty open-task projection")
+check(pageTasks(source: [heading, prose, image]).isEmpty, "A notes-only list has no tasks")
 
-// The production document path continues to sort contiguous root-task runs.
+// The document itself sorts the same runs, prose and all.
 let sortedOutline = BlockTree.sortingTaskRuns(in: outline, by: .alphabetical)
-check(sortedOutline.map(\.id) == ids([heading, charlie, delta, zulu, alpha, childNote, prose, beta, image]),
+check(sortedOutline.map(\.id) == ids([heading, charlie, delta, echo, zulu, alpha, childNote, prose, beta, image]),
       "Document sorting preserves prose boundaries and carries each task's original subtree")
 check(BlockTree.sortingTaskRuns(in: outline, by: .manual).map(\.id) == outline.map(\.id),
       "Returning to manual Document order restores the exact rich outline")
 check(blocks.map(BackupBlock.init) == original, "Document sorting also leaves stored models unchanged")
 
-// Mutation through a projected row targets the original model, never a copy.
-let projectedAlpha = projection(.alphabetical).tasks.first { $0.id == alpha.id }!
-check(projectedAlpha === alpha, "Projected task identity is the original SwiftData object")
-store.setText("Renamed child", for: projectedAlpha)
-store.toggleCompletion(projectedAlpha)
+// Mutation through a sorted row targets the original model, never a copy.
+let sortedAlpha = pageTasks(.alphabetical).first { $0.id == alpha.id }!
+check(sortedAlpha === alpha, "A sorted task is the original SwiftData object")
+store.setText("Renamed child", for: sortedAlpha)
+store.toggleCompletion(sortedAlpha)
 store.save()
 check(store.block(id: alpha.id)?.text == "Renamed child" && alpha.isCompleted,
-      "Editing and completing a projected task updates the original child")
+      "Editing and completing a sorted task updates the original child")
 check(alpha.parentID == zulu.id && alpha.sortIndex == original.first { $0.id == alpha.id }!.sortIndex,
-      "Projected task mutations retain original ownership, parent, and insertion position")
+      "Sorted task mutations retain original ownership, parent, and insertion position")
 check([heading, childNote, prose, image].allSatisfy { value in
     original.first { $0.id == value.id } == BackupBlock(value)
 }, "Task mutations leave headings, notes, rich formatting, and image payloads unchanged")

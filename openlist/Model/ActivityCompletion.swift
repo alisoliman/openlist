@@ -21,7 +21,12 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
     var hasConflictingDetails = false
 
     @MainActor init(event: ActivityEvent, matchingRecord: CompletionRecord?) {
-        let change = event.change
+        self.init(event: event, change: event.change, matchingRecord: matchingRecord)
+    }
+
+    /// For callers that have already decoded `event.change`: each read of it
+    /// decodes the stored JSON again.
+    @MainActor init(event: ActivityEvent, change: TaskActivityChange?, matchingRecord: CompletionRecord?) {
         id = event.id
         taskID = event.blockID
         completionID = change?.completionID

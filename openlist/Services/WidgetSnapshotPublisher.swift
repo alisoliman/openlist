@@ -7,47 +7,137 @@ import Foundation
 import SwiftData
 import WidgetKit
 
+/// What a snapshot needs from outside the Store: settings, the calendar plan
+/// and the work timer, and whether the app is in front when it is written.
+///
+/// Each value is read when a snapshot is built, so a settings change shows on
+/// the next refresh without replacing the sources. The defaults are the app's
+/// own defaults with no calendar, which lets the publisher run on a Store
+/// alone, as the check suites do; the app installs `live(calendar:settings:libraryID:)`.
+@MainActor
+struct WidgetSnapshotSources {
+    var libraryID: UUID?
+    /// The app's accent as 0xRRGGBB.
+    var accentHex: @MainActor () -> UInt32 = { 0x7C4DF0 }
+    var serifTitles: @MainActor () -> Bool = { true }
+    /// The calendar the app uses for weeks, honouring its first-weekday setting.
+    var calendar: @MainActor () -> Calendar = { .current }
+    /// Meetings and task blocks overlapping the interval, in any order.
+    var agenda: @MainActor (DateInterval) -> [WidgetSnapshot.AgendaEvent] = { _ in [] }
+    /// The running or paused work at a date, if any.
+    var work: @MainActor (Date) -> WidgetSnapshot.Work? = { _ in nil }
+    /// Whether the app is frontmost. WidgetKit budgets only the reloads an
+    /// app asks for from the background, so a sliding plan is held back only
+    /// then.
+    var isAppActive: @MainActor () -> Bool = { true }
+
+    static var empty: WidgetSnapshotSources { WidgetSnapshotSources() }
+}
+
 /// Keeps the widget's snapshot file in step with the app's data.
 ///
-/// Rebuilding is cheap but not free, so writes are coalesced: a burst of edits
-/// produces a single refresh once the user pauses.
+/// Rebuilding runs on the main actor, so writes are coalesced (a burst of
+/// edits produces a single refresh once the user pauses) and the rebuild
+/// reads no more than the widgets show: tasks and the headings they sit
+/// under, not every paragraph, and the completion history only when it has
+/// changed.
+///
+/// Every changed snapshot is written straight away, but reloads are scoped:
+/// WidgetKit budgets the reloads an app asks for from the background, and a
+/// plan that slides every few minutes must not spend the other widgets'.
 @MainActor
 final class WidgetSnapshotPublisher {
-    /// Work and the week's agenda, from the calendar. Absent in tools that
-    /// build snapshots without one.
-    typealias CalendarFeed = (Date) -> (work: WidgetSnapshot.Work?, agenda: [WidgetSnapshot.AgendaDay])
-
-    private let store: Store
-    private let libraryID: UUID?
-    private var pendingRefresh: Task<Void, Never>?
-    private var lastWritten: WidgetSnapshot?
-    private var heatmapCache: (key: [Int], activity: WidgetSnapshot.Activity?)?
-    /// Each list's first open tasks in its own order, by list, with what the
-    /// order was worked out from.
-    private var listOrderCache: [UUID: (key: Int, ids: [UUID])] = [:]
-    /// The settings calendar, whose week the Agenda and heatmap follow.
-    var settingsCalendar: () -> Calendar = { .current }
-    var calendarFeed: CalendarFeed?
-
-    /// Weeks of history the medium Activity widget draws.
-    static let activityWeeks = 21
-    /// Today's rows kept for each day: the oldest overdue ones, then today's
-    /// and tomorrow's, each with room of its own. Large Today draws up to 3
-    /// overdue rows and 5 in all, as the design's; the rest are spares for
-    /// ticks queued in the widget and, after midnight, tomorrow's rows.
-    static let todayRows = (overdue: 10, perDay: 15)
-
-    convenience init(store: Store) {
-        self.init(store: store, libraryID: nil)
+    /// No widget size shows more rows than these, and the file is decoded on
+    /// every timeline request.
+    private enum Limit {
+        /// Each of Today's groups, overdue, due today and tomorrow, on its
+        /// own: more than a widget draws of any, so rows a cap leaves out
+        /// never come before the rows a widget shows, even once a widget
+        /// starts the next day with them (`WidgetState`).
+        static let todayItems = 6
+        static let inboxItems = 6
+        static let openItems = 12
+        static let doneItems = 6
+        /// The medium Activity widget's heatmap.
+        static let activityWeeks = 21
     }
 
-    init(store: Store, libraryID: UUID?) {
+    /// Which widget timelines a write reloads.
+    enum Reload: Equatable {
+        /// Every widget: tasks, counts, lists, activity or appearance changed.
+        case all
+        /// Up Next and Agenda: only the plan or the work session changed.
+        case plan
+    }
+
+    /// How a snapshot differs from the one written before it.
+    enum Change: Equatable {
+        /// Anything outside the plan and the work session.
+        case data
+        /// The work session itself: started, paused, switched or stopped.
+        case work
+        /// Only where meetings and blocks sit: an unstarted block sliding to
+        /// the next free time, a calendar edit, a running block extended.
+        case plan
+    }
+
+    private let store: Store
+    var sources: WidgetSnapshotSources
+    /// Asks WidgetKit to reload. The check suites replace it to count reloads.
+    var reloadTimelines: @MainActor (Reload) -> Void = { reload in
+        switch reload {
+        case .all: WidgetCenter.shared.reloadAllTimelines()
+        case .plan: for kind in WidgetKind.plan { WidgetCenter.shared.reloadTimelines(ofKind: kind) }
+        }
+    }
+    /// While the app is in the background, plan-only changes reload Up Next
+    /// and Agenda at most this often. Agenda's own entries step every quarter
+    /// hour, so a slid block shows at most one step late; the file is always
+    /// current, so any earlier reload shows it sooner.
+    var planReloadInterval: TimeInterval = 15 * 60
+    private var pendingRefresh: Task<Void, Never>?
+    private var lastWritten: WidgetSnapshot?
+    private var lastPlanReload = Date.distantPast
+    /// Reloads Up Next and Agenda once the interval is up, for the last of a
+    /// run of held-back plan changes.
+    private var pendingPlanReload: Task<Void, Never>?
+    private var activityCache: ActivityCache?
+    /// Each sorted list's task order, and the key it was worked out for.
+    private var sortedOrders: [UUID: SortedOrder] = [:]
+
+    /// A sorted list's tasks in its page's order. That order runs through the
+    /// prose between the list's runs of tasks, so working it out reads the
+    /// whole document, while most rebuilds (the editor's autosave as you
+    /// type, a sliding plan) leave it as it was.
+    private struct SortedOrder {
+        var key: Int
+        var ids: [UUID]
+    }
+
+    /// The Activity section and what it was built from. Building it reads the
+    /// whole completion history, which most refreshes (a typing pause, a
+    /// Start, a sliding plan) leave as it was.
+    private struct ActivityCache {
+        var history: CompletionHistorySignature
+        var calendar: Calendar
+        var day: Date
+        /// See `ActivityHeatmap.nextCompletionAt`.
+        var staleAt: Date?
+        var activity: WidgetSnapshot.Activity
+    }
+
+    init(store: Store, sources: WidgetSnapshotSources = .empty) {
         self.store = store
-        self.libraryID = libraryID
+        self.sources = sources
 
         // Overdue / due-today / done-today are all relative to "today", and the
         // app computes them when it writes the snapshot. Without this the
         // widget would keep yesterday's counts until something else changed.
+        // Forced, because a day can start with the same rows and counts the
+        // last one ended with (nothing due either day), and skipping that
+        // write would leave `generatedAt` on yesterday: the widget reads it to
+        // tell which day the counts are for, so it would move them forward
+        // again, and after two such days take a running app's file as stale.
         // The publisher lives as long as the app, so the observation is never
         // torn down and needs no stored token.
         NotificationCenter.default.addObserver(
@@ -55,7 +145,7 @@ final class WidgetSnapshotPublisher {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshNow() }
+            MainActor.assumeIsolated { self?.refreshNow(force: true) }
         }
     }
 
@@ -69,243 +159,399 @@ final class WidgetSnapshotPublisher {
         }
     }
 
-    /// Rebuilds and writes immediately. `forcingReload` reloads the widgets even
-    /// when nothing changed, after actions a widget has been showing as done.
-    func refreshNow(forcingReload: Bool = false) {
+    /// Rebuilds and writes immediately. The write and the timeline reload are
+    /// skipped when nothing the widget shows has changed, unless `force` asks
+    /// for them anyway, such as after a widget action whose optimistic state
+    /// the widget should now drop. A forced refresh reloads every widget at
+    /// once, however little changed.
+    func refreshNow(force: Bool = false, now: Date = .now) {
         pendingRefresh?.cancel()
-        var snapshot = buildSnapshot()
-        let now = Date.now
-        let running = snapshot.work?.isRunning == true
-        if running { snapshot.heartbeatAt = now }
-        if snapshot != lastWritten {
-            lastWritten = snapshot
-            WidgetSnapshotStore.write(snapshot)
-            WidgetCenter.shared.reloadAllTimelines()
-        } else if running, now.timeIntervalSince(lastWritten?.heartbeatAt ?? .distantPast) >= 60 {
-            // Nothing the widget shows changed, but a running timer's heartbeat
-            // tells it the app is still recording. A rewrite is enough; the
-            // widget reads it on its next reload.
-            lastWritten = snapshot
-            WidgetSnapshotStore.write(snapshot)
-            if forcingReload { WidgetCenter.shared.reloadAllTimelines() }
-        } else if forcingReload {
-            WidgetCenter.shared.reloadAllTimelines()
+        pendingRefresh = nil
+        let snapshot = buildSnapshot(now: now)
+        guard force || snapshot != lastWritten else { return }
+        let change = force ? .data : lastWritten.map { Self.change(from: $0, to: snapshot) } ?? .data
+        write(snapshot, change: change, now: now)
+    }
+
+    /// Writes, synchronously, what the widget should show once the app has quit.
+    ///
+    /// Quitting pauses running work, but that pause may land after this call
+    /// and the process exits before a debounced refresh would run. Running
+    /// work is therefore written as already paused at `now`, so a widget never
+    /// keeps counting for an app that is no longer recording.
+    func prepareForTermination(now: Date = .now) {
+        pendingRefresh?.cancel()
+        pendingRefresh = nil
+        var snapshot = buildSnapshot(now: now)
+        if var work = snapshot.work, work.state == .working {
+            work.priorSeconds = work.elapsed(at: now)
+            work.segmentStartedAt = nil
+            work.state = .paused
+            snapshot.work = work
         }
+        write(snapshot, change: .data, now: now)
+    }
+
+    private func write(_ snapshot: WidgetSnapshot, change: Change, now: Date) {
+        lastWritten = snapshot
+        // Always written, so a reload for any reason shows the latest.
+        WidgetSnapshotStore.write(snapshot)
+        switch change {
+        case .data:
+            planWidgetsReloaded(at: now)
+            reloadTimelines(.all)
+        case .work:
+            reloadPlanWidgets(now: now)
+        case .plan:
+            let due = lastPlanReload.addingTimeInterval(planReloadInterval)
+            if sources.isAppActive() || now >= due {
+                reloadPlanWidgets(now: now)
+            } else if pendingPlanReload == nil {
+                pendingPlanReload = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(due.timeIntervalSince(now)))
+                    guard !Task.isCancelled else { return }
+                    self?.reloadPlanWidgets(now: .now)
+                }
+            }
+        }
+    }
+
+    private func reloadPlanWidgets(now: Date) {
+        planWidgetsReloaded(at: now)
+        reloadTimelines(.plan)
+    }
+
+    /// A reload reads the file as it is now, so a held-back one is moot.
+    private func planWidgetsReloaded(at now: Date) {
+        pendingPlanReload?.cancel()
+        pendingPlanReload = nil
+        lastPlanReload = now
+    }
+
+    /// Which widgets a new snapshot concerns. Up Next and Agenda draw only
+    /// the plan, the work session and the day's done count; the others never
+    /// draw the plan.
+    nonisolated static func change(from old: WidgetSnapshot, to new: WidgetSnapshot) -> Change {
+        var oldRest = old, newRest = new
+        oldRest.agenda = []
+        newRest.agenda = []
+        oldRest.work = nil
+        newRest.work = nil
+        guard oldRest == newRest else { return .data }
+        var oldWork = old.work, newWork = new.work
+        oldWork?.blockStart = nil
+        oldWork?.blockEnd = nil
+        newWork?.blockStart = nil
+        newWork?.blockEnd = nil
+        return oldWork == newWork ? .plan : .work
     }
 
     // MARK: - Building
 
+    /// Every field holds absolute values, never elapsed time, so the snapshot
+    /// stays equal between work heartbeats and a running session does not
+    /// reload the widgets every minute.
     func buildSnapshot(now: Date = .now) -> WidgetSnapshot {
-        let calendar = settingsCalendar()
+        let calendar = sources.calendar()
+        let hierarchy = store.listHierarchy()
         let lists = store.allLists()
-        let hierarchy = ListHierarchy(lists)
         var listsByID: [UUID: TaskList] = [:]
         for list in lists { listsByID[list.id] = list }
-        // Tasks only: prose never shows in a widget, and a library's
-        // documents can hold many times more of it than tasks. This runs
-        // after every save, the editor's autosave included.
-        let allTasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
-            $0.trashID == nil && $0.kindRaw == "task"
-        }))) ?? []).filter { !$0.isDeleted }
-        let tasks = ActiveTaskPolicy(hierarchy: hierarchy).tasks(in: allTasks)
-        let inbox = InboxPolicy(lists: lists)
 
+        let blocks = outlineBlocks()
+        let tasks = ActiveTaskPolicy(hierarchy: hierarchy).tasks(in: blocks)
+        let inbox = InboxPolicy(hierarchy: hierarchy)
+        let tasksByID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        /// Whether an open task sits above this one, through its parent tasks.
+        func isUnderOpenTask(_ task: Block) -> Bool {
+            var seen: Set<UUID> = [task.id]
+            var parentID = task.parentID
+            while let id = parentID, let parent = tasksByID[id], seen.insert(id).inserted {
+                if !parent.isCompleted { return true }
+                parentID = parent.parentID
+            }
+            return false
+        }
+        var blocksByList: [UUID: [Block]] = [:]
+        for block in blocks {
+            if let listID = block.listID, listsByID[listID] != nil { blocksByList[listID, default: []].append(block) }
+        }
+
+        // One pass fills every counter; the day boundaries are computed once up front.
         let todayStart = calendar.startOfDay(for: now)
         let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
-        let soonEnd = calendar.date(byAdding: .day, value: 2, to: todayStart) ?? tomorrowStart
+        let dayAfterStart = calendar.date(byAdding: .day, value: 1, to: tomorrowStart) ?? tomorrowStart
 
-        func item(_ task: Block) -> WidgetSnapshot.Item {
-            let list = task.listID.flatMap { listsByID[$0] }
-            return WidgetSnapshot.Item(
-                id: task.id,
-                occurrenceID: task.occurrenceID,
-                title: task.displayTitle,
-                listID: task.listID,
-                listName: list?.displayTitle ?? "",
-                listIcon: list?.glyph ?? "",
-                accent: list?.widgetAccent ?? ListAccent.graphite.rawValue,
-                dueDate: task.dueDate,
-                includesTime: task.includesTime,
-                isCompleted: task.isCompleted,
-                completedAt: task.completedAt,
-                isStarred: task.isStarred,
-                hasRepeat: task.recurrenceData != nil,
-                priority: task.priorityRaw,
-                isInbox: inbox.includes(task)
-            )
+        var overdue: [Block] = []
+        var dueNow: [Block] = []
+        var dueToday: [WidgetSnapshot.Due] = []
+        var dueNext: [Block] = []
+        var dueTomorrow: [WidgetSnapshot.Due] = []
+        var totalOpen = 0
+        var waiting: [Block] = []
+
+        for task in tasks where !task.isCompleted {
+            totalOpen += 1
+            // Triage takes what the Inbox badge counts: a subtask goes with the
+            // open task above it, whose card carries it; one under done tasks
+            // only is a card of its own.
+            if inbox.includes(task), !isUnderOpenTask(task) { waiting.append(task) }
+
+            guard let due = task.dueDate else { continue }
+            // By day, as the app's Today: a timed task whose time has passed
+            // is still due today.
+            if due < todayStart {
+                overdue.append(task)
+            } else if due < tomorrowStart {
+                dueToday.append(WidgetSnapshot.Due(date: due, includesTime: task.includesTime))
+                dueNow.append(task)
+            } else if due < dayAfterStart {
+                // Tomorrow's work, which the widget moves into today at
+                // midnight. The app republishes then only if it is running;
+                // quit, or before a login, the file is all the widget has.
+                dueTomorrow.append(WidgetSnapshot.Due(date: due, includesTime: task.includesTime))
+                dueNext.append(task)
+            }
         }
+
+        // Ties go by capture order, as the app's Today, then by id: the fetch
+        // returns tasks in no fixed order, and a snapshot whose rows swapped
+        // places would reload every widget with nothing changed.
+        overdue.sort(by: Self.byDueDate)
+        dueNow.sort(by: Self.byDueDate)
+        dueNext.sort(by: Self.byDueDate)
+        waiting.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt > $1.createdAt }
 
         var snapshot = WidgetSnapshot()
+        // The moment the counts are relative to, which the widget moves them
+        // forward from; `now` is the wall clock except in the check suites.
         snapshot.generatedAt = now
-        snapshot.libraryID = libraryID
+        snapshot.libraryID = sources.libraryID
+        snapshot.accentHex = sources.accentHex()
+        snapshot.serifTitles = sources.serifTitles()
         snapshot.firstWeekday = calendar.firstWeekday
-        snapshot.completedTodayDay = todayStart
-
-        var soon: [Block] = []
-        var inboxOpen: [Block] = []
-        var dueDates: [Date] = []
-        var listCounts: [UUID: (open: Int, done: Int)] = [:]
-        for task in tasks {
-            let listID = task.listID
-            if task.isCompleted {
-                if let completedAt = task.completedAt, completedAt >= todayStart, completedAt < tomorrowStart {
-                    snapshot.completedTodayCount += 1
-                }
-                if let listID { listCounts[listID, default: (0, 0)].done += 1 }
-                continue
-            }
-            snapshot.totalOpenCount += 1
-            if let listID { listCounts[listID, default: (0, 0)].open += 1 }
-            if inbox.includes(task) { inboxOpen.append(task) }
-            guard let due = task.dueDate else { continue }
-            dueDates.append(due)
-            // Version 1's rule, for its widget: timed work is late once its time passes.
-            if task.includesTime ? due < now : due < todayStart { snapshot.overdueCount += 1 }
-            else if due < tomorrowStart { snapshot.dueTodayCount += 1 }
-            // Overdue by day, as the app's Today: today's and tomorrow's too,
-            // so entries after midnight still have the new day's rows.
-            if due < soonEnd { soon.append(task) }
+        // Capped group by group, so a long backlog still leaves today's own
+        // work rows to draw.
+        snapshot.todayItems = (overdue.prefix(Limit.todayItems) + dueNow.prefix(Limit.todayItems)).map { task in
+            item(task, list: task.listID.flatMap { listsByID[$0] })
         }
-        snapshot.dueDays = WidgetSnapshot.dueDays(dueDates, calendar: calendar)
-
-        let sorted = soon.sorted { a, b in
-            let aDay = calendar.startOfDay(for: a.dueDate!), bDay = calendar.startOfDay(for: b.dueDate!)
-            if aDay != bDay { return aDay < bDay }
-            if a.includesTime != b.includesTime { return a.includesTime }
-            if a.dueDate != b.dueDate || a.priorityRaw != b.priorityRaw { return Block.byDueDate(a, b) }
-            // Then capture order, as the app's Today, and one fixed order for
-            // exact ties, so the rows and the snapshot compared on each
-            // rebuild stay put however the fetch returns them.
-            return a.createdAt == b.createdAt ? a.id.uuidString < b.id.uuidString : a.createdAt < b.createdAt
+        snapshot.overdueCount = overdue.count
+        snapshot.dueTodayCount = dueToday.count
+        snapshot.dueToday = dueToday.sorted(by: Self.byDate)
+        // Ordered and capped as today's rows are, which they join after them.
+        snapshot.tomorrowItems = dueNext.prefix(Limit.todayItems).map { task in
+            item(task, list: task.listID.flatMap { listsByID[$0] })
         }
-        // By day, so however much is overdue, today's and tomorrow's rows still come.
-        let overdue = sorted.prefix { $0.dueDate! < todayStart }
-        let dueToday = sorted.dropFirst(overdue.count).prefix { $0.dueDate! < tomorrowStart }
-        let dueTomorrow = sorted.dropFirst(overdue.count + dueToday.count)
-        snapshot.todayItems = (overdue.prefix(Self.todayRows.overdue) + dueToday.prefix(Self.todayRows.perDay)
-            + dueTomorrow.prefix(Self.todayRows.perDay)).map(item)
-
-        snapshot.inboxCount = inboxOpen.count
-        snapshot.inboxItems = inboxOpen.sorted { $0.createdAt > $1.createdAt }.prefix(WidgetSnapshot.inboxRows).map {
+        snapshot.dueTomorrow = dueTomorrow.sorted(by: Self.byDate)
+        snapshot.inboxCount = waiting.count
+        snapshot.inboxItems = waiting.prefix(Limit.inboxItems).map {
             WidgetSnapshot.InboxItem(id: $0.id, title: $0.displayTitle, createdAt: $0.createdAt)
         }
-
-        let tasksByList = Dictionary(grouping: allTasks.filter { $0.listID != nil }, by: { $0.listID! })
-        let above = blocksAbove(allTasks)
-        var orders: [UUID: (key: Int, ids: [UUID])] = [:]
-        // The List widget's picker and its default follow the sidebar. Every
-        // active list is here, so the one a widget shows stays however many
-        // lists are made, moved or reordered ahead of it.
-        let sidebar = hierarchy.sidebarOrder(lists, sections: store.allSections())
-        snapshot.lists = sidebar.filter { !$0.isSystemInbox }.map { list in
-            let owned = tasksByList[list.id] ?? []
-            let open = openTasks(in: list, tasks: owned, above: above, limit: WidgetSnapshot.ListSummary.openRows, orders: &orders)
-            let done = owned.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
-            return WidgetSnapshot.ListSummary(
-                id: list.id,
-                title: list.displayTitle,
-                icon: list.glyph,
-                accent: list.widgetAccent,
-                openCount: listCounts[list.id]?.open ?? 0,
-                doneCount: listCounts[list.id]?.done ?? 0,
-                openItems: open.map(item),
-                doneItems: done.prefix(6).map(item)
-            )
+        snapshot.totalOpenCount = totalOpen
+        var orders: [UUID: SortedOrder] = [:]
+        snapshot.lists = hierarchy.sidebarOrder(lists, sections: store.allSections()).map {
+            summary(of: $0, blocks: blocksByList[$0.id] ?? [], hierarchy: hierarchy, orders: &orders)
         }
-        listOrderCache = orders
+        // Only the lists still sorted keep an order.
+        sortedOrders = orders
 
-        if let calendarFeed {
-            let feed = calendarFeed(now)
-            snapshot.work = feed.work
-            if let work = feed.work { snapshot.work?.item = tasks.first { $0.id == work.taskID }.map(item) }
-            snapshot.agenda = feed.agenda
+        let weekStart = Self.weekStart(containing: now, calendar: calendar)
+        let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+        snapshot.weekStart = weekStart
+        snapshot.agenda = sources.agenda(DateInterval(start: weekStart, end: weekEnd))
+            .sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+        snapshot.work = sources.work(now)
+
+        snapshot.activity = activity(now: now, weekStart: weekStart, calendar: calendar)
+        // Done today as the app's Today counts it (`Block.isCompletedToday`):
+        // tasks completed today, from current state, so a reopen or Undo takes
+        // one away. A repeat rolls forward to its next occurrence instead of
+        // staying completed, and a routine's steps reset with it, so, as in
+        // the app, finishing one moves it off today without adding to done.
+        // Activity, above, still counts those completions.
+        snapshot.completedTodayCount = tasks.count { task in
+            task.isCompleted && task.completedAt.map { $0 >= todayStart && $0 < tomorrowStart } == true
         }
-        snapshot.activity = activity(now: now, calendar: calendar)
         return snapshot
     }
 
-    /// The first `limit` open tasks of `list` in the list's own order.
-    ///
-    /// That order runs through the prose and headings above the tasks, so
-    /// working it out reads every block in the list. Kept until the list's
-    /// tasks, or a block above one, move or change what the list sorts by;
-    /// typing in the list's prose leaves it be.
-    private func openTasks(in list: TaskList, tasks: [Block], above: [UUID: Block], limit: Int,
-                           orders: inout [UUID: (key: Int, ids: [UUID])]) -> [Block] {
-        // A list with nothing open has no order to work out.
-        guard tasks.contains(where: { !$0.isCompleted }) else { return [] }
-        let sorting = list.sorting
+    /// Every task, and the headings, paragraphs and tasks they sit under, up
+    /// to the top of each document: enough for each list's outline to put its
+    /// tasks where the full document does, without the prose around them.
+    /// Siblings keep their order and the walk its roots, so the outline is
+    /// the same as the one built from every block.
+    private func outlineBlocks() -> [Block] {
+        // A model deleted since the last save still turns up in a fetch.
+        let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" }))) ?? [])
+            .filter { !$0.isDeleted }
+        var blocks = tasks
+        var fetched = Set(tasks.map(\.id))
+        var missing = Set(tasks.compactMap(\.parentID)).subtracting(fetched)
+        while !missing.isEmpty {
+            fetched.formUnion(missing)
+            let ids = Array(missing)
+            let parents = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && ids.contains($0.id) }))) ?? [])
+                .filter { !$0.isDeleted }
+            blocks += parents
+            missing = Set(parents.compactMap(\.parentID)).subtracting(fetched)
+        }
+        return blocks
+    }
+
+    /// Open tasks in the order the list's page draws them. Subtasks are
+    /// included: the list shows them, the open and done counts include them,
+    /// and ticking one off from a widget is the same action as in the app.
+    private func summary(of list: TaskList, blocks: [Block], hierarchy: ListHierarchy,
+                         orders: inout [UUID: SortedOrder]) -> WidgetSnapshot.ListSummary {
+        let tasks = blocks.contains(where: \.isTask) ? orderedTasks(of: list, blocks: blocks, orders: &orders) : []
+        let open = tasks.filter { !$0.isCompleted }
+        let done = tasks.filter(\.isCompleted).sorted { left, right in
+            left.completedAt == right.completedAt ? left.id.uuidString < right.id.uuidString : Block.byCompletionDate(left, right)
+        }
+        return WidgetSnapshot.ListSummary(
+            id: list.id,
+            title: list.displayTitle,
+            path: hierarchy.path(for: list.id),
+            icon: list.glyph,
+            accentHex: list.displayAccentHex,
+            isInbox: list.isSystemInbox,
+            openCount: open.count,
+            doneCount: done.count,
+            openItems: open.prefix(Limit.openItems).map { item($0, list: list) },
+            doneItems: done.prefix(Limit.doneItems).map { item($0, list: list) }
+        )
+    }
+
+    /// The list's tasks in its page's order: the document's outline, with the
+    /// list's Sort reordering each run of top-level tasks between its prose
+    /// and headings. Unsorted, the tasks and the blocks they sit under give
+    /// that order. A sorted list reads its whole document, since the prose
+    /// between runs is what keeps them apart, but only when its order may
+    /// have changed: its tasks or the blocks they sit under moved or changed
+    /// what the Sort reads, the Sort itself changed, or a block came or went
+    /// at the top level, where the runs are. Typing leaves the order be.
+    private func orderedTasks(of list: TaskList, blocks: [Block], orders: inout [UUID: SortedOrder]) -> [Block] {
+        var seen: Set<UUID> = []
+        let owned = blocks.filter { $0.listID == list.id && !$0.isTrashed && seen.insert($0.id).inserted }
+        guard list.sorting != .manual else { return Self.outlineTasks(owned, sorting: .manual) }
+        let key = sortingKey(of: list, blocks: owned)
+        let tasksByID = Dictionary(owned.filter(\.isTask).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if let cached = sortedOrders[list.id], cached.key == key {
+            orders[list.id] = cached
+            return cached.ids.compactMap { tasksByID[$0] }
+        }
+        let listID = list.id
+        seen = []
+        let document = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
+            $0.trashID == nil && $0.listID == listID
+        }))) ?? []).filter { !$0.isDeleted && !$0.isTrashed && seen.insert($0.id).inserted }
+        let tasks = Self.outlineTasks(document, sorting: list.sorting)
+        orders[list.id] = SortedOrder(key: key, ids: tasks.map(\.id))
+        return tasks
+    }
+
+    private static func outlineTasks(_ blocks: [Block], sorting: ListSorting) -> [Block] {
+        BlockTree.sortingTaskRuns(in: BlockTree.flatten(blocks, respectCollapse: false), by: sorting)
+            .map(\.block).filter(\.isTask)
+    }
+
+    /// What a sorted list's order is worked out from, short of its prose:
+    /// the Sort, every task and block above one, in place and in what the
+    /// Sort reads, and how many blocks sit at the top level, a count the
+    /// store answers without reading them. Summed, so the order a fetch
+    /// returned the blocks in does not matter.
+    private func sortingKey(of list: TaskList, blocks: [Block]) -> Int {
         func hash(_ body: (inout Hasher) -> Void) -> Int {
             var hasher = Hasher()
             body(&hasher)
             return hasher.finalize()
         }
-        // Summed, so the order the fetch returned the tasks in doesn't matter.
-        var key = hash { $0.combine(sorting) }
-        var seen: Set<UUID> = []
-        for task in tasks {
-            key &+= hash {
-                $0.combine(task.id); $0.combine(task.parentID); $0.combine(task.sortIndex); $0.combine(task.createdAt)
-                $0.combine(task.isCompleted); $0.combine(task.dueDate); $0.combine(task.priorityRaw)
-                if sorting == .alphabetical { $0.combine(task.displayTitle) }
-            }
-            var parent = task.parentID
-            while let id = parent, let block = above[id], seen.insert(id).inserted {
-                key &+= hash { $0.combine(id); $0.combine(block.parentID); $0.combine(block.sortIndex); $0.combine(block.createdAt); $0.combine(block.listID) }
-                parent = block.parentID
-            }
-        }
-        let byID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let cached = listOrderCache[list.id], cached.key == key {
-            orders[list.id] = cached
-            return cached.ids.compactMap { byID[$0] }
-        }
+        let sorting = list.sorting
         let listID = list.id
-        let blocks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
-            $0.trashID == nil && $0.listID == listID
-        }))) ?? []).filter { !$0.isDeleted }
-        let open = Array(ListTasksProjection(blocks: blocks, listID: listID, sorting: sorting, showsCompleted: false).tasks.prefix(limit))
-        orders[list.id] = (key, open.map(\.id))
-        return open
+        let roots = (try? store.context.fetchCount(FetchDescriptor<Block>(predicate: #Predicate {
+            $0.trashID == nil && $0.listID == listID && $0.parentID == nil
+        }))) ?? -1
+        var key = hash { $0.combine(sorting); $0.combine(roots) }
+        for block in blocks {
+            key &+= hash {
+                $0.combine(block.id); $0.combine(block.parentID); $0.combine(block.sortIndex); $0.combine(block.kindRaw)
+                guard block.isTask else { return }
+                $0.combine(block.createdAt); $0.combine(block.isCompleted); $0.combine(block.dueDate)
+                $0.combine(block.includesTime); $0.combine(block.priorityRaw)
+                if sorting == .alphabetical { $0.combine(block.displayTitle) }
+            }
+        }
+        return key
     }
 
-    /// The blocks other than tasks that hold tasks, at any depth, by id: the
-    /// ones whose place decides where the tasks beneath them fall in a list.
-    private func blocksAbove(_ tasks: [Block]) -> [UUID: Block] {
-        let taskIDs = Set(tasks.map(\.id))
-        var found: [UUID: Block] = [:]
-        var wanted = Set(tasks.compactMap(\.parentID)).subtracting(taskIDs)
-        var depth = 0
-        while !wanted.isEmpty, depth < 64 {
-            depth += 1
-            let ids = Array(wanted)
-            let parents = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
-                $0.trashID == nil && ids.contains($0.id)
-            }))) ?? []).filter { !$0.isDeleted }
-            for parent in parents { found[parent.id] = parent }
-            wanted = Set(parents.compactMap(\.parentID)).subtracting(taskIDs).subtracting(found.keys)
-        }
-        return found
+    private func item(_ task: Block, list: TaskList?) -> WidgetSnapshot.Item {
+        WidgetSnapshot.Item(
+            id: task.id,
+            occurrenceID: task.occurrenceID,
+            title: task.displayTitle,
+            listID: task.listID,
+            listName: list?.displayTitle ?? "",
+            listIcon: list?.glyph ?? "",
+            accentHex: list?.displayAccentHex ?? ListAccent.graphite.hex,
+            dueDate: task.dueDate,
+            includesTime: task.includesTime,
+            isCompleted: task.isCompleted,
+            completedAt: task.completedAt,
+            isStarred: task.isStarred,
+            hasRepeat: task.recurrenceData != nil,
+            priority: task.priorityRaw,
+            createdAt: task.createdAt
+        )
     }
 
-    /// The heatmap's counts, read again only when the day, the week's first day
-    /// or the recorded activity changes: heartbeats rebuild the snapshot every
-    /// minute while work runs.
-    private func activity(now: Date, calendar: Calendar) -> WidgetSnapshot.Activity? {
-        let completed = (try? store.context.fetchCount(FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.kindRaw == "completed" }))) ?? -1
-        let events = (try? store.context.fetchCount(FetchDescriptor<ActivityEvent>())) ?? -1
-        let key = [Int(calendar.startOfDay(for: now).timeIntervalSinceReferenceDate), calendar.firstWeekday, completed, events]
-        if let heatmapCache, heatmapCache.key == key { return heatmapCache.activity }
-        let activity = (try? store.activityHeatmap(now: now, calendar: calendar, weeks: Self.activityWeeks)).map {
-            WidgetSnapshot.Activity(start: $0.start, counts: $0.days.map(\.count))
+    /// The heatmap counts retained completions, as the Activity screen does,
+    /// so it is rebuilt only when that history, the day or the calendar
+    /// changes.
+    private func activity(now: Date, weekStart: Date, calendar: Calendar) -> WidgetSnapshot.Activity {
+        let day = calendar.startOfDay(for: now)
+        guard let history = try? store.completionHistorySignature() else {
+            activityCache = nil
+            return WidgetSnapshot.Activity()
         }
-        heatmapCache = (key, activity)
+        if let cache = activityCache, cache.history == history, cache.calendar == calendar, cache.day == day,
+           cache.staleAt.map({ now < $0 }) ?? true {
+            return cache.activity
+        }
+        guard let heatmap = try? store.activityHeatmap(now: now, calendar: calendar, weeks: Limit.activityWeeks) else {
+            activityCache = nil
+            return WidgetSnapshot.Activity()
+        }
+        var activity = WidgetSnapshot.Activity()
+        activity.days = heatmap.days.map { WidgetSnapshot.ActivityDay(date: $0.id, count: $0.count) }
+        // The Activity screen's streak, over the whole history.
+        activity.streak = heatmap.streak
+        activity.today = heatmap.days.last?.count ?? 0
+        activity.week = heatmap.days.filter { $0.id >= weekStart }.reduce(0) { $0 + $1.count }
+        activity.month = heatmap.days.filter { calendar.isDate($0.id, equalTo: now, toGranularity: .month) }
+            .reduce(0) { $0 + $1.count }
+        activity.monthName = calendar.standaloneMonthSymbols[calendar.component(.month, from: now) - 1]
+        activityCache = ActivityCache(history: history, calendar: calendar, day: day,
+                                      staleAt: heatmap.nextCompletionAt, activity: activity)
         return activity
     }
+
+    /// Soonest due first, as `Block.byDueDate`, then in capture order and by id.
+    private static func byDueDate(_ left: Block, _ right: Block) -> Bool {
+        if Block.byDueDate(left, right) { return true }
+        if Block.byDueDate(right, left) { return false }
+        return left.createdAt == right.createdAt ? left.id.uuidString < right.id.uuidString : left.createdAt < right.createdAt
+    }
+
+    private static func byDate(_ left: WidgetSnapshot.Due, _ right: WidgetSnapshot.Due) -> Bool {
+        left.date == right.date ? !left.includesTime && right.includesTime : left.date < right.date
+    }
+
+    /// The first day of the week containing `date`, as the Activity heatmap
+    /// aligns its columns.
+    static func weekStart(containing date: Date, calendar: Calendar) -> Date {
+        let today = calendar.startOfDay(for: date)
+        let offset = (calendar.component(.weekday, from: today) - calendar.firstWeekday + 7) % 7
+        return calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+    }
 }
 
-extension TaskList {
-    /// The colour the widgets draw a list's tasks in, as the app draws them:
-    /// Inbox's own blue (`NX.inbox`) as `#RRGGBB`, else the list's accent.
-    var widgetAccent: String { isSystemInbox ? "#3A7BD8" : accent.rawValue }
-}

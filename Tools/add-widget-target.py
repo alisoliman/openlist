@@ -277,7 +277,7 @@ def main():
             f'\t\t\t\t\t"@executable_path/../Frameworks",\n'
             f'\t\t\t\t\t"@executable_path/../../../../Frameworks",\n'
             f'\t\t\t\t);\n'
-            f'\t\t\t\tMACOSX_DEPLOYMENT_TARGET = 26.5;\n'
+            f'\t\t\t\tMACOSX_DEPLOYMENT_TARGET = 27.0;\n'
             f'\t\t\t\tMARKETING_VERSION = 1.0;\n'
             f'\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = {BUNDLE_ID};\n'
             f'\t\t\t\tPRODUCT_NAME = "$(TARGET_NAME)";\n'

@@ -5,10 +5,10 @@ open an issue first to discuss the user journey and scope.
 
 ## Build and check
 
-Use macOS 26.5 or later and Xcode 27. CI and release builds run on GitHub's
+Use macOS 27 or later and Xcode 27. CI and release builds run on GitHub's
 `xcode-27` Apple Silicon image and select its latest Xcode, verifying that it is version 27. This image
 currently provides a preview toolchain; each run logs the actual Xcode, Swift,
-and host architecture. The app's minimum macOS target remains 26.5.
+and host architecture. The app's minimum macOS target is 27.0.
 Clone the repository, then run:
 
 ```sh
@@ -72,7 +72,7 @@ provisioning profile. Xcode can update development provisioning when the signed-
 developer has permission (`xcodebuild -allowProvisioningUpdates`). Forks must
 also change the container identifier in `Config/openlist.entitlements` and
 `openlist/Services/ICloudConfiguration.swift`. Do not add CloudKit to the
-snapshot-only widget.
+widget; it reads the snapshot and only appends to the App Group command queue.
 
 Debug signatures select CloudKit `Development` and APNs `development`; Release
 signatures select `Production` and `production`. Native macOS uses the
@@ -175,7 +175,7 @@ notarization, or runtime checks.
 The existing App Group and sandbox permissions are retained, including the
 network server permission needed by opt-in localhost MCP access. The native MCP
 launcher is signed before the widget and app. Neither the launcher nor the
-snapshot-only widget receives CloudKit or push entitlements.
+widget receives CloudKit or push entitlements.
 
 See Apple's [supported macOS capabilities](https://developer.apple.com/help/account/reference/supported-capabilities-macos)
 and [TN3125: Provisioning Profiles](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles).

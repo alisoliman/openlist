@@ -165,6 +165,33 @@ let amsterdamDay = ActivityHeatmap(completions: [boundary], now: now, calendar: 
 let pacificDay = ActivityHeatmap(completions: [boundary], now: now, calendar: pacific).days.first { $0.count > 0 }!.id
 check(calendar.component(.day, from: amsterdamDay) == 2 && pacific.component(.day, from: pacificDay) == 1, "timezone changes regroup by local completion date")
 check(ActivityHeatmap(completions: [ActivityCompletion(taskID: UUID(), wasRecurring: false, date: now.addingTimeInterval(1))], now: now).total == 0, "future actions do not leak into today's count")
+let ahead = ActivityHeatmap(completions: [ActivityCompletion(taskID: UUID(), wasRecurring: false, date: now.addingTimeInterval(90)),
+    ActivityCompletion(taskID: UUID(), wasRecurring: false, date: now.addingTimeInterval(30))], now: now, calendar: calendar)
+check(ahead.nextCompletionAt == now.addingTimeInterval(30), "the first completion left out for being ahead of the clock is reported")
+
+// The streak reads the whole history, so a 12-week screen and a 21-week widget agree.
+let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+let hundredDays = (0..<100).map { ActivityCompletion(taskID: UUID(), wasRecurring: false, date: calendar.date(byAdding: .day, value: -$0, to: yesterday)!) }
+for weeks in [12, 21] {
+    check(ActivityHeatmap(completions: hundredDays, now: now, calendar: calendar, weeks: weeks).streak == 100,
+          "a 100-day streak is not cut to the displayed weeks, and an empty today does not break it")
+}
+check(ActivityHeatmap(completions: hundredDays + [ActivityCompletion(taskID: UUID(), wasRecurring: false, date: now)], now: now, calendar: calendar).streak == 101,
+      "a completion today extends the streak")
+check(ActivityHeatmap(completions: hundredDays.filter { !calendar.isDate($0.date, inSameDayAs: calendar.date(byAdding: .day, value: -40, to: yesterday)!) },
+                      now: now, calendar: calendar).streak == 40, "a missed day ends the streak")
+let repeatedTask = UUID()
+check(ActivityHeatmap(completions: [ActivityCompletion(taskID: repeatedTask, wasRecurring: false, date: calendar.date(byAdding: .day, value: -3, to: now)!),
+    ActivityCompletion(taskID: repeatedTask, wasRecurring: false, date: yesterday)], now: now, calendar: calendar).streak == 0,
+      "an ordinary task completed again counts on its first day only, for the streak too")
+let reopenedYesterday = UUID()
+check(ActivityHeatmap(completions: hundredDays + [ActivityCompletion(taskID: reopenedYesterday, wasRecurring: false, date: now)],
+                      reversals: [ActivityReversal(taskID: reopenedYesterday, date: now.addingTimeInterval(-1))],
+                      now: now.addingTimeInterval(60), calendar: calendar).streak == 101
+      && ActivityHeatmap(completions: hundredDays + [ActivityCompletion(taskID: reopenedYesterday, wasRecurring: false, date: now)],
+                         reversals: [ActivityReversal(taskID: reopenedYesterday, date: now.addingTimeInterval(30))],
+                         now: now.addingTimeInterval(60), calendar: calendar).streak == 100,
+      "the streak counts only completions that still stand: one reopened since leaves today's run")
 for (count, band) in [(0, 0), (1, 1), (2, 2), (3, 2), (4, 3), (6, 3), (7, 4)] {
     let day = ActivityHeatmapDay(id: first, completions: (0..<count).map { _ in firstFact }, unclassifiedCount: 0)
     check(ActivityBand.level(day.count) == band && day.accessibilityDescription.contains(day.countDescription),

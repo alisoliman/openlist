@@ -5,7 +5,7 @@ body:
     id: version
     attributes:
       label: Openlist and macOS versions
-      placeholder: Openlist 0.1.0, macOS 26.5, Apple M1
+      placeholder: Openlist 0.1.0, macOS 27.0, Apple M1
     validations:
       required: true
   - type: textarea

@@ -5,6 +5,7 @@
 
 import AppKit
 import Foundation
+import Observation
 import SwiftData
 import SwiftUI
 
@@ -48,22 +49,21 @@ final class AppEnvironment {
     let mcp: MCPIntegration
     let workbench: Workbench
     let libraryMaintenance: LibraryMaintenance?
+    /// Takes widget clicks to their screen once the library and window are ready.
+    let widgetLinks: WidgetLinkRouter
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
-    /// Applies what widget checkboxes and buttons ask for.
-    private let widgetActions: WidgetActionApplier
+    /// Applies widget buttons: ticking tasks off and the work timer.
+    private let widgetCommands: WidgetCommandProcessor
     /// Retained so the notification centre keeps a live delegate.
     private let notificationDelegate = NotificationDelegate()
     let calendarNotifications: CalendarNotificationBridge
     private var hasBootstrapped = false
     @ObservationIgnored private var notificationActivityObserver: NSObjectProtocol?
+    @ObservationIgnored private var terminationObserver: NSObjectProtocol?
     @ObservationIgnored private var derivedRecoveryTask: Task<Void, Never>?
-    @ObservationIgnored private var widgetCalendarSignature: [String] = []
 
     var templateCopyRequest: TemplateCopyRequest?
-
-    /// Where a widget tap asked to go, awaiting the main window.
-    var pendingWidgetRoute: WidgetRoute?
 
     /// Work ▸ Show Work asked for the Work panel as it opened the main window,
     /// so its toolbar shows the panel once up. The window's closing clears it.
@@ -113,18 +113,19 @@ final class AppEnvironment {
         navigator = Navigator(defaults: ReviewSession.defaults)
         reminderNavigation = ReminderNavigation(navigator: navigator)
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
-        widgetPublisher = WidgetSnapshotPublisher(store: store, libraryID: libraryID)
+        widgetPublisher = WidgetSnapshotPublisher(store: store,
+            sources: .live(calendar: calendar, settings: settings, libraryID: libraryID))
         workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar,
                               defaults: ReviewSession.defaults)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, workbench: workbench)
-        widgetActions = WidgetActionApplier(store: store, workbench: workbench, calendar: calendar, publisher: widgetPublisher)
-        assert(WidgetRoute.scheme == LocalLink.scheme, "Widget routes and item links share the app's URL scheme")
-
-        widgetPublisher.settingsCalendar = { [weak settings] in settings?.calendar ?? .current }
-        let widgetCalendar = WidgetCalendarFeed(store: store, calendar: calendar) { [weak settings] in settings?.calendar ?? .current }
-        widgetPublisher.calendarFeed = { widgetCalendar($0) }
+        widgetLinks = WidgetLinkRouter(store: store, navigator: navigator, screens: workbench)
+        widgetCommands = WidgetCommandProcessor(store: store, calendar: calendar, publisher: widgetPublisher, actions: workbench)
+        assert(WidgetLink.scheme == LocalLink.scheme, "Widget links and item links share the app's URL scheme")
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
+        // The plan and the running session change without a save. Debounced,
+        // because one Start or Pause reports several times on its way through.
+        calendar.onWidgetStateChange = { [weak widgetPublisher] in widgetPublisher?.scheduleRefresh() }
 
         store.onLabelsMerged = { [weak navigator] sourceID, destinationID in
             navigator?.retargetLabel(from: sourceID, to: destinationID)
@@ -143,42 +144,48 @@ final class AppEnvironment {
         }
         sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
         installNotificationDelegate()
+        installWidgetActions()
         notificationActivityObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
             object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.store.refreshAllReminders()
                     NotificationService.shared.reminders.refresh()
-                    if self?.hasBootstrapped == true { self?.widgetActions.drainQueue() }
+                    if self?.hasBootstrapped == true { self?.widgetCommands.drainQueue() }
                 }
             }
-        // Registered before any intent can run in this process: App.init builds
-        // the environment. Launched only to run one, the app bootstraps first.
-        widgetActions.bootstrap = { [weak self] in self?.bootstrap() }
-        WidgetActionDispatcher.performer = { [weak self] action in await self?.widgetActions.apply(action) }
-        widgetActions.startWatching()
+        watchWidgetInputs()
     }
 
-    /// Republishes the widget snapshot when what Up Next and Agenda show
-    /// changes without a save: the plan, the timer, meetings, the week's start.
-    /// Starts at bootstrap, then follows each change it sees.
-    private func watchCalendarForWidgets() {
-        let signature = withObservationTracking {
-            calendar.visibleBlocks.map { block in
-                // The running block's end moves with each heartbeat; the widget
-                // only sees it by the quarter hour.
-                let end = block.isActive ? WidgetCalendarFeed.quarter(after: block.end) : block.end
-                return "\(block.id)|\(block.start.timeIntervalSinceReferenceDate)|\(end.timeIntervalSinceReferenceDate)|\(block.isCompleted)"
-            }
-                + calendar.plan.blocks.map { "p\($0.id)|\($0.start.timeIntervalSinceReferenceDate)" }
-                + ["\(calendar.activeSession?.id.uuidString ?? "-")", "\(calendar.resumeTaskID?.uuidString ?? "-")",
-                   // Bumped by every calendar change, a meeting moved or renamed included.
-                   "\(calendar.externalCalendars.revision)", "\(settings.firstWeekday)"]
+    /// Lets widget buttons and links reach the app. The command handler goes
+    /// in first thing, because an intent can be what launched the app: App.init
+    /// builds the environment, and the processor bootstraps before applying
+    /// anything.
+    private func installWidgetActions() {
+        widgetCommands.prepare = { [weak self] in self?.bootstrap() }
+        WidgetCommandRouter.handler = { [weak widgetCommands] command in widgetCommands?.handle(command) }
+        // Quick Add floats over the app in front. The link may have made
+        // Openlist active; the card gives focus back as it closes.
+        widgetLinks.capture = { request in QuickCapturePanel.shared.showFromWidget(request) }
+        widgetLinks.activate = { NSApp.activate(ignoringOtherApps: true) }
+        widgetLinks.unavailable = { [weak localLinks] in localLinks?.error = .targetUnavailable }
+    }
+
+    /// Refreshes the widgets when something they mirror changes without a
+    /// save: the accent, serif titles, the first weekday their weeks start on,
+    /// and the calendars, whose revision moves on every reload, so a meeting
+    /// added, moved or renamed earlier in the week is read again. That is on
+    /// an EventKit change and on the coordinator's periodic refresh, whether
+    /// or not a meeting changed. Runs from init, then again after each change
+    /// it sees.
+    private func watchWidgetInputs() {
+        withObservationTracking {
+            _ = (settings.accent, settings.serifTitles, settings.firstWeekday, calendar.externalCalendars.revision)
         } onChange: { [weak self] in
-            Task { @MainActor in self?.watchCalendarForWidgets() }
+            Task { @MainActor in
+                self?.widgetPublisher.scheduleRefresh()
+                self?.watchWidgetInputs()
+            }
         }
-        defer { widgetCalendarSignature = signature }
-        guard signature != widgetCalendarSignature else { return }
-        widgetPublisher.scheduleRefresh()
     }
 
     /// Wires notification handling once the environment is fully built.
@@ -203,6 +210,19 @@ final class AppEnvironment {
     /// the task it makes is due today, as `openCapture` decides.
     func presentTaskCapture() {
         workbench.openCapture()
+    }
+
+    /// Opens an Openlist link, whether a widget sent it or someone put it in
+    /// their own text, such as a task note, and returns whether it was a
+    /// widget's. A widget's link goes where the widget would take you, and
+    /// brings Openlist forward as it needs. Anything else, including a widget
+    /// link this build cannot open, is read as an item link, whose notice says
+    /// what is wrong with it: a link that silently does nothing explains nothing.
+    @discardableResult
+    func openLink(_ url: URL) -> Bool {
+        if widgetLinks.receive(url) { return true }
+        localLinks.receive(url)
+        return false
     }
 
     func consumeCommand() -> EditorCommand? {
@@ -236,16 +256,16 @@ final class AppEnvironment {
         sync.checkAccount()
         if sync.state.isEnabled { NSApplication.shared.registerForRemoteNotifications() }
         calendar.bootstrap()
-        // After the calendar: its monitor pauses running work first when
-        // Openlist quits, so the widget's last snapshot shows it paused.
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.widgetPublisher.refreshNow() }
-        }
-        // Ticks made in widgets while Openlist was closed, then the snapshot
-        // with the work, the plan and the week the calendar has just loaded.
-        widgetActions.drainQueue()
-        watchCalendarForWidgets()
+        // After the calendar, so the first snapshot has the day's plan and the
+        // work the last run left paused.
         widgetPublisher.refreshNow()
+        // Registered after the calendar's own observer, which pauses running
+        // work as the app quits, so the widgets are left showing that pause.
+        // The publisher writes running work as paused if it gets there first.
+        terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.widgetPublisher.prepareForTermination() }
+            }
         calendarNotifications.update()
         mcp.start(storageAvailable: store.persistenceError == nil)
         if let library = libraryMaintenance,
@@ -265,6 +285,12 @@ final class AppEnvironment {
                 blocks: store.context.fetch(FetchDescriptor<Block>()),
                 lists: store.context.fetch(FetchDescriptor<TaskList>()))
         }
+        widgetLinks.storeReady()
+        // Taps the extension queued while the app was not running, an
+        // earlier build's queue included.
+        WidgetCommandProcessor.adoptEarlierQueue()
+        widgetCommands.listenForSignals()
+        widgetCommands.drainQueue()
     }
 
     private func refreshAfterRemoteChange() {

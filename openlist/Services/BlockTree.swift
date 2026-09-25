@@ -421,13 +421,4 @@ extension ListSorting {
         case .priority: lhs.priorityRaw > rhs.priorityRaw
         }
     }
-
-    func sortedTasks(_ tasks: [Block]) -> [Block] {
-        guard self != .manual else { return tasks }
-        return tasks.enumerated().sorted {
-            if precedes($0.element, $1.element) { return true }
-            if precedes($1.element, $0.element) { return false }
-            return $0.offset < $1.offset
-        }.map(\.element)
-    }
 }

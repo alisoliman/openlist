@@ -38,8 +38,8 @@ still choose another destination.
 - `Tools/run-capture-checks.sh`: capture appends to the document root, in the
   order captures are made, preserves prior hierarchy and indices, and opens the
   folded headings it goes in.
-- `Tools/run-list-tasks-checks.sh`: `ListTasksProjection`, the flat queue of a
-  list's tasks the List widget shows: mixed headings, collapsed branches, rich
-  prose, nested tasks, every sort and stable ties, hidden completed tasks and
-  unchanged payloads.
+- `Tools/run-list-tasks-checks.sh`: the order a list's page draws its tasks in
+  (`BlockTree`), which the List widget follows too: mixed headings, collapsed
+  branches, rich prose, nested tasks, every sort within each run of top-level
+  tasks, stable ties and unchanged payloads.
 - `Tools/check.sh`: complete repository regression checks.

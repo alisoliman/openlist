@@ -88,7 +88,7 @@ triaging.showInboxTriage()
 triaging.replace(with: .inbox)
 check(triaging.documentListID == triageInbox, "Replacing the route ends the triage visit")
 triaging.showInboxTriage()
-// The widget's Inbox link, as RootView takes it, while the triage visit is on show.
+// The widget's Inbox link, as WidgetLinkRouter takes it, while the triage visit is on show.
 triaging.selection = [UUID()]
 triaging.openTask(triageInspected)
 triaging.go(to: .inbox)

@@ -36,7 +36,12 @@ final class CalendarCoordinator {
     @ObservationIgnored var onNudgesChanged: (() -> Void)?
     /// Runs each time the Mac reports you back: waking, the screen, unlocking.
     @ObservationIgnored var onMacReturn: (() -> Void)?
-    private var activeSessionID: UUID?
+    /// Runs when something a widget shows changes without a save: the plan,
+    /// the running session, or the paused work that can resume.
+    @ObservationIgnored var onWidgetStateChange: (() -> Void)?
+    private var activeSessionID: UUID? {
+        didSet { if oldValue != activeSessionID { onWidgetStateChange?() } }
+    }
     var activeSession: WorkSession? {
         guard let activeSessionID else { return nil }
         return store.workSessions().first { $0.id == activeSessionID }
@@ -828,6 +833,7 @@ final class CalendarCoordinator {
             overrunNudge = nil
         }
         updateStartNudge(now: now)
+        onWidgetStateChange?()
     }
 
     private func refreshVisibleBlocks(now: Date) {
@@ -1161,6 +1167,7 @@ final class CalendarCoordinator {
     private func persistResume() {
         defaults.set(resumeTaskID?.uuidString, forKey: "work.resumeTaskID")
         defaults.set(resumeOccurrenceID?.uuidString, forKey: "work.resumeOccurrenceID")
+        onWidgetStateChange?()
     }
 
     /// Where work on `task` running at `now` has to stop: the next meeting or

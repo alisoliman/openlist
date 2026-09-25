@@ -10,345 +10,308 @@ import Foundation
 ///
 /// The widget deliberately does not open the SwiftData store: cross-process
 /// Core Data access needs coordination the widget has no reason to take on,
-/// and a widget only ever needs a handful of rows.
-///
-/// Every date is absolute. The widget works out "late", "Tomorrow", ages, the
-/// Agenda's now line and the heatmap's columns against each timeline entry's
-/// own date, so entries after midnight or a quarter of an hour later stay right
-/// while the app isn't running.
-///
-/// Version 2 is a superset of version 1: keys keep their meaning and version 1's
-/// are all still written, so a version 1 widget reads a new file, and every key
-/// decodes when present, so a file written by an older app still renders.
+/// and a widget only ever needs a handful of rows. Everything a widget draws,
+/// including the day's plan and the work timer, arrives through this file.
 nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
+    /// Bumped when a field changes meaning. Missing fields decode to their
+    /// defaults, so an older file still renders until the app rewrites it.
     static let currentVersion = 2
 
-    /// A task row.
+    /// One task row.
     struct Item: Codable, Equatable, Identifiable, Sendable {
         var id: UUID
-        /// The occurrence a completion applies to; nil in version 1 files.
-        var occurrenceID: UUID?
+        /// The repeat occurrence the row represents. Actions carry it so a
+        /// stale tap can never complete the next occurrence of a repeat.
+        var occurrenceID: UUID
         var title: String
         var listID: UUID?
         var listName: String
-        /// The list's glyph: an emoji, or an SF Symbol's name (`ListIcon`).
         var listIcon: String
-        /// Raw value of `ListAccent`, or `#RRGGBB` for Inbox's own colour.
-        var accent: String
+        /// The owning list's colour as 0xRRGGBB.
+        var accentHex: UInt32
         var dueDate: Date?
         var includesTime: Bool
         var isCompleted: Bool
         var completedAt: Date?
         var isStarred: Bool
         var hasRepeat: Bool
-        /// Raw value of `TaskPriority`.
-        var priority: Int = 0
-        /// An Inbox task: one ticked in Today while the app is quit leaves the
-        /// Inbox's count too, carried among `inboxItems` or not.
-        var isInbox = false
+        /// Raw `TaskPriority`: 0 none, 1 low, 2 medium, 3 high.
+        var priority: Int
+        var createdAt: Date
+
+        /// Late by day, as the app's Today screen and the design count it: due
+        /// on an earlier day. A timed task whose time has passed today is
+        /// still due today.
+        func isOverdue(at now: Date, calendar: Calendar = .current) -> Bool {
+            guard !isCompleted, let dueDate else { return false }
+            return dueDate < calendar.startOfDay(for: now)
+        }
     }
 
-    /// How many open tasks fall due on one day: enough to count overdue and
-    /// due-today work at any entry date, in as many entries as there are days
-    /// with something due, however many tasks share them.
-    struct DueDay: Codable, Equatable, Sendable {
-        /// The day's start.
-        var day: Date
-        var count: Int
-    }
-
-    /// Inbox rows the snapshot carries: the 4 medium Quick Add lists, as the
-    /// design's, and spares, so ticks queued in the widget while the app is
-    /// quit still leave all 4, the next ones moving up.
-    static let inboxRows = 8
-
+    /// One Inbox capture waiting for triage.
     struct InboxItem: Codable, Equatable, Identifiable, Sendable {
         var id: UUID
         var title: String
         var createdAt: Date
     }
 
+    /// A list the List widget can show, and the configuration picker offers.
     struct ListSummary: Codable, Equatable, Identifiable, Sendable {
-        /// Open rows each list carries: the 6 large List draws, as the
-        /// design's, and spares, so ticks queued in the widget while the app
-        /// is quit still leave all 6, the next open tasks moving up.
-        static let openRows = 12
-
         var id: UUID
         var title: String
+        /// "Parent › Child" for nested lists, otherwise the title.
+        var path: String
         var icon: String
-        var accent: String
+        var accentHex: UInt32
+        var isInbox: Bool
         var openCount: Int
         var doneCount: Int
-        /// The first `openRows` open tasks in the list's own order.
-        var openItems: [Item] = []
-        /// The latest completions, newest first.
-        var doneItems: [Item] = []
+        /// Open tasks in the list's own order, capped.
+        var openItems: [Item]
+        /// Completed tasks, most recent first, capped.
+        var doneItems: [Item]
     }
 
-    /// The work on the toolbar's timer: running, or paused and resumable.
-    struct Work: Codable, Equatable, Sendable {
-        var taskID: UUID
-        var occurrenceID: UUID
-        var title: String
-        var listName: String
-        var listIcon: String
-        var accent: String
-        var isRunning: Bool
-        /// Running: when the elapsed clock would read zero, so it stays put
-        /// while the work runs. Paused: unused.
-        var elapsedAnchor: Date
-        /// Paused: the seconds recorded on this occurrence. Running: zero.
-        var pausedElapsed: Double
-        /// The slot the work fills on the calendar, if it has one.
-        var slotStart: Date?
-        var slotEnd: Date?
-        var estimateMinutes: Double
-        /// The task's row, as Today or a list would carry it: Up Next's Done
-        /// queued while the app is quit settles its list's counts, its due
-        /// counts and the Inbox's from it when no other row carries the task.
-        /// Nil in older files, and for a task the counts leave out.
-        var item: Item?
-    }
+    /// A meeting or a planned task block on the calendar.
+    struct AgendaEvent: Codable, Equatable, Identifiable, Sendable {
+        enum Kind: String, Codable, Sendable {
+            case meeting
+            case task
+        }
 
-    struct AgendaItem: Codable, Equatable, Identifiable, Sendable {
-        enum Kind: String, Codable, Sendable { case meeting, task }
         var id: String
         var kind: Kind
         var title: String
         var start: Date
         var end: Date
+        /// Set for task blocks.
         var taskID: UUID?
         var occurrenceID: UUID?
-        var listIcon: String?
-        var listName: String?
-        var accent: String?
-        var isCompleted: Bool
-        var isActive: Bool
-        /// A slot the plan suggests but nobody placed. Up Next can offer it;
-        /// the Agenda, like the app's calendar, doesn't draw it.
-        var isFlexible: Bool
+        var listName: String = ""
+        var listIcon: String = ""
+        /// Task blocks use their list's colour; meetings have none.
+        var accentHex: UInt32?
+        var isCompleted: Bool = false
+        /// The block currently being recorded.
+        var isActive: Bool = false
     }
 
-    struct AgendaDay: Codable, Equatable, Sendable {
-        var day: Date
-        var items: [AgendaItem]
+    /// The work session shown in the app's toolbar timer.
+    struct Work: Codable, Equatable, Sendable {
+        enum State: String, Codable, Sendable {
+            case working
+            case paused
+        }
+
+        var state: State
+        var taskID: UUID
+        var occurrenceID: UUID
+        var title: String
+        var listName: String
+        var listIcon: String
+        var accentHex: UInt32
+        /// Start of the running segment; `nil` while paused. Absolute values
+        /// keep the snapshot unchanged between heartbeats, and let the widget
+        /// tick with `Text(timerInterval:)` without reloading.
+        var segmentStartedAt: Date?
+        /// Time recorded by earlier, closed segments of this occurrence.
+        var priorSeconds: Double
+        var estimateMinutes: Double
+        /// The planned block, when there is one, for the "10:00–11:30" label.
+        var blockStart: Date?
+        var blockEnd: Date?
+
+        /// Recorded seconds at `now`.
+        func elapsed(at now: Date) -> Double {
+            priorSeconds + (segmentStartedAt.map { max(0, now.timeIntervalSince($0)) } ?? 0)
+        }
+
+        /// The date the timer counts from, so `Text(timerInterval:)` shows the
+        /// full recorded time and not just the running segment.
+        var timerOrigin: Date? {
+            segmentStartedAt.map { $0.addingTimeInterval(-priorSeconds) }
+        }
     }
 
-    /// Completions per day for the heatmap, as the Activity screen counts them.
+    /// When an open task is due: it turns late at the midnight after that day.
+    struct Due: Codable, Equatable, Sendable {
+        var date: Date
+        var includesTime: Bool
+
+        /// By day, as `Item.isOverdue`.
+        func isOverdue(at now: Date, calendar: Calendar = .current) -> Bool {
+            date < calendar.startOfDay(for: now)
+        }
+    }
+
+    struct ActivityDay: Codable, Equatable, Sendable {
+        /// Start of the day in the Mac's time zone.
+        var date: Date
+        var count: Int
+    }
+
     struct Activity: Codable, Equatable, Sendable {
-        /// The first day `counts` covers.
-        var start: Date
-        /// One count per day from `start` to the day the snapshot was built,
-        /// that day's included.
-        var counts: [Int]
-
-        /// The count on `date`'s day; 0 on a day `counts` doesn't cover.
-        func count(on date: Date, calendar: Calendar) -> Int {
-            let index = index(of: date, calendar: calendar)
-            return counts.indices.contains(index) ? counts[index] : 0
-        }
-
-        /// Counts `change` more completions on `date`'s day, or fewer. A day
-        /// after the last one covered is added, with any before it at 0.
-        mutating func count(on date: Date, by change: Int, calendar: Calendar) {
-            let index = index(of: date, calendar: calendar)
-            guard index >= 0 else { return }
-            if index >= counts.count {
-                guard change > 0 else { return }
-                counts += Array(repeating: 0, count: index + 1 - counts.count)
-            }
-            counts[index] = max(0, counts[index] + change)
-        }
-
-        private func index(of date: Date, calendar: Calendar) -> Int {
-            calendar.dateComponents([.day], from: calendar.startOfDay(for: start), to: calendar.startOfDay(for: date)).day ?? -1
-        }
+        /// Oldest first. Starts on a week boundary and ends today, so the last
+        /// column is the current week.
+        var days: [ActivityDay] = []
+        var streak: Int = 0
+        var today: Int = 0
+        var week: Int = 0
+        var month: Int = 0
+        /// "September".
+        var monthName: String = ""
     }
 
-    var version = Self.currentVersion
+    var version: Int = WidgetSnapshot.currentVersion
+    var generatedAt: Date {
+        get { stamp.date }
+        set { stamp.date = newValue }
+    }
     /// Excluded from `==` on purpose: it changes on every build, and the
     /// publisher compares snapshots to decide whether a widget reload is
     /// actually warranted.
-    var generatedAt: Date = .now
-    /// Rewritten, without a reload, while work runs. A running timer whose
-    /// heartbeat has stopped belongs to an app that is no longer running.
-    var heartbeatAt: Date?
-    /// Builds task and list links.
+    private var stamp = Timestamp(date: .now)
+
+    /// A date that never participates in `==`.
+    private nonisolated struct Timestamp: Equatable, Sendable {
+        var date: Date
+        static func == (lhs: Self, rhs: Self) -> Bool { true }
+    }
+    /// The library the rows belong to, for building item links.
     var libraryID: UUID?
-    /// `Calendar.firstWeekday` from the app's settings.
-    var firstWeekday = 1
-    /// Open tasks due before the end of tomorrow, overdue ones included.
+    /// The app's accent colour as 0xRRGGBB.
+    var accentHex: UInt32 = 0x7C4DF0
+    /// Mirrors the app's serif-title setting.
+    var serifTitles: Bool = true
+    /// `Calendar.firstWeekday` the app uses (1 = Sunday … 7 = Saturday).
+    var firstWeekday: Int = Calendar.current.firstWeekday
+
+    /// Overdue work, then work due today, each soonest first and capped on
+    /// its own, so a long backlog never leaves today without rows.
     var todayItems: [Item] = []
-    /// Every open, dated task, by the day it's due, soonest first.
-    var dueDays: [DueDay] = []
-    /// Version 1's counts, worked out as it did when the snapshot was built,
-    /// for a version 1 widget still reading the file. This one counts from
-    /// `dueDays` at each entry's date, so `==` leaves these out.
-    var overdueCount = 0
-    var dueTodayCount = 0
-    var completedTodayCount = 0
-    /// The day `completedTodayCount` belongs to.
-    var completedTodayDay: Date?
-    var inboxCount = 0
-    /// The newest `inboxRows` open Inbox tasks, newest first.
+    var overdueCount: Int = 0
+    var dueTodayCount: Int = 0
+    /// Every open task behind `dueTodayCount`, soonest first and not capped
+    /// like `todayItems`, so a widget can move them to late at midnight.
+    var dueToday: [Due] = []
+    /// Tomorrow's rows (capped like today's) and due dates (uncapped), so a
+    /// widget can start the new day at midnight when the app has not run
+    /// since to republish.
+    var tomorrowItems: [Item] = []
+    var dueTomorrow: [Due] = []
+    /// Done today exactly as the app's Today counts it: tasks completed today.
+    /// A reopen or Undo takes one away; a repeat that rolls forward is open
+    /// again, so it is not counted, there or here.
+    var completedTodayCount: Int = 0
+    var inboxCount: Int = 0
+    /// Newest first.
     var inboxItems: [InboxItem] = []
-    var totalOpenCount = 0
-    /// Active lists other than Inbox, in sidebar order.
+    var totalOpenCount: Int = 0
+    /// Active lists in sidebar order, Inbox first.
     var lists: [ListSummary] = []
+
+    /// First day of the week the agenda covers.
+    var weekStart: Date?
+    /// Meetings and planned blocks from `weekStart` through the end of that
+    /// week, sorted by start.
+    var agenda: [AgendaEvent] = []
     var work: Work?
-    /// Each day of the settings week, and tomorrow when the week ends today.
-    var agenda: [AgendaDay] = []
-    var activity: Activity?
+
+    var activity = Activity()
 
     init() {}
 
-    static func == (lhs: WidgetSnapshot, rhs: WidgetSnapshot) -> Bool {
-        lhs.version == rhs.version
-            && lhs.libraryID == rhs.libraryID
-            && lhs.firstWeekday == rhs.firstWeekday
-            && lhs.todayItems == rhs.todayItems
-            && lhs.dueDays == rhs.dueDays
-            && lhs.completedTodayCount == rhs.completedTodayCount
-            && lhs.completedTodayDay == rhs.completedTodayDay
-            && lhs.inboxCount == rhs.inboxCount
-            && lhs.inboxItems == rhs.inboxItems
-            && lhs.totalOpenCount == rhs.totalOpenCount
-            && lhs.lists == rhs.lists
-            && lhs.work == rhs.work
-            && lhs.agenda == rhs.agenda
-            && lhs.activity == rhs.activity
-    }
-
-    /// Open tasks' due dates, counted by day, soonest first.
-    static func dueDays(_ dates: some Sequence<Date>, calendar: Calendar) -> [DueDay] {
-        var counts: [Date: Int] = [:]
-        for date in dates { counts[calendar.startOfDay(for: date), default: 0] += 1 }
-        return counts.map { DueDay(day: $0.key, count: $0.value) }.sorted { $0.day < $1.day }
-    }
-
-    /// Counts `change` more open tasks due on `date`'s day, or fewer.
-    mutating func countDue(on date: Date, by change: Int, calendar: Calendar) {
-        let day = calendar.startOfDay(for: date)
-        if let index = dueDays.firstIndex(where: { calendar.isDate($0.day, inSameDayAs: day) }) {
-            dueDays[index].count += change
-            if dueDays[index].count <= 0 { dueDays.remove(at: index) }
-        } else if change > 0 {
-            dueDays.append(DueDay(day: day, count: change))
-            dueDays.sort { $0.day < $1.day }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
         }
+        let empty = WidgetSnapshot()
+        version = value(.version, 1)
+        generatedAt = value(.generatedAt, empty.generatedAt)
+        libraryID = value(.libraryID, empty.libraryID)
+        accentHex = value(.accentHex, empty.accentHex)
+        serifTitles = value(.serifTitles, empty.serifTitles)
+        firstWeekday = value(.firstWeekday, empty.firstWeekday)
+        todayItems = value(.todayItems, empty.todayItems)
+        overdueCount = value(.overdueCount, empty.overdueCount)
+        dueTodayCount = value(.dueTodayCount, empty.dueTodayCount)
+        dueToday = value(.dueToday, empty.dueToday)
+        tomorrowItems = value(.tomorrowItems, empty.tomorrowItems)
+        dueTomorrow = value(.dueTomorrow, empty.dueTomorrow)
+        completedTodayCount = value(.completedTodayCount, empty.completedTodayCount)
+        inboxCount = value(.inboxCount, empty.inboxCount)
+        inboxItems = value(.inboxItems, empty.inboxItems)
+        totalOpenCount = value(.totalOpenCount, empty.totalOpenCount)
+        lists = value(.lists, empty.lists)
+        weekStart = value(.weekStart, empty.weekStart)
+        agenda = value(.agenda, empty.agenda)
+        work = value(.work, empty.work)
+        activity = value(.activity, empty.activity)
     }
 
-    private static func legacyDueDays(overdue: Int, dueToday: Int, builtAt date: Date) -> [DueDay] {
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: date)
-        let before = calendar.date(byAdding: .day, value: -1, to: day) ?? day
-        return [DueDay(day: before, count: overdue), DueDay(day: day, count: dueToday)].filter { $0.count > 0 }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(generatedAt, forKey: .generatedAt)
+        try container.encodeIfPresent(libraryID, forKey: .libraryID)
+        try container.encode(accentHex, forKey: .accentHex)
+        try container.encode(serifTitles, forKey: .serifTitles)
+        try container.encode(firstWeekday, forKey: .firstWeekday)
+        try container.encode(todayItems, forKey: .todayItems)
+        try container.encode(overdueCount, forKey: .overdueCount)
+        try container.encode(dueTodayCount, forKey: .dueTodayCount)
+        try container.encode(dueToday, forKey: .dueToday)
+        try container.encode(tomorrowItems, forKey: .tomorrowItems)
+        try container.encode(dueTomorrow, forKey: .dueTomorrow)
+        try container.encode(completedTodayCount, forKey: .completedTodayCount)
+        try container.encode(inboxCount, forKey: .inboxCount)
+        try container.encode(inboxItems, forKey: .inboxItems)
+        try container.encode(totalOpenCount, forKey: .totalOpenCount)
+        try container.encode(lists, forKey: .lists)
+        try container.encodeIfPresent(weekStart, forKey: .weekStart)
+        try container.encode(agenda, forKey: .agenda)
+        try container.encodeIfPresent(work, forKey: .work)
+        try container.encode(activity, forKey: .activity)
     }
-}
 
-// MARK: - Decoding older files
-
-// Synthesized decoding would throw on the first key a version 1 file lacks, so
-// every key decodes when present and falls back to its default otherwise.
-
-nonisolated private extension KeyedDecodingContainer {
-    func value<T: Decodable>(_ key: Key, or fallback: @autoclosure () -> T) -> T {
-        ((try? decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
+    private enum CodingKeys: String, CodingKey {
+        case version, generatedAt
+        case libraryID, accentHex, serifTitles, firstWeekday
+        case todayItems, overdueCount, dueTodayCount, dueToday, tomorrowItems, dueTomorrow, completedTodayCount
+        case inboxCount, inboxItems, totalOpenCount, lists
+        case weekStart, agenda, work, activity
     }
-}
 
-nonisolated extension WidgetSnapshot {
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.init()
-        // A file without a version was written by version 1.
-        version = c.value(.version, or: 1)
-        generatedAt = c.value(.generatedAt, or: .now)
-        heartbeatAt = c.value(.heartbeatAt, or: nil)
-        libraryID = c.value(.libraryID, or: nil)
-        firstWeekday = c.value(.firstWeekday, or: 1)
-        todayItems = c.value(.todayItems, or: [])
-        overdueCount = c.value(.overdueCount, or: 0)
-        dueTodayCount = c.value(.dueTodayCount, or: 0)
-        // Version 1 wrote its counts instead: late the day before it was
-        // built, due that day, so they read as they did until the app
-        // publishes again.
-        dueDays = c.contains(.dueDays) ? c.value(.dueDays, or: [])
-            : Self.legacyDueDays(overdue: overdueCount, dueToday: dueTodayCount, builtAt: generatedAt)
-        completedTodayCount = c.value(.completedTodayCount, or: 0)
-        completedTodayDay = c.value(.completedTodayDay, or: nil)
-        inboxCount = c.value(.inboxCount, or: 0)
-        inboxItems = c.value(.inboxItems, or: [])
-        totalOpenCount = c.value(.totalOpenCount, or: 0)
-        lists = c.value(.lists, or: [])
-        work = c.value(.work, or: nil)
-        agenda = c.value(.agenda, or: [])
-        activity = c.value(.activity, or: nil)
-    }
-}
-
-nonisolated extension WidgetSnapshot.Item {
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(id: try c.decode(UUID.self, forKey: .id),
-                  occurrenceID: c.value(.occurrenceID, or: nil),
-                  title: c.value(.title, or: ""),
-                  listID: c.value(.listID, or: nil),
-                  listName: c.value(.listName, or: ""),
-                  listIcon: c.value(.listIcon, or: ""),
-                  accent: c.value(.accent, or: "graphite"),
-                  dueDate: c.value(.dueDate, or: nil),
-                  includesTime: c.value(.includesTime, or: false),
-                  isCompleted: c.value(.isCompleted, or: false),
-                  completedAt: c.value(.completedAt, or: nil),
-                  isStarred: c.value(.isStarred, or: false),
-                  hasRepeat: c.value(.hasRepeat, or: false),
-                  priority: c.value(.priority, or: 0),
-                  isInbox: c.value(.isInbox, or: false))
-    }
-}
-
-nonisolated extension WidgetSnapshot.ListSummary {
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(id: try c.decode(UUID.self, forKey: .id),
-                  title: c.value(.title, or: ""),
-                  icon: c.value(.icon, or: ""),
-                  accent: c.value(.accent, or: "graphite"),
-                  openCount: c.value(.openCount, or: 0),
-                  doneCount: c.value(.doneCount, or: 0),
-                  openItems: c.value(.openItems, or: []),
-                  doneItems: c.value(.doneItems, or: []))
+    /// The list a List widget shows: the chosen one, or the first real list.
+    func list(id: UUID?) -> ListSummary? {
+        if let id, let list = lists.first(where: { $0.id == id }) { return list }
+        return lists.first { !$0.isInbox } ?? lists.first
     }
 }
 
 /// Reads and writes the snapshot file in the shared container.
 nonisolated enum WidgetSnapshotStore {
     static func write(_ snapshot: WidgetSnapshot) {
-        guard let url = AppGroup.snapshotURL, let data = encode(snapshot) else { return }
+        guard let url = AppGroup.snapshotURL, let data = try? encode(snapshot) else { return }
         // Atomic so the widget never reads a half-written file.
         try? data.write(to: url, options: .atomic)
     }
 
-    /// The published snapshot, or nil when there is none yet or a newer app
-    /// wrote one this widget can't be sure it reads correctly.
     static func read() -> WidgetSnapshot? {
         guard let url = AppGroup.snapshotURL, let data = try? Data(contentsOf: url) else { return nil }
-        return decode(data)
+        return try? decode(data)
     }
 
-    static func encode(_ snapshot: WidgetSnapshot) -> Data? {
+    static func encode(_ snapshot: WidgetSnapshot) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        return try? encoder.encode(snapshot)
+        return try encoder.encode(snapshot)
     }
 
-    static func decode(_ data: Data) -> WidgetSnapshot? {
+    static func decode(_ data: Data) throws -> WidgetSnapshot {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let snapshot = try? decoder.decode(WidgetSnapshot.self, from: data),
-              snapshot.version <= WidgetSnapshot.currentVersion else { return nil }
-        return snapshot
+        return try decoder.decode(WidgetSnapshot.self, from: data)
     }
 }

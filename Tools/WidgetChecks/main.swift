@@ -1,570 +1,811 @@
+import CoreGraphics
 import Foundation
 
 var checks = 0
-func check(_ value: Bool, _ message: String) {
-    precondition(value, message)
+
+func check(_ condition: @autoclosure () throws -> Bool, _ message: String) {
     checks += 1
+    guard (try? condition()) == true else { fatalError("FAIL: \(message)") }
 }
 
-let english = Locale(identifier: "en_GB")
-func clockAt(_ date: Date = WidgetSampleData.referenceDate) -> WidgetClock {
-    WidgetClock(now: date, firstWeekday: WidgetSampleData.firstWeekday, locale: english)
+// A fixed calendar, so names and day boundaries never depend on this Mac.
+var calendar = Calendar(identifier: .gregorian)
+calendar.locale = Locale(identifier: "en_US_POSIX")
+calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+
+let now = WidgetSnapshot.mockupNow(calendar: calendar)
+let today = calendar.startOfDay(for: now)
+
+/// A time on the mockup's Wednesday, or `day` days from it.
+func at(_ hour: Int, _ minute: Int = 0, day: Int = 0) -> Date {
+    calendar.date(byAdding: DateComponents(day: day, hour: hour, minute: minute), to: today)!
 }
-let clock = clockAt()
-let design = WidgetSampleData.snapshot()
-let session = WidgetSampleData.snapshot(fixture: .session)
-func id(_ key: String) -> UUID { WidgetSampleData.id(key) }
 
-// MARK: Schema
+let sample = WidgetSnapshot.sample(now: now, calendar: calendar)
+let q1 = WidgetSnapshot.sampleTaskID("q1")
+let q4 = WidgetSnapshot.sampleTaskID("q4")
+let k6 = WidgetSnapshot.sampleTaskID("k6")
+let kyoto = WidgetSnapshot.sampleListID("kyoto")
+let p1 = WidgetSnapshot.sampleTaskID("p1")
 
-let version1 = """
-{"generatedAt":"2026-09-20T08:00:00Z","todayItems":[{"id":"6B1D8E0A-7C1F-4B7E-9D55-2B8B2F1A0C11","title":"Pay the electricity bill",
-"listName":"Personal","listIcon":"🌱","accent":"green","dueDate":"2026-09-19T00:00:00Z","includesTime":false,"isCompleted":false,
-"isStarred":false,"hasRepeat":true}],"overdueCount":1,"dueTodayCount":2,"completedTodayCount":3,"inboxCount":2,"totalOpenCount":9,
-"lists":[{"id":"0E6C6F4B-2E6A-4C0F-9B1E-6B7C2C9A1D22","title":"Personal","icon":"🌱","accent":"green","openCount":4,"doneCount":2}]}
-"""
-let old = WidgetSnapshotStore.decode(Data(version1.utf8))
-check(old != nil, "A version 1 file still decodes")
-check(old?.version == 1, "A file without a version reads as version 1")
-check(old?.todayItems.first?.title == "Pay the electricity bill" && old?.todayItems.first?.occurrenceID == nil
-      && old?.todayItems.first?.priority == 0 && old?.todayItems.first?.isInbox == false, "Version 1 rows decode, new keys at their defaults")
-check(old?.totalOpenCount == 9 && old?.inboxCount == 2 && old?.completedTodayCount == 3, "Version 1 counts keep their meaning")
-check(old?.lists.first?.openCount == 4 && old?.lists.first?.openItems.isEmpty == true, "Version 1 lists decode without rows")
-check(old?.work == nil && old?.agenda.isEmpty == true && old?.activity == nil, "Version 1 has no work, agenda or activity")
-let builtAt = clockAt(ISO8601DateFormatter().date(from: "2026-09-20T08:00:00Z")!)
-let builtCounts = old.map { DueCounts($0, clock: builtAt) }
-check(builtCounts?.overdue == 1 && builtCounts?.dueToday == 2, "Version 1's counts read as they did on the day it was built")
-check(old.map { DueCounts($0, clock: clock).overdue } == 3, "and what was due that day is late by now")
+func item(_ key: String, in snapshot: WidgetSnapshot = sample) -> WidgetSnapshot.Item {
+    let id = WidgetSnapshot.sampleTaskID(key)
+    return (snapshot.todayItems + snapshot.lists.flatMap { $0.openItems + $0.doneItems }).first { $0.id == id }!
+}
 
-// A version 1 widget, sharing the App Group with a newer app, still reads the file.
-struct Version1: Decodable {
-    struct Item: Decodable {
-        var id: UUID, title: String, listName: String, listIcon: String, accent: String, dueDate: Date?
-        var includesTime: Bool, isCompleted: Bool, isStarred: Bool, hasRepeat: Bool
+let q1Occurrence = item("q1").occurrenceID
+
+func command(_ action: WidgetCommand.Action, _ taskID: UUID? = nil, occurrence: UUID? = nil, at date: Date = now) -> WidgetCommand {
+    WidgetCommand(action: action, taskID: taskID, occurrenceID: occurrence, issuedAt: date)
+}
+
+/// A tap on the sample row `key`, naming its task and occurrence as every
+/// widget button does.
+func tap(_ action: WidgetCommand.Action, _ key: String, in snapshot: WidgetSnapshot = sample, at date: Date = now) -> WidgetCommand {
+    let row = item(key, in: snapshot)
+    return command(action, row.id, occurrence: row.occurrenceID, at: date)
+}
+
+// MARK: - Sample snapshot
+
+check(sample.todayItems.map(\.title) == [
+    "Close out Q2 retro actions", "Reserve the Nishiki market tour", "Fix the dripping bathroom tap",
+    "Draft Q3 OKRs", "Write interview feedback for Priya", "Pay the ryokan deposit", "Ask Mika to water the planters",
+], "the sample's Today rows follow the mockup: by day, timed before untimed")
+check(sample.overdueCount == 3 && sample.dueTodayCount == 4,
+      "the sample counts late by day, as the app's Today does: a 10:00 task is still due today at 10:40")
+check(sample.completedTodayCount == 2 && sample.inboxCount == 6 && sample.inboxItems.count == 6, "the sample has two done today and six Inbox captures")
+check(sample.lists.map(\.title) == ["Inbox", "Weekend in Kyoto", "Home", "Reading", "Q3 planning", "Hiring loop"], "the sample lists come Inbox first")
+check(sample.list(id: nil)?.id == kyoto, "the default list is the first real one")
+check(sample.lists[1].openCount == 5 && sample.lists[1].doneCount == 1, "Kyoto has five open and one done")
+check(sample.agenda.count { calendar.isDate($0.start, inSameDayAs: now) } == 9, "today has four meetings and five blocks")
+check(sample.firstWeekday == 2 && sample.weekStart == at(0, day: -2), "the sample week starts on Monday the 21st")
+
+// MARK: - Snapshot file
+
+do {
+    let data = try WidgetSnapshotStore.encode(sample)
+    let decoded = try WidgetSnapshotStore.decode(data)
+    check(decoded == sample, "a snapshot survives an encode and decode round trip")
+    check(abs(decoded.generatedAt.timeIntervalSince(sample.generatedAt)) < 1, "the write time survives the round trip")
+    check(decoded.version == WidgetSnapshot.currentVersion, "new files carry the current version")
+
+    let taskID = UUID(), listID = UUID()
+    let legacy = """
+    {"generatedAt":"2026-09-23T08:40:00Z","overdueCount":2,"dueTodayCount":3,"completedTodayCount":1,
+     "inboxCount":4,"totalOpenCount":9,"futureKey":true,
+     "todayItems":[{"id":"\(taskID)","title":"Old","listName":"Home","listIcon":"🏡","accent":"green",
+       "dueDate":"2026-09-23T08:00:00Z","includesTime":true,"isCompleted":false,"isStarred":false,"hasRepeat":false}],
+     "lists":[{"id":"\(listID)","title":"Home","icon":"🏡","accent":"green","openCount":3,"doneCount":1}]}
+    """
+    let old = try WidgetSnapshotStore.decode(Data(legacy.utf8))
+    check(old.version == 1, "a file without a version decodes as version 1")
+    check(old.overdueCount == 2 && old.dueTodayCount == 3 && old.completedTodayCount == 1 && old.inboxCount == 4 && old.totalOpenCount == 9,
+          "a version 1 file keeps its counters")
+    check(old.todayItems.isEmpty && old.lists.isEmpty, "rows in the old shape fall back to empty instead of failing the file")
+    check(old.agenda.isEmpty && old.work == nil && old.accentHex == 0x7C4DF0 && old.serifTitles, "fields a version 1 file lacks take their defaults")
+    check((try? WidgetSnapshotStore.decode(Data("not json".utf8))) == nil, "a corrupt file is rejected")
+
+    var later = sample
+    later.generatedAt = sample.generatedAt.addingTimeInterval(3600)
+    check(later == sample, "equality ignores when the snapshot was written")
+    later.inboxCount += 1
+    check(later != sample, "equality notices a changed field")
+}
+
+// MARK: - Widget links
+
+do {
+    let id = UUID()
+    let links: [WidgetLink] = [.capture(listID: nil), .capture(listID: id), .inbox, .triage, .today, .calendar, .activity, .task(id), .list(id)]
+    for link in links {
+        check(WidgetLink(url: link.url) == link, "\(link) survives a URL round trip")
+        check(WidgetLink.isWidgetLink(link.url), "\(link) is recognised as a widget link")
     }
-    struct ListSummary: Decodable {
-        var id: UUID, title: String, icon: String, accent: String, openCount: Int, doneCount: Int
+    check(WidgetLink.capture(listID: nil).url.absoluteString == "openlist://widget/capture", "capture uses the widget host")
+    check(WidgetLink.task(id).url.absoluteString == "openlist://widget/task/\(id.uuidString.lowercased())", "item links use lowercase IDs")
+    check(WidgetLink(url: URL(string: "openlist://widget/task/\(id.uuidString.uppercased())")!) == .task(id), "uppercase IDs still parse")
+
+    let rejected = [
+        "openlist-dev://widget/today", "openlist://widget/today?x=1", "openlist://widget/today#top",
+        "openlist://widget:8080/today", "openlist://widget/nope", "openlist://widget/task/not-a-uuid",
+        "openlist://widget/task/\(id)/extra", "openlist://widget/capture/folder/\(id)", "openlist://widget",
+    ]
+    for string in rejected {
+        check(WidgetLink(url: URL(string: string)!) == nil, "\(string) is rejected")
     }
-    var generatedAt: Date, todayItems: [Item], overdueCount: Int, dueTodayCount: Int, completedTodayCount: Int
-    var inboxCount: Int, totalOpenCount: Int, lists: [ListSummary]
-}
-var published = design
-published.overdueCount = 3
-published.dueTodayCount = 4
-let reader = JSONDecoder()
-reader.dateDecodingStrategy = .iso8601
-let legacy = try? reader.decode(Version1.self, from: WidgetSnapshotStore.encode(published)!)
-check(legacy?.overdueCount == 3 && legacy?.dueTodayCount == 4 && legacy?.todayItems.count == design.todayItems.count
-      && legacy?.lists.count == design.lists.count, "A version 1 widget reads a version 2 file")
-check(published == design, "Version 1's counts don't decide a reload")
-
-let encoded = WidgetSnapshotStore.encode(design)!
-check(WidgetSnapshotStore.decode(encoded) == design, "Version 2 round-trips")
-check(WidgetSnapshotStore.decode(WidgetSnapshotStore.encode(session)!) == session, "The session fixture round-trips")
-var future = design
-future.version = WidgetSnapshot.currentVersion + 1
-check(WidgetSnapshotStore.decode(WidgetSnapshotStore.encode(future)!) == nil, "A newer app's file is left unread")
-var later = design
-later.generatedAt = later.generatedAt.addingTimeInterval(90)
-later.heartbeatAt = .now
-check(later == design, "Equality ignores when the snapshot was built and its heartbeat")
-later.inboxCount += 1
-check(later != design, "Equality sees what the widget shows")
-
-// Open tasks are counted by the day they fall due, however many share one.
-let noon = WidgetSampleData.referenceDate
-let days = WidgetSnapshot.dueDays([noon, noon.addingTimeInterval(3_600), noon.addingTimeInterval(-86_400), noon], calendar: clock.calendar)
-check(days.map(\.count) == [1, 3] && days[1].day == clock.today, "Due dates count by day, soonest first")
-check(design.dueDays.count == Set(design.dueDays.map(\.day)).count && design.dueDays.reduce(0) { $0 + $1.count } == 13,
-      "The design's thirteen dated tasks, one entry a day")
-var counted = design
-counted.countDue(on: noon, by: -4, calendar: clock.calendar)
-check(!counted.dueDays.contains { $0.day == clock.today }, "A day with nothing left due drops out")
-counted.countDue(on: noon, by: 2, calendar: clock.calendar)
-check(counted.dueDays.first { $0.day == clock.today }?.count == 2 && counted.dueDays == counted.dueDays.sorted { $0.day < $1.day },
-      "and comes back in its place")
-
-// MARK: Routes
-
-let libraryID = UUID()
-let taskID = UUID()
-let listID = UUID()
-check(WidgetRoute.taskURL(libraryID: libraryID, taskID: taskID) == LocalLink(libraryID: libraryID, target: .task(taskID)).url(),
-      "Task links are exactly the app's version 1 links")
-check(WidgetRoute.listURL(libraryID: libraryID, listID: listID) == LocalLink(libraryID: libraryID, target: .list(listID)).url(),
-      "List links are exactly the app's version 1 links")
-check(try LocalLink.parse(WidgetRoute.taskURL(libraryID: libraryID, taskID: taskID)).target == .task(taskID), "Task links open through LocalLink")
-check(WidgetRoute.taskURL(libraryID: nil, taskID: taskID) == WidgetRoute.today.url, "Without a library identity a row opens Today")
-check(WidgetRoute.scheme == LocalLink.scheme, "Widget routes use the edition's scheme")
-for route in [WidgetRoute.capture(listID: nil, forToday: false), .capture(listID: listID, forToday: true), .capture(listID: nil, forToday: true),
-              .inbox, .triage, .today, .calendar, .activity, .lists] {
-    check(WidgetRoute(url: route.url) == route, "\(route.url.absoluteString) round-trips")
-}
-check(WidgetRoute(url: WidgetRoute.taskURL(libraryID: libraryID, taskID: taskID)) == nil, "Item links are left to LocalLink")
-check(WidgetRoute(url: URL(string: "\(WidgetRoute.scheme)://capture/extra")!) == nil, "Unknown paths are not widget routes")
-check(WidgetRoute(url: URL(string: "https://capture")!) == nil, "Other schemes are not widget routes")
-check(WidgetRoute.capture(listID: nil, forToday: false).url.absoluteString == "\(WidgetRoute.scheme)://capture", "Quick Add is openlist://capture")
-
-// MARK: Today
-
-let today = TodayModel(design, clock: clock)
-check(today.done == 2 && today.total == 9, "Today reads 2 of 9 done")
-check(today.late == 3 && today.dueToday == 4, "3 late, 4 due today")
-check(today.rows.map(\.id) == ["q4", "k3", "h1", "q1", "p1", "k2", "k4"].map(id), "Late by day first, then timed before untimed")
-check(today.rows.prefix(3).map(\.dueText) == ["3d late", "2d late", "1d late"], "Late rows say how late")
-check(today.rows[3].dueText == "10:00" && today.rows[6].dueText == "Repeats", "Timed rows show the time; an untimed repeat says so")
-check(today.weekday == "Wednesday" && today.dayNumber == "23", "Medium's side shows the day")
-check(abs(today.progress - 2.0 / 9) < 0.0001, "The ring shows the day's progress")
-
-let sessionToday = TodayModel(session, clock: clock)
-check(sessionToday.done == 3 && sessionToday.total == 9 && sessionToday.late == 2, "After the session: 3 of 9 done, 2 late")
-check(sessionToday.rows.first?.id == id("k3"), "The ticked task has settled out")
-
-// The next day, from the same snapshot.
-let tomorrow = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(86_400))
-let nextDay = TodayModel(design, clock: tomorrow)
-check(nextDay.done == 0, "Done today starts again after midnight")
-check(nextDay.late == 7 && nextDay.dueToday == 1, "Yesterday's work is late; tomorrow's is due")
-check(nextDay.rows.last?.id == id("q2") && nextDay.rows.last?.dueText == "Today", "Tomorrow's row is today's the next day")
-check(nextDay.rows.first?.dueText == "4d late", "Lateness counts from the entry's day")
-
-// MARK: Overlay
-
-let tick = WidgetAction(kind: .complete, taskID: id("k3"), occurrenceID: id("k3"), createdAt: WidgetSampleData.referenceDate)
-let ticked = SnapshotOverlay.apply([tick], to: design)
-let tickedToday = TodayModel(ticked, clock: clock)
-check(!tickedToday.rows.contains { $0.id == id("k3") }, "A queued tick hides the row")
-check(tickedToday.done == 3 && tickedToday.late == 2 && tickedToday.total == 9, "and moves it to done")
-let kyoto = ticked.lists.first { $0.id == id("kyoto") }!
-check(kyoto.openCount == 4 && kyoto.doneCount == 2 && kyoto.doneItems.first?.id == id("k3"), "The list counts it done")
-check(SummaryModel(ticked, clock: clock).overdue == 2, "Summary counts one fewer overdue")
-check(SnapshotOverlay.apply([tick, tick], to: design) == ticked, "A tick counts once")
-check(TodayModel(SnapshotOverlay.apply([tick], to: ticked), clock: clock).done == 3, "A tick the app already published changes nothing")
-let stale = WidgetAction(kind: .complete, taskID: id("k3"), occurrenceID: UUID())
-check(SnapshotOverlay.apply([stale], to: design) == design, "A tick on an occurrence that rolled on is ignored")
-let reopen = WidgetAction(kind: .reopen, taskID: id("k6"), occurrenceID: id("k6"))
-let reopened = SnapshotOverlay.apply([reopen], to: design).lists.first { $0.id == id("kyoto") }!
-check(reopened.openCount == 6 && reopened.doneCount == 0 && reopened.openItems.last?.id == id("k6"), "A queued reopen moves the row back")
-let planned = SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: id("p1"), occurrenceID: id("p1"))], to: design)
-check(planned.agenda.flatMap(\.items).first { $0.taskID == id("p1") }?.isCompleted == true, "The Agenda shows a queued tick done")
-check(SnapshotOverlay.apply([WidgetAction(kind: .startWork, taskID: id("q1"))], to: design) == design, "Work waits for the app")
-check(DueCounts(SnapshotOverlay.apply([reopen], to: ticked), clock: clock) == DueCounts(ticked, clock: clock),
-      "A queued reopen of an undated task counts nothing due")
-let kyotoDue = WidgetAction(kind: .complete, taskID: id("k5"), occurrenceID: id("k5"))
-check(SnapshotOverlay.apply([kyotoDue], to: design).dueDays.reduce(0) { $0 + $1.count } == 12, "A list row's tick counts one fewer due")
-// A Today tick on a task past the open rows its list carries: the list still
-// counts it done and shows it among its latest, as when it carries the row.
-var uncarried = design
-let kyotoIndex = uncarried.lists.firstIndex { $0.id == id("kyoto") }!
-uncarried.lists[kyotoIndex].openItems.removeAll { $0.id == id("k3") }
-check(SnapshotOverlay.apply([tick], to: uncarried) == ticked, "A Today tick past its list's rows still counts in the list")
-check(SnapshotOverlay.apply([tick, tick], to: uncarried) == ticked, "and counts once")
-let backAgain = SnapshotOverlay.apply([tick, WidgetAction(kind: .reopen, taskID: id("k3"), occurrenceID: id("k3"))], to: uncarried)
-check(backAgain == uncarried && backAgain.todayItems.contains { $0.id == id("k3") }, "and a reopen after it counts it open again")
-
-// A tick and its untick queued while the app is quit take each other back, as
-// the app skips them: the task is where it was, its Agenda block tinted, and
-// Up Next offers it, as the design's untick leaves it.
-func action(_ kind: WidgetAction.Kind, _ key: String) -> WidgetAction {
-    WidgetAction(kind: kind, taskID: id(key), occurrenceID: id(key), createdAt: WidgetSampleData.referenceDate)
-}
-let deposit = SnapshotOverlay.apply([action(.complete, "k2"), action(.reopen, "k2")], to: design)
-check(deposit == design, "A queued tick and untick leave the snapshot as the app published it, agenda included")
-check(ListModel(deposit.lists[kyotoIndex], showsCompleted: true, clock: clock).rows.map(\.id) == ["k3", "k4", "k2", "k1", "k5", "k6"].map(id),
-      "and the row keeps its place in the list")
-check(SnapshotOverlay.apply([action(.reopen, "k6"), action(.complete, "k6")], to: design) == design, "An untick and its tick do too")
-check(SnapshotOverlay.apply([action(.complete, "k2"), action(.complete, "k3"), action(.reopen, "k2")], to: design)
-      == SnapshotOverlay.apply([action(.complete, "k3")], to: design), "whatever other tasks are ticked between them")
-check(SnapshotOverlay.apply([action(.complete, "k2"), action(.reopen, "k2"), action(.complete, "k2")], to: design)
-      == SnapshotOverlay.apply([action(.complete, "k2")], to: design), "and a third tick still counts")
-let reopenElsewhere = WidgetAction(kind: .reopen, taskID: id("k2"), occurrenceID: UUID())
-check(WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.complete, "k3"), action(.reopen, "k2")]) == 2
-      && WidgetAction.takingBack(0, in: [action(.complete, "k2"), reopenElsewhere]) == nil
-      && WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.startWork, "k2"), action(.reopen, "k2")]) == nil
-      && WidgetAction.takingBack(0, in: [action(.startWork, "k2"), action(.startWork, "k2")]) == nil,
-      "Only the next action on the task, the opposite tick on the same occurrence, takes one back")
-// The app skips the pair only while the task is as the first found it, which
-// is what the overlay reads off the snapshot: open for a tick, done for an untick.
-check(WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.reopen, "k2")], whileCompleted: false) == 1
-      && WidgetAction.takingBack(0, in: [action(.complete, "k2"), action(.reopen, "k2")], whileCompleted: true) == nil
-      && WidgetAction.takingBack(0, in: [action(.reopen, "k6"), action(.complete, "k6")], whileCompleted: true) == 1
-      && WidgetAction.takingBack(0, in: [action(.reopen, "k6"), action(.complete, "k6")], whileCompleted: false) == nil
-      && WidgetAction.takingBack(0, in: [action(.startWork, "k2"), action(.startWork, "k2")], whileCompleted: false) == nil,
-      "The app skips a tick and its untick only from the state the first found")
-// A tick the app already published, then an untick: the untick still reopens it.
-let publishedDone = SnapshotOverlay.apply([action(.complete, "k2")], to: design)
-let evenings = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(6 * 3_600 + 20 * 60))
-check(UpNextModel(publishedDone, clock: evenings).state == .clear, "At 17:00, with the deposit done, the day is clear")
-for queued in [[action(.reopen, "k2")], [action(.complete, "k2"), action(.reopen, "k2")]] {
-    // The app, finding the task done, skips no pair here either.
-    check(WidgetAction.takingBack(0, in: queued, whileCompleted: true) == nil, "The app applies the reopen, \(queued.count) queued")
-    let open = SnapshotOverlay.apply(queued, to: publishedDone)
-    let blocks = open.agenda.flatMap(\.items)
-    check(!blocks.contains { $0.taskID == id("k2") } && blocks.count == design.agenda.flatMap(\.items).count - 1,
-          "A queued reopen takes the task's done block off the Agenda, as the app does, \(queued.count) queued")
-    check(UpNextModel(open, clock: evenings).state == .clear, "so Up Next offers no Start the app would drop")
-    check(open.lists[kyotoIndex].openItems.map(\.id) == ["k3", "k4", "k1", "k5", "k2"].map(id)
-          && open.lists[kyotoIndex].openCount == 5 && open.todayItems.contains { $0.id == id("k2") },
-          "A row the app published done goes back after the list's open rows")
-}
-check([WidgetAction.Kind.startWork, .pauseWork, .resumeWork].allSatisfy(\.answersTimer)
-      && ![WidgetAction.Kind.complete, .reopen, .finishWork].contains(where: \.answersTimer),
-      "Only Start, Pause and Resume answer the timer; Done completes the task however long it waits")
-
-// Up Next's Done, queued in the extension before macOS 27 pins it to the app:
-// shown done at once, as the design's finish() ticks the task, and its work gone.
-let finish = WidgetAction(kind: .finishWork, taskID: id("q1"), occurrenceID: id("q1"), createdAt: WidgetSampleData.referenceDate)
-let finished = SnapshotOverlay.apply([finish], to: session)
-let finishedNext = UpNextModel(finished, clock: clock)
-check(finished.work == nil && finishedNext.state == .next && finishedNext.title == "Write interview feedback for Priya",
-      "A queued Done ends the work, and Up Next moves on to the next block")
-check(TodayModel(finished, clock: clock).done == 4 && !TodayModel(finished, clock: clock).rows.contains { $0.id == id("q1") }
-      && finished.agenda.flatMap(\.items).first { $0.taskID == id("q1") }?.isCompleted == true
-      && finished.lists.first { $0.id == id("q3") }?.doneItems.first?.id == id("q1"), "and shows the task done, as a tick does")
-check(SnapshotOverlay.apply([finish, finish], to: session) == finished && SnapshotOverlay.apply([finish], to: finished) == finished,
-      "A Done counts once, and one the app already published changes nothing")
-check(SnapshotOverlay.apply([WidgetAction(kind: .finishWork, taskID: id("q1"), occurrenceID: UUID())], to: session) == session,
-      "A Done on an occurrence that rolled on is ignored")
-var workOnly = session
-workOnly.todayItems.removeAll { $0.id == id("q1") }
-for index in workOnly.lists.indices { workOnly.lists[index].openItems.removeAll { $0.id == id("q1") } }
-let workOnlyFinished = SnapshotOverlay.apply([finish], to: workOnly)
-check(workOnlyFinished.work == nil && UpNextModel(workOnlyFinished, clock: clock).state == .next
-      && workOnlyFinished.completedTodayCount == 4 && workOnlyFinished.totalOpenCount == workOnly.totalOpenCount - 1,
-      "A Done on work past the rows carried still ends it and counts it done")
-// From the row the work carries: its list, Today's due counts and its total
-// settle as they do for a row carried, where Today would read 4 of 10.
-let workListID = session.work!.item!.listID!
-let workList = workOnly.lists.first { $0.id == workListID }!
-let workListFinished = workOnlyFinished.lists.first { $0.id == workListID }!
-check(workListFinished.openCount == workList.openCount - 1 && workListFinished.doneCount == workList.doneCount + 1
-      && workListFinished.doneItems.first?.id == id("q1") && workListFinished.doneItems.first?.isCompleted == true
-      && workOnlyFinished.lists.filter { $0.id != workListID } == workOnly.lists.filter { $0.id != workListID },
-      "and its list counts it done among its latest")
-check(DueCounts(workOnlyFinished, clock: clock) == DueCounts(finished, clock: clock)
-      && TodayModel(workOnlyFinished, clock: clock).total == 9 && TodayModel(finished, clock: clock).total == 9,
-      "and Today and Summary count it off its due day: 4 of 9 done")
-var inboxWork = workOnly
-inboxWork.work!.item!.listID = id("inbox")
-inboxWork.work!.item!.isInbox = true
-inboxWork.inboxCount = WidgetSnapshot.inboxRows + 1
-let inboxWorkFinished = SnapshotOverlay.apply([finish], to: inboxWork)
-check(inboxWorkFinished.inboxCount == WidgetSnapshot.inboxRows && inboxWorkFinished.lists == inboxWork.lists
-      && SnapshotOverlay.apply([finish], to: workOnly).inboxCount == workOnly.inboxCount,
-      "Work on an Inbox task past the newest rows counts one fewer in the Inbox; other work leaves it")
-var olderWork = session
-olderWork.work!.item = nil
-let olderWorkJSON = String(decoding: WidgetSnapshotStore.encode(olderWork)!, as: UTF8.self)
-check(!olderWorkJSON.contains("\"item\"") && WidgetSnapshotStore.decode(Data(olderWorkJSON.utf8))?.work == olderWork.work,
-      "Work written without its row, as an older app does, still decodes")
-
-// MARK: List
-
-let list = ListModel(design.lists.first { $0.id == id("kyoto") }!, showsCompleted: false, clock: clock)
-check(list.open == 5 && list.done == 1, "Weekend in Kyoto: 5 open, 1 done")
-check(list.rows.map(\.dueText) == ["2d late", "Repeats", "18:00", "Sat 26", "Sun 27"], "List rows read as the design")
-check(abs(list.progress - 1.0 / 6) < 0.0001, "The bar shows the list's progress")
-let withDone = ListModel(design.lists.first { $0.id == id("kyoto") }!, showsCompleted: true, clock: clock)
-check(withDone.rows.count == 6 && withDone.rows.last?.dueText == "Done", "Show completed adds done rows last")
-check(design.lists.map(\.title) == ["Weekend in Kyoto", "Home", "Reading", "Q3 planning", "Hiring loop"], "Every list but Inbox, in order")
-
-// Ticks queued while the app is quit still leave large List 6 open rows, the
-// next ones moving up ahead of the done ones, as the design's: a list carries
-// spare open rows, as the publisher writes them.
-var long = design.lists.first { $0.id == id("kyoto") }!
-long.openCount = 20
-long.openItems = (0..<WidgetSnapshot.ListSummary.openRows).map { number in
-    var item = long.openItems[0]
-    item.id = id("long-\(number)")
-    item.occurrenceID = item.id
-    item.title = "Task \(number)"
-    item.dueDate = nil
-    return item
-}
-var longSnapshot = design
-longSnapshot.lists = [long]
-for ticks in [2, WidgetSnapshot.ListSummary.openRows - 6] {
-    let queued = (0..<ticks).map { WidgetAction(kind: .complete, taskID: id("long-\($0)"), occurrenceID: id("long-\($0)")) }
-    let ticked = ListModel(SnapshotOverlay.apply(queued, to: longSnapshot).lists[0], showsCompleted: true, clock: clock)
-    check(ticked.rows.prefix(6).map(\.title) == (ticks..<ticks + 6).map { "Task \($0)" }, "\(ticks) queued ticks leave large List 6 open rows")
-    check(ticked.rowCount - 6 == (20 - ticks) + (1 + ticks) - 6, "and +N more counts the rest, done ones too")
+    check(WidgetLink.isWidgetLink(URL(string: "openlist-dev://widget/today")!), "the other build's widget links are still claimed, not reported as item links")
+    check(!WidgetLink.isWidgetLink(URL(string: "openlist://v1/\(id)/task/\(id)")!), "item links are left to LocalLink")
+    check(!WidgetLink.isWidgetLink(URL(string: "https://widget/today")!), "web URLs are not widget links")
 }
 
-// MARK: Up Next
+// MARK: - Command queue
 
-let upNext = UpNextModel(design, clock: clock)
-check(upNext.state == .now && upNext.label == "Now", "Up Next: Now")
-check(upNext.time == "10:00–11:30" && upNext.title == "Draft Q3 OKRs", "on Draft Q3 OKRs, 10:00–11:30")
-check(upNext.note == "50 min left" && abs(upNext.progress - 40.0 / 90) < 0.001, "50 min left, the bar at 0.444")
-check(upNext.later.map(\.title) == ["Write interview feedback for Priya", "Update the design role scorecard", "Board prep", "Priya debrief"],
-      "Later today: the next four, meetings and tasks together")
-check(upNext.later.map(\.time) == ["11:30", "13:00", "14:00", "15:30"] && upNext.later[2].isMeeting, "at their times")
-let early = UpNextModel(design, clock: clockAt(WidgetSampleData.referenceDate.addingTimeInterval(-3_600)))
-check(early.state == .next && early.note == "in 20 min" && early.progress == 0, "Before a block: Next, in 20 min")
-let evening = UpNextModel(design, clock: clockAt(WidgetSampleData.referenceDate.addingTimeInterval(9 * 3_600)))
-check(evening.state == .clear && evening.title == "Nothing else planned" && evening.listName == "Your day is clear", "After the last block: clear")
-// The design counts minutes past an hour too: finish q1 and p1 in its gallery and Up Next reads "in 140 min".
-var morningDone = design
-morningDone.agenda = morningDone.agenda.map { day in
-    var day = day
-    day.items = day.items.map { item in
-        var item = item
-        if item.id == "p-q1" || item.id == "p-p1" { item.isCompleted = true }
-        return item
+do {
+    let url = WidgetCommandQueue.url!
+    check(url.path.contains("OpenlistUIReviews/WidgetChecks-"), "the checks use a throwaway container, never the App Group")
+    check(WidgetCommandQueue.pending().isEmpty, "the queue starts empty")
+
+    let a = UUID(), b = UUID()
+    WidgetCommandQueue.append(WidgetCommand(action: .complete, taskID: a))
+    check(WidgetCommandQueue.pending().map(\.action) == [.complete], "an appended command is pending")
+    WidgetCommandQueue.append(WidgetCommand(action: .reopen, taskID: a))
+    check(WidgetCommandQueue.pending().map(\.action) == [.reopen], "a newer tap on the same task supersedes the older one")
+    WidgetCommandQueue.append(WidgetCommand(action: .startWork, taskID: a))
+    WidgetCommandQueue.append(WidgetCommand(action: .complete, taskID: b))
+    let pending = WidgetCommandQueue.pending()
+    check(pending.map(\.action) == [.reopen, .startWork, .complete], "work commands do not supersede ticks, and order is kept")
+    WidgetCommandQueue.remove([pending[0].id])
+    check(WidgetCommandQueue.pending().map(\.action) == [.startWork, .complete], "applied commands are removed")
+
+    WidgetCommandQueue.append(WidgetCommand(action: .pauseWork, issuedAt: Date.now.addingTimeInterval(-7 * 3600)))
+    check(WidgetCommandQueue.pending().count == 2, "commands older than their lifetime are never replayed")
+    WidgetCommandQueue.remove(Set(WidgetCommandQueue.pending().map(\.id)))
+    check(WidgetCommandQueue.pending().isEmpty && !FileManager.default.fileExists(atPath: url.path), "an empty queue leaves no file behind")
+
+    // Done on Up Next, then unticking the same row on Today: the untick takes
+    // the Done back, and the row draws open again rather than stuck closing.
+    let working = WidgetSnapshot.sample(now: now, work: .working, calendar: calendar)
+    WidgetCommandQueue.append(WidgetCommand(action: .finishWork, taskID: q1, occurrenceID: q1Occurrence))
+    WidgetCommandQueue.append(WidgetCommand(action: .reopen, taskID: q1, occurrenceID: q1Occurrence))
+    check(WidgetCommandQueue.pending().map(\.action) == [.reopen], "unticking after Done supersedes the Done")
+    let untaken = WidgetState(snapshot: working, pending: WidgetCommandQueue.pending(), now: now, calendar: calendar)
+    check(untaken.check(for: item("q1", in: working)) == .open && untaken.snapshot.work == working.work, "a Done taken back leaves the row open and the work running")
+    WidgetCommandQueue.remove(Set(WidgetCommandQueue.pending().map(\.id)))
+    check(WidgetCommandSignal.name == "\(AppGroup.identifier).widget-commands", "the wake-up signal is namespaced by the App Group")
+    try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+}
+
+// MARK: - Pending commands over the snapshot
+
+do {
+    let base = WidgetState(snapshot: sample, now: now, calendar: calendar)
+    check(base.snapshot == sample && base.closing.isEmpty, "with nothing pending the snapshot is drawn as published")
+    check(base.todayProgress == (2, 9), "Today's progress counts done against everything due by today")
+    check(base.check(for: item("k6")) == .done && base.check(for: item("q4")) == .open, "rows start open or done as published")
+
+    let ticked = WidgetState(snapshot: sample, pending: [tap(.complete, "q4")], now: now, calendar: calendar)
+    check(ticked.check(for: item("q4")) == .closing, "a pending tick draws the row closing")
+    check(ticked.snapshot.todayItems.contains { $0.id == q4 }, "the closing row stays until the app applies it")
+    check(ticked.snapshot.overdueCount == 2 && ticked.snapshot.completedTodayCount == 3, "a tick moves a late task to done")
+    check(ticked.todayProgress == (3, 9), "progress already shows the tick")
+    check(item("q4", in: ticked.snapshot).isOverdue(at: now, calendar: calendar), "a closing row keeps its late colour and section until the app settles it")
+    let q3 = ticked.snapshot.lists.first { $0.title == "Q3 planning" }!
+    check(q3.openCount == 3 && q3.doneCount == 2, "the list's counts follow the tick")
+    check(ticked.snapshot.activity.today == 3 && ticked.snapshot.activity.days.last?.count == 3, "the heatmap counts the tick today")
+    check(ticked.snapshot.agenda.first { $0.taskID == q4 }?.isCompleted == true, "the task's planned block is done too")
+
+    var applied = sample
+    applied.todayItems.removeAll { $0.id == q4 }
+    for index in applied.lists.indices { applied.lists[index].openItems.removeAll { $0.id == q4 } }
+    for index in applied.agenda.indices where applied.agenda[index].taskID == q4 { applied.agenda[index].isCompleted = true }
+    applied.overdueCount -= 1
+    applied.completedTodayCount += 1
+    let replayed = WidgetState(snapshot: applied, pending: [tap(.complete, "q4")], now: now, calendar: calendar)
+    check(replayed.snapshot == applied && replayed.closing.isEmpty, "a command the app already applied is not counted twice")
+
+    let reopened = WidgetState(snapshot: sample, pending: [tap(.reopen, "k6")], now: now, calendar: calendar)
+    let kyotoList = reopened.snapshot.lists.first { $0.id == kyoto }!
+    check(kyotoList.openItems.last?.id == k6 && kyotoList.doneItems.isEmpty, "a reopened row moves to the open rows")
+    check(kyotoList.openCount == 6 && kyotoList.doneCount == 0, "reopening restores the list's counts")
+    check(reopened.snapshot.completedTodayCount == 1, "reopening today's completion takes it off done today")
+    let reopenedActivity = reopened.snapshot.activity
+    check(reopenedActivity.days.last?.count == 1 && reopenedActivity.today == 1 && reopenedActivity.week == 1 && reopenedActivity.month == 48,
+          "and Activity takes it back off its day and the totals, as the app's heatmap does")
+    check(reopenedActivity.streak == sample.activity.streak && ActivityStats(activity: reopenedActivity, now: now, calendar: reopened.calendar).streak == 1,
+          "a day with a completion left keeps its place in the streak")
+    let bothReopened = WidgetState(snapshot: sample, pending: [tap(.reopen, "k6"), tap(.reopen, "q6")], now: now, calendar: calendar)
+    check(bothReopened.snapshot.activity.days.last?.count == 0 && bothReopened.snapshot.activity.streak == 0
+          && ActivityStats(activity: bothReopened.snapshot.activity, now: now, calendar: bothReopened.calendar).streak == 0,
+          "reopening all of today's completions takes today out of the streak")
+    var noDaysDone = sample
+    noDaysDone.activity = WidgetSnapshot.Activity(streak: 3, today: 1, week: 4, month: 9)
+    let noDaysReopened = WidgetState(snapshot: noDaysDone, pending: [tap(.reopen, "k6")], now: now, calendar: calendar).snapshot.activity
+    check(noDaysReopened.today == 0 && noDaysReopened.week == 3 && noDaysReopened.month == 8 && noDaysReopened.streak == 2,
+          "without published days the app's totals give the completion back, and today leaves the streak once it has none")
+
+    // The app takes a reopened task's done block off the calendar, and plans
+    // it afresh under a new occurrence, so the Agenda drops the block too.
+    var withHistory = sample
+    let k6Row = item("k6")
+    withHistory.agenda.append(WidgetSnapshot.AgendaEvent(
+        id: "completed-\(UUID())-0", kind: .task, title: k6Row.title, start: at(9), end: at(9, 20),
+        taskID: k6, occurrenceID: k6Row.occurrenceID, isCompleted: true
+    ))
+    let reopenedHistory = WidgetState(snapshot: withHistory, pending: [command(.reopen, k6, occurrence: k6Row.occurrenceID)], now: now, calendar: calendar)
+    check(!reopenedHistory.snapshot.agenda.contains { $0.taskID == k6 } && reopenedHistory.snapshot.agenda.count == sample.agenda.count,
+          "reopening takes the task's done block off the agenda, and nothing else")
+
+    let started = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1")], now: now, calendar: calendar)
+    let work = started.snapshot.work
+    check(work?.state == .working && work?.segmentStartedAt == now && work?.blockStart == at(10) && work?.blockEnd == at(11, 30),
+          "Start records against the block under way")
+    check(work?.estimateMinutes == 90 && work?.title == "Draft Q3 OKRs", "the session takes the block's length and title")
+    check(started.snapshot.agenda.first { $0.id == "block-q1" }?.isActive == true, "the recording block is marked active")
+    let early = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1", at: at(9, 50))], now: at(9, 51), calendar: calendar)
+    check(early.snapshot.work?.blockStart == nil && early.snapshot.work?.estimateMinutes == 90,
+          "Start ahead of the block records into no slot, since the app replans the block from the tap, but keeps its length")
+    check(early.snapshot.agenda.allSatisfy { !$0.isActive }, "a block not yet under way is not marked as recording")
+    check(early.upNext.phase == .working && early.upNext.rangeText.isEmpty && early.upNext.later.first?.time == "10:00",
+          "Up Next shows no slot for it, and the rest of the day stays later")
+
+    // Work taps are drawn only while the app would still apply them, so these
+    // sequences happen within the two-minute window.
+    let paused = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1"), command(.pauseWork, q1, occurrence: q1Occurrence, at: at(10, 41))],
+                             now: at(10, 42), calendar: calendar)
+    check(paused.snapshot.work?.state == .paused && paused.snapshot.work?.priorSeconds == 60 && paused.snapshot.work?.segmentStartedAt == nil,
+          "Pause closes the running segment")
+    check(paused.snapshot.agenda.first { $0.id == "block-q1" }?.isActive == false, "a paused session records into no block")
+    check(paused.upNext.phase == .paused && paused.upNext.elapsed == 60, "Up Next shows the paused session")
+
+    let resumed = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1"), command(.pauseWork, q1, occurrence: q1Occurrence, at: at(10, 41)),
+                                                          command(.resumeWork, q1, occurrence: q1Occurrence, at: at(10, 42))],
+                              now: at(10, 42), calendar: calendar)
+    check(resumed.snapshot.work?.state == .working && resumed.snapshot.work?.elapsed(at: at(10, 43)) == 120, "Resume carries the recorded time forward")
+    let restarted = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1"), command(.pauseWork, q1, occurrence: q1Occurrence, at: at(10, 41)),
+                                                            tap(.startWork, "q1", at: at(10, 42))],
+                                now: at(10, 42), calendar: calendar)
+    check(restarted.snapshot.work?.priorSeconds == 60 && restarted.snapshot.work?.state == .working, "Start on the paused task resumes it")
+
+    let finished = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1"), command(.finishWork, q1, occurrence: q1Occurrence, at: at(10, 41))],
+                               now: at(10, 42), calendar: calendar)
+    check(finished.snapshot.work == nil && finished.check(for: item("q1")) == .closing, "Done ends the session and ticks the task")
+    check(finished.snapshot.dueTodayCount == 3 && finished.snapshot.overdueCount == 3, "finishing a task due today takes it off the due-today count")
+    check(finished.upNext.phase == .next && finished.upNext.title == "Write interview feedback for Priya", "Up Next moves on after Done")
+
+    let working = WidgetSnapshot.sample(now: now, work: .working, calendar: calendar)
+    let pausedLater = WidgetState(snapshot: working, pending: [command(.pauseWork, q1, occurrence: q1Occurrence, at: at(10, 41))], now: at(10, 42), calendar: calendar)
+    check(pausedLater.snapshot.work?.priorSeconds == 64, "pausing a session the app started keeps its time")
+    let doublePause = WidgetState(snapshot: pausedLater.snapshot, pending: [command(.pauseWork, q1, occurrence: q1Occurrence, at: at(10, 42))],
+                                  now: at(10, 42), calendar: calendar)
+    check(doublePause.snapshot == pausedLater.snapshot, "pausing twice is harmless")
+    let unnamed = WidgetState(snapshot: working, pending: [command(.pauseWork, at: at(10, 41))], now: at(10, 42), calendar: calendar)
+    check(unnamed.snapshot == working, "a Pause without ids is ignored, as the app ignores it")
+    // The app drops Start, Pause and Resume older than two minutes rather than
+    // replay them, so the widget stops drawing them too; ticks keep.
+    let expiredPause = WidgetState(snapshot: working, pending: [command(.pauseWork, q1, occurrence: q1Occurrence, at: at(10, 41))], now: at(10, 45), calendar: calendar)
+    check(expiredPause.snapshot.work?.state == .working, "a Pause the app will refuse as stale is not drawn")
+    check(!WidgetState(snapshot: sample, now: at(23, 59), calendar: calendar).isOutdated
+          && !WidgetState(snapshot: sample, now: at(8, day: 1), calendar: calendar).isOutdated
+          && WidgetState(snapshot: sample, now: at(8, day: 2), calendar: calendar).isOutdated,
+          "a snapshot is outdated once the app has missed a whole day")
+    let expiredStart = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1", at: at(10, 30))], now: now, calendar: calendar)
+    check(expiredStart.snapshot.work == nil, "a stale Start draws no running clock")
+    let oldTick = WidgetState(snapshot: sample, pending: [command(.complete, q1, occurrence: q1Occurrence, at: at(8))], now: now, calendar: calendar)
+    check(oldTick.check(for: item("q1")) == .closing, "a tick stays drawn while it waits for the app")
+    check(WidgetCommand(action: .resumeWork, issuedAt: at(10, 38)).isCurrent(at: now) && !WidgetCommand(action: .resumeWork, issuedAt: at(10, 37)).isCurrent(at: now),
+          "work commands stay current for two minutes")
+
+    // A stale widget still drew other work when it was tapped. The app ignores
+    // these taps, so the overlay must not draw them either.
+    let staleTaps: [(WidgetSnapshot, WidgetCommand, String)] = [
+        (working, command(.pauseWork, p1, occurrence: item("p1").occurrenceID), "Pause aimed at other work"),
+        (working, command(.pauseWork, q1, occurrence: UUID()), "Pause aimed at an earlier occurrence"),
+        (working, command(.pauseWork, q1), "Pause naming the task but no occurrence"),
+        (working, command(.finishWork, p1, occurrence: item("p1").occurrenceID), "Done aimed at other work"),
+        (working, tap(.startWork, "p1"), "Start while other work runs"),
+        (WidgetSnapshot.sample(now: now, work: .paused, calendar: calendar), command(.resumeWork, p1, occurrence: item("p1").occurrenceID),
+         "Resume aimed at other work"),
+    ]
+    for (snapshot, tap, name) in staleTaps {
+        let state = WidgetState(snapshot: snapshot, pending: [tap], now: now, calendar: calendar)
+        check(state.snapshot == snapshot && state.closing.isEmpty, "\(name) changes nothing")
     }
-    return day
-}
-let afternoon = UpNextModel(morningDone, clock: clock)
-check(afternoon.state == .next && afternoon.time == "13:00–13:30" && afternoon.note == "in 140 min", "Long waits count minutes, as the design")
-check(UpNextModel.minutes(80 * 60) == "80 min" && UpNextModel.minutes(-30) == "0 min", "80 min left, never below 0 min")
-check(upNext.accent == "blue" && evening.accent == nil, "The block's list colour, for a symbol icon; none once the day is clear")
 
-let paused = UpNextModel(session, clock: clock)
-check(paused.state == .paused && paused.label == "Paused" && paused.timer == .paused(seconds: 18), "The session: paused at 00:18")
-check(paused.time == "10:00–11:30" && paused.later.first?.time == "11:30", "Paused work keeps its slot and what follows")
-var running = session
-running.work?.isRunning = true
-running.work?.elapsedAnchor = WidgetSampleData.referenceDate.addingTimeInterval(-600)
-running.heartbeatAt = WidgetSampleData.referenceDate
-let live = UpNextModel(running, clock: clock, heartbeatLimit: WidgetSampleData.referenceDate.addingTimeInterval(-180))
-check(live.state == .working && live.timer == .running(anchor: WidgetSampleData.referenceDate.addingTimeInterval(-600)), "Running work ticks from its anchor")
-check(abs(live.progress - 600.0 / 5_400) < 0.001, "Its bar fills with the work")
-let orphaned = UpNextModel(running, clock: clock, heartbeatLimit: WidgetSampleData.referenceDate.addingTimeInterval(60))
-check(orphaned.state == .paused && orphaned.timer == .paused(seconds: 600), "A timer whose heartbeat stopped shows paused at it")
+    // Every button names its task and occurrence, and the app acts on
+    // nothing a command leaves out, so the overlay draws none of these.
+    let unnamedTaps: [(WidgetSnapshot, WidgetCommand, String)] = [
+        (sample, command(.complete, q4), "a tick naming no occurrence"),
+        (sample, command(.complete, occurrence: item("q4").occurrenceID), "a tick naming no task"),
+        (sample, command(.reopen, k6), "an untick naming no occurrence"),
+        (sample, command(.startWork, q1), "a Start naming no occurrence"),
+        (working, command(.finishWork, q1), "a Done naming no occurrence"),
+        (working, command(.finishWork), "a Done naming nothing"),
+        (WidgetSnapshot.sample(now: now, work: .paused, calendar: calendar), command(.resumeWork), "a Resume naming nothing"),
+    ]
+    for (snapshot, tap, name) in unnamedTaps {
+        let state = WidgetState(snapshot: snapshot, pending: [tap], now: now, calendar: calendar)
+        check(state.snapshot == snapshot && state.closing.isEmpty, "\(name) changes nothing")
+    }
 
-// MARK: Quick Add, Summary, Activity
+    // The app drops every queued command after the queue's lifetime, so a
+    // tick is drawn until then and no longer.
+    let morningTick = tap(.complete, "q1", at: at(8))
+    check(morningTick.isCurrent(at: at(13, 59)) && !morningTick.isCurrent(at: at(14)) && morningTick.expiry == at(14),
+          "a tick stays current for the queue's lifetime")
+    let expiredTick = WidgetState(snapshot: sample, pending: [morningTick], now: at(14), calendar: calendar)
+    check(expiredTick.check(for: item("q1")) == .open && expiredTick.snapshot.completedTodayCount == 2 && expiredTick.snapshot.activity == sample.activity,
+          "a tick the app would drop is drawn open, and counted nowhere")
 
-let capture = CaptureModel(design, clock: clock)
-check(capture.count == 6 && capture.items.map(\.age) == ["2h", "5h", "1d", "2d"], "Quick Add: 6 waiting, the newest four with ages")
-check(CaptureModel.age(WidgetSampleData.referenceDate.addingTimeInterval(-20), now: WidgetSampleData.referenceDate) == "1m", "A fresh capture reads 1m")
-// An Inbox task due today, ticked in Today while the app is quit: the snapshot
-// carries spare Inbox rows, as the publisher writes them, so medium Quick Add
-// still lists the newest four, the next one moving up, as the design's.
-var dueInInbox = design
-dueInInbox.inboxItems = Array(design.inboxItems.prefix(5))
-dueInInbox.inboxCount = 5
-var inboxRow = design.todayItems[0]
-inboxRow.id = dueInInbox.inboxItems[1].id
-inboxRow.occurrenceID = inboxRow.id
-inboxRow.listID = id("inbox")
-inboxRow.isInbox = true
-dueInInbox.todayItems.append(inboxRow)
-let inboxTicked = CaptureModel(SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: inboxRow.id, occurrenceID: inboxRow.id)],
-                                                     to: dueInInbox), clock: clock)
-check(inboxTicked.count == 4 && inboxTicked.items.map(\.id) == [0, 2, 3, 4].map { dueInInbox.inboxItems[$0].id },
-      "A queued tick on an Inbox task leaves Quick Add 4 rows under Inbox 4")
-check(WidgetSnapshot.inboxRows > CaptureModel.shown, "The snapshot carries spare Inbox rows")
-// An Inbox of 9 whose oldest task, due today, is past the 8 newest carried:
-// ticked in Today while the app is quit, Quick Add and Summary still count it gone.
-var fullInbox = design
-fullInbox.inboxItems = (0..<WidgetSnapshot.inboxRows).map {
-    WidgetSnapshot.InboxItem(id: id("inbox-\($0)"), title: "Capture \($0)", createdAt: noon.addingTimeInterval(-Double($0 + 1) * 3_600))
-}
-fullInbox.inboxCount = WidgetSnapshot.inboxRows + 1
-var oldestInbox = design.todayItems[0]
-oldestInbox.id = id("inbox-oldest")
-oldestInbox.occurrenceID = oldestInbox.id
-oldestInbox.listID = id("inbox")
-oldestInbox.isInbox = true
-fullInbox.todayItems.append(oldestInbox)
-check(WidgetSnapshotStore.decode(WidgetSnapshotStore.encode(fullInbox)!) == fullInbox, "A row's Inbox flag round-trips")
-let oldestTicked = SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: oldestInbox.id, occurrenceID: oldestInbox.id)], to: fullInbox)
-check(oldestTicked.inboxCount == 8 && oldestTicked.inboxItems == fullInbox.inboxItems
-      && CaptureModel(oldestTicked, clock: clock).count == 8 && SummaryModel(oldestTicked, clock: clock).inbox == 8
-      && !TodayModel(oldestTicked, clock: clock).rows.contains { $0.id == oldestInbox.id },
-      "A queued Today tick on an Inbox task past the rows carried counts one fewer in the Inbox")
-var elsewhere = fullInbox
-elsewhere.todayItems[elsewhere.todayItems.count - 1].isInbox = false
-check(SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: oldestInbox.id, occurrenceID: oldestInbox.id)], to: elsewhere).inboxCount == 9,
-      "and one in another list leaves the Inbox's count")
+    // A clock set back since the tap dates it in the future; that is no fresher.
+    check(!command(.startWork, q1, occurrence: q1Occurrence, at: now.addingTimeInterval(10 * 60)).isCurrent(at: now),
+          "a work command dated well ahead of now is not current")
+    check(command(.resumeWork, q1, occurrence: q1Occurrence, at: now.addingTimeInterval(60)).isCurrent(at: now),
+          "within the window, either side of the tap")
+    let futureStart = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1", at: now.addingTimeInterval(10 * 60))], now: now, calendar: calendar)
+    check(futureStart.snapshot.work == nil, "a Start dated well ahead draws no running clock")
+    let nearStart = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1", at: now.addingTimeInterval(60))], now: now, calendar: calendar)
+    check(nearStart.snapshot.work?.segmentStartedAt == now, "one just ahead records from now, as the app starts it")
+    let futureTick = WidgetState(snapshot: sample, pending: [tap(.complete, "q4", at: now.addingTimeInterval(3600))], now: now, calendar: calendar)
+    check(futureTick.check(for: item("q4")) == .closing && futureTick.snapshot.completedTodayCount == 3, "a tick dated ahead counts as made now")
 
-// Quick Add's timeline has an entry wherever an age shown moves on, so none stays behind.
-let captureStart = WidgetSampleData.referenceDate
-var captured = design
-let capturedAges: [(TimeInterval, String)] = [(20, "Just now"), (1_807, "Half an hour ago"), (18_011, "This morning"), (183_600, "Two days ago")]
-captured.inboxItems = capturedAges.map { age, title in
-    WidgetSnapshot.InboxItem(id: UUID(), title: title, createdAt: captureStart.addingTimeInterval(-age))
-}
-let ageEntries = [captureStart] + CaptureModel.ageChanges(captured, after: captureStart)
-check(ageEntries == ageEntries.sorted() && Set(ageEntries).count == ageEntries.count && ageEntries.count < 200
-      && ageEntries.last! < captureStart.addingTimeInterval(86_400), "Age entries run in order through the day ahead: \(ageEntries.count)")
-check(ageEntries[1] == captureStart.addingTimeInterval(100) && ageEntries.contains(captureStart.addingTimeInterval(3_580)),
-      "A fresh capture moves to 2m two minutes in, and to 1h at the hour")
-var newestBehind: Date?
-var ageLag: TimeInterval = 0
-var behindSince: Date?
-var ageEntry = 0
-for step in stride(from: 0.0, to: 86_400, by: 5) {
-    let moment = captureStart.addingTimeInterval(step)
-    while ageEntry + 1 < ageEntries.count, ageEntries[ageEntry + 1] <= moment { ageEntry += 1 }
-    let drawn = CaptureModel(captured, clock: clockAt(ageEntries[ageEntry])).items.map(\.age)
-    let exact = CaptureModel(captured, clock: clockAt(moment)).items.map(\.age)
-    if drawn[0] != exact[0], newestBehind == nil { newestBehind = moment }
-    behindSince = drawn == exact ? nil : behindSince ?? moment
-    if let behindSince { ageLag = max(ageLag, moment.timeIntervalSince(behindSince)) }
-}
-check(newestBehind == nil, "The newest capture's age is never behind: at \(String(describing: newestBehind))")
-check(ageLag < 60, "Older ages are at most a minute behind: \(ageLag)s")
-var emptyInbox = design
-emptyInbox.inboxItems = []
-check(CaptureModel.ageChanges(emptyInbox, after: captureStart).isEmpty, "An empty Inbox has no ages to move on")
+    // Ticked at 23:50 and still waiting after midnight: the app dates the
+    // completion at the tap, so it belongs to the day before.
+    let lateTick = WidgetState(snapshot: sample, pending: [tap(.complete, "k2", at: at(23, 50))], now: at(0, 5, day: 1), calendar: calendar)
+    check(lateTick.check(for: item("k2")) == .closing && lateTick.snapshot.completedTodayCount == 0 && lateTick.todayProgress == (0, 7),
+          "a tick from before midnight is drawn, but not as done today")
+    let lateStats = ActivityStats(activity: lateTick.snapshot.activity, now: at(0, 5, day: 1), calendar: lateTick.calendar)
+    check(lateStats.today == 0 && lateTick.snapshot.activity.days.last?.date == today && lateTick.snapshot.activity.days.last?.count == 3,
+          "Activity counts it on the day of the tap, not the entry's")
+    let lateSameDay = WidgetState(snapshot: sample, pending: [tap(.complete, "k2", at: at(23, 50))], now: at(23, 55), calendar: calendar)
+    check(lateSameDay.snapshot.completedTodayCount == 3 && lateSameDay.snapshot.activity.days.last?.count == 3, "on the same day, it is done today")
+    var noDays = sample
+    noDays.activity = WidgetSnapshot.Activity(streak: 3, today: 1, week: 4, month: 9)
+    let noDaysTick = WidgetState(snapshot: noDays, pending: [tap(.complete, "q4")], now: now, calendar: calendar).snapshot.activity
+    check(noDaysTick.days.isEmpty && noDaysTick.today == 2 && noDaysTick.week == 5 && noDaysTick.month == 10 && noDaysTick.streak == 3,
+          "without published days the app's totals take the tick, and a day already counted keeps its streak")
+    let noDaysLate = WidgetState(snapshot: noDays, pending: [tap(.complete, "k2", at: at(23, 50))], now: at(0, 5, day: 1), calendar: calendar).snapshot.activity
+    check(noDaysLate.today == 1 && noDaysLate.week == 5 && noDaysLate.streak == 3, "and a tick from the day before is not today's")
 
-let summary = SummaryModel(design, clock: clock)
-check([summary.due, summary.overdue, summary.inbox, summary.done] == [4, 3, 6, 2], "Summary: 4, 3, 6, 2")
-check(summary.week.map(\.day) == ["M", "T", "W", "T", "F", "S", "S"] && summary.week[2].isToday, "The week runs Monday to Sunday")
-check(summary.week.map(\.count) == [0, 0, 2, nil, nil, nil, nil] && summary.weekTotal == 2, "This week: 2 done, days to come empty")
+    // The app rolls a repeat forward rather than complete it, so Today does
+    // not count it as done; Activity counts every completion.
+    let repeated = WidgetState(snapshot: sample, pending: [tap(.complete, "k4")], now: now, calendar: calendar)
+    check(repeated.check(for: item("k4")) == .closing && repeated.snapshot.dueTodayCount == 3 && !repeated.snapshot.dueToday.contains { $0.date == today },
+          "a ticked repeat leaves today's due work")
+    check(repeated.snapshot.completedTodayCount == 2 && repeated.todayProgress == (2, 8), "but is not done today: the app has it open again")
+    let repeatList = repeated.snapshot.lists.first { $0.id == kyoto }!
+    check(repeated.snapshot.totalOpenCount == sample.totalOpenCount && repeatList.openCount == 5 && repeatList.doneCount == 1,
+          "and it stays among the open tasks")
+    check(repeated.snapshot.activity.today == 3 && repeated.snapshot.activity.days.last?.count == 3, "Activity still counts the repeat")
 
-let activity = ActivityModel(design, clock: clock, weeks: 21)
-check(activity.weeks.count == 21 && activity.weeks.allSatisfy { $0.count == 7 }, "21 weeks of seven days")
-check(activity.todayIndex == 2 && activity.weeks[20][2] == 2 && activity.weeks[20][3] == nil, "Today is Wednesday of the last week")
-check(activity.streak == 1 && activity.today == 2 && activity.week == 2 && activity.month == 49, "1-day streak; 2 today, 2 this week, 49 in September")
-check(activity.monthName == "September", "The month is named")
-check(ActivityModel(design, clock: clock, weeks: 10).weeks.count == 10, "Small shows 10 weeks")
-// A repeat done today rolls on rather than sit done, so today's done tasks
-// leave it out; the heatmap, the Activity screen's, counts it, today as any day.
-var repeated = design
-repeated.activity!.counts[repeated.activity!.counts.count - 1] = 3
-let repeatedActivity = ActivityModel(repeated, clock: clock, weeks: 21)
-check(repeatedActivity.today == 3 && repeatedActivity.weeks[20][2] == 3 && repeatedActivity.week == 3 && repeatedActivity.month == 50,
-      "A repeat done today counts in the Activity widget's today, as on the screen")
-let repeatedSummary = SummaryModel(repeated, clock: clock)
-check(repeatedSummary.week[2].count == 3 && repeatedSummary.weekTotal == 3 && repeatedSummary.done == 2 && TodayModel(repeated, clock: clock).done == 2,
-      "and in Summary's week, while Done and Today count the tasks done today, as the app's Today")
-var onlyRepeat = repeated
-onlyRepeat.completedTodayCount = 0
-onlyRepeat.activity!.counts[onlyRepeat.activity!.counts.count - 1] = 1
-check(ActivityModel(onlyRepeat, clock: clock, weeks: 21).streak == 1, "and in the streak")
-let dayAfter = ActivityModel(repeated, clock: tomorrow, weeks: 21)
-check(dayAfter.today == 0 && dayAfter.weeks[20][2] == 3 && dayAfter.weeks[20][3] == 0, "The next day it's yesterday's, and today starts at 0")
-var noHeatmap = design
-noHeatmap.activity = nil
-check(ActivityModel(noHeatmap, clock: clock, weeks: 21).today == 2, "A file without a heatmap counts today's done tasks")
-// A tick queued while the app is quit counts on the heatmap too, a reopen of
-// one done today takes it off, and one after midnight counts on the new day.
-check(ActivityModel(ticked, clock: clock, weeks: 21).today == 3 && SummaryModel(ticked, clock: clock).weekTotal == 3,
-      "A queued tick counts in today's cell")
-let sessionReopened = SnapshotOverlay.apply([WidgetAction(kind: .reopen, taskID: id("q4"), occurrenceID: id("q4"))], to: session)
-check(ActivityModel(session, clock: clock, weeks: 21).today == 3 && ActivityModel(sessionReopened, clock: clock, weeks: 21).today == 2
-      && TodayModel(sessionReopened, clock: clock).done == 2, "A queued reopen of a task done today takes it off")
-let afterMidnight = SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: id("k3"), occurrenceID: id("k3"), createdAt: tomorrow.now)],
-                                          to: design, calendar: tomorrow.calendar)
-let afterMidnightActivity = ActivityModel(afterMidnight, clock: tomorrow, weeks: 21)
-check(afterMidnightActivity.today == 1 && afterMidnightActivity.weeks[20][2] == 2 && afterMidnightActivity.streak == 2
-      && TodayModel(afterMidnight, clock: tomorrow).done == 1, "A tick queued after midnight counts on the new day")
-check([0, 1, 2, 3, 4, 6, 7].map(ActivityModel.opacity) == [0, 0.28, 0.5, 0.5, 0.75, 0.75, 1],
-      "The heatmap's steps change at the legend's 1, 2–3, 4–6 and 7+ bands")
+    let later = WidgetState(snapshot: sample, now: at(11, 31), calendar: calendar)
+    check(later.snapshot.overdueCount == 3 && later.snapshot.dueTodayCount == 4 && !item("q1", in: later.snapshot).isOverdue(at: at(11, 31), calendar: calendar),
+          "a timed task whose time has passed is still due today, as on the app's Today")
+    let tomorrow = WidgetState(snapshot: sample, now: at(0, 30, day: 1), calendar: calendar)
+    check(tomorrow.snapshot.completedTodayCount == 0, "done today starts again after midnight")
+    check(tomorrow.snapshot.overdueCount == 7 && tomorrow.snapshot.dueTodayCount == 1, "yesterday's due tasks count as late after midnight, and tomorrow's are due")
 
-// MARK: Agenda
-
-let agenda = AgendaModel(design, clock: clock)
-check(agenda.daySubtitle == "Wed 23 · 4 meetings · 5 planned", "Today's subtitle")
-check(agenda.range == "21 – 27 September", "This week's range")
-check(agenda.week.map(\.label) == ["Mon 21", "Tue 22", "Wed 23", "Thu 24", "Fri 25", "Sat 26", "Sun 27"], "Seven day heads")
-let draft = agenda.today.items.first { $0.title == "Draft Q3 OKRs" }!
-let frame = AgendaModel.frame(start: draft.start, end: draft.end, pxh: 29)
-check(frame.top == 30 && frame.height == 41.5 && draft.timeText == "10:00–11:30", "10:00–11:30 sits at 30, 41.5 tall")
-check(abs(AgendaModel.nowOffset(agenda.nowHour, pxh: 29)! - 48.333) < 0.01, "The now line at 10:40")
-check(AgendaModel.nowOffset(20, pxh: 29) == nil && AgendaModel.nowOffset(8.5, pxh: 29) == nil, "No now line outside the grid's hours")
-check(AgendaModel.frame(start: 16.5, end: 16.6667, pxh: 29).height == 13, "Short slots keep their minimum height")
-// A meeting starting inside a pinned slot: the day reads in start order, and
-// the slot draws over the meeting, as the design draws its meetings first.
-var overlapping = design
-let pinned = clock.today.addingTimeInterval(13.5 * 3_600)
-overlapping.agenda = [WidgetSnapshot.AgendaDay(day: clock.today, items: [
-    WidgetSnapshot.AgendaItem(id: "p-pinned", kind: .task, title: "Pinned slot", start: pinned, end: pinned.addingTimeInterval(3_600),
-                              taskID: id("pinned"), occurrenceID: id("pinned"), accent: "blue",
-                              isCompleted: false, isActive: false, isFlexible: false),
-    WidgetSnapshot.AgendaItem(id: "m-later", kind: .meeting, title: "Later meeting", start: pinned.addingTimeInterval(1_800),
-                              end: pinned.addingTimeInterval(5_400), isCompleted: false, isActive: false, isFlexible: false),
-])]
-let overlap = AgendaModel(overlapping, clock: clock).today.items
-check(overlap.map(\.title) == ["Pinned slot", "Later meeting"] && overlap[0].layer > overlap[1].layer,
-      "A planned block draws over a meeting that starts inside it")
-check(AgendaModel(session, clock: clock).week[1].items.first { $0.title == "Close out Q2 retro actions" }?.isDone == true,
-      "A done slot shows done")
-let across = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(6 * 86_400))
-check(AgendaModel(design, clock: across).range == "28 September – 4 October", "A week across months names both")
-check(clock.hours(WidgetSampleData.referenceDate.addingTimeInterval(15 * 3_600), on: clock.today) == 25 + 40.0 / 60,
-      "Past midnight the hours go on counting")
-
-// On the days the clocks change, blocks and the now line keep to the hour labels.
-var amsterdam = Calendar(identifier: .gregorian)
-amsterdam.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
-for (month, day, change) in [(3, 29, "go forward"), (10, 25, "go back")] {
-    let moment = amsterdam.date(from: DateComponents(year: 2026, month: month, day: day, hour: 10, minute: 40))!
-    let changeDay = WidgetClock(now: moment, firstWeekday: WidgetSampleData.firstWeekday, calendar: amsterdam, locale: english)
-    check(abs(changeDay.nowHours - (10 + 40.0 / 60)) < 0.0001, "10:40 is 10.67 on the day the clocks \(change)")
-    let block = AgendaModel(WidgetSampleData.snapshot(now: moment, calendar: amsterdam), clock: changeDay)
-        .today.items.first { $0.title == "Draft Q3 OKRs" }!
-    check(block.start == 10 && block.end == 11.5 && block.timeText == "10:00–11:30", "and 10:00–11:30 sits at 10 to 11.5")
+    // Written at 22:00 and not rewritten since, as when the app has quit: the
+    // new day's work was published with it, so Today starts the day anyway.
+    let written = WidgetSnapshot.sample(now: at(22), calendar: calendar)
+    let q2 = WidgetSnapshot.sampleTaskID("q2")
+    check(written.tomorrowItems.map(\.id) == [q2] && written.dueTomorrow == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)],
+          "the snapshot carries tomorrow's rows and due dates")
+    let morning = WidgetState(snapshot: written, now: at(8, day: 1), calendar: calendar)
+    check(morning.snapshot.todayItems.last?.id == q2 && morning.snapshot.dueTodayCount == 1 && morning.snapshot.overdueCount == 7,
+          "the next morning, tomorrow's task is due today and the rest of the evening's work is late")
+    check(morning.snapshot.dueToday == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)], "and turns late at the next midnight")
+    check(morning.snapshot.tomorrowItems.isEmpty && morning.snapshot.dueTomorrow.isEmpty, "tomorrow's work is merged once")
+    let tickedMorning = WidgetState(snapshot: written, pending: [tap(.complete, "q2", in: written, at: at(8, 5, day: 1))], now: at(8, 10, day: 1), calendar: calendar)
+    check(tickedMorning.snapshot.dueTodayCount == 0 && tickedMorning.snapshot.dueToday.isEmpty && tickedMorning.snapshot.completedTodayCount == 1,
+          "ticking it off counts it once")
+    check(tickedMorning.snapshot.activity.days.last?.date == at(0, day: 1) && tickedMorning.snapshot.activity.days.last?.count == 1,
+          "on a day the app has not published yet, Activity gains that day")
+    let twoDays = WidgetState(snapshot: written, now: at(8, day: 2), calendar: calendar)
+    check(twoDays.snapshot.overdueCount == 8 && twoDays.snapshot.dueTodayCount == 0, "a day later, it is late too")
+    var timedTomorrow = written
+    timedTomorrow.tomorrowItems[0].dueDate = at(9, day: 1)
+    timedTomorrow.tomorrowItems[0].includesTime = true
+    timedTomorrow.dueTomorrow = [WidgetSnapshot.Due(date: at(9, day: 1), includesTime: true)]
+    var quietTomorrow = timedTomorrow
+    quietTomorrow.inboxItems = []
+    let pastMidnight = WidgetState(snapshot: quietTomorrow, now: at(0, 1, day: 1), calendar: calendar)
+    check(TimelineSchedule.snapshotDates(for: pastMidnight.snapshot, now: at(0, 1, day: 1), calendar: calendar) == [at(0, 1, day: 1)],
+          "the timeline built after midnight has no entry at tomorrow's task's time")
+    let afterItsTime = WidgetState(snapshot: timedTomorrow, now: at(9, 30, day: 1), calendar: calendar).snapshot
+    check(afterItsTime.overdueCount == 7 && afterItsTime.dueTodayCount == 1, "since it is still due today after its time")
+    var capped = written
+    capped.overdueCount += 5
+    let cappedMorning = WidgetState(snapshot: capped, now: at(8, day: 1), calendar: calendar)
+    check(cappedMorning.snapshot.todayItems.last?.id == q2 && cappedMorning.snapshot.dueTodayCount == 1,
+          "tomorrow's rows join today's even when the day's rows were capped: each group's cap is more than a widget draws")
 }
 
-// The gallery's sample week is the week today falls in: today with the design's
-// Wednesday, the other days their own weekday's meetings, and planned slots on
-// their tasks' due days.
-func sampleAgenda(_ day: Int) -> (clock: WidgetClock, agenda: AgendaModel) {
-    let at = clockAt(WidgetSampleData.referenceDate.addingTimeInterval(Double(day - 23) * 86_400))
-    return (at, AgendaModel(WidgetSampleData.snapshot(now: at.now), clock: at))
+// MARK: - Entries
+
+do {
+    let entry = SnapshotEntry(date: now, snapshot: sample, list: ListSelection(listID: UUID()), calendar: calendar)
+    check(entry.selectedList?.id == kyoto, "a list that has gone falls back to the first real list")
+    check(SnapshotEntry(date: now, snapshot: sample, list: ListSelection(listID: WidgetSnapshot.sampleListID("home")), calendar: calendar).selectedList?.title == "Home",
+          "the configured list is shown")
+    check(entry.at(at(12)).date == at(12) && entry.at(at(12)).list == entry.list, "an entry moved in time keeps its data and configuration")
+    check(entry.state.calendar.firstWeekday == 2, "entries use the app's first weekday")
 }
-func meetings(_ agenda: AgendaModel) -> [[String]] { agenda.week.map { $0.items.filter(\.isMeeting).map(\.title) } }
-func slots(_ agenda: AgendaModel, _ column: Int) -> [String] {
-    agenda.week[column].items.filter { !$0.isMeeting }.map { "\($0.title) \($0.timeText)" }
+
+// MARK: - Today's sections
+
+do {
+    let base = WidgetState(snapshot: sample, now: now, calendar: calendar)
+    let all = base.todaySections()
+    check(all.late.map(\.title) == ["Close out Q2 retro actions", "Reserve the Nishiki market tour", "Fix the dripping bathroom tap"]
+          && all.rest.count == 4, "Today's rows split into late work and the rest of today")
+    let five = base.todaySections(limit: 5)
+    check(five.late.count == 3 && five.rest.map(\.title) == ["Draft Q3 OKRs", "Write interview feedback for Priya"],
+          "large Today's five rows hold the late work and today's first")
+
+    // Six more tasks, all late, ahead of the sample's.
+    var backlog = sample
+    let extra = (1...6).map { offset -> WidgetSnapshot.Item in
+        var row = item("q4")
+        row.id = UUID()
+        row.occurrenceID = UUID()
+        row.title = "Backlog \(offset)"
+        row.dueDate = at(0, day: -10 + offset)
+        return row
+    }
+    backlog.todayItems = extra + backlog.todayItems
+    backlog.overdueCount += extra.count
+    let crowded = WidgetState(snapshot: backlog, now: now, calendar: calendar)
+    let crowdedFive = crowded.todaySections(limit: 5)
+    check(crowdedFive.late.map(\.title) == ["Backlog 1", "Backlog 2", "Backlog 3"]
+          && crowdedFive.rest.map(\.title) == ["Draft Q3 OKRs", "Write interview feedback for Priya"],
+          "a long backlog leaves two of large Today's rows to today's own work")
+    check(crowded.todaySections(limit: 3).late.count == 1 && crowded.todaySections(limit: 3).rest.count == 2, "as it does when fewer rows fit")
+    var lone = backlog
+    lone.todayItems.removeAll { !$0.isOverdue(at: now, calendar: calendar) && $0.title != "Draft Q3 OKRs" }
+    let loneFive = WidgetState(snapshot: lone, now: now, calendar: calendar).todaySections(limit: 5)
+    check(loneFive.late.count == 4 && loneFive.rest.count == 1, "late work fills the rows today's work leaves")
+    var noneDue = backlog
+    noneDue.todayItems.removeAll { !$0.isOverdue(at: now, calendar: calendar) }
+    check(WidgetState(snapshot: noneDue, now: now, calendar: calendar).todaySections(limit: 5).late.count == 5,
+          "and every row, with nothing due today")
 }
-let designWeek = meetings(agenda)
-check(designWeek[5] == ["Pottery class"] && designWeek[6].isEmpty && designWeek.prefix(5).allSatisfy { $0.first == "Standup" },
-      "The design's week: a standup every weekday, pottery on Saturday")
-check(slots(agenda, 1) == ["Close out Q2 retro actions 14:00–14:30"] && slots(agenda, 3) == ["Review hiring budget with Sam 13:00–13:45"]
-      && slots(agenda, 4) == ["Prep board update slides 10:00–11:00"], "The design's slots around its Wednesday, where it has them")
-let thursday = sampleAgenda(24)
-check(meetings(thursday.agenda) == [designWeek[0], designWeek[1], designWeek[3], designWeek[2], designWeek[4], designWeek[5], designWeek[6]]
-      && thursday.agenda.week[3].isToday, "On a Thursday the design's Wednesday is today, and Monday still starts the week")
-check(thursday.agenda.daySubtitle == "Thu 24 · 4 meetings · 5 planned", "Today has the design's plan")
-check(slots(thursday.agenda, 2) == ["Close out Q2 retro actions 14:00–14:30"]
-      && slots(thursday.agenda, 4) == ["Review hiring budget with Sam 13:00–13:45"]
-      && slots(thursday.agenda, 5) == ["Prep board update slides 11:30–12:30"],
-      "Slots keep their days from today, one moved past Saturday's pottery")
-let tuesday = sampleAgenda(22)
-check(meetings(tuesday.agenda) == [designWeek[0], designWeek[2], designWeek[1], designWeek[3], designWeek[4], designWeek[5], designWeek[6]]
-      && slots(tuesday.agenda, 3) == ["Prep board update slides 12:00–13:00"], "On a Tuesday a slot starts as Thursday's offsite ends")
-let saturday = sampleAgenda(26)
-check(meetings(saturday.agenda) == [designWeek[0], designWeek[1], designWeek[2], designWeek[3], designWeek[4], designWeek[2], designWeek[6]],
-      "On a Saturday the weekdays keep their own meetings")
-let sunday = sampleAgenda(27)
-check(meetings(sunday.agenda) == [designWeek[0], designWeek[1], designWeek[2], designWeek[3], designWeek[4], designWeek[5], designWeek[2]]
-      && slots(sunday.agenda, 5) == ["Close out Q2 retro actions 14:00–14:30"] && slots(sunday.agenda, 6).count == 5,
-      "On a Sunday too, pottery still on Saturday")
-let monday = sampleAgenda(21)
-check(meetings(monday.agenda) == [designWeek[2], designWeek[1], designWeek[0], designWeek[3], designWeek[4], designWeek[5], designWeek[6]],
-      "On a Monday, Monday's own meetings move to Wednesday")
-for date in 21...27 {
-    let (at, week) = sampleAgenda(date)
-    let due = Dictionary(WidgetSampleData.snapshot(now: at.now).lists.flatMap(\.openItems).compactMap { item in
-        item.dueDate.map { (item.title, at.calendar.startOfDay(for: $0)) }
-    }, uniquingKeysWith: { first, _ in first })
-    check(meetings(week).prefix(5).allSatisfy { $0.first == "Standup" }, "A standup every weekday, on the \(date)th too")
-    for day in week.week {
-        for slot in day.items where !slot.isMeeting {
-            check(due[slot.title].map { $0 < at.today || $0 == day.day } ?? true, "\(slot.title) sits on its due day, on the \(date)th")
-            check(!day.items.contains { $0.isMeeting && $0.start < slot.end && slot.start < $0.end }, "\(slot.title) clears the meetings")
+
+// MARK: - Up Next through the day
+
+do {
+    func upNext(_ date: Date, _ snapshot: WidgetSnapshot = sample) -> UpNext { UpNext(snapshot: snapshot, now: date, calendar: calendar) }
+
+    let early = upNext(at(8))
+    check(early.phase == .next && early.title == "Draft Q3 OKRs" && early.note == "in 120 min" && early.progress == 0, "before the first block, Up Next shows it as next")
+    check(early.later.map(\.time) == ["09:30", "11:30", "13:00", "14:00", "15:30", "16:00", "16:30", "18:00"],
+          "before the first block, Later today lists what comes before it too")
+    let between = upNext(at(13, 40))
+    check(between.phase == .next && between.title == "Order new water filters" && between.later.map(\.time) == ["14:00", "15:30", "16:00", "18:00"],
+          "between blocks, the meetings before the next block are later today")
+
+    let current = upNext(now)
+    check(current.phase == .now && current.note == "50 min left" && current.rangeText == "10:00–11:30", "during a block, Up Next counts it down")
+    check(abs(current.progress - 40.0 / 90) < 0.0001, "progress is the share of the block gone by")
+    check(current.listLine() == "💼 Q3 planning" && current.listLine(includesIcon: false) == "Q3 planning", "the list line drops its emoji when asked")
+    check(WidgetFormat.listLine(icon: "folder", name: "Q3 planning") == "Q3 planning"
+          && WidgetFormat.listLine(icon: "cart.fill", name: "") == "",
+          "a list icon naming an SF Symbol is left out of a line of text, never printed as its name")
+    check(current.later.first == UpNext.Later(id: "block-p1", start: at(11, 30), title: "Write interview feedback for Priya", time: "11:30", accentHex: 0xB8479A, isMeeting: false),
+          "Later today lists the next block with its list colour")
+    check(current.later[2].title == "Board prep" && current.later[2].isMeeting && current.later[2].accentHex == nil, "meetings have no colour of their own")
+
+    let short = upNext(at(11, 35))
+    check(short.phase == .now && short.title == "Write interview feedback for Priya" && short.note == "15 min left", "back-to-back blocks hand over at the boundary")
+    check(short.later.count == 6, "Later today shrinks as the day goes on")
+    check(upNext(at(12)).phase == .next && upNext(at(12)).note == "in 60 min", "between blocks, Up Next looks ahead")
+
+    let afternoon = upNext(at(16, 5))
+    check(afternoon.title == "Order new water filters" && afternoon.later.map(\.title) == ["Pay the ryokan deposit"], "a meeting already under way is not listed as later")
+
+    let evening = upNext(at(18, 20))
+    check(evening.phase == .none && evening.title == "Nothing else planned" && evening.later.isEmpty && evening.rangeText.isEmpty,
+          "after the last block the day is clear")
+    check(evening.listName == "Your day is clear", "and says so")
+    var meetingsOnly = sample
+    for index in meetingsOnly.agenda.indices where meetingsOnly.agenda[index].kind == .task { meetingsOnly.agenda[index].isCompleted = true }
+    let onlyMeetings = upNext(now, meetingsOnly)
+    check(onlyMeetings.phase == .none && onlyMeetings.later.map(\.time) == ["14:00", "15:30", "16:00"] && onlyMeetings.later.allSatisfy(\.isMeeting),
+          "with every block done, the day's remaining meetings are later")
+    check(onlyMeetings.listName == "Next: Board prep at 14:00", "and the day is not called clear: the subtitle names the next meeting")
+
+    let working = upNext(now, WidgetSnapshot.sample(now: now, work: .working, calendar: calendar))
+    check(working.phase == .working && working.elapsed == 4 && working.timerOrigin == now.addingTimeInterval(-4), "a running session wins over the plan")
+    check(working.note == "of 90 min" && working.rangeText == "10:00–11:30" && working.isRecording, "a running session shows its estimate and block")
+    let pausedSample = WidgetSnapshot.sample(now: now, work: .paused, calendar: calendar)
+    let paused = upNext(now, pausedSample)
+    check(paused.phase == .paused && paused.timerOrigin == nil && paused.elapsed == 14, "a paused session shows a still clock")
+    check(paused.rangeText == "10:00–11:30" && paused.later.first?.time == "11:30", "paused inside its block, the block stays in the header")
+
+    // Pausing replans the rest of the task, so the app publishes paused work
+    // with its next planned block, later today or on another day.
+    func replanned(to start: Date, _ end: Date) -> WidgetSnapshot {
+        var snapshot = pausedSample
+        snapshot.work?.blockStart = start
+        snapshot.work?.blockEnd = end
+        let index = snapshot.agenda.firstIndex { $0.id == "block-q1" }!
+        snapshot.agenda[index].start = start
+        snapshot.agenda[index].end = end
+        return snapshot
+    }
+    let afterMeetings = upNext(now, replanned(to: at(16, 45), at(17, 30)))
+    check(afterMeetings.rangeText == "16:45–17:30" && afterMeetings.later.map(\.time) == ["11:30", "13:00", "14:00", "15:30", "16:00", "16:30", "18:00"],
+          "paused work holds no time: everything ahead today is later, except its own replanned block")
+    let tomorrowBlock = upNext(now, replanned(to: at(9, day: 1), at(9, 50, day: 1)))
+    check(tomorrowBlock.phase == .paused && tomorrowBlock.rangeText.isEmpty && tomorrowBlock.later.count == 7,
+          "a block on another day is not shown as today's, and hides nothing")
+    var workingElsewhere = WidgetSnapshot.sample(now: now, work: .working, calendar: calendar)
+    workingElsewhere.work?.blockStart = at(13)
+    workingElsewhere.work?.blockEnd = at(13, 30)
+    check(upNext(now, workingElsewhere).later.first?.time == "11:30", "running work only holds a block that has started")
+
+    let skipped = WidgetState(snapshot: sample, pending: [tap(.complete, "q1")], now: now, calendar: calendar).upNext
+    check(skipped.phase == .next && skipped.note == "in 50 min", "a completed block is skipped")
+}
+
+// MARK: - Wording
+
+do {
+    func due(_ key: String) -> String { WidgetFormat.dueText(for: item(key), now: now, calendar: calendar) }
+    check(due("q4") == "3d late" && due("h1") == "1d late", "late tasks say how many days")
+    check(due("q1") == "10:00" && !item("q1").isOverdue(at: now, calendar: calendar), "a timed task shows its time, and is due today until the day is over")
+    check(due("p1") == "11:30" && due("k4") == "Repeats", "timed and repeating tasks due today")
+    check(due("q2") == "Tomorrow" && due("k1") == "Sat 26" && due("k5") == "Sun 27" && due("h3") == "Tue 29", "the coming week uses day names")
+    check(due("k6") == "Done" && due("h2") == "", "done and undated tasks")
+
+    var plain = item("h2")
+    plain.dueDate = today
+    check(WidgetFormat.dueText(for: plain, now: now, calendar: calendar) == "Today", "an all-day task due today")
+    plain.dueDate = at(0, day: 10)
+    check(WidgetFormat.dueText(for: plain, now: now, calendar: calendar) == "3 Oct", "further out, the date")
+    plain.dueDate = at(15, day: -1)
+    plain.includesTime = true
+    check(WidgetFormat.dueText(for: plain, now: now, calendar: calendar) == "1d late", "a timed task from yesterday is a day late")
+
+    func age(_ seconds: TimeInterval) -> String { WidgetFormat.age(of: now.addingTimeInterval(-seconds), now: now) }
+    check(age(30) == "now" && age(299) == "now", "a capture from the last five minutes")
+    check(age(300) == "5m" && age(12 * 60) == "10m" && age(3599) == "55m", "minutes, in fives")
+    check(age(2 * 3600) == "2h" && age(26 * 3600) == "1d", "hours and days")
+    // The timeline has an entry for every change of the label, so between
+    // two entries the label a widget drew is still true.
+    let captured = at(10, 38)
+    check(stride(from: 0.0, through: 3 * 86_400, by: 60).allSatisfy { offset in
+        let date = captured.addingTimeInterval(offset)
+        let next = WidgetFormat.ageChange(of: captured, after: date)
+        let label = WidgetFormat.age(of: captured, now: date)
+        return next > date && WidgetFormat.age(of: captured, now: next.addingTimeInterval(-1)) == label
+            && WidgetFormat.age(of: captured, now: next) != label
+    }, "an age label changes exactly when ageChange says it does")
+    check(WidgetFormat.ageChange(of: captured, after: captured) == at(10, 43) && WidgetFormat.ageChange(of: captured, after: at(11, 35)) == at(11, 38)
+          && WidgetFormat.ageChange(of: captured, after: at(11, 38)) == at(12, 38), "five-minute steps for the first hour, then hourly")
+    check(WidgetFormat.clock(at(9, 5), calendar: calendar) == "09:05" && WidgetFormat.range(at(10), at(11, 30), calendar: calendar) == "10:00–11:30",
+          "clock times are 24-hour")
+    check(WidgetFormat.minutesLeft(until: at(11, 30), now: now) == "50 min left" && WidgetFormat.minutesUntil(at(11, 30), now: now) == "in 50 min",
+          "countdowns in minutes")
+    check(WidgetFormat.minutesLeft(until: now.addingTimeInterval(20), now: now) == "1 min left", "a running block never says zero")
+    check(WidgetFormat.dayLabel(now, calendar: calendar) == "Wed 23" && WidgetFormat.weekdayName(now, calendar: calendar) == "Wednesday", "day names")
+    check(WidgetFormat.weekRange(from: at(0, day: -2), calendar: calendar) == "21 – 27 September", "a week inside one month")
+    check(WidgetFormat.weekRange(from: at(0, day: 5), calendar: calendar) == "28 September – 4 October", "a week across a month end")
+    check(WidgetFormat.count(1, "meeting") == "1 meeting" && WidgetFormat.count(4, "meeting") == "4 meetings", "counted nouns")
+    check(WidgetStyle.darkAccent(0x7C4DF0) == 0x9B78FF, "the default accent lifts to the design's dark value")
+    var ring = item("k2")
+    ring.priority = 2
+    check(WidgetStyle.light.checkColor(for: ring, isLate: false) == WidgetStyle.light.amber, "medium priority rings are amber, as in the app's rows")
+    check(WidgetStyle.light.checkColor(for: ring, isLate: true) == WidgetStyle.light.red, "late work rings red whatever its priority")
+    ring.priority = 0
+    check(WidgetStyle.light.checkColor(for: ring, isLate: false) == WidgetStyle.light.listColor(ring.accentHex), "other rings wear their list's colour")
+    check(WidgetStyle.darkAccent(0x2F6FE0) >> 16 > 0x2F && WidgetStyle.darkAccent(0x2F6FE0) & 0xFF == 0xFF, "other accents brighten for dark mode")
+}
+
+// MARK: - Activity and Summary
+
+do {
+    let weekCalendar = sample.calendar(base: calendar)
+    let small = ActivityGrid.weeks(10, activity: sample.activity, now: now, calendar: weekCalendar)
+    check(small.count == 10 && small.allSatisfy { $0.count == 7 }, "the small heatmap has ten weeks of seven days")
+    check(small.last?[0].date == at(0, day: -2) && small.first?[0].date == at(0, day: -65), "columns run from nine weeks ago to this week, Monday first")
+    check(small.last?[2].isToday == true && small.last?[2].count == 2, "today sits in the current week with its count")
+    check(small.last?[3...].allSatisfy(\.isFuture) == true && small.last?[..<3].allSatisfy { !$0.isFuture } == true, "days still to come are empty")
+    check(ActivityGrid.weeks(21, activity: sample.activity, now: now, calendar: weekCalendar).count == 21, "the medium heatmap has 21 weeks")
+    check([0, 1, 2, 3, 4, 6, 7, 12].map(ActivityGrid.band) == [0, 1, 2, 2, 3, 3, 4, 4], "bands are 0, 1, 2–3, 4–6 and 7+")
+
+    let stats = ActivityStats(activity: sample.activity, now: now, calendar: weekCalendar)
+    check(stats.today == 2 && stats.week == 2 && stats.month == 49 && stats.streak == 1 && stats.monthName == "September",
+          "the sample's totals match the mockup: 2 today, 2 this week, 49 in September, a 1-day streak")
+    let quiet = ActivityStats(activity: sample.activity, now: at(9, day: 1), calendar: weekCalendar)
+    check(quiet.today == 0 && quiet.streak == 1, "an empty today does not break the streak")
+    check(ActivityStats(activity: WidgetSnapshot.Activity(streak: 3, today: 1), now: now, calendar: weekCalendar).streak == 3,
+          "without published days the app's totals are used")
+
+    let week = SummaryWeek.days(activity: sample.activity, now: now, calendar: weekCalendar)
+    check(week.map(\.letter) == ["M", "T", "W", "T", "F", "S", "S"], "the week starts on the app's first weekday")
+    check(week.map(\.count) == [0, 0, 2, nil, nil, nil, nil] && week[2].isToday, "this week's counts, with days to come empty")
+}
+
+// MARK: - Agenda layout
+
+do {
+    let day = AgendaLayout.day(now, snapshot: sample, now: now, calendar: calendar)
+    check(day.meetingCount == 4 && day.plannedCount == 5 && day.isToday, "today's column holds its meetings and blocks")
+    check(day.events.prefix(4).allSatisfy { $0.kind == .meeting }, "meetings come first so blocks draw on top")
+    check(AgendaLayout.summary(for: day) == "Wed 23 · 4 meetings · 5 planned", "the day's summary line")
+
+    let window = AgendaLayout.window(for: day.events, calendar: calendar)
+    check(window == AgendaWindow(startHour: 9, endHour: 19), "the day spans at least nine to seven")
+    let hour = window.hourHeight(in: 290)
+    check(window.hourHeight(in: 299) == 29 && window.hourHeight(in: 5) == 1, "hours snap down to whole points, and never vanish")
+    let draft = window.frame(for: day.events.first { $0.id == "block-q1" }!, hourHeight: hour, calendar: calendar)
+    check(hour == 29 && draft.top == 30 && draft.height == 41.5, "a block's frame matches the design")
+    let standup = window.frame(for: day.events.first { $0.title == "Standup" }!, hourHeight: hour, calendar: calendar)
+    check(standup.top == 15.5 && standup.height == 13, "short events keep one line of height")
+    check(abs(window.nowOffset(now, hourHeight: hour, calendar: calendar)! - 48.333) < 0.001, "the now line sits at 10:40")
+    check(window.nowOffset(at(21), hourHeight: hour, calendar: calendar) == nil, "the now line hides outside the window")
+    check(window.labelHours() == [10, 12, 14, 16, 18], "hour labels every two hours inside the window")
+
+    let week = AgendaLayout.week(snapshot: sample, now: now, calendar: sample.calendar(base: calendar))
+    check(week.map(\.label) == ["Mon 21", "Tue 22", "Wed 23", "Thu 24", "Fri 25", "Sat 26", "Sun 27"], "the week runs Monday to Sunday")
+    check(week.firstIndex(where: \.isToday) == 2 && week[6].events.isEmpty, "today is the third column; Sunday is empty")
+    check(AgendaLayout.summary(for: week[6]) == "Sun 27 · Nothing planned" && AgendaLayout.summary(for: week[5]) == "Sat 26 · 1 meeting",
+          "the summary leaves out counts that are zero")
+    let plannedOnly = AgendaDay(date: at(0, day: 4), isToday: false, label: "Sun 27", events: week[3].events.filter { $0.kind == .task })
+    check(AgendaLayout.summary(for: plannedOnly) == "Sun 27 · 1 planned", "a day of planned work only")
+    var stale = sample
+    stale.weekStart = at(0, day: -9)
+    check(AgendaLayout.weekStart(snapshot: stale, now: now, calendar: sample.calendar(base: calendar)) == at(0, day: -2),
+          "a week that no longer covers today falls back to this week")
+
+    func event(_ id: String, _ start: Date, _ end: Date) -> WidgetSnapshot.AgendaEvent {
+        WidgetSnapshot.AgendaEvent(id: id, kind: .meeting, title: id, start: start, end: end)
+    }
+    let columns = AgendaLayout.columns(for: [event("a", at(10), at(11)), event("b", at(10, 30), at(11, 30)), event("c", at(11), at(12)), event("d", at(13), at(14))])
+    check(columns["a"] == AgendaColumn(index: 0, count: 2) && columns["b"] == AgendaColumn(index: 1, count: 2) && columns["c"] == AgendaColumn(index: 0, count: 2),
+          "overlapping events share the width; touching ones share a column")
+    check(columns["d"] == AgendaColumn(index: 0, count: 1), "an event on its own takes the full width")
+    let wide = AgendaLayout.window(for: [event("early", at(7, 30), at(8)), event("late", at(20), at(21, 15))], including: at(22, 30), calendar: calendar)
+    check(wide == AgendaWindow(startHour: 7, endHour: 23), "the window widens for early and late events and for now")
+
+    // Blocks in a day column 280 points wide, 5 in from either side.
+    func blocks(_ events: [WidgetSnapshot.AgendaEvent], in window: AgendaWindow, hourHeight: CGFloat) -> [String: CGRect] {
+        Dictionary(uniqueKeysWithValues: window.blocks(for: events, hourHeight: hourHeight, width: 280, inset: 5, calendar: calendar).map { ($0.id, $0.rect) })
+    }
+    func meets(_ upper: CGRect?, _ lower: CGRect?) -> Bool {
+        guard let upper, let lower else { return false }
+        return abs(upper.maxY - lower.minY) < 0.001
+    }
+    // On the design's nine-to-seven grid nothing is cut short or moved aside,
+    // so the widget still draws the mockup.
+    for hourHeight: CGFloat in [26, 27, 28, 29] {
+        for column in week {
+            let placed = window.blocks(for: column.events, hourHeight: hourHeight, width: 280, inset: 5, calendar: calendar)
+            check(placed.allSatisfy { block in
+                let frame = window.frame(for: block.event, hourHeight: hourHeight, calendar: calendar)
+                return block.rect == CGRect(x: 5, y: frame.top, width: 270, height: frame.height)
+            }, "at \(hourHeight) points an hour, \(column.label)'s blocks are the full width and their own height")
+        }
+    }
+    // A 07:00 gym session and a 19:00 dinner make a thirteen-hour grid, whose
+    // half-hours are shorter than a line of title. Back to back they still
+    // share the full width; the earlier one stops at the later one's top.
+    let standupID = day.events.first { $0.title == "Standup" }!.id
+    let priya = day.events.first { $0.title == "Priya debrief" }!.id
+    let coffee = day.events.first { $0.title == "Coffee with Leo" }!.id
+    let longDay = AgendaWindow(startHour: 7, endHour: 20)
+    for hourHeight: CGFloat in [22, 21, 20, 18] {
+        let placed = blocks(day.events, in: longDay, hourHeight: hourHeight)
+        check(placed.count == day.events.count && placed.values.allSatisfy { $0.minX == 5 && $0.width == 270 },
+              "at \(hourHeight) points an hour, the sample day's back-to-back half-hours keep the full width")
+        check(meets(placed[standupID], placed["block-q1"]) && meets(placed[priya], placed[coffee]) && meets(placed[coffee], placed["block-h2"]),
+              "at \(hourHeight) points an hour, a half-hour that would run into the next block stops at its top")
+        check(placed[standupID]!.height == hourHeight / 2, "a half-hour cut short keeps its own half hour of height")
+    }
+    // Cut to less than that, a block would lose its title, so it moves aside.
+    let tooClose = blocks([event("x", at(10), at(10, 10)), event("y", at(10, 20), at(10, 30))], in: longDay, hourHeight: 21)
+    check(tooClose["x"] == CGRect(x: 5, y: 64, width: 134, height: 13) && tooClose["y"]?.minX == 141,
+          "a ten-minute block ten minutes before another still moves aside on a long day")
+    let backToBack = blocks([event("x", at(16, 40), at(16, 50)), event("y", at(16, 50), at(17))], in: window, hourHeight: 29)
+    check(backToBack["x"]?.width == 134 && backToBack["y"]?.width == 134, "back-to-back ten-minute blocks sit side by side")
+    // Whatever the hour's height, no block is drawn under another, and none
+    // is cut shorter than its title's capitals.
+    var crowded = week
+    crowded[2].events += [
+        event("gym", at(7), at(8)), event("dinner", at(19), at(20)), event("call", at(10, 30), at(11, 15)),
+        event("ten", at(16, 40), at(16, 50)), event("ten-more", at(16, 50), at(17)), event("gap", at(17, 10), at(17, 20)),
+    ]
+    let crowdedWindow = AgendaLayout.window(for: crowded.flatMap(\.events), calendar: calendar)
+    for hourHeight in stride(from: CGFloat(8), through: 30, by: 1) {
+        for column in crowded {
+            let placed = crowdedWindow.blocks(for: column.events, hourHeight: hourHeight, width: 280, inset: 5, calendar: calendar)
+            let apart = placed.allSatisfy { a in
+                placed.allSatisfy { b in
+                    let overlap = a.rect.intersection(b.rect)
+                    return a.id == b.id || overlap.isNull || overlap.width * overlap.height < 0.001
+                }
+            }
+            check(apart, "at \(hourHeight) points an hour, no block on \(column.label) is drawn under another")
+            check(placed.allSatisfy { $0.rect.height >= 9 - 0.001 }, "at \(hourHeight) points an hour, no block on \(column.label) is cut below nine points")
         }
     }
 }
-let thursdaySample = WidgetSampleData.snapshot(now: thursday.clock.now)
-let thursdayActivity = ActivityModel(thursdaySample, clock: thursday.clock, weeks: 21)
-check(thursdayActivity.todayIndex == 3 && thursdayActivity.weeks[20][3] == 2 && thursdayActivity.weeks[20][4] == nil
-      && Array(thursdayActivity.weeks.prefix(20)) == Array(activity.weeks.prefix(20)), "The heatmap keeps the design's weeks, today on Thursday")
-let thursdayBars = SummaryModel(thursdaySample, clock: thursday.clock).week.map(\.count)
-check(thursdayBars.prefix(2) == [0, 0] && thursdayBars[3] == 2 && thursdayBars.suffix(3) == [nil, nil, nil],
-      "Summary's bars fall on their own days")
 
-// MARK: Emoji
+// MARK: - Timeline dates
 
-// The List tile's 15 px emoji, a row's 10 px meta line and Up Next's 10.5 px list line, as the app sizes them.
-check(abs(EmojiSize.points(forDesign: 15) - 38.0 / 3) < 0.001 && abs(EmojiSize.points(forDesign: 10) - 8.3) < 0.001
-      && abs(EmojiSize.points(forDesign: 10.5) - 8.8) < 0.001, "Small emoji draw at the design's size, not Core Text's larger one")
-check(EmojiSize.points(forDesign: 24) == 24 && EmojiSize.points(forDesign: 30) == 30, "From 24 px the two agree")
-// A list icon from synced or older data can name an SF Symbol, which draws as the symbol.
-check(ListIcon.isSymbolName("briefcase.fill") && ListIcon.isSymbolName("checklist"), "SF Symbol names read as symbols")
-check(!["🗻", "📋", "", "ab", "not.a.symbol.name"].contains(where: ListIcon.isSymbolName), "Emoji and other text stay text")
+do {
+    var quietInbox = sample
+    quietInbox.inboxItems = []
+    check(TimelineSchedule.snapshotDates(for: quietInbox, now: now, calendar: calendar) == [now],
+          "Today gets no entry at a timed task's time: tasks turn late at midnight, when the timeline reloads")
+    let hourly = TimelineSchedule.snapshotDates(for: sample, now: now, calendar: calendar)
+    check(hourly.contains(at(11, 40)) && hourly.contains(at(23, 40)) && !hourly.contains(at(11)),
+          "Inbox ages get an entry on each capture's own hour marks, not the clock's")
+    check(TimelineSchedule.nextDay(after: now, calendar: calendar) == at(0, 1, day: 1), "timelines reload a minute past midnight")
+    check(TimelineSchedule.reload(after: hourly, now: now, calendar: calendar) == at(0, 1, day: 1), "a day that fits in the timeline reloads after midnight")
+    var fresh = quietInbox
+    fresh.inboxItems = [WidgetSnapshot.InboxItem(id: UUID(), title: "Fresh", createdAt: at(10, 38))]
+    let freshDates = TimelineSchedule.snapshotDates(for: fresh, now: now, calendar: calendar)
+    check([at(10, 43), at(10, 48), at(11, 33), at(11, 38), at(12, 38), at(23, 38)].allSatisfy(freshDates.contains) && freshDates.count == 1 + 11 + 13,
+          "a fresh capture gets an entry every five minutes for its first hour, then hourly")
 
-print("Passed \(checks) widget snapshot, route, overlay and design checks")
+    // Every task due today turns late at midnight, including those past the
+    // snapshot's row cap: here 14 late tasks fill the rows, and the one due at
+    // 15:00 exists only in `dueToday`.
+    var crowdedRows = quietInbox
+    crowdedRows.todayItems.removeAll { !$0.isOverdue(at: now, calendar: calendar) }
+    for index in crowdedRows.lists.indices { crowdedRows.lists[index].openItems.removeAll { $0.dueDate.map { $0 >= today } ?? false } }
+    crowdedRows.overdueCount = 14
+    crowdedRows.dueTodayCount = 1
+    crowdedRows.dueToday = [WidgetSnapshot.Due(date: at(15), includesTime: true)]
+    let atFour = WidgetState(snapshot: crowdedRows, now: at(16), calendar: calendar)
+    check(atFour.snapshot.overdueCount == 14 && atFour.snapshot.dueTodayCount == 1, "a task past the row cap is still due today after its time")
+    let pastMidnightCrowded = WidgetState(snapshot: crowdedRows, now: at(0, 30, day: 1), calendar: calendar)
+    check(pastMidnightCrowded.snapshot.overdueCount == 15 && pastMidnightCrowded.snapshot.dueTodayCount == 1
+          && pastMidnightCrowded.snapshot.dueToday == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)],
+          "and late after midnight, when tomorrow's work is due")
+    check(TimelineSchedule.snapshotDates(for: crowdedRows, now: now, calendar: calendar) == [now], "with no entry at its time")
+
+    // Ticks and unticks keep `dueToday` in step with the count, so the day
+    // starts right at midnight.
+    let tickedP1 = WidgetState(snapshot: sample, pending: [tap(.complete, "p1")], now: now, calendar: calendar)
+    check(tickedP1.snapshot.dueTodayCount == 3 && !tickedP1.snapshot.dueToday.contains { $0.date == at(11, 30) },
+          "a task ticked off leaves the due-today dates")
+    let tickedLater = WidgetState(snapshot: sample, pending: [tap(.complete, "p1")], now: at(11, 31), calendar: calendar)
+    check(tickedP1.todayProgress == (3, 9) && tickedLater.todayProgress == (3, 9) && tickedLater.snapshot.overdueCount == 3,
+          "a pending tick counts the same once its time has passed")
+    var doneAtThree = sample
+    let kyotoIndex = doneAtThree.lists.firstIndex { $0.id == kyoto }!
+    doneAtThree.lists[kyotoIndex].doneItems[0].dueDate = at(15)
+    doneAtThree.lists[kyotoIndex].doneItems[0].includesTime = true
+    let untickedAtThree = WidgetState(snapshot: doneAtThree, pending: [tap(.reopen, "k6")], now: now, calendar: calendar)
+    check(untickedAtThree.snapshot.dueTodayCount == 5 && untickedAtThree.snapshot.dueToday.map(\.date) == [today, at(10), at(11, 30), at(15), at(18)]
+          && !TimelineSchedule.snapshotDates(for: untickedAtThree.snapshot, now: now, calendar: calendar).contains(at(15)),
+          "a task unticked is due today again, among the dates that turn late at midnight")
+    let untickedLater = WidgetState(snapshot: doneAtThree, pending: [tap(.reopen, "k6")], now: at(15, 30), calendar: calendar)
+    check(untickedLater.snapshot.overdueCount == 3 && untickedLater.snapshot.dueTodayCount == 5, "and still due today once its time has passed")
+
+    // A tap waiting for the app is drawn until the app would drop it, so the
+    // timelines have an entry at that moment.
+    let waiting = [tap(.complete, "q4", at: at(8)), tap(.pauseWork, "q1")]
+    check(TimelineSchedule.snapshotDates(for: quietInbox, pending: waiting, now: now, calendar: calendar)
+          == [now, now.addingTimeInterval(121), at(14)], "a waiting tap gets an entry when it expires")
+    check(TimelineSchedule.upNextDates(for: WidgetSnapshot.sample(now: now, work: .paused, calendar: calendar), pending: waiting, now: now, calendar: calendar)
+          .contains(now.addingTimeInterval(121)), "including while Up Next holds still")
+    check(TimelineSchedule.agendaDates(for: sample, pending: [tap(.complete, "q4", at: at(8, 7))], now: now, calendar: calendar).contains(at(14, 7)),
+          "and on the agenda")
+
+    let upNext = TimelineSchedule.upNextDates(for: sample, now: now, calendar: calendar)
+    check(upNext.first == now && upNext[1] == at(10, 41) && upNext.last == at(12, 10) && upNext.count == 91, "Up Next steps a minute at a time for 90 minutes")
+    check(upNext.contains(at(11, 30)) && upNext.contains(at(11, 50)) && upNext == upNext.sorted(), "block boundaries are included, in order")
+    check(TimelineSchedule.upNextReload(after: upNext, now: now, calendar: calendar) == at(12, 10), "Up Next reloads when its steps run out")
+    let evening = TimelineSchedule.upNextDates(for: sample, now: at(18, 20), calendar: calendar)
+    check(evening == [at(18, 20)] && TimelineSchedule.upNextReload(after: evening, now: at(18, 20), calendar: calendar) == at(0, 1, day: 1),
+          "with the plan over, Up Next waits for tomorrow")
+    let recording = WidgetSnapshot.sample(now: now, work: .working, calendar: calendar)
+    check(TimelineSchedule.upNextDates(for: recording, now: at(23), calendar: calendar).count == 91, "running work fills its bar a minute at a time")
+    let holding = WidgetSnapshot.sample(now: now, work: .paused, calendar: calendar)
+    let overnight = TimelineSchedule.upNextDates(for: holding, now: at(23), calendar: calendar)
+    check(overnight == [at(23)] && TimelineSchedule.upNextReload(after: overnight, now: at(23), calendar: calendar) == at(0, 1, day: 1),
+          "paused work adds no minute steps, so it does not reload through the night")
+    let pausedDay = TimelineSchedule.upNextDates(for: holding, now: now, calendar: calendar)
+    check(pausedDay.first == now && pausedDay[1] == at(11, 30) && TimelineSchedule.upNextReload(after: pausedDay, now: now, calendar: calendar) == at(18, 15),
+          "while paused, only the day's boundaries step")
+
+    let agenda = TimelineSchedule.agendaDates(for: sample, now: now, calendar: calendar)
+    check(agenda.first == now && agenda[1] == at(10, 45) && agenda.last == at(0, day: 1), "the agenda steps every quarter hour until midnight")
+    check(agenda.contains(at(11, 50)) && agenda.contains(at(16, 40)) && agenda.count == 57, "the agenda adds boundaries between quarters")
+    check(agenda.count <= TimelineSchedule.maximumEntries && upNext.count <= TimelineSchedule.maximumEntries, "timelines stay within the entry budget")
+    check(TimelineSchedule.reload(after: agenda, now: now, calendar: calendar) == at(0, 1, day: 1), "the agenda reloads after midnight")
+    var busyDay = quietInbox
+    busyDay.agenda = (0..<14).map { hour in
+        WidgetSnapshot.AgendaEvent(id: "busy-\(hour)", kind: .meeting, title: "Busy", start: at(8 + hour, 5), end: at(8 + hour, 40))
+    }
+    let busyDates = TimelineSchedule.agendaDates(for: busyDay, now: at(0, 5), calendar: calendar)
+    check(busyDates.count == TimelineSchedule.maximumEntries && busyDates.last == at(22, 45)
+          && TimelineSchedule.reload(after: busyDates, now: at(0, 5), calendar: calendar) == at(22, 45),
+          "a day cut short by the entry cap reloads at its last entry instead of freezing until midnight")
+}
+
+print("✅ \(checks) widget checks passed")

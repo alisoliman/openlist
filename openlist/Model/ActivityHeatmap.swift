@@ -8,6 +8,14 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
     var days: [ActivityHeatmapDay]
     var calendar: Calendar
     var invalidDateCount: Int
+    /// Consecutive days with a counted completion, ending today or, while
+    /// today has none yet, yesterday. Read from the whole retained history
+    /// rather than the displayed weeks, so every surface agrees on it.
+    var streak: Int
+    /// The earliest completion dated after `now`, which is left out until
+    /// then (another Mac's clock can run ahead). A kept heatmap is stale
+    /// from that moment even if no history changes.
+    var nextCompletionAt: Date?
 
     var start: Date { days[0].id }
     var end: Date { days[days.count - 1].id }
@@ -34,6 +42,7 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
         var unknown: [Date: Int] = [:]
         invalidDateCount = completions.filter { !$0.date.timeIntervalSinceReferenceDate.isFinite }.count
         let valid = completions.filter { $0.date.timeIntervalSinceReferenceDate.isFinite && $0.date <= now }
+        nextCompletionAt = completions.lazy.map(\.date).filter { $0.timeIntervalSinceReferenceDate.isFinite && $0 > now }.min()
         let byEvent: [ActivityCompletion] = Dictionary(grouping: valid, by: \.id).values.map {
             ActivityCompletion.mergingDuplicates($0)
         }
@@ -77,6 +86,7 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
             guard let key, actions[key] != nil else { continue }
             actions[key]?.append(ActivityHeatmapAction(at: reversal.date, id: nil, entry: nil))
         }
+        var countedDays: Set<Date> = []
         for timeline in actions.values {
             // Deduplicate before clipping the range: completing an old ordinary
             // task again this week cannot turn into an extra completion. The
@@ -87,6 +97,7 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
             }
             guard let standing else { continue }
             let day = calendar.startOfDay(for: standing.date)
+            countedDays.insert(day)
             if day >= firstDay { known[day, default: []].append(standing) }
         }
         days = dates.map { date in
@@ -96,6 +107,16 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
             }
             return ActivityHeatmapDay(id: date, completions: completions, unclassifiedCount: unknown[date] ?? 0)
         }
+
+        // A day that has not been worked yet does not break the streak.
+        func dayBefore(_ day: Date) -> Date { calendar.startOfDay(for: calendar.date(byAdding: .day, value: -1, to: day)!) }
+        var cursor = countedDays.contains(today) ? today : dayBefore(today)
+        var run = 0
+        while countedDays.contains(cursor) {
+            run += 1
+            cursor = dayBefore(cursor)
+        }
+        streak = run
     }
 }
 

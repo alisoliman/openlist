@@ -487,7 +487,7 @@ class PackagingChecks(unittest.TestCase):
                 plistlib.dump({
                     "CFBundleExecutable": name, "CFBundleIdentifier": identifier,
                     "CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "7",
-                    "LSMinimumSystemVersion": "26.5",
+                    "LSMinimumSystemVersion": "27.0",
                     **({"UTExportedTypeDeclarations": [
                         {"UTTypeIdentifier": "app.openlist.block-drag", "UTTypeConformsTo": ["public.data"]},
                         {"UTTypeIdentifier": "app.openlist.list-drag", "UTTypeConformsTo": ["public.data"]},
@@ -538,7 +538,7 @@ class PackagingChecks(unittest.TestCase):
         self.assertIn(str(bundle).encode(), result.stderr)
         self.assertIn(diagnostic.encode(), result.stderr)
         self.assertNotIn(
-            f"Verified arm64, version 1.2.3 (7), macOS 26.5: {bundle}\n".encode(),
+            f"Verified arm64, version 1.2.3 (7), macOS 27.0: {bundle}\n".encode(),
             result.stdout,
         )
 
@@ -787,7 +787,7 @@ class PackagingChecks(unittest.TestCase):
         root_configs = objects[objects[project["rootObject"]]["buildConfigurationList"]]["buildConfigurations"]
         for config_id in root_configs:
             settings = objects[config_id]["buildSettings"]
-            self.assertEqual(settings["MACOSX_DEPLOYMENT_TARGET"], "26.5")
+            self.assertEqual(settings["MACOSX_DEPLOYMENT_TARGET"], "27.0")
             self.assertTrue(settings["DEVELOPMENT_TEAM"])
         self.assertNotEqual(app_id, helper_id)
 

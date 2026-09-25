@@ -43,6 +43,7 @@ struct RootView: View {
                 env.isMainWindowKey = window?.isKeyWindow == true
                 env.reminderNavigation.windowReady(window != nil)
                 env.localLinks.windowReady(window != nil)
+                env.widgetLinks.windowReady(window != nil)
                 installUndo(in: window)
                 clearInitialFocus(for: env.navigator.route)
             }
@@ -55,6 +56,7 @@ struct RootView: View {
             guard window === hostWindow.window else { return }
             env.reminderNavigation.windowReady(true)
             env.localLinks.windowReady(true)
+            env.widgetLinks.windowReady(true)
             installUndo(in: window)
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
@@ -82,6 +84,7 @@ struct RootView: View {
             env.isMainWindowKey = false
             env.reminderNavigation.windowReady(false)
             env.localLinks.windowReady(false)
+            env.widgetLinks.windowReady(false)
             // The Work panel goes with the window, and so does a Show Work
             // asked for while it was open.
             env.calendar.isWorkPanelPresented = false
@@ -118,34 +121,6 @@ struct RootView: View {
             guard env.activeDocument == nil else { return }
             handleGlobalCommand()
         }
-        .onChange(of: env.pendingWidgetRoute, initial: true) { _, route in
-            if let route { openWidgetRoute(route) }
-        }
-    }
-
-    /// Where a widget tap asked to go: Quick Add, or a screen in this window.
-    private func openWidgetRoute(_ route: WidgetRoute) {
-        env.pendingWidgetRoute = nil
-        switch route {
-        case let .capture(listID, forToday):
-            // The Quick Add panel floats over the app in front without activating Openlist.
-            QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, dueToday: forToday))
-            return
-        // This Mac's choice for the Inbox, even straight after a triage visit.
-        case .inbox:
-            env.workbench.go(.inbox)
-            env.navigator.followInboxPresentation()
-        // Triage even where this Mac shows the Inbox as a document, for this visit.
-        case .triage:
-            env.workbench.go(.inbox)
-            env.navigator.showInboxTriage()
-        case .today: env.workbench.go(.today)
-        // Up Next and Agenda: today's work, whichever range the Calendar was left on.
-        case .calendar: env.workbench.showOnCalendar()
-        case .activity: env.workbench.go(.activity)
-        case .lists: env.workbench.go(.lists)
-        }
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Commands outside a document

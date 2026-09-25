@@ -9,7 +9,8 @@ import Security
 /// The App Group both processes share.
 ///
 /// The app owns the SwiftData store inside it and publishes a small JSON
-/// snapshot alongside; the widget only ever reads the snapshot.
+/// snapshot alongside. The widget reads the snapshot, and only ever writes to
+/// the command queue (`widget-commands.json`) the app applies.
 nonisolated enum AppGroup {
     #if OPENLIST_DEV
     static let identifier = "Y5UE64R7TQ.solimanali.openlist.dev"

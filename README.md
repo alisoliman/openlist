@@ -11,7 +11,7 @@ project and is not affiliated with or endorsed by Superlist.
 
 Download the **Apple Silicon (arm64)** DMG or ZIP from
 [GitHub Releases](https://github.com/alisoliman/openlist/releases/latest).
-Requires an **Apple Silicon Mac (M1 or newer) running macOS 26.5 or later**.
+Requires an **Apple Silicon Mac (M1 or newer) running macOS 27 or later**.
 Intel binaries are not currently published.
 
 Open the DMG and drag `openlist.app` to Applications, or unzip the ZIP and move
@@ -31,7 +31,7 @@ Existing local data is preserved.
 
 ## Build from source
 
-Requires Xcode 27 and macOS 26.5 or later. CI and release builds run on GitHub's
+Requires Xcode 27 and macOS 27 or later. CI and release builds run on GitHub's
 `xcode-27` Apple Silicon image and verify that the selected Xcode is version 27.
 
 ```sh
@@ -390,15 +390,27 @@ scheme. See the [local link and backup/restore contract](docs/local-item-links.m
 
 ### Widgets
 
-Seven macOS widgets — **Today**, **Up Next**, **Quick Add**, **List**, **Agenda**,
-**Summary** and **Activity** — drawn for full colour, dark and the desktop's
-in-background rendering. The app publishes a small JSON snapshot into the shared
-App Group container and reloads timelines when anything they show changes; the
-widget never opens the SwiftData store, which keeps cross-process access out of
-the picture entirely. Ticking a task off, and Up Next's Start, Pause and Done, are
-App Intents: applied at once inside the app, or queued in the container for the
-app when the system runs them in the extension. `Tools/WidgetPreviews/render.sh`
-renders every kind and size from the design's sample data.
+Seven desktop widgets, in full colour, dark and the desktop's in-background
+(vibrant) rendering:
+
+| Widget | Sizes | Shows |
+|---|---|---|
+| **Today** | S · M · L | Overdue and due-today tasks, progress, "+ New task" |
+| **Up Next** | S · M | The planned block you should be on now, with Start, Pause and Done, and what's later today |
+| **Quick Add** | S · M | One click to capture; medium adds the Inbox and Triage |
+| **List** | M · L | Any list you choose, optionally with completed tasks |
+| **Agenda** | L · XL | Today's plan around your meetings, or the whole week |
+| **Summary** | S · M | Due, overdue, Inbox and done, plus this week's completions |
+| **Activity** | S · M | Your completion heatmap and streak |
+
+Checkboxes and work controls act without opening Openlist: they run as App
+Intents in the app, which applies them through the same actions as the window,
+so the tray, Undo and the change log treat a widget's tick like one there. Links
+open the matching screen, or Quick Add floating over the app you are in. The
+widget never opens the SwiftData store; the app publishes a JSON snapshot into
+the shared App Group container and reloads only the widgets a change affects.
+`Tools/render-widgets.sh` renders every kind and size. See
+[widgets](docs/WIDGETS.md).
 
 ### iCloud
 
@@ -514,7 +526,7 @@ openlist/
                state and actions), and the design tokens (NextTheme, NXEditor)
   Views/       RootView, menus, the Work panel, calendar history, shared pickers
 Shared/        ListAccent, ListIcon, EmojiSize, ActivityBand, WidgetSnapshot,
-               WidgetRoute, WidgetActions, WidgetIntents, AppGroup,
+               WidgetCommand, WidgetIntents, WidgetKind, WidgetLink, AppGroup,
                ReviewSession, Fonts   (app + widget)
 OpenlistWidget/  WidgetKit extension
 MCPTransport/   Local Swift package: authenticated MCP/HTTP transport

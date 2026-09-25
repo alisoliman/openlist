@@ -208,13 +208,21 @@ enum NextAccent: String, CaseIterable, Identifiable {
         case .orange: "Orange"
         }
     }
-    var color: Color {
+    /// The accent as 0xRRGGBB, which the widget snapshot carries. `color`
+    /// is built from it, so the widgets can never drift from the app.
+    nonisolated var hex: UInt32 {
         switch self {
-        case .violet: Color(.sRGB, red: 0x7C / 255, green: 0x4D / 255, blue: 0xF0 / 255)
-        case .blue: Color(.sRGB, red: 0x2F / 255, green: 0x6F / 255, blue: 0xE0 / 255)
-        case .green: Color(.sRGB, red: 0x1F / 255, green: 0x8A / 255, blue: 0x6D / 255)
-        case .orange: Color(.sRGB, red: 0xC2 / 255, green: 0x53 / 255, blue: 0x2B / 255)
+        case .violet: 0x7C4DF0
+        case .blue: 0x2F6FE0
+        case .green: 0x1F8A6D
+        case .orange: 0xC2532B
         }
+    }
+    /// Spelled out rather than `Color(hex:)`: the dev-isolation checks build
+    /// these settings without Shared/ListAccent.swift.
+    var color: Color {
+        Color(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+              blue: Double(hex & 0xFF) / 255)
     }
 }
 

@@ -89,21 +89,18 @@ struct openlistApp: App {
                     .preferredColorScheme(env.settings.appearance.colorScheme)
                     .environment(\.calendar, env.settings.calendar)
                     .environment(\.openURL, OpenURLAction { url in
+                        // Widget links share the item-link scheme; openLink claims
+                        // the ones this build can open before item-link handling.
                         guard LocalLink.isLocal(url) else { return .systemAction }
-                        env.localLinks.receive(url)
+                        env.openLink(url)
                         return .handled
                     })
                     .task { env.bootstrap() }
                     .onOpenURL { url in
-                        // Widget taps have routes of their own, which activate
-                        // Openlist as they need: Quick Add floats over the app
-                        // in front. The rest are item links.
-                        if let route = WidgetRoute(url: url) {
-                            env.pendingWidgetRoute = route
-                        } else {
-                            env.localLinks.receive(url)
-                            NSApplication.shared.activate(ignoringOtherApps: true)
-                        }
+                        // Widget links bring Openlist forward as they need:
+                        // Quick Add floats over the app in front. The rest are
+                        // item links.
+                        if !env.openLink(url) { NSApplication.shared.activate(ignoringOtherApps: true) }
                     }
                     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
             } else {

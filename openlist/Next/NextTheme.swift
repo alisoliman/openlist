@@ -37,7 +37,7 @@ enum NX {
     static let redText = dynamic(light: 0xC03A42, dark: 0xF07A80)
     static let amber = Color(hex: 0xE8A917)
     static let amberText = dynamic(light: 0xA87A06, dark: 0xE8B84A)
-    static let inbox = Color(hex: 0x3A7BD8)
+    static let inbox = Color(hex: ListAccent.inboxHex)
     static let today = Color(hex: 0xE0861F)
     static let lists = Color(hex: 0x5B5BD6)
     static let grey = Color(hex: 0x6E6A73)

@@ -12,7 +12,7 @@ struct TaskNoteLinks: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(references) { reference in
                     Button {
-                        env.localLinks.receive(reference.url)
+                        env.openLink(reference.url)
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "link").font(.system(size: 10.5, weight: .medium)).accessibilityHidden(true)
@@ -22,7 +22,9 @@ struct TaskNoteLinks: View {
                     .buttonStyle(NXPanelButtonStyle(kind: .link))
                     .help(reference.url.absoluteString)
                     .accessibilityValue(reference.url.absoluteString)
-                    .accessibilityHint("Reveal the referenced item in this local library")
+                    .accessibilityHint(WidgetLink(url: reference.url) == nil
+                        ? "Reveal the referenced item in this local library"
+                        : "Open what this link names in Openlist")
                 }
             }
             // The links line up with the note's text; their hover fill reaches past it.

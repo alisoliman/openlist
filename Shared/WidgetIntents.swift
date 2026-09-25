@@ -5,57 +5,45 @@
 
 import AppIntents
 import Foundation
+import WidgetKit
 
-// The widget's buttons and checkboxes. They're compiled into both processes so
-// the system can run each one wherever suits it; either way the action goes
-// through `WidgetActionDispatcher`, which applies it inside the app or queues it
-// for the app from the extension.
+// Widget buttons. They are compiled into both targets and ask to run in the
+// app, where the store, the calendar and the work timer live; the app launches
+// in the background if it is not already running. See `WidgetCommand` for the
+// queued fallback used if the system performs one in the extension instead.
 
-/// Ticks a task off, or reopens it, from a widget checkbox.
-///
-/// Runs wherever the system likes, the extension included, so the task is
-/// ticked off without opening Openlist.
-struct SetTaskCompletionIntent: SetValueIntent {
+/// Ticks a task off, or reopens it.
+struct ToggleTaskIntent: AppIntent {
     static let title: LocalizedStringResource = "Complete Task"
-    static let description = IntentDescription("Ticks a task off, or reopens it, from an Openlist widget.")
     static let isDiscoverable = false
+    static var allowedExecutionTargets: IntentExecutionTargets { .main }
 
     @Parameter(title: "Task") var taskID: String
     @Parameter(title: "Occurrence") var occurrenceID: String
-    @Parameter(title: "Completed") var value: Bool
+    @Parameter(title: "Completed") var completed: Bool
 
     init() {}
 
-    init(taskID: UUID, occurrenceID: UUID?) {
+    init(taskID: UUID, occurrenceID: UUID, completed: Bool) {
         self.taskID = taskID.uuidString
-        self.occurrenceID = occurrenceID?.uuidString ?? ""
+        self.occurrenceID = occurrenceID.uuidString
+        self.completed = completed
     }
 
     func perform() async throws -> some IntentResult {
-        if let id = UUID(uuidString: taskID) {
-            await WidgetActionDispatcher.dispatch(WidgetAction(kind: value ? .complete : .reopen, taskID: id,
-                                                               occurrenceID: UUID(uuidString: occurrenceID)))
-        }
+        await WidgetIntentPerformer.run(WidgetCommand(
+            action: completed ? .complete : .reopen,
+            taskID: UUID(uuidString: taskID),
+            occurrenceID: UUID(uuidString: occurrenceID)
+        ))
         return .result()
     }
 }
 
-// Work is only ever recorded by the running app, and these share state with the
-// timer in its toolbar, so they ask to run in the app's process: in the
-// background, as a ForegroundContinuableIntent did, without bringing it forward.
-// From macOS 27 `allowedExecutionTargets` pins them there. Before it the system
-// may still pick the extension, which queues them like a tick. A Start, Pause
-// or Resume the app only finds after the timer has moved on is dropped, with a
-// notice in the tray; a Done shows done at once and is applied whenever the
-// app opens, as a tick is.
-
-/// Up Next's Start.
+/// Starts recording the planned block's task.
 struct StartWorkIntent: AppIntent {
-    static let title: LocalizedStringResource = "Start Working"
-    static let description = IntentDescription("Starts the timer on a task.")
+    static let title: LocalizedStringResource = "Start Work"
     static let isDiscoverable = false
-    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
-    @available(macOS 27, *)
     static var allowedExecutionTargets: IntentExecutionTargets { .main }
 
     @Parameter(title: "Task") var taskID: String
@@ -63,53 +51,78 @@ struct StartWorkIntent: AppIntent {
 
     init() {}
 
-    init(taskID: UUID, occurrenceID: UUID?) {
+    init(taskID: UUID, occurrenceID: UUID) {
         self.taskID = taskID.uuidString
-        self.occurrenceID = occurrenceID?.uuidString ?? ""
+        self.occurrenceID = occurrenceID.uuidString
     }
 
     func perform() async throws -> some IntentResult {
-        await dispatchWork(.startWork, taskID: taskID, occurrenceID: occurrenceID)
+        await WidgetIntentPerformer.run(WidgetCommand(
+            action: .startWork,
+            taskID: UUID(uuidString: taskID),
+            occurrenceID: UUID(uuidString: occurrenceID)
+        ))
         return .result()
     }
 }
 
-/// Up Next's Pause, and its Resume once paused. Which one the widget showed
-/// travels with it: a widget behind the timer can't flip it the wrong way.
+/// Pauses the running work session. Names the session the widget drew, so a
+/// stale widget can never pause work that started since.
 struct PauseWorkIntent: AppIntent {
-    static let title: LocalizedStringResource = "Pause or Resume Working"
-    static let description = IntentDescription("Pauses the timer, or resumes paused work.")
+    static let title: LocalizedStringResource = "Pause Work"
     static let isDiscoverable = false
-    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
-    @available(macOS 27, *)
     static var allowedExecutionTargets: IntentExecutionTargets { .main }
 
     @Parameter(title: "Task") var taskID: String
     @Parameter(title: "Occurrence") var occurrenceID: String
-    /// Pause, or when false, Resume.
-    @Parameter(title: "Pause") var pauses: Bool
 
     init() {}
 
-    init(taskID: UUID, occurrenceID: UUID?, pauses: Bool) {
+    init(taskID: UUID, occurrenceID: UUID) {
         self.taskID = taskID.uuidString
-        self.occurrenceID = occurrenceID?.uuidString ?? ""
-        self.pauses = pauses
+        self.occurrenceID = occurrenceID.uuidString
     }
 
     func perform() async throws -> some IntentResult {
-        await dispatchWork(pauses ? .pauseWork : .resumeWork, taskID: taskID, occurrenceID: occurrenceID)
+        await WidgetIntentPerformer.run(WidgetCommand(
+            action: .pauseWork,
+            taskID: UUID(uuidString: taskID),
+            occurrenceID: UUID(uuidString: occurrenceID)
+        ))
         return .result()
     }
 }
 
-/// Up Next's Done: completes the task the timer is on.
+/// Resumes the paused work session the widget drew.
+struct ResumeWorkIntent: AppIntent {
+    static let title: LocalizedStringResource = "Resume Work"
+    static let isDiscoverable = false
+    static var allowedExecutionTargets: IntentExecutionTargets { .main }
+
+    @Parameter(title: "Task") var taskID: String
+    @Parameter(title: "Occurrence") var occurrenceID: String
+
+    init() {}
+
+    init(taskID: UUID, occurrenceID: UUID) {
+        self.taskID = taskID.uuidString
+        self.occurrenceID = occurrenceID.uuidString
+    }
+
+    func perform() async throws -> some IntentResult {
+        await WidgetIntentPerformer.run(WidgetCommand(
+            action: .resumeWork,
+            taskID: UUID(uuidString: taskID),
+            occurrenceID: UUID(uuidString: occurrenceID)
+        ))
+        return .result()
+    }
+}
+
+/// Completes the task being worked on.
 struct FinishWorkIntent: AppIntent {
-    static let title: LocalizedStringResource = "Finish Working"
-    static let description = IntentDescription("Completes the task you're working on.")
+    static let title: LocalizedStringResource = "Finish Work"
     static let isDiscoverable = false
-    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
-    @available(macOS 27, *)
     static var allowedExecutionTargets: IntentExecutionTargets { .main }
 
     @Parameter(title: "Task") var taskID: String
@@ -117,18 +130,31 @@ struct FinishWorkIntent: AppIntent {
 
     init() {}
 
-    init(taskID: UUID, occurrenceID: UUID?) {
+    init(taskID: UUID, occurrenceID: UUID) {
         self.taskID = taskID.uuidString
-        self.occurrenceID = occurrenceID?.uuidString ?? ""
+        self.occurrenceID = occurrenceID.uuidString
     }
 
     func perform() async throws -> some IntentResult {
-        await dispatchWork(.finishWork, taskID: taskID, occurrenceID: occurrenceID)
+        await WidgetIntentPerformer.run(WidgetCommand(
+            action: .finishWork,
+            taskID: UUID(uuidString: taskID),
+            occurrenceID: UUID(uuidString: occurrenceID)
+        ))
         return .result()
     }
 }
 
-private func dispatchWork(_ kind: WidgetAction.Kind, taskID: String, occurrenceID: String) async {
-    guard let id = UUID(uuidString: taskID) else { return }
-    await WidgetActionDispatcher.dispatch(WidgetAction(kind: kind, taskID: id, occurrenceID: UUID(uuidString: occurrenceID)))
+nonisolated enum WidgetIntentPerformer {
+    /// In the app, applies the command before returning. Anywhere else, queues
+    /// it for the app and wakes it.
+    static func run(_ command: WidgetCommand) async {
+        if await WidgetCommandRouter.dispatch(command) { return }
+        WidgetCommandQueue.append(command)
+        WidgetCommandSignal.post()
+        // The system reloads only the widget that was tapped. Every other one
+        // showing the task draws the queue over the snapshot too, so they
+        // change together, as they do when the app publishes.
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }

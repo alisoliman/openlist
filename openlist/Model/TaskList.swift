@@ -158,6 +158,10 @@ extension TaskList {
         return icon.isEmpty ? "📋" : icon
     }
 
+    /// The list's colour as 0xRRGGBB. Inbox draws in its own blue throughout
+    /// the app, whatever accent it has stored.
+    var displayAccentHex: UInt32 { isSystemInbox ? ListAccent.inboxHex : accent.hex }
+
     func touch() { updatedAt = .now }
 }
 

@@ -191,10 +191,9 @@ private struct NXHeatmapCard: View {
 
     private var summary: String {
         let total = heatmap.total
-        var streak = 0
-        for day in heatmap.days.reversed() {
-            if day.count > 0 { streak += 1 } else if day.id != heatmap.end { break }
-        }
+        // The whole history's streak, which the widget shows too, not a
+        // count clipped to the weeks on screen.
+        let streak = heatmap.streak
         return "\(total) \(total == 1 ? "completion" : "completions") · \(streak)-day streak"
     }
 
