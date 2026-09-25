@@ -262,7 +262,6 @@ def main():
             f'\t\t{IDS["widget_debug"] if debug else IDS["widget_release"]} /* {name} */ = {{\n'
             f'\t\t\tisa = XCBuildConfiguration;\n'
             f'\t\t\tbuildSettings = {{\n'
-            f'\t\t\t\tASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;\n'
             f'\t\t\t\tCODE_SIGN_ENTITLEMENTS = Config/{WIDGET_NAME}.entitlements;\n'
             f'\t\t\t\tCODE_SIGN_STYLE = Automatic;\n'
             f'\t\t\t\tCURRENT_PROJECT_VERSION = 1;\n'

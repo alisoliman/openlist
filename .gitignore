@@ -16,6 +16,9 @@ xcuserdata/
 
 # Release artifacts and private signing material
 dist/
+
+# Local verification and Playwright captures
+output/
 *.p12
 *.p8
 *.mobileprovision

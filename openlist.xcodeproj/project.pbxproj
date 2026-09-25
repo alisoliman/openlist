@@ -437,7 +437,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Openlist;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/openlist.entitlements;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Openlist reads your calendars to schedule tasks around busy events. It never creates, changes, or deletes calendar events.";
 				APS_ENVIRONMENT = development;
@@ -474,7 +473,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Openlist;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/openlist.entitlements;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Openlist reads your calendars to schedule tasks around busy events. It never creates, changes, or deletes calendar events.";
 				APS_ENVIRONMENT = production;
@@ -510,7 +508,6 @@
 		41362FF8304B659900C93862 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/OpenlistWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -545,7 +542,6 @@
 		41362FF9304B659900C93862 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/OpenlistWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -670,7 +666,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = OpenlistDev;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/OpenlistDev.entitlements;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Openlist reads your calendars to schedule tasks around busy events. It never creates, changes, or deletes calendar events.";
 				APS_ENVIRONMENT = development;
@@ -709,7 +704,6 @@
 		D3E000000000000000000003 /* Dev */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/OpenlistDevWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
