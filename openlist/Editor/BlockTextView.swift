@@ -36,7 +36,7 @@ struct BlockEditorCallbacks {
     /// The `/` menu query changed. `nil` means the menu should close.
     /// `range` covers the "/" and its query, so the outline removes exactly
     /// that span, and only while the line still holds it.
-    var onSlashQuery: (_ query: String?, _ range: NSRange, _ caretRect: CGRect, _ viewport: CGRect) -> Void = { _, _, _, _ in }
+    var onSlashQuery: (_ query: String?, _ range: NSRange, _ viewport: CGRect) -> Void = { _, _, _ in }
     /// A block-kind change requested by a markdown prefix such as `## `.
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
     /// A multi-line paste. Return `true` to keep the default insert from
@@ -530,7 +530,7 @@ struct BlockTextView: NSViewRepresentable {
             guard textChanged || view.isSlashMenuOpen, let storage = view.textStorage else { return }
             let text = storage.string as NSString
             guard !view.hasMarkedText(), parent.kind != .code, text.hasPrefix("/") else {
-                parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
+                parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero)
                 return
             }
             let rect = view.caretRectLocal(at: min(view.selectedRange().location, text.length))
@@ -539,7 +539,7 @@ struct BlockTextView: NSViewRepresentable {
                 if view.isSlashMenuOpen { dismissSlash(in: view) }
                 return
             }
-            parent.callbacks.onSlashQuery(text.substring(from: 1), NSRange(location: 0, length: text.length), rect, viewport)
+            parent.callbacks.onSlashQuery(text.substring(from: 1), NSRange(location: 0, length: text.length), viewport)
         }
     }
 }
@@ -720,7 +720,7 @@ final class BlockNSTextView: NSTextView {
     // MARK: Caret geometry
 
     /// Rect of the caret at `location`, in this view's own coordinates. The
-    /// outline adds the row's origin to position the slash menu.
+    /// slash card stays up only while the caret is on the visible page.
     func caretRectLocal(at location: Int) -> CGRect {
         guard let layout = layoutManager, let container = textContainer else { return .zero }
         layout.ensureLayout(for: container)
