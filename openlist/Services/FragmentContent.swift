@@ -2,7 +2,7 @@ import AppKit
 import SwiftData
 
 enum FragmentContent {
-    static func capture(_ selection: [UUID], store: Store, includingMedia: Bool = true) throws -> DocumentFragment {
+    static func capture(_ selection: [UUID], store: Store) throws -> DocumentFragment {
         guard !selection.isEmpty, let first = store.block(id: selection[0]), let listID = first.listID else {
             throw CopyError.unavailable
         }
@@ -19,7 +19,7 @@ enum FragmentContent {
             var parent = byID[id]?.parentID
             while let ancestor = parent {
                 guard visited.insert(ancestor).inserted, let block = byID[ancestor] else {
-                    throw FragmentError.invalid("The source has an incomplete or cyclic outline.")
+                    throw FragmentError.uncopied("Its outline is incomplete. Let the library finish syncing and try again.")
                 }
                 if selected.contains(ancestor) { roots.remove(id) }
                 parent = block.parentID
@@ -50,7 +50,7 @@ enum FragmentContent {
         var seen = Set<UUID>()
         while let block = stack.popLast() {
             guard seen.insert(block.id).inserted, seen.count <= 10_000 else {
-                throw FragmentError.invalid("The source is cyclic or contains more than 10,000 blocks.")
+                throw FragmentError.uncopied("It holds more than 10,000 lines.")
             }
             originals.append(block)
             stack += (children[block.id] ?? []).reversed()
@@ -59,7 +59,7 @@ enum FragmentContent {
         let wantedLabels = Set(originals.flatMap(\.labelIDs))
         let availableLabels = labels.filter { wantedLabels.contains($0.id) }
         guard Set(availableLabels.map(\.id)) == wantedLabels else {
-            throw FragmentError.invalid("A source label is unavailable. Let the library finish syncing and try again.")
+            throw FragmentError.uncopied("A label on it is unavailable. Let the library finish syncing and try again.")
         }
         var totalMediaBytes = 0
         func readMedia(filename: String, data: Data?) throws -> FragmentMedia {
@@ -88,7 +88,7 @@ enum FragmentContent {
             record.reminderAt = block.reminderAt
             record.recurrence = block.recurrence
             if block.recurrenceData != nil, record.recurrence == nil {
-                throw FragmentError.invalid("A source repeat rule cannot be read.")
+                throw FragmentError.uncopied("A repeat rule on it cannot be read.")
             }
             record.recurrence?.completedOccurrences = 0
             record.selectedForDay = block.selectedForDay
@@ -100,12 +100,10 @@ enum FragmentContent {
             record.schedulingEstimateMinutes = block.schedulingEstimateMinutes
             record.keepsSessionsTogether = block.keepsSessionsTogether
             record.tracksAwayFromMac = block.tracksAwayFromMac
-            if includingMedia {
-                if let filename = block.mediaFilename {
-                    record.image = try readMedia(filename: filename, data: block.mediaData)
-                } else if block.mediaData != nil {
-                    throw FragmentError.invalid("A source image has no filename.")
-                }
+            if let filename = block.mediaFilename {
+                record.image = try readMedia(filename: filename, data: block.mediaData)
+            } else if block.mediaData != nil {
+                throw FragmentError.uncopied("An image in it has no file name.")
             }
             record.mediaWidth = block.mediaWidth
             record.mediaHeight = block.mediaHeight
@@ -116,26 +114,30 @@ enum FragmentContent {
                 sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.createdAt)]))
                 .filter { !$0.isDeleted }.map {
                     FragmentAttachment(displayName: $0.displayName, contentType: $0.contentType,
-                        media: includingMedia ? try readMedia(filename: $0.filename, data: $0.contentData)
-                            : FragmentMedia(fileExtension: "", data: Data()))
+                        media: try readMedia(filename: $0.filename, data: $0.contentData))
                 }
             return record
         }
         let value = DocumentFragment(roots: orderedRoots, blocks: records,
             labels: availableLabels.map { FragmentLabel(id: $0.id, name: $0.name, accent: $0.accentRaw) })
-        try value.validate()
+        try copying(value.validate)
         return value
+    }
+
+    /// What the paste side checks, worded for the copy that failed it.
+    private static func copying(_ validate: () throws -> Void) throws {
+        do { try validate() } catch FragmentError.invalid(let reason) { throw FragmentError.uncopied(reason) }
     }
 
     private static func media(filename: String, data: Data?) throws -> FragmentMedia {
         guard !filename.isEmpty, filename != ".", filename != "..", (filename as NSString).lastPathComponent == filename else {
-            throw FragmentError.invalid("A source file has an invalid path.")
+            throw FragmentError.uncopied("A file in it has an invalid path.")
         }
         let size = try data?.count ?? (FileManager.default.attributesOfItem(atPath: MediaStore.shared.url(for: filename).path)[.size] as? NSNumber)?.intValue ?? 0
         guard size <= DocumentFragment.maximumAssetBytes else { throw FragmentError.tooLarge }
         let value = FragmentMedia(fileExtension: (filename as NSString).pathExtension,
             data: try data ?? MediaStore.shared.readFile(filename: filename))
-        try value.validate()
+        try copying(value.validate)
         return value
     }
 
@@ -158,8 +160,8 @@ enum FragmentContent {
         let text = NSMutableAttributedString(string: block.text, attributes: RichTextCodec.baseAttributes(for: .paragraph))
         for style in block.styles {
             let range = NSRange(location: style.location, length: style.length)
-            var font = style.code ? NSFont.monospacedSystemFont(ofSize: Theme.Editor.codePointSize, weight: .regular)
-                : Theme.Editor.nsFont(for: .paragraph)
+            var font = style.code ? NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: .regular)
+                : NXEditor.nsFont(for: .paragraph)
             if style.bold { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
             if style.italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
             text.addAttribute(.font, value: font, range: range)

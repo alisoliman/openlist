@@ -54,7 +54,7 @@ check(copiedImage.mediaCaption == child.mediaCaption && copiedImage.mediaWidth =
 let copiedAttachment = store.attachments(for: copiedImage.id).first!
 check(copiedAttachment.filename != originalFile && media.fileContents(filename: copiedAttachment.filename) == fileBytes, "List attachment has independent complete file")
 check(copiedAttachment.displayName == attachment.displayName && copiedAttachment.createdAt == attachment.createdAt && copiedAttachment.contentType == attachment.contentType && copiedAttachment.sortIndex == attachment.sortIndex, "Attachment metadata preserved")
-store.deleteList(duplicatedList)
+store.trashList(duplicatedList)
 check(media.fileContents(filename: originalImage) == imageBytes && media.fileContents(filename: originalFile) == fileBytes, "Deleting duplicate list leaves original media intact")
 
 let blockCopy = store.duplicateBlock(child)
@@ -74,14 +74,15 @@ let failedList = store.duplicateList(list)
 _ = media.fileContents(filename: originalImage) // Drain the media cleanup queue.
 check(failedList.id == list.id && store.allLists(includeArchived: true).map(\.id) == listIDsBefore, "Missing attachment creates no partial duplicate list")
 check(store.blocks(inList: list.id).map(\.id) == blockIDsBefore, "Failed list copy does not mutate original tree")
-check(store.editorNotice?.contains("not duplicated") == true, "Failed list copy surfaces notice")
+check(store.actionError?.contains("not duplicated") == true && store.editorNotice == nil, "Failed list copy surfaces the red failure card")
 let namesAfterListFailure = try FileManager.default.contentsOfDirectory(atPath: mediaFolder.path).sorted()
 check(namesAfterListFailure == namesBefore, "Failed list copy removes staged image files")
-store.editorNotice = nil
+store.actionError = nil
 let failedBlock = store.duplicateBlock(child)
 _ = media.fileContents(filename: originalImage)
 check(failedBlock.id == child.id && store.blocks(inList: list.id).map(\.id) == blockIDsBefore, "Missing attachment creates no partial duplicate block")
-check(store.editorNotice?.contains("not duplicated") == true, "Failed block copy surfaces notice")
+check(store.actionError?.contains("was not duplicated") == true && store.actionError?.contains("block") == false,
+      "Failed block copy surfaces the red failure card, naming what it is")
 let namesAfterBlockFailure = try FileManager.default.contentsOfDirectory(atPath: mediaFolder.path).sorted()
 check(namesAfterBlockFailure == namesBefore, "Failed block copy removes staged image files")
 check(attachment.filename == "missing-file.txt" && parent.note == "Preserve this note", "Failed copy preserves existing unsaved changes")

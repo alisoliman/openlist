@@ -1,0 +1,173 @@
+
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<style>/* latin-ext */
+/* latin */
+/* latin-ext */
+/* latin */
+/* fallback */
+
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+</style>
+<style>
+  body { margin:0; background:#DFDAD3; font-family:-apple-system,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#7C4DF0; text-decoration:none; }
+  a:hover { color:#5F32CC; }
+  .ms { font-family:'Material Symbols Rounded'; font-weight:400; font-style:normal; line-height:1; letter-spacing:normal; text-transform:none; display:inline-block; white-space:nowrap; direction:ltr; font-feature-settings:'liga'; -webkit-font-smoothing:antialiased; font-variation-settings:'FILL' 0,'wght' 500,'GRAD' 0,'opsz' 20; }
+  .ms.f { font-variation-settings:'FILL' 1,'wght' 500,'GRAD' 0,'opsz' 20; }
+  @keyframes sheetUp { from { transform:translateY(100%); } to { transform:none; } }
+  @keyframes widgetIn { from { opacity:0; transform:scale(0.86); } to { opacity:1; transform:none; } }
+  @keyframes flipIn { from { opacity:0; transform:perspective(900px) rotateY(-70deg); } to { opacity:1; transform:none; } }
+  @keyframes popIn { from { opacity:0; transform:scale(0.6); } to { opacity:1; transform:none; } }
+  @keyframes toastIn { from { opacity:0; transform:translate(-50%,10px); } to { opacity:1; transform:translate(-50%,0); } }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+</style>
+</helmet>
+
+<div style="padding:26px 26px 60px; display:flex; flex-direction:column; align-items:center; gap:16px;">
+
+  <div style="display:flex; align-items:center; gap:12px; width:1400px; max-width:100%; flex-wrap:wrap;">
+    <div style="font:600 11px/1.2 -apple-system,sans-serif; letter-spacing:0.09em; text-transform:uppercase; color:rgba(23,22,26,0.42);">Openlist — macOS widgets</div>
+    <div style="flex:1; min-width:40px; height:1px; background:rgba(23,22,26,0.14);"></div>
+    <div style="display:flex; padding:2px; border-radius:9px; background:rgba(23,22,26,0.07); gap:2px;">
+      <sc-for list="{{ modes }}" as="o" hint-placeholder-count="3">
+        <div sc-camel-on-click="{{ o.onClick }}" style="{{ o.style }}">{{ o.label }}</div>
+      </sc-for>
+    </div>
+    <div sc-camel-on-click="{{ toggleEdit }}" style="{{ editBtnStyle }}">
+      <span class="ms" style="font-size:15px;">{{ editIcon }}</span>{{ editLabel }}
+    </div>
+  </div>
+
+  <div style="width:1400px; max-width:100%; overflow-x:auto; border-radius:12px; box-shadow:0 34px 80px rgba(40,30,20,0.3), 0 0 0 0.5px rgba(23,22,26,0.25);">
+    <div sc-camel-on-click="{{ onDesktopClick }}" style="{{ desktopStyle }}">
+
+      <div style="{{ menubarStyle }}">
+        <span style="font-weight:700;">Openlist</span>
+        <span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span>
+        <span style="flex:1;"></span>
+        <span class="ms" style="font-size:15px;">wifi</span>
+        <span class="ms" style="font-size:15px;">search</span>
+        <span style="font-variant-numeric:tabular-nums;">Wed 23 Sep  10:40</span>
+      </div>
+
+      <div style="padding:30px 30px 0; display:grid; grid-template-columns:repeat(7, 170px); grid-auto-rows:170px; gap:18px; grid-auto-flow:row dense;">
+        <sc-for list="{{ desk }}" as="w" hint-placeholder-count="7">
+          <div style="{{ w.cellStyle }}">
+            <sc-if value="{{ w.showWidget }}" hint-placeholder-val="{{ true }}">
+              <div sc-camel-on-click="{{ w.onClick }}" style="{{ w.innerStyle }}">
+                <dc-import name="OpenlistWidget" kind="{{ w.kind }}" size="{{ w.size }}" mode="{{ w.mode }}" model="{{ w.model }}" hint-size="170px,170px"></dc-import>
+              </div>
+            </sc-if>
+            <sc-if value="{{ w.showConfig }}" hint-placeholder-val="{{ false }}">
+              <div sc-camel-on-click="{{ w.stop }}" style="{{ w.configStyle }}">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font:700 13px/1 -apple-system,sans-serif; color:#17161A;">List</span>
+                  <span style="font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.5);">Choose what this widget shows</span>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:5px;">
+                  <sc-for list="{{ w.cfgLists }}" as="c" hint-placeholder-count="5">
+                    <span sc-camel-on-click="{{ c.onClick }}" style="{{ c.style }}"><span style="font-size:11px;">{{ c.emoji }}</span>{{ c.name }}</span>
+                  </sc-for>
+                </div>
+                <div sc-camel-on-click="{{ w.onToggleDone }}" style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                  <span style="font:500 12px/1 -apple-system,sans-serif; color:#17161A; flex:1;">Show completed</span>
+                  <div style="{{ w.trackStyle }}"><div style="{{ w.knobStyle }}"></div></div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:auto;">
+                  <span sc-camel-on-click="{{ w.onConfigDone }}" style="font:600 11.5px/1 -apple-system,sans-serif; color:#fff; background:#7C4DF0; padding:7px 14px; border-radius:7px; cursor:pointer;">Done</span>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ w.editing }}" hint-placeholder-val="{{ false }}">
+              <div sc-camel-on-click="{{ w.onRemove }}" style="position:absolute; left:-8px; top:-8px; width:22px; height:22px; border-radius:50%; background:rgba(58,56,64,0.92); box-shadow:0 2px 6px rgba(0,0,0,0.25), 0 0 0 0.5px rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:6; animation:popIn 220ms cubic-bezier(0.34,1.56,0.64,1);"><span class="ms" style="font-size:15px; color:#fff; font-variation-settings:'wght' 700;">remove</span></div>
+              <sc-if value="{{ w.canConfig }}" hint-placeholder-val="{{ false }}">
+                <div sc-camel-on-click="{{ w.onConfig }}" style="position:absolute; left:50%; bottom:-12px; transform:translateX(-50%); padding:5px 10px; border-radius:999px; background:rgba(58,56,64,0.92); color:#fff; font:600 10.5px/1 -apple-system,sans-serif; white-space:nowrap; cursor:pointer; z-index:6; animation:popIn 220ms cubic-bezier(0.34,1.56,0.64,1);">Edit Widget</div>
+              </sc-if>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ toastShow }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ toastStyle }}">
+          <span class="ms" style="font-size:15px; color:#C9AEFF;">{{ toastIcon }}</span>
+          <span>{{ toastText }}</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ editing }}" hint-placeholder-val="{{ false }}">
+        <div sc-camel-on-click="{{ stop }}" style="{{ sheetStyle }}">
+          <div style="width:210px; flex:none; padding:18px 12px; border-right:0.5px solid var(--gline); display:flex; flex-direction:column; gap:3px;">
+            <div style="display:flex; align-items:center; gap:7px; height:30px; padding:0 10px; border-radius:8px; background:var(--gchip); color:var(--gsub); margin-bottom:10px;">
+              <span class="ms" style="font-size:15px;">search</span>
+              <span style="font:500 12.5px/1 -apple-system,sans-serif;">Search Widgets</span>
+            </div>
+            <sc-for list="{{ apps }}" as="a" hint-placeholder-count="6">
+              <div style="{{ a.style }}">
+                <span style="{{ a.tileStyle }}"><span class="ms f" style="font-size:13px;">{{ a.icon }}</span></span>
+                <span>{{ a.name }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+            <div style="display:flex; align-items:center; gap:12px; padding:18px 22px 4px;">
+              <span style="font:400 26px/1 'Instrument Serif',Georgia,serif; color:var(--gink);">Openlist</span>
+              <span style="font:500 12px/1.3 -apple-system,sans-serif; color:var(--gsub);">Click a widget or its + to add it. Pick a size underneath.</span>
+              <span style="flex:1;"></span>
+              <span sc-camel-on-click="{{ toggleEdit }}" style="font:600 12px/1 -apple-system,sans-serif; color:#fff; background:#7C4DF0; padding:8px 16px; border-radius:8px; cursor:pointer;">Done</span>
+            </div>
+            <div style="flex:1; overflow-x:auto; overflow-y:hidden; display:flex; gap:30px; padding:14px 22px 18px; align-items:flex-start;">
+              <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="7">
+                <div style="{{ g.colStyle }}">
+                  <div style="height:236px; display:flex; align-items:flex-end;">
+                    <div sc-camel-on-click="{{ g.onAdd }}" style="{{ g.boxStyle }}" style-hover="transform:translateY(-3px)">
+                      <div style="{{ g.scaleStyle }}">
+                        <dc-import name="OpenlistWidget" kind="{{ g.kind }}" size="{{ g.size }}" mode="{{ g.mode }}" model="{{ g.model }}" hint-size="170px,170px"></dc-import>
+                      </div>
+                      <div style="position:absolute; left:-8px; top:-8px; width:22px; height:22px; border-radius:50%; background:#2F9E6E; box-shadow:0 2px 6px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center;"><span class="ms" style="font-size:16px; color:#fff; font-variation-settings:'wght' 700;">add</span></div>
+                    </div>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <span style="font:600 13px/1.2 -apple-system,sans-serif; color:var(--gink);">{{ g.name }}</span>
+                    <span style="font:400 11.5px/1.4 -apple-system,sans-serif; color:var(--gsub); text-wrap:pretty;">{{ g.desc }}</span>
+                  </div>
+                  <div style="display:flex; gap:4px;">
+                    <sc-for list="{{ g.sizes }}" as="z" hint-placeholder-count="2">
+                      <span sc-camel-on-click="{{ z.onClick }}" style="{{ z.style }}">{{ z.label }}</span>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <div style="width:1400px; max-width:100%; display:grid; grid-template-columns:repeat(auto-fit, minmax(300px,1fr)); gap:1px; background:rgba(23,22,26,0.12); border-radius:12px; overflow:hidden; box-shadow:0 0 0 1px rgba(23,22,26,0.12);">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="8">
+      <div style="background:#FCFBFA; padding:18px 20px; display:flex; flex-direction:column; gap:7px;">
+        <div style="display:flex; align-items:baseline; gap:8px;">
+          <span style="font:400 20px/1.1 'Instrument Serif',Georgia,serif; color:#17161A;">{{ n.name }}</span>
+          <span style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.06em; text-transform:uppercase; color:#7C4DF0;">{{ n.sizes }}</span>
+        </div>
+        <div style="font:400 12.5px/1.55 -apple-system,sans-serif; color:rgba(23,22,26,0.64); text-wrap:pretty;">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+</div>

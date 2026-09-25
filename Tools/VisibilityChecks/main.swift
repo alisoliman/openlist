@@ -92,4 +92,42 @@ do {
     check(ActiveTaskPolicy(lists: lists).tasks(in: tasks).contains { $0.parentID == task.id }, "unarchiving restores subtasks too")
 }
 
+// The Completed groups fold as one, whatever each screen's default: the
+// design's single completedOpen, not a flip of each screen's own default.
+do {
+    let shown = TaskList(title: "Shown")
+    shown.completedVisibility = .show
+    let inherits = TaskList(title: "Inherits")
+    let setting = false
+    func open(_ fold: NXCompletedFold?, _ screenDefault: Bool, list: TaskList? = nil) -> Bool {
+        NXCompletedFold.isOpen(fold, default: screenDefault, list: list?.id)
+    }
+    check(open(nil, shown.showsCompleted(default: setting), list: shown)
+          && !open(nil, inherits.showsCompleted(default: setting), list: inherits),
+          "until a fold, each screen opens Completed as its own setting says")
+    // Folded closed on the shown list: closed there, on a label screen and on an inheriting list.
+    var fold = NXCompletedFold(open: false)
+    check(!open(fold, shown.showsCompleted(default: setting), list: shown), "a fold closed stays closed where it was made")
+    check(!open(fold, setting) && !open(fold, inherits.showsCompleted(default: setting), list: inherits),
+          "a fold closed on a shown list doesn't open Completed on labels or other lists")
+    // Folded open on a label screen: open there and on the shown list too.
+    fold = NXCompletedFold(open: !open(fold, setting))
+    check(open(fold, setting) && open(fold, shown.showsCompleted(default: setting), list: shown),
+          "a fold opened on a label opens Completed on the lists too")
+    let hidden = TaskList(title: "Hidden")
+    hidden.completedVisibility = .hide
+    check(open(fold, hidden.showsCompleted(default: setting), list: hidden), "the last fold holds over a list set to hide")
+    // The shown list changes its Completed Tasks to hide: that shows on it at once, not elsewhere.
+    shown.completedVisibility = .hide
+    fold.lapsed.insert(shown.id)
+    check(!open(fold, shown.showsCompleted(default: setting), list: shown),
+          "a list's new Completed Tasks choice shows on it over the fold")
+    check(open(fold, setting) && open(fold, hidden.showsCompleted(default: setting), list: hidden),
+          "a list's new Completed Tasks choice leaves Today, labels and other lists folded")
+    // Folding again, on any screen, folds the changed list with the rest.
+    fold = NXCompletedFold(open: !open(fold, shown.showsCompleted(default: setting), list: shown))
+    check(open(fold, shown.showsCompleted(default: setting), list: shown) && open(fold, setting),
+          "the next fold holds on a list whose choice changed too")
+}
+
 print("✅ \(checks) visibility and persistence checks passed")

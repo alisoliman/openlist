@@ -3,13 +3,20 @@ import SwiftData
 import SwiftUI
 import UserNotifications
 
-/// Reminder time editor, offering offsets relative to the due date.
+/// Reminder time editor, offering offsets relative to the due date. Each
+/// change goes through the workbench: one Undo step, with its tray.
 struct ReminderPicker: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
 
     @State private var customDate: Date = .now
+    @State private var picksDay = false
+    /// A time still being typed as Custom…, which Set reminder sets first.
+    @State private var typedTime: NXPendingCustomValue?
+
+    private var calendar: Calendar { env.settings.calendar }
 
     var body: some View {
         // SwiftUI may update this child after a saved deletion, before its
@@ -17,73 +24,126 @@ struct ReminderPicker: View {
         if block.modelContext != nil, !block.isDeleted { liveContent }
     }
 
+    /// The due time a timed task with no reminder of its own reminds you at,
+    /// as the Store schedules it.
+    static func dueTimeReminder(of block: Block) -> Date? {
+        block.reminderAt == nil && block.includesTime ? block.dueDate : nil
+    }
+
     private var liveContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(block.reminderAt.map { Store.absoluteDateText($0, includesTime: true) } ?? "No reminder", systemImage: "bell")
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.secondaryText)
-                .padding(.bottom, 4)
-            if block.dueDate != nil {
-                VStack(spacing: 2) {
-                    offsetRow("At the due time", minutes: 0)
-                    offsetRow("10 minutes before", minutes: -10)
-                    offsetRow("1 hour before", minutes: -60)
-                    offsetRow("1 day before", minutes: -1_440)
+        let dueTime = Self.dueTimeReminder(of: block)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                // A reminder at the due time rings grey, not being one of its own.
+                Image(systemName: block.reminderAt == nil && dueTime == nil ? "bell.slash" : "bell")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(block.reminderAt == nil ? NX.ink(0.4) : style.accent)
+                    .accessibilityHidden(true)
+                // As the Reminder pill that opens it reads, with the time.
+                Text(block.reminderAt.map { NXFormat.dueAndClock($0) } ?? dueTime.map { NXFormat.atDueTime($0) } ?? "No reminder")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                Spacer(minLength: 6)
+                // Grey, as the design's None clears a date: it can be undone,
+                // and red is for deleting things.
+                if block.reminderAt != nil {
+                    Button("Remove reminder") {
+                        env.workbench.setReminder(block.id, at: nil)
+                    }
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                 }
-                Divider()
-            } else {
-                Text("Add a due date to use relative reminders.")
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.tertiaryText)
             }
 
-            DatePicker("Remind me at", selection: $customDate)
-                .font(Theme.Font.body)
-                .datePickerStyle(.compact)
-
-            Button("Set reminder") {
-                env.store.setReminder(customDate, for: block)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-
-            if block.reminderAt != nil {
-                Button("Remove reminder") {
-                    env.store.setReminder(nil, for: block)
+            VStack(alignment: .leading, spacing: 8) {
+                NXCapsTitle(text: "Before it’s due")
+                if block.dueDate != nil {
+                    NXFlow(spacing: 4) {
+                        offsetPill("At the due time", ReminderOffset())
+                        offsetPill("10 minutes before", ReminderOffset(minutes: -10))
+                        offsetPill("1 hour before", ReminderOffset(minutes: -60))
+                        offsetPill("1 day before", ReminderOffset(days: -1))
+                    }
+                } else {
+                    Text("Add a due date to use relative reminders.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(NX.ink(0.45))
                 }
-                .buttonStyle(.plain)
-                .font(Theme.Font.metadata)
-                .foregroundStyle(ListAccent.red.color)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                NXCapsTitle(text: "Remind me at")
+                HStack(spacing: 6) {
+                    NXDatePill(label: "Reminder day", date: customDate, isOpen: picksDay) {
+                        withAnimation(style.ease(180)) { picksDay.toggle() }
+                    }
+                    NXTimePill(label: "Reminder time", minute: CalendarMonthGrid.minute(of: customDate, calendar: calendar)) { minute in
+                        customDate = CalendarMonthGrid.date(customDate, atMinute: minute, calendar: calendar)
+                    }
+                    Spacer(minLength: 6)
+                    Button("Set reminder") {
+                        // A click here while typing sets the time typed, not
+                        // the one the pill showed before it.
+                        if let typedTime {
+                            guard typedTime.commit() else { NSSound.beep(); return }
+                            self.typedTime = nil
+                        }
+                        env.workbench.setReminder(block.id, at: customDate)
+                    }
+                    .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
+                }
+                if picksDay {
+                    CalendarMonthPicker(selection: customDate, calendar: calendar) { day in
+                        customDate = CalendarMonthGrid.date(day, atMinute: CalendarMonthGrid.minute(of: customDate, calendar: calendar),
+                                                            calendar: calendar)
+                        withAnimation(style.ease(180)) { picksDay = false }
+                    }
+                    .transition(.opacity)
+                }
             }
 
             TaskReminderStatus(block: block)
         }
         .onChange(of: block.reminderAt) { _, date in
-            customDate = date ?? block.dueDate ?? .now
+            customDate = date ?? offsetDate(ReminderOffset()) ?? .now
         }
         .onAppear {
-            customDate = block.reminderAt ?? block.dueDate ?? .now
-
+            customDate = block.reminderAt ?? offsetDate(ReminderOffset()) ?? .now
         }
+        .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
+        // "Remind me at" is a draft only Set reminder sets, so the Schedule
+        // popover's Done closes over a time typed here as over a day picked.
+        .transformPreference(NXPendingCustomValueKey.self) { $0 = nil }
     }
 
-    private func offsetRow(_ title: String, minutes: Int) -> some View {
-        Button {
-            guard let dueDate = block.dueDate else { return }
-            let base = block.includesTime
-                ? dueDate
-                : Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: dueDate) ?? dueDate
-            env.store.setReminder(base.addingTimeInterval(TimeInterval(minutes * 60)), for: block)
+    /// The reminder an offset from the due date would set, at 9:00 on a date
+    /// without a time. A day before is a calendar day, at the same clock time
+    /// on a daylight-saving change.
+    private func offsetDate(_ offset: ReminderOffset) -> Date? {
+        guard let dueDate = block.dueDate else { return nil }
+        let base = block.includesTime
+            ? dueDate
+            : calendar.date(bySettingHour: 9, minute: 0, second: 0, of: dueDate) ?? dueDate
+        return offset.date(from: base, calendar: calendar)
+    }
+
+    /// Whether `offset` is when the task reminds you. At the due time is lit
+    /// too for a timed task with no reminder of its own.
+    private func isCurrent(_ offset: ReminderOffset) -> Bool {
+        let date = offsetDate(offset)
+        return date.flatMap { date in block.reminderAt.map { abs($0.timeIntervalSince(date)) < 1 } }
+            ?? (offset == ReminderOffset() && Self.dueTimeReminder(of: block) != nil)
+    }
+
+    private func offsetPill(_ title: String, _ offset: ReminderOffset) -> some View {
+        let isOn = isCurrent(offset)
+        return NXInspectorPill(isOn: isOn) {
+            // Choosing the current time again saves nothing, as in Repeat;
+            // at the due time it would pin a reminder of its own there.
+            guard !isCurrent(offset), let date = offsetDate(offset) else { return }
+            env.workbench.setReminder(block.id, at: date)
         } label: {
-            HStack {
-                Text(title)
-                    .font(Theme.Font.body)
-                Spacer()
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .contentShape(Rectangle())
+            Text(title)
         }
-        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }

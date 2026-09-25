@@ -19,6 +19,31 @@ struct NXChipModel: Identifiable {
     var icon: String?
     var tone: NXTone = .neutral
     var fill = false
+    /// A list chip's list, whose glyph leads the label.
+    var glyph: TaskList?
+    /// When it plays chipIn on a task row, as the design's `fresh` key. On
+    /// the capture card every chip pops but a `.never` one.
+    var pops: NXChipPop = .withRow
+}
+
+/// When a task row's chip plays chipIn, as each of the design's row chips
+/// sets its `fresh` key.
+enum NXChipPop {
+    /// With a fresh row and whenever the row's chips change, as most do.
+    case withRow
+    /// Only when the row's chips change: a list or star chip arrives with a new row.
+    case onChange
+    /// Never, as the subtask count and a done task's time.
+    case never
+
+    /// Whether the chip pops on a row that's `fresh` or whose chips `changed`.
+    func plays(fresh: Bool, changed: Bool) -> Bool {
+        switch self {
+        case .withRow: fresh || changed
+        case .onChange: changed
+        case .never: false
+        }
+    }
 }
 
 struct NXChip: View {
@@ -27,7 +52,16 @@ struct NXChip: View {
     var fresh = false
     /// Tasks-screen chips: text only, colour only when it means something.
     var quiet = false
-    @State private var appeared = true
+    /// Starts hidden when the chip arrives fresh, so chipIn has somewhere to play from.
+    @State private var appeared: Bool
+
+    init(chip: NXChipModel, fresh: Bool = false, quiet: Bool = false) {
+        self.chip = chip
+        self.fresh = fresh
+        self.quiet = quiet
+        // Quiet chips have no chipIn: the design's only change colour.
+        _appeared = State(initialValue: !fresh || quiet)
+    }
 
     var body: some View {
         let (fg, bg) = colors
@@ -36,21 +70,35 @@ struct NXChip: View {
                 Image(systemName: icon).font(.system(size: 9.5, weight: chip.fill ? .bold : .semibold))
             }
             if !chip.label.isEmpty {
-                Text(quiet && isLabel ? "#" + chip.label : chip.label)
-                    .font(.system(size: quiet ? 11.5 : 11, weight: quiet ? .medium : .semibold))
+                let size: CGFloat = quiet ? 11.5 : 11
+                Group {
+                    if let list = chip.glyph {
+                        // One run, as the design's `emoji + " " + name`, the emoji at the design's size.
+                        Text("\(NXListGlyph.text(list, size: size)) \(chip.label)")
+                            .accessibilityLabel(chip.label)
+                    } else {
+                        Text(quiet && isLabel ? "#" + chip.label : chip.label)
+                    }
+                }
+                .font(.system(size: size, weight: quiet ? .medium : .semibold))
+                // The design's 1.2 line box: a chip is 19.2 pt, a quiet one 13.8.
+                .padding(.vertical, (size * 1.2 - NX.lineHeight(size)) / 2)
             }
         }
         .lineLimit(1)
-        .foregroundStyle(quiet ? quietColor(fg) : fg)
+        // The design's 200ms colour transition, as a chip changes tone in place.
+        .animation(NX.cssEase(200)) { $0.foregroundStyle(quiet ? quietColor(fg) : fg) }
         .padding(.horizontal, quiet ? 0 : 7)
         .padding(.vertical, quiet ? 0 : 3)
-        .background(quiet ? Color.clear : bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .animation(NX.cssEase(200)) {
+            $0.background(quiet ? Color.clear : bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
         .fixedSize()
-        .scaleEffect(appeared ? 1 : 0.85)
-        .offset(y: appeared ? 0 : 3)
+        // With Reduce Motion chipIn only fades, as the overlay cards do.
+        .scaleEffect(appeared || !style.slides ? 1 : 0.85)
+        .offset(y: appeared || !style.slides ? 0 : 3)
         .opacity(appeared ? 1 : 0)
-        .onChange(of: fresh) { _, isFresh in if isFresh { pop() } }
-        .onAppear { if fresh { pop() } }
+        .onChange(of: fresh, initial: true) { _, isFresh in if isFresh, !quiet { pop() } }
     }
 
     private var isLabel: Bool { if case .label = chip.tone { true } else { false } }
@@ -63,9 +111,11 @@ struct NXChip: View {
     }
 
     private func pop() {
-        guard style.lively else { return }
-        appeared = false
-        withAnimation(style.ease(280)) { appeared = true }
+        withTransaction(\.disablesAnimations, true) { appeared = false }
+        // Showing again on the next update keeps the two changes from
+        // merging into none, which would skip chipIn. It plays at the
+        // design's own speed whatever the Motion setting.
+        Task { @MainActor in withAnimation(NX.ease(280)) { appeared = true } }
     }
 
     private var colors: (Color, Color) {
@@ -101,24 +151,13 @@ struct NXKey: View {
 
 /// The design's 34×20 switch.
 struct NXToggle: View {
-    @Environment(\.nextStyle) private var style
     let isOn: Bool
     /// What VoiceOver announces; the visible label sits beside the switch.
     var label: String = ""
     var action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule().fill(isOn ? style.accent : NX.ink(0.16))
-                Circle().fill(.white)
-                    .frame(width: 16, height: 16)
-                    .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
-                    .padding(2)
-            }
-            .frame(width: 34, height: 20)
-            .animation(style.spring(200), value: isOn)
-        }
+        Button(action: action) { NXSwitch(isOn: isOn) }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityValue(isOn ? "On" : "Off")
@@ -126,11 +165,35 @@ struct NXToggle: View {
     }
 }
 
+/// The switch itself, as the inspector's and Settings' draw it: the design's
+/// `background 180ms ease` on the track and 200ms spring on the knob, at
+/// those speeds whatever the Motion setting.
+struct NXSwitch: View {
+    @Environment(\.nextStyle) private var style
+    let isOn: Bool
+
+    var body: some View {
+        Capsule()
+            .animation(NX.cssEase(180)) { $0.foregroundStyle(isOn ? style.accent : NX.ink(0.16)) }
+            .frame(width: 34, height: 20)
+            .overlay(alignment: .leading) {
+                Circle().fill(.white)
+                    .frame(width: 16, height: 16)
+                    .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
+                    .offset(x: isOn ? 16 : 2)
+                    .animation(style.bounce(200), value: isOn)
+            }
+    }
+}
+
 // MARK: - Hover
 
-/// A plain button whose background appears on hover.
+/// A plain button whose background appears on hover. `rest` is the fill at
+/// rest; the hover fill replaces it, as the design's style-hover does: at
+/// once, with no transition, and with no pressed state, as it has none.
 struct NXHoverButtonStyle: ButtonStyle {
     var hover: Color = NX.ink(0.06)
+    var rest: Color = .clear
     var radius: CGFloat = 7
     var padding: EdgeInsets = EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
     var foreground: Color = NX.ink(0.6)
@@ -149,13 +212,29 @@ struct NXHoverButtonStyle: ButtonStyle {
             configuration.label
                 .padding(style.padding)
                 .foregroundStyle(hovering ? (style.hoverForeground ?? style.foreground) : style.foreground)
-                .background(hovering || configuration.isPressed ? style.hover : .clear,
+                .background(hovering || configuration.isPressed ? style.hover : style.rest,
                             in: RoundedRectangle(cornerRadius: style.radius, style: .continuous))
-                .opacity(configuration.isPressed ? 0.8 : 1)
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.12), value: hovering)
         }
+    }
+}
+
+/// The grey minus or plus of the inspector's estimate stepper. `label` is
+/// what VoiceOver reads for it, not the symbol's name.
+struct NXStepButton: View {
+    let icon: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 11, weight: .medium)).frame(width: 15, height: 15)
+        }
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
+                                        padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
+                                        foreground: NX.ink(0.6)))
+        .accessibilityLabel(label)
     }
 }
 
@@ -170,64 +249,230 @@ extension View {
 
 // MARK: - Screen header
 
+/// A screen title renamed in place, like a list's: a click on it starts,
+/// Return or clicking away commits, Esc cancels.
+struct NXTitleRename {
+    var isEditing: Binding<Bool>
+    /// What the field starts from, all selected: the title as stored, or
+    /// nothing for a title still to be given.
+    var value: String
+    var placeholder: String
+    var commit: (String) -> Void
+}
+
 struct NXScreenHeader<Trailing: View>: View {
     @Environment(\.nextStyle) private var style
-    enum Tile { case icon(String), emoji(String), list(TaskList) }
+    enum Tile { case icon(String), list(TaskList) }
     let tile: Tile
     let color: Color
     let title: String
     let subtitle: String
     var progress: (done: Int, total: Int)?
-    /// Sits after the subtitle, like the list header's hours menu.
-    var accessory: AnyView?
+    /// Makes the title editable in place.
+    var rename: NXTitleRename?
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12))
-                switch tile {
-                case let .icon(name):
-                    Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
-                case let .emoji(emoji):
-                    Text(emoji).font(.system(size: 24))
-                case let .list(list):
-                    NXListGlyph(list: list, size: 24)
+        NXHeaderFlow(gap: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12))
+                    switch tile {
+                    case let .icon(name):
+                        Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
+                    case let .list(list):
+                        NXListGlyph(list: list, size: 24)
+                    }
                 }
-            }
-            .frame(width: 44, height: 44)
+                .frame(width: 44, height: 44)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(style.serifTitles ? NX.serif(34) : .system(size: 27, weight: .bold))
-                    .kerning(style.serifTitles ? 0 : -0.27)
-                    .foregroundStyle(NX.ink)
-                    .lineLimit(1)
-                // The accessory's hover padding stands in for the space after the subtitle.
-                HStack(spacing: -1) {
+                VStack(alignment: .leading, spacing: 5) {
+                    if let rename {
+                        NXHeaderTitleField(title: title, rename: rename)
+                    } else {
+                        NXHeaderTitle(text: title)
+                    }
+                    // Wraps, as the design's, rather than cut off in a narrow window.
+                    // Its 12px/1.2 line box over SwiftUI's line.
                     Text(subtitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(NX.ink(0.48))
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
-                    accessory
+                        .padding(.vertical, (12 * 1.2 - NX.lineHeight(12)) / 2)
                 }
             }
-            .layoutPriority(1)
-            Spacer(minLength: 12)
             if let progress, progress.total > 0 {
                 NXProgress(done: progress.done, total: progress.total)
             }
             trailing()
         }
-        .padding(.bottom, 18)
+    }
+}
+
+/// The design's header row, which wraps: the tile and title lead, and the
+/// progress and any controls sit on the same line's trailing edge, the flex
+/// spacer's two gaps from the title at least. When they don't all fit beside
+/// the title, they flow onto lines of their own below it, from the leading
+/// edge, one gap apart and one gap down, and the title takes the whole width.
+private struct NXHeaderFlow: Layout {
+    var gap: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(width: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for placement in arrange(width: bounds.width, subviews: subviews).placements {
+            subviews[placement.index].place(at: CGPoint(x: bounds.minX + placement.origin.x, y: bounds.minY + placement.origin.y),
+                                            proposal: ProposedViewSize(placement.size))
+        }
+    }
+
+    private struct Placement { var index: Int; var origin: CGPoint; var size: CGSize }
+
+    private func arrange(width proposed: CGFloat?, subviews: Subviews) -> (placements: [Placement], size: CGSize) {
+        guard let lead = subviews.first else { return ([], .zero) }
+        let trail = Array(subviews.indices.dropFirst())
+        let ideals = trail.map { subviews[$0].sizeThatFits(.unspecified) }
+        let trailWidth = ideals.reduce(0) { $0 + $1.width } + gap * CGFloat(max(0, ideals.count - 1))
+        let oneLine = lead.sizeThatFits(.unspecified).width + (trail.isEmpty ? 0 : 2 * gap + trailWidth)
+        let width = proposed.flatMap { $0.isFinite ? $0 : nil } ?? oneLine
+
+        if trail.isEmpty || oneLine <= width {
+            // One line: what trails ends at the trailing edge, and the title
+            // has all that's left, as a title being renamed fills it.
+            let leadWidth = trail.isEmpty ? width : width - 2 * gap - trailWidth
+            let leadSize = lead.sizeThatFits(ProposedViewSize(width: leadWidth, height: nil))
+            let height = max(leadSize.height, ideals.map(\.height).max() ?? 0)
+            var placements = [Placement(index: 0, origin: CGPoint(x: 0, y: (height - leadSize.height) / 2), size: leadSize)]
+            var x = width - trailWidth
+            for (index, size) in zip(trail, ideals) {
+                placements.append(Placement(index: index, origin: CGPoint(x: x, y: (height - size.height) / 2), size: size))
+                x += size.width + gap
+            }
+            return (placements, CGSize(width: width, height: height))
+        }
+
+        let leadSize = lead.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        var placements = [Placement(index: 0, origin: .zero, size: leadSize)]
+        var y = leadSize.height + gap
+        var line: [(index: Int, size: CGSize)] = []
+        var x: CGFloat = 0
+        func endLine() {
+            let height = line.map(\.size.height).max() ?? 0
+            var left: CGFloat = 0
+            for item in line {
+                placements.append(Placement(index: item.index, origin: CGPoint(x: left, y: y + (height - item.size.height) / 2),
+                                            size: item.size))
+                left += item.size.width + gap
+            }
+            y += height + gap
+            line = []
+            x = 0
+        }
+        for (index, ideal) in zip(trail, ideals) {
+            // No wider than the header, so the progress can drop its count.
+            let size = ideal.width > width ? subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil)) : ideal
+            if !line.isEmpty, x + size.width > width { endLine() }
+            line.append((index, size))
+            x += size.width + gap
+        }
+        endLine()
+        return (placements, CGSize(width: width, height: y - gap))
+    }
+}
+
+/// A screen header's title: serif 34 on the design's 1.05 line box, or bold
+/// 27 on its 1.1 without serif titles. VoiceOver reads it as a heading.
+struct NXHeaderTitle: View {
+    @Environment(\.nextStyle) private var style
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .modifier(NXHeaderTitleType())
+            // Long names wrap, as the design's header does, rather than truncate.
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            // The design's 34px/1.05 line box, not the serif's taller metrics,
+            // or its sans 27px/1.1 over SwiftUI's line.
+            .padding(.vertical, style.serifTitles ? NX.serifLeading(34, lineHeight: 1.05) : (27 * 1.1 - NX.lineHeight(27)) / 2)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The header title's face, shared by the title and the field renaming it.
+private struct NXHeaderTitleType: ViewModifier {
+    @Environment(\.nextStyle) private var style
+
+    func body(content: Content) -> some View {
+        content
+            .font(style.serifTitles ? NX.serif(34) : .system(size: 27, weight: .bold))
+            .kerning(style.serifTitles ? 0 : -0.27)
+            .foregroundStyle(NX.ink)
+    }
+}
+
+/// The header's title renamed in place. The field sits on the title's own
+/// line box, which keeps laying out what's typed, so the header keeps its
+/// metrics while the title is written.
+private struct NXHeaderTitleField: View {
+    let title: String
+    let rename: NXTitleRename
+    @State private var draft = ""
+    @State private var selection: TextSelection?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        if rename.isEditing.wrappedValue {
+            NXHeaderTitle(text: draft.isEmpty ? rename.placeholder : draft)
+                .opacity(0)
+                // The field over it is what VoiceOver reads.
+                .accessibilityHidden(true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .leading) {
+                    TextField(rename.placeholder, text: $draft, selection: $selection, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .modifier(NXHeaderTitleType())
+                        .lineLimit(1...2)
+                        .focused($focused)
+                        .onSubmit(commit)
+                        .onExitCommand { rename.isEditing.wrappedValue = false }
+                        .accessibilityLabel("Title")
+                }
+                .onAppear {
+                    draft = rename.value
+                    selection = TextSelection(range: draft.startIndex..<draft.endIndex)
+                    // Once the field is on screen, or the focus can miss it.
+                    DispatchQueue.main.async { focused = true }
+                }
+                .onChange(of: focused) { _, now in if !now { commit() } }
+        } else {
+            NXHeaderTitle(text: title)
+                .contentShape(Rectangle())
+                .onTapGesture { rename.isEditing.wrappedValue = true }
+                .pointerStyle(.horizontalText)
+                .help("Rename")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: "Rename") { rename.isEditing.wrappedValue = true }
+        }
+    }
+
+    /// Return or clicking away: a name that isn't empty, and has changed, is
+    /// kept, on one line, as a paste's or ⌥↩'s breaks become spaces.
+    private func commit() {
+        guard rename.isEditing.wrappedValue else { return }
+        rename.isEditing.wrappedValue = false
+        let name = BlockNSTextView.joiningLines(NSAttributedString(string: draft)).string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty, name != rename.value { rename.commit(name) }
     }
 }
 
 extension NXScreenHeader where Trailing == EmptyView {
-    init(tile: Tile, color: Color, title: String, subtitle: String, progress: (done: Int, total: Int)? = nil,
-         accessory: AnyView? = nil) {
-        self.init(tile: tile, color: color, title: title, subtitle: subtitle, progress: progress, accessory: accessory) { EmptyView() }
+    init(tile: Tile, color: Color, title: String, subtitle: String, progress: (done: Int, total: Int)? = nil) {
+        self.init(tile: tile, color: color, title: title, subtitle: subtitle, progress: progress) { EmptyView() }
     }
 }
 
@@ -237,7 +482,7 @@ struct NXProgress: View {
     let total: Int
 
     var body: some View {
-        // Narrow windows drop the count, then the bar, before the title truncates.
+        // Wrapped under the title and still too narrow, it drops the count, then the bar.
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
                 Text("\(done) of \(total) done")
@@ -267,20 +512,23 @@ struct NXProgress: View {
     }
 }
 
-/// Segmented control used by Calendar's range picker.
+/// Segmented control used by Calendar's range picker, the Schedule popover's
+/// Due, Repeat and Reminder tabs and Work history's tabs. The white pill
+/// moves at once, as the design's.
 struct NXSegmented<Value: Hashable>: View {
-    @Environment(\.nextStyle) private var style
     let options: [(Value, String)]
     let selection: Value
     var onSelect: (Value) -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(options, id: \.0) { value, label in
                 Button { onSelect(value) } label: {
+                    // The design's 500 12/1, so the control is its 28pt: 2 + 6 + 12 + 6 + 2.
                     Text(label)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(selection == value ? NX.ink : NX.ink(0.55))
+                        .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background {
@@ -292,11 +540,11 @@ struct NXSegmented<Value: Hashable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == value ? .isSelected : [])
             }
         }
         .padding(2)
         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .animation(style.ease(140), value: selection)
     }
 }
 

@@ -15,19 +15,23 @@ extension TaskActivityState {
 }
 
 extension Store {
-    /// A fresh reader publishes only committed completion actions, including
-    /// after a failed write leaves retryable models in the live context.
-    func activityHeatmap(now: Date = .now, calendar: Calendar = .current) throws -> ActivityHeatmap {
+    /// A fresh reader publishes only committed completion actions, and the
+    /// Undo and reopen actions that took one back, including after a failed
+    /// write leaves retryable models in the live context.
+    func activityHeatmap(now: Date = .now, calendar: Calendar = .current, weeks: Int = 12) throws -> ActivityHeatmap {
         let reader = ModelContext(context.container)
         reader.autosaveEnabled = false
-        let events = try reader.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.kindRaw == "completed" }))
+        let saved = try reader.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate {
+            $0.kindRaw == "completed" || $0.kindRaw == "completionUndone" || $0.kindRaw == "reopened"
+        }))
+        let events = saved.filter { $0.kindRaw == "completed" }
         let needed = Array(Set(events.filter { $0.change?.completionWasRecurring == nil || $0.change?.completedOccurrenceID == nil }
             .compactMap { $0.change?.completionID }))
         let records = needed.isEmpty ? [] : try reader.fetch(FetchDescriptor<CompletionRecord>(predicate: #Predicate { needed.contains($0.id) }))
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ActivityHeatmap(completions: events.map {
             ActivityCompletion(event: $0, matchingRecord: $0.change?.completionID.flatMap { byID[$0] })
-        }, now: now, calendar: calendar)
+        }, reversals: saved.compactMap(ActivityReversal.init(event:)), now: now, calendar: calendar, weeks: weeks)
     }
 
     /// Existing one-way note/star entries must still describe a committed
@@ -94,6 +98,12 @@ extension Store {
             let after = task.isDeleted || task.isTrashed ? nil : TaskActivityState(task, list: list(id: task.listID))
             func append(_ kind: ActivityKind, completion: CompletionRecord? = nil, undone: CompletionRecord? = nil) {
                 guard let subject = after ?? before else { return }
+                // What a list document line saves to its own task as it's
+                // written is the line's one entry, recorded as it ends.
+                if let line = line(saving: kind, to: task) {
+                    line.hold(kind, of: task.id, from: before, to: after)
+                    return
+                }
                 let event = ActivityEvent(kind: kind, title: subject.title.isEmpty ? "Untitled task" : subject.title,
                     blockID: task.id, listID: subject.listID, listTitle: subject.listTitle, listIcon: subject.listIcon)
                 let record = completion ?? undone ?? (kind == .completed ? savedCompletions.first {
@@ -143,13 +153,33 @@ extension Store {
         return result
     }
 
-    /// Task history is independent of the Updates feed's latest-300 helper.
+    /// Runs a change that saves more than once, like tasks completed
+    /// together, so its history is one batch, as a single save's is.
+    func withActivityBatch<T>(_ batch: UUID, _ body: () throws -> T) rethrows -> T {
+        let previous = activityBatch
+        activityBatch = batch
+        defer { activityBatch = previous }
+        return try body()
+    }
+
+    /// Task history is independent of `recentActivity`, which Changes reads.
+    /// Used by the checks: pages of the same history the inspector's `@Query`
+    /// shows, through `taskActivityDescriptor`.
     func taskActivity(for taskID: UUID, limit: Int = 50, offset: Int = 0) throws -> [ActivityEvent] {
-        let excluded = Array(uncommittedActivityIDs)
+        try context.fetch(Self.taskActivityDescriptor(for: taskID, excluding: Array(uncommittedActivityIDs),
+                                                      limit: limit, offset: offset))
+    }
+
+    /// A task's saved history, newest first: the query the inspector's Full
+    /// history runs and `taskActivity` fetches. What `excluded` names (the
+    /// uncommitted events of a failed save) goes before the limit applies,
+    /// so it can't use up a page.
+    static func taskActivityDescriptor(for taskID: UUID, excluding excluded: [UUID], limit: Int,
+                                       offset: Int = 0) -> FetchDescriptor<ActivityEvent> {
         var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == taskID && !excluded.contains($0.id) },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
         descriptor.fetchLimit = max(1, limit)
         descriptor.fetchOffset = max(0, offset)
-        return try context.fetch(descriptor)
+        return descriptor
     }
 }

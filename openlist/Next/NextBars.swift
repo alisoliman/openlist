@@ -21,24 +21,34 @@ struct NXSelectionBar: View {
         }
         .foregroundStyle(.white)
         .padding(6)
+        .environment(\.colorScheme, .dark)
+        // Outside the dark scheme, so the surface follows the window's appearance.
         .background(NX.inverse, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .shadow(color: Color(hex: 0x17161A).opacity(0.36), radius: 20, y: 16)
-        .environment(\.colorScheme, .dark)
+    }
+
+    /// The selected rows the current screen shows, in screen order: what the
+    /// bar counts and acts on, and whether it shows at all.
+    static func selected(_ workbench: Workbench) -> [UUID] {
+        workbench.visibleIDs.filter(workbench.selection.contains)
     }
 
     private func bar(_ fit: Fit) -> some View {
         let workbench = env.workbench
-        let ids = workbench.targetIDs
+        // The buttons act on the rows the count was taken from, so the two
+        // agree even if rows leave the screen before the bar is drawn again.
+        let ids = Self.selected(workbench)
+        let count = ids.count
         return HStack(spacing: 2) {
-            Text("\(workbench.selection.count)")
+            Text("\(count)")
                 .font(.system(size: 12, weight: .bold))
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .frame(minWidth: 22, minHeight: 22)
-                .padding(.horizontal, workbench.selection.count > 9 ? 6 : 0)
+                .padding(.horizontal, count > 9 ? 6 : 0)
                 .background(style.accent, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .padding(.trailing, fit == .icons ? 4 : 0)
-                .accessibilityLabel("\(workbench.selection.count) selected")
+                .accessibilityLabel("\(count) selected")
             if fit != .icons {
                 Text("selected")
                     .font(.system(size: 12, weight: .medium))
@@ -49,7 +59,7 @@ struct NXSelectionBar: View {
             divider
             barButton("Done", icon: "checkmark.circle", key: "E", tint: Color(hex: 0x6FD3A4), fit: fit) { workbench.complete(ids) }
             barButton("Today", icon: "calendar", key: "T", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 0) }
-            barButton("Tomorrow", icon: "sunset", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 1) }
+            barButton("Tomorrow", icon: "sun.horizon", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 1) }
             barButton("Plan", icon: "calendar.badge.clock", key: "P", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.plan(ids) }
             barButton("Star", icon: "star", key: "F", tint: Color(hex: 0xF2C14E), fit: fit) { workbench.star(ids) }
             barButton("Trash", icon: "trash", key: "D", tint: Color(hex: 0xFF8A8A), hover: Color(red: 1, green: 0.47, blue: 0.47).opacity(0.14),
@@ -90,99 +100,79 @@ struct NXSelectionBar: View {
     }
 }
 
-/// The Store's completion Undo for tasks completed outside Next's rows: the
-/// menu bar, calendar, notifications and MCP. Completions made here already
-/// report in the tray, so their Store action stays quiet.
-struct NXOutsideCompletionFeedback: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
-
-    var body: some View {
-        let workbench = env.workbench
-        if workbench.tray == nil, workbench.selection.isEmpty, let action = env.store.completionUndo, !isReported(action) {
-            CalendarCompletionFeedback()
-        }
-    }
-
-    /// Whether the change log already holds this completion or reopen of the
-    /// same tasks. Next writes a completion once its dwell ends, so the Store's
-    /// action arrives up to the dwell (plus the row stagger) after its entry.
-    private func isReported(_ action: CompletionUndoAction) -> Bool {
-        guard let change = env.store.completionUndoChanges[action.id] else { return false }
-        let roots = Set([change.rootTaskID] + change.additionalRootTaskIDs)
-        let window = style.dwell + 5 + Double(roots.count) * style.ms(75) / 1000
-        let since = action.createdAt.addingTimeInterval(-window)
-        // Newest first, so only the recent entries are read.
-        return env.workbench.log.lazy.prefix { $0.at >= since }.contains { entry in
-            guard let id = entry.taskID, roots.contains(id) else { return false }
-            return action.isReopening ? entry.icon == "arrow.uturn.backward" : entry.tone == .green
-        }
-    }
-}
-
 /// The short-lived confirmation with Undo and an optional destination link.
+/// It stays up as one message follows another: the text changes in place and
+/// only the drain starts over.
 struct NXTray: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     let message: TrayMessage
-    @State private var drained = false
 
     var body: some View {
         let workbench = env.workbench
         let tint = Self.tint(message.tone)
         HStack(spacing: 10) {
+            // The design's 15pt icon line sets a plain message's height; only
+            // Undo or a destination's pill makes the tray taller.
             Image(systemName: message.icon)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
+                .frame(height: 15)
             NXWidthCap(460) {
                 Text(message.text)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(2)
             }
-            if let destination = message.destination, destination.route != env.navigator.route {
+            if let destination = message.destination, workbench.offers(destination) {
                 Button(destination.label) {
-                    workbench.go(destination.route)
+                    workbench.follow(destination)
                     workbench.dismissTray()
                 }
                 .font(.system(size: 11.5, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.18), radius: 7,
-                                                padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
-                                                foreground: .white))
-                .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.18), rest: .white.opacity(0.1), radius: 7,
+                                                padding: Self.pillPadding, foreground: .white))
             }
             if message.undoable, workbench.canUndo {
                 Button("Undo ⌘Z") { workbench.undoLast() }
                     .font(.system(size: 11.5, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0xC9AEFF, opacity: 0.24), radius: 7,
-                                                    padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
-                                                    foreground: Color(hex: 0xC9AEFF)))
-                    .background(Color(hex: 0xC9AEFF, opacity: 0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0xC9AEFF, opacity: 0.24), rest: Color(hex: 0xC9AEFF, opacity: 0.14), radius: 7,
+                                                    padding: Self.pillPadding, foreground: Color(hex: 0xC9AEFF)))
             }
         }
         .foregroundStyle(.white)
         .padding(.vertical, 8)
         .padding(.leading, 12)
         .padding(.trailing, 8)
-        .frame(minHeight: 40)
-        .background(NX.inverse)
         .overlay(alignment: .bottomLeading) {
-            GeometryReader { geo in
-                Rectangle().fill(tint)
-                    .frame(width: geo.size.width, height: 2)
-                    .scaleEffect(x: drained ? 0 : 1, y: 1, anchor: .leading)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-            }
+            NXTrayDrain(color: Self.drain(message.tone, accent: style.accent), dwell: style.dwell)
+                .id(message.id)
         }
+        .environment(\.colorScheme, .dark)
+        // Outside the dark scheme, so the surface follows the window's appearance.
+        .background(NX.inverse)
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .shadow(color: Color(hex: 0x17161A).opacity(0.34), radius: 17, y: 14)
-        .environment(\.colorScheme, .dark)
-        .onAppear { drain() }
-        .onChange(of: message.id) { _, _ in drain() }
+        // A new message swaps in without animating the tray's size.
+        .animation(nil, value: message.id)
     }
 
-    private func drain() {
-        drained = false
-        withAnimation(.linear(duration: style.dwell)) { drained = true }
+    /// The design's 6/9 pill around its 600 11.5/1 text, fitted over SwiftUI's
+    /// taller line, so a tray with one is the design's 39.5pt.
+    private static let pillPadding: EdgeInsets = {
+        let vertical = 6 + (11.5 - NX.lineHeight(11.5)) / 2
+        return EdgeInsets(top: vertical, leading: 9, bottom: vertical, trailing: 9)
+    }()
+
+    /// The drain takes the saturated tone, not the icon's pastel; the
+    /// neutral one is the design's dark ink, barely there on the tray.
+    static func drain(_ tone: TrayTone, accent: Color) -> Color {
+        switch tone {
+        case .green: Color(hex: 0x2F9E6E)
+        case .red: Color(hex: 0xC03A42)
+        case .amber: Color(hex: 0xA87A06)
+        case .accent: accent
+        case .neutral: Color(hex: 0x17161A, opacity: 0.6)
+        }
     }
 
     static func tint(_ tone: TrayTone) -> Color {
@@ -192,6 +182,24 @@ struct NXTray: View {
         case .amber: Color(hex: 0xF2C14E)
         case .accent, .neutral: Color(hex: 0xC9AEFF)
         }
+    }
+}
+
+/// The 2pt bar that empties over the dwell. The tray gives each message a new
+/// one, so the drain starts over while the tray stays put.
+private struct NXTrayDrain: View {
+    let color: Color
+    let dwell: Double
+    @State private var drained = false
+
+    var body: some View {
+        GeometryReader { geo in
+            Rectangle().fill(color)
+                .frame(width: geo.size.width, height: 2)
+                .scaleEffect(x: drained ? 0 : 1, y: 1, anchor: .leading)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        }
+        .onAppear { withAnimation(.linear(duration: dwell)) { drained = true } }
     }
 }
 
@@ -216,19 +224,35 @@ struct NXBottomBars: View {
 
     var body: some View {
         let workbench = env.workbench
-        ZStack {
-            if !workbench.selection.isEmpty && !env.navigator.isCommandPaletteOpen {
-                NXSelectionBar().transition(Self.barTransition)
-            } else if let tray = workbench.tray, workbench.selection.isEmpty {
-                NXTray(message: tray).id(tray.id).transition(Self.barTransition)
+        // Like its count, the bar goes by the selected rows on screen.
+        let hasSelection = !NXSelectionBar.selected(workbench).isEmpty
+        // Each bar sits on the 26pt baseline, as the design's `bottom:26px`,
+        // so a shorter tray doesn't move while a taller bar leaves.
+        ZStack(alignment: .bottom) {
+            if hasSelection && !env.navigator.isCommandPaletteOpen {
+                NXSelectionBar().transition(barTransition)
+            } else if let tray = workbench.tray, !hasSelection {
+                NXTray(message: tray).transition(barTransition)
             }
         }
-        .animation(style.ease(220), value: workbench.selection.isEmpty)
-        .animation(style.ease(200), value: workbench.tray?.id)
+        // The design's barIn, at its own speed whatever the Motion setting.
+        // Each bar goes at once, as the design's leave with their state.
+        .animation(NX.ease(220), value: hasSelection)
+        .animation(NX.ease(200), value: workbench.tray == nil)
         .padding(.bottom, 26)
+        // The tray rises and drains away without a sound, so VoiceOver hears
+        // each message, even one a selection bar keeps off screen.
+        .onChange(of: workbench.tray?.id) {
+            guard let tray = workbench.tray, NSApp.isActive else { return }
+            let undo = tray.undoable && workbench.canUndo ? ". Undo with Command-Z" : ""
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                userInfo: [.announcement: tray.text + undo, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }
     }
 
-    static let barTransition = AnyTransition.asymmetric(
-        insertion: .offset(y: 10).combined(with: .scale(scale: 0.97)).combined(with: .opacity),
-        removal: .opacity)
+    /// The design's barIn as a bar shows, or a fade with Reduce Motion; none as it goes.
+    private var barTransition: AnyTransition {
+        .asymmetric(insertion: style.slide(.offset(y: 10).combined(with: .scale(scale: 0.97)).combined(with: .opacity)),
+                    removal: .identity)
+    }
 }

@@ -81,7 +81,7 @@ func resolve(_ target: LocalLink.Target) throws -> ContentReveal {
 }
 let target = try resolve(.task(taskID))
 check(target.taskID == taskID && target.listID == listID && target.ancestorIDs == [parent.id], "Nested exact task and completed/collapsed ancestor path")
-check(target.source == .localLink && target.query.isEmpty, "Link reveal has no search or title dependency")
+check(target.query.isEmpty && target.field == .text && target.blockID == taskID, "Link reveal has no search or title dependency")
 check(parent.isCompleted && parent.isCollapsed, "Reveal never rewrites completion or collapse")
 let navigator = Navigator()
 let unrelatedListID = UUID()
@@ -95,20 +95,20 @@ links.windowReady(true)
 check(navigator.contentReveal == nil, "Window readiness alone cannot resolve before bootstrap")
 navigator.replace(with: .today) // Existing bootstrap default.
 links.storeReady(resolve: resolve)
-check(navigator.openTaskID == taskID && navigator.contentReveal?.source == .localLink, "Delivery after bootstrap overrides Today exactly once")
-check(navigator.listViewMode(for: listID) == .document && navigator.contentReveal?.ancestorIDs == [parent.id],
-      "Exact nested task link exits Tasks mode and reveals its original document hierarchy")
+check(navigator.openTaskID == taskID && navigator.contentReveal?.taskID == taskID && navigator.contentReveal?.query.isEmpty == true,
+      "Delivery after bootstrap overrides Today exactly once")
+check(navigator.listViewMode(for: listID) == .tasks && navigator.contentReveal?.ancestorIDs == [parent.id],
+      "Exact nested task link keeps the list's Tasks mode, as a search hit on the task does")
 check(navigator.listViewMode(for: unrelatedListID) == .tasks,
       "Revealing one list leaves another list's Tasks preference unchanged")
 let linkSelectionScope = UUID()
-navigator.selectRow(task.id, gesture: .replace, scope: linkSelectionScope, visible: [task.id, duplicate.id])
-navigator.selectRow(duplicate.id, gesture: .toggle, scope: linkSelectionScope, visible: [task.id, duplicate.id])
-check(navigator.isSelectingRows && navigator.selection.count == 2, "Fixture starts with a real multi-row selection")
+navigator.selectForEditing(duplicate.id, scope: linkSelectionScope, visible: [task.id, duplicate.id])
+check(navigator.selection == [duplicate.id] && navigator.rowSelection.scopeID == linkSelectionScope,
+      "Fixture starts with another line selected in a document")
 links.receive(taskURL)
-check(!navigator.isSelectingRows && navigator.rowSelection.scopeID == nil && navigator.orderedSelection.isEmpty,
-      "Exact task link clears stale bulk selection and its ordering scope")
-check(navigator.selection == [taskID] && navigator.openTaskID == taskID,
-      "Exact task link selects its target for editing without entering bulk mode")
+check(navigator.rowSelection.scopeID == nil, "Exact task link clears the stale selection's scope")
+check(navigator.selection.isEmpty && navigator.openTaskID == taskID,
+      "Exact task link opens its target in the inspector, with no line left selected, as a search hit lands")
 
 let firstActivation = navigator.searchActivation
 links.windowReady(true)
@@ -116,13 +116,14 @@ links.storeReady(resolve: resolve)
 check(navigator.searchActivation == firstActivation, "Repeated readiness does not replay a delivery")
 links.windowReady(false)
 navigator.setListViewMode(.tasks, for: listID)
+let revealBeforeQueue = navigator.contentReveal
 links.receive(LocalLink(libraryID: firstIdentity, target: .list(listID)).url())
-check(navigator.contentReveal == nil && navigator.listViewMode(for: listID) == .tasks,
-      "Closed main window queues a list link without prematurely leaving Tasks mode")
+check(navigator.contentReveal == revealBeforeQueue && navigator.listViewMode(for: listID) == .tasks,
+      "Closed main window queues a list link without revealing it early")
 links.windowReady(true)
 check(navigator.openTaskID == nil && navigator.contentReveal?.destination == .list(listID), "Reopened window consumes pending list link")
-check(navigator.listViewMode(for: listID) == .document && navigator.hasDocumentEditor,
-      "Queued whole-list link reopens the original document from Tasks mode")
+check(navigator.listViewMode(for: listID) == .tasks && navigator.route == .list(listID),
+      "Queued whole-list link opens the list as this Mac shows it, as a list search hit does")
 
 // Both entry points share one navigator after integration. Readiness must not
 // lose either queue, replay a delivery, or let bootstrap reset a revealed item.
@@ -294,4 +295,7 @@ catch { check(error as? LocalLinkError == .targetUnavailable, "Copying a stale m
 let noIdentity = LocalLinkNavigation(libraryID: nil, navigator: Navigator())
 noIdentity.storeReady(resolve: resolve); noIdentity.windowReady(true); noIdentity.receive(taskURL)
 check(noIdentity.error == .identityUnavailable, "Missing store identity fails closed")
+let goneText = LocalLinkError.targetUnavailable.localizedDescription
+check(goneText.contains("turned into a heading, bullet or text") && !goneText.contains("block") && !goneText.contains("restores"),
+      "A dead link's notice names the line kinds a task can be turned into, in the design's words")
 print("Passed \(checks) local link parsing, library identity, queued navigation and exact reveal checks")

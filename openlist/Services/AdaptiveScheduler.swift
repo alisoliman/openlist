@@ -8,6 +8,9 @@ enum AdaptiveScheduler {
         var minutes: Double { max(0, end.timeIntervalSince(start) / 60) }
     }
     private static let tolerance = 0.001
+    /// What a planned slot left unworked adds to its task's assessment, as the
+    /// calendar draws it: carried forward, until Plan finds it a new slot.
+    static let missedPlacementConflict = "Planned time was missed and is carried forward."
 
     static func plan(
         tasks: [ScheduleTask], preferences: CalendarPreferences,
@@ -69,16 +72,16 @@ enum AdaptiveScheduler {
                 conflicts.append("Outside \(task.category.title.lowercased()) availability or inside a break.")
             }
             if let earliest = task.earliestStart, start < earliest {
-                conflicts.append("Pinned before this task is available to start.")
+                conflicts.append("Planned before the day it’s deferred to.")
             }
             if let due = task.dueDate, end > due {
-                conflicts.append("Pinned time extends past the deadline.")
+                conflicts.append("Planned time runs past its due date.")
             }
             if blocks.contains(where: { $0.isActive && intersects(span, Span(start: $0.start, end: $0.end)) }) {
                 conflicts.append("Overlaps active work.")
             }
             if task.keepTogether && (span.minutes + tolerance < requiredMinutes(task) || represented[task.occurrenceID, default: 0] > tolerance) {
-                conflicts.append("Pinned placement splits a task marked Keep together.")
+                conflicts.append("Planned time splits a task marked Keep together.")
             }
             blocks.append(block(task: task, span: span, suffix: pin.id.uuidString, isPinned: true,
                                 placementID: pin.id, conflicts: Array(Set(conflicts)).sorted()))
@@ -93,7 +96,7 @@ enum AdaptiveScheduler {
             if blocks.indices.contains(where: { other in
                 other != index && blocks[other].isPinned && intersects(span, Span(start: blocks[other].start, end: blocks[other].end))
             }) {
-                blocks[index].conflicts.append("Overlaps another pinned block.")
+                blocks[index].conflicts.append("Overlaps another planned task.")
                 blocks[index].conflicts.sort()
             }
         }
@@ -109,13 +112,13 @@ enum AdaptiveScheduler {
             represented[task.occurrenceID, default: 0] += minutes
             outsidePinnedMinutes[task.occurrenceID, default: 0] += minutes
             if let due = task.dueDate, outsideStart.addingTimeInterval(minutes * 60) > due {
-                outsidePinConflicts[task.occurrenceID, default: []].append("Pinned time beyond the planning horizon extends past the deadline.")
+                outsidePinConflicts[task.occurrenceID, default: []].append("Time planned beyond the four-week plan runs past its due date.")
             }
         }
 
         let placedIDs = Set(placements.filter { $0.end > now || $0.isPinned }.map(\.occurrenceID))
         let candidates = uniqueTasks.filter { task in
-            task.selectedForToday || task.earliestStart != nil || placedIDs.contains(task.occurrenceID) || active?.occurrenceID == task.occurrenceID ||
+            task.selectedForToday || task.isPlaced || task.earliestStart != nil || placedIDs.contains(task.occurrenceID) || active?.occurrenceID == task.occurrenceID ||
                 (task.dueDate.map { $0 <= horizon } ?? false)
         }
         let todayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
@@ -198,21 +201,21 @@ enum AdaptiveScheduler {
             }
             let required = requiredMinutes(task)
             let status: TaskScheduleStatus
-            var reason: String
+            let reason: String
             if !isCandidate {
                 status = .outsidePlanningHorizon
                 reason = "Deadline is beyond the rolling four-week plan. Select for today to schedule sooner."
             } else if let due = task.dueDate, due <= horizon, beforeDeadline + tolerance < required {
                 status = .cannotFitBeforeDeadline
                 let missing = Int(ceil(required - beforeDeadline))
-                reason = "\(missing) min cannot fit before the deadline.\(taskBlocks.contains(where: { !$0.conflicts.isEmpty }) ? " Review pinned conflicts." : "")"
+                reason = "\(missing) min cannot fit before the deadline.\(taskBlocks.contains(where: { !$0.conflicts.isEmpty }) ? " Review its planned time on the Calendar." : "")"
             } else if scheduled + tolerance < required {
                 status = .outsidePlanningHorizon
                 if outsidePinnedMinutes[task.occurrenceID, default: 0] > tolerance {
-                    reason = "\(Int(ceil(outsidePinnedMinutes[task.occurrenceID, default: 0]))) min are pinned beyond the four-week plan."
+                    reason = "\(Int(ceil(outsidePinnedMinutes[task.occurrenceID, default: 0]))) min are planned beyond the four-week plan."
                 } else {
                     reason = taskBlocks.contains(where: { !$0.conflicts.isEmpty })
-                        ? "Pinned conflicts leave insufficient safe time within the four-week plan."
+                        ? "Conflicts in its planned time leave too little free time within the four-week plan."
                         : "\(Int(ceil(required - scheduled))) min remain beyond available time in the four-week plan."
                 }
             } else {
@@ -222,8 +225,7 @@ enum AdaptiveScheduler {
             let missedPins = placements.filter {
                 $0.isPinned && $0.taskID == task.taskID && $0.occurrenceID == task.occurrenceID && $0.end <= now && $0.end > $0.start
             }
-            let conflicts = Array(Set(taskBlocks.flatMap(\.conflicts) + outsidePinConflicts[task.occurrenceID, default: []] + (missedPins.isEmpty ? [] : ["Pinned time was missed; remaining work has been replanned."]))).sorted()
-            if !missedPins.isEmpty { reason += " Pinned time was missed; review the new placement." }
+            let conflicts = Array(Set(taskBlocks.flatMap(\.conflicts) + outsidePinConflicts[task.occurrenceID, default: []] + (missedPins.isEmpty ? [] : [missedPlacementConflict]))).sorted()
             assessments.append(TaskScheduleAssessment(taskID: task.taskID, occurrenceID: task.occurrenceID,
                 status: status, requiredMinutes: required, scheduledMinutes: scheduled,
                 beforeDeadlineMinutes: beforeDeadline, reason: reason, conflicts: conflicts))
@@ -291,10 +293,8 @@ enum AdaptiveScheduler {
         var day = calendar.startOfDay(for: start)
         while day < end {
             let next = calendar.date(byAdding: .day, value: 1, to: day)!
-            let weekday = calendar.component(.weekday, from: day)
-            let override = profile.overrides.last { calendar.isDate($0.date, inSameDayAs: day) }
-            let windows = override?.windows ?? profile.weekly[weekday, default: []]
-            let breaks = override?.breaks ?? profile.breaks[weekday, default: []]
+            let windows = profile.windows(on: day, calendar: calendar)
+            let breaks = profile.breaks(on: day, calendar: calendar)
             func spans(_ windows: [AvailabilityWindow]) -> [Span] {
                 windows.compactMap { window in
                     guard window.startMinute >= 0, window.endMinute <= 1440,

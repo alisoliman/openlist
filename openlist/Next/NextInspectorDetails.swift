@@ -15,58 +15,45 @@ struct NXInspectorHeading<Accessory: View>: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 10.5, weight: .semibold))
-                .kerning(0.74)
-                .textCase(.uppercase)
-                .foregroundStyle(NX.ink(0.36))
+            NXCapsTitle(text: title)
             Spacer(minLength: 6)
             accessory()
         }
     }
 }
 
-/// A quiet text button for secondary inspector actions.
-private struct NXInspectorLink: View {
+/// A quiet action row, like the design's "Add subtask": ink 0.42, ink on hover.
+struct NXInspectorQuietAction: View {
+    let icon: String
     let title: String
+    /// Takes the row's width, as Add subtask does under the subtasks.
+    var fills = false
     let action: () -> Void
 
     var body: some View {
-        Button(title, action: action)
-            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                            padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                            foreground: NX.ink(0.6), hoverForeground: NX.ink))
-            .font(.system(size: 11, weight: .semibold))
-    }
-}
-
-/// A chevron toggle for a part of a section the inspector builds only when open.
-private struct NXInspectorDisclosure: View {
-    @Environment(\.nextStyle) private var style
-    let title: String
-    @Binding var isExpanded: Bool
-
-    var body: some View {
-        Button { withAnimation(style.ease(220)) { isExpanded.toggle() } } label: {
-            HStack(spacing: 5) {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 15, height: 15)
+                    .accessibilityHidden(true)
+                // 500 12.5/1.
                 Text(title)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8.5, weight: .bold))
-                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .padding(.vertical, (12.5 - NX.lineHeight(12.5)) / 2)
+                if fills { Spacer(minLength: 0) }
             }
-            .font(.system(size: 11, weight: .semibold))
         }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                        padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                        foreground: NX.ink(0.5), hoverForeground: NX.ink))
-        .padding(.leading, -5)
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.04), radius: 8,
+                                        padding: EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8),
+                                        foreground: NX.ink(0.42), hoverForeground: NX.ink))
     }
 }
 
 // MARK: - Planning
 
-/// Calendar planning beyond the day toggle and estimate: why the plan falls
-/// short, deferral, how sessions run and what has been recorded.
+/// Calendar planning beyond the day toggle and estimate: deferral, how
+/// sessions run and what has been recorded.
 struct NXInspectorPlanOptions: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
@@ -76,41 +63,29 @@ struct NXInspectorPlanOptions: View {
     @State private var showsHistory = false
 
     var body: some View {
+        // As the design's card, it says nothing of the planner's own sessions,
+        // which the calendar never draws; the slot line says where the task is.
         VStack(alignment: .leading, spacing: 8) {
-            if let assessment = env.calendar.plan.assessments.first(where: { $0.taskID == task.id }),
-               assessment.status != .scheduled || !assessment.conflicts.isEmpty {
-                shortfall(assessment)
-            }
             if let deferred = task.deferredUntil {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.uturn.forward").font(.system(size: 10.5, weight: .semibold))
                     Text("Deferred until \(NXFormat.dueLabel(deferred))")
                     Spacer(minLength: 6)
-                    NXInspectorLink(title: "Clear") { env.store.deselectForToday(task) }
+                    Button("Clear") { env.workbench.clearDeferral(task.id) }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+                        .padding(.trailing, -5)
                         .accessibilityLabel("Clear task deferral")
                 }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.ink(0.55))
             }
-            NXInspectorDisclosure(title: "More options", isExpanded: $expanded)
+            NXDisclosureButton("More options", isExpanded: $expanded)
             if expanded {
                 options.transition(.opacity)
             }
         }
         .popover(isPresented: $deferring, arrowEdge: .bottom) { TaskDeferralPicker(block: task).environment(env) }
         .sheet(isPresented: $showsHistory) { CalendarHistoryView(taskID: task.id).environment(env) }
-    }
-
-    private func shortfall(_ assessment: TaskScheduleAssessment) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(assessment.status.title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(assessment.status == .cannotFitBeforeDeadline ? NX.amberText : NX.ink(0.66))
-            Text("\(Int(assessment.beforeDeadlineMinutes.rounded())) of \(Int(assessment.requiredMinutes.rounded())) min covered · \(assessment.reason)")
-                .font(.system(size: 11))
-                .foregroundStyle(NX.ink(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     /// Built only when expanded: the suggestion and recorded time read history.
@@ -137,7 +112,7 @@ struct NXInspectorPlanOptions: View {
             toggle("Track work away from this Mac", isOn: task.tracksAwayFromMac) {
                 env.store.setTracksAway(!task.tracksAwayFromMac, for: task)
             }
-            .help(task.tracksAwayFromMac ? "Tracking continues through lock or sleep, until a meeting or unavailable time."
+            .help(task.tracksAwayFromMac ? "Tracking continues through lock or sleep."
                   : "Locking or sleeping pauses active work.")
             HStack(spacing: 6) {
                 Image(systemName: personal ? "house" : "briefcase").font(.system(size: 10.5))
@@ -147,7 +122,8 @@ struct NXInspectorPlanOptions: View {
             .foregroundStyle(NX.ink(0.45))
             HStack(spacing: 6) {
                 if !task.isCompleted {
-                    NXInspectorLink(title: "Defer…") { deferring = true }
+                    Button("Defer…") { deferring = true }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                         .padding(.leading, -5)
                 }
                 Spacer(minLength: 6)
@@ -155,7 +131,8 @@ struct NXInspectorPlanOptions: View {
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(NX.ink(0.45))
-                NXInspectorLink(title: "History") { showsHistory = true }
+                Button("History") { showsHistory = true }
+                    .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                     .padding(.trailing, -5)
             }
         }
@@ -169,7 +146,8 @@ struct NXInspectorPlanOptions: View {
                 .font(.system(size: 11))
                 .foregroundStyle(NX.ink(0.5))
                 .fixedSize(horizontal: false, vertical: true)
-            NXInspectorLink(title: title, action: perform)
+            Button(title, action: perform)
+                .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                 .padding(.leading, -5)
         }
     }
@@ -185,125 +163,282 @@ struct NXInspectorPlanOptions: View {
 
 // MARK: - Subtasks
 
-/// The task's own outline, drawn by the same editor a list uses.
+/// The task's subtasks as the design lists them: every task under it, in
+/// document order and indented by depth, with their progress. Rows tick and
+/// open from here; Add subtask writes the new line in the list's document.
 struct NXInspectorSubtasks: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     let task: Block
+    /// Whether the section shows for a task with no subtasks yet.
+    let showsEmpty: Bool
+    @Query private var blocks: [Block]
+
+    init(task: Block, showsEmpty: Bool = true) {
+        self.task = task
+        self.showsEmpty = showsEmpty
+        _blocks = OutlineEditor.blocksQuery(for: DocumentContext(listID: task.listID ?? UUID()))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            NXInspectorHeading(title: "Subtasks") {
-                if let progress = env.store.subtaskProgress(for: task) {
-                    SubtaskProgressChip(done: progress.done, total: progress.total)
-                }
-            }
-            DocumentView(
-                document: DocumentContext(listID: task.listID ?? UUID(), rootBlockID: task.id),
-                emptyPlaceholder: "Add a subtask…",
-                showsCompleted: true,
-                seedsEmptyBlock: false,
-                appendButtonTitle: "Add subtask"
-            )
-            .id(task.id)
+        let workbench = env.workbench
+        let rows = Self.subtasks(of: task.id, in: blocks)
+        let done = rows.filter { $0.block.isCompleted || workbench.closing[$0.id] != nil }.count
+        let fraction = rows.isEmpty ? 0 : CGFloat(done) / CGFloat(rows.count)
+        if showsEmpty || !rows.isEmpty {
+            section(rows: rows, done: done, fraction: fraction)
         }
+    }
+
+    private func section(rows: [BlockRow], done: Int, fraction: CGFloat) -> some View {
+        let workbench = env.workbench
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                NXCapsTitle(text: "Subtasks")
+                // Empty without subtasks, and still spaced, as the design's
+                // count is; in the same 10.5/1 line box as the title.
+                Text(rows.isEmpty ? "" : "\(done)/\(rows.count)")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(NX.ink(0.45))
+                    .monospacedDigit()
+                    .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2).fill(NX.ink(0.07))
+                        // As the design's, only the width eases; the fill
+                        // turns green at once as the last one closes.
+                        RoundedRectangle(cornerRadius: 2)
+                            .animation(nil) { $0.foregroundStyle(!rows.isEmpty && done == rows.count ? NX.green : style.accent) }
+                            .frame(width: proxy.size.width * fraction)
+                    }
+                    .animation(NX.cssEase(400), value: fraction)
+                }
+                .frame(height: 3)
+            }
+            .padding(.bottom, 6)
+            ForEach(rows) { row in
+                NXInspectorSubtaskRow(row: row)
+            }
+            NXInspectorQuietAction(icon: "plus", title: "Add subtask", fills: true) { workbench.addSubtask(to: task.id) }
+                .help("Add a subtask in the list")
+        }
+    }
+
+    /// Every task under `id`, at any depth, in document order; each row's
+    /// depth counts from the task's own children.
+    static func subtasks(of id: UUID, in blocks: [Block]) -> [BlockRow] {
+        let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
+        return BlockTree.flatten(live, root: id, respectCollapse: false).filter(\.block.isTask)
+    }
+}
+
+/// One subtask: 15pt checkbox, 13pt title, struck once done, and a chevron.
+/// A click inspects it. As the design, an untitled one shows blank.
+private struct NXInspectorSubtaskRow: View {
+    @Environment(AppEnvironment.self) private var env
+    let row: BlockRow
+    @State private var hovering = false
+
+    var body: some View {
+        let workbench = env.workbench
+        let task = row.block
+        let closing = workbench.closing[task.id]
+        let filled = task.isCompleted || closing != nil
+        HStack(spacing: 9) {
+            // 18 a level; at the top it's still one of the row's gaps, as in the design.
+            Color.clear.frame(width: CGFloat(row.depth) * 18, height: 1)
+            NXCheckbox(filled: filled, closing: closing, priority: .none, title: task.displayTitle, size: 15, pops: false) {
+                workbench.toggle(task.id)
+            }
+            // 400 13/1.3.
+            Text(task.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                .font(.system(size: 13))
+                .foregroundStyle(filled ? NX.ink(0.42) : NX.ink)
+                .strikethrough(filled, color: NX.ink(0.42))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.vertical, (13 * 1.3 - NX.lineHeight(13)) / 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(NX.ink(0.3))
+                .frame(width: 14, height: 14)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(hovering ? NX.ink(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // The design's `opacity 300ms ease`, which eases nothing else.
+        .animation(NX.cssEase(300)) { $0.opacity(closing != nil ? 0.6 : 1) }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { workbench.inspect(task.id) }
+        .contextMenu { NXTaskMenu(ids: [task.id]) }
+        // One element: opening is its action, ticking a named one.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(task.displayTitle)
+        .accessibilityValue(closing != nil ? "Completing" : filled ? "Completed" : "Open")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { workbench.inspect(task.id) }
+        .accessibilityAction(named: filled ? "Reopen" : "Complete") { workbench.toggle(task.id) }
+        .accessibilityAction(named: "Open Details") { workbench.inspect(task.id) }
+    }
+}
+
+/// "Subtask of" the task above, over the inspector's title, with that
+/// task's progress. A click inspects it.
+struct NXInspectorParentCrumb: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    let parent: Block
+    @Query private var blocks: [Block]
+    @State private var hovering = false
+
+    init(parent: Block) {
+        self.parent = parent
+        _blocks = OutlineEditor.blocksQuery(for: DocumentContext(listID: parent.listID ?? UUID()))
+    }
+
+    var body: some View {
+        let workbench = env.workbench
+        let subtasks = NXInspectorSubtasks.subtasks(of: parent.id, in: blocks)
+        let done = subtasks.filter { $0.block.isCompleted || workbench.closing[$0.id] != nil }.count
+        Button { workbench.inspect(parent.id) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 14, height: 14)
+                Text("Subtask of")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .fixedSize()
+                // As the design, the parent's text as written, blank when it has none.
+                Text(parent.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text("\(done)/\(subtasks.count)")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .monospacedDigit()
+                    .opacity(0.8)
+                    .fixedSize()
+            }
+            .foregroundStyle(hovering ? style.accent : NX.ink(0.55))
+            .padding(.top, 5)
+            .padding(.bottom, 5)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .background(hovering ? style.accent.opacity(0.1) : NX.ink(0.04),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Its hover shows at once, as the design's style-hover.
+        .onHover { hovering = $0 }
+        .help("Show “\(parent.displayTitle)”")
+        .accessibilityLabel("Subtask of \(parent.displayTitle)")
+        // The design's -4 above and -8 below, so it sits close over the title.
+        .padding(.top, -4)
+        .padding(.bottom, -8)
     }
 }
 
 // MARK: - Files
 
-/// Files kept with the task. Attach with the button or drop them on the section.
+/// Files kept with the task. The design has none, so the section shows only
+/// once there are some; until then "Attach a file" sits by "Add a note",
+/// while that stands in for the note. Files dropped anywhere on the panel
+/// are attached too.
 struct NXInspectorFiles: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let task: Block
-    @State private var dropTargeted = false
+    /// Opens the note, while "Add a note" stands in for it.
+    var addsNote: (() -> Void)?
 
     var body: some View {
         let attachments = env.store.attachments(for: task.id)
-        VStack(alignment: .leading, spacing: 4) {
-            NXInspectorHeading(title: "Files") {
-                Button { presentFilePicker() } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "paperclip").font(.system(size: 10.5, weight: .semibold))
-                        Text("Attach")
-                    }
-                    .font(.system(size: 11, weight: .semibold))
+        let files = NXTaskFiles(workbench: env.workbench)
+        if addsNote != nil || attachments.isEmpty {
+            HStack(spacing: 2) {
+                if let addsNote {
+                    NXInspectorQuietAction(icon: "text.alignleft", title: "Add a note", action: addsNote)
                 }
-                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 5,
-                                                padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                                foreground: NX.ink(0.6), hoverForeground: NX.ink))
-                .padding(.trailing, -5)
-                .help("Attach files")
-                .accessibilityLabel("Attach files to task")
+                if attachments.isEmpty {
+                    NXInspectorQuietAction(icon: "paperclip", title: "Attach a file") { files.choose(for: task) }
+                        .help("Attach files, or drop them on the panel")
+                }
             }
-            if attachments.isEmpty {
-                Text("Drop files here to keep them with the task")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(NX.ink(0.36))
-                    .padding(.vertical, 4)
-            } else {
+            // The icons line up with the panel's edge.
+            .padding(.leading, -8)
+            .padding(.vertical, -6)
+        }
+        if !attachments.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                NXInspectorHeading(title: "Files") {
+                    Button { files.choose(for: task) } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "paperclip").font(.system(size: 10.5, weight: .semibold))
+                            Text("Attach")
+                        }
+                    }
+                    .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+                    .padding(.trailing, -5)
+                    .help("Attach files, or drop them on the panel")
+                    .accessibilityLabel("Attach files to task")
+                }
                 ForEach(attachments) { attachment in
-                    AttachmentRow(attachment: attachment) {
-                        env.store.removeEditorMedia(filename: attachment.filename)
-                        env.store.context.delete(attachment)
-                        env.store.save()
-                    }
+                    AttachmentRow(attachment: attachment) { env.workbench.removeAttachment(attachment) }
                 }
             }
-        }
-        .padding(6)
-        .background(dropTargeted ? style.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            if dropTargeted {
-                RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(style.accent.opacity(0.5), lineWidth: 1)
-            }
-        }
-        .padding(-6)
-        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-            // The provider calls back off the main actor, so carry the id
-            // rather than the model object itself.
-            let blockID = task.id
-            for provider in providers {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
-                    Task { @MainActor in
-                        guard let target = env.store.block(id: blockID) else { return }
-                        attach(url: url, to: target)
-                    }
-                }
-            }
-            return true
         }
     }
+}
 
-    private func presentFilePicker() {
+/// Keeps files with a task, chosen in the Open panel or dropped, as one
+/// Workbench step (`Workbench.attachFiles`).
+struct NXTaskFiles {
+    let workbench: Workbench
+
+    func choose(for block: Block) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            attach(url: url, to: task)
-        }
+        workbench.attachFiles(panel.urls, to: block.id)
     }
 
-    private func attach(url: URL, to block: Block) {
-        do {
-            let media = try MediaStore.shared.importFile(at: url)
-            let existing = env.store.attachments(for: block.id)
-            let attachment = Attachment(
-                blockID: block.id,
-                filename: media.filename,
-                displayName: media.displayName,
-                contentType: media.contentType,
-                byteCount: media.byteCount,
-                sortIndex: (existing.last?.sortIndex ?? 0) + BlockTree.indexStep,
-                contentData: media.data
-            )
-            env.store.context.insert(attachment)
-            env.store.save()
-        } catch {
-            MarkdownExporter.presentError(error, operation: "Import attachment")
+    func drop(_ providers: [NSItemProvider], on blockID: UUID) -> Bool {
+        // The provider calls back off the main actor, so carry the id rather
+        // than the model object itself.
+        let dropped = DroppedFiles(workbench: workbench, blockID: blockID, count: providers.count)
+        for (index, provider) in providers.enumerated() {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                Task { @MainActor in dropped.receive(url, at: index) }
+            }
         }
+        return true
+    }
+}
+
+/// A drop's files as their providers hand them over, attached together, in
+/// the order dropped, once the last has arrived.
+private final class DroppedFiles {
+    let workbench: Workbench
+    let blockID: UUID
+    private var urls: [URL?]
+    private var remaining: Int
+
+    init(workbench: Workbench, blockID: UUID, count: Int) {
+        self.workbench = workbench
+        self.blockID = blockID
+        urls = Array(repeating: nil, count: count)
+        remaining = count
+    }
+
+    func receive(_ url: URL?, at index: Int) {
+        urls[index] = url
+        remaining -= 1
+        guard remaining == 0 else { return }
+        workbench.attachFiles(urls.compactMap(\.self), to: blockID)
     }
 }
 
@@ -319,15 +454,15 @@ struct NXInspectorHistory: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            NXInspectorDisclosure(title: "Full history", isExpanded: $expanded)
-                .help("Newest first. Clear History in Updates also clears task activity.")
-            // Queried only when open, like the legacy Activity disclosure.
+            NXDisclosureButton("Full history", isExpanded: $expanded)
+                .help("Newest first. Clearing activity history in Settings › Data also clears this.")
+            // Queried only when open, so a closed disclosure fetches no history.
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Created \(Store.absoluteDateText(task.createdAt, includesTime: true))")
+                        Text("Created \(NXFormat.moment(task.createdAt))")
                         if let completedAt = task.completedAt {
-                            Text("Completed \(Store.absoluteDateText(completedAt, includesTime: true))")
+                            Text("Completed \(NXFormat.moment(completedAt))")
                         }
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -349,27 +484,30 @@ private struct NXInspectorHistoryPage: View {
     init(taskID: UUID, limit: Int, excluded: [UUID], loadOlder: @escaping () -> Void) {
         self.limit = limit
         self.loadOlder = loadOlder
-        // Exclude before applying the limit, so failed attempts can't use up
-        // a page or hide Load older activity.
-        var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == taskID && !excluded.contains($0.id) },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
-        descriptor.fetchLimit = limit + 1
-        _events = Query(descriptor)
+        // One past the page, which shows Load older activity. The Store's
+        // query excludes before the limit applies, so failed attempts can't
+        // use up a page or hide it.
+        _events = Query(Store.taskActivityDescriptor(for: taskID, excluding: excluded, limit: limit + 1))
     }
+
+    /// Activity's 12/1.4, so the saved rows keep the rhythm of the ones above.
+    private var leading: CGFloat { 12 * 1.4 - NX.lineHeight(12) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if events.isEmpty {
                 Text("No recorded activity for this task.")
                     .font(.system(size: 12))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.45))
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 5 + leading / 2)
             } else {
                 ForEach(events.prefix(limit)) { event in
                     row(event)
                 }
                 if events.count > limit {
-                    NXInspectorLink(title: "Load older activity", action: loadOlder)
+                    Button("Load older activity", action: loadOlder)
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                         .padding(.leading, -5)
                         .padding(.top, 4)
                 }
@@ -378,22 +516,28 @@ private struct NXInspectorHistoryPage: View {
     }
 
     private func row(_ event: ActivityEvent) -> some View {
-        let place = [event.listIcon, event.listTitle].filter { !$0.isEmpty }.joined(separator: " ")
-        let when = event.timestamp.formatted(date: .abbreviated, time: .shortened)
+        let when = NXFormat.moment(event.timestamp)
+        let spoken = event.listTitle.isEmpty ? when : "\(when) · \(event.listTitle)"
+        // Its due dates in the words of the time under them, as recordedDetail writes them.
+        let detail = ActivityEvent.recordedDetail(event.kind, detail: event.detail, change: event.change)
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
-            Image(systemName: event.kind.symbol).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
+            Image(systemName: event.kind.symbol).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(event.kind.verb) “\(event.title)”")
                     .font(.system(size: 12))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.66))
-                if !event.recordedDetail.isEmpty {
-                    Text(event.recordedDetail)
+                    .padding(.vertical, leading / 2)
+                if !detail.isEmpty {
+                    Text(detail)
                         .font(.system(size: 11))
                         .foregroundStyle(NX.ink(0.5))
                 }
-                Text(place.isEmpty ? when : "\(when) · \(place)")
+                place(event, when: when)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(NX.ink(0.36))
+                    // The line without its list's glyph, which reads as a symbol's name.
+                    .accessibilityLabel(spoken)
             }
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
@@ -401,5 +545,15 @@ private struct NXInspectorHistoryPage: View {
         }
         .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
+    }
+
+    /// When it happened and in which list, its glyph drawn as the Activity
+    /// day panel draws it: an SF Symbol from synced or older data as the
+    /// symbol, never its name.
+    private func place(_ event: ActivityEvent, when: String) -> Text {
+        let title = event.listTitle
+        guard !event.listIcon.isEmpty else { return Text(verbatim: title.isEmpty ? when : "\(when) · \(title)") }
+        let glyph = NXListGlyph.text(event.listIcon, size: 10.5)
+        return title.isEmpty ? Text("\(when) · \(glyph)") : Text("\(when) · \(glyph) \(title)")
     }
 }

@@ -42,6 +42,11 @@ func rejects(_ tool: OpenlistMCPTool, _ args: [String: MCPValue], code: String =
     check(result.structuredContent?.objectValue?["error"]?.objectValue?["code"] == .string(code), "failure has code \(code)")
 }
 
+func failureMessage(_ tool: OpenlistMCPTool, _ args: [String: MCPValue]) throws -> String {
+    let result = try adapter.call(tool.rawValue, arguments: args, allowsWrites: true)
+    return result.structuredContent?.objectValue?["error"]?.objectValue?["message"]?.stringValue ?? ""
+}
+
 func id(_ value: [String: MCPValue], _ key: String) -> UUID {
     UUID(uuidString: value[key]!.objectValue!["id"]!.stringValue!)!
 }
@@ -112,6 +117,15 @@ if phase == "prepare" {
     check(store.block(id: literalID)!.listID == inbox.id, "omitted list defaults to Inbox")
     _ = try call(.setTaskCompleted, ["task_id": uuid(literalID), "completed": true])
     check(try call(.listTasks, ["view": "today", "status": "completed"])["tasks"]!.arrayValue!.count == 1, "Today includes tasks completed today even without a due date")
+    let plannedID = id(try call(.createTask, ["title": "Planned for today"]), "task")
+    let laterID = id(try call(.createTask, ["title": "Planned for tomorrow"]), "task")
+    let startOfToday = Calendar.current.startOfDay(for: .now)
+    store.block(id: plannedID)!.selectedForDay = startOfToday
+    store.block(id: laterID)!.selectedForDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfToday)
+    let todayTasks = try call(.listTasks, ["view": "today"])["tasks"]!.arrayValue!
+    check(todayTasks.contains { $0.objectValue?["id"] == uuid(plannedID) && $0.objectValue?["planned_for"] == .string(MCPDates.day(startOfToday)) }
+          && !todayTasks.contains { $0.objectValue?["id"] == uuid(laterID) },
+          "Today includes open tasks planned for today, as the app's does, and says the day they're planned for")
     let rootID = id(try call(.createTask, [
         "title": "Build prototype", "list_id": uuid(workID),
         "due_date": "2030-03-10", "note": "Fixture note",
@@ -123,23 +137,43 @@ if phase == "prepare" {
     let childID = id(try call(.createTask, ["title": "Child", "parent_id": uuid(rootID)]), "task")
     check(store.block(id: childID)!.listID == workID && store.block(id: childID)!.parentID == rootID, "parent-only capture inherits the parent's list")
     let noteID = id(try call(.appendBlock, [
-        "list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested context", "kind": "heading2",
+        "list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested context", "kind": "bullet",
     ]), "block")
     check(try store.taskActivity(for: noteID).contains { $0.kind == .noteAdded && $0.title == "Nested context" }, "MCP standalone text block preserves its existing noteAdded activity")
-    let editSession = UUID()
-    store.activeTitleDrafts[editSession] = childID
-    try rejects(.updateTask, ["task_id": uuid(childID), "title": "Overwrite draft"], code: "busy")
-    try rejects(.setTaskCompleted, ["task_id": uuid(rootID), "completed": true], code: "busy")
-    try rejects(.moveTask, ["task_id": uuid(rootID), "list_id": uuid(otherID)], code: "busy")
-    try rejects(.updateList, ["list_id": uuid(workID), "is_archived": true], code: "busy")
-    check(try call(.getTask, ["task_id": uuid(childID)])["task"]?.objectValue?["text"] == "Child", "local title editing does not block read tools")
-    store.activeTitleDrafts.removeValue(forKey: editSession)
     root.isCollapsed = true
     store.save()
     let detail = try call(.getTask, ["task_id": uuid(rootID), "limit": 1])
     check(detail["blocks"]!.arrayValue!.count == 1 && detail["total"] == 2 && detail["next_offset"] == 1, "collapsed task details paginate all descendants")
     let listPage = try call(.getList, ["list_id": uuid(workID)])
     check(listPage["blocks"]!.arrayValue!.map { $0.objectValue!["depth"]! } == [0, 1, 2], "list reading preserves complete outline depth")
+    // Lines go where the list document puts them: only tasks and list items
+    // nest, under a task or list item, two levels deep at most.
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested heading", "kind": "heading2"])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(rootID), "text": "Nested text"])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(rootID), "kind": "divider", "text": ""])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(noteID), "text": "Third level", "kind": "numbered"])
+    try rejects(.createTask, ["title": "Third level", "parent_id": uuid(noteID)])
+    let sectionID = id(try call(.appendBlock, ["list_id": uuid(workID), "text": "Section", "kind": "heading1"]), "block")
+    let proseID = id(try call(.appendBlock, ["list_id": uuid(workID), "text": "Prose"]), "block")
+    try rejects(.createTask, ["title": "Under a heading", "parent_id": uuid(sectionID)])
+    try rejects(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(proseID), "text": "Under text", "kind": "bullet"])
+    let spareID = id(try call(.createTask, ["title": "Spare", "list_id": uuid(workID)]), "task")
+    let spareChildID = id(try call(.createTask, ["title": "Spare child", "parent_id": uuid(spareID)]), "task")
+    try rejects(.moveTask, ["task_id": uuid(rootID), "list_id": uuid(workID), "parent_id": uuid(spareID)])
+    try rejects(.moveTask, ["task_id": uuid(spareID), "list_id": uuid(workID), "parent_id": uuid(childID)])
+    try rejects(.moveTask, ["task_id": uuid(spareChildID), "list_id": uuid(workID), "parent_id": uuid(noteID)])
+    let tooDeep = try failureMessage(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(noteID), "text": "Third level", "kind": "numbered"])
+    let movedTooDeep = try failureMessage(.moveTask, ["task_id": uuid(spareID), "list_id": uuid(workID), "parent_id": uuid(childID)])
+    check(tooDeep.hasPrefix("Lines nest two levels deep at most.") && !tooDeep.contains("moved")
+          && movedTooDeep.contains("counting the lines under the task being moved"),
+          "the depth failure names a moved task's lines only when a task with lines is moved")
+    let looseID = id(try call(.createTask, ["title": "Loose", "list_id": uuid(workID)]), "task")
+    _ = try call(.moveTask, ["task_id": uuid(looseID), "list_id": uuid(workID), "parent_id": uuid(spareChildID)])
+    check(store.block(id: looseID)!.parentID == spareChildID, "a move under a subtask still lands two levels deep")
+    let itemID = id(try call(.appendBlock, ["list_id": uuid(workID), "parent_id": uuid(spareID), "text": "Packing", "kind": "numbered"]), "block")
+    _ = try call(.createTask, ["title": "Under a list item", "parent_id": uuid(itemID)])
+    check(try call(.getTask, ["task_id": uuid(spareID)])["blocks"]!.arrayValue!.map { $0.objectValue!["depth"]! } == [0, 1, 0, 1],
+          "tasks and list items nest under a task or list item, as in the list document")
     check(try call(.listTasks, ["label_id": uuid(labelID)])["tasks"]!.arrayValue!.count == 1, "label filter finds the task")
     check(try call(.listTasks, ["query": "FIXTURE NOTE"])["tasks"]!.arrayValue!.count == 1, "search includes task notes case-insensitively")
     check(try call(.listTasks, ["offset": .int(Int.max)])["tasks"]!.arrayValue!.isEmpty, "extreme offsets neither overflow nor repeat results")

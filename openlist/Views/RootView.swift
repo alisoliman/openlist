@@ -7,7 +7,7 @@ import SwiftData
 import SwiftUI
 
 /// The main window. `NextShell` draws everything; this view owns the window
-/// wiring: sheets, alerts, notices, menu commands and the Dock badge.
+/// wiring: sheets, menu commands and the Dock badge.
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.openWindow) private var openWindow
@@ -23,33 +23,20 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var navigator = env.navigator
-        @Bindable var captureEnvironment = env
+        @Bindable var sheets = env
 
         NextShell()
         .ignoresSafeArea()
         .navigationTitle("Openlist")
-        .sheet(item: $captureEnvironment.templateCopyRequest) { request in
+        .sheet(item: $sheets.templateCopyRequest) { request in
             TemplateCopySheet(request: request)
         }
         .sheet(isPresented: $navigator.isShortcutSheetOpen) {
             ShortcutsSheet()
         }
-        .sheet(item: $captureEnvironment.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
-        .alert(
-            "Delete “\(env.listPendingDeletion?.displayTitle ?? "")”?",
-            isPresented: Binding(
-                get: { env.listPendingDeletion != nil },
-                set: { if !$0 { env.listPendingDeletion = nil } }
-            )
-        ) {
-            Button("Cancel", role: .cancel) { env.listPendingDeletion = nil }
-            Button("Delete", role: .destructive) {
-                if let list = env.listPendingDeletion { env.performDeleteList(list) }
-            }
-        } message: {
-            Text("This moves the list and its child documents, tasks, notes, and files to Trash as one restorable unit. You can restore them later. With iCloud enabled, this change also syncs to your other Macs.")
-        }
-        .overlay(alignment: .top) { statusNotices.padding(.top, 52) }
+        .sheet(item: $sheets.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
+        .sheet(item: $sheets.listPendingDeletion) { list in DeleteListSheet(list: list).environment(env) }
+        .sheet(item: $sheets.linkPrompt) { prompt in NXLinkSheet(prompt: prompt).environment(env) }
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
@@ -62,7 +49,6 @@ struct RootView: View {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
         }
-        .task { installQuickCapture() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow else { return }
             env.isMainWindowKey = isMainWindow(window)
@@ -88,42 +74,42 @@ struct RootView: View {
         .onAppear {
             updateDockBadge()
             env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
+            env.calendarNotifications.openMainWindow = { openWindow(id: WindowID.main) }
+            // ⌘L in a list document line asks in this window's link sheet.
+            BlockNSTextView.linkPrompter = { env.linkPrompt = $0 }
         }
         .onDisappear {
             env.isMainWindowKey = false
             env.reminderNavigation.windowReady(false)
             env.localLinks.windowReady(false)
+            // The Work panel goes with the window, and so does a Show Work
+            // asked for while it was open.
+            env.calendar.isWorkPanelPresented = false
+            env.showsWorkPanelOnOpen = false
         }
         .onChange(of: env.navigator.route) { _, route in
             focusClearedFor = nil
             clearInitialFocus(for: route)
             // Screens that aren't documents (Today, Tasks, …) have no editor to
             // claim menu commands, so hand them to the fallback below.
-            if !env.navigator.hasDocumentEditor { env.activeDocument = nil }
+            if !env.navigator.documentOwnsEditorCommands { env.activeDocument = nil }
         }
-        .onChange(of: env.navigator.hasDocumentEditor) { _, hasDocumentEditor in
-            // Switching a list presentation can remove the editor without
-            // changing the route or closing an inspector.
-            if !hasDocumentEditor {
+        .onChange(of: env.navigator.documentOwnsEditorCommands) { _, ownsCommands in
+            // Switching the Inbox's presentation can remove the editor
+            // without changing the route or closing an inspector.
+            if !ownsCommands {
                 env.activeDocument = nil
                 focusClearedFor = nil
                 clearInitialFocus(for: env.navigator.route)
             }
         }
         .onChange(of: env.navigator.openTaskID) { _, newValue in
-            // Editing a subtask inside the inspector makes it the command
-            // target. Closing it has to release that or ⌘N stays dead.
-            if newValue == nil, !env.navigator.hasDocumentEditor {
+            // An open task holds off the initial-focus clear; closing it off
+            // a document gives the screen that clear, and its commands, back.
+            if newValue == nil, !env.navigator.documentOwnsEditorCommands {
                 env.activeDocument = nil
                 focusClearedFor = nil
                 clearInitialFocus(for: env.navigator.route)
-            }
-        }
-        .onChange(of: env.navigator.selection) { _, selection in
-            // Esc in an inspector subtask drops its selection but not its
-            // claim. With no row left to act on, the Next screen takes over.
-            if selection.isEmpty, env.activeDocument?.rootBlockID != nil, !env.navigator.hasDocumentEditor {
-                env.activeDocument = nil
             }
         }
         .onChange(of: env.commandToken) { _, newValue in
@@ -132,48 +118,40 @@ struct RootView: View {
             guard env.activeDocument == nil else { return }
             handleGlobalCommand()
         }
+        .onChange(of: env.pendingWidgetRoute, initial: true) { _, route in
+            if let route { openWidgetRoute(route) }
+        }
     }
 
-    private var statusNotices: some View {
-        VStack(spacing: 6) {
-            if let notice = env.store.editorNotice {
-                noticeCard(text: notice, icon: "info.circle", tint: ListAccent.blue.softBackground, action: ("Dismiss", { env.store.editorNotice = nil }))
-            }
-            if let error = env.store.persistenceError {
-                noticeCard(text: "Changes are not saved. \(error)", icon: "exclamationmark.triangle.fill",
-                       tint: ListAccent.red.softBackground, action: ("Retry saving", { env.store.save() }))
-            }
-            if let warning = syncWarning {
-                noticeCard(text: warning, icon: "icloud.slash", tint: ListAccent.orange.softBackground, action: nil)
-            }
+    /// Where a widget tap asked to go: Quick Add, or a screen in this window.
+    private func openWidgetRoute(_ route: WidgetRoute) {
+        env.pendingWidgetRoute = nil
+        switch route {
+        case let .capture(listID, forToday):
+            // The Quick Add panel floats over the app in front without activating Openlist.
+            QuickCapturePanel.shared.showFromWidget(QuickCaptureRequest(listID: listID, dueToday: forToday))
+            return
+        // This Mac's choice for the Inbox, even straight after a triage visit.
+        case .inbox:
+            env.workbench.go(.inbox)
+            env.navigator.followInboxPresentation()
+        // Triage even where this Mac shows the Inbox as a document, for this visit.
+        case .triage:
+            env.workbench.go(.inbox)
+            env.navigator.showInboxTriage()
+        case .today: env.workbench.go(.today)
+        // Up Next and Agenda: today's work, whichever range the Calendar was left on.
+        case .calendar: env.workbench.showOnCalendar()
+        case .activity: env.workbench.go(.activity)
+        case .lists: env.workbench.go(.lists)
         }
-        .frame(maxWidth: 560)
-        .padding(.horizontal, 20)
-    }
-
-    private func noticeCard(text: String, icon: String, tint: Color, action: (String, () -> Void)?) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Label(text, systemImage: icon)
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            if let action {
-                Button(action.0, action: action.1)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.accent)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .background(NX.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Commands outside a document
 
-    /// This window, or a popover shown from it (a child window). Quick Add,
-    /// Settings and the menu bar window are not, so the Task menu ignores them.
+    /// This window, or a popover shown from it (a child window). Quick Add
+    /// and the menu bar's popover are not, so the Task menu ignores them.
     private func isMainWindow(_ window: NSWindow) -> Bool {
         var candidate: NSWindow? = window
         while let current = candidate {
@@ -189,54 +167,16 @@ struct RootView: View {
         env.workbench.installCompletionUndo()
     }
 
-    private var syncWarning: String? {
-        env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
-            ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
-    }
-
     /// Runs menu commands on the Next screens, where the targets are the
     /// selection, else the focused row, else the inspected task. These are
     /// the tasks AppCommands enables the Task menu for.
     private func handleGlobalCommand() {
         guard let command = env.consumeCommand() else { return }
-        let workbench = env.workbench
-        let ids = workbench.targetTasks.map(\.id)
-
-        switch command {
-        case .newTask:
-            workbench.openCapture()
-        case .toggleCompletion:
-            workbench.toggleCompletion(ids)
-        case .openDetails:
-            if let first = ids.first { inspect(first) }
-        case .pickDueDate, .pickLabel:
-            guard let first = ids.first else { return }
-            env.requestedPicker = command == .pickDueDate ? .due : .labels
-            inspect(first)
-        case .setDueToday:
-            workbench.schedule(ids, offset: 0)
-        case .clearDueDate:
-            workbench.schedule(ids, offset: nil)
-        case .toggleStar:
-            workbench.star(ids)
-        case .deleteSelection:
-            workbench.trash(ids)
-        case .clearLabels:
-            workbench.clearLabels(ids)
-        case .indent, .outdent, .moveUp, .moveDown, .expandAll, .collapseAll:
-            // Outline-only operations have no meaning in a cross-list view.
-            break
-        }
+        // Outline-only operations have no meaning in a cross-list view.
+        env.performTaskCommand(command, on: env.workbench.targetTasks.map(\.id))
     }
 
-    /// Opens a task in the inspector. The task already on show keeps the focus
-    /// it has, so the Inbox triage keys still work once the inspector closes.
-    private func inspect(_ id: UUID) {
-        guard id != env.navigator.openTaskID else { return }
-        env.workbench.inspect(id)
-    }
-
-    // MARK: - Quick capture & Dock
+    // MARK: - Initial focus & Dock
 
     /// Drops the window's first responder when arriving somewhere that focus
     /// would be destructive.
@@ -264,6 +204,8 @@ struct RootView: View {
             // settles this guard without taking the user's focus away.
             guard let editor else { return }
             focusClearedFor = route
+            // A list document line's caret or selection is the user's own.
+            guard !(editor is BlockNSTextView) else { return }
             let length = (editor.string as NSString).length
             if length > 0, editor.selectedRange() == NSRange(location: 0, length: length) {
                 window.makeFirstResponder(nil)
@@ -271,23 +213,13 @@ struct RootView: View {
         }
     }
 
-    /// Whether nothing on screen wants the focus AppKit handed out: no document
-    /// editor, overlay or open task, and this route not already settled.
+    /// Whether nothing on screen wants the focus AppKit handed out: no overlay
+    /// or open task, and this route not already settled.
     private func mayClearFocus(on route: AppRoute) -> Bool {
-        !env.navigator.hasDocumentEditor && focusClearedFor != route
+        focusClearedFor != route
             && !env.navigator.isSearchOpen && !env.navigator.isCommandPaletteOpen
             && !env.navigator.isShortcutSheetOpen && !env.workbench.captureOpen
             && env.navigator.openTaskID == nil
-    }
-
-    private func installQuickCapture() {
-        QuickCaptureHotKey.shared.onTrigger = {
-            openWindow(id: WindowID.quickAdd)
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        if env.settings.quickCaptureHotKeyEnabled {
-            QuickCaptureHotKey.shared.register()
-        }
     }
 
     /// Overdue, due-today, starred and planned-for-today work — the number
@@ -303,145 +235,78 @@ struct RootView: View {
     }
 }
 
-/// Shown when a route points at something that has since been deleted.
+/// The window's editor, failure, saving and sync notices. They sit under the
+/// toolbar with the link, label and Trash notices, in line with the screen's
+/// content, which VoiceOver hears as they appear (`NextNotices`). A refusal
+/// that changed nothing passes in the tray instead; see `Store.refuse`.
+struct NXStatusNotices: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let notice = env.store.editorNotice {
+                NXNoticeCard(icon: "info.circle", message: notice) {
+                    Button("Dismiss") { env.store.editorNotice = nil }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
+            }
+            if let error = env.store.actionError {
+                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: error) {
+                    Button("Dismiss") { env.store.actionError = nil }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
+            }
+            if let error = env.store.persistenceError {
+                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
+                    Button("Retry saving") { env.store.save() }
+                        .buttonStyle(NXPanelButtonStyle(kind: .link))
+                }
+                .nxNoticePlacement()
+            }
+            if let warning = syncWarning {
+                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
+                    .nxNoticePlacement()
+            }
+        }
+    }
+
+    private var syncWarning: String? {
+        env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
+            ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
+    }
+}
+
+/// Shown when a route points at something that has since been deleted, like
+/// a list Back returns to after it went to Trash: the design's dashed empty
+/// box on the page, and a way on.
 struct MissingContentView: View {
+    @Environment(AppEnvironment.self) private var env
     let message: String
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "questionmark.folder")
-                .font(.system(size: 30))
-                .foregroundStyle(Theme.tertiaryText)
-            Text(message)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.secondaryText)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvas)
-    }
-}
-
-/// Standard page scaffold: big title, optional subtitle and trailing controls,
-/// then scrolling content constrained to a comfortable measure.
-struct ScreenScaffold<Header: View, Content: View>: View {
-    @Environment(AppEnvironment.self) private var env
-    @State private var scrollPosition = ScrollPosition(idType: UUID.self)
-    @State private var scrollRoute: AppRoute?
-    @State private var hasRestoredScroll = false
-    @State private var visibleNoteRevealID: UUID?
-    var maxContentWidth: CGFloat = 820
-    /// Gap between the title block and the content below it.
-    var headerSpacing: CGFloat = 14
-    @ViewBuilder var header: () -> Header
-    @ViewBuilder var content: () -> Content
-
-    private var readyRevealID: UUID? {
-        guard !env.navigator.isSearchOpen, let request = env.navigator.contentReveal,
-              request.taskID == nil, env.navigator.route == .list(request.listID) else { return nil }
-        return request.id
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let gutter = min(Theme.Spacing.documentGutter, max(16, geometry.size.width * 0.045))
-            ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    header()
-                        .padding(.bottom, headerSpacing)
-                        .id(ContentReveal.Anchor.pageHeader)
-                    content()
-                }
-                .frame(maxWidth: maxContentWidth, alignment: .leading)
-                .padding(.horizontal, gutter)
-                .padding(.top, 24)
-                .padding(.bottom, 60)
-                .frame(maxWidth: .infinity, alignment: .top)
+        let workbench = env.workbench
+        let way = destination
+        NXPage {
+            VStack(spacing: 12) {
+                NXDashedEmpty(text: way.route == .trash ? "This list is in Trash." : message)
+                Button(way.label) { workbench.go(way.route) }
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
             }
-            .scrollPosition($scrollPosition)
-            .onChange(of: env.navigator.rowSelection.focusID) { _, id in
-                guard env.navigator.isSelectingRows, let id,
-                      env.activeDocument?.rootBlockID == nil,
-                      NSApp.keyWindow?.firstResponder is RowSelectionNSControl else { return }
-                if env.activeDocument == nil { proxy.scrollTo(TaskSelectionScrollID.first(id)) }
-                else { proxy.scrollTo(id) }
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y
-            } action: { _, offset in
-                guard hasRestoredScroll, let scrollRoute, scrollRoute == env.navigator.route else { return }
-                env.navigator.rememberScrollOffset(offset, for: scrollRoute)
-            }
-            .onAppear {
-                scrollRoute = env.navigator.route
-                if readyRevealID == nil {
-                    if let offset = env.navigator.scrollOffset(for: env.navigator.route) {
-                        scrollPosition.scrollTo(y: offset)
-                    } else {
-                        scrollPosition.scrollTo(edge: .top)
-                    }
-                }
-                hasRestoredScroll = true
-            }
-            .task(id: readyRevealID) {
-                guard readyRevealID != nil, let request = env.navigator.contentReveal else { return }
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                if request.revealsSummary(for: request.listID) {
-                    proxy.scrollTo(ContentReveal.Anchor.listSummary(request.listID), anchor: .center)
-                } else if let id = request.blockID, request.field == .note,
-                          visibleNoteRevealID == request.id {
-                    proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
-                } else if let id = request.blockID { scrollPosition.scrollTo(id: id, anchor: .center) }
-                else { proxy.scrollTo(ContentReveal.Anchor.pageHeader, anchor: .top) }
-            }
-            .onPreferenceChange(ContentRevealNoteReadyKey.self) { requestID in
-                visibleNoteRevealID = requestID
-                guard let requestID, requestID == readyRevealID,
-                      let id = env.navigator.contentReveal?.blockID else { return }
-                // The first scroll materializes the row. Only then does its
-                // nested note anchor exist in the lazy document.
-                proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
-            }
-            .background(Theme.canvas)
-            }
+            .padding(.top, 8)
         }
     }
-}
 
-/// Empty-state placeholder used across the smart views.
-struct EmptyStateView: View {
-    let icon: String
-    let title: String
-    var message: String = ""
-    var actionTitle: String?
-    var action: (() -> Void)?
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.tertiaryText)
-
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-
-            if !message.isEmpty {
-                Text(message)
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
-            }
-
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 4)
-            }
+    /// Trash for a list that's there, else where lists or labels are found.
+    private var destination: (label: String, route: AppRoute) {
+        switch env.navigator.route {
+        case let .list(id):
+            let lists = (try? env.store.context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id }))) ?? []
+            return lists.contains { $0.trashID != nil } ? ("Open Trash", .trash) : ("Open Lists", .lists)
+        default:
+            return ("Open Tasks", .tasks)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 56)
     }
 }
 
@@ -451,7 +316,8 @@ private final class RootWindowReference {
 }
 
 /// Identifies this RootView's window without relying on SwiftUI's generated
-/// window identifiers or accidentally targeting Quick Add and Settings.
+/// window identifiers or accidentally targeting Quick Add or the menu bar's
+/// popover.
 private struct RootWindowReader: NSViewRepresentable {
     let onChange: (NSWindow?) -> Void
 

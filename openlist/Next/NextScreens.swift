@@ -3,7 +3,10 @@
 //  openlist
 //
 
+import AppKit
+import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Renders a screen's groups and returns nothing else; screens compose it
 /// under their header.
@@ -25,20 +28,7 @@ struct NXGroupsStack: View {
     @MainActor
     static func rowIDs(_ groups: [NXGroup], workbench: Workbench) -> [UUID] {
         groups.flatMap { group -> [UUID] in
-            let open = !group.collapsible || group.defaultOpen != workbench.collapsedGroups.contains(group.id)
-            return open ? group.rows.map(\.id) : []
-        }
-    }
-}
-
-enum NXSort {
-    /// Due first, then undated, then capture order.
-    static func byDue(_ a: Block, _ b: Block) -> Bool {
-        switch (a.dueDate, b.dueDate) {
-        case let (x?, y?) where x != y: return x < y
-        case (_?, nil): return true
-        case (nil, _?): return false
-        default: return a.createdAt < b.createdAt
+            group.isOpen(in: workbench) ? group.rows.map(\.id) : []
         }
     }
 }
@@ -46,23 +36,42 @@ enum NXSort {
 // MARK: - Today
 
 struct NextTodayScreen: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    /// Every document block, for the order the lists show their tasks in.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
 
     var body: some View {
-        let workbench = env.workbench
-        let model = Self.model(library: library, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
-                               accent: style.accent) { env.store.placements(taskID: $0).isEmpty }
-        NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
-            NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
-                           subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
-                           progress: model.progress)
-            if model.clear {
-                todayClear(done: model.progress.done)
+        // Ordered here, where neither the clock nor the workbench is read, so
+        // they don't walk every outline again.
+        NXTodayPage(tasks: NextTasksScreen.outlineOrder(library: library, blocks: blocks))
+    }
+}
+
+/// Today for tasks already in outline order, which its groups keep, as the
+/// design's keep its tasks' own order.
+private struct NXTodayPage: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    let tasks: [Block]
+
+    var body: some View {
+        // The design's 20s clock: done-ago chips, the date and the buckets
+        // all move on with it, midnight included.
+        TimelineView(.periodic(from: .now, by: 20)) { context in
+            let now = context.date
+            let workbench = env.workbench
+            let model = Self.model(tasks: tasks, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
+                                   accent: style.accent, now: now) { !workbench.placedTaskIDs().contains($0) }
+            NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
+                NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
+                               subtitle: now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
+                               progress: model.progress)
+                if model.clear {
+                    todayClear(done: model.progress.done)
+                }
+                NXGroupsStack(groups: model.groups, options: NXRowOptions(now: now))
+                NXAddRow(text: "Add a task for today", forToday: true)
             }
-            NXGroupsStack(groups: model.groups)
-            NXAddRow(text: "Add a task for today", forToday: true)
         }
     }
 
@@ -72,17 +81,22 @@ struct NextTodayScreen: View {
         var clear: Bool
     }
 
+    /// Today's groups from the library's tasks in outline order. Each open
+    /// group keeps that order, as the design's are plain filters of its tasks.
     @MainActor
-    static func model(library: NextLibrary, workbench: Workbench, showsCompleted: Bool, accent: Color,
+    static func model(tasks: [Block], workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
                       isUnplaced: @escaping (UUID) -> Bool) -> Model {
-        let visible = library.tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
-        func offset(_ task: Block) -> Int? { task.dueDate.map { NXFormat.dayOffset($0) } }
-        // Overdue as everywhere else: a timed task once its time passes, a dated one from the next day.
-        let overdue = visible.filter { NXFormat.isPastDue($0) }.sorted(by: NXSort.byDue)
-        let due = visible.filter { offset($0) == 0 && !NXFormat.isPastDue($0) }.sorted(by: NXSort.byDue)
-        let planned = visible.filter { workbench.isPlanned($0) && (offset($0) ?? 1) > 0 }.sorted(by: NXSort.byDue)
-        let starred = visible.filter { $0.isStarred && (offset($0) ?? 1) > 0 && !workbench.isPlanned($0) }.sorted(by: NXSort.byDue)
-        let doneToday = library.tasks.filter(\.isCompletedToday).sorted(by: Block.byCompletionDate)
+        let visible = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
+        func offset(_ task: Block) -> Int? { task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
+        // By day, as the design: Overdue is earlier days only, so a timed
+        // task whose time has passed stays in Due today.
+        let overdue = visible.filter { (offset($0) ?? 0) < 0 }
+        let due = visible.filter { offset($0) == 0 }
+        let planned = visible.filter { workbench.isPlanned($0) && (offset($0) ?? 1) > 0 }
+        let starred = visible.filter { $0.isStarred && (offset($0) ?? 1) > 0 && !workbench.isPlanned($0) }
+        let doneToday = tasks
+            .filter { $0.isCompleted && $0.completedAt.map { NXFormat.dayOffset($0, now: now) == 0 } == true }
+            .sorted(by: Block.byCompletionDate)
 
         var groups: [NXGroup] = []
         if !overdue.isEmpty {
@@ -105,7 +119,7 @@ struct NextTodayScreen: View {
         }
         if !doneToday.isEmpty {
             groups.append(NXGroup(id: "done", title: "Completed today", icon: "checkmark.circle.fill", color: NX.green,
-                                  rows: doneToday, collapsible: true, defaultOpen: showsCompleted))
+                                  rows: doneToday, collapsible: true, defaultOpen: showsCompleted, completed: true))
         }
         let open = overdue.count + due.count + planned.count + starred.count
         return Model(groups: groups, progress: (doneToday.count, doneToday.count + open), clear: open == 0)
@@ -115,19 +129,28 @@ struct NextTodayScreen: View {
         HStack(spacing: 18) {
             Image(systemName: "sun.max.fill").font(.system(size: 34)).foregroundStyle(NX.today)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Today is clear").font(NX.serif(26)).foregroundStyle(NX.ink)
+                Text("Today is clear").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
+                // The design's 13/1.45: the extra leading between lines and,
+                // halved, above the first and below the last.
+                let leading = 13 * 1.45 - NX.lineHeight(13)
                 Text("\(done) finished today. Nothing is overdue, due, planned or starred.")
                     .font(.system(size: 13))
+                    .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.56))
+                    .padding(.vertical, leading / 2)
             }
             Spacer(minLength: 8)
-            Button("Look at tomorrow") { env.workbench.go(.calendar) }
-                .font(.system(size: 12, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, radius: 8,
-                                                padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
-                                                foreground: NX.ink(0.7)))
-                .background(NX.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NX.ink(0.14), lineWidth: 0.5))
+            // In Day view, or on the week's last day, the range moves to it.
+            // The design's 600 12/1, so the button is its 28pt: 8 + 12 + 8.
+            Button { env.workbench.showOnCalendar(NXFormat.day(offset: 1)) } label: {
+                Text("Look at tomorrow")
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
+            }
+            .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, rest: NX.card, radius: 8,
+                                            padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
+                                            foreground: NX.ink(0.7)))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NX.ink(0.14), lineWidth: 0.5))
         }
         .padding(.vertical, 30)
         .padding(.horizontal, 28)
@@ -138,101 +161,64 @@ struct NextTodayScreen: View {
     }
 }
 
-/// The design's liftIn entrance: y 10, scale .985, fade.
+/// The design's liftIn entrance: y 10, scale .985, fade, at its own speed
+/// whatever the Motion setting: 320ms on the house ease for Today's and the
+/// Inbox's cards, or what the card's own liftIn takes.
 struct NXLiftIn: ViewModifier {
     @Environment(\.nextStyle) private var style
+    var animation: Animation = NX.ease(320)
     @State private var shown = false
 
     func body(content: Content) -> some View {
+        // With Reduce Motion it only fades, as the overlay cards do.
+        let risen = shown || !style.slides
         content
-            .offset(y: shown ? 0 : 10)
-            .scaleEffect(shown ? 1 : 0.985)
+            .offset(y: risen ? 0 : 10)
+            .scaleEffect(risen ? 1 : 0.985)
             .opacity(shown ? 1 : 0)
-            .onAppear { withAnimation(style.ease(320)) { shown = true } }
+            .onAppear { withAnimation(animation) { shown = true } }
     }
 }
 
 // MARK: - List & label
 
-/// The list header's switch between Work and Personal hours.
-struct NXHoursMenu: View {
-    @Environment(AppEnvironment.self) private var env
-    let list: TaskList
-
-    var body: some View {
-        let workbench = env.workbench
-        let current = workbench.hours(for: list)
-        Menu {
-            Picker("Plan and Start working use", selection: Binding(get: { current },
-                                                                    set: { workbench.setHours($0, for: list.id) })) {
-                ForEach(AvailabilityCategory.allCases) { category in
-                    let summary = NXHours.summary(env.calendar.preferences.profile(for: category), calendar: env.settings.calendar)
-                    Text("\(category.title) Hours · \(summary)").tag(category)
-                }
-            }
-            .pickerStyle(.inline)
-            Divider()
-            Button("Edit Hours in Settings…") { workbench.go(.settings) }
-        } label: {
-            HStack(spacing: 4) {
-                Text("\(current.title) hours").font(.system(size: 12, weight: .medium))
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-            }
-        }
-        .menuStyle(.button)
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
-                                        padding: EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4),
-                                        foreground: NX.ink(0.48), hoverForeground: NX.ink))
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Which hours Plan and Start working use for this list")
-        .accessibilityLabel("Hours: \(current.title)")
-    }
-}
-
-/// Switches a list between the Next task list and its document, where notes
-/// and headings live. The choice is remembered per list on this Mac.
-struct NXViewModeButton: View {
-    @Environment(AppEnvironment.self) private var env
-    let listID: UUID
-    var showsTitle = false
-
-    var body: some View {
-        let target: ListViewMode = env.navigator.listViewMode(for: listID) == .document ? .tasks : .document
-        Button { env.navigator.setListViewMode(target, for: listID) } label: {
-            HStack(spacing: 5) {
-                Image(systemName: target == .document ? "doc.text" : "checklist").font(.system(size: 14, weight: .medium))
-                if showsTitle { Text("Show as \(target.title)").font(.system(size: 12, weight: .medium)) }
-            }
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 7,
-                                        padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: showsTitle ? 8 : 5),
-                                        foreground: NX.ink(0.45), hoverForeground: NX.ink))
-        .fixedSize()
-        .help(target == .document ? "Show notes and headings" : "Show as a task list")
-        .accessibilityLabel("Show as \(target.title)")
-    }
-}
-
+/// A list: its cover and header, its description and nested lists, then the
+/// list itself as the design's document, then the tasks done at its top
+/// level, which leave the document once settled.
 struct NextListScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
     let list: TaskList
+    /// The Tasks presentation: the same document with only its tasks.
+    var tasksOnly = false
+    /// The document's task rows, which lead the page's J/K order.
+    @State private var documentRowIDs: [UUID] = []
+    @State private var renaming = false
+    /// A list just made is named from an empty field, its placeholder
+    /// standing in for "Untitled list".
+    @State private var naming = false
+    @State private var describing = false
 
     var body: some View {
         let workbench = env.workbench
-        let (ordered, depths) = outline()
-        let open = ordered.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
-        let done = ordered.filter { $0.isCompleted && workbench.closing[$0.id] == nil }.sorted(by: Block.byCompletionDate)
-        let groups = Self.groups(open: open, done: done, showsCompleted: env.settings.showsCompletedTasks)
+        let tasks = library.tasks(in: list.id)
+        let open = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
+        let groups = Self.completedGroups(tasks, in: list.id, workbench: workbench,
+                                          showsCompleted: list.showsCompleted(default: env.settings.showsCompletedTasks),
+                                          inDocument: Set(documentRowIDs), tasksOnly: tasksOnly)
         let section = library.sectionTitle(for: list)
         let archived = library.archived.contains { $0.id == list.id }
-        NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
+        NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
+            NXListCover(list: list)
             NXScreenHeader(tile: .list(list), color: list.nxColor, title: list.displayTitle,
                            subtitle: "\(open.count) open" + (section.isEmpty ? "" : " · \(section)")
-                               + (archived ? " · Archived" : "") + " ·",
-                           progress: (ordered.filter(\.isCompleted).count, ordered.count),
-                           accessory: AnyView(NXHoursMenu(list: list))) {
+                               + (archived ? " · Archived" : ""),
+                           progress: (tasks.filter(\.isCompleted).count, tasks.count),
+                           rename: list.isSystemInbox ? nil : NXTitleRename(isEditing: $renaming,
+                                                                           value: naming ? "" : list.title,
+                                                                           placeholder: "Untitled list") { name in
+                               workbench.renameList(list.id, to: name)
+                           }) {
                 // A list archived through its parent unarchives with the parent.
                 if list.isArchived {
                     Button("Unarchive") { workbench.setArchived(false, for: list) }
@@ -243,67 +229,389 @@ struct NextListScreen: View {
                         .fixedSize()
                         .help("Return this list to the sidebar and active tasks")
                 }
-                NXViewModeButton(listID: list.id)
+                NXListOptions(list: list) { describing = true }
             }
-            NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: list.id, notes: true, depths: depths))
-            NXAddRow(text: "Add to \(list.displayTitle)", listID: list.id)
+            NXListDescription(list: list, editing: $describing)
+            NXChildLists(list: list)
+            NXDocumentOutline(list: list, tasksOnly: tasksOnly)
+                // The Turn into card draws over the Completed group.
+                .zIndex(1)
+                .onPreferenceChange(NXDocumentRowsKey.self) { documentRowIDs = $0 }
+            // The design's 20s clock, so Completed's done-ago chips move on.
+            TimelineView(.periodic(from: .now, by: 20)) { context in
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: list.id, notes: true,
+                                                                    now: context.date))
+            }
         }
-        .onAppear { env.store.markOpened(list) }
+        .onAppear {
+            env.store.markOpened(list)
+            // A list just made opens ready to be named, but not under an
+            // open capture, whose card keeps the keys.
+            if workbench.namingListID == list.id || list.title.isEmpty, !list.isSystemInbox, !workbench.captureOpen {
+                workbench.namingListID = nil
+                naming = true
+                renaming = true
+            }
+        }
+        .onChange(of: renaming) { _, editing in if !editing { naming = false } }
+    }
+
+    /// The Completed group under a list's document: the tasks done at its top
+    /// level once they've settled. As the design's list branch, done subtasks
+    /// stay struck in place. A done task the document still draws, with a
+    /// task under it still open, isn't listed twice. In the Tasks
+    /// presentation the top level is the tasks', so a done task a heading,
+    /// list item or text line holds, with no task above it, is listed too.
+    @MainActor
+    static func completedGroups(_ tasks: [Block], in listID: UUID, workbench: Workbench, showsCompleted: Bool,
+                                inDocument: Set<UUID> = [], tasksOnly: Bool = false) -> [NXGroup] {
+        let byID = tasksOnly ? Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
+        let done = tasks.filter {
+            $0.isCompleted && workbench.closing[$0.id] == nil && !inDocument.contains($0.id)
+                && ($0.parentID == nil
+                    || tasksOnly && !BlockTree.hasTaskAncestor($0) { byID[$0] ?? workbench.store.block(id: $0) })
+        }
+            .sorted(by: Block.byCompletionDate)
+        guard !done.isEmpty else { return [] }
+        return [NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green, rows: done,
+                        collapsible: true, defaultOpen: showsCompleted, completed: true, listID: listID)]
     }
 
     static func groups(open: [Block], done: [Block], showsCompleted: Bool) -> [NXGroup] {
         var groups = [NXGroup(id: "open", rows: open, showHead: false, emptyText: "No open tasks. Press N to capture one.")]
         if !done.isEmpty {
             groups.append(NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green,
-                                  rows: done, collapsible: true, defaultOpen: showsCompleted))
+                                  rows: done, collapsible: true, defaultOpen: showsCompleted, completed: true))
         }
         return groups
     }
+}
 
-    /// Tasks in document order, with their depth among task ancestors.
-    private func outline() -> ([Block], [UUID: Int]) {
-        // Archived lists opened from the Lists gallery keep their tasks too.
-        let tasks = library.tasks(in: list.id)
-        let taskIDs = Set(tasks.lazy.map(\.id))
-        guard !taskIDs.isEmpty else { return ([], [:]) }
-        let rows = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
-        var ordered: [Block] = []
-        var depths: [UUID: Int] = [:]
-        // Stack of (document depth, is task) for the current ancestor chain.
-        var chain: [(depth: Int, isTask: Bool)] = []
-        for row in rows {
-            while let last = chain.last, last.depth >= row.depth { chain.removeLast() }
-            let isTask = taskIDs.contains(row.id)
-            if isTask {
-                ordered.append(row.block)
-                let depth = chain.filter(\.isTask).count
-                if depth > 0 { depths[row.id] = depth }
+/// The list's cover above its header, while it has one on show.
+private struct NXListCover: View {
+    let list: TaskList
+    @State private var image: NSImage?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Always there, so the image loads before there's anything to show.
+            Color.clear.frame(height: 0)
+            if list.coverFilename != nil, list.coverPresentation == .compact, let image {
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 140)
+                    .overlay {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
+                    .padding(.bottom, 22)
+                    .accessibilityElement()
+                    .accessibilityLabel("List cover: \(list.coverMetadata?.displayName ?? list.displayTitle)")
             }
-            chain.append((row.depth, isTask))
         }
-        // Tasks the outline could not reach still belong on the screen.
-        let seen = Set(ordered.map(\.id))
-        ordered += tasks.filter { !seen.contains($0.id) }
-        return (ordered, depths)
+        .task(id: list.coverFilename) { load() }
+        .onChange(of: list.coverData) { _, _ in load() }
+    }
+
+    private func load() {
+        image = list.coverFilename.flatMap { MediaStore.shared.image(named: $0, data: list.coverData) }
+    }
+}
+
+/// The list header's options, the native extras the design has no place
+/// for: the list's own commands (`NXListMenu`), with the page's order,
+/// completed tasks, appearance, description and cover.
+private struct NXListOptions: View {
+    @Environment(AppEnvironment.self) private var env
+    let list: TaskList
+    /// Starts the description under the header, or writes the one there.
+    let describe: () -> Void
+    @State private var appearanceOpen = false
+
+    var body: some View {
+        Menu {
+            NXListMenu(list: list, surface: .page) {
+                Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.workbench.setSorting($0, for: list) })) {
+                    ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Picker("Completed Tasks", selection: Binding(get: { list.completedVisibility }, set: { visibility in
+                    // The list's new choice shows on it at once, over the Completed groups' last fold.
+                    env.workbench.completedFold?.lapsed.insert(list.id)
+                    env.workbench.setCompletedVisibility(visibility, for: list)
+                })) {
+                    ForEach(TaskList.CompletedVisibility.allCases) { Text($0.title).tag($0) }
+                }
+                Divider()
+                Button("Icon & Colour…") { appearanceOpen = true }
+                Button(list.summary.isEmpty ? "Add Description" : "Edit Description", action: describe)
+                Menu("Cover") { coverItems }
+            }
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium))
+        }
+        .menuStyle(.button)
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 7,
+                                        padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
+                                        foreground: NX.ink(0.45), hoverForeground: NX.ink))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("List options")
+        .accessibilityLabel("List options")
+        .popover(isPresented: $appearanceOpen, arrowEdge: .bottom) {
+            ListAppearancePicker(list: list).environment(env)
+        }
+    }
+
+    /// The cover's own choices: a local image, how it shows, and removing it.
+    @ViewBuilder
+    private var coverItems: some View {
+        Button(list.coverFilename == nil ? "Add Cover from File…" : "Replace Cover from File…") {
+            guard let source = Self.chooseCoverImage(for: list) else { return }
+            perform { try env.workbench.setCover(of: list, from: source) }
+        }
+        if list.coverFilename != nil {
+            Picker("Cover Display", selection: Binding(get: { list.coverPresentation }, set: { presentation in
+                perform { try env.workbench.setCoverPresentation(presentation, of: list) }
+            })) {
+                ForEach(ListCoverPresentation.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Button("Remove Cover", role: .destructive) { perform { try env.workbench.removeCover(of: list) } }
+        }
+    }
+
+    /// A cover change that fails says why in the window's notice, as its
+    /// Undo's failure does.
+    private func perform(_ operation: () throws -> Void) {
+        do { try operation() } catch { env.store.actionError = "The cover could not be changed. \(error.localizedDescription)" }
+    }
+
+    /// Asks for the image a list's cover should show.
+    private static func chooseCoverImage(for list: TaskList) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = list.coverFilename == nil ? "Add list cover" : "Replace list cover"
+        panel.prompt = "Choose image"
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose an image up to 20 MB and 40 megapixels. Openlist keeps its own copy."
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+}
+
+/// The list's description under its header, 13.8 at ink .62, written in
+/// place: a click starts, Return or clicking away commits, Esc cancels.
+private struct NXListDescription: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    let list: TaskList
+    @Binding var editing: Bool
+    @State private var draft = ""
+    @State private var selection: TextSelection?
+    /// The reveal whose description is lit, until it fades.
+    @State private var litRevealID: UUID?
+    @FocusState private var focused: Bool
+
+    private var revealsSummary: Bool { env.navigator.contentReveal?.revealsSummary(for: list.id) == true }
+
+    /// A search hit in the description, once search has stepped aside.
+    private var readyRevealID: UUID? {
+        guard revealsSummary, !env.navigator.isSearchOpen else { return nil }
+        return env.navigator.contentReveal?.id
+    }
+
+    var body: some View {
+        // The design's 1.45 line box, as the rows' titles have it.
+        let leading = max(0, 13.8 * 1.45 - NX.lineHeight(13.8))
+        VStack(alignment: .leading, spacing: 0) {
+            if editing || !list.summary.isEmpty || revealsSummary {
+                Group {
+                    if editing {
+                        TextField("Add a description…", text: $draft, selection: $selection, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .focused($focused)
+                            .onSubmit(commit)
+                            .onExitCommand { editing = false }
+                            .onAppear {
+                                draft = list.summary
+                                if selection == nil { selection = TextSelection(insertionPoint: draft.endIndex) }
+                                // Once the field is on screen, or the focus can miss it.
+                                DispatchQueue.main.async { focused = true }
+                            }
+                            .onChange(of: focused) { _, now in if !now { commit() } }
+                            .accessibilityLabel("List description")
+                    } else {
+                        Text(list.summary.isEmpty ? "Add a description…" : list.summary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .contentShape(Rectangle())
+                            .onTapGesture { editing = true }
+                            .pointerStyle(.horizontalText)
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityHint("Edits the description")
+                            .accessibilityAction { editing = true }
+                    }
+                }
+                .font(.system(size: 13.8))
+                .lineSpacing(leading)
+                .foregroundStyle(NX.ink(list.summary.isEmpty && !editing ? 0.32 : 0.62))
+                .padding(.vertical, leading / 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    // Where a search hit landed, in the design's fresh tint, as a revealed line has it.
+                    if revealsSummary, litRevealID != nil, litRevealID == env.navigator.contentReveal?.id {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(style.accent.opacity(0.11))
+                            .padding(-5)
+                            .transition(.opacity)
+                    }
+                }
+                .id(ContentReveal.Anchor.listSummary(list.id))
+                // Under the title, past the header's tile.
+                .padding(.leading, 56)
+                .padding(.top, 12)
+            }
+        }
+        .task(id: readyRevealID) {
+            litRevealID = readyRevealID
+            guard readyRevealID != nil else { return }
+            try? await Task.sleep(for: .milliseconds(1200))
+            guard !Task.isCancelled else { return }
+            // The design's row background transition: 700ms ease.
+            withAnimation(NX.cssEase(700)) { litRevealID = nil }
+        }
+        .task(id: readyRevealID) {
+            guard readyRevealID != nil, let reveal = env.navigator.contentReveal else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            selection = SearchProjection.range(of: reveal.query, in: list.summary).map { TextSelection(range: $0) }
+            if editing { focused = true } else { editing = true }
+        }
+    }
+
+    private func commit() {
+        guard editing else { return }
+        editing = false
+        let summary = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if summary != list.summary { env.workbench.setListDescription(list.id, to: summary) }
+        selection = nil
+    }
+}
+
+/// The lists nested in this one, as a compact group above its document.
+private struct NXChildLists: View {
+    @Environment(\.nextLibrary) private var library
+    let list: TaskList
+
+    var body: some View {
+        let children = library.children(of: list)
+        VStack(alignment: .leading, spacing: 0) {
+            if !children.isEmpty {
+                HStack(spacing: 7) {
+                    Text("Lists")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(NX.ink)
+                    Text("\(children.count)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NX.ink(0.38))
+                        .monospacedDigit()
+                }
+                // One heading to VoiceOver, as a group's head.
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(children, id: \.id) { NXChildListRow(list: $0) }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(.top, children.isEmpty ? 0 : 16)
+    }
+}
+
+/// A nested list: its glyph where a row's checkbox sits, its title and its
+/// open count. A click opens it.
+private struct NXChildListRow: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    @Environment(\.nextLibrary) private var library
+    let list: TaskList
+    @State private var hovering = false
+
+    var body: some View {
+        let workbench = env.workbench
+        let count = library.openCount(in: list.id)
+        HStack(spacing: 0) {
+            NXListGlyph(list: list, size: 13)
+                .frame(width: 26, alignment: .leading)
+            // 13.8 on the rows' 1.45 line box.
+            Text(list.displayTitle)
+                .font(.system(size: 13.8))
+                .foregroundStyle(NX.ink)
+                .lineLimit(1)
+                .padding(.vertical, max(0, 13.8 * 1.45 - NX.lineHeight(13.8)) / 2)
+            Spacer(minLength: 8)
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NX.ink(0.38))
+                    .monospacedDigit()
+            }
+        }
+        .padding(.vertical, style.rowVerticalPadding)
+        .padding(.horizontal, 10)
+        .background(hovering ? NX.ink(0.03) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { workbench.go(workbench.route(for: list)) }
+        .contextMenu { NXListMenu(list: list, surface: .childRow) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(list.displayTitle)
+        .accessibilityValue("\(count) open")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { workbench.go(workbench.route(for: list)) }
     }
 }
 
 struct NextLabelScreen: View {
-    @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
+    /// Every document block, for the order the lists show their tasks in.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
     let label: TaskLabel
 
     var body: some View {
+        // Ordered here, where the workbench isn't read, so it doesn't walk every outline again.
+        NXLabelPage(label: label, tasks: NextTasksScreen.outlineOrder(library: library, blocks: blocks))
+    }
+}
+
+/// A label's tasks, already in outline order, which its open group keeps,
+/// as the design's keeps its tasks' own order.
+private struct NXLabelPage: View {
+    @Environment(AppEnvironment.self) private var env
+    let label: TaskLabel
+    let tasks: [Block]
+
+    var body: some View {
         let workbench = env.workbench
-        let mine = library.tasks.filter { $0.labelIDs.contains(label.id) }
-        let open = mine.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }.sorted(by: NXSort.byDue)
+        let mine = tasks.filter { $0.labelIDs.contains(label.id) }
+        let open = mine.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
         let done = mine.filter { $0.isCompleted && workbench.closing[$0.id] == nil }.sorted(by: Block.byCompletionDate)
         let groups = NextListScreen.groups(open: open, done: done, showsCompleted: env.settings.showsCompletedTasks)
         NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXScreenHeader(tile: .icon("tag.fill"), color: label.nxColor, title: "#\(label.name)",
                            subtitle: "\(open.count) open \(open.count == 1 ? "task" : "tasks") with this label",
                            progress: (mine.filter(\.isCompleted).count, mine.count))
-            NXGroupsStack(groups: groups, options: NXRowOptions(showList: true, notes: true))
+            // The design's 20s clock, so Completed's done-ago chips move on.
+            TimelineView(.periodic(from: .now, by: 20)) { context in
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: true, notes: true, now: context.date))
+            }
             NXAddRow(text: "Add a task")
         }
     }

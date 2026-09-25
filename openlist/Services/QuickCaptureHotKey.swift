@@ -6,27 +6,40 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import Observation
 
 /// Registers ⇧⌥Space as a system-wide hot key for quick capture.
 ///
 /// Carbon's `RegisterEventHotKey` is used rather than an `NSEvent` global
 /// monitor because it works inside the App Sandbox without the accessibility
 /// permission a monitor would demand.
-@MainActor
+@Observable @MainActor
 final class QuickCaptureHotKey {
     static let shared = QuickCaptureHotKey()
 
-    /// Invoked on the main actor when the hot key fires.
-    var onTrigger: (() -> Void)?
+    /// Why ⇧⌥Space couldn't be registered, the last time it was tried.
+    enum Failure: Equatable {
+        /// Another app already owns it.
+        case taken
+        case failed
+    }
 
-    private var hotKeyRef: EventHotKeyRef?
-    private var eventHandler: EventHandlerRef?
+    /// Invoked on the main actor when the hot key fires.
+    @ObservationIgnored var onTrigger: (() -> Void)?
+
+    /// Whether ⇧⌥Space opens capture from any app now, which the menu bar's
+    /// key cap shows.
+    private(set) var isRegistered = false
+    /// Why the last registration failed, until the next one or `unregister`;
+    /// Settings says so under its switch rather than promise the key.
+    private(set) var failure: Failure?
+
+    @ObservationIgnored private var hotKeyRef: EventHotKeyRef?
+    @ObservationIgnored private var eventHandler: EventHandlerRef?
     private let signature = OSType(0x4F4C_5354) // 'OLST'
     private let identifier: UInt32 = 1
 
     private init() {}
-
-    var isRegistered: Bool { hotKeyRef != nil }
 
     func register() {
         guard hotKeyRef == nil else { return }
@@ -46,10 +59,15 @@ final class QuickCaptureHotKey {
             0,
             &reference
         )
-        // A non-zero status usually means another app already owns the combo;
-        // failing quietly is better than blocking launch.
-        guard status == noErr else { return }
+        // A non-zero status usually means another app already owns the combo.
+        // Launch goes on; Settings says why the key does nothing.
+        guard status == noErr else {
+            failure = status == OSStatus(eventHotKeyExistsErr) ? .taken : .failed
+            return
+        }
         hotKeyRef = reference
+        isRegistered = true
+        failure = nil
         _ = hotKeyID
     }
 
@@ -58,6 +76,8 @@ final class QuickCaptureHotKey {
             UnregisterEventHotKey(hotKeyRef)
             self.hotKeyRef = nil
         }
+        isRegistered = false
+        failure = nil
     }
 
     private func installHandlerIfNeeded() {

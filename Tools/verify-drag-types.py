@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify registered private transport types in source or built app metadata."""
+"""Verify the registered private drag and backup types in source or built app metadata."""
 import plistlib
 import sys
 from pathlib import Path
@@ -16,10 +16,10 @@ except (OSError, plistlib.InvalidFileException) as error:
     fail(f"cannot read Info.plist ({error})")
 exports = info.get("UTExportedTypeDeclarations")
 if not isinstance(exports, list):
-    fail("must declare private drag types and the library backup type")
+    fail("must declare the private drag types and the library backup type")
 for identifier, conformance in [
     ("app.openlist.block-drag", "public.data"),
-    ("app.openlist.inbox-order", "public.data"),
+    ("app.openlist.list-drag", "public.data"),
     ("solimanali.openlist.library-backup", "com.apple.package"),
 ]:
     matches = [item for item in exports if isinstance(item, dict) and item.get("UTTypeIdentifier") == identifier]

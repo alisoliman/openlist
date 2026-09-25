@@ -13,6 +13,7 @@ nonisolated struct SearchCorpus: Equatable, Sendable {
         let displayTitle: String
         let isTask: Bool
         let isCompleted: Bool
+        let dueDate: Date?
         let updatedAt: Date
         let createdAt: Date
         let symbol: String
@@ -24,7 +25,6 @@ nonisolated struct SearchCorpus: Equatable, Sendable {
         let summary: String
         let path: String
         let icon: String
-        let accent: ListAccent
         let isArchived: Bool
         let mergedIntoID: UUID?
         let createdAt: Date
@@ -38,12 +38,12 @@ nonisolated struct SearchCorpus: Equatable, Sendable {
         self.blocks = blocks.filter { !$0.isDeleted && !$0.isTrashed && $0.listID.flatMap { hierarchy.retainedGroup(for: $0) } == nil }.map {
             BlockRecord(id: $0.id, listID: $0.listID, parentID: $0.parentID,
                 text: $0.text, note: $0.note, displayTitle: $0.displayTitle,
-                isTask: $0.isTask, isCompleted: $0.isCompleted, updatedAt: $0.updatedAt,
+                isTask: $0.isTask, isCompleted: $0.isCompleted, dueDate: $0.dueDate, updatedAt: $0.updatedAt,
                 createdAt: $0.createdAt, symbol: $0.kind.symbol)
         }
         self.lists = lists.filter { !$0.isDeleted && hierarchy.availableIDs.contains($0.id) }.map {
             ListRecord(id: $0.id, title: $0.title, displayTitle: $0.displayTitle,
-                summary: $0.summary, path: hierarchy.path(for: $0.id), icon: $0.icon, accent: $0.accent,
+                summary: $0.summary, path: hierarchy.path(for: $0.id), icon: $0.icon,
                 isArchived: hierarchy.isArchived($0.id), mergedIntoID: $0.mergedIntoID, createdAt: $0.createdAt)
         }
     }

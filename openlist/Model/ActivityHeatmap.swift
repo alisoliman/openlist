@@ -1,7 +1,9 @@
 import Foundation
 
-/// Counts retained actions, not today's checked state. No coverage ledger
-/// exists, so an empty day is unknown and never an asserted zero.
+/// Counts the saved completions that still stand, as the design counts the
+/// tasks done: one taken back since, by its Undo or by reopening the task,
+/// with no completion after it, leaves the count. No coverage ledger exists,
+/// so an empty day is unknown and never an asserted zero.
 nonisolated struct ActivityHeatmap: Equatable, Sendable {
     var days: [ActivityHeatmapDay]
     var calendar: Calendar
@@ -12,12 +14,15 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
     var total: Int { days.reduce(0) { $0 + $1.count } }
     var unclassifiedCount: Int { days.reduce(invalidDateCount) { $0 + $1.unclassifiedCount } }
 
-    init(completions: [ActivityCompletion], now: Date = .now, calendar: Calendar = .current) {
+    /// `weeks` whole weeks, the last one today's: the Activity screen shows 12,
+    /// the medium Activity widget 21.
+    init(completions: [ActivityCompletion], reversals: [ActivityReversal] = [], now: Date = .now,
+         calendar: Calendar = .current, weeks: Int = 12) {
         self.calendar = calendar
         let today = calendar.startOfDay(for: now)
         let weekdayOffset = (calendar.component(.weekday, from: today) - calendar.firstWeekday + 7) % 7
         let weekStart = calendar.date(byAdding: .day, value: -weekdayOffset, to: today)!
-        let firstDay = calendar.date(byAdding: .day, value: -77, to: weekStart)!
+        let firstDay = calendar.date(byAdding: .day, value: -7 * (max(1, weeks) - 1), to: weekStart)!
         var dates: [Date] = []
         var next = firstDay
         while next <= today {
@@ -35,25 +40,79 @@ nonisolated struct ActivityHeatmap: Equatable, Sendable {
         let byRecord: [String: [ActivityCompletion]] = Dictionary(grouping: byEvent) { entry in
             entry.completionID.map { "record:\($0)" } ?? "event:\(entry.id)"
         }
-        let merged: [ActivityCompletion] = byRecord.values.map { ActivityCompletion.mergingDuplicates($0) }
-        let sorted = merged.sorted { left, right in
-            if left.date != right.date { return left.date < right.date }
-            return left.id.uuidString < right.id.uuidString
-        }
-        var seenKeys: Set<String> = []
-        for entry in sorted {
-            let day = calendar.startOfDay(for: entry.date)
+        // Each counted task or cycle's completions and the actions that took
+        // one back, as they were saved; a record's every saved copy is its
+        // merged entry, so its Redo stands for it again.
+        var actions: [String: [ActivityHeatmapAction]] = [:]
+        var keyByRecord: [UUID: String] = [:]
+        var keyByOccurrence: [String: String] = [:]
+        for copies in byRecord.values {
+            let entry = ActivityCompletion.mergingDuplicates(copies)
             guard !entry.hasConflictingDetails, let taskID = entry.taskID, let recurring = entry.wasRecurring,
                   !recurring || entry.cycleID != nil || entry.occurrenceID != nil else {
+                let day = calendar.startOfDay(for: entry.date)
                 if day >= firstDay { unknown[day, default: 0] += 1 }
                 continue
             }
             let key = recurring ? "\(taskID):\(entry.cycleID ?? entry.occurrenceID!)" : "\(taskID):task"
-            // Deduplicate before clipping the range: completing an old ordinary
-            // task again this week cannot turn into an extra completion.
-            guard seenKeys.insert(key).inserted else { continue }
-            if day >= firstDay { known[day, default: []].append(entry) }
+            if let record = entry.completionID { keyByRecord[record] = key }
+            if let occurrence = entry.occurrenceID { keyByOccurrence["\(taskID):\(occurrence)"] = key }
+            for copy in copies { actions[key, default: []].append(ActivityHeatmapAction(at: copy.recordedAt, id: copy.id, entry: entry)) }
         }
-        days = dates.map { ActivityHeatmapDay(id: $0, completions: known[$0] ?? [], unclassifiedCount: unknown[$0] ?? 0) }
+        // An Undo takes back the record it removed. A reopen takes back an
+        // ordinary task's count, or the cycle it counted in, its own rule's or
+        // a repeat's above it, else the count of the occurrence it reopened;
+        // a subtask the repeat resets as it rolls on names no cycle, so keeps
+        // its cycle's count.
+        for reversal in reversals where reversal.date.timeIntervalSinceReferenceDate.isFinite {
+            let key: String?
+            if let record = reversal.completionID {
+                key = keyByRecord[record]
+            } else if let task = reversal.taskID, let cycle = reversal.cycleID {
+                let own = "\(task):\(cycle)"
+                key = actions[own] != nil ? own : reversal.occurrenceID.flatMap { keyByOccurrence["\(task):\($0)"] }
+            } else {
+                key = reversal.taskID.map { "\($0):task" }
+            }
+            guard let key, actions[key] != nil else { continue }
+            actions[key]?.append(ActivityHeatmapAction(at: reversal.date, id: nil, entry: nil))
+        }
+        for timeline in actions.values {
+            // Deduplicate before clipping the range: completing an old ordinary
+            // task again this week cannot turn into an extra completion. The
+            // first completion since the last one taken back supplies the day.
+            var standing: ActivityCompletion?
+            for action in timeline.sorted() {
+                if let entry = action.entry { standing = standing ?? entry } else { standing = nil }
+            }
+            guard let standing else { continue }
+            let day = calendar.startOfDay(for: standing.date)
+            if day >= firstDay { known[day, default: []].append(standing) }
+        }
+        days = dates.map { date in
+            let completions = (known[date] ?? []).sorted { left, right in
+                if left.date != right.date { return left.date < right.date }
+                return left.id.uuidString < right.id.uuidString
+            }
+            return ActivityHeatmapDay(id: date, completions: completions, unclassifiedCount: unknown[date] ?? 0)
+        }
+    }
+}
+
+/// A completion or a reversal in the order it was saved; a reversal saved at
+/// the same moment as a completion comes after it.
+private nonisolated struct ActivityHeatmapAction: Comparable {
+    var at: Date
+    var id: UUID?
+    var entry: ActivityCompletion?
+
+    static func < (left: Self, right: Self) -> Bool {
+        if left.at != right.at { return left.at < right.at }
+        if (left.entry == nil) != (right.entry == nil) { return right.entry == nil }
+        return (left.id?.uuidString ?? "") < (right.id?.uuidString ?? "")
+    }
+
+    static func == (left: Self, right: Self) -> Bool {
+        left.at == right.at && left.id == right.id && (left.entry == nil) == (right.entry == nil)
     }
 }

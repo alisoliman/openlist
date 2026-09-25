@@ -6,7 +6,7 @@
 import Foundation
 import SwiftData
 
-/// A single line of content inside a list document or a task's detail page.
+/// A single line of content inside a list document.
 ///
 /// Blocks form an arbitrarily deep tree. Parentage is expressed with
 /// `parentID` rather than a SwiftData relationship so that reordering,
@@ -62,7 +62,7 @@ final class Block {
     /// JSON-encoded `Recurrence`.
     var recurrenceData: Data?
     var labelIDs: [UUID] = []
-    /// Free-form note shown under the title in the task detail page.
+    /// Free-form note shown under the title in the list document and the inspector.
     var note: String = ""
 
     /// Inert legacy queue payload, retained for CloudKit and backup compatibility.
@@ -153,11 +153,6 @@ extension Block {
         return includesTime ? dueDate < .now : dueDate < Calendar.current.startOfDay(for: .now)
     }
 
-    var isDueToday: Bool {
-        guard let dueDate else { return false }
-        return Calendar.current.isDateInToday(dueDate)
-    }
-
     /// Finished at some point today — the set Today's "completed" group shows.
     var isCompletedToday: Bool {
         guard isCompleted, let completedAt else { return false }
@@ -225,8 +220,8 @@ extension Block {
     }
 }
 
-/// Optional urgency flag. Superlist's free tier keeps this lightweight, so
-/// this maps to a simple none/low/medium/high scale used for sorting.
+/// Optional urgency flag: a simple none/low/medium/high scale, used for
+/// sorting and the checkbox's priority ring.
 enum TaskPriority: Int, Codable, CaseIterable, Sendable {
     case none = 0
     case low = 1
@@ -239,16 +234,6 @@ enum TaskPriority: Int, Codable, CaseIterable, Sendable {
         case .low: "Low"
         case .medium: "Medium"
         case .high: "High"
-        }
-    }
-
-    /// Tint used for the checkbox ring and the detail chip.
-    var accent: ListAccent? {
-        switch self {
-        case .none: nil
-        case .low: .blue
-        case .medium: .orange
-        case .high: .red
         }
     }
 }

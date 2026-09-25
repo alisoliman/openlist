@@ -28,7 +28,7 @@ struct NextLibrary {
     private var labelsByID: [UUID: TaskLabel] = [:]
     /// Non-trashed tasks of active and archived lists.
     private var tasksByList: [UUID: [Block]] = [:]
-    private var taskIDs: Set<UUID> = []
+    private var tasksByID: [UUID: Block] = [:]
     private var openByList: [UUID: Int] = [:]
     private var openByLabel: [UUID: Int] = [:]
 
@@ -40,15 +40,15 @@ struct NextLibrary {
         self.labels = labels.sorted { $0.sortIndex < $1.sortIndex }
         let active = allLists.filter { hierarchy.activeIDs.contains($0.id) }
         let archived = allLists.filter { hierarchy.isArchived($0.id) }
-        lists = Self.sidebarOrder(active, sections: self.sections, hierarchy: hierarchy)
-        self.archived = Self.nested(archived.sorted { $0.sortIndex < $1.sortIndex }, hierarchy: hierarchy)
+        lists = hierarchy.sidebarOrder(active, sections: self.sections)
+        self.archived = hierarchy.nested(archived.sorted { $0.sortIndex < $1.sortIndex })
         listsByID = Dictionary((active + archived).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         activeListIDs = Set(active.map(\.id))
         labelsByID = Dictionary(labels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for task in tasks where task.trashID == nil {
             guard let listID = task.listID, listsByID[listID] != nil else { continue }
             tasksByList[listID, default: []].append(task)
-            taskIDs.insert(task.id)
+            tasksByID[task.id] = task
             if !task.isCompleted { openByList[listID, default: 0] += 1 }
             guard activeListIDs.contains(listID) else { continue }
             self.tasks.append(task)
@@ -57,44 +57,6 @@ struct NextLibrary {
             for id in Set(task.labelIDs) { openByLabel[id, default: 0] += 1 }
         }
         inboxIDs = hierarchy.inboxIDs
-    }
-
-    /// Inbox first, then top-level lists by section and position, each
-    /// followed by its nested lists.
-    private static func sidebarOrder(_ active: [TaskList], sections: [SidebarSection], hierarchy: ListHierarchy) -> [TaskList] {
-        let sectionRank = Dictionary(sections.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        // Lists with no surviving section sit under "Other lists", pinned ones
-        // first; unpinned ones are only in the gallery.
-        func rank(_ list: TaskList) -> Int {
-            if list.isSystemInbox { return -1 }
-            if let index = list.sectionID.flatMap({ sectionRank[$0] }) { return index }
-            return sections.count + (list.isPinned ? 0 : 1)
-        }
-        let roots = active.filter { hierarchy.parent(of: $0.id) == nil }
-            .sorted { (rank($0), $0.sidebarIndex) < (rank($1), $1.sidebarIndex) }
-        return nested(roots, among: active, hierarchy: hierarchy)
-    }
-
-    /// Each list followed by its nested lists, depth first. Lists whose parent
-    /// is in `lists` come after it rather than at the top level.
-    private static func nested(_ lists: [TaskList], hierarchy: ListHierarchy) -> [TaskList] {
-        let ids = Set(lists.map(\.id))
-        let roots = lists.filter { hierarchy.parent(of: $0.id).map { ids.contains($0.id) } != true }
-        return nested(roots, among: lists, hierarchy: hierarchy)
-    }
-
-    private static func nested(_ roots: [TaskList], among lists: [TaskList], hierarchy: ListHierarchy) -> [TaskList] {
-        let ids = Set(lists.map(\.id))
-        var ordered: [TaskList] = []
-        var seen = Set<UUID>()
-        func visit(_ list: TaskList) {
-            guard seen.insert(list.id).inserted else { return }
-            ordered.append(list)
-            for child in hierarchy.children(of: list.id) where ids.contains(child.id) { visit(child) }
-        }
-        for root in roots { visit(root) }
-        // A list the walk can't reach still belongs in the library.
-        return ordered + lists.filter { !seen.contains($0.id) }
     }
 
     /// Resolves active and archived lists.
@@ -163,12 +125,6 @@ struct NXOutlineRow: Identifiable {
 }
 
 extension TaskList {
-    /// The emoji shown for a list; Inbox has a fixed one.
-    var glyph: String {
-        if isSystemInbox { return "📥" }
-        return icon.isEmpty ? "📋" : icon
-    }
-
     @MainActor var nxColor: Color { isSystemInbox ? NX.inbox : accent.color }
 }
 
@@ -192,14 +148,51 @@ struct NXListGlyph: View {
     let list: TaskList
     var size: CGFloat = 14
 
+    /// Whether a list icon names an SF Symbol rather than being an emoji,
+    /// by the rule the widgets share (`ListIcon`).
+    static func isSymbolName(_ icon: String) -> Bool { ListIcon.isSymbolName(icon) }
+
     var body: some View {
         let icon = list.glyph
-        if icon.allSatisfy({ $0.isASCII }), icon.contains(".") || icon.count > 2, NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
+        if Self.isSymbolName(icon) {
             Image(systemName: icon)
                 .font(.system(size: size * 0.9, weight: .medium))
                 .foregroundStyle(list.nxColor)
         } else {
-            Text(icon).font(.system(size: size))
+            Text(icon).font(.system(size: Self.emojiPointSize(size)))
+        }
+    }
+
+    /// The emoji's size for a design size, which the widget shares (`EmojiSize`).
+    static func emojiPointSize(_ size: CGFloat) -> CGFloat { EmojiSize.points(forDesign: size) }
+
+    /// A list icon to run inline with text at `size`, as the design's
+    /// `emoji + " " + name` strings: the emoji at the design's size rather
+    /// than Core Text's larger one, or the SF Symbol, in `color` if given.
+    static func text(_ icon: String, size: CGFloat, color: Color? = nil) -> Text {
+        guard isSymbolName(icon) else { return Text(verbatim: icon).font(.system(size: emojiPointSize(size))) }
+        let symbol = Text(Image(systemName: icon)).font(.system(size: size * 0.9, weight: .medium))
+        return color.map { symbol.foregroundStyle($0) } ?? symbol
+    }
+
+    /// A list's glyph inline with text at `size`, a symbol in the list's colour.
+    static func text(_ list: TaskList, size: CGFloat) -> Text {
+        text(list.glyph, size: size, color: list.nxColor)
+    }
+}
+
+/// A list as a menu item, as in Move to: its emoji before its name, or its
+/// symbol as the item's image rather than the symbol's name as text.
+struct NXListMenuButton: View {
+    let list: TaskList
+    let action: () -> Void
+
+    var body: some View {
+        let icon = list.glyph
+        if NXListGlyph.isSymbolName(icon) {
+            Button(list.displayTitle, systemImage: icon, action: action)
+        } else {
+            Button("\(icon) \(list.displayTitle)", action: action)
         }
     }
 }
@@ -207,17 +200,24 @@ struct NXListGlyph: View {
 // MARK: - Shared queries
 
 extension NextLibrary {
-    /// Whether a task sits under another task rather than at a list's top level.
-    func isSubtask(_ task: Block) -> Bool {
-        guard let parentID = task.parentID else { return false }
-        return taskIDs.contains(parentID)
+    /// Whether an open task sits above this one, through its parent tasks.
+    func isUnderOpenTask(_ task: Block) -> Bool {
+        var seen: Set<UUID> = [task.id]
+        var parentID = task.parentID
+        while let id = parentID, let parent = tasksByID[id], seen.insert(id).inserted {
+            if !parent.isCompleted { return true }
+            parentID = parent.parentID
+        }
+        return false
     }
 
-    /// Inbox tasks waiting for a decision, oldest first.
+    /// Inbox tasks waiting for a decision, oldest first. A subtask goes with
+    /// the open task above it, whose card carries it; one under done tasks
+    /// only is a card of its own, or triage could never reach it.
     @MainActor
     func inboxQueue(_ workbench: Workbench) -> [Block] {
         tasks.filter { isInbox($0) && !$0.isCompleted && !workbench.kept.contains($0.id) && workbench.closing[$0.id] == nil }
-            .filter { !isSubtask($0) }
+            .filter { !isUnderOpenTask($0) }
             .sorted { $0.createdAt < $1.createdAt }
     }
 

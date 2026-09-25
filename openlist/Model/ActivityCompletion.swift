@@ -9,8 +9,15 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
     var cycleID: UUID?
     var wasRecurring: Bool?
     var date: Date
+    /// When it was saved, which orders it with the Undo or reopen that took
+    /// it back. A completion's Redo or restored Undo keeps its own `date`.
+    var recordedAt: Date
     var title: String
     var listTitle: String
+    /// The list it was done in, and that list's icon then (empty for one
+    /// with none), which still show once the task is trashed or erased.
+    var listID: UUID?
+    var listIcon = ""
     var hasConflictingDetails = false
 
     @MainActor init(event: ActivityEvent, matchingRecord: CompletionRecord?) {
@@ -30,13 +37,16 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
         // alone does not identify every completion in a multi-action commit.
         if wasRecurring == nil, change?.advancesOccurrence == true { wasRecurring = true }
         date = change?.completedAt ?? record?.completedAt ?? event.timestamp
+        recordedAt = event.timestamp
         title = event.title
         listTitle = event.listTitle
+        listID = event.listID
+        listIcon = event.listIcon
     }
 
     init(id: UUID = UUID(), taskID: UUID?, completionID: UUID? = nil,
          occurrenceID: UUID? = nil, cycleID: UUID? = nil, wasRecurring: Bool?, date: Date,
-         title: String = "Task", listTitle: String = "") {
+         recordedAt: Date? = nil, title: String = "Task", listTitle: String = "") {
         self.id = id
         self.taskID = taskID
         self.completionID = completionID
@@ -44,6 +54,7 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
         self.cycleID = cycleID
         self.wasRecurring = wasRecurring
         self.date = date
+        self.recordedAt = recordedAt ?? date
         self.title = title
         self.listTitle = listTitle
     }
@@ -75,5 +86,45 @@ nonisolated struct ActivityCompletion: Identifiable, Equatable, Sendable {
         result.cycleID = cycles.count == 1 ? cycles.first : nil
         result.wasRecurring = recurring.count == 1 ? recurring.first : nil
         return result
+    }
+}
+
+/// A saved action that took a completion back: its Undo, which names the
+/// completion record it removed, or the task reopened.
+nonisolated struct ActivityReversal: Equatable, Sendable {
+    var taskID: UUID?
+    /// The completion record an Undo removed.
+    var completionID: UUID?
+    /// The cycle a reopened task takes back: its own rule's unadvanced one,
+    /// or the repeat's above it. An ordinary task has none, its reopen taking
+    /// back its one count, and neither has a subtask a repeat resets as it
+    /// rolls on, which keeps its cycle's count.
+    var cycleID: UUID?
+    /// The occurrence a reopen took back, which finds its completion when
+    /// that counted otherwise, like a task done before it had a rule.
+    var occurrenceID: UUID?
+    var date: Date
+
+    @MainActor init?(event: ActivityEvent) {
+        switch event.kind {
+        case .completionUndone:
+            guard let record = event.change?.completionID else { return nil }
+            completionID = record
+        case .reopened:
+            cycleID = event.change?.completionCycleID
+            occurrenceID = event.change?.before?.occurrenceID
+        default:
+            return nil
+        }
+        taskID = event.blockID
+        date = event.timestamp
+    }
+
+    init(taskID: UUID?, completionID: UUID? = nil, cycleID: UUID? = nil, occurrenceID: UUID? = nil, date: Date) {
+        self.taskID = taskID
+        self.completionID = completionID
+        self.cycleID = cycleID
+        self.occurrenceID = occurrenceID
+        self.date = date
     }
 }

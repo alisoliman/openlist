@@ -1,26 +1,40 @@
 # Activity heatmap
 
-Open **More → Activity** in the sidebar, or Activity in the View menu or command palette, to see the current
-calendar week and the previous 11 weeks. The grid follows the first-weekday
-preference and this Mac's current time zone. Each day is a keyboard-accessible
-button with its date and numeric count; selecting it shows the saved completion
-titles, list names, and local times. Numbers remain visible in every colored
-cell, so color is never the only way to read the grid. The legend uses fixed
-bands: 1, 2–3, 4–6, and 7 or more recorded completions.
-**About these counts** contains time-zone and counting details. Missing history
-and uncountable entries remain visible beside the grid rather than being hidden
-in that disclosure.
+Open **Activity** in the sidebar, press **⌘6**, or choose it in the View menu or
+command palette to see the current calendar week and the previous 11 weeks. The
+grid follows the first-weekday preference and this Mac's current time zone. Each
+day is an accessibility button whose description carries its date, its numeric
+count, that history may be incomplete, and how many entries have missing or
+conflicting counting details. Clicking a day shows its saved completion titles,
+lists and local times, and a title opens that task's details. Numbers remain
+visible in every coloured cell, so colour is never the only way to read the grid.
+The legend uses fixed bands: 1, 2–3, 4–6, and 7 or more recorded completions,
+defined once in `Shared/ActivityBand.swift` so the Activity widget shades a day
+the same way, and the card sums the range with the current streak. **Changes**, below, is the
+log of recent edits.
 
 ## What counts
 
 The source is committed `ActivityEvent` completion history, independent of the
-Updates feed's latest-300 helper and of today's task state. An ordinary task
+recent events **Changes** reads and of today's task state. An ordinary task
 counts once by task UUID across all retained history. A recurring task or a
 subtask in a recurring cycle counts once per task UUID and completed occurrence
-cycle UUID. The first countable recorded completion supplies the day and saved title. Reopening
-an ordinary task does not add another count. Undo keeps the historical performed
-action, as in the task Activity timeline; Redo does not add another count.
-Deduplication happens before restricting the visible date range.
+cycle UUID. As in the design, only a completion that still stands counts: its
+Undo (the `completionUndone` event names the record it removed) or reopening
+the task takes it back, and with no completion saved after that it leaves the
+day, the total and the streak. A reopen takes back an ordinary task's count, or
+the cycle the task counted in, which its `reopened` event names: its own rule's
+unadvanced cycle, or the cycle of the repeat above it for a subtask. When nothing
+counted in that cycle, as for a task done before it was given a rule, it takes
+back the completion of the occurrence it reopened. A repeat rolling on to its
+next date resets its ticked subtasks with `reopened` events that name no cycle,
+so they keep their cycle's count. The first countable completion since the last
+one taken back supplies the day and saved title, so a task reopened and done
+again counts once, on the later day; Redo, or a reopen's Undo, puts the same
+completion back on its own day. Reopen history saved before subtask reopens named
+their cycle leaves those subtasks counted. The task Activity timeline still lists
+every performed action. Deduplication happens before restricting the visible date
+range.
 
 New completion events capture the exact completed occurrence UUID, counting
 cycle UUID, and recurrence status inside the existing optional Codable `changeData` payload.
@@ -41,39 +55,36 @@ event are never used to invent old facts or a coverage start date.
 ## Coverage, saving, and retention
 
 There is no historical coverage ledger. Every total describes available
-records and may be incomplete. A dash means a count is unavailable; it does
-not establish that no tasks were completed that day. The day detail and empty
-state explain this too. Clearing history, importing a library with partial
-history, older app versions, and incomplete synchronization can leave gaps.
+records and may be incomplete. An empty cell means no completion was recorded;
+it does not establish that no tasks were completed that day. Clearing history,
+importing a library with partial history, older app versions, and incomplete
+synchronization can leave gaps.
 
 Activity reads through a fresh context and refreshes after saved changes,
 remote database changes, app activation, date/time-zone changes, and changes to
 the first-weekday preference. Uncommitted or failed task saves are not counted.
-A read failure replaces the grid with an error and retry action instead of
-showing stale totals or an empty-success state. Refresh is also available in the
-page header.
+A read failure replaces the grid with an error instead of showing stale totals
+or an empty-success state; the next refresh tries again.
 
 Moving tasks or lists to Trash, restoring them, and permanently erasing them
-retain the existing independent completion history. **Clear History** in
-Updates and **Clear all activity history** in Settings clear the heatmap along
-with task Activity entries. Calendar-only records cannot repopulate it.
-**Delete all data** removes these events too. Clearing Calendar work history
-does not remove new event-based counts; older entries that depended on calendar
-metadata can become uncountable, which is disclosed. Whole-library backups
+retain the existing independent completion history. **Clear all activity
+history…** in Settings › Data clears the heatmap along with Changes and each
+task's history. Calendar-only records cannot repopulate it. **Delete
+everything…** removes these events too. Whole-library backups
 already preserve `changeData` bytes, including these optional fields. This
-feature changes neither backup schema nor private migration behavior.
+feature changes neither backup schema nor private migration behaviour.
 
 Inherited recurring children use their nearest recurring ancestor's cycle,
 which stays stable when a child is repeatedly reopened before the parent
 advances. Parent cascades can complete a self-recurring child without advancing
 its own rule; reopening history preserves that unadvanced cycle for both the
 child and its descendants. Completion Undo snapshots retain the same cycle for
-Redo. The calendar's own occurrence UUID behavior is unchanged.
+Redo. The calendar's own occurrence UUID behaviour is unchanged.
 Multi-selection completion and reopening use the same cycle facts, including
 their multi-root Undo/Redo. A failed atomic bulk action rolls back its pending
 cycle metadata along with its task changes.
 
-Run `./Tools/run-activity-heatmap-checks.sh` for date boundaries, DST/time-zone
-grouping, repeated toggles, recurring children, Undo/Redo, committed reads,
+Run `./Tools/run-activity-heatmap-checks.sh` for legend bands, date boundaries,
+DST/time-zone grouping, repeated toggles, recurring children, Undo/Redo, reopening, committed reads,
 failed writes/clear, old payload decoding, backup roundtrip, Trash retention,
 and process relaunch coverage.

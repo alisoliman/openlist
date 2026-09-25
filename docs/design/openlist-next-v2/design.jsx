@@ -57,8 +57,24 @@ class Component extends DCLogic {
       tf: { status: "open", group: "list", lists: {}, q: "", tq: "" }, tfMenu: null, tqFocus: false, calRange: 7, actDay: null, hold: null, working: null,
       completedOpen: false, moreOpen: false, collapsed: {}, pulseList: null, pulseId: null, freshBlock: null,
       settings: { showCompleted: false, reduce: false, quickAdd: true },
-      now,
+      now, blocks: [], edit: null, slash: null,
     };
+    const seedOrder = { k1: 10, k7: 20, k8: 21, k9: 22, k2: 23, d1: 24, k3: 40, k4: 41, k5: 42, q1: 10, q2: 20, q3: 30, q4: 40 };
+    const seedDepth = { k8: 1, k9: 1, k2: 1 };
+    const extraTasks = [
+      { id: "k7", list: "kyoto", text: "Book the ryokan", due: null, labels: ["travel"], star: true, created: now - 6 * D, noteOpen: true, note: "Kasuga replies in about a day. If the tatami room is gone, the annex is fine — ask for the garden side." },
+      { id: "k8", list: "kyoto", text: "Compare Gion vs Arashiyama", due: null, labels: [], created: now - 6 * D, done: true, doneAt: now - 26 * H },
+      { id: "k9", list: "kyoto", text: "Email Kasuga about the tatami room", due: null, labels: [], created: now - 6 * D },
+    ];
+    this.state.tasks = [...this.state.tasks, ...extraTasks].map((x, i) => ({ ...x, order: seedOrder[x.id] ?? 100 + i * 10, depth: seedDepth[x.id] || 0 }));
+    this.state.blocks = [
+      { id: "b1", list: "kyoto", kind: "h1", text: "Before we go", order: 0 },
+      { id: "b3", list: "kyoto", kind: "h1", text: "On the ground", order: 30 },
+      { id: "b4", list: "kyoto", kind: "bullet", text: "The JR pass covers the Nara day trip", order: 31 },
+      { id: "b5", list: "kyoto", kind: "bullet", text: "Nishiki is closed most Wednesdays — go on Thursday", order: 32 },
+      { id: "b6", list: "q3", kind: "h2", text: "This week", order: 0 },
+      { id: "b7", list: "q3", kind: "h2", text: "Carried over", order: 35 },
+    ];
   }
 
   static DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -137,9 +153,9 @@ class Component extends DCLogic {
   patch(ids, fn) { this.setState((s) => ({ tasks: s.tasks.map((x) => (ids.includes(x.id) ? { ...x, ...fn(x) } : x)) })); }
   flash(ids, flag, ms) { this.later(flag + ids.join(","), () => this.patch(ids, () => ({ [flag]: false })), ms); }
 
-  snap(label, icon, tone, ids, go) {
-    const s = this.state;
-    const entry = { label, tasks: s.tasks, placements: s.placements, kept: s.kept, reviewed: s.reviewed };
+  snap(label, icon, tone, ids, go, base) {
+    const s = this.state; const b = base || s;
+    const entry = { label, tasks: b.tasks, blocks: b.blocks, placements: b.placements, kept: b.kept, reviewed: b.reviewed };
     const idx = s.undo.length;
     const logs = ids.map((id) => ({ id: "l" + ++this.seq, taskId: id, label, icon, tone, at: Date.now(), undoIdx: idx }));
     this.setState((st) => ({ undo: [...st.undo, entry], log: [...logs, ...st.log].slice(0, 120) }));
@@ -150,12 +166,13 @@ class Component extends DCLogic {
     const s = this.state; if (!s.undo.length) return;
     const e = s.undo[s.undo.length - 1]; const idx = s.undo.length - 1;
     Object.keys(this.timers).forEach((k) => { if (!["tray", "pulse", "pulseList"].includes(k)) clearTimeout(this.timers[k]); });
-    this.setState({ tasks: e.tasks.map((x) => ({ ...x, restored: true, fresh: false })), placements: e.placements, kept: e.kept, reviewed: e.reviewed, closing: {}, flying: {}, undo: s.undo.slice(0, -1), log: s.log.filter((l) => l.undoIdx !== idx), triage: { exit: null, flip: !s.triage.flip } });
+    this.setState({ tasks: e.tasks.map((x) => ({ ...x, restored: true, fresh: false })), placements: e.placements, blocks: e.blocks || s.blocks, kept: e.kept, reviewed: e.reviewed, closing: {}, flying: {}, edit: null, slash: null, undo: s.undo.slice(0, -1), log: s.log.filter((l) => l.undoIdx !== idx), triage: { exit: null, flip: !s.triage.flip } });
     this.showTray({ text: "Undid — " + e.label, icon: "undo", tone: "neutral", undo: false });
     this.later("restored", () => this.setState((st) => ({ tasks: st.tasks.map((x) => (x.restored ? { ...x, restored: false } : x)) })), 900);
   }
 
   complete(ids) {
+    ids = [...new Set(ids.flatMap((id) => [id, ...this.subtree(id).filter((y) => !y.isBlock && !y.done).map((y) => y.id)]))];
     const s = this.state; const go = [], rolls = [];
     ids.forEach((id) => { const x = this.T(id); if (!x || x.done || x.trashed || s.closing[id]) return; (x.repeat ? rolls : go).push(x); });
     if (!go.length && !rolls.length) return;
@@ -196,6 +213,7 @@ class Component extends DCLogic {
     this.setState({ pulseList: listId, selected: {} }); this.later("pulseList", () => this.setState({ pulseList: null }), 1100);
   }
   trash(ids) {
+    ids = [...new Set(ids.flatMap((id) => [id, ...this.subtree(id).filter((y) => !y.isBlock).map((y) => y.id)]))];
     const t = ids.filter((id) => this.T(id)); if (!t.length) return;
     this.snap("Moved " + this.describe(t) + " to Trash", "delete", "red", t, { label: "Open Trash", route: "trash" });
     this.setState((s) => { const f = { ...s.flying }; t.forEach((id) => (f[id] = true)); return { flying: f, selected: {}, focusId: null, inspectId: t.includes(s.inspectId) ? null : s.inspectId }; });
@@ -399,6 +417,7 @@ class Component extends DCLogic {
         f: () => this.act((t) => this.star(t)), p: () => this.act((t) => this.plan(t)),
         d: () => this.act((t) => this.trash(t)), backspace: () => this.act((t) => this.trash(t)), delete: () => this.act((t) => this.trash(t)),
         enter: () => s.focusId && this.setState({ inspectId: s.focusId }),
+        " ": () => s.focusId && this.toggleNote(s.focusId),
         escape: () => { if (s.inspectId) this.setState({ inspectId: null }); else if (Object.keys(s.selected).length) this.setState({ selected: {} }); else this.setState({ focusId: null }); },
       };
       if (map[lk]) { e.preventDefault(); map[lk](); }
@@ -475,6 +494,206 @@ class Component extends DCLogic {
     };
   }
 
+  // ---------- document editing ----------
+  docItems(listId, s = this.state) {
+    const bl = s.blocks.filter((b) => b.list === listId).map((b) => ({ ...b, isBlock: true }));
+    const tk = s.tasks.filter((x) => x.list === listId && !x.trashed).map((x) => ({ ...x, kind: "task", isBlock: false }));
+    return [...bl, ...tk].sort((a, b) => (a.order ?? 1e6) - (b.order ?? 1e6) || (a.created || 0) - (b.created || 0));
+  }
+  lineOf(id, s = this.state) {
+    const t = s.tasks.find((x) => x.id === id); if (t) return { ...t, kind: "task", isBlock: false };
+    const b = s.blocks.find((x) => x.id === id); return b ? { ...b, isBlock: true } : null;
+  }
+  isHead(k) { return k === "h1" || k === "h2"; }
+  subtree(id, s = this.state) {
+    const ln = this.lineOf(id, s); if (!ln || this.isHead(ln.kind)) return [];
+    const items = this.docItems(ln.list, s); const i = items.findIndex((y) => y.id === id); const d = ln.depth || 0; const out = [];
+    for (let j = i + 1; j < items.length; j++) { const y = items[j]; if (this.isHead(y.kind) || (y.depth || 0) <= d) break; out.push(y); }
+    return out;
+  }
+  patchLine(st, id, p) { return { tasks: st.tasks.map((x) => (x.id === id ? { ...x, ...p } : x)), blocks: st.blocks.map((x) => (x.id === id ? { ...x, ...p } : x)) }; }
+  baseSnap() { const s = this.state; return { tasks: s.tasks, blocks: s.blocks, placements: s.placements, kept: s.kept, reviewed: s.reviewed }; }
+  pushUndo(pre, label, id) {
+    const s = this.state; const idx = s.undo.length;
+    this.setState((st) => ({ undo: [...st.undo, { label, tasks: pre.tasks, blocks: pre.blocks, placements: pre.placements, kept: pre.kept, reviewed: pre.reviewed }], log: [{ id: "l" + ++this.seq, taskId: id, label, icon: "edit", tone: "neutral", at: Date.now(), undoIdx: idx }, ...st.log].slice(0, 120) }));
+  }
+  convert(st, id, kind) {
+    const t = st.tasks.find((x) => x.id === id), b = st.blocks.find((x) => x.id === id);
+    const depthFor = (d) => (kind === "bullet" || kind === "task" ? d || 0 : 0);
+    if (kind === "task") { if (t) return {}; return { blocks: st.blocks.filter((x) => x.id !== id), tasks: [...st.tasks, { id, list: b.list, text: b.text, order: b.order, depth: depthFor(b.depth), due: null, labels: [], created: Date.now(), morph: true, _new: b._new }] }; }
+    if (t) return { tasks: st.tasks.filter((x) => x.id !== id), blocks: [...st.blocks, { id, list: t.list, kind, text: t.text, order: t.order, depth: depthFor(t.depth), morph: true, _new: t._new }] };
+    return { blocks: st.blocks.map((x) => (x.id === id ? { ...x, kind, depth: depthFor(x.depth), morph: true } : x)) };
+  }
+  unmorph(id) { this.later("morph" + id, () => this.setState((st) => this.patchLine(st, id, { morph: false })), 420); }
+  startEdit(id, field = "text", caret = null) {
+    const ln = this.lineOf(id); if (!ln) return;
+    if (!this.preEdit || this.preEdit.id !== id) this.preEdit = { id, isNew: false, ...this.baseSnap() };
+    this.focusPending = id + ":" + field; this.caretAt = caret;
+    this.setState((st) => ({ edit: { id, field, text: field === "note" ? ln.note || "" : ln.text }, slash: null, focusId: ln.isBlock ? null : id, selected: {}, ...(field === "note" ? this.patchLine(st, id, { noteOpen: true }) : {}) }));
+  }
+  commitEdit(after) {
+    const s = this.state; const e = s.edit; const pre = this.preEdit; this.preEdit = null;
+    if (!e) { if (after) after(); return; }
+    const ln = this.lineOf(e.id);
+    if (!ln) { this.setState({ edit: null, slash: null }, after); return; }
+    if (e.field === "text" && !e.text.trim()) {
+      this.setState((st) => ({ edit: null, slash: null, tasks: st.tasks.filter((x) => x.id !== e.id), blocks: st.blocks.filter((x) => x.id !== e.id) }), after);
+      if (pre && !pre.isNew) this.pushUndo(pre, "Removed an empty line", e.id);
+      return;
+    }
+    const val = e.field === "note" ? e.text.replace(/\s+$/, "") : e.text.trim();
+    const changed = e.field === "note" ? val !== (ln.note || "") : val !== ln.text;
+    const structural = pre && (pre.tasks !== s.tasks || pre.blocks !== s.blocks);
+    this.setState((st) => ({ edit: null, slash: null, ...this.patchLine(st, e.id, e.field === "note" ? { note: val, noteOpen: !!val } : { text: val, _new: false }) }), after);
+    if (pre && (changed || structural)) this.pushUndo(pre, pre.isNew ? "Added “" + this.short(val) + "”" : e.field === "note" ? "Edited note on “" + this.short(ln.text) + "”" : "Edited “" + this.short(val) + "”", e.id);
+  }
+  addLine(refId, opts = {}) {
+    const s = this.state; const ref = refId ? this.lineOf(refId) : null; const listId = ref ? ref.list : opts.list;
+    const items = this.docItems(listId); let depth = 0, order, kind = opts.kind || "task";
+    if (ref) {
+      const head = this.isHead(ref.kind); const sub = this.subtree(ref.id);
+      kind = opts.kind || (head || ref.kind === "text" ? (ref.kind === "text" ? "text" : "task") : ref.kind);
+      const idxOf = (id) => items.findIndex((y) => y.id === id);
+      if (!ref.isBlock && !ref.collapsed && sub.length) { depth = (ref.depth || 0) + 1; const nx = items[idxOf(ref.id) + 1]; order = ((ref.order ?? 0) + (nx.order ?? (ref.order ?? 0) + 10)) / 2; }
+      else { depth = head || kind === "text" ? 0 : ref.depth || 0; const last = sub.length ? sub[sub.length - 1] : ref; const nx = items[idxOf(last.id) + 1]; const lo = last.order ?? 0; order = nx && nx.order != null ? (lo + nx.order) / 2 : lo + 10; }
+    } else { const last = items[items.length - 1]; order = (last && last.order != null ? last.order : 0) + 10; }
+    const id = "e" + ++this.seq + "_" + Date.now();
+    this.preEdit = { id, isNew: true, ...this.baseSnap() };
+    const base = { id, list: listId, text: "", order, depth, fresh: true, _new: true };
+    this.focusPending = id + ":text"; this.caretAt = null;
+    this.setState((st) => ({ ...(kind === "task" ? { tasks: [...st.tasks, { ...base, due: null, labels: [], created: Date.now() }] } : { blocks: [...st.blocks, { ...base, kind }] }), edit: { id, field: "text", text: "" }, slash: null, focusId: kind === "task" ? id : null, selected: {} }));
+    this.later("fresh" + id, () => this.setState((st) => this.patchLine(st, id, { fresh: false })), 1100);
+  }
+  indent(id, dir) {
+    this.setState((st) => {
+      const ln = this.lineOf(id, st); if (!ln || this.isHead(ln.kind) || ln.kind === "text") return {};
+      const items = this.docItems(ln.list, st); const i = items.findIndex((y) => y.id === id); const prev = items[i - 1];
+      const d = ln.depth || 0; const maxD = prev && (prev.kind === "task" || prev.kind === "bullet") ? (prev.depth || 0) + 1 : 0;
+      const nd = Math.max(0, Math.min(d + dir, maxD, 2)); if (nd === d) return {};
+      const sub = this.subtree(id, st).map((y) => y.id); const delta = nd - d;
+      const f = (x) => (x.id === id || sub.includes(x.id) ? { ...x, depth: Math.max(0, (x.depth || 0) + delta) } : x);
+      return { tasks: st.tasks.map(f), blocks: st.blocks.map(f) };
+    });
+  }
+  neighbour(id, dir) { const ids = this.visibleIds || []; const i = ids.indexOf(id); return i < 0 ? null : ids[i + dir] || null; }
+  slashOpts(q) {
+    return [["task", "Task", "check_box_outline_blank", "[ ]"], ["h1", "Heading", "format_h1", "#"], ["h2", "Subheading", "format_h2", "##"], ["bullet", "Bullet", "format_list_bulleted", "-"], ["text", "Text", "notes", ">"]]
+      .filter(([, l]) => !q || l.toLowerCase().includes(q)).map(([kind, label, icon, hint]) => ({ kind, label, icon, hint }));
+  }
+  applySlash(id, kind) { this.focusPending = id + ":text"; this.caretAt = 0; this.setState((st) => ({ ...this.convert(st, id, kind), edit: { ...st.edit, text: "" }, slash: null })); this.unmorph(id); }
+  toggleNote(id) {
+    const x = this.T(id); if (!x) return;
+    if (!x.noteOpen && !x.note) { this.startEdit(id, "note"); return; }
+    this.setState((st) => this.patchLine(st, id, { noteOpen: !x.noteOpen }));
+  }
+  onEditChange(e) {
+    const v = e.target.value; const s = this.state; const ed = s.edit; if (!ed) return;
+    if (ed.field === "text") {
+      const m = v.match(/^(##|#|-|\*|\[ ?\]|>)\s/);
+      if (m) {
+        const kind = m[1] === "#" ? "h1" : m[1] === "##" ? "h2" : m[1] === ">" ? "text" : m[1].startsWith("[") ? "task" : "bullet";
+        this.focusPending = ed.id + ":text"; this.caretAt = 0;
+        this.setState((st) => ({ ...this.convert(st, ed.id, kind), edit: { ...ed, text: v.slice(m[0].length) }, slash: null })); this.unmorph(ed.id); return;
+      }
+      if (v.startsWith("/")) { this.setState({ edit: { ...ed, text: v }, slash: { id: ed.id, q: v.slice(1).toLowerCase(), idx: s.slash && s.slash.id === ed.id ? s.slash.idx : 0 } }); return; }
+    }
+    this.setState({ edit: { ...ed, text: v }, slash: null });
+  }
+  onEditKey(e) {
+    const s = this.state; const ed = s.edit; if (!ed) return; const ln = this.lineOf(ed.id); if (!ln) return;
+    const sl = s.slash && s.slash.id === ed.id ? s.slash : null;
+    if (sl) {
+      const opts = this.slashOpts(sl.q); const n = Math.max(1, opts.length);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); this.setState({ slash: { ...sl, idx: (sl.idx + (e.key === "ArrowDown" ? 1 : -1) + n) % n } }); return; }
+      if (e.key === "Enter") { e.preventDefault(); if (opts[sl.idx]) this.applySlash(ed.id, opts[sl.idx].kind); return; }
+      if (e.key === "Escape") { e.preventDefault(); this.setState({ slash: null }); return; }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!ed.text.trim()) { if ((ln.depth || 0) > 0) this.indent(ed.id, -1); else if (ln.kind !== "task") { this.setState((st) => this.convert(st, ed.id, "task")); this.unmorph(ed.id); } return; }
+      this.commitEdit(() => this.addLine(ed.id)); return;
+    }
+    if (e.key === "Enter" && e.shiftKey && ln.kind === "task") { e.preventDefault(); this.commitEdit(() => this.startEdit(ed.id, "note")); return; }
+    if (e.key === "Tab") { e.preventDefault(); this.indent(ed.id, e.shiftKey ? -1 : 1); return; }
+    if (e.key === "Backspace" && e.target.selectionStart === 0 && e.target.selectionEnd === 0) {
+      if (!ed.text) { e.preventDefault(); const prev = this.neighbour(ed.id, -1); this.commitEdit(() => prev && this.startEdit(prev)); return; }
+      if (ln.kind !== "task" && ln.kind !== "text") { e.preventDefault(); this.setState((st) => this.convert(st, ed.id, "text")); this.unmorph(ed.id); return; }
+      if ((ln.depth || 0) > 0) { e.preventDefault(); this.indent(ed.id, -1); return; }
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") { const nb = this.neighbour(ed.id, e.key === "ArrowUp" ? -1 : 1); if (nb) { e.preventDefault(); this.commitEdit(() => this.startEdit(nb)); } return; }
+    if (e.key === "Escape") { e.preventDefault(); this.commitEdit(); }
+  }
+  onEditBlur(id, field) {
+    setTimeout(() => { const ed = this.state.edit; if (ed && ed.id === id && ed.field === field && !(document.activeElement && /input|textarea/i.test(document.activeElement.tagName) && document.activeElement.dataset.line === id)) this.commitEdit(); }, 0);
+  }
+
+  mkDoc(listId) {
+    const s = this.state, A = this.A(); const items = this.docItems(listId);
+    const vis = []; let hideDepth = null, hideHead = null;
+    items.forEach((it) => {
+      const lvl = it.kind === "h1" ? 1 : it.kind === "h2" ? 2 : 9; const d = it.depth || 0;
+      if (hideHead != null) { if (lvl <= hideHead) hideHead = null; else return; }
+      if (hideDepth != null) { if (d > hideDepth && lvl === 9) return; hideDepth = null; }
+      if (!it.isBlock && it.done && !s.closing[it.id] && d === 0) { hideDepth = d; return; }
+      vis.push(it);
+      if (!it.isBlock && it.collapsed) hideDepth = d;
+      if (lvl < 9 && it.collapsed) hideHead = lvl;
+    });
+    this.visibleIds = vis.map((v) => v.id);
+    const fonts = {
+      task: "font:400 13.8px/1.45 -apple-system,sans-serif; color:#17161A;", bullet: "font:400 13.8px/1.45 -apple-system,sans-serif; color:#17161A;",
+      text: "font:400 13.5px/1.55 -apple-system,sans-serif; color:rgba(23,22,26,0.66);",
+      h1: "font:700 20px/1.3 -apple-system,sans-serif; color:#17161A; letter-spacing:-0.01em;", h2: "font:600 15.5px/1.35 -apple-system,sans-serif; color:#17161A;",
+    };
+    const holders = { task: "Task — “/” turns it into anything, ⇥ makes it a subtask", bullet: "List item", text: "Write something…", h1: "Heading", h2: "Subheading" };
+    return vis.map((it) => {
+      const kind = it.kind; const isTask = kind === "task"; const head = this.isHead(kind); const d = it.depth || 0;
+      const ed = s.edit && s.edit.id === it.id ? s.edit : null; const editing = !!ed && ed.field === "text"; const noteEditing = !!ed && ed.field === "note";
+      const i = items.findIndex((y) => y.id === it.id); const sect = [];
+      for (let j = i + 1; j < items.length; j++) { const y = items[j]; const yl = y.kind === "h1" ? 1 : y.kind === "h2" ? 2 : 9; if (head ? yl <= (kind === "h1" ? 1 : 2) : yl < 9 || (y.depth || 0) <= d) break; sect.push(y); }
+      const kidTasks = sect.filter((y) => !y.isBlock); const kd = kidTasks.filter((y) => y.done || s.closing[y.id]).length;
+      const base = isTask ? this.mkRow(this.T(it.id), { showList: false, listId }) : {};
+      const chips = isTask ? [...(kidTasks.length ? [this.chip(kd + "/" + kidTasks.length, { icon: "subdirectory_arrow_right", tone: kd === kidTasks.length ? "green" : "neutral" })] : []), ...base.chips]
+        : head && it.collapsed && kidTasks.length ? [this.chip(kidTasks.filter((y) => !y.done).length + " open", {})] : [];
+      const edStyle = editing || noteEditing ? " background:" + (head ? "transparent" : "rgba(23,22,26,0.035)") + "; box-shadow:none; z-index:4;" : "";
+      const anim = it.fresh ? " animation:rowIn 300ms cubic-bezier(0.2,0.9,0.2,1);" : it.morph ? " animation:morphIn 320ms cubic-bezier(0.2,0.9,0.2,1);" : "";
+      const lineStyle = isTask ? base.wrapStyle + edStyle + anim
+        : "position:relative; display:flex; align-items:flex-start; border-radius:9px; transition:background 180ms ease, box-shadow 180ms ease; padding:" + (kind === "h1" ? "20px 10px 4px" : kind === "h2" ? "13px 10px 3px" : "5px 10px") + ";" + edStyle + anim;
+      const slashOn = s.slash && s.slash.id === it.id; const opts = slashOn ? this.slashOpts(s.slash.q) : [];
+      return {
+        ...base, id: it.id, isTask, isBullet: kind === "bullet", text: it.text, chips, lineStyle,
+        indentStyle: "width:" + d * 26 + "px; flex:none;",
+        hasCaret: isTask ? sect.length > 0 : head && sect.length > 0,
+        caretStyle: "position:absolute; left:" + (d * 26 - 10) + "px; top:" + (kind === "h1" ? 23 : kind === "h2" ? 15 : 6) + "px; font-size:16px; border-radius:5px; cursor:pointer; color:rgba(23,22,26,0.34); transition:transform 180ms ease; transform:rotate(" + (it.collapsed ? 0 : 90) + "deg);",
+        onCaret: (e) => { e.stopPropagation(); this.setState((st) => this.patchLine(st, it.id, { collapsed: !it.collapsed })); },
+        showText: !editing, editing, draft: ed ? ed.text : "", placeholder: holders[kind],
+        textStyle: isTask ? base.textStyle : fonts[kind] + " position:relative; display:inline; white-space:pre-wrap;",
+        strikeStyle: isTask ? base.strikeStyle : "display:none;",
+        inputStyle: "display:block; width:100%; box-sizing:border-box; border:none; outline:none; background:transparent; padding:0; margin:0; caret-color:" + A + "; " + fonts[kind],
+        inputRef: (el) => { if (!el) return; el.dataset.line = it.id; if (this.focusPending === it.id + ":text") { this.focusPending = null; el.focus(); const p = this.caretAt == null ? el.value.length : Math.min(this.caretAt, el.value.length); try { el.setSelectionRange(p, p); } catch (x) {} } },
+        onChange: (e) => this.onEditChange(e), onKeyDown: (e) => this.onEditKey(e), onBlur: () => this.onEditBlur(it.id, "text"),
+        onLineClick: isTask ? base.onClick : (e) => { e.stopPropagation(); this.startEdit(it.id); },
+        onEdit: (e) => { e.stopPropagation(); if (s.closing[it.id]) { this.cancelClose(it.id); return; } if (e.metaKey || e.ctrlKey || e.shiftKey) { isTask && this.toggleSel(it.id); return; } this.startEdit(it.id); },
+        onOpen: isTask ? base.onOpen : () => {},
+        showNote: isTask && (it.noteOpen || noteEditing), noteEditing, noteShow: isTask && it.noteOpen && !noteEditing,
+        noteDraft: noteEditing ? ed.text : "", noteRows: Math.max(1, ((noteEditing ? ed.text : it.note) || "").split("\n").length),
+        noteText: it.note || "Add a note…", noteHint: isTask && !!it.note && !it.noteOpen,
+        noteStyle: "font:400 13px/1.55 -apple-system,sans-serif; white-space:pre-wrap; cursor:text; text-wrap:pretty; color:" + (it.note ? "rgba(23,22,26,0.62)" : "rgba(23,22,26,0.32)") + ";",
+        noteRef: (el) => { if (!el) return; el.dataset.line = it.id; if (this.focusPending === it.id + ":note") { this.focusPending = null; el.focus(); const p = el.value.length; try { el.setSelectionRange(p, p); } catch (x) {} } },
+        onNoteChange: (e) => { const v = e.target.value; this.setState((st) => ({ edit: { ...st.edit, text: v } })); },
+        onNoteKey: (e) => { if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); this.commitEdit(); } else if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); this.commitEdit(() => this.startEdit(it.id)); } },
+        onNoteBlur: () => this.onEditBlur(it.id, "note"),
+        onNoteEdit: (e) => { e.stopPropagation(); this.startEdit(it.id, "note"); },
+        onNoteToggle: (e) => { e.stopPropagation(); this.toggleNote(it.id); },
+        noteBtnStyle: "font-size:15px; padding:3px; border-radius:6px; cursor:pointer; transition:opacity 140ms ease; color:" + (it.noteOpen ? A : "rgba(23,22,26,0.45)") + "; opacity:" + (it.note || it.noteOpen ? 0.9 : 0.2) + ";",
+        slashOpen: slashOn, keep: (e) => e.preventDefault(),
+        slashItems: opts.map((o, k) => ({ ...o, onPick: (e) => { e.preventDefault(); this.applySlash(it.id, o.kind); },
+          style: "display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:7px; cursor:pointer; " + (k === (s.slash ? s.slash.idx : 0) ? "background:" + A + "; color:#fff;" : "color:#17161A;"),
+          iconStyle: "font-size:16px; color:" + (k === (s.slash ? s.slash.idx : 0) ? "#fff" : "rgba(23,22,26,0.5)") + ";" })),
+      };
+    });
+  }
+
   buildGroups() {
     const s = this.state, r = s.route;
     const visible = (x) => !x.trashed && (!x.done || !!s.closing[x.id]);
@@ -503,8 +722,8 @@ class Component extends DCLogic {
       const isList = r.startsWith("list:"); const id = r.slice(isList ? 5 : 6);
       const mine = (x) => (isList ? x.list === id : (x.labels || []).includes(id));
       rowOpts = { showList: !isList, listId: isList ? id : null, notes: true };
-      const open = openAll.filter(mine); const done = s.tasks.filter((x) => x.done && !x.trashed && mine(x) && !s.closing[x.id]);
-      groups.push(G("open", "", "", "", open, { noHead: true, emptyText: "No open tasks. Press N to capture one." }));
+      const open = openAll.filter(mine); const done = s.tasks.filter((x) => x.done && !x.trashed && mine(x) && !s.closing[x.id] && !(isList && (x.depth || 0) > 0));
+      if (!isList) groups.push(G("open", "", "", "", open, { noHead: true, emptyText: "No open tasks. Press N to capture one." }));
       if (done.length) groups.push(G("ldone", "Completed", "check_circle", "#2F9E6E", done, { collapsible: true, openOverride: s.completedOpen || s.settings.showCompleted }));
       extra.progress = [s.tasks.filter((x) => x.done && !x.trashed && mine(x)).length, s.tasks.filter((x) => !x.trashed && mine(x)).length];
     } else if (r === "tasks") {
@@ -658,7 +877,8 @@ class Component extends DCLogic {
         chevStyle: "font-size:14px; color:rgba(23,22,26,0.36); transition:transform 180ms ease; transform:rotate(" + (collapsed ? 0 : 90) + "deg);",
       };
     });
-    this.rowIds = rowIds;
+    const doc = isList ? this.mkDoc(curList.id) : [];
+    this.rowIds = [...doc.filter((d) => d.isTask).map((d) => d.id), ...rowIds];
     const showGroups = ["today", "inbox", "tasks"].includes(r) || isList || isLabel;
 
     // header
@@ -814,7 +1034,35 @@ class Component extends DCLogic {
       const pc = { null: "rgba(23,22,26,0.25)", low: "#3A7BD8", medium: "#E8A917", high: "#D8434B" };
       const acts = s.log.filter((lg) => lg.taskId === ix.id).map((lg) => ({ icon: lg.icon, text: lg.label, when: this.rel(lg.at) }));
       acts.push({ icon: "add_circle", text: "Captured in " + (ix.list === "inbox" ? "Inbox" : l.name), when: this.rel(ix.created) });
+      const dItems = this.docItems(ix.list); const di = dItems.findIndex((y) => y.id === ix.id); const dd = ix.depth || 0;
+      let parent = null;
+      if (dd > 0) for (let j = di - 1; j >= 0; j--) { const y = dItems[j]; if (this.isHead(y.kind)) break; if (!y.isBlock && (y.depth || 0) < dd) { parent = y; break; } }
+      const subAll = this.subtree(ix.id).filter((y) => !y.isBlock);
+      const subDone = subAll.filter((y) => y.done || s.closing[y.id]).length;
+      const pSubs = parent ? this.subtree(parent.id).filter((y) => !y.isBlock) : [];
+      const inDoc = ix.list !== "inbox";
       ins = {
+        hasParent: !!parent, parentText: parent ? parent.text : "",
+        parentProgress: parent ? pSubs.filter((y) => y.done || s.closing[y.id]).length + "/" + pSubs.length : "",
+        onParent: () => parent && this.setState({ inspectId: parent.id, focusId: parent.id }),
+        showSubs: inDoc && dd < 2, subCount: subAll.length ? subDone + "/" + subAll.length : "",
+        subBarStyle: "height:3px; border-radius:2px; transition:width 400ms ease; width:" + (subAll.length ? Math.round((subDone / subAll.length) * 100) : 0) + "%; background:" + (subAll.length && subDone === subAll.length ? "#2F9E6E" : A) + ";",
+        subs: subAll.map((k) => { const kc = !!s.closing[k.id]; const kf = k.done || kc; const rel = (k.depth || 0) - dd - 1; return {
+          text: k.text, onOpen: () => this.setState({ inspectId: k.id, focusId: k.id }),
+          onToggle: (e) => { e.stopPropagation(); this.toggle(k.id); },
+          style: "display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:8px; cursor:pointer; transition:opacity 300ms ease;" + (kc ? " opacity:0.6;" : ""),
+          indentStyle: "width:" + rel * 18 + "px; flex:none;",
+          boxStyle: "width:15px; height:15px; flex:none; border-radius:50%; box-sizing:border-box; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 200ms ease; " + (kf ? "background:" + (kc ? A : "#2F9E6E") + "; border:1.5px solid transparent;" : "border:1.5px solid rgba(23,22,26,0.3);"),
+          checkStyle: "font-size:10px; color:#fff; font-variation-settings:'wght' 700; opacity:" + (kf ? 1 : 0) + ";",
+          textStyle: "font:400 13px/1.3 -apple-system,sans-serif; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:" + (kf ? "rgba(23,22,26,0.42)" : "#17161A") + ";" + (kf ? " text-decoration:line-through;" : "") }; }),
+        onAddSub: () => {
+          const id = ix.id; const go = () => { if (s.route !== "list:" + ix.list) this.go("list:" + ix.list); this.setState((st) => this.patchLine(st, id, { collapsed: false })); setTimeout(() => {
+            const sub = this.subtree(id); const ref = this.lineOf(id);
+            if (sub.length) this.addLine(sub[sub.length - 1].id, { kind: "task" });
+            else { this.addLine(id, { kind: "task" }); setTimeout(() => { const ed = this.state.edit; if (ed) this.indent(ed.id, 1); }, 0); }
+          }, 30); };
+          this.commitEdit(go);
+        },
         listEmoji: l.emoji, listName: l.name, text: ix.text, hasNote: !!ix.note, note: ix.note || "",
         titleStyle: "font:600 18px/1.3 -apple-system,sans-serif; color:" + (ix.done ? "rgba(23,22,26,0.45)" : "#17161A") + "; text-wrap:pretty;" + (ix.done ? " text-decoration:line-through;" : ""),
         boxStyle: "width:18px; height:18px; border-radius:50%; box-sizing:border-box; display:flex; align-items:center; justify-content:center; transition:background 200ms ease; " + (filled ? "background:" + (closing ? A : "#2F9E6E") + "; border:1.5px solid transparent;" : "border:1.5px solid " + (pc[ix.prio] && ix.prio ? pc[ix.prio] : "rgba(23,22,26,0.3)") + ";"),
@@ -986,7 +1234,10 @@ class Component extends DCLogic {
       showGroups, groups, groupsWrapStyle: "padding-top:" + (r === "inbox" ? 10 : 6) + "px;",
       todayClear: r === "today" && !!extra.todayClear, todayClearText: (prog ? prog[0] : 0) + " finished today. Nothing is overdue, due, planned or starred.",
       goCalendar: () => this.go("calendar"),
-      showAddRow: isList || r === "today" || isLabel, addRowText: isList ? "Add to " + curList.name : r === "today" ? "Add a task for today" : "Add a task",
+      isDoc: isList, doc,
+      docAdd: (e) => { e.stopPropagation(); const lid = curList.id; this.commitEdit(() => this.addLine(null, { list: lid, kind: "task" })); },
+      docAddText: doc.length ? "Add to " + (curList ? curList.name : "") : "Start typing — # for a heading, / to turn a line into anything",
+      showAddRow: r === "today" || isLabel, addRowText: isList ? "Add to " + curList.name : r === "today" ? "Add a task for today" : "Add a task",
       // calendar
       calRanges: [[1, "Day"], [3, "3 days"], [7, "Week"]].map(([v, lab]) => ({ label: lab, onClick: () => this.setState({ calRange: v }), style: "padding:6px 10px; border-radius:7px; cursor:pointer; font:500 12px/1 -apple-system,sans-serif; " + (s.calRange === v ? "background:#fff; color:#17161A; box-shadow:0 1px 2px rgba(23,22,26,0.12);" : "color:rgba(23,22,26,0.55);") })),
       calHeadGrid: "display:grid; grid-template-columns:" + cols + "; border-bottom:0.5px solid rgba(23,22,26,0.09); min-width:" + (52 + dayIdx.length * 92) + "px;",

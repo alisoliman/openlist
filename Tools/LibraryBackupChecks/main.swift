@@ -619,4 +619,41 @@ rejects("Replacing a list cover external blob during pinned export cannot publis
         })
 }
 
+let freshSuite = "openlist.backup-check.fresh.\(UUID())"
+let freshDefaults = UserDefaults(suiteName: freshSuite)!
+check(!LibraryBackupSettings(defaults: freshDefaults).showsCompletedTasks,
+    "Show completed falls back to off when never set, matching the app's registered default")
+freshDefaults.removePersistentDomain(forName: freshSuite)
+
+// Daily snapshots: one a day, the newest fourteen kept, other files untouched.
+let snapshotFolder = root.appendingPathComponent("Snapshots", isDirectory: true)
+try manager.createDirectory(at: snapshotFolder, withIntermediateDirectories: true)
+let snapshots = LibrarySnapshots(directory: snapshotFolder)
+var utc = Calendar(identifier: .gregorian)
+utc.timeZone = TimeZone(identifier: "UTC")!
+let day: TimeInterval = 86_400
+check(snapshots.isDue(at: fixedDate, calendar: utc), "An empty snapshot folder is due")
+check(LibrarySnapshots.date(fromName: LibrarySnapshots.name(for: fixedDate)).map { abs($0.timeIntervalSince(fixedDate)) < 1 } == true,
+    "Snapshot names carry their time to the second")
+let todaySnapshot = snapshots.destination(at: fixedDate)
+try LibraryBackupPackage.write(snapshot, to: todaySnapshot) { _ in legacyBytes }
+try check(try LibraryBackupPackage.read(at: todaySnapshot).snapshot == hydrated, "A daily snapshot is a complete, valid backup package")
+check(snapshots.all().map(\.url) == [todaySnapshot], "The written snapshot is listed")
+check(!snapshots.isDue(at: fixedDate.addingTimeInterval(60), calendar: utc), "A snapshot taken today makes the next one wait")
+check(snapshots.isDue(at: fixedDate.addingTimeInterval(day), calendar: utc), "The next day is due")
+check(snapshots.isDue(at: fixedDate.addingTimeInterval(-day), calendar: utc), "A snapshot dated ahead of a clock set back isn't that day's")
+let older = (1...16).map { snapshots.destination(at: fixedDate.addingTimeInterval(-Double($0) * day)) }
+for url in older.shuffled() { try manager.createDirectory(at: url, withIntermediateDirectories: true) }
+let unrelatedFile = snapshotFolder.appendingPathComponent("Notes.txt")
+try Data("kept".utf8).write(to: unrelatedFile)
+let manualBackup = snapshotFolder.appendingPathComponent("Openlist 2023-01-01 A1B2C3.openlistbackup", isDirectory: true)
+try manager.createDirectory(at: manualBackup, withIntermediateDirectories: true)
+check(snapshots.all().count == 17 && snapshots.all().first?.url == todaySnapshot, "Snapshots list newest first and ignore other files")
+let pruned = try snapshots.prune()
+check(Set(pruned) == Set(older.suffix(3)), "Pruning removes only the snapshots past the newest fourteen")
+check(snapshots.all().map(\.url) == [todaySnapshot] + older.prefix(13), "The newest fourteen snapshots remain, in order")
+check(manager.fileExists(atPath: unrelatedFile.path) && manager.fileExists(atPath: manualBackup.path),
+    "Pruning never touches files that aren't daily snapshots")
+try check(try snapshots.prune().isEmpty, "Pruning an already trimmed folder removes nothing")
+
 print("\(checks) library backup checks passed")

@@ -7,17 +7,12 @@
 <body>
 <x-dc>
 <helmet>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link rel="preconnect" href="https://fonts.gstatic.com">
 <style>/* latin-ext */
-
 /* latin */
-
 /* latin-ext */
-
 /* latin */
-
 /* fallback */
-
 
 .material-symbols-rounded {
   font-family: 'Material Symbols Rounded';
@@ -58,6 +53,7 @@
   @keyframes bump { 0% { transform:scale(1); } 40% { transform:scale(1.35); } 100% { transform:scale(1); } }
   @keyframes notchDrop { from { transform:translateY(-110%); } to { transform:translateY(0); } }
   @keyframes notchIn { from { transform:translate(-50%,-110%); } to { transform:translate(-50%,0); } }
+  @keyframes morphIn { from { opacity:0.3; transform:translateX(-6px); } to { opacity:1; transform:none; } }
   @keyframes breathe { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.45; transform:scale(0.8); } }
 </style>
 </helmet>
@@ -409,6 +405,77 @@
             </div>
           </sc-if>
 
+          <!-- LIST DOCUMENT -->
+          <sc-if value="{{ isDoc }}" hint-placeholder-val="{{ false }}">
+            <div style="padding-top:12px; display:flex; flex-direction:column; gap:1px;">
+              <sc-for list="{{ doc }}" as="ln" hint-placeholder-count="8">
+                <div sc-camel-on-click="{{ ln.onLineClick }}" sc-camel-on-double-click="{{ ln.onOpen }}" style="{{ ln.lineStyle }}">
+                  <div style="{{ ln.indentStyle }}"></div>
+                  <sc-if value="{{ ln.hasCaret }}" hint-placeholder-val="{{ false }}">
+                    <span sc-camel-on-click="{{ ln.onCaret }}" class="ms" style="{{ ln.caretStyle }}" style-hover="background:rgba(23,22,26,0.06); color:#17161A">chevron_right</span>
+                  </sc-if>
+                  <sc-if value="{{ ln.isTask }}" hint-placeholder-val="{{ true }}">
+                    <div style="{{ ln.railStyle }}"></div>
+                    <div sc-camel-on-click="{{ ln.onToggle }}" style="width:26px; flex:none; padding-top:2px; cursor:pointer; position:relative;">
+                      <div style="{{ ln.ringStyle }}"></div>
+                      <div style="{{ ln.boxStyle }}"><span class="ms" style="{{ ln.checkStyle }}">check</span></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ ln.isBullet }}" hint-placeholder-val="{{ false }}">
+                    <div style="width:26px; flex:none; display:flex; justify-content:center; padding-top:8px;"><div style="width:5px; height:5px; border-radius:50%; background:rgba(23,22,26,0.45);"></div></div>
+                  </sc-if>
+                  <div style="flex:1; min-width:0; position:relative;">
+                    <sc-if value="{{ ln.showText }}" hint-placeholder-val="{{ true }}">
+                      <div sc-camel-on-click="{{ ln.onEdit }}" style="cursor:text; min-height:20px;"><span style="{{ ln.textStyle }}">{{ ln.text }}<span style="{{ ln.strikeStyle }}"></span></span><sc-if value="{{ ln.noteHint }}" hint-placeholder-val="{{ false }}"><span class="ms" style="font-size:13px; color:rgba(23,22,26,0.3); margin-left:7px; vertical-align:-2px;">notes</span></sc-if></div>
+                    </sc-if>
+                    <sc-if value="{{ ln.editing }}" hint-placeholder-val="{{ false }}">
+                      <input value="{{ ln.draft }}" ref="{{ ln.inputRef }}" sc-camel-on-change="{{ ln.onChange }}" sc-camel-on-key-down="{{ ln.onKeyDown }}" sc-camel-on-blur="{{ ln.onBlur }}" placeholder="{{ ln.placeholder }}" style="{{ ln.inputStyle }}">
+                    </sc-if>
+                    <sc-if value="{{ ln.showNote }}" hint-placeholder-val="{{ false }}">
+                      <div style="padding:3px 0 4px; animation:fadeIn 180ms ease;">
+                        <sc-if value="{{ ln.noteEditing }}" hint-placeholder-val="{{ false }}">
+                          <textarea value="{{ ln.noteDraft }}" ref="{{ ln.noteRef }}" rows="{{ ln.noteRows }}" sc-camel-on-change="{{ ln.onNoteChange }}" sc-camel-on-key-down="{{ ln.onNoteKey }}" sc-camel-on-blur="{{ ln.onNoteBlur }}" placeholder="Add a note…" style="width:100%; display:block; box-sizing:border-box; border:none; outline:none; resize:none; background:transparent; padding:0; margin:0; font:400 13px/1.55 -apple-system,sans-serif; color:rgba(23,22,26,0.66);"></textarea>
+                        </sc-if>
+                        <sc-if value="{{ ln.noteShow }}" hint-placeholder-val="{{ false }}">
+                          <div sc-camel-on-click="{{ ln.onNoteEdit }}" style="{{ ln.noteStyle }}">{{ ln.noteText }}</div>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ ln.slashOpen }}" hint-placeholder-val="{{ false }}">
+                      <div sc-camel-on-mouse-down="{{ ln.keep }}" style="position:absolute; left:-6px; top:calc(100% + 6px); width:270px; padding:5px; border-radius:11px; background:#fff; box-shadow:0 16px 40px rgba(40,30,20,0.18), 0 0 0 0.5px rgba(23,22,26,0.14); z-index:30; display:flex; flex-direction:column; gap:1px; animation:popIn 160ms cubic-bezier(0.2,0.9,0.2,1); transform-origin:top left;">
+                        <div style="font:600 10px/1 -apple-system,sans-serif; letter-spacing:0.08em; text-transform:uppercase; color:rgba(23,22,26,0.36); padding:7px 9px 6px;">Turn into</div>
+                        <sc-for list="{{ ln.slashItems }}" as="o" hint-placeholder-count="5">
+                          <div sc-camel-on-mouse-down="{{ o.onPick }}" style="{{ o.style }}">
+                            <span class="ms" style="{{ o.iconStyle }}">{{ o.icon }}</span>
+                            <span style="font:500 13px/1 -apple-system,sans-serif; flex:1;">{{ o.label }}</span>
+                            <span style="font:500 10.5px/1 ui-monospace,Menlo,monospace; opacity:0.5;">{{ o.hint }}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px; padding-top:1px; flex:none; justify-content:flex-end;">
+                    <sc-for list="{{ ln.chips }}" as="chip" hint-placeholder-count="0">
+                      <span style="{{ chip.style }}"><sc-if value="{{ chip.hasIcon }}" hint-placeholder-val="{{ false }}"><span class="ms" style="{{ chip.iconStyle }}">{{ chip.icon }}</span></sc-if>{{ chip.label }}</span>
+                    </sc-for>
+                    <sc-if value="{{ ln.isTask }}" hint-placeholder-val="{{ true }}">
+                      <sc-if value="{{ ln.isSelected }}" hint-placeholder-val="{{ false }}"><span style="{{ ln.selMarkStyle }}"><span class="ms" style="font-size:11px; color:#fff; font-variation-settings:'wght' 700;">check</span></span></sc-if>
+                      <span sc-camel-on-click="{{ ln.onNoteToggle }}" class="ms" title="Note · Space" style="{{ ln.noteBtnStyle }}" style-hover="background:rgba(23,22,26,0.07); color:#17161A; opacity:1">notes</span>
+                      <span sc-camel-on-click="{{ ln.onOpen }}" class="ms" style="{{ ln.openStyle }}" style-hover="background:rgba(23,22,26,0.07); color:#17161A; opacity:1">right_panel_open</span>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-for>
+              <div sc-camel-on-click="{{ docAdd }}" style="display:flex; align-items:center; gap:10px; margin-top:6px; padding:7px 10px; border-radius:9px; cursor:text; color:rgba(23,22,26,0.36);" style-hover="background:rgba(23,22,26,0.035); color:rgba(23,22,26,0.55)">
+                <div style="width:15px; height:15px; border-radius:50%; border:1.5px dashed rgba(23,22,26,0.24); box-sizing:border-box;"></div>
+                <span style="font:400 13.5px/1.3 -apple-system,sans-serif;">{{ docAddText }}</span>
+              </div>
+              <div style="display:flex; gap:14px; flex-wrap:wrap; padding:10px 10px 0; font:500 11px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.38);">
+                <span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">#</span>Heading</span><span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">##</span>Subheading</span><span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">-</span>Bullet</span><span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">[ ]</span>Task</span><span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">/</span>Turn into</span><span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">⇥</span>Subtask</span><span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">⇧↩</span>Note</span><span style="display:flex; align-items:center; gap:5px;"><span style="font:500 10px/1 ui-monospace,Menlo,monospace; background:rgba(23,22,26,0.06); padding:2px 5px; border-radius:4px; white-space:nowrap;">Space</span>Show note</span>
+              </div>
+            </div>
+          </sc-if>
+
           <!-- GROUPED ROWS (Today / Tasks / List / Label / Inbox queue / Completed) -->
           <sc-if value="{{ showGroups }}" hint-placeholder-val="{{ false }}">
             <div style="{{ groupsWrapStyle }}">
@@ -724,6 +791,14 @@
             <span sc-camel-on-click="{{ closeInspector }}" class="ms" style="font-size:16px; color:rgba(23,22,26,0.45); cursor:pointer; padding:4px; border-radius:6px;" style-hover="background:rgba(23,22,26,0.06)">close</span>
           </div>
           <div style="flex:1; overflow:auto; padding:16px 16px 20px; display:flex; flex-direction:column; gap:16px;">
+            <sc-if value="{{ ins.hasParent }}" hint-placeholder-val="{{ false }}">
+              <div sc-camel-on-click="{{ ins.onParent }}" style="display:flex; align-items:center; gap:6px; margin:-4px 0 -8px; padding:5px 8px 5px 6px; align-self:flex-start; max-width:100%; box-sizing:border-box; border-radius:7px; cursor:pointer; background:rgba(23,22,26,0.04); color:rgba(23,22,26,0.55);" style-hover="background:rgba(124,77,240,0.1); color:#7C4DF0">
+                <span class="ms" style="font-size:14px;">arrow_upward</span>
+                <span style="font:500 11.5px/1.2 -apple-system,sans-serif; white-space:nowrap;">Subtask of</span>
+                <span style="font:600 11.5px/1.2 -apple-system,sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#17161A;">{{ ins.parentText }}</span>
+                <span style="font:500 10.5px/1 -apple-system,sans-serif; white-space:nowrap; opacity:0.8;">{{ ins.parentProgress }}</span>
+              </div>
+            </sc-if>
             <div style="display:flex; gap:10px; align-items:flex-start;">
               <div sc-camel-on-click="{{ ins.onToggle }}" style="padding-top:3px; cursor:pointer; position:relative;">
                 <div style="{{ ins.boxStyle }}"><span class="ms" style="{{ ins.checkStyle }}">check</span></div>
@@ -752,6 +827,28 @@
               <span style="font:500 11.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45);">Starred</span>
               <div sc-camel-on-click="{{ ins.onStar }}" style="{{ ins.starStyle }}"><span class="ms" style="{{ ins.starIconStyle }}">star</span>{{ ins.starLabel }}</div>
             </div>
+
+            <sc-if value="{{ ins.showSubs }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <div style="display:flex; align-items:center; gap:8px; padding-bottom:6px;">
+                  <span style="font:600 10.5px/1 -apple-system,sans-serif; letter-spacing:0.07em; text-transform:uppercase; color:rgba(23,22,26,0.36);">Subtasks</span>
+                  <span style="font:600 10.5px/1 -apple-system,sans-serif; color:rgba(23,22,26,0.45); font-variant-numeric:tabular-nums;">{{ ins.subCount }}</span>
+                  <div style="flex:1; height:3px; border-radius:2px; background:rgba(23,22,26,0.07); overflow:hidden;"><div style="{{ ins.subBarStyle }}"></div></div>
+                </div>
+                <sc-for list="{{ ins.subs }}" as="k" hint-placeholder-count="3">
+                  <div sc-camel-on-click="{{ k.onOpen }}" style="{{ k.style }}" style-hover="background:rgba(23,22,26,0.04)">
+                    <div style="{{ k.indentStyle }}"></div>
+                    <div sc-camel-on-click="{{ k.onToggle }}" style="{{ k.boxStyle }}"><span class="ms" style="{{ k.checkStyle }}">check</span></div>
+                    <span style="{{ k.textStyle }}">{{ k.text }}</span>
+                    <span class="ms" style="font-size:14px; color:rgba(23,22,26,0.3);">chevron_right</span>
+                  </div>
+                </sc-for>
+                <div sc-camel-on-click="{{ ins.onAddSub }}" style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:8px; cursor:pointer; color:rgba(23,22,26,0.42);" style-hover="background:rgba(23,22,26,0.04); color:#17161A">
+                  <span class="ms" style="font-size:15px; width:15px;">add</span>
+                  <span style="font:500 12.5px/1 -apple-system,sans-serif;">Add subtask</span>
+                </div>
+              </div>
+            </sc-if>
 
             <div style="border-radius:11px; background:#fff; box-shadow:0 0 0 0.5px rgba(23,22,26,0.1); padding:12px;">
               <div style="display:flex; align-items:center; gap:8px;">

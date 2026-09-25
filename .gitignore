@@ -22,3 +22,6 @@ dist/
 *.provisionprofile
 .env
 .env.*
+
+# Local verification and Playwright captures
+output/

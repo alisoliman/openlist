@@ -80,33 +80,6 @@ enum BlockTree {
         return result.flatMap { $0 }
     }
 
-    /// A display projection: completed tasks settle below pending siblings,
-    /// carrying their entire subtree. Stored manual order is untouched, so
-    /// reopening a task restores its position and exports keep document order.
-    static func prioritizingPendingTasks(in rows: [BlockRow]) -> [BlockRow] {
-        var index = 0
-        func siblings(at depth: Int) -> [BlockRow] {
-            var pending: [[BlockRow]] = []
-            var completed: [[BlockRow]] = []
-            while index < rows.count, rows[index].depth == depth {
-                let row = rows[index]
-                index += 1
-                var branch = [row]
-                if index < rows.count, rows[index].depth > depth {
-                    branch += siblings(at: rows[index].depth)
-                }
-                if row.block.isTask && row.block.isCompleted {
-                    completed.append(branch)
-                } else {
-                    pending.append(branch)
-                }
-            }
-            return (pending + completed).flatMap { $0 }
-        }
-        guard let first = rows.first else { return [] }
-        return siblings(at: first.depth)
-    }
-
     /// Children of `parentID`, ordered by `sortIndex`.
     static func children(of parentID: UUID?, in blocks: [Block]) -> [Block] {
         childIndex(of: blocks, root: parentID)[parentID] ?? []
@@ -117,7 +90,7 @@ enum BlockTree {
     /// - Parameters:
     ///   - blocks: every block in the container, at any depth.
     ///   - root: the parent to start from — `nil` for a list document, or a
-    ///     task's id when rendering its detail page.
+    ///     task's id for the subtree under it.
     ///   - respectCollapse: when `true`, subtrees of collapsed blocks are skipped.
     static func flatten(
         _ blocks: [Block],
@@ -166,21 +139,105 @@ enum BlockTree {
         return rows
     }
 
-    /// Temporarily revealed ancestors/targets remain visible without changing
-    /// completion preferences or exposing every other completed branch.
+    /// Hides the done tasks at depth 0, with their subtrees, keeping done
+    /// subtasks where they were ticked. Revealed ancestors and targets stay
+    /// visible without exposing every other done branch.
     static func hidingCompletedTasks(in rows: [BlockRow], revealing: Set<UUID> = []) -> [BlockRow] {
         var result: [BlockRow] = []
-        var skipDeeperThan: Int?
+        var hidesBranch = false
         for row in rows {
-            if let limit = skipDeeperThan {
-                if row.depth > limit { continue }
-                skipDeeperThan = nil
+            if row.depth == 0 {
+                hidesBranch = row.block.isTask && row.block.isCompleted && !revealing.contains(row.id)
             }
-            if row.block.isTask, row.block.isCompleted, !revealing.contains(row.id) {
-                skipDeeperThan = row.depth
-                continue
+            if !hidesBranch { result.append(row) }
+        }
+        return result
+    }
+
+    /// The done top-level tasks with a task still open somewhere below them,
+    /// which a document hiding its done top-level tasks keeps on show, or
+    /// that open task would go with it. `atTaskLevel` takes every done task
+    /// with no task above it, the top level of the Tasks presentation.
+    static func completedTasksHoldingOpenTasks(in blocks: [Block], atTaskLevel: Bool = false) -> Set<UUID> {
+        let index = childIndex(of: blocks)
+        let byID = atTaskLevel ? Dictionary(blocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
+        let tops = atTaskLevel ? blocks.filter { $0.isTask && $0.isCompleted && !hasTaskAncestor($0) { byID[$0] } }
+            : index[nil] ?? []
+        var result: Set<UUID> = []
+        for top in tops where top.isTask && top.isCompleted {
+            if descendants(of: top.id, using: index).contains(where: { $0.isTask && !$0.isCompleted }) {
+                result.insert(top.id)
+            }
+        }
+        return result
+    }
+
+    /// Whether a task sits anywhere above `block`, each parent looked up
+    /// with `parent`. A task with none is a top-level task among the tasks.
+    static func hasTaskAncestor(_ block: Block, parent: (UUID) -> Block?) -> Bool {
+        var seen: Set<UUID> = [block.id]
+        var next = block.parentID
+        while let id = next, seen.insert(id).inserted, let ancestor = parent(id) {
+            if ancestor.isTask { return true }
+            next = ancestor.parentID
+        }
+        return false
+    }
+
+    // MARK: - Heading sections
+
+    /// The level of a heading that bounds a section, `nil` for other kinds.
+    static func sectionLevel(of kind: BlockKind) -> Int? {
+        switch kind {
+        case .heading1: 1
+        case .heading2: 2
+        case .heading3: 3
+        default: nil
+        }
+    }
+
+    /// Each top-level heading's section: the rows after it up to the next
+    /// top-level heading of the same or a higher level, at any depth. Pass
+    /// every row of the document, so a section counts what it hides too.
+    static func sections(in rows: [BlockRow]) -> [UUID: ArraySlice<BlockRow>] {
+        var sections: [UUID: ArraySlice<BlockRow>] = [:]
+        for (index, row) in rows.enumerated() where row.depth == 0 {
+            guard let level = sectionLevel(of: row.block.kind) else { continue }
+            let rest = rows[(index + 1)...]
+            let end = rest.firstIndex { $0.depth == 0 && (sectionLevel(of: $0.block.kind) ?? .max) <= level } ?? rows.endIndex
+            sections[row.id] = rows[(index + 1)..<end]
+        }
+        return sections
+    }
+
+    /// The top-level headings whose sections hold `id`, nearest first: the
+    /// heading above it, then each heading of a higher level above that one.
+    static func enclosingSections(of id: UUID, in rows: [BlockRow]) -> [UUID] {
+        guard let index = rows.firstIndex(where: { $0.id == id }) else { return [] }
+        // A heading sits in the sections of higher-level headings only.
+        var limit = rows[index].depth == 0 ? sectionLevel(of: rows[index].block.kind) ?? .max : .max
+        var headings: [UUID] = []
+        for row in rows[..<index].reversed() where row.depth == 0 {
+            guard let level = sectionLevel(of: row.block.kind), level < limit else { continue }
+            headings.append(row.id)
+            limit = level
+        }
+        return headings
+    }
+
+    /// Hides a collapsed top-level heading's section, the way a collapsed
+    /// task hides its subtree.
+    static func hidingCollapsedSections(in rows: [BlockRow], revealing: Set<UUID> = []) -> [BlockRow] {
+        var result: [BlockRow] = []
+        var hiddenUntilLevel: Int?
+        for row in rows {
+            let level = row.depth == 0 ? sectionLevel(of: row.block.kind) : nil
+            if let limit = hiddenUntilLevel {
+                guard let level, level <= limit else { continue }
+                hiddenUntilLevel = nil
             }
             result.append(row)
+            if let level, row.block.isCollapsed, !revealing.contains(row.id) { hiddenUntilLevel = level }
         }
         return result
     }
@@ -236,8 +293,8 @@ enum BlockTree {
     /// Every descendant of `blockID`, at any depth.
     ///
     /// Rebuilds the parent index on each call — fine for one-off use, but when
-    /// walking many blocks prefer ``subtaskCounts(in:)`` or hoist
-    /// ``childIndex(of:)`` and use ``descendants(of:using:)``.
+    /// walking many blocks hoist ``childIndex(of:)`` and use
+    /// ``descendants(of:using:)``.
     static func descendants(of blockID: UUID, in blocks: [Block]) -> [Block] {
         descendants(of: blockID, using: childIndex(of: blocks, root: blockID))
     }
@@ -253,44 +310,6 @@ enum BlockTree {
             queue.append(contentsOf: kids.map(\.id))
         }
         return result
-    }
-
-    /// Completed/total subtask counts for **every** block, in one pass.
-    ///
-    /// Computing these individually is quadratic: each `descendants` call
-    /// rebuilds the whole index. A document view needs the number for every
-    /// row, so it wants the whole table at once.
-    static func subtaskCounts(in blocks: [Block]) -> [UUID: (done: Int, total: Int)] {
-        let index = childIndex(of: blocks)
-        var counts: [UUID: (done: Int, total: Int)] = [:]
-        counts.reserveCapacity(blocks.count)
-
-        // Post-order: a block's totals are its children's totals plus the
-        // children themselves, so each block is visited exactly once.
-        func visit(_ block: Block) -> (done: Int, total: Int) {
-            if let cached = counts[block.id] { return cached }
-
-            var done = 0
-            var total = 0
-            for child in index[block.id] ?? [] {
-                let sub = visit(child)
-                if child.isTask {
-                    total += 1
-                    if child.isCompleted { done += 1 }
-                }
-                done += sub.done
-                total += sub.total
-            }
-
-            let result = (done, total)
-            counts[block.id] = result
-            return result
-        }
-
-        for block in blocks where counts[block.id] == nil {
-            _ = visit(block)
-        }
-        return counts
     }
 
     /// Walks up the parent chain, nearest ancestor first.

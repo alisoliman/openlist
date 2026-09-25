@@ -5,10 +5,9 @@
 
 import SwiftUI
 
-/// The fixed palette used for list tints, label chips and activity markers.
-///
-/// Each accent resolves through `Color` so it adapts automatically between
-/// light and dark appearance.
+/// The fixed Next palette for lists and labels: list glyphs, tiles and
+/// covers, label chips, calendar blocks and the widgets' list colours. Each
+/// is one sRGB value, the same in light and dark appearance.
 enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
     case graphite
     case red
@@ -40,7 +39,7 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// Saturated fill used for checkboxes, chips and icon backgrounds.
+    /// The list's or label's colour.
     var color: Color {
         switch self {
         case .graphite: Color(hex: 0x6E6A73)
@@ -56,12 +55,6 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
         case .brown: Color(hex: 0xA0694B)
         }
     }
-
-    /// Tinted background for chips and soft badges.
-    var softBackground: Color { color.opacity(0.14) }
-
-    /// Readable text colour when drawn on `softBackground`.
-    var textColor: Color { color }
 }
 
 extension Color {

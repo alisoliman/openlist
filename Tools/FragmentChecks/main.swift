@@ -29,7 +29,7 @@ if CommandLine.arguments[2] == "reopen" {
     let fragment = try FragmentClipboard.read(from: clipboard)
     check(try fragment.encoded() == Data(contentsOf: fragmentURL) || fragment == DocumentFragment.decode(Data(contentsOf: fragmentURL)), "Actual private clipboard payload survives source-process exit")
     check(store.block(id: fragment.roots[0]) == nil, "Deleted clipboard source remains absent across processes")
-    let ids = try store.pasteFragment(fragment, in: .init(listID: manifest.listID), after: nil)
+    let ids = try store.pasteFragment(fragment, inList: manifest.listID, after: nil)
     let root = store.block(id: ids[0])!
     check(root.text == fragment.blocks[0].text, "Self-contained serialized clipboard pastes after restart and source deletion")
     let children = BlockTree.descendants(of: root.id, in: store.blocks(inList: manifest.listID))
@@ -90,10 +90,10 @@ try store.persistChanges()
 let fragment = try FragmentContent.capture([root.id, previous.id, root.id], store: store)
 let pendingDestination = TaskList(title: "Unsaved destination")
 store.context.insert(pendingDestination)
-rejects("An unsaved list cannot receive durable children") { _ = try store.pasteFragment(fragment, in: .init(listID: pendingDestination.id), after: nil) }
+rejects("An unsaved list cannot receive durable children") { _ = try store.pasteFragment(fragment, inList: pendingDestination.id, after: nil) }
 let pendingParent = Block(kind: .task, text: "Unsaved parent", listID: target.id)
 store.context.insert(pendingParent)
-rejects("An unsaved parent cannot receive durable children") { _ = try store.pasteFragment(fragment, in: .init(listID: target.id, rootBlockID: pendingParent.id), after: nil) }
+rejects("An unsaved line cannot anchor durable lines") { _ = try store.pasteFragment(fragment, inList: target.id, after: pendingParent.id) }
 let orphanReader = ModelContext(container)
 check(try orphanReader.fetch(FetchDescriptor<Block>()).allSatisfy { $0.listID != pendingDestination.id && $0.parentID != pendingParent.id }, "Fresh disk reader sees no orphan from rejected draft destinations")
 check(store.context.hasChanges && pendingDestination.title == "Unsaved destination" && pendingParent.text == "Unsaved parent", "Rejected destination preserves pending list and task instances")
@@ -117,6 +117,14 @@ check(try FragmentContent.capture([root.id], store: store).blocks[0].styles == f
 root.richData = RichTextCodec.encode(attributed)
 let markdown = FragmentMarkdown.render(fragment)
 check(markdown.contains("https://example.com/a?q=1") && markdown.contains("Proof") && !markdown.contains("Outside subtree") && !markdown.contains("file://"), "Markdown fallback is subtree-only, rich, readable, and has no private cache links")
+// Paste and Match Style reads the content's own lines, not that Markdown: each
+// line's plain text, depth, completion and note, with no star, label, file or image line.
+let plainLines = MarkdownInputRules.pasteLines(of: fragment)
+check(plainLines.map(\.depth) == Array(0...24) && plainLines.first?.text == root.text && plainLines.first?.kind == .task
+        && plainLines.first?.isCompleted == true && plainLines.first?.note == root.note
+        && plainLines.dropFirst().map(\.text) == (0..<24).map { "Level \($0)" }
+        && !plainLines.contains { $0.text.contains("⭐") || $0.text.contains("#") || $0.text.contains("Proof") || $0.text.contains("Image") },
+    "Openlist content reads as its lines for Paste and Match Style, without its Markdown's styling, star, labels, files or images")
 
 var malformed = fragment
 malformed.version = 999
@@ -144,7 +152,7 @@ undo.groupsByEvent = false
 var pasted: [UUID] = []
 undo.beginUndoGrouping()
 store.undoableEditorEdit(in: target.id, name: "Paste content", undoManager: undo, includingNewLabels: true) {
-    pasted = try! store.pasteFragment(fragment, in: .init(listID: target.id), after: nil)
+    pasted = try! store.pasteFragment(fragment, inList: target.id, after: nil)
 }
 undo.endUndoGrouping()
 let copyID = pasted[0]
@@ -165,19 +173,15 @@ undo.redo()
 check(BlockTree.descendants(of: copyID, in: store.blocks(inList: target.id)).count == 25, "One Redo restores complete hierarchy")
 check(store.block(id: copyID)?.inboxMembershipData == nil, "Paste Redo retains clean metadata")
 check(try store.taskActivity(for: copyID).map(\.kind).contains(.restored), "Redo records Restored under pasted UUID")
-let scheduledID = try store.pasteFragment(fragment, in: .init(listID: target.id), after: copyID, includeSchedules: true)[0]
-let scheduled = store.block(id: scheduledID)!
-check(scheduled.dueDate == root.dueDate && scheduled.reminderAt == root.reminderAt && scheduled.recurrence?.frequency == .weekly, "Explicit schedule inclusion retains dates/reminders/rules")
-check(scheduled.recurrence?.completedOccurrences == 0 && scheduled.occurrenceID == scheduled.id, "Schedule inclusion still resets occurrence identity and progress")
-check(scheduled.inboxMembershipData == nil, "Including schedules never copies legacy queue metadata")
 var active = fragment
 active.blocks[0].isCompleted = false
 active.blocks[0].completedAt = nil
-let activeID = try store.pasteFragment(active, in: .init(listID: target.id), after: nil, includeSchedules: true)[0]
-check(NotificationService.shared.scheduled.contains(activeID), "Explicit future reminder is reconciled only after the successful insertion")
+let activeID = try store.pasteFragment(active, inList: target.id, after: nil)[0]
+check(store.block(id: activeID)?.reminderAt == nil && !NotificationService.shared.scheduled.contains(activeID),
+      "An open task's pasted copy leaves its future reminder behind")
 var converted = fragment
 converted.blocks[0].kind = "paragraph"
-let convertedID = try store.pasteFragment(converted, in: .init(listID: target.id), after: nil)[0]
+let convertedID = try store.pasteFragment(converted, inList: target.id, after: nil)[0]
 check(store.attachments(for: convertedID).first?.contentData == blob, "Converted task retains hidden attachment bytes on a non-task block")
 check(try FragmentContent.capture([convertedID], store: store).blocks[0].attachments[0].media.data == blob, "Copying converted task retains its full hidden file payload")
 
@@ -188,7 +192,7 @@ var foreignID: UUID!
 let labelUndo = UndoManager(); labelUndo.groupsByEvent = false
 labelUndo.beginUndoGrouping()
 store.undoableEditorEdit(in: target.id, name: "Paste content", undoManager: labelUndo, includingNewLabels: true) {
-    foreignID = try! store.pasteFragment(foreign, in: .init(listID: target.id), after: nil)[0]
+    foreignID = try! store.pasteFragment(foreign, inList: target.id, after: nil)[0]
 }
 labelUndo.endUndoGrouping()
 let newLabelID = store.block(id: foreignID)!.labelIDs[0]
@@ -207,7 +211,7 @@ let oldNote = root.note
 root.note = "Unsaved live source note"
 target.summary = "Unsaved destination summary"
 let pending = try FragmentContent.capture([root.id], store: store)
-let pendingCopyID = try store.pasteFragment(pending, in: .init(listID: target.id), after: nil)[0]
+let pendingCopyID = try store.pasteFragment(pending, inList: target.id, after: nil)[0]
 check(store.block(id: pendingCopyID)?.note == root.note && store.context.hasChanges, "Successful paste snapshots live source text without flushing its draft")
 let pendingReader = ModelContext(container)
 check(try pendingReader.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == sourceID })).first?.note == oldNote, "Sibling insertion leaves committed source note unchanged")
@@ -222,7 +226,7 @@ retained.note = "Pending source edit"; retainedList.summary = "Pending destinati
 let beforeFiles = try files(), beforeIDs = Set(failing.blocks(inList: target.id).map(\.id)), beforeHistory = try events(failing.context)
 let beforeLabels = Set(failing.allLabels().map(\.id))
 foreign.labels[0].name = "Must not leak"
-rejects("Real read-only writer rejects complete insertion") { _ = try failing.pasteFragment(foreign, in: .init(listID: target.id), after: nil) }
+rejects("Real read-only writer rejects complete insertion") { _ = try failing.pasteFragment(foreign, inList: target.id, after: nil) }
 check(retained.note == "Pending source edit" && retainedList.summary == "Pending destination edit" && failing.context.hasChanges, "Failure preserves retained instances and unsaved editor state")
 check(Set(failing.blocks(inList: target.id).map(\.id)) == beforeIDs && Set(failing.allLabels().map(\.id)) == beforeLabels, "First live fetch has no partial blocks or labels")
 check(try files() == beforeFiles && events(failing.context) == beforeHistory, "Failed writer rolls back all media and history")
@@ -234,18 +238,19 @@ attachment.filename = "not-present-on-disk.txt"
 attachment.contentData = nil
 rejects("Missing source file rejects clipboard copy before replacing clipboard") { try FragmentClipboard.copy([root.id], store: store, to: clipboard) }
 check(try FragmentClipboard.read(from: clipboard) == fragment, "Failed copy keeps the prior clipboard payload intact")
-let markdownBoard = NSPasteboard(name: .init(UUID().uuidString))
-try FragmentClipboard.copy([root.id], store: store, markdownOnly: true, to: markdownBoard)
-check(markdownBoard.data(forType: FragmentClipboard.type) == nil && markdownBoard.string(forType: .string)?.contains("file not included") == true, "Markdown-only copy stays readable with missing media and never claims embedded bytes")
-markdownBoard.releaseGlobally()
 attachment.filename = missingFilename
 attachment.contentData = blob
 try store.persistChanges()
+let knownLabels = root.labelIDs
+root.labelIDs = [UUID()]
+do { _ = try FragmentContent.capture([root.id], store: store); preconditionFailure("A missing label must stop the copy") }
+catch { check(error.localizedDescription.hasPrefix("Content was not copied. A label on it"), "A copy that fails says it wasn't copied, not pasted") }
+root.labelIDs = knownLabels
 
 let mediaFolder = media.url(for: "drain").deletingLastPathComponent()
 let attributes = try FileManager.default.attributesOfItem(atPath: mediaFolder.path)
 try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: mediaFolder.path)
-rejects("A real media staging write failure aborts insertion") { _ = try store.pasteFragment(fragment, in: .init(listID: target.id), after: nil) }
+rejects("A real media staging write failure aborts insertion") { _ = try store.pasteFragment(fragment, inList: target.id, after: nil) }
 try FileManager.default.setAttributes([.posixPermissions: attributes[.posixPermissions]!], ofItemAtPath: mediaFolder.path)
 check(try Set(store.blocks(inList: target.id).map(\.id)) == beforeIDs && events(store.context) == beforeHistory, "Media failure leaves no staged tree or Created history")
 
@@ -257,16 +262,117 @@ collision.id = label.id
 let match = TaskLabel(name: "travel", accent: .blue)
 other.context.insert(collision); other.context.insert(match)
 try other.persistChanges()
-let crossID = try other.pasteFragment(fragment, in: .init(listID: otherList.id), after: nil)[0]
+let crossID = try other.pasteFragment(fragment, inList: otherList.id, after: nil)[0]
 check(other.block(id: crossID)?.labelIDs == [match.id] && match.accent == .blue && collision.name == "Unrelated identity collision", "Cross-library matching ignores source UUID collisions and preserves destination color")
 check(other.allLabels().count == 2 && other.block(id: crossID)?.listID == otherList.id, "Cross-library insertion creates no dangling label or source list reference")
 check(other.block(id: crossID)?.inboxMembershipData == nil, "Cross-library paste has no source Inbox membership")
 
-for literal in ["```swift\n# not a heading\n\n- not a bullet\n```", "first\n\nlast", "first  \nsecond", "  indented\nnext", " one space\nnext", "\u{00a0}nonbreaking indent\nnext", "[title](https://example.com)\n<script>data</script>"] {
-    let parsed = MarkdownInputRules.parseClipboard(literal)
-    check(parsed.count == 1 ? parsed[0].text == literal : parsed.map(\.text).joined(separator: "\n") == literal, "Unsupported external Markdown preserves literal content")
+// Pasted after a line, Openlist content keeps to the list document's two
+// levels, as pasted Markdown does: it steps out beside the lines the anchor
+// is under until what it holds fits, only tasks and list items go under a
+// line, and a copied hierarchy deeper than two levels comes up to the second.
+let nestedList = store.createList(title: "Nested paste")
+let nestedDocument = DocumentContext(listID: nestedList.id)
+let trip = store.appendBlock(kind: .task, text: "Trip", to: nestedDocument)
+let pack = store.insertChild(kind: .task, text: "Pack", of: trip, at: .last)
+let socks = store.insertChild(kind: .task, text: "Socks", of: pack, at: .last)
+let chapter = store.appendBlock(kind: .heading1, text: "Chapter", to: nestedDocument)
+let kept = store.insertChild(kind: .task, text: "Kept under", of: chapter, at: .last)
+_ = store.appendBlock(kind: .task, text: "Last", to: nestedDocument)
+let tallList = store.createList(title: "Tall source")
+let book = store.appendBlock(kind: .task, text: "Book", to: .init(listID: tallList.id))
+let flights = store.insertChild(kind: .task, text: "Flights", of: book, at: .last)
+let seats = store.insertChild(kind: .task, text: "Seats", of: flights, at: .last)
+try store.persistChanges()
+let tall = try FragmentContent.capture([book.id], store: store)
+func nestedOutline(_ listID: UUID = nestedList.id) -> [String] {
+    BlockTree.flatten(store.blocks(inList: listID), respectCollapse: false).map { "\($0.depth) \($0.block.text)" }
 }
-check(MarkdownInputRules.parseClipboard("- [ ] Parent\n  - [x] Child").map(\.depth) == [0, 1], "Supported external task Markdown keeps nesting")
+func pastingNested(_ fragment: DocumentFragment, after anchor: Block, _ body: () -> Void) throws {
+    let pastedIDs = try store.pasteFragment(fragment, inList: nestedList.id, after: anchor.id)
+    body()
+    for id in pastedIDs { store.deleteBlock(store.block(id: id)!) }
+    try store.persistChanges()
+}
+let before = nestedOutline()
+try pastingNested(tall, after: pack) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "0 Book", "1 Flights", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
+        "A task holding two levels, pasted after a subtask, steps out to the top after the task it was under")
+}
+try pastingNested(try FragmentContent.capture([flights.id], store: store), after: socks) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "1 Flights", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
+        "A task holding a level, pasted two levels in, steps out one, after the subtask it was under")
+}
+try pastingNested(try FragmentContent.capture([seats.id], store: store), after: socks) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
+        "A single task pasted two levels in stays beside the line")
+}
+let headingRoot = FragmentBlock(id: UUID(), parentID: nil, kind: "heading2", text: "Pasted heading")
+try pastingNested(DocumentFragment(roots: [headingRoot.id], blocks: [headingRoot], labels: []), after: socks) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "0 Pasted heading", "0 Chapter", "1 Kept under", "0 Last"],
+        "A heading pasted in a nested line goes to the top, after that line's task")
+}
+try pastingNested(try FragmentContent.capture([seats.id], store: store), after: kept) {
+    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "0 Chapter", "1 Kept under", "0 Seats", "0 Last"],
+        "A task pasted beside a line a heading keeps goes beside the heading, not under it")
+}
+check(nestedOutline() == before, "Taking the pasted lines away leaves the document as it was")
+// The paste checks what's saved above the line it goes beside, not only the
+// line: when another writer has moved that line's task out of the list,
+// pasting a single task after the line, which would go beside it under that
+// task, is rejected and writes nothing.
+let staleList = store.createList(title: "Stale parent")
+let staleParent = store.appendBlock(kind: .task, text: "Moved elsewhere", to: .init(listID: staleList.id))
+let staleLine = store.insertChild(kind: .task, text: "Left behind", of: staleParent, at: .last)
+try store.persistChanges()
+let otherWriter = ModelContext(container)
+let staleParentID = staleParent.id
+let movedParent = try otherWriter.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == staleParentID })).first!
+movedParent.listID = tallList.id
+try otherWriter.save()
+func savedIDs() throws -> Set<UUID> {
+    let reader = ModelContext(container)
+    return Set(try reader.fetch(FetchDescriptor<Block>()).map(\.id)).union(try reader.fetch(FetchDescriptor<TaskLabel>()).map(\.id))
+}
+let single = try FragmentContent.capture([seats.id], store: store)
+let savedBeforeStale = try savedIDs()
+rejects("A line whose task has left the list on disk cannot take a paste beside it") {
+    _ = try store.pasteFragment(single, inList: staleList.id, after: staleLine.id)
+}
+check(try savedIDs() == savedBeforeStale && store.children(of: staleParentID, listID: staleList.id).map(\.id) == [staleLine.id],
+    "The rejected paste writes nothing")
+movedParent.listID = staleList.id
+try otherWriter.save()
+let deepIDs = (0..<5).map { _ in UUID() }
+let deep = DocumentFragment(roots: [deepIDs[0]], blocks: [
+    FragmentBlock(id: deepIDs[0], parentID: nil, kind: "task", text: "A"),
+    FragmentBlock(id: deepIDs[1], parentID: deepIDs[0], kind: "task", text: "B"),
+    FragmentBlock(id: deepIDs[2], parentID: deepIDs[1], kind: "task", text: "C"),
+    FragmentBlock(id: deepIDs[3], parentID: deepIDs[2], kind: "task", text: "D"),
+    FragmentBlock(id: deepIDs[4], parentID: deepIDs[0], kind: "task", text: "E"),
+], labels: [])
+let deepList = store.createList(title: "Deep paste")
+try store.persistChanges()
+let deepRoots = try store.pasteFragment(deep, inList: deepList.id, after: nil)
+check(nestedOutline(deepList.id) == ["0 A", "1 B", "2 C", "2 D", "1 E"] && deepRoots.count == 1,
+    "An older outline's lines past two levels come up to the second, in their order, under the same task")
+check(nestedOutline(target.id).allSatisfy { Int($0.prefix(1))! <= OutlinePolicy.maximumDepth },
+    "The mixed-depth fixture pasted at the top keeps to two levels")
+
+// External text as a paste reads it: what doesn't read as Markdown keeps its words, a
+// trimmed text line for each non-blank line and a fenced block as one code line.
+let fenced = MarkdownInputRules.pasteLines("```swift\n# not a heading\n\n- not a bullet\n```")
+check(fenced.map(\.kind) == [.code] && fenced.map(\.text) == ["# not a heading\n\n- not a bullet"], "An external fenced block pastes as one code line, its content literal")
+for (source, lines) in [("first\n\nlast", ["first", "last"]), ("first  \nsecond", ["first", "second"]), ("  indented\nnext", ["indented", "next"]),
+                        (" one space\nnext", ["one space", "next"]), ("\u{00a0}nonbreaking indent\nnext", ["nonbreaking indent", "next"]),
+                        ("[title](https://example.com)\n<script>data</script>", ["[title](https://example.com)", "<script>data</script>"])] {
+    let parsed = MarkdownInputRules.pasteLines(source)
+    check(parsed.allSatisfy { $0.kind == .paragraph && $0.depth == 0 } && parsed.map(\.text) == lines, "Unsupported external Markdown pastes as trimmed text lines, keeping its words")
+}
+check(MarkdownInputRules.pasteLines("- [ ] Parent\n  - [x] Child").map(\.depth) == [0, 1], "Supported external task Markdown keeps nesting")
+// The fallback takes the whole paste: one blank line anywhere keeps every line's markers as text.
+let spaced = MarkdownInputRules.pasteLines("## Groceries\n\n- [ ] Milk\n- [ ] Eggs")
+check(spaced.allSatisfy { $0.kind == .paragraph && $0.depth == 0 } && spaced.map(\.text) == ["## Groceries", "- [ ] Milk", "- [ ] Eggs"], "A blank line anywhere pastes every line as text, markers included")
 try payload.write(to: fragmentURL)
 store.deleteBlock(root); try store.persistChanges()
 check(store.block(id: sourceID) == nil && media.fileContents(filename: copiedFilename) == blob, "Source deletion leaves pasted files independent")

@@ -6,6 +6,14 @@
 import Foundation
 import SwiftData
 
+/// A deleted label as it was, and where it sat among the labels of each task
+/// that had it, so Undo can put it back.
+struct DeletedLabel: Equatable {
+    var label: LabelMergePlan.LabelState
+    var positions: [UUID: Int]
+    var deletedAt: Date
+}
+
 extension Store {
     // MARK: - Completion
 
@@ -44,7 +52,7 @@ extension Store {
             block.deferredUntil = nextEligible
             // The reminder has to travel with the occurrence, or it stays in
             // the past and every future repeat is silently unreminded.
-            shiftReminder(on: block, fromDue: previousDue)
+            shiftReminder(on: block, fromDue: previousDue, timed: block.includesTime)
 
             // Subtasks reset so the next occurrence starts fresh.
             resetSubtasks(of: block, now: now, nextEligible: nextEligible, completedCycleID: completedCycleID)
@@ -82,7 +90,10 @@ extension Store {
     }
 
     func reopen(_ block: Block) {
-        let unadvancedCycle = block.recurrence == nil ? nil : recurringCompletionCycle(for: block)
+        // The cycle its completion counted in, its own rule's or the repeat's
+        // above it, which Activity takes back. A repeat rolling on resets its
+        // subtasks with none, so they keep their cycle's count.
+        let unadvancedCycle = recurringCompletionCycle(for: block)
         discardTaskSchedule(for: block, reason: "Reopened")
         block.occurrenceID = UUID()
         pendingReopenedCycleIDs[block.occurrenceID] = unadvancedCycle
@@ -113,24 +124,13 @@ extension Store {
         }
     }
 
-    /// Fraction of a task's subtasks that are done, for the progress pill.
-    ///
-    /// Fetches the owning list, so this is for one-off use. Views that render
-    /// many rows should build `BlockTree.subtaskCounts(in:)` once instead.
-    func subtaskProgress(for block: Block) -> (done: Int, total: Int)? {
-        guard let listID = block.listID else { return nil }
-        let counts = BlockTree.subtaskCounts(in: blocks(inList: listID))
-        guard let entry = counts[block.id], entry.total > 0 else { return nil }
-        return entry
-    }
-
     // MARK: - Scheduling
 
     func setDueDate(_ date: Date?, includesTime: Bool = false, for block: Block) {
-        let previousDue = block.dueDate
+        let previousDue = block.dueDate, wasTimed = block.includesTime
         block.dueDate = date
         block.includesTime = date == nil ? false : includesTime
-        if date != nil { shiftReminder(on: block, fromDue: previousDue) }
+        if date != nil { shiftReminder(on: block, fromDue: previousDue, timed: wasTimed) }
         block.touch()
 
         if date == nil {
@@ -143,18 +143,14 @@ extension Store {
         save()
     }
 
-    func setDueToday(_ block: Block) {
-        setDueDate(Calendar.current.startOfDay(for: .now), includesTime: false, for: block)
-    }
-
-    func setDueTomorrow(_ block: Block) {
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
-        setDueDate(tomorrow, includesTime: false, for: block)
-    }
-
-    func setDueNextWeek(_ block: Block) {
-        let next = Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: .now))
-        setDueDate(next, includesTime: false, for: block)
+    /// "Next week": the coming Monday, whichever day the week starts on here.
+    /// When that Monday is tomorrow it's the one after, so it never repeats Tomorrow.
+    static func nextWeekDay(from now: Date = .now, calendar: Calendar = .current) -> Date {
+        let today = calendar.startOfDay(for: now)
+        guard let monday = calendar.nextDate(after: today, matching: DateComponents(weekday: 2), matchingPolicy: .nextTime)
+        else { return calendar.date(byAdding: .day, value: 7, to: today) ?? today }
+        guard calendar.dateComponents([.day], from: today, to: monday).day == 1 else { return monday }
+        return calendar.date(byAdding: .day, value: 7, to: monday) ?? monday
     }
 
     func setReminder(_ date: Date?, for block: Block) {
@@ -173,17 +169,21 @@ extension Store {
         save()
     }
 
-    /// Moves a reminder by the same amount the due date moved.
+    /// Moves a reminder with the due date (`ReminderOffset.reminder`): as far
+    /// from a due time, "1 day before" at the same clock time across a
+    /// daylight-saving change, and at the same clock time the same calendar
+    /// days away when either due is a day without a time.
     ///
     /// A reminder is meaningful relative to its occurrence ("15 minutes
     /// before"), so rescheduling the task has to carry it along.
-    private func shiftReminder(on block: Block, fromDue previousDue: Date?) {
+    private func shiftReminder(on block: Block, fromDue previousDue: Date?, timed wasTimed: Bool) {
         guard
             let reminder = block.reminderAt,
             let previousDue,
             let newDue = block.dueDate
         else { return }
-        block.reminderAt = newDue.addingTimeInterval(reminder.timeIntervalSince(previousDue))
+        block.reminderAt = ReminderOffset.reminder(reminder, movedFrom: previousDue, timed: wasTimed,
+                                                   to: newDue, timed: block.includesTime, calendar: .current)
     }
 
     /// Kept as a mutation callsite marker. OS state only follows committed
@@ -300,18 +300,63 @@ extension Store {
         try renameLabel(id: label.id, to: newName)
     }
 
-    func deleteLabel(_ label: TaskLabel) {
+    /// Deletes a label and takes it off every task outside Trash. Returns what
+    /// ``restoreDeletedLabel(_:)`` needs to put it back, or nil if it failed.
+    @discardableResult
+    func deleteLabel(_ label: TaskLabel) -> DeletedLabel? {
         do {
             let labelID = label.id
+            let state = LabelMergePlan.LabelState(label)
             let all = try context.fetch(FetchDescriptor<Block>())
             try preserveTrashLabel(label, referencedBy: all)
-            for block in all where !block.isTrashed && block.labelIDs.contains(labelID) {
+            var positions: [UUID: Int] = [:]
+            for block in all where !block.isTrashed {
+                guard let position = block.labelIDs.firstIndex(of: labelID) else { continue }
+                positions[block.id] = position
                 block.labelIDs.removeAll { $0 == labelID }
             }
             context.delete(label)
             try persistChanges()
+            labelRevision += 1
+            return DeletedLabel(label: state, positions: positions, deletedAt: .now)
         } catch {
             persistenceError = "The label could not be deleted. \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// Undo of ``deleteLabel(_:)``: the label comes back as it was, where it
+    /// sat among the labels of each task that had it and is still outside
+    /// Trash. A label of the same name made since the deletion stands in for
+    /// it rather than a second one. Returns the id those tasks carry, or nil
+    /// if it failed.
+    @discardableResult
+    func restoreDeletedLabel(_ deleted: DeletedLabel) -> UUID? {
+        do {
+            let labels = try context.fetch(FetchDescriptor<TaskLabel>()).filter { !$0.isDeleted }
+            let labelID: UUID
+            if labels.contains(where: { $0.id == deleted.label.id }) {
+                labelID = deleted.label.id
+            } else if let same = labels.first(where: {
+                $0.createdAt >= deleted.deletedAt && TaskLabel.namesMatch($0.name, deleted.label.name)
+            }) {
+                labelID = same.id
+            } else {
+                context.insert(deleted.label.restore())
+                labelID = deleted.label.id
+            }
+            let ids = Array(deleted.positions.keys)
+            for block in try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) }))
+            where !block.isTrashed && !block.labelIDs.contains(labelID) {
+                let position = min(deleted.positions[block.id] ?? block.labelIDs.count, block.labelIDs.count)
+                block.labelIDs.insert(labelID, at: position)
+            }
+            try persistChanges()
+            labelRevision += 1
+            return labelID
+        } catch {
+            persistenceError = "The label could not be restored. \(error.localizedDescription)"
+            return nil
         }
     }
 
@@ -342,15 +387,8 @@ extension Store {
 
     // MARK: - Text formatting
 
-    /// How much detail a relative date string carries.
-    enum DateStyle {
-        /// "today", "Tue", "12 Mar" — for chips.
-        case short
-        /// "Today", "Tuesday", "Tue 12 March" — for section headings.
-        case long
-    }
-
-    static func relativeDateText(_ date: Date, style: DateStyle = .short) -> String {
+    /// "today", "Tue" or "12 Mar", for due chips, repeat summaries and history.
+    static func relativeDateText(_ date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return "today" }
         if calendar.isDateInTomorrow(date) { return "tomorrow" }
@@ -364,26 +402,12 @@ extension Store {
 
         // Within a week either way, the weekday name is the clearest label.
         if abs(days) < 7 {
-            return date.formatted(.dateTime.weekday(style == .long ? .wide : .abbreviated))
+            return date.formatted(.dateTime.weekday(.abbreviated))
         }
         if calendar.component(.year, from: date) == calendar.component(.year, from: .now) {
-            return style == .long
-                ? date.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
-                : date.formatted(.dateTime.day().month(.abbreviated))
+            return date.formatted(.dateTime.day().month(.abbreviated))
         }
-        return style == .long
-            ? date.formatted(.dateTime.day().month(.wide).year())
-            : date.formatted(.dateTime.day().month(.abbreviated).year())
-    }
-
-    /// Short chip text such as "Today", "Tue", "12 Mar", with an optional time.
-    static func dueChipText(for block: Block) -> String {
-        guard let dueDate = block.dueDate else { return "" }
-        var text = relativeDateText(dueDate).capitalizedFirstLetter
-        if block.includesTime {
-            text += " \(dueDate.formatted(date: .omitted, time: .shortened))"
-        }
-        return text
+        return date.formatted(.dateTime.day().month(.abbreviated).year())
     }
 
     /// Unambiguous "12 Mar 2026, 6:00 PM" form used by pickers and export.
@@ -391,11 +415,6 @@ extension Store {
         includesTime
             ? date.formatted(date: .abbreviated, time: .shortened)
             : date.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    /// "Today" / "Yesterday" / "Tue 12 March" headings for day-grouped lists.
-    static func dayHeading(for date: Date) -> String {
-        relativeDateText(date, style: .long).capitalizedFirstLetter
     }
 }
 

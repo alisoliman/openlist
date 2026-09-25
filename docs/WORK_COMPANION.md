@@ -1,35 +1,50 @@
 # Work companion
 
-Implemented 18 September 2026 following the [Up next design review](ux-research/2026-09-18/up-next-rethink.md).
+Work has one stable place in the window: while a task is recording, or paused
+with work that can resume, a work notch drops from the toolbar with its title,
+elapsed time, **Pause** or **Resume**, **Done** and **Stop**. Clicking its title
+opens the **Work** panel, as does **Work → Show Work**. Suggestions never open the
+panel or begin recording by themselves.
 
-The global suggestion banner is replaced by a stable Work toolbar control. Opening it shows a task's planned slot, estimate, scheduling source, and separate deadline. Suggestions never open the panel or begin recording automatically. While recording, a labeled Stop button remains in the toolbar across destinations.
+The Work panel shows the task's planned slot, estimate, recorded time and
+separate deadline. With nothing planned for now it offers
+**Choose a task** and **Open calendar**.
 
 ## Behavior
 
-- Start now/Start working and Resume explicitly create a work segment. Stop saves it and leaves the task open; the resumable occurrence persists across relaunches.
-- Later can quiet the occurrence for 15 minutes, with Undo, without changing its plan. Move planned time separately previews changes to other tasks before saving a preferred placement.
-- Choosing a different task while recording requires a switch confirmation. The prior segment must save before a new one starts.
-- The first extension that would displace another task pauses recording for consent. Its preview lists old/new times and is recomputed when accepted; changed impact requires another review. Waiting for approval is not recorded. Availability, pins, and fixed busy time still bound work.
-- Completing reports the finished occurrence, recorded time, and next recurrence when applicable. Undo restores the occurrence without restarting time.
-- Task-local actions, the Work menu, and the command palette share the same occurrence validation and switching rules. Stale recurrence references cannot start a replacement occurrence.
-- Background Work notifications are opt-in. Start reminders are coalesced by occurrence and snooze revision; reviewing an extension opens its impact preview.
+- Starting (**Start working** in task details, **Start** on Calendar's
+  **Planned now** banner, **Work → Start Selected Task** or **Task → Start
+  Working**) and Resume explicitly create a work segment. **Pause** saves it and
+  keeps the work on the notch to resume, across relaunches too. **Stop working**
+  saves it, leaves the task open and ends the work, the tray saying how long was
+  recorded.
+- **Later… → Remind in 15 minutes** quiets the occurrence without changing its
+  plan. **Later… → Move planned time…**, for a task with a block on the
+  calendar, moves that block to another start, as long as it is. Its sheet lists
+  what the new time would overlap, and the move is pinned as Plan's placement
+  is, one change with Undo in the tray. The due date stays the same.
+- Starting another task while one is recording switches straight away, saving
+  the previous segment first, and the tray offers Undo.
+- Recording continues past the estimate. The working block grows in 15-minute
+  steps and later placements that day move out of its way, with Undo in the
+  tray. When a meeting or a break leaves no more room, work keeps recording and
+  the notch names what it is running into; at the end of the list's hours the
+  block simply stops growing.
+- **Complete task** (the Work panel, the notch's **Done**, **Work → Complete
+  Current Task**) stops recording and completes the task as its row's checkbox
+  does: it closes after the undo delay and the tray offers **Undo**, which
+  reopens it without restarting time. A background notification's **Complete
+  task** completes it at once, with Undo in the tray, and leaves the finished
+  occurrence, recorded time and next recurrence in the Work panel, where **Undo
+  completion** restores it.
+- Task actions, the Work menu and the command palette share the same occurrence
+  validation. Stale recurrence references cannot start a replacement occurrence.
+- Background Work notifications are opt-in in Settings › Notifications. Start reminders are
+  coalesced by occurrence and snooze revision.
 
 ## Verification
 
-Native review used a separately signed `Openlist Work Review.app` with its own bundle identifier, preferences, and seeded sample library. CloudKit and real notifications were disabled for that review. No personal task library was used.
-
-Native checks covered opening a future suggestion; snooze feedback and Undo; Start, Stop, Resume; persistent Stop after navigating from Today to Inbox; task selection and switch confirmation; recurring completion and Undo; stopped-session recovery after relaunch; Escape dismissal; command-palette search and Return to open Work; and editing, canceling, and saving a Move preview. The saved preferred time and unchanged deadline were verified in the reopened panel. Accessibility-tree inspection confirmed named controls and recording status. Native review found and prompted fixes for a spurious stale-occurrence warning after completion and an incorrect unavailable-slot label for tasks moved earlier.
-
-The runtime suite exercises occurrence safety, persistence, switching, consent at the first displaced-task boundary, stale impact review, actual recorded intervals, hard boundaries, and failure recovery. Added regression cases cover the Work companion and Move previews.
-
-Build and full-suite results are recorded with the implementation commit's handoff. The development build also verifies the app/widget/helper identity and isolated storage entitlements.
-
-![Native Move preview with earlier and later affected tasks](ux-research/2026-09-18/native-move-preview.png)
-
-## Remaining validation limits
-
-Full spoken VoiceOver, enlarged text, both native appearances, compact-window resizing, and physical sleep/lock transitions were not exhaustively exercised in this pass. Runtime checks cover interruption and boundary logic; the earlier browser mockup's responsive and appearance checks are not native evidence. Real notification delivery was deliberately disabled in the sample app. The proposed human comparison study remains a product-research follow-up, not a completed study.
-
-## Integration
-
-This change is intended to combine with the parallel Inbox redesign. Resolve overlaps in RootView, AppCommands, README, and runtime source lists while keeping the Work toolbar and removing the old CalendarWorkBanner. No schema migration or external dependency is introduced.
+`Tools/run-calendar-runtime-checks.sh` exercises occurrence safety,
+persistence, switching, extension and its Undo, recorded intervals, hard
+boundaries, Move previews and failure recovery. No schema migration or external
+dependency is involved.

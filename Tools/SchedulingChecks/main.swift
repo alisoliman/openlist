@@ -121,10 +121,10 @@ let outsidePin = PlacementInput(id: UUID(), taskID: task(1).taskID, occurrenceID
     start: date("2026-10-13T09:00:00+02:00"), end: date("2026-10-13T09:30:00+02:00"), isPinned: true)
 let outsidePinnedPlan = plan([task(1, today: false)], placements: [outsidePin])
 check(outsidePinnedPlan.blocks.isEmpty, "A pin beyond the horizon cannot silently move into today's plan")
-check(outsidePinnedPlan.assessments[0].status == .outsidePlanningHorizon && outsidePinnedPlan.assessments[0].reason.contains("pinned"), "Outside-horizon pin has an explicit assessment")
+check(outsidePinnedPlan.assessments[0].status == .outsidePlanningHorizon && outsidePinnedPlan.assessments[0].reason.contains("planned beyond"), "Outside-horizon pin has an explicit assessment")
 let deadlineOutsidePin = plan([task(1, due: tomorrow)], placements: [outsidePin])
 check(deadlineOutsidePin.blocks.isEmpty && deadlineOutsidePin.assessments[0].status == .cannotFitBeforeDeadline, "Outside-horizon pin cannot falsely satisfy a nearer deadline")
-check(deadlineOutsidePin.assessments[0].conflicts.contains { $0.contains("deadline") }, "Outside-horizon pin after cutoff is a visible fixed-time conflict")
+check(deadlineOutsidePin.assessments[0].conflicts.contains { $0.contains("due date") }, "Outside-horizon pin after cutoff is a visible fixed-time conflict")
 let crossingPin = PlacementInput(id: UUID(), taskID: task(1).taskID, occurrenceID: task(1).occurrenceID,
     start: date("2026-10-11T23:00:00+02:00"), end: date("2026-10-12T01:00:00+02:00"), isPinned: true)
 let crossingPinnedPlan = plan([task(1, minutes: 120)], preferences: preferences(windows: [.init(startMinute: 0, endMinute: 1440)]), placements: [crossingPin])
@@ -143,6 +143,16 @@ check(plan([task(1)], preferences: overridePreferences).blocks[0].start == date(
 overridePreferences.work.overrides = [AvailabilityOverride(date: now, windows: [.init(startMinute: 600, endMinute: 720)], breaks: [.init(startMinute: 630, endMinute: 660)])]
 let overridden = plan([task(1, minutes: 60)], preferences: overridePreferences)
 check(overridden.blocks.map(\.start) == [ten, eleven], "Date override replaces weekly hours and breaks")
+// The calendar grid hatches the breaks the planner uses: a date override's, else the weekday's.
+let lunch = AvailabilityWindow(startMinute: 720, endMinute: 780)
+check(AvailabilityProfile.workDefault.breaks(on: now, calendar: calendar) == [lunch], "A day without an override has its weekday's break")
+var movedLunch = AvailabilityProfile.workDefault
+movedLunch.overrides = [AvailabilityOverride(date: now, windows: [.init(startMinute: 540, endMinute: 1020)], breaks: [.init(startMinute: 780, endMinute: 840)])]
+check(movedLunch.breaks(on: now, calendar: calendar) == [.init(startMinute: 780, endMinute: 840)], "A moved break is hatched where the override puts it")
+check(movedLunch.breaks(on: tomorrow, calendar: calendar) == [lunch], "Another day keeps the weekly break")
+var dayOff = AvailabilityProfile.workDefault
+dayOff.overrides = [AvailabilityOverride(date: now, windows: [])]
+check(dayOff.breaks(on: now, calendar: calendar).isEmpty && dayOff.windows(on: now, calendar: calendar).isEmpty, "A day off has no hours and no break to hatch")
 let deferred = plan([task(1, earliest: tomorrow)])
 check(deferred.blocks[0].start == date("2026-09-15T09:00:00+02:00"), "Deferred task cannot return earlier than chosen day")
 
@@ -191,7 +201,24 @@ let missedPin = PlacementInput(id: UUID(), taskID: task(1).taskID, occurrenceID:
     start: now.addingTimeInterval(-3600), end: now.addingTimeInterval(-1800), isPinned: true)
 let missedPlan = plan([task(1, today: false)], placements: [missedPin])
 check(!missedPlan.assessments[0].conflicts.isEmpty, "Missed pinned commitment remains flagged")
+check(missedPlan.assessments[0].conflicts == [AdaptiveScheduler.missedPlacementConflict]
+      && missedPlan.assessments[0].reason == "All remaining work has scheduled time.",
+      "A missed pin is flagged by its conflict alone; the assessment's reason stays its status's own")
 check(missedPlan.blocks[0].start == now && !missedPlan.blocks[0].isActive, "Missed pin replans without pretending the task started")
+// Plan pins a task without picking it for today: the pin alone keeps
+// undated work in the plan, where it was put, with nothing more beside it.
+let placedOnly = plan([task(1, today: false)], placements: [pinned])
+check(placedOnly.blocks.count == 1 && placedOnly.blocks[0].isPinned && placedOnly.blocks[0].start == eleven
+      && placedOnly.assessments.first?.status == .scheduled, "A pin alone keeps unpicked undated work in the plan at its slot")
+// The runtime keeps a missed pin back from the plan, so the task says it was
+// placed: its work still replans from now, as a picked task's would.
+var placedTask = task(1, today: false)
+placedTask.isPlaced = true
+let carriedForward = plan([placedTask])
+check(carriedForward.blocks.count == 1 && !carriedForward.blocks[0].isPinned && carriedForward.blocks[0].start == now
+      && carriedForward.assessments.first?.status == .scheduled, "A placed task with no pin passed still replans its unpicked undated work")
+check(plan([task(1, today: false)]).blocks.isEmpty && plan([task(1, today: false)]).assessments.isEmpty,
+      "Unplaced, unpicked undated work stays out of the plan")
 let wrongPin = PlacementInput(id: UUID(), taskID: task(99).taskID, occurrenceID: task(1).occurrenceID, start: eleven, end: noon, isPinned: true)
 check(plan([task(1)], placements: [wrongPin]).blocks.allSatisfy { !$0.isPinned }, "Mismatched task and occurrence cannot capture another task's pin")
 let shortPinned = plan([task(1, minutes: 15)], placements: [pinned])
@@ -261,4 +288,203 @@ let mixed = plan(mixedTasks, busy: [meeting])
 verifyConservation(mixed, tasks: mixedTasks)
 let reversed = plan(mixedTasks.reversed(), busy: [meeting])
 check(mixed.blocks.map(\.id) == reversed.blocks.map(\.id) && mixed.blocks.map(\.start) == reversed.blocks.map(\.start), "Planning is deterministic under input reordering")
+
+// The Calendar's week follows "Week starts on", and Plan and "Not planned yet" use the same days.
+let wednesday = date("2026-09-23T10:40:00+02:00")
+var mondayWeek = calendar
+mondayWeek.firstWeekday = 2
+var sundayWeek = calendar
+sundayWeek.firstWeekday = 1
+@MainActor
+func dayNumbers(_ days: [Date]) -> [Int] { days.map { calendar.component(.day, from: $0) } }
+check(dayNumbers(CalendarWeek.days(count: 7, from: wednesday, calendar: mondayWeek)) == Array(21...27), "A Monday week around Wednesday 23 runs 21 to 27, as the design's")
+check(dayNumbers(CalendarWeek.days(count: 7, from: wednesday, calendar: sundayWeek)) == Array(20...26), "A Sunday week starts on the Sunday before")
+check(dayNumbers(CalendarWeek.days(count: 7, from: date("2026-09-27T09:00:00+02:00"), calendar: mondayWeek)) == Array(21...27), "On the week's last day, today is the last column")
+check(dayNumbers(CalendarWeek.days(count: 7, from: date("2026-09-21T09:00:00+02:00"), calendar: mondayWeek)) == Array(21...27), "On the week's first day, today is the first column")
+check(dayNumbers(CalendarWeek.days(count: 3, from: wednesday, calendar: mondayWeek)) == [23, 24, 25]
+      && dayNumbers(CalendarWeek.days(count: 1, from: wednesday, calendar: mondayWeek)) == [23], "Day and 3 days start today")
+let shownWeek = CalendarWeek.span(from: wednesday, calendar: mondayWeek)
+check(shownWeek.start == date("2026-09-21T00:00:00+02:00") && shownWeek.end == date("2026-09-28T00:00:00+02:00"), "Plan searches no further than the Week view's last day")
+@MainActor
+func shownBlock(_ number: Int, _ start: String, _ end: String, active: Bool = false, done: Bool = false) -> PlannedBlock {
+    PlannedBlock(id: "\(number)", taskID: task(number).taskID, occurrenceID: task(number).occurrenceID, start: date(start), end: date(end),
+                 isPinned: true, placementID: UUID(), conflicts: [], isActive: active, completionID: done ? UUID() : nil)
+}
+let placedNow = CalendarWeek.placedTaskIDs([
+    shownBlock(1, "2026-09-14T10:00:00+02:00", "2026-09-14T10:30:00+02:00"),
+    shownBlock(2, "2026-09-22T14:00:00+02:00", "2026-09-22T14:30:00+02:00"),
+    shownBlock(3, "2026-09-25T10:00:00+02:00", "2026-09-25T11:00:00+02:00"),
+    shownBlock(4, "2026-09-23T09:00:00+02:00", "2026-09-23T09:30:00+02:00", done: true),
+    shownBlock(5, "2026-09-18T09:00:00+02:00", "2026-09-18T09:30:00+02:00", active: true)
+], now: wednesday, calendar: mondayWeek)
+check(!placedNow.contains(task(1).taskID), "A slot missed before the Week view's week no longer keeps its task out of Not planned yet")
+check(placedNow.contains(task(2).taskID) && placedNow.contains(task(3).taskID), "Yesterday's carried-forward slot and a later one still count as placed")
+check(!placedNow.contains(task(4).taskID) && placedNow.contains(task(5).taskID), "A done block doesn't count, running work does")
+
+// The inspector's "In the calendar …" names a block the grid draws, as the
+// design reads any placement, past or done: the running or next one, else the
+// latest still placed, else where the task was done.
+@MainActor
+func shownSlot(_ number: Int, _ blocks: [PlannedBlock], occurrence: UUID? = nil) -> String? {
+    CalendarWeek.shownSlot(of: task(number).taskID, occurrenceID: occurrence ?? task(number).occurrenceID, in: blocks,
+                           now: wednesday, calendar: mondayWeek)?.id
+}
+let missedYesterday = shownBlock(6, "2026-09-22T14:00:00+02:00", "2026-09-22T14:30:00+02:00")
+check(shownSlot(6, [missedYesterday]) == "6", "A slot missed yesterday, carried forward, still reads as in the calendar")
+var tomorrowSlot = shownBlock(6, "2026-09-24T09:00:00+02:00", "2026-09-24T09:30:00+02:00")
+tomorrowSlot.id = "6-next"
+check(shownSlot(6, [tomorrowSlot, missedYesterday]) == "6-next", "An upcoming slot wins over a missed one")
+var nowSlot = shownBlock(6, "2026-09-23T10:30:00+02:00", "2026-09-23T11:00:00+02:00")
+nowSlot.id = "6-now"
+check(shownSlot(6, [tomorrowSlot, nowSlot, missedYesterday]) == "6-now", "The slot under way comes before later ones")
+var running = shownBlock(6, "2026-09-23T10:00:00+02:00", "2026-09-23T10:40:00+02:00", active: true)
+running.id = "6-active"
+check(shownSlot(6, [tomorrowSlot, running]) == "6-active", "Running work reads as its block, even at its end")
+var earlierMissed = shownBlock(6, "2026-09-21T09:00:00+02:00", "2026-09-21T09:30:00+02:00")
+earlierMissed.id = "6-monday"
+check(shownSlot(6, [earlierMissed, missedYesterday]) == "6", "Of missed slots, the latest reads")
+check(shownSlot(7, [shownBlock(7, "2026-09-14T10:00:00+02:00", "2026-09-14T10:30:00+02:00")]) == nil,
+      "A slot missed before the week reads as not in the calendar, as Not planned yet has it")
+check(shownSlot(8, [shownBlock(8, "2026-09-23T10:15:00+02:00", "2026-09-23T10:30:00+02:00", done: true)]) == "8",
+      "A done task reads where it was done")
+check(shownSlot(6, [tomorrowSlot], occurrence: UUID()) == nil, "Another occurrence's slot isn't this one's")
+check(shownSlot(9, [tomorrowSlot]) == nil, "Another task's slot isn't this one's")
+
+// A nudge's click brings the Calendar to the day of that block, today while it's under way.
+@MainActor
+func nudgedDay(_ number: Int, _ blocks: [PlannedBlock]) -> Int {
+    calendar.component(.day, from: CalendarWeek.nudgedDay(of: task(number).taskID, occurrenceID: task(number).occurrenceID,
+                                                          in: blocks, now: wednesday, calendar: mondayWeek))
+}
+check(nudgedDay(6, [tomorrowSlot]) == 24 && nudgedDay(6, [missedYesterday]) == 22, "A nudge's click shows its slot's day")
+var overnight = shownBlock(6, "2026-09-22T23:30:00+02:00", "2026-09-23T11:00:00+02:00")
+overnight.id = "6-overnight"
+check(nudgedDay(6, [tomorrowSlot, nowSlot]) == 23 && nudgedDay(6, [running]) == 23 && nudgedDay(6, [overnight]) == 23,
+      "A nudge's click on a slot under way, or running work, shows today, even for a slot from before midnight")
+check(nudgedDay(9, [tomorrowSlot]) == 23, "A nudge's click with no slot drawn shows today")
+
+// Plan keeps to the week around today while it has hours long enough for the task, then goes on into the next.
+@MainActor
+func planSlot(at when: String, minutes: Double = 30, category: AvailabilityCategory = .work, deferred: Date? = nil,
+              busy: [DateInterval] = [], week: Calendar = mondayWeek) -> PlanSlot {
+    CalendarWeek.slot(duration: minutes * 60, deferredUntil: deferred, category: category, preferences: CalendarPreferences(),
+                      busy: busy, now: date(when), calendar: week)
+}
+@MainActor
+func found(_ value: String, minutes: Double = 30) -> PlanSlot {
+    .found(DateInterval(start: date(value), duration: minutes * 60))
+}
+check(planSlot(at: "2026-09-23T10:40:00+02:00") == found("2026-09-23T10:45:00+02:00"), "Plan takes the next free quarter hour today, as the design's")
+let workdaysTaken = (23...25).map { DateInterval(start: date("2026-09-\($0)T09:00:00+02:00"), end: date("2026-09-\($0)T17:00:00+02:00")) }
+check(planSlot(at: "2026-09-23T10:40:00+02:00", busy: workdaysTaken) == .none(.thisWeek),
+      "With hours left this week but all of them taken, Plan looks no further, as the design's")
+check(planSlot(at: "2026-09-25T16:45:00+02:00") == found("2026-09-28T09:00:00+02:00"),
+      "On Friday at 16:45 a 30-minute task no longer fits this week's hours, so it goes to Monday")
+check(planSlot(at: "2026-09-25T16:45:00+02:00", minutes: 15) == found("2026-09-25T16:45:00+02:00", minutes: 15),
+      "A 15-minute task still fits Friday's last quarter hour")
+check(planSlot(at: "2026-09-25T16:45:00+02:00", week: sundayWeek) == found("2026-09-28T09:00:00+02:00"),
+      "With a Sunday week, Friday evening plans into the next week's Monday too")
+check(planSlot(at: "2026-09-26T10:00:00+02:00") == found("2026-09-28T09:00:00+02:00"),
+      "On Saturday a Work task, with no Work hours left this week, goes to Monday")
+check(planSlot(at: "2026-09-26T10:00:00+02:00", week: sundayWeek) == found("2026-09-28T09:00:00+02:00"),
+      "On the Saturday that ends a Sunday week, a Work task goes to Monday")
+check(planSlot(at: "2026-09-26T10:00:00+02:00", category: .personal) == found("2026-09-26T18:00:00+02:00"),
+      "On Saturday a Personal task still has this week's evenings")
+check(planSlot(at: "2026-09-27T23:50:00+02:00") == found("2026-09-28T09:00:00+02:00")
+        && planSlot(at: "2026-09-27T23:50:00+02:00", category: .personal) == found("2026-09-28T18:00:00+02:00"),
+      "In the week's last quarter hour, Plan goes on into the next week, not a week from tomorrow")
+let nextWeekTaken = (28...30).map { DateInterval(start: date("2026-09-\($0)T09:00:00+02:00"), end: date("2026-09-\($0)T17:00:00+02:00")) }
+    + [DateInterval(start: date("2026-10-01T09:00:00+02:00"), end: date("2026-10-02T17:00:00+02:00"))]
+check(planSlot(at: "2026-09-26T10:00:00+02:00", busy: nextWeekTaken) == .none(.nextWeek), "With next week taken as well, Plan says so")
+check(planSlot(at: "2026-09-23T10:40:00+02:00", minutes: 300) == .none(.nextWeek), "A task longer than any stretch of hours fits neither week")
+let deferral = date("2026-09-30T00:00:00+02:00")
+check(planSlot(at: "2026-09-23T10:40:00+02:00", deferred: deferral) == found("2026-09-30T09:00:00+02:00"),
+      "A deferral past this week plans from the day it may start")
+check(planSlot(at: "2026-09-23T10:40:00+02:00", deferred: deferral, busy: nextWeekTaken + [DateInterval(start: date("2026-10-05T09:00:00+02:00"), end: date("2026-10-06T17:00:00+02:00"))])
+        == .none(.weekFrom(deferral)), "A deferral past this week searches the week from it")
+check(planSlot(at: "2026-09-23T10:40:00+02:00", deferred: date("2026-09-25T16:50:00+02:00")) == found("2026-09-28T09:00:00+02:00"),
+      "A deferral late in this week goes on into the next once this one has no room left")
+
+// The Calendar steps its range a day, three days or a week at a time, and shows where Plan put a task.
+let saturday = date("2026-09-26T10:00:00+02:00")
+let thisWeekDays = CalendarWeek.days(count: 7, from: saturday, calendar: mondayWeek)
+let nextWeekStart = CalendarWeek.anchor(stepping: thisWeekDays, by: 1, now: saturday, calendar: mondayWeek)
+check(nextWeekStart == date("2026-09-28T00:00:00+02:00"), "Next week steps to the Monday after")
+check(dayNumbers(CalendarWeek.days(count: 7, from: nextWeekStart!, calendar: mondayWeek)) == [28, 29, 30, 1, 2, 3, 4], "The next week runs Monday to Sunday")
+check(CalendarWeek.anchor(stepping: CalendarWeek.days(count: 7, from: nextWeekStart!, calendar: mondayWeek), by: -1, now: saturday, calendar: mondayWeek) == nil,
+      "Stepping back to the week around today follows today again")
+check(CalendarWeek.anchor(stepping: thisWeekDays, by: -1, now: saturday, calendar: mondayWeek) == date("2026-09-14T00:00:00+02:00"), "Previous week steps back seven days")
+check(CalendarWeek.anchor(stepping: [date("2026-09-26T00:00:00+02:00")], by: 1, now: saturday, calendar: mondayWeek) == date("2026-09-27T00:00:00+02:00")
+        && CalendarWeek.anchor(stepping: CalendarWeek.days(count: 3, from: saturday, calendar: mondayWeek), by: 1, now: saturday, calendar: mondayWeek)
+            == date("2026-09-29T00:00:00+02:00"), "Day steps a day and 3 days three")
+check(CalendarWeek.anchor(showing: date("2026-09-28T09:00:00+02:00"), count: 7, now: saturday, calendar: mondayWeek) == date("2026-09-28T00:00:00+02:00"),
+      "A block Plan put on next week's Monday moves the Week view there")
+check(CalendarWeek.anchor(showing: date("2026-09-26T18:00:00+02:00"), count: 7, now: saturday, calendar: mondayWeek) == nil
+        && CalendarWeek.anchor(showing: date("2026-09-26T09:00:00+02:00"), count: 7, now: wednesday, calendar: sundayWeek) == nil,
+      "A block in the week around today leaves the range following today")
+
+// A range stepped or planned to holds only the day it was set; from the next day the Calendar shows the range around today again.
+@MainActor
+func rangeStart(_ anchor: String?, setAt: String, now: String) -> Int {
+    calendar.component(.day, from: CalendarWeek.start(anchor: anchor.map(date), setAt: date(setAt), now: date(now), calendar: mondayWeek))
+}
+check(rangeStart(nil, setAt: "2026-09-21T09:00:00+02:00", now: "2026-09-23T10:00:00+02:00") == 23, "With no anchor the range is today's")
+check(rangeStart("2026-09-22T00:00:00+02:00", setAt: "2026-09-23T09:00:00+02:00", now: "2026-09-23T10:00:00+02:00") == 22
+        && rangeStart("2026-09-30T00:00:00+02:00", setAt: "2026-09-23T00:10:00+02:00", now: "2026-09-23T23:50:00+02:00") == 30,
+      "A range stepped or planned to holds for the rest of that day")
+check(rangeStart("2026-09-24T00:00:00+02:00", setAt: "2026-09-23T22:00:00+02:00", now: "2026-09-24T00:01:00+02:00") == 24
+        && rangeStart("2026-09-24T00:00:00+02:00", setAt: "2026-09-23T22:00:00+02:00", now: "2026-09-25T09:00:00+02:00") == 25,
+      "Day view planned into tomorrow follows today from then on, never a day gone by")
+check(rangeStart("2026-09-23T00:00:00+02:00", setAt: "2026-09-21T09:00:00+02:00", now: "2026-09-22T09:00:00+02:00") == 22,
+      "A day planned ahead on Monday gives way to today on Tuesday, before it comes")
+check(rangeStart("2026-09-26T00:00:00+02:00", setAt: "2026-09-23T09:00:00+02:00", now: "2026-09-24T09:00:00+02:00") == 24,
+      "Three days stepped ahead give way to the three from today the next day")
+let lapsed = (counts: [1, 3, 7], anchor: date("2026-09-26T00:00:00+02:00"), setAt: date("2026-09-21T09:00:00+02:00"), now: date("2026-09-22T09:00:00+02:00"))
+check(lapsed.counts.allSatisfy { count in
+          CalendarWeek.days(count: count, from: CalendarWeek.start(anchor: lapsed.anchor, setAt: lapsed.setAt, now: lapsed.now, calendar: mondayWeek), calendar: mondayWeek)
+              .contains { calendar.isDate($0, inSameDayAs: lapsed.now) }
+      }, "A lapsed anchor stays lapsed in Day, 3 days and Week alike, each showing today")
+check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday,
+                                                                     now: date("2026-09-26T21:00:00+02:00"), calendar: mondayWeek), calendar: mondayWeek))
+        == [28, 29, 30, 1, 2, 3, 4], "Next week stepped to on Saturday stays shown that day")
+check(dayNumbers(CalendarWeek.days(count: 7, from: CalendarWeek.start(anchor: date("2026-09-28T00:00:00+02:00"), setAt: saturday,
+                                                                     now: date("2026-09-27T09:00:00+02:00"), calendar: mondayWeek), calendar: mondayWeek))
+        == [21, 22, 23, 24, 25, 26, 27], "On Sunday it gives way to the week around today")
+// What opens the Calendar on a day (a tray's Show, a Work panel link, a widget, a nudge) moves a range that doesn't show it and leaves one that does.
+@MainActor
+func revealed(_ day: String, anchor: String?, setAt: String = "2026-09-23T10:40:00+02:00", count: Int,
+              now: String = "2026-09-23T11:45:00+02:00") -> Date? {
+    CalendarWeek.anchor(revealing: date(day), anchor: anchor.map(date), setAt: date(setAt), count: count, now: date(now), calendar: mondayWeek)
+}
+check(revealed("2026-09-23T11:45:00+02:00", anchor: "2026-09-24T00:00:00+02:00", count: 1) == nil,
+      "Show for today's work brings a Day view Plan moved to tomorrow back to today")
+check(revealed("2026-09-23T11:45:00+02:00", anchor: "2026-09-14T00:00:00+02:00", count: 7) == nil,
+      "Show for today's work brings a Week view stepped a week back to the week around today")
+check(revealed("2026-10-01T09:00:00+02:00", anchor: "2026-09-28T00:00:00+02:00", count: 7) == date("2026-09-28T00:00:00+02:00")
+        && revealed("2026-09-27T09:00:00+02:00", anchor: "2026-09-26T00:00:00+02:00", count: 3) == date("2026-09-26T00:00:00+02:00")
+        && revealed("2026-09-25T09:00:00+02:00", anchor: nil, count: 3) == nil,
+      "A range that shows the day already keeps its anchor, or keeps following today")
+check(revealed("2026-09-25T09:00:00+02:00", anchor: "2026-09-24T00:00:00+02:00", count: 1) == date("2026-09-25T00:00:00+02:00"),
+      "A day the range doesn't show moves it there")
+check(revealed("2026-09-25T09:00:00+02:00", anchor: "2026-09-24T00:00:00+02:00", count: 1, now: "2026-09-25T09:00:00+02:00") == nil,
+      "An anchor that has lapsed isn't kept: today's range shows today")
+// The work trays keep Show on the Calendar while its range doesn't show today, where their work is.
+let dayMovedToTomorrow = CalendarWeek.start(anchor: date("2026-09-24T00:00:00+02:00"), setAt: wednesday, now: wednesday, calendar: mondayWeek)
+check(!CalendarWeek.shows(wednesday, count: 1, from: dayMovedToTomorrow, calendar: mondayWeek)
+        && CalendarWeek.shows(wednesday, count: 7, from: dayMovedToTomorrow, calendar: mondayWeek)
+        && CalendarWeek.shows(wednesday, count: 1, from: wednesday, calendar: mondayWeek),
+      "Tomorrow's Day view doesn't show today, the Week around it does")
+
+// "Not planned yet" takes tasks due from a week back to the end of the week around today (the settings week, as Plan searches it), or four days out when that's later.
+@MainActor
+func dueSoon(_ due: String, now: String, week: Calendar = mondayWeek) -> Bool { CalendarWeek.isDueSoon(date(due), now: date(now), calendar: week) }
+check(dueSoon("2026-09-27T00:00:00+02:00", now: "2026-09-23T10:00:00+02:00") && !dueSoon("2026-09-28T00:00:00+02:00", now: "2026-09-23T10:00:00+02:00")
+        && dueSoon("2026-09-16T00:00:00+02:00", now: "2026-09-23T10:00:00+02:00") && !dueSoon("2026-09-15T23:00:00+02:00", now: "2026-09-23T10:00:00+02:00"),
+      "On the design's Wednesday, due from a week back to Sunday, +4, as the design's")
+check(dueSoon("2026-09-26T00:00:00+02:00", now: "2026-09-21T09:00:00+02:00") && dueSoon("2026-09-27T23:30:00+02:00", now: "2026-09-21T09:00:00+02:00"),
+      "On a Monday, Saturday and Sunday of this week are due soon too")
+check(dueSoon("2026-09-26T00:00:00+02:00", now: "2026-09-20T09:00:00+02:00", week: sundayWeek)
+        && !dueSoon("2026-09-27T00:00:00+02:00", now: "2026-09-20T09:00:00+02:00", week: sundayWeek), "A Sunday week ends on its Saturday")
+check(dueSoon("2026-10-01T00:00:00+02:00", now: "2026-09-27T09:00:00+02:00") && !dueSoon("2026-10-02T00:00:00+02:00", now: "2026-09-27T09:00:00+02:00"),
+      "On the week's last day, the next four days are still due soon")
 print("Scheduling checks passed: \(count)")

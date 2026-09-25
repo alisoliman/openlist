@@ -20,20 +20,23 @@ enum NX {
     /// Ink — every text and hairline colour is this at some opacity.
     static let ink = dynamic(light: 0x17161A, dark: 0xF1EFEC)
     /// The tray and other inverted surfaces.
-    static let inverse = dynamic(light: 0x1F1D22, dark: 0x3A3740)
+    static let inverse = dynamic(light: 0x17161A, dark: 0x3A3740)
+    /// Filled primary buttons, like triage's "Keep for later".
+    static let primaryButton = dynamic(light: 0x17161A, dark: 0x3A3740)
+    static let primaryButtonHover = dynamic(light: 0x2C2A31, dark: 0x46434C)
 
     static func ink(_ opacity: Double) -> Color { ink.opacity(opacity) }
 
     // MARK: Semantic
 
     static let green = Color(hex: 0x2F9E6E)
-    /// The text variants are darker in light mode and lighter in dark mode so
-    /// they clear 4.5:1 on paper and on their own tinted chip fill.
-    static let greenText = dynamic(light: 0x1B6E4A, dark: 0x5CC596)
+    /// The text variants: the design's chip text hexes in light mode, lighter
+    /// in dark mode so they stay legible on their own tinted chip fill.
+    static let greenText = dynamic(light: 0x23865B, dark: 0x5CC596)
     static let red = Color(hex: 0xD8434B)
-    static let redText = dynamic(light: 0xB0343C, dark: 0xF07A80)
+    static let redText = dynamic(light: 0xC03A42, dark: 0xF07A80)
     static let amber = Color(hex: 0xE8A917)
-    static let amberText = dynamic(light: 0x8A6405, dark: 0xE8B84A)
+    static let amberText = dynamic(light: 0xA87A06, dark: 0xE8B84A)
     static let inbox = Color(hex: 0x3A7BD8)
     static let today = Color(hex: 0xE0861F)
     static let lists = Color(hex: 0x5B5BD6)
@@ -57,6 +60,14 @@ enum NX {
         hasSerif ? .custom("InstrumentSerif-Regular", size: size) : .system(size: size, design: .serif)
     }
 
+    /// Half the difference between the design's CSS line box (`size × lineHeight`)
+    /// and the serif's line as SwiftUI lays it out (`serifLineHeight`).
+    /// Negative: the design packs Instrument Serif tighter than its metrics.
+    static func serifLeading(_ size: CGFloat, lineHeight: CGFloat) -> CGFloat {
+        guard let line = serifLineHeight(size) else { return 0 }
+        return (size * lineHeight - line) / 2
+    }
+
     static func mono(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }
@@ -74,6 +85,8 @@ enum NX {
     /// `cubic-bezier(0.34, 1.56, 0.64, 1)` — the overshooting spring.
     static func spring(_ ms: Double) -> Animation { .timingCurve(0.34, 1.56, 0.64, 1, duration: ms / 1000) }
     static func standard(_ ms: Double) -> Animation { .timingCurve(0.4, 0, 0.2, 1, duration: ms / 1000) }
+    /// CSS's plain `ease`, `cubic-bezier(0.25, 0.1, 0.25, 1)`.
+    static func cssEase(_ ms: Double) -> Animation { .timingCurve(0.25, 0.1, 0.25, 1, duration: ms / 1000) }
 
     // MARK: Shadows
 
@@ -92,19 +105,41 @@ enum NX {
 /// Per-window style resolved from settings and the system reduce-motion flag.
 struct NextStyle: Equatable {
     var accent: Color = NextAccent.violet.color
-    /// Multiplies animation durations: 0.6 restrained, 1 expressive, 1.2 playful, 0.4 reduced.
+    /// Multiplies the durations the design paces with ms() (rows, screens,
+    /// triage, the inspector): 0.6 restrained, 1 expressive, 1.2 playful, 0.4
+    /// reduced. Its fixed timings go through `NX` instead.
     var motion: Double = 1
-    /// Whether bounces, rings and slides play.
+    /// Whether the checkbox's bounce and ring play, as the design's lively().
     var lively = true
+    /// Whether the inspector, notch, bottom bars and overlay cards slide in,
+    /// Trash's restored row slides out, chips, the selection check and lifted
+    /// cards rise into place, and the tick and switch knob overshoot. Reduce
+    /// Motion fades and eases them instead, as its hint promises.
+    var slides = true
     var dwell: Double = 5
     var compact = false
     var serifTitles = true
 
     var rowVerticalPadding: CGFloat { compact ? 3 : 5 }
+    /// A filled accent button under the pointer: each sRGB channel of the
+    /// accent 0x12 down, as the design's Planned now Start goes from #7C4DF0
+    /// to #6A3BDE.
+    var accentHover: Color {
+        guard let rgb = NSColor(accent).usingColorSpace(.sRGB) else { return accent }
+        let shade = { (value: CGFloat) in max(0, value - 0x12 / 255) }
+        return Color(.sRGB, red: shade(rgb.redComponent), green: shade(rgb.greenComponent),
+                     blue: shade(rgb.blueComponent), opacity: rgb.alphaComponent)
+    }
     func ms(_ base: Double) -> Double { (base * motion).rounded() }
     func ease(_ base: Double) -> Animation { NX.ease(ms(base)) }
     func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }
     func standard(_ base: Double) -> Animation { NX.standard(ms(base)) }
+    func cssEase(_ base: Double) -> Animation { NX.cssEase(ms(base)) }
+    /// The design's fixed overshooting spring, like its tick's and switch
+    /// knob's, whatever the Motion setting. Reduce Motion eases instead.
+    func bounce(_ ms: Double) -> Animation { slides ? NX.spring(ms) : NX.ease(ms) }
+    /// `transition`, or a fade where the style doesn't slide.
+    func slide(_ transition: AnyTransition) -> AnyTransition { slides ? transition : .opacity }
 }
 
 private struct NextStyleKey: EnvironmentKey {
@@ -115,6 +150,21 @@ extension EnvironmentValues {
     var nextStyle: NextStyle {
         get { self[NextStyleKey.self] }
         set { self[NextStyleKey.self] = newValue }
+    }
+}
+
+extension NextAccent {
+    /// The accent as one of the editor's shared colours. It stays the same
+    /// instance across renders, so as a `BlockTextView.accentColor` it's set
+    /// on the text view only when it changes, where `NSColor(style.accent)`
+    /// would be a new colour on every update.
+    var editorColor: NSColor {
+        switch self {
+        case .violet: NXEditor.accentViolet
+        case .blue: NXEditor.accentBlue
+        case .green: NXEditor.accentGreen
+        case .orange: NXEditor.accentOrange
+        }
     }
 }
 

@@ -79,21 +79,22 @@ if phase == "prepare" {
     let doomedIDs = [doomedTask.id, doomedImage.id]
     store.refreshAllReminders()
     store.save()
-    store.deleteList(doomed)
+    store.trashList(doomed)
     check(store.list(id: doomed.id) == nil && doomedIDs.allSatisfy { store.block(id: $0) == nil }, "Deleting a list removes parent and descendant blocks")
     check(store.attachments(for: doomedImage.id).count == 1, "Deleting a list retains descendant attachment records")
     check(media.fileContents(filename: "delete-list.png") != nil && media.fileContents(filename: "delete-list.txt") != nil, "Deleting a list retains image and attachment files")
     check(!NotificationService.shared.scheduled.contains(doomedTask.id), "Deleting a list cancels reminders")
     check(store.block(id: keepTask.id) != nil && media.fileContents(filename: "keep-image.png") != nil, "List deletion preserves unrelated list and media")
-    store.deleteList(inbox)
+    store.trashList(inbox)
     check(store.inboxList()?.id == inbox.id && store.block(id: inboxTask.id) != nil, "System Inbox cannot be deleted")
 
     let removeBlock = store.appendBlock(kind: .task, text: "Delete block", to: .init(listID: keep.id))
     let removeImage = try image("delete-block.png", parent: removeBlock)
     _ = try attach("delete-block.txt", to: removeImage)
     let removedIDs = [removeBlock.id, removeImage.id]
-    store.deleteBlocks([removeBlock, removeImage])
-    check(removedIDs.allSatisfy { store.block(id: $0) == nil }, "Overlapping parent-child block deletion removes subtree once")
+    store.deleteBlock(removeBlock)
+    store.save()
+    check(removedIDs.allSatisfy { store.block(id: $0) == nil }, "Deleting a block removes the subtree under it")
     check(store.attachments(for: removeImage.id).isEmpty && media.fileContents(filename: "delete-block.txt") == nil && media.fileContents(filename: "delete-block.png") == nil, "Subtree deletion removes all owned attachment records and files")
     check(store.block(id: keepImage.id)?.parentID == keepTask.id, "Subtree deletion preserves unrelated child relationship")
 
@@ -114,6 +115,53 @@ if phase == "prepare" {
     let defaultSection = store.defaultSection()!
     store.deleteSection(defaultSection)
     check(store.defaultSection()?.id == defaultSection.id, "Default sidebar section cannot be deleted")
+
+    // Undo of Delete Section and of a sidebar drag, as the Workbench registers them.
+    let unfiled = store.sidebarPlacements()
+    let undoSection = store.createSection(title: "Undo section")
+    store.move(list: keep, toSection: undoSection.id, above: nil)
+    store.move(list: archived, toSection: undoSection.id, above: keep)
+    let filed = store.sidebarPlacements()
+    let removed = store.removeSection(undoSection)
+    check(removed?.lists.count == 2 && keep.sectionID == nil && archived.sectionID == nil && keep.isPinned,
+          "Removing a section keeps what Undo needs, and its lists stay in the sidebar")
+    check(store.removeSection(defaultSection) == nil, "The default section is never removed")
+    store.move(list: archived, toSection: defaultSection.id, above: nil)
+    check(removed.map(store.restoreSection) == true && store.allSections().contains { $0.id == undoSection.id && $0.title == "Undo section" },
+          "Undo brings the section back under its own id")
+    check(keep.sectionID == undoSection.id && keep.sidebarIndex == filed[keep.id]?.sidebarIndex && archived.sectionID == defaultSection.id,
+          "Its lists go back in it where they sat, unless filed elsewhere since")
+    let beforeDrag = store.sidebarPlacements()
+    store.move(list: keep, toSection: defaultSection.id, above: archived)
+    let afterDrag = store.sidebarPlacements()
+    let dragged = afterDrag.filter { beforeDrag[$0.key] != $0.value }
+    store.applySidebarPlacements(beforeDrag.filter { dragged[$0.key] != nil }, expecting: dragged)
+    check(!dragged.isEmpty && store.sidebarPlacements() == beforeDrag, "Undoing a sidebar drag puts back exactly what it moved")
+    store.applySidebarPlacements(afterDrag, expecting: beforeDrag)
+    check(store.sidebarPlacements() == afterDrag, "Redoing it moves them again")
+    store.deleteSection(store.allSections().first { $0.id == undoSection.id }!)
+    store.applySidebarPlacements(unfiled, expecting: store.sidebarPlacements())
+    check(store.sidebarPlacements() == unfiled, "The lists are back where the section checks left them")
+
+    // A drop back where a list was moves nothing the sidebar shows, even when
+    // the Store writes it a new index; one past a neighbour does.
+    let slotSection = store.createSection(title: "Slot section")
+    let slotLists = ["Slot A", "Slot B", "Slot C"].map { store.createList(title: $0) }
+    for slotList in slotLists { store.move(list: slotList, toSection: slotSection.id, above: nil) }
+    slotLists[1].sidebarIndex = slotLists[0].sidebarIndex + 10
+    store.save()
+    let slotB = store.sidebarSlot(of: slotLists[1].id), slotC = store.sidebarSlot(of: slotLists[2].id)
+    let indexB = slotLists[1].sidebarIndex
+    store.move(list: slotLists[1], toSection: slotSection.id, above: slotLists[2])
+    check(slotB?.nextID == slotLists[2].id && slotLists[1].sidebarIndex != indexB && store.sidebarSlot(of: slotLists[1].id) == slotB,
+          "A list dropped on the one below it keeps its slot, though its index changed")
+    store.move(list: slotLists[2], toSection: slotSection.id, above: nil)
+    check(slotC?.nextID == nil && store.sidebarSlot(of: slotLists[2].id) == slotC, "and one dropped at the end it's at keeps it too")
+    store.move(list: slotLists[0], toSection: slotSection.id, above: slotLists[2])
+    check(store.sidebarSlot(of: slotLists[0].id)?.nextID == slotLists[2].id, "One dropped past a neighbour takes a new slot")
+    for slotList in slotLists { store.context.delete(slotList) }
+    store.save()
+    store.deleteSection(slotSection)
 
     // More than the former UI fetch cap, so clearing cannot silently leave
     // older records behind. Also covers the history step in reset.
@@ -145,7 +193,7 @@ if phase == "prepare" {
     check(count == 0 && !blocks.contains { $0.text == "Delete block" || ($0.text == "Doomed parent" && !$0.isTrashed) }, "History and cascade deletions remain durable")
     check(media.fileContents(filename: "keep.txt") == Data("keep.txt".utf8) && media.fileContents(filename: "delete-list.txt") != nil, "Remaining and retained media bytes survive process restart")
 
-    // Compose the same store operations as DataSettingsTab.reset. Native
+    // Compose the same store operations as NXDataSettings.reset. Native
     // destructive confirmation and navigation are covered separately by UI QA.
     check(store.permanentlyResetLibrary(), "Confirmed library reset succeeds")
     let resetBlocks = try allBlocks(), resetAttachments = try allAttachments()

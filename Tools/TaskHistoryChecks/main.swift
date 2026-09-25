@@ -169,7 +169,34 @@ freshCompletion.dueDate = due
 freshCompletion.includesTime = true
 store.toggleCompletion(freshCompletion, now: due)
 check(try history(freshCompletion).map(\.kind).contains(.created) && history(freshCompletion).map(\.kind).contains(.completed), "create and complete in one transaction retain both real facts")
-check(try history(freshCompletion).first { $0.kind == .completed }?.recordedDetail.contains(due.formatted(date: .abbreviated, time: .shortened)) == true, "create and complete in one transaction retains the known due time")
+check(try history(freshCompletion).first { $0.kind == .completed }?.recordedDetail.contains(MomentText.moment(due)) == true, "create and complete in one transaction retains the known due time")
+// History and the Work panel write a moment as the app's pills and clock do.
+let momentNow = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 9))!
+let momentToday = Calendar.current.date(bySettingHour: 18, minute: 5, second: 0, of: momentNow)!
+let momentLastYear = Calendar.current.date(from: DateComponents(year: 2025, month: 10, day: 3, hour: 7, minute: 30))!
+let momentThisYear = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 7, minute: 30))!
+check(MomentText.moment(momentToday, now: momentNow) == "Today 18:05" && MomentText.moment(momentToday, inSentence: true, now: momentNow) == "today 18:05",
+      "a moment today reads as the design's day and 24-hour clock, lower case in a sentence")
+check(MomentText.moment(momentToday.addingTimeInterval(2 * 86_400), includesTime: false, now: momentNow)
+          == momentToday.addingTimeInterval(2 * 86_400).formatted(.dateTime.weekday(.abbreviated).day()),
+      "a day in the week ahead reads as its weekday and date")
+check(MomentText.moment(momentThisYear, now: momentNow) == "\(momentThisYear.formatted(.dateTime.day().month(.abbreviated))) 07:30"
+          && MomentText.moment(momentLastYear, now: momentNow) == "\(momentLastYear.formatted(.dateTime.day().month(.abbreviated).year())) 07:30",
+      "a moment names its year only when it isn't this one")
+check(MomentText.clock(momentLastYear) == "07:30" && MomentText.day(momentLastYear, now: momentNow) == momentLastYear.formatted(.dateTime.day().month(.abbreviated)),
+      "the pills' day and the clock stay the design's, with no year")
+check(WorkSession.stopText("Mac was unavailable") == "Paused while the Mac was away" && WorkSession.stopText(nil) == "Paused"
+          && WorkSession.stopText("Library restored; paused at last recorded time") == "Paused when the library was restored"
+          && WorkSession.stopText("Changed to a note") == "Ended when the task was turned into text"
+          && WorkSession.stopText("Completion undone") == "Paused when the completion was undone"
+          && WorkSession.stopText("Completion restored") == "Ended when the task was done",
+      "Work history words each saved pause reason as the Work panel does, older reasons included")
+check(["Completed", "Completion restored", "Reopened", "Next occurrence"].allSatisfy { WorkSession.resumableStopText($0) == "Paused" }
+          && WorkSession.resumableStopText("Completion undone") == "Paused when the completion was undone"
+          && WorkSession.resumableStopText("Mac slept") == "Paused while the Mac was asleep",
+      "The Work panel's paused card, beside Resume working, never says the work ended")
+check(WorkSession.stopText("Stopped working") == "Stopped",
+      "Work history words a session ended by Stop as its tray does, not as paused")
 
 // Debounced fallback persists even without Return; it never inserts a row per key.
 let beforeDebounce = try history(task).count
@@ -192,6 +219,12 @@ try store.persistChanges()
 check(store.recentActivity().count == 300 && !store.recentActivity().contains { $0.blockID == task.id }, "global window can contain none of this task's history")
 check(try store.taskActivity(for: task.id, limit: 50).count == 50, "task page uses independent filter and limit")
 check(try store.taskActivity(for: task.id, limit: 50, offset: 400).count > 0, "old task entries past 300 remain reachable")
+// The inspector's Full history runs the same query: each Load older grows its
+// page by 50, fetching one row past it for the button.
+let grownPage = try store.context.fetch(Store.taskActivityDescriptor(for: task.id, excluding: [], limit: 100 + 1)).map(\.id)
+check(try grownPage.count == 101 && Array(grownPage.prefix(100)) == store.taskActivity(for: task.id, limit: 50).map(\.id)
+        + store.taskActivity(for: task.id, limit: 50, offset: 50).map(\.id),
+      "Full history's grown page and its Load older row are the pages taskActivity reads")
 let old = try store.taskActivity(for: task.id, limit: 10_000).last!
 check(old.change == nil && old.recordedDetail == "Only this old fact was recorded", "old events do not invent absent before values")
 
@@ -331,4 +364,118 @@ try restoring.persistChanges()
 check(try restoring.taskActivity(for: restoreID).count == 1 && restoring.taskActivity(for: restoreID).first?.kind == .restored, "Undo after clearing history records exactly one known restoration")
 check(restoring.block(id: restoreID)?.text == "Restore after clear", "Undo after clear restores the actual task")
 check(restoring.pendingRestoredTaskIDs.isEmpty, "successful save consumes the restoration signal")
-print("✅ \(checks) task history checks passed (commits, recurrence, undo, failure, paging, coalescing)")
+// The history one change saves, a task each, shares a batch, which Changes
+// shows as the change's one row; another change's has its own.
+let batchContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+let batching = Store(context: batchContainer.mainContext)
+batching.bootstrap()
+let batchList = batching.createList(title: "Batch source")
+let batchParent = batching.appendBlock(kind: .task, text: "Batch parent", to: .init(listID: batchList.id))
+_ = batching.insertChild(kind: .task, text: "Batch child", of: batchParent)
+try batching.persistChanges()
+func batch(of kind: ActivityKind) throws -> [ActivityEvent] {
+    let all = try events(batching).filter { $0.kind == kind }.sorted { $0.timestamp > $1.timestamp }
+    guard let newest = all.first?.batchID else { return [] }
+    return try events(batching).filter { $0.batchID == newest }
+}
+check(batching.trashBlocks([batchParent]), "a task trashes with its subtask")
+let trashBatch = try batch(of: .deleted)
+check(trashBatch.count == 2 && trashBatch.allSatisfy { $0.kind == .deleted }, "a task trashed with its subtask saves one batch")
+check(batching.restoreTrash(ids: [batchParent.id]), "the task restores with its subtask")
+let restoreBatch = try batch(of: .restored)
+check(restoreBatch.count == 2 && restoreBatch.allSatisfy { $0.kind == .restored } && restoreBatch[0].batchID != trashBatch[0].batchID,
+      "its restore is a batch of its own")
+check(batching.trashList(batchList), "the list trashes")
+let listTrash = try batch(of: .listDeleted)
+check(listTrash.count == 3 && listTrash.filter { $0.kind == .deleted }.count == 2,
+      "a list trashed saves its own event and its tasks' in one batch")
+check(listTrash.first { $0.kind == .listDeleted }?.recordedDetail == "", "a list's event, with only its batch, says only what it recorded")
+check(batching.restoreTrash(ids: [batchList.id]), "the list restores")
+let listRestore = try batch(of: .restored)
+check(listRestore.count == 3 && listRestore.contains { $0.blockID == nil && $0.listID == batchList.id && $0.title == "Batch source" },
+      "a list restored saves an event of its own, in its tasks' batch")
+let listCopyID = try batching.copyList(batchList, mode: .duplicate)
+let listCopy = try batch(of: .listCreated)
+check(listCopy.count == 3 && listCopy.contains { $0.kind == .listCreated && $0.listID == listCopyID && $0.title == "Batch source"
+          && $0.change?.copy == .duplicate } && listCopy.filter { $0.kind == .created }.allSatisfy { $0.change?.copy == nil },
+      "a list duplicated saves one event for the copy, naming the list it copied, in its tasks' batch")
+let taskCopyID = try batching.copyBlock(batching.block(id: batchParent.id)!, mode: .template(keepingRecurrence: false))
+let copied = try events(batching)
+let copyBatch = copied.first { $0.blockID == taskCopyID }?.batchID
+let taskCopy = copied.filter { $0.kind == .created && copyBatch != nil && $0.batchID == copyBatch }
+check(taskCopy.count == 2 && taskCopy.first { $0.blockID == taskCopyID }?.change?.copy == .template
+          && taskCopy.filter { $0.change?.copy == nil }.count == 1, "a task copied names its copy as a template, its subtask with it")
+let together = ["First together", "Second together"].map { batching.appendBlock(kind: .task, text: $0, to: .init(listID: batchList.id)) }
+try batching.persistChanges()
+let shared = UUID()
+batching.withActivityBatch(shared) {
+    for task in together { batching.toggleCompletion(task) }
+}
+check(try events(batching).filter { $0.kind == .completed && $0.batchID == shared }.count == 2,
+      "a change saved more than once, like tasks completed together, keeps one batch")
+// A parent done with its open subtasks saves a completion each, and its row
+// counts them all, as the log does; a repeat resets its subtasks as it rolls
+// on, so its row counts the repeat alone, again as the log does.
+func completions(_ batch: UUID) throws -> [ActivityEvent] {
+    try events(batching).filter { $0.kind == .completed && $0.batchID == batch }
+}
+func counted(_ batch: UUID) throws -> Int {
+    NXSavedChanges.counted(try completions(batch).map { NXSavedTask(id: $0.blockID, rolls: $0.change?.advancesOccurrence == true) },
+                           kind: ActivityKind.completed.rawValue) { batching.blockIncludingTrash(id: $0)?.parentID }.count
+}
+let doneParent = batching.appendBlock(kind: .task, text: "Done parent", to: .init(listID: batchList.id))
+for title in ["Open one", "Open two"] { _ = batching.insertChild(kind: .task, text: title, of: doneParent) }
+let secondParent = batching.appendBlock(kind: .task, text: "Second parent", to: .init(listID: batchList.id))
+for title in ["Open three", "Open four"] { _ = batching.insertChild(kind: .task, text: title, of: secondParent) }
+let doneBeside = batching.appendBlock(kind: .task, text: "Done beside", to: .init(listID: batchList.id))
+let rolling = batching.appendBlock(kind: .task, text: "Rolling", to: .init(listID: batchList.id))
+rolling.dueDate = .now
+rolling.recurrence = .weekly
+for title in ["Reset one", "Reset two"] { _ = batching.insertChild(kind: .task, text: title, of: rolling) }
+let closesBeside = batching.appendBlock(kind: .task, text: "Closes beside", to: .init(listID: batchList.id))
+try batching.persistChanges()
+let parentDone = UUID()
+batching.withActivityBatch(parentDone) { batching.toggleCompletion(doneParent) }
+check(try completions(parentDone).count == 3 && counted(parentDone) == 3, "a parent done with two open subtasks counts three tasks")
+let withBeside = UUID()
+batching.withActivityBatch(withBeside) { for task in [secondParent, doneBeside] { batching.toggleCompletion(task) } }
+check(try completions(withBeside).count == 4 && counted(withBeside) == 4, "such a parent done with another task counts four")
+let rolled = UUID()
+batching.withActivityBatch(rolled) { for task in [rolling, closesBeside] { batching.toggleCompletion(task) } }
+check(try completions(rolled).count == 4 && counted(rolled) == 2,
+      "a repeat done with its open subtasks and another task counts two, the subtasks it reset left out")
+// Earlier words a repeat's completion as the log does, "rolls to" its next
+// date, which the completion's own event saves.
+let rolledChange = try completions(rolled).first { $0.blockID == rolling.id }?.change
+check(rolledChange?.advancesOccurrence == true && rolledChange?.after?.dueDate == rolling.dueDate
+          && rolledChange?.after?.dueDate.map { due in rolledChange?.completedDueDate.map { due > $0 } == true } == true,
+      "a repeat's completion saves the next date it rolled on to")
+// Repeats done together with no other task closing count as rolls alone, so
+// Earlier draws their row with the repeat glyph, as the log does.
+let bothRolling = ["Rolls one", "Rolls two"].map { batching.appendBlock(kind: .task, text: $0, to: .init(listID: batchList.id)) }
+for task in bothRolling { task.dueDate = .now; task.recurrence = .weekly }
+_ = batching.insertChild(kind: .task, text: "Reset three", of: bothRolling[0])
+try batching.persistChanges()
+let rolledTogether = UUID()
+batching.withActivityBatch(rolledTogether) { for task in bothRolling { batching.toggleCompletion(task) } }
+let togetherTasks = try completions(rolledTogether).map { NXSavedTask(id: $0.blockID, rolls: $0.change?.advancesOccurrence == true) }
+let togetherCounted = NXSavedChanges.counted(togetherTasks, kind: ActivityKind.completed.rawValue) {
+    batching.blockIncludingTrash(id: $0)?.parentID
+}
+check(togetherTasks.count == 3 && togetherCounted.count == 2 && togetherCounted.allSatisfy { togetherTasks[$0].rolls },
+      "two repeats done together count two, each a roll, the subtask one reset left out")
+// A list's restore saves where it went back to, as its tray says it.
+let placeParent = batching.createList(title: "Place parent")
+let placeChild = batching.createChildList(in: placeParent)!
+try batching.persistChanges()
+func restoredPlaces(_ list: TaskList) throws -> Set<String> {
+    Set(try events(batching).filter { $0.kind == .restored && $0.blockID == nil && $0.listID == list.id }.map(\.detail))
+}
+check(try restoredPlaces(batchList) == [""], "a list restored at the top level saves no place")
+check(batching.trashList(placeChild) && batching.restoreTrash(ids: [placeChild.id]), "a nested list restores")
+check(try restoredPlaces(placeChild) == ["to Place parent"], "a list restored under its parent saves that it went back there")
+check(batching.trashList(placeChild) && batching.trashList(placeParent) && batching.permanentlyEraseTrash(ids: [placeParent.id])
+          && batching.restoreTrash(ids: [placeChild.id]), "a nested list restores once its parent is erased")
+check(try restoredPlaces(placeChild) == ["to Place parent", "to the top level — its parent list is unavailable"],
+      "a list restored with its parent gone saves that it went to the top level")
+print("✅ \(checks) task history checks passed (commits, recurrence, undo, failure, paging, coalescing, batches)")

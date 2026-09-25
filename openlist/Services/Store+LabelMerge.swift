@@ -147,11 +147,11 @@ extension Store {
         onDidSave?()
     }
 
-    /// Undo is held by Store, so leaving Settings or changing screens cannot
-    /// discard it. Later task content and unrelated labels are left in place.
+    /// Takes back `merge`, as the window's Undo does, or with none the latest
+    /// merge. Later task content and unrelated labels are left in place.
     @discardableResult
-    func undoLabelMerge() -> Bool {
-        guard let plan = labelMergeUndo else { return false }
+    func undoLabelMerge(_ merge: LabelMergePlan? = nil) -> Bool {
+        guard let plan = merge ?? labelMergeUndo else { return false }
         do {
             guard !isSavingSuspended else { throw LabelMaintenanceError.changedPlan }
             if context.hasChanges { try persistChanges() }
@@ -202,7 +202,7 @@ extension Store {
             _ = restored?.id
             adoptCommittedLabelChanges()
             mergedLabelIDs[plan.source.id] = nil
-            labelMergeUndo = nil
+            if labelMergeUndo == plan { labelMergeUndo = nil }
             labelRevision += 1
             onDidSave?()
             return true

@@ -8,9 +8,49 @@
 
 import Foundation
 
+extension AppEnvironment {
+    /// Runs a Task-menu command on `ids` the way the Next screens do, with
+    /// the workbench's dwell, tray, log and Undo. `false` for the outline's
+    /// own commands, which only a document can run.
+    @discardableResult
+    func performTaskCommand(_ command: EditorCommand, on ids: [UUID]) -> Bool {
+        switch command {
+        case .toggleCompletion:
+            workbench.toggleCompletion(ids)
+        case .openDetails:
+            if let first = ids.first { inspectForCommand(first) }
+        case .pickDueDate, .pickLabel:
+            guard let first = ids.first else { return true }
+            requestedPicker = command == .pickDueDate ? .due : .labels
+            inspectForCommand(first)
+        case .setDueToday:
+            workbench.schedule(ids, offset: 0)
+        case .clearDueDate:
+            workbench.schedule(ids, offset: nil)
+        case .toggleStar:
+            workbench.star(ids)
+        case .deleteSelection:
+            workbench.trash(ids)
+        case .clearLabels:
+            workbench.clearLabels(ids)
+        case .indent, .outdent, .moveUp, .moveDown, .expandAll, .collapseAll:
+            return false
+        }
+        return true
+    }
+
+    /// Opens a task in the inspector. The task already on show keeps the focus
+    /// it has, so the Inbox triage keys still work once the inspector closes.
+    private func inspectForCommand(_ id: UUID) {
+        guard id != navigator.openTaskID else { return }
+        workbench.inspect(id)
+    }
+}
+
 extension Workbench {
     /// Task ▸ Clear Labels: strips every target's labels as one undoable change.
     func clearLabels(_ ids: [UUID]) {
+        document?.commitLine()
         let tasks = tasks(ids).filter { !$0.labelIDs.isEmpty }
         guard !tasks.isEmpty else { return }
         let before = tasks.map { (id: $0.id, labelIDs: $0.labelIDs) }

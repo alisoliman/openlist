@@ -69,7 +69,6 @@ struct ListHierarchy {
     var inboxIDs: Set<UUID> { Set(records.values.filter { $0.isSystemInbox && activeIDs.contains($0.id) }.map(\.id)) }
 
     func isArchived(_ id: UUID) -> Bool { availableIDs.contains(id) && !activeIDs.contains(id) }
-    func isAvailable(_ id: UUID) -> Bool { availableIDs.contains(id) }
     func parent(of id: UUID) -> TaskList? { displayParents[id].flatMap { records[$0] } }
 
     func ancestors(of id: UUID) -> [TaskList] {
@@ -122,13 +121,6 @@ struct ListHierarchy {
 
     func path(for id: UUID) -> String {
         (ancestors(of: id).map(\.displayTitle) + (records[id].map { [$0.displayTitle] } ?? [])).joined(separator: " › ")
-    }
-
-    func recoveryContext(for id: UUID) -> String? {
-        guard let list = records[id], let parentID = list.parentListID else { return nil }
-        if records[parentID] == nil { return "Parent list unavailable. Shown at top level until its parent returns." }
-        if displayParents[id] == nil { return "This imported parent relationship cannot be displayed. Move this list to choose its location." }
-        return nil
     }
 
     private static func ordered(_ left: TaskList, _ right: TaskList) -> Bool {

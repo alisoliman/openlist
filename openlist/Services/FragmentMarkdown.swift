@@ -3,7 +3,7 @@ import Foundation
 enum FragmentMarkdown {
     /// Portable textual fallback deliberately describes files instead of
     /// publishing private, short-lived local cache paths as broken links.
-    static func render(_ fragment: DocumentFragment, mediaAreEmbedded: Bool = true) -> String {
+    static func render(_ fragment: DocumentFragment) -> String {
         let byID = Dictionary(uniqueKeysWithValues: fragment.blocks.map { ($0.id, $0) })
         let labels = Dictionary(uniqueKeysWithValues: fragment.labels.map { ($0.id, $0.name) })
         let children = Dictionary(grouping: fragment.blocks, by: \.parentID)
@@ -29,7 +29,7 @@ enum FragmentMarkdown {
                 lines.append(indent + fence)
             case "divider": lines.append(indent + "---")
             case "image": lines.append(indent + InlineMarkdown.escape(block.mediaCaption.isEmpty ? "Image" : block.mediaCaption)
-                + (mediaAreEmbedded ? " (image included in Openlist content)" : " (image not included)"))
+                + " (image included in Openlist content)")
             default: lines.append(indent + text)
             }
             if !block.note.isEmpty {
@@ -37,7 +37,7 @@ enum FragmentMarkdown {
             }
             for file in block.attachments {
                 lines.append(indent + "  Attachment: " + InlineMarkdown.escape(file.displayName)
-                    + (mediaAreEmbedded ? " (file included in Openlist content)" : " (file not included)"))
+                    + " (file included in Openlist content)")
             }
             stack += (children[id] ?? []).reversed().map { ($0.id, depth + 1) }
         }

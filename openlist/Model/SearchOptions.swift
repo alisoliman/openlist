@@ -1,24 +1,9 @@
 import Foundation
 
 nonisolated struct SearchOptions: Equatable, Sendable {
-    enum Scope: String, CaseIterable, Identifiable, Sendable {
-        case everything, tasks, notes, lists
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .everything: "All"
-            case .tasks: "Tasks"
-            case .notes: "Notes"
-            case .lists: "Lists"
-            }
-        }
-    }
-
     var query = ""
-    var scope: Scope = .everything
-    // Search has always included these records. Keep that access explicit.
+    /// Search's Include completed; archived lists and their content always show.
     var includesCompleted = true
-    var includesArchived = true
     var needle: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     static func matchRange(_ needle: String, in text: String) -> Range<String.Index>? {

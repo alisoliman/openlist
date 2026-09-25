@@ -10,28 +10,38 @@ struct ContentRevealNoteReadyKey: PreferenceKey {
 
 /// Non-task notes have no inspector editor. Reveal the matching passage in
 /// its owning document, with the full retained note available for reading.
+/// It reads as the design's note block, with the match in the accent as its
+/// search hits have it.
 struct ContentRevealNote: View {
+    @Environment(\.nextStyle) private var style
     let text: String
     let query: String
     let requestID: UUID?
     @State private var hasAppeared = false
-    @FocusState private var isFocused: Bool
+    @State private var showsFullNote = false
     @AccessibilityFocusState private var isAccessibilityFocused: Bool
 
     var body: some View {
+        let snippet = SearchProjection.snippet(text, matching: query)
+        // A short note shows whole, line breaks and all.
+        let isWhole = snippet == text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         VStack(alignment: .leading, spacing: 6) {
-            Text("Matched note").font(.callout.weight(.semibold))
-            Text(excerpt).textSelection(.enabled)
-            DisclosureGroup("Full note") { Text(text).textSelection(.enabled) }
+            NXCapsTitle(text: "Matched note")
+                .accessibilityAddTraits(.isHeader)
+            note(highlighted(isWhole ? text : snippet))
+            if !isWhole {
+                NXDisclosureButton("Full note", isExpanded: $showsFullNote)
+                if showsFullNote { note(AttributedString(text)) }
+            }
         }
-        .font(Theme.Font.body)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Theme.accent.opacity(0.08), in: .rect(cornerRadius: 8))
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(NX.ink(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Search result in note")
-        .focusable()
-        .focused($isFocused)
+        // VoiceOver goes to the match; the keyboard stays with the page's
+        // keys, and no focus ring is drawn around a card the design has none on.
         .accessibilityFocused($isAccessibilityFocused)
         .preference(key: ContentRevealNoteReadyKey.self, value: hasAppeared ? requestID : nil)
         .onAppear { hasAppeared = true }
@@ -40,16 +50,29 @@ struct ContentRevealNote: View {
             guard requestID != nil else { return }
             await Task.yield()
             guard !Task.isCancelled else { return }
-            isFocused = true
             isAccessibilityFocused = true
         }
     }
 
-    private var excerpt: AttributedString {
-        var value = AttributedString(SearchProjection.snippet(text, matching: query))
+    /// The design's note type: 13/1.55 at ink 0.7.
+    private func note(_ value: AttributedString) -> some View {
+        let font = NSFont.systemFont(ofSize: 13)
+        let leading = max(0, 13 * 1.55 - (font.ascender - font.descender + font.leading))
+        return Text(value)
+            .font(.system(size: 13))
+            .lineSpacing(leading)
+            .foregroundStyle(NX.ink(0.7))
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
+
+    /// The match as the design's search marks it: the accent on its faint
+    /// tint, in the note's own weight.
+    private func highlighted(_ excerpt: String) -> AttributedString {
+        var value = AttributedString(excerpt)
         if let range = value.range(of: query, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) {
-            value[range].foregroundColor = Theme.accent
-            value[range].inlinePresentationIntent = .stronglyEmphasized
+            value[range].foregroundColor = style.accent
+            value[range].backgroundColor = style.accent.opacity(0.15)
         }
         return value
     }

@@ -5,6 +5,45 @@
 
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// What a list in the sidebar takes: another list, or the rows a task row
+/// or a list document's grip drags, in this library's own payloads.
+private nonisolated struct NXSidebarDrop: Transferable {
+    let value: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.listTypeIdentifier)) { data in
+            NXSidebarDrop(value: String(decoding: data, as: UTF8.self))
+        }
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.blockTypeIdentifier)) { data in
+            NXSidebarDrop(value: String(decoding: data, as: UTF8.self))
+        }
+    }
+}
+
+/// What the Inbox takes: only rows, as it can't take a list.
+private nonisolated struct NXSidebarRowDrop: Transferable {
+    let value: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.blockTypeIdentifier)) { data in
+            NXSidebarRowDrop(value: String(decoding: data, as: UTF8.self))
+        }
+    }
+}
+
+/// What a sidebar section takes: only a list, so a row dragged over it
+/// marks no drop it would refuse.
+private nonisolated struct NXSidebarListDrop: Transferable {
+    let value: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType(exportedAs: DragPayload.listTypeIdentifier)) { data in
+            NXSidebarListDrop(value: String(decoding: data, as: UTF8.self))
+        }
+    }
+}
 
 struct NextSidebar: View {
     @Environment(AppEnvironment.self) private var env
@@ -40,30 +79,41 @@ struct NextSidebar: View {
             searchField
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    VStack(spacing: 1) {
-                        ForEach(NavItem.all, id: \.route) { item in navRow(item) }
-                    }
-                    ForEach(library.sections, id: \.id) { section in
-                        sectionBlock(section, title: section.displayTitle, collapsed: section.isCollapsed,
-                                     lists: library.lists(in: section)) {
-                            env.store.setCollapsed(!section.isCollapsed, for: section)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        VStack(spacing: 1) {
+                            ForEach(NavItem.all, id: \.route) { item in navRow(item) }
                         }
+                        ForEach(library.sections, id: \.id) { section in
+                            sectionBlock(section, title: section.displayTitle, collapsed: section.isCollapsed,
+                                         lists: library.lists(in: section)) {
+                                env.store.setCollapsed(!section.isCollapsed, for: section)
+                            }
+                            .id(section.id)
+                        }
+                        // Unpinned lists are only in the Lists gallery.
+                        let other = library.unsectioned.filter(\.isPinned)
+                        if !other.isEmpty {
+                            sectionBlock(nil, title: "Other lists", collapsed: workbench.collapsedGroups.contains("sec-other"),
+                                         lists: other) { toggle("sec-other") }
+                        }
+                        // Like "Other lists", no header until there's a label under it.
+                        if !library.labels.isEmpty { labelsBlock }
                     }
-                    // Unpinned lists are only in the Lists gallery.
-                    let other = library.unsectioned.filter(\.isPinned)
-                    if !other.isEmpty {
-                        sectionBlock(nil, title: "Other lists", collapsed: workbench.collapsedGroups.contains("sec-other"),
-                                     lists: other) { toggle("sec-other") }
-                    }
-                    labelsBlock
+                    .padding(.horizontal, 8)
+                    .padding(.top, 2)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 2)
-                .padding(.bottom, 12)
+                .scrollIndicators(.automatic)
+                // File ▸ New Section's section: its name field opens, in view.
+                .onChange(of: workbench.namingSectionID, initial: true) { _, id in
+                    guard let id, let section = env.store.allSections().first(where: { $0.id == id }) else { return }
+                    workbench.namingSectionID = nil
+                    startRename(.section(id), draft: section.title)
+                    DispatchQueue.main.async { withAnimation(style.ease(240)) { proxy.scrollTo(id, anchor: .center) } }
+                }
             }
-            .scrollIndicators(.never)
             footer
         }
         .frame(width: 236)
@@ -84,9 +134,8 @@ struct NextSidebar: View {
             .frame(height: 28)
             .padding(.horizontal, 9)
         }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.08), radius: 8, padding: EdgeInsets(),
+        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.08), rest: NX.ink(0.05), radius: 8, padding: EdgeInsets(),
                                         foreground: NX.ink(0.45)))
-        .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .pointerStyle(.horizontalText)
     }
 
@@ -104,7 +153,7 @@ struct NextSidebar: View {
             NavItem(route: .today, icon: "sun.max", filledIcon: "sun.max.fill", label: "Today", color: NX.today),
             NavItem(route: .calendar, icon: "calendar", filledIcon: "calendar", label: "Calendar"),
             NavItem(route: .tasks, icon: "checklist", filledIcon: "checklist", label: "Tasks", color: NX.green),
-            NavItem(route: .lists, icon: "square.stack", filledIcon: "square.stack.fill", label: "Lists", color: NX.lists),
+            NavItem(route: .lists, icon: "square.2.layers.3d", filledIcon: "square.2.layers.3d.fill", label: "Lists", color: NX.lists),
             NavItem(route: .activity, icon: "square.grid.2x2", filledIcon: "square.grid.2x2.fill", label: "Activity"),
         ]
     }
@@ -117,14 +166,19 @@ struct NextSidebar: View {
         }
     }
 
+    @ViewBuilder
     private func navRow(_ item: NavItem) -> some View {
-        let on = route == item.route || (item.route == .activity && route == .updates)
-        let pulsing = item.route == .inbox && workbench.pulseListID != nil && workbench.pulseListID == library.inbox?.id
+        let on = route == item.route
+        // The Inbox is a list too: rows dragged onto it move there, as onto any list.
+        let inbox = item.route == .inbox ? library.inbox : nil
+        let pulsing = inbox != nil && workbench.pulseListID == inbox?.id
         let count = count(for: item.route)
-        return NXSidebarRow(on: on, pulsing: pulsing, height: 29, title: item.label,
-                            value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
+        let row = NXSidebarRow(on: on, pulsing: pulsing, ring: inbox != nil && dropTargetID == inbox?.id ? style.accent.opacity(0.6) : nil,
+                               height: 29, title: item.label,
+                               value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
+            // Sized to the design's 16px Material glyphs, which draw about 12pt wide.
             Image(systemName: on ? item.filledIcon : item.icon)
-                .font(.system(size: 13.5, weight: .medium))
+                .font(.system(size: 12, weight: on ? .medium : .regular))
                 .foregroundStyle(on ? (item.color ?? style.accent) : NX.ink(0.55))
                 .frame(width: 16)
             Text(item.label)
@@ -135,6 +189,15 @@ struct NextSidebar: View {
         } action: {
             workbench.go(item.route)
         }
+        if let inbox {
+            row.dropDestination(for: NXSidebarRowDrop.self) { items, _ in
+                dropRows(items.map(\.value), on: inbox.id)
+            } isTargeted: { setDropTarget(inbox.id, $0) }
+            // The Inbox's list commands, those a system list has.
+            .contextMenu { NXListMenu(list: inbox, surface: .sidebar) }
+        } else {
+            row
+        }
     }
 
     private func countText(_ count: Int, pulsing: Bool, opacity: Double = 0.38) -> some View {
@@ -143,7 +206,7 @@ struct NextSidebar: View {
             .foregroundStyle(pulsing ? style.accent : NX.ink(opacity))
             .monospacedDigit()
             .contentTransition(.numericText())
-            .modifier(NXBump(trigger: pulsing ? workbench.pulseRevision : 0))
+            .modifier(NXBump(trigger: workbench.pulseRevision, active: pulsing))
     }
 
     // MARK: Sections
@@ -185,35 +248,38 @@ struct NextSidebar: View {
                 .background(dropTargetID == section.id ? style.accent.opacity(0.12) : .clear,
                             in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contextMenu {
+                    // Its name field would take the keys from an open capture's card.
                     Button("Rename Section…") { startRename(.section(section.id), draft: section.title) }
+                        .disabled(workbench.captureOpen)
                     Button("New List in Section") { workbench.createList(in: section) }
                     if !section.isDefault {
                         Divider()
                         Button("Delete Section", role: .destructive) { deleteSection(section) }
                     }
                 }
-                .dropDestination(for: String.self) { items, _ in
-                    guard let dragged = draggedList(items) else { return false }
-                    env.store.move(list: dragged, toSection: section.id, above: nil)
+                .dropDestination(for: NXSidebarListDrop.self) { items, _ in
+                    guard let dragged = draggedList(items.map(\.value)) else { return false }
+                    workbench.moveList(dragged, toSection: section.id, above: nil)
                     return true
                 } isTargeted: { setDropTarget(section.id, $0) }
         }
     }
 
     private func sectionHeader(_ title: String, open: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(style.ease(160)) { action() }
-        } label: {
+        Button(action: action) {
             HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
-                    .kerning(0.7)
+                    .kerning(0.735)
                     .textCase(.uppercase)
                     .foregroundStyle(NX.ink(0.34))
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(NX.ink(0.3))
                     .rotationEffect(.degrees(open ? 90 : 0))
+                    // Only the chevron turns, over the design's 160ms whatever the
+                    // Motion setting; the lists show or go at once, as its do.
+                    .animation(NX.cssEase(160), value: open)
                 Spacer()
             }
             .padding(.top, 4)
@@ -224,14 +290,10 @@ struct NextSidebar: View {
         .accessibilityValue(open ? "Expanded" : "Collapsed")
     }
 
-    /// Its lists stay in the sidebar, under "Other lists".
+    /// Its lists stay in the sidebar, under "Other lists"; Undo files them back.
     private func deleteSection(_ section: SidebarSection) {
         if renaming == .section(section.id) { renaming = nil }
-        let title = section.displayTitle
-        let hadLists = !library.lists(in: section).isEmpty
-        env.store.deleteSection(section)
-        workbench.showTray(hadLists ? "Deleted “\(title)”. Its lists moved to Other lists" : "Deleted “\(title)”",
-                           icon: "folder.badge.minus")
+        workbench.deleteSection(section)
     }
 
     @ViewBuilder
@@ -259,57 +321,48 @@ struct NextSidebar: View {
         } action: {
             workbench.go(workbench.route(for: list))
         }
-        .draggable(DragPayload.list.encode(list.id))
+        // Never as text, which a document line would take in.
+        .onDrag { DragPayload.list.provider(for: list.id) }
         // Past three levels the title keeps its room.
         .padding(.leading, CGFloat(min(depth, 3)) * 14)
-        .contextMenu { listMenu(list, nested: depth > 0) }
-        .dropDestination(for: String.self) { items, _ in
-            drop(items, on: list, nested: depth > 0)
+        .contextMenu { NXListMenu(list: list, surface: .sidebar, rename: { startRename(.list(list.id), draft: list.title) }) }
+        .dropDestination(for: NXSidebarDrop.self) { items, _ in
+            drop(items.map(\.value), on: list, nested: depth > 0)
         } isTargeted: { setDropTarget(list.id, $0) }
-    }
-
-    @ViewBuilder
-    private func listMenu(_ list: TaskList, nested: Bool) -> some View {
-        Button("Open") { workbench.go(workbench.route(for: list)) }
-        Button("Rename List…") { startRename(.list(list.id), draft: list.title) }
-        Button("Move List…") { env.listPendingMove = list }
-        Button("New Child List") { workbench.createChildList(in: list) }
-        CopyItemLinkButton(target: .list(list.id))
-        Picker("Hours", selection: Binding(get: { workbench.hours(for: list) },
-                                           set: { workbench.setHours($0, for: list.id) })) {
-            ForEach(AvailabilityCategory.allCases) { Text("\($0.title) Hours").tag($0) }
-        }
-        let mode = env.navigator.listViewMode(for: list.id)
-        Button(mode == .document ? "Show as Tasks" : "Show as Document") {
-            env.navigator.setListViewMode(mode == .document ? .tasks : .document, for: list.id)
-            workbench.go(workbench.route(for: list))
-        }
-        Divider()
-        Button("Duplicate") { workbench.go(.list(env.store.duplicateList(list).id)) }
-        Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id), undoManager: nil) }
-        Button("Export as Markdown…") { MarkdownExporter.presentSavePanel(for: list, store: env.store) }
-        // A nested list shows under its parent whether pinned or not.
-        if !nested {
-            Button("Remove from Sidebar") { workbench.setPinned(false, for: list) }
-        }
-        Divider()
-        Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
     }
 
     // MARK: Drag and drop
 
-    /// Tasks dropped on a list move into it. A list dropped on a top-level
+    /// Rows dropped on a list move into it. A list dropped on a top-level
     /// list moves above it, in its section.
     private func drop(_ items: [String], on list: TaskList, nested: Bool) -> Bool {
         if items.contains(where: { DragPayload.list.decode($0) != nil }) {
             guard !nested, let sectionID = list.sectionID, let dragged = draggedList(items),
                   dragged.id != list.id else { return false }
-            env.store.move(list: dragged, toSection: sectionID, above: list)
+            workbench.moveList(dragged, toSection: sectionID, above: list)
             return true
         }
-        let ids = items.compactMap { DragPayload.block.decode($0) }
-        guard !ids.isEmpty else { return false }
-        workbench.move(ids, to: list.id)
+        return dropRows(items, on: list.id)
+    }
+
+    /// Rows move only in this library's session payload. A bare row ID,
+    /// from another app or library, is not one. Any line a document's grip
+    /// drags moves, a heading or text too. Rows already all in the list are
+    /// refused, as they'd go nowhere, and so is any line but a task on the
+    /// Inbox while it shows as triage, which draws only tasks.
+    private func dropRows(_ items: [String], on listID: UUID) -> Bool {
+        let session = env.navigator.blockDragSessionID
+        let ids = items.flatMap { item -> [UUID] in
+            guard case let .blocks(ids) = DragPayload.blockDrop(item, session: session) else { return [] }
+            return ids
+        }
+        guard ids.contains(where: { env.store.block(id: $0).map { $0.listID != listID } ?? false }) else { return false }
+        if listID == library.inbox?.id, env.navigator.listViewMode(for: listID) != .document,
+           ids.contains(where: { env.store.block(id: $0).map { !$0.isTask } ?? false }) {
+            env.store.refuse("Only tasks go to the Inbox while it shows as triage.")
+            return false
+        }
+        workbench.move(ids, to: listID, lines: true)
         return true
     }
 
@@ -359,10 +412,10 @@ struct NextSidebar: View {
         let name = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         switch target {
         case let .list(id):
-            if let list = library.list(id), !name.isEmpty, name != list.title { env.store.rename(list, to: name) }
+            if let list = library.list(id), !name.isEmpty, name != list.title { env.workbench.renameList(id, to: name) }
         case let .section(id):
             if let section = library.sections.first(where: { $0.id == id }), !section.isDeleted, section.modelContext != nil {
-                env.store.rename(section, to: name)
+                workbench.renameSection(section.id, to: name)
             }
         }
         renaming = nil
@@ -379,7 +432,7 @@ struct NextSidebar: View {
                     ForEach(library.labels, id: \.id) { label in
                         let on = route == .label(label.id)
                         let count = library.openCount(label: label.id)
-                        NXSidebarRow(on: on, pulsing: false, height: 27, title: label.name,
+                        NXSidebarRow(on: on, pulsing: false, fades: false, height: 27, title: label.name,
                                      value: "\(count) open \(count == 1 ? "task" : "tasks")") {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(label.nxColor)
@@ -397,10 +450,7 @@ struct NextSidebar: View {
                             workbench.go(.label(label.id))
                         }
                         .contextMenu {
-                            Button("Delete Label", role: .destructive) {
-                                if route == .label(label.id) { env.navigator.replace(with: .tasks) }
-                                env.store.deleteLabel(label)
-                            }
+                            Button("Delete Label", role: .destructive) { workbench.deleteLabel(label) }
                         }
                     }
                 }
@@ -449,10 +499,9 @@ struct NextSidebar: View {
     private func footerButton<Label: View>(on: Bool, title: String, value: String = "", help: String? = nil,
                                            @ViewBuilder label: () -> Label, action: @escaping () -> Void) -> some View {
         Button(action: action, label: label)
-            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.05), radius: 7,
+            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(on ? 0.07 : 0.05), rest: on ? NX.ink(0.07) : .clear, radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6),
                                             foreground: on ? NX.ink : NX.ink(0.5)))
-            .background(on ? NX.ink(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help(help ?? title)
             .accessibilityLabel(title)
             .accessibilityValue(value)
@@ -466,6 +515,8 @@ private struct NXSidebarRow<Content: View>: View {
     @Environment(\.nextStyle) private var style
     let on: Bool
     let pulsing: Bool
+    /// Nav and list rows fade between rest, hover and current; label rows snap.
+    var fades = true
     var ring: Color?
     let height: CGFloat
     let title: String
@@ -487,7 +538,9 @@ private struct NXSidebarRow<Content: View>: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(on ? NX.ink(0.06) : ring ?? .clear, lineWidth: on ? 0.5 : 1)
                     }
-                    .animation(.easeOut(duration: 0.3), value: pulsing)
+                    .animation(NX.cssEase(300), value: pulsing)
+                    .animation(fades ? fade : nil, value: on)
+                    .animation(fades ? fade : nil, value: hovering)
             }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -498,17 +551,29 @@ private struct NXSidebarRow<Content: View>: View {
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
             .accessibilityAction { action() }
     }
+
+    /// The design's `300ms ease` (CSS `ease`) on the background and shadow,
+    /// whatever the Motion setting.
+    private var fade: Animation { NX.cssEase(300) }
 }
 
-/// The count bump when something lands in a list.
+/// The count bump when something lands in a list. It plays when `trigger`
+/// moves on while `active`, and when the count first appears mid-pulse, so a
+/// list's first task bumps too and the pulse ending doesn't bump again.
 struct NXBump: ViewModifier {
     let trigger: Int
+    var active = true
+    @State private var plays = 0
+
     func body(content: Content) -> some View {
-        content.keyframeAnimator(initialValue: 1.0, trigger: trigger) { view, scale in
-            view.scaleEffect(scale)
-        } keyframes: { _ in
-            CubicKeyframe(1.35, duration: 0.17)
-            CubicKeyframe(1, duration: 0.25)
-        }
+        content
+            .keyframeAnimator(initialValue: 1.0, trigger: plays) { view, scale in
+                view.scaleEffect(scale)
+            } keyframes: { _ in
+                CubicKeyframe(1.35, duration: 0.17)
+                CubicKeyframe(1, duration: 0.25)
+            }
+            .onChange(of: trigger) { if active { plays += 1 } }
+            .onAppear { if active { plays += 1 } }
     }
 }

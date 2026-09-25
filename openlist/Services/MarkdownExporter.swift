@@ -48,6 +48,28 @@ enum MarkdownExporter {
         }
     }
 
+    /// Settings' Export every list: each top-level list in `folder`, as its
+    /// own Export writes it, so a list with nested lists is one folder holding
+    /// them all and none is written twice. `wrote` hears how many lists each
+    /// write took, so a failure part way can say how many were exported.
+    @MainActor
+    static func writeAll(store: Store, to folder: URL, wrote: (Int) -> Void = { _ in }) throws {
+        let hierarchy = store.listHierarchy()
+        for list in store.allLists(includeArchived: true) where hierarchy.parent(of: list.id) == nil {
+            let documents = hierarchy.subtree(of: list.id).count
+            try write(list: list, store: store, to: destination(for: list, in: folder, documents: documents))
+            wrote(documents)
+        }
+    }
+
+    /// Where a list's export goes in `folder`: "List.md", or a "List" folder
+    /// when it has nested lists, a new name beside what's there.
+    @MainActor
+    private static func destination(for list: TaskList, in folder: URL, documents: Int) -> URL {
+        let name = MarkdownExportPackage.safeFilename(list.displayTitle)
+        return MarkdownExportPackage.availableURL(in: folder, filename: documents > 1 ? name : name + ".md")
+    }
+
     @MainActor
     private static func assets(for list: TaskList, store: Store) throws -> [MarkdownExportPackage.Asset] {
         var assets: [MarkdownExportPackage.Asset] = []
@@ -77,7 +99,10 @@ enum MarkdownExporter {
 
     @MainActor
     private static func render(list: TaskList, store: Store, mediaPath: (String) -> String) -> String {
-        var output = "# \(InlineMarkdown.escape(list.icon)) \(InlineMarkdown.escape(list.displayTitle))\n\n"
+        // The glyph the app draws; an SF Symbol's name from synced or older
+        // data, which Markdown can't draw, is left out rather than written.
+        let glyph = ListIcon.isSymbolName(list.glyph) ? "" : InlineMarkdown.escape(list.glyph) + " "
+        var output = "# \(glyph)\(InlineMarkdown.escape(list.displayTitle))\n\n"
         if let filename = list.coverFilename {
             output += "![\(InlineMarkdown.escape(list.displayTitle + " cover"))](\(InlineMarkdown.destination(mediaPath(filename))))\n\n"
         }
@@ -160,8 +185,11 @@ enum MarkdownExporter {
 
     // MARK: - Save panel
 
+    /// Asks where, then writes the list's export there. `true` once it's
+    /// written; a failure says why in the window's notice.
     @MainActor
-    static func presentSavePanel(for list: TaskList, store: Store) {
+    @discardableResult
+    static func presentSavePanel(for list: TaskList, store: Store) -> Bool {
         let documents = store.listHierarchy().subtree(of: list.id)
         let blocks = documents.flatMap { store.blocks(inList: $0.id) }
         let hasMedia = list.coverFilename != nil || blocks.contains { $0.mediaFilename != nil || !store.attachments(for: $0.id).isEmpty }
@@ -178,45 +206,43 @@ enum MarkdownExporter {
             panel.title = "Export \(list.displayTitle)"
             panel.prompt = "Export"
             panel.message = documents.count > 1
-                ? "Choose where to export a folder containing one Markdown file per document, with parent and child links and shared assets. Existing files are kept."
+                ? "Choose where to export a folder holding one Markdown file for this list and one for each list nested in it, linked together, with their shared assets. Existing files are kept."
                 : "Choose a folder for \(filename) and its images and attachments. Keep the Markdown file and assets folder together when sharing. Existing files are kept."
-            guard panel.runModal() == .OK, let folder = panel.url else { return }
-            url = MarkdownExportPackage.availableURL(in: folder, filename: documents.count > 1 ? MarkdownExportPackage.safeFilename(list.displayTitle) : filename)
+            guard panel.runModal() == .OK, let folder = panel.url else { return false }
+            url = destination(for: list, in: folder, documents: documents.count)
         } else {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
             panel.nameFieldStringValue = filename
             panel.canCreateDirectories = true
             panel.title = "Export \(list.displayTitle)"
-            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            guard panel.runModal() == .OK, let destination = panel.url else { return false }
             url = destination
         }
         do {
             try write(list: list, store: store, to: url)
+            return true
         } catch {
-            presentError(error, operation: "Export list")
+            store.actionError = "“\(list.displayTitle)” could not be exported. \(error.localizedDescription)"
+            return false
         }
     }
 
+    /// Puts the list's document on the clipboard as the Markdown Export
+    /// writes for it. `false`, after saying why in the window's notice, when
+    /// it couldn't.
     @MainActor
-    static func presentError(_ error: Error, operation: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "\(operation) failed"
-        alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-
-    @MainActor
-    static func copyToPasteboard(list: TaskList, store: Store) {
+    @discardableResult
+    static func copyToPasteboard(list: TaskList, store: Store) -> Bool {
         do {
             let content = try markdown(for: list, store: store)
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(content, forType: .string)
+            return true
         } catch {
-            presentError(error, operation: "Copy list as Markdown")
+            store.actionError = "“\(list.displayTitle)” could not be copied as Markdown. \(error.localizedDescription)"
+            return false
         }
     }
 }

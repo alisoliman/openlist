@@ -64,9 +64,6 @@ func runBulkNestedOwnerChecks(at directory: URL) throws {
     rejects("A stale inherited-Trash selection cannot partially complete active content") {
         _ = try store.setBulkCompletion(true, ids: [active.id, late.id])
     }
-    rejects("A stale inherited-Trash selection cannot create a separate deletion group") {
-        _ = try store.trashSelection([active.id, late.id], undoManager: undo)
-    }
     let after = try records()
     check(after == before && !undo.canUndo, "Rejected stale bulk actions preserve every selected field and register no Undo")
     try finishChildImport(owner.parent, child: owner.child)

@@ -17,18 +17,21 @@ final class CalendarNotificationBridge {
 
     private let store: Store
     private let calendar: CalendarCoordinator
-    private let navigator: Navigator
+    private let workbench: Workbench
     private let service: NotificationService
+    /// Opens the main window again if it was closed, as a reminder's click
+    /// does: the Calendar and the inspector a click opens are that window's.
+    var openMainWindow: (() -> Void)?
     private var updateTask: Task<Void, Never>?
     private var lastPostedID: String?
     private var deliveredStarts: Set<String> = Set(ReviewSession.defaults.stringArray(forKey: "work.deliveredStarts") ?? [])
     private var observers: [NSObjectProtocol] = []
 
-    init(store: Store, calendar: CalendarCoordinator, navigator: Navigator,
+    init(store: Store, calendar: CalendarCoordinator, workbench: Workbench,
          service: NotificationService = .shared) {
         self.store = store
         self.calendar = calendar
-        self.navigator = navigator
+        self.workbench = workbench
         self.service = service
         guard ReviewSession.identifier == nil else { return }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
@@ -82,9 +85,15 @@ final class CalendarNotificationBridge {
         service.removeCalendarNudge(identifier: identifier)
         guard action != UNNotificationDismissActionIdentifier else { return }
         if action == UNNotificationDefaultActionIdentifier || action == NotificationService.calendarOpenPlanAction {
-            navigator.go(to: .calendar)
+            // In the main window, over whatever was up there, as a reminder
+            // lands: the task opens as its block on the Calendar opens it.
+            openMainWindow?()
+            // On the slot's day, whichever range the Calendar was stepped or moved to.
+            workbench.showOnCalendar(slotOf: taskID, occurrenceID: occurrenceID)
+            workbench.navigator.isShortcutSheetOpen = false
             if let task = store.block(id: taskID), task.occurrenceID == occurrenceID {
-                navigator.openTask(taskID)
+                workbench.focusID = nil
+                workbench.navigator.openTask(taskID)
             }
             NSApp.activate(ignoringOtherApps: true)
             update()
@@ -101,10 +110,8 @@ final class CalendarNotificationBridge {
             calendar.requestWork(WorkTaskReference(task))
         case NotificationService.calendarLaterAction where nudge.category == NotificationService.calendarStartCategory:
             calendar.quietWork(WorkTaskReference(task))
-        case NotificationService.calendarDoneAction where nudge.category == NotificationService.calendarOverrunCategory || nudge.category == NotificationService.calendarHeadsUpCategory:
+        case NotificationService.calendarDoneAction where nudge.category == NotificationService.calendarHeadsUpCategory:
             calendar.complete(task: task)
-        case NotificationService.calendarKeepGoingAction where nudge.category == NotificationService.calendarOverrunCategory && calendar.overrunNudge?.needsConfirmation == true:
-            calendar.showWork(for: task)
         default: break
         }
         update()
@@ -113,20 +120,13 @@ final class CalendarNotificationBridge {
     private var currentNudge: Nudge? {
         if let nudge = calendar.overrunNudge,
            let task = store.block(id: nudge.taskID), task.occurrenceID == nudge.occurrenceID, !task.isCompleted {
-            let kind = nudge.needsConfirmation ? "confirmation" : "heads-up"
             let dates = "\(stamp(nudge.estimatedEnd)).\(stamp(nudge.proposedEnd))"
-            let id = "\(NotificationService.calendarRequestPrefix)overrun.\(nudge.taskID).\(nudge.occurrenceID).\(kind).\(dates).\(nudge.movedTaskCount)"
+            let id = "\(NotificationService.calendarRequestPrefix)overrun.\(nudge.taskID).\(nudge.occurrenceID).heads-up.\(dates).\(nudge.movedTaskCount)"
             let count = nudge.movedTaskCount
-            let impact = count == 0 ? "" : " Keeping going will move \(count) other \(count == 1 ? "task" : "tasks")."
-            let minutes = max(0, nudge.proposedEnd.timeIntervalSince(nudge.estimatedEnd) / 60)
-            let duration = minutes.formatted(.number.precision(.fractionLength(0...1)))
-            let unit = minutes == 1 ? "minute" : "minutes"
-            let body = nudge.needsConfirmation
-                ? "Recording is paused. Review \(duration) more \(unit), or complete the task.\(impact)"
-                : "Estimate almost reached. Recording pauses if more time would move other work."
+            let impact = count == 0 ? "" : ", moving \(count) other \(count == 1 ? "task" : "tasks")"
+            let body = "Estimate almost reached. Recording continues and the plan makes room\(impact)."
             return Nudge(identifier: id, taskID: nudge.taskID, occurrenceID: nudge.occurrenceID,
-                         category: nudge.needsConfirmation ? NotificationService.calendarOverrunCategory : NotificationService.calendarHeadsUpCategory,
-                         title: task.displayTitle, body: body)
+                         category: NotificationService.calendarHeadsUpCategory, title: task.displayTitle, body: body)
         }
         if let nudge = calendar.startNudge,
            let task = store.block(id: nudge.taskID), task.occurrenceID == nudge.occurrenceID, !task.isCompleted {
