@@ -5,6 +5,7 @@
 
 import AppIntents
 import Foundation
+import WidgetKit
 
 // Widget buttons. They are compiled into both targets and ask to run in the
 // app, where the store, the calendar and the work timer live; the app launches
@@ -151,5 +152,9 @@ nonisolated enum WidgetIntentPerformer {
         if await WidgetCommandRouter.dispatch(command) { return }
         WidgetCommandQueue.append(command)
         WidgetCommandSignal.post()
+        // The system reloads only the widget that was tapped. Every other one
+        // showing the task draws the queue over the snapshot too, so they
+        // change together, as they do when the app publishes.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }

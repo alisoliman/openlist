@@ -427,6 +427,20 @@ check(withErrands.todayItems == beforeErrands.todayItems && withErrands.dueToday
       "tomorrow's work leaves today's rows and counts alone")
 check(withErrands.totalOpenCount == beforeErrands.totalOpenCount + 13, "and is counted as open once")
 
+// Tasks due the same day with the same priority go in capture order, then by
+// id, however the fetch returns them, so an unchanged library never reloads.
+let ties = (0..<5).map { index -> Block in
+    let tie = task("Tie \(index)", in: someday, index: Double(40 + index), due: date(25))
+    tie.createdAt = date(22, 12 - index)
+    return tie
+}
+store.save()
+for _ in 0..<5 {
+    let dayAfter = publisher.buildSnapshot(now: date(24, 8)).tomorrowItems.filter { $0.title.hasPrefix("Tie ") }
+    check(dayAfter.map(\.id) == ties.reversed().map(\.id), "rows due together keep their capture order on every rebuild")
+}
+store.trashBlocks(ties)
+
 // MARK: - Clearing activity
 
 // Done today reads the tasks, not the history, so clearing the history leaves

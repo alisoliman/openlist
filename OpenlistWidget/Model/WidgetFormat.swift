@@ -123,7 +123,9 @@ nonisolated enum WidgetFormat {
     /// "🗻 Weekend in Kyoto". Vibrant rendering drops the emoji, which would
     /// otherwise turn into a grey smudge.
     static func listLine(icon: String, name: String, includesIcon: Bool = true) -> String {
-        guard includesIcon, !icon.isEmpty else { return name }
+        // A list icon naming an SF Symbol, from synced or older data, is left
+        // out of a line of text rather than printed as its name.
+        guard includesIcon, !icon.isEmpty, !ListIcon.isSymbolName(icon) else { return name }
         return name.isEmpty ? icon : "\(icon) \(name)"
     }
 

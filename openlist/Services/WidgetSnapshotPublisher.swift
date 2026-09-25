@@ -299,9 +299,12 @@ final class WidgetSnapshotPublisher {
             }
         }
 
-        dueSoon.sort(by: Block.byDueDate)
-        dueNext.sort(by: Block.byDueDate)
-        waiting.sort { $0.createdAt > $1.createdAt }
+        // Ties go by capture order, as the app's Today, then by id: the fetch
+        // returns tasks in no fixed order, and a snapshot whose rows swapped
+        // places would reload every widget with nothing changed.
+        dueSoon.sort(by: Self.byDueDate)
+        dueNext.sort(by: Self.byDueDate)
+        waiting.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt > $1.createdAt }
 
         var snapshot = WidgetSnapshot()
         // The moment the counts are relative to, which the widget moves them
@@ -316,12 +319,12 @@ final class WidgetSnapshotPublisher {
         }
         snapshot.overdueCount = overdue
         snapshot.dueTodayCount = dueToday.count
-        snapshot.dueToday = dueToday.sorted { $0.date < $1.date }
+        snapshot.dueToday = dueToday.sorted(by: Self.byDate)
         // Ordered and capped as today's rows are, which they join after them.
         snapshot.tomorrowItems = dueNext.prefix(Limit.todayItems).map { task in
             item(task, list: task.listID.flatMap { listsByID[$0] })
         }
-        snapshot.dueTomorrow = dueTomorrow.sorted { $0.date < $1.date }
+        snapshot.dueTomorrow = dueTomorrow.sorted(by: Self.byDate)
         snapshot.inboxCount = waiting.count
         snapshot.inboxItems = waiting.prefix(Limit.inboxItems).map {
             WidgetSnapshot.InboxItem(id: $0.id, title: $0.displayTitle, createdAt: $0.createdAt)
@@ -380,7 +383,9 @@ final class WidgetSnapshotPublisher {
     private func summary(of list: TaskList, blocks: [Block], hierarchy: ListHierarchy) -> WidgetSnapshot.ListSummary {
         let tasks = blocks.contains(where: \.isTask) ? orderedTasks(of: list, blocks: blocks) : []
         let open = tasks.filter { !$0.isCompleted }
-        let done = tasks.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
+        let done = tasks.filter(\.isCompleted).sorted { left, right in
+            left.completedAt == right.completedAt ? left.id.uuidString < right.id.uuidString : Block.byCompletionDate(left, right)
+        }
         return WidgetSnapshot.ListSummary(
             id: list.id,
             title: list.displayTitle,
@@ -463,6 +468,17 @@ final class WidgetSnapshotPublisher {
         activityCache = ActivityCache(history: history, calendar: calendar, day: day,
                                       staleAt: heatmap.nextCompletionAt, activity: activity)
         return activity
+    }
+
+    /// Soonest due first, as `Block.byDueDate`, then in capture order and by id.
+    private static func byDueDate(_ left: Block, _ right: Block) -> Bool {
+        if Block.byDueDate(left, right) { return true }
+        if Block.byDueDate(right, left) { return false }
+        return left.createdAt == right.createdAt ? left.id.uuidString < right.id.uuidString : left.createdAt < right.createdAt
+    }
+
+    private static func byDate(_ left: WidgetSnapshot.Due, _ right: WidgetSnapshot.Due) -> Bool {
+        left.date == right.date ? !left.includesTime && right.includesTime : left.date < right.date
     }
 
     /// The first day of the week containing `date`, as the Activity heatmap

@@ -11,7 +11,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor \
     -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault \
     -enable-upcoming-feature MemberImportVisibility -target arm64-apple-macos27.0 \
     -o "$OUT/widget-checks" \
-    Shared/WidgetSnapshot.swift Shared/WidgetCommand.swift Shared/WidgetLink.swift Shared/AppGroup.swift Shared/ListAccent.swift \
+    Shared/WidgetSnapshot.swift Shared/WidgetCommand.swift Shared/WidgetLink.swift Shared/AppGroup.swift Shared/ListAccent.swift Shared/ListIcon.swift \
     Tools/WidgetChecks/ReviewSession.swift \
     OpenlistWidget/Model/*.swift OpenlistWidget/Timeline/TimelineSchedule.swift \
     OpenlistWidget/Design/WidgetStyle.swift OpenlistWidget/Design/WidgetFonts.swift \

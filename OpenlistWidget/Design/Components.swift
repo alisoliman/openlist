@@ -161,10 +161,7 @@ struct ListGlyph: View {
     }
 
     /// Lists store an emoji, or an SF Symbol name, as the app's sidebar does.
-    static func isSymbol(_ icon: String) -> Bool {
-        (icon.allSatisfy(\.isASCII) && (icon.contains(".") || icon.count > 2))
-            && NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil
-    }
+    static func isSymbol(_ icon: String) -> Bool { ListIcon.isSymbolName(icon) }
 }
 
 /// The 32-point round buttons on Up Next: Start, Pause, Resume and Done.

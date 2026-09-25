@@ -410,6 +410,9 @@ do {
     check(current.phase == .now && current.note == "50 min left" && current.rangeText == "10:00–11:30", "during a block, Up Next counts it down")
     check(abs(current.progress - 40.0 / 90) < 0.0001, "progress is the share of the block gone by")
     check(current.listLine() == "💼 Q3 planning" && current.listLine(includesIcon: false) == "Q3 planning", "the list line drops its emoji when asked")
+    check(WidgetFormat.listLine(icon: "folder", name: "Q3 planning") == "Q3 planning"
+          && WidgetFormat.listLine(icon: "cart.fill", name: "") == "",
+          "a list icon naming an SF Symbol is left out of a line of text, never printed as its name")
     check(current.later.first == UpNext.Later(id: "block-p1", start: at(11, 30), title: "Write interview feedback for Priya", time: "11:30", accentHex: 0xB8479A, isMeeting: false),
           "Later today lists the next block with its list colour")
     check(current.later[2].title == "Board prep" && current.later[2].isMeeting && current.later[2].accentHex == nil, "meetings have no colour of their own")
