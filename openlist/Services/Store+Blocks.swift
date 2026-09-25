@@ -131,31 +131,6 @@ extension Store {
         respaceIfNeeded(parentID: parentID, listID: listID)
     }
 
-    /// Deletes several blocks, skipping any that are already covered by an
-    /// ancestor in the same selection.
-    func deleteBlocks(_ selection: [Block]) {
-        guard let listID = selection.first?.listID else { return }
-        let all = blocks(inList: listID)
-        let selectedIDs = Set(selection.map(\.id))
-
-        var roots: [Block] = []
-        var selectedDepth: Int?
-        // Use the rendered tree so a cycle cannot make every selected block
-        // appear to have another selected ancestor.
-        for row in BlockTree.flatten(all, respectCollapse: false) {
-            if let depth = selectedDepth, row.depth > depth { continue }
-            selectedDepth = nil
-            if selectedIDs.contains(row.id) {
-                roots.append(row.block)
-                selectedDepth = row.depth
-            }
-        }
-        for block in roots {
-            deleteBlock(block)
-        }
-        save()
-    }
-
     // MARK: - Kind
 
     func changeKind(_ block: Block, to kind: BlockKind) {

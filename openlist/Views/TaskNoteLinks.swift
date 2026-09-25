@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Plain TextEditor intentionally stays plain. Explicit controls make pasted
+/// The inspector's note field stays plain text. Explicit controls make pasted
 /// local references usable by pointer, keyboard and assistive technology.
 struct TaskNoteLinks: View {
     let note: String

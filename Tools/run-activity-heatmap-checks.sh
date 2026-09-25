@@ -11,7 +11,8 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/activity-hea
   openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift openlist/Services/Navigator.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
-  openlist/Services/SampleData.swift Tools/EditorChecks/Support.swift Tools/ActivityHeatmapChecks/main.swift
+  openlist/Services/SampleData.swift Tools/EditorChecks/Support.swift Tools/CalendarRuntimeChecks/CalendarHistoryReset.swift \
+  Tools/ActivityHeatmapChecks/main.swift
 "$OUT/activity-heatmap-checks" "$OUT/Activity.store" write
 "$OUT/activity-heatmap-checks" "$OUT/Activity.store" reopen
 "$OUT/activity-heatmap-checks" "$OUT/Activity.store" verify-clear

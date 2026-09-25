@@ -19,6 +19,9 @@ final class NXOverlayState {
     @ObservationIgnored var pendingSearchOpen: SearchOptions?
     /// The shell's key-handling view, whose window the overlays borrow focus from.
     @ObservationIgnored weak var host: NSView?
+    /// The sidebar's frame in the window, which the shell reports: the
+    /// overlays dim only the main pane, so a field there is never theirs.
+    @ObservationIgnored var sidebarFrame: CGRect = .zero
     @ObservationIgnored private weak var returnView: NSView?
     @ObservationIgnored private var returnRange: NSRange?
     @ObservationIgnored private var activation = 0
@@ -41,6 +44,16 @@ final class NXOverlayState {
         }
         returnRange = (responder as? NSTextView)?.selectedRange()
         rememberedActivation = activation
+    }
+
+    /// Whether the window's field editor is editing a field in the sidebar,
+    /// such as a list's or section's name, rather than one in the main pane.
+    func editsSidebarField() -> Bool {
+        guard sidebarFrame.width > 0, let window = host?.window,
+              let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+              let field = editor.delegate as? NSView else { return false }
+        let x = field.convert(field.bounds, to: nil).midX
+        return x >= sidebarFrame.minX && x <= sidebarFrame.maxX
     }
 
     /// Returns focus to the remembered view and selection when the overlay
@@ -291,6 +304,21 @@ extension NXCaptureDraft {
         return (block, folded.filter { !$0.isCollapsed }.map(\.id))
     }
 
+    /// What Return and ⇧↩ do with the draft, the window's card and Quick
+    /// Add's alike: save it, or say on the card why it wasn't saved. Tokens
+    /// with no title save nothing and say nothing, as the design's Return.
+    func addCapture() -> NXCaptureOutcome {
+        let parse = captureParse()
+        guard !parse.title.isEmpty else { return .untitled }
+        do {
+            let saved = try saveCapture(parse)
+            return .saved(saved.block, opened: saved.opened)
+        } catch {
+            return .failed(NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
+                                           failed: true))
+        }
+    }
+
     /// Tab and Shift-Tab step the destination through Inbox and every list.
     /// From a list no longer among them, Tab starts at Inbox and Shift-Tab
     /// at the last list.
@@ -312,6 +340,16 @@ extension Workbench: NXCaptureDraft {}
 struct NXCaptureNotice: Equatable {
     var text: String
     var failed = false
+}
+
+/// What `addCapture` made of the draft.
+enum NXCaptureOutcome {
+    /// Nothing but tokens, or nothing at all, was typed.
+    case untitled
+    /// The task, and the folded headings the capture opened to show it.
+    case saved(Block, opened: [UUID])
+    /// Why the task wasn't added, for the card; the draft stays.
+    case failed(NXCaptureNotice)
 }
 
 /// The design's capture card, over the main window or in the Quick Add panel.

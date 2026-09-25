@@ -70,17 +70,15 @@ check(longNoteHit.field == .note && longNoteHit.snippet.contains("needle target 
       "a heading's deep note match quotes the passage that matched")
 check(try project(SearchOptions(query: " "), source: blocks).isEmpty, "whitespace query shows no corpus")
 check(try project(SearchOptions(query: "\n needle \t")).count == allHits.count, "query trims all outer whitespace")
-check(try project(SearchOptions(query: "needle", scope: .lists)).isEmpty, "list scope excludes content")
-check(try project(SearchOptions(query: "needle", scope: .notes)).map(\.id) == [.block(paragraph.id)], "notes scope retains existing non-task semantics")
-let tasksOnly = try project(SearchOptions(query: "needle", scope: .tasks))
-check(!tasksOnly.contains { $0.id == .block(paragraph.id) } && tasksOnly.contains { $0.id == noteHit.id }, "task notes remain task-scope matches")
-let noArchived = try project(SearchOptions(query: "needle", includesArchived: false))
-check(!noArchived.contains { $0.id == .block(archivedTask.id) }, "archive option filters content")
+check(allHits.contains { $0.id == .block(archivedTask.id) }, "search finds an archived list's content")
 let noCompleted = try project(SearchOptions(query: "needle", includesCompleted: false))
 check(!noCompleted.contains { $0.id == .block(completed.id) || $0.id == .block(paragraph.id) }, "completion option excludes completed ancestors and tasks")
-check(try project(SearchOptions(query: "project", scope: .lists)).count == 2, "list results include archive and omit merged alias")
-check(try project(SearchOptions(query: "project", scope: .lists, includesArchived: false)).count == 1, "list archive option is explicit")
-let listHits = try project(SearchOptions(query: "project", scope: .lists))
+/// A search's list hits, which lead its results.
+func listResults(_ query: String) throws -> [SearchHit] {
+    try project(SearchOptions(query: query)).filter { if case .list = $0.id { true } else { false } }
+}
+check(try listResults("project").count == 2, "list results include archive and omit merged alias")
+let listHits = try listResults("project")
 check(listHits.first { $0.id == .list(list.id) }?.context == "List" && listHits.first { $0.id == .list(archived.id) }?.context == "List · Archived",
       "list hits say they're a list rather than repeating their own name")
 check(listHits.allSatisfy { $0.snippet.isEmpty }, "a list hit on its name is the design's two lines")
@@ -164,7 +162,7 @@ check(movedField.field == .note, "resolver follows the live matching field after
 paragraph.text = formerTitle
 paragraph.note = ""
 list.summary = "Hidden description needle"
-let summaryHit = try project(SearchOptions(query: "needle", scope: .lists)).first { $0.id == .list(list.id) }
+let summaryHit = try listResults("needle").first { $0.id == .list(list.id) }
 check(summaryHit?.field == .summary && summaryHit?.snippet.contains("needle") == true, "a list's description match quotes it")
 let summaryRequest = try ContentReveal.resolve(.list(list.id), field: .summary, query: "needle", blocks: blocks, lists: lists)
 navigator.go(to: .list(list.id))

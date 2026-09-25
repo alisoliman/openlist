@@ -76,7 +76,7 @@ check(service.client.requests[expired.id] == nil && service.reminders.statuses[e
 let deleted = store.appendBlock(kind: .task, text: "Delete me", to: DocumentContext(listID: list.id))
 store.setReminder(date, for: deleted); await service.reminders.waitUntilIdle()
 let deletedID = deleted.id
-store.deleteBlocks([deleted]); await service.reminders.waitUntilIdle()
+store.deleteBlock(deleted); store.save(); await service.reminders.waitUntilIdle()
 check(service.client.requests[deletedID] == nil, "Committed deletion removes request")
 
 let navigator = Navigator()

@@ -34,9 +34,15 @@ struct WorkCompletionView: View {
                     .padding(.top, 4)
             }
             HStack(spacing: 8) {
-                if summary.undoID != nil { NXWorkButton("Undo completion") { env.calendar.undoWorkCompletion() } }
+                if summary.undoID != nil {
+                    Button("Undo completion") { env.calendar.undoWorkCompletion() }
+                        .buttonStyle(NXPanelButtonStyle())
+                        .fixedSize()
+                }
                 Spacer(minLength: 8)
-                NXWorkButton("Choose next task", prominent: true, action: chooseNext)
+                Button("Choose next task", action: chooseNext)
+                    .buttonStyle(NXPanelButtonStyle(kind: .primary))
+                    .fixedSize()
             }
             .padding(.top, 14)
         }

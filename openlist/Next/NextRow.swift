@@ -307,6 +307,9 @@ struct NXSelectionMark: View {
                 // animated, at the design's 180ms whatever the Motion setting.
                 withAnimation(NX.cssEase(180)) { shown = true }
             }
+            // Read with the row's chips, where the check shows.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Selected")
     }
 }
 
@@ -415,8 +418,8 @@ struct NXCheckbox: View {
         .buttonStyle(.plain)
         // Filled covers the completion dwell too; clicking then cancels it, so it reads as Reopen.
         .accessibilityLabel("\(filled ? "Reopen" : "Complete") \(title.isEmpty ? "task" : title)")
+        // Its value says it's done: "selected" is for a row's selection.
         .accessibilityValue(closing != nil ? "Completing" : filled ? "Completed" : "Open")
-        .accessibilityAddTraits(filled ? .isSelected : [])
     }
 }
 

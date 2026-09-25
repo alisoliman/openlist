@@ -295,26 +295,6 @@ extension Store {
         discardTaskSchedule(for: block, reason: "Completed", now: now)
     }
 
-    /// Reset explicitly removes history as well as current planning choices.
-    func clearCalendarHistory() {
-        do {
-            for session in try context.fetch(FetchDescriptor<WorkSession>()) { context.delete(session) }
-            for record in try context.fetch(FetchDescriptor<CompletionRecord>()) { context.delete(record) }
-            for placement in try context.fetch(FetchDescriptor<SchedulePlacement>()) { context.delete(placement) }
-            calendarPlannedBlocks = []
-            completionUndo = nil
-            completionUndoChanges.removeAll()
-            pendingCompletionUndoChanges.removeAll()
-            for registration in completionUndoRegistrations.values {
-                registration.manager?.removeAllActions(withTarget: registration)
-            }
-            completionUndoRegistrations.removeAll()
-            save()
-        } catch {
-            persistenceError = "Calendar history could not be cleared. \(error.localizedDescription)"
-        }
-    }
-
     /// Completion history is display-only. It must never be passed back to the
     /// scheduler as availability, estimates, or fixed placements.
     func completedCalendarBlocks() -> [PlannedBlock] {

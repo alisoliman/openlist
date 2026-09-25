@@ -289,7 +289,8 @@ struct NXWorkNotch: View {
         }
     }
 
-    /// Pause or Resume, Done and Stop, after a hairline.
+    /// Pause or Resume, Done and Stop, after a hairline as tall as the
+    /// buttons, as the design's wrapper draws its left border.
     private func controls(paused: Bool) -> some View {
         let workbench = env.workbench
         return HStack(spacing: 1) {
@@ -301,7 +302,7 @@ struct NXWorkNotch: View {
             notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
         }
         .padding(.leading, 5)
-        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5, height: 22) }
+        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) }
     }
 
     private func toggleWorkPanel() {

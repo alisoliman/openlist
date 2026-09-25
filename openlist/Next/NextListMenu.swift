@@ -11,7 +11,9 @@ import SwiftUI
 /// extra: the design has no list menus. A surface leaves out only what it
 /// can't do (Open, on the list's own page) and adds only its own: the
 /// sidebar's Rename in place, and the "…" menu's options for the page on
-/// show, after the list's presentation and hours.
+/// show, after the list's presentation and hours. The Inbox, in the
+/// sidebar, has those a system list can: its presentation, hours, link,
+/// copy and export.
 struct NXListMenu<Options: View>: View {
     enum Surface { case sidebar, gallery, page, childRow }
 
@@ -31,18 +33,25 @@ struct NXListMenu<Options: View>: View {
         if surface != .page {
             Button("Open") { workbench.go(workbench.route(for: list)) }
         }
-        // Away from the page, the list opens to show it.
-        Toggle("Show Tasks Only", isOn: Binding(get: { navigator.listViewMode(for: list.id) == .tasks }, set: {
+        // Away from the page, the list opens to show it. The Inbox's tasks
+        // presentation is its triage.
+        Toggle(list.isSystemInbox ? "Show as Triage" : "Show Tasks Only",
+               isOn: Binding(get: { navigator.listViewMode(for: list.id) == .tasks }, set: {
             navigator.setListViewMode($0 ? .tasks : .document, for: list.id)
             if surface != .page { workbench.go(workbench.route(for: list)) }
         }))
         Menu("Hours") { hoursItems }
             .accessibilityLabel("Hours: \(workbench.hours(for: list).title)")
         options
+        // Over an open capture, beside the sidebar, what would put a name
+        // field, sheet, confirmation or save panel over the card stands down,
+        // as File ▸'s items do, so the card keeps the keys and its draft.
+        let keepsCapture = workbench.captureOpen
         if !list.isSystemInbox {
             Divider()
-            if let rename { Button("Rename List…", action: rename) }
+            if let rename { Button("Rename List…", action: rename).disabled(keepsCapture) }
             Button("Move List…") { env.listPendingMove = list }
+                .disabled(keepsCapture)
             Button("New Child List") { workbench.createChildList(in: list) }
                 .disabled(archived)
         }
@@ -51,10 +60,12 @@ struct NXListMenu<Options: View>: View {
         // Native extras: the design has neither copy nor export.
         Button("Copy as Markdown", action: copyMarkdown)
         Button("Export as Markdown…") { workbench.exportMarkdown(list) }
+            .disabled(keepsCapture)
         if !list.isSystemInbox {
             Divider()
             Button("Duplicate") { workbench.duplicateList(list) }
             Button("Use as Template…") { env.templateCopyRequest = TemplateCopyRequest(source: .list(list.id)) }
+                .disabled(keepsCapture)
             Divider()
             // Nested lists show under their parent, so only top-level ones can be pinned.
             if !archived && library.hierarchy.parent(of: list.id) == nil {
@@ -66,6 +77,7 @@ struct NXListMenu<Options: View>: View {
             }
             Divider()
             Button("Delete List", role: .destructive) { env.requestDeleteList(list) }
+                .disabled(keepsCapture && env.settings.confirmsBeforeDeletingLists)
         }
     }
 

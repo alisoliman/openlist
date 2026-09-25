@@ -123,13 +123,6 @@ struct ListHierarchy {
         (ancestors(of: id).map(\.displayTitle) + (records[id].map { [$0.displayTitle] } ?? [])).joined(separator: " › ")
     }
 
-    func recoveryContext(for id: UUID) -> String? {
-        guard let list = records[id], let parentID = list.parentListID else { return nil }
-        if records[parentID] == nil { return "Parent list unavailable. Shown at top level until its parent returns." }
-        if displayParents[id] == nil { return "This imported parent relationship cannot be displayed. Move this list to choose its location." }
-        return nil
-    }
-
     private static func ordered(_ left: TaskList, _ right: TaskList) -> Bool {
         left.sortIndex == right.sortIndex ? left.id.uuidString < right.id.uuidString : left.sortIndex < right.sortIndex
     }

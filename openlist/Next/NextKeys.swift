@@ -126,6 +126,10 @@ final class NextKeyHandler {
             // Edit ▸ Search would close capture and drop the draft. Only ⌘K,
             // whose palette replaces capture in the design too, gets past it.
             if flags == .command && chars == "f" { return true }
+            // The card's Return, Tab and Escape are its field's, as the
+            // design binds them to its input: a name being written in the
+            // sidebar beside it keeps its own.
+            if isEditingText && overlays.editsSidebarField() { return false }
             if isEnter && !flags.contains(.command) {
                 _ = workbench.createFromCapture(keepOpen: flags.contains(.shift))
                 return true
@@ -205,6 +209,7 @@ final class NextKeyHandler {
             case "a":
                 guard !workbench.visibleIDs.isEmpty else { return false }
                 workbench.selectAllVisible()
+                announce(selectedCount)
                 return true
             default:
                 return false
@@ -355,6 +360,7 @@ final class NextKeyHandler {
             // Nothing on screen publishes rows: let the event reach the screen.
             guard !workbench.visibleIDs.isEmpty else { return false }
             workbench.moveFocus(by: key == Key.down ? 1 : -1, extending: shift)
+            announceFocus()
             return true
         case Key.enter, Key.keypadEnter:
             // A list document's heading or text, left with Escape, has no
@@ -378,7 +384,10 @@ final class NextKeyHandler {
             return !NSApp.isFullKeyboardAccessEnabled
         case Key.escape:
             if navigator.openTaskID != nil { navigator.closeTask() }
-            else if !workbench.selection.isEmpty { workbench.clearSelection() }
+            else if !workbench.selection.isEmpty {
+                workbench.clearSelection()
+                announce("Selection cleared")
+            }
             // With nothing else to let go, a line a search hit or link
             // revealed ends in place, as the design's search leaves nothing behind.
             else if workbench.focusID == nil, navigator.contentReveal != nil { navigator.finishReveal() }
@@ -391,9 +400,13 @@ final class NextKeyHandler {
         switch chars {
         case "j", "k":
             workbench.moveFocus(by: chars == "j" ? 1 : -1, extending: shift)
+            announceFocus()
             return true
         case "x":
-            if let id = workbench.focusID { workbench.toggleSelection(id) }
+            if let id = workbench.focusID {
+                workbench.toggleSelection(id)
+                announce((workbench.selection.contains(id) ? "Selected" : "Deselected") + ", \(selectedCount)")
+            }
             return true
         default:
             if openGlobal(chars) { return true }
@@ -432,6 +445,36 @@ final class NextKeyHandler {
             return false
         }
         return true
+    }
+
+    // MARK: VoiceOver
+
+    /// Says which row J/K or the arrows focused, as the palette says its
+    /// highlighted row: VoiceOver's cursor doesn't follow the focus card, so
+    /// E, T, M, F, P and D would act on a row it never read out. While rows
+    /// are selected, as ⇧J/⇧K select them, it says whether this one is and
+    /// how many are.
+    private func announceFocus() {
+        let workbench = env.workbench
+        guard let id = workbench.focusID, let task = env.store.block(id: id) else { return }
+        var parts = [task.displayTitle]
+        if task.isCompleted || workbench.closing[id] != nil { parts.append("completed") }
+        if !workbench.selection.isEmpty {
+            parts.append(workbench.selection.contains(id) ? "selected" : "not selected")
+            parts.append(selectedCount)
+        }
+        announce(parts.joined(separator: ", "))
+    }
+
+    /// The selection bar's count, as VoiceOver reads it there.
+    private var selectedCount: String { "\(env.workbench.selectedVisibleIDs.count) selected" }
+
+    /// Spoken at once over the last, so a held J reads only the row it
+    /// stops on; only while Openlist is active, as the tray's messages.
+    private func announce(_ message: String) {
+        guard NSApp.isActive else { return }
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     private static let goRoutes: [String: AppRoute] = [

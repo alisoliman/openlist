@@ -67,10 +67,16 @@ struct WorkSessionCard: View {
                         }
                     }
                     HStack(spacing: 8) {
-                        NXWorkButton("Pause") { env.workbench.toggleWorkPause() }
-                        NXWorkButton("Stop working", action: stop)
+                        Button("Pause") { env.workbench.toggleWorkPause() }
+                            .buttonStyle(NXPanelButtonStyle())
+                            .fixedSize()
+                        Button("Stop working", action: stop)
+                            .buttonStyle(NXPanelButtonStyle())
+                            .fixedSize()
                         Spacer(minLength: 8)
-                        NXWorkButton("Complete task", prominent: true, action: complete)
+                        Button("Complete task", action: complete)
+                            .buttonStyle(NXPanelButtonStyle(kind: .primary))
+                            .fixedSize()
                     }
                     .padding(.top, 14)
                 } else {
@@ -104,23 +110,25 @@ struct WorkSessionCard: View {
                     }
                     .padding(.top, 12)
                     HStack(spacing: 8) {
-                        NXWorkButton(paused ? "Resume working" : plan.map { $0.start > context.date } == true ? "Start now" : "Start working",
-                                     prominent: true, action: start)
+                        Button(paused ? "Resume working" : plan.map { $0.start > context.date } == true ? "Start now" : "Start working",
+                               action: start)
+                            .buttonStyle(NXPanelButtonStyle(kind: .primary))
+                            .fixedSize()
                             .accessibilityIdentifier("work.start")
                         Spacer(minLength: 8)
                         if paused {
-                            NXWorkButton("Complete task", action: complete)
+                            Button("Complete task", action: complete)
+                                .buttonStyle(NXPanelButtonStyle())
+                                .fixedSize()
                         } else {
                             Menu {
                                 Button("Remind in 15 minutes") { env.calendar.quietWork(reference) }
                                 if let plan { Button("Move planned time…") { move(plan) } }
                             } label: {
-                                Text("Later…").font(.system(size: 12, weight: .semibold))
+                                Text("Later…")
                             }
                             .menuStyle(.button)
-                            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 8,
-                                                            padding: EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 12),
-                                                            foreground: NX.ink(0.72), hoverForeground: NX.ink))
+                            .buttonStyle(NXPanelButtonStyle())
                             .menuIndicator(.hidden)
                             .fixedSize()
                         }

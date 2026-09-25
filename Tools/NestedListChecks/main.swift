@@ -188,7 +188,7 @@ if phase == "write" {
     let orphan = store.createList(title: "Missing parent child")
     let missingID = UUID(); orphan.parentListID = missingID
     try store.persistChanges()
-    try check(store.listHierarchy().parent(of: orphan.id) == nil && store.listHierarchy().recoveryContext(for: orphan.id) != nil && store.list(id: orphan.id) != nil, "Missing parent preserves ownership reference and recoverable top-level access")
+    try check(store.listHierarchy().parent(of: orphan.id) == nil && orphan.parentListID == missingID && store.list(id: orphan.id) != nil, "Missing parent preserves ownership reference and recoverable top-level access")
     let laterParent = TaskList(title: "Later parent"); laterParent.id = missingID; context.insert(laterParent)
     try store.persistChanges()
     try check(store.listHierarchy().parent(of: orphan.id)?.id == missingID, "An arriving parent reconnects the original child")
@@ -215,13 +215,14 @@ if phase == "write" {
     owner.isArchived = false
     descendant.parentListID = UUID()
     projection = ListHierarchy(projected)
-    try check(projection.ancestors(of: descendant.id).isEmpty && projection.recoveryContext(for: descendant.id) != nil,
+    try check(projection.ancestors(of: descendant.id).isEmpty && projection.parent(of: descendant.id) == nil
+        && projection.path(for: descendant.id) == "Child" && descendant.parentListID != nil,
         "Shared projection represents an unavailable parent without a stale path")
     let arriving = TaskList(title: "Arriving owner"); arriving.id = descendant.parentListID!
     projected.append(arriving)
     projection = ListHierarchy(projected)
-    try check(projection.path(for: descendant.id) == "Arriving owner › Child" && projection.recoveryContext(for: descendant.id) == nil,
-        "Late parent arrival updates shared row paths and clears recovery context")
+    try check(projection.path(for: descendant.id) == "Arriving owner › Child" && projection.parent(of: descendant.id)?.id == arriving.id,
+        "Late parent arrival updates shared row paths and reconnects the parent")
     descendant.parentListID = owner.id
     try check(ListHierarchy(projected).path(for: descendant.id) == "Renamed owner › Child",
         "Moving a document updates the shared row projection to its new parent")

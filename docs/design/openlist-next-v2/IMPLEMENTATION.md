@@ -39,7 +39,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   and ⌘, stand down and its draft stays, as the design's keys do, and so do the menus'
   other window items (New List, New Section, Export, the View screens, Back, Forward, Hide
   Sidebar, Expand and Collapse All, the Work menu's, Keyboard Shortcuts); only ⌘K's palette
-  replaces it. Capture aims at the list on show only while it takes tasks: on an archived
+  replaces it. Beside it the sidebar's New list, New List in Section and New Child List
+  still make and open a list, as the design's New list does, but without its name field,
+  and what would put a name field, sheet, confirmation or save panel over the card is off
+  (Rename, Move List…, Use as Template…, Export as Markdown…, a Delete List that asks
+  first), so the card keeps the keys; a name being written there keeps its own Return, Tab
+  and Esc. Capture aims at the list on show only while it takes tasks: on an archived
   list's page, a native one, it aims at Inbox, as Quick Add does. A save that fails says so
   on the card, as Quick Add's does, not in the tray under the backdrop.
 - The macOS menus are native extras. Task ▸ names its items as the palette and row menu do
@@ -245,12 +250,14 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Tasks Only and Hours, Rename (the sidebar's, in place), Move and New Child List, Copy
   Link, Copy as Markdown and Export, Duplicate and Use as Template…, Pin and Archive, then
   Delete; the "…" menu adds the page's Sort, Completed Tasks, Icon & Colour…, description
-  and cover after Hours, and has no Open. Copy as Markdown, beside Export as Markdown…, puts
-  the Markdown Export writes on the clipboard (`MarkdownExporter.copyToPasteboard`) and says
-  "Copied “List” as Markdown" in the tray, as Export says "Exported “List” as Markdown" once
-  written. A list menu's Hours picks the Work or Personal hours Plan and Start working use
-  for the list, which the design takes from its section; the list page's subtitle stays the
-  design's "N open · Section".
+  and cover after Hours, and has no Open. The sidebar's Inbox row has those a system list
+  has (Open, Show as Triage, Hours, Copy Link, Copy as Markdown, Export), and File ▸ Export
+  List as Markdown… takes the Inbox on show, as triage or document. Copy as Markdown,
+  beside Export as Markdown…, puts the Markdown Export writes on the clipboard
+  (`MarkdownExporter.copyToPasteboard`) and says "Copied “List” as Markdown" in the tray, as
+  Export says "Exported “List” as Markdown" once written. A list menu's Hours picks the Work
+  or Personal hours Plan and Start working use for the list, which the design takes from its
+  section; the list page's subtitle stays the design's "N open · Section".
   Native extras on the list page: the "…" options menu, the title renamed in place, the
   description, cover and nested lists, a drag grip on every line (drops go through
   `BlockDragAndDrop` under the design's nesting rules, and onto sidebar lists and the
@@ -392,9 +399,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Work history words a session's pause as the Work panel does, and the panel's completion
   reads "Done", a repeat's "Rolls to Wed 30", as the tray does.
 - The tray is the one passing feedback, as in the design, and VoiceOver hears each message
-  (with "Undo with Command-Z" when it offers Undo). Redo, a native extra, says "Redid — …"
-  with Undo, as Undo says "Undid — …"; one of a task's Trash that moves nothing, either way,
-  says "Could not …", keeps the log as it was and leaves the stack. Completions made outside Next's rows
+  (with "Undo with Command-Z" when it offers Undo), as it hears the row J/K or the arrows
+  focus (with whether it's selected, as ⇧J/⇧K select them), and the selection X, ⌘A and Esc
+  change ("Selected, 3 selected", "Selection cleared"), a native extra: the design's focus
+  card and selection tint are only seen. Redo, a native extra, says "Redid — …" with Undo,
+  as Undo says "Undid — …"; one of a task's Trash that moves nothing, either way, says
+  "Could not …", keeps the log as it was and leaves the stack. Completions made outside Next's rows
   (menu bar, calendar, notifications, MCP) report there too, their Undo the Store's
   completion entry, and so does Settings' Export… ("Exported N lists as Markdown"). One-off
   refusals (`Store.refuse`: a drop the document's rules don't allow, rearranging a sorted
@@ -409,10 +419,13 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   VoiceOver hears each card as it appears (`NextNotices`), but sync's warnings, which no
   action set off.
 - Native extras that snap like the design's actions, with Undo and a log entry: Delete List
-  (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), a list's Duplicate, Use as
-  Template… (the copy opens; Undo takes it to Trash) and Move List…, a list dragged in the
-  sidebar, New and Delete Section (New Section also opens its name field; a rename is logged
-  as an edit), the "…" menu's Sort, Completed Tasks and Cover, Delete Label (sidebar and
+  (`Workbench.trashList`, "Moved “…” to Trash" with Open Trash), New List (the design's tray
+  has no Undo; here it takes the list back, or to Trash once it holds anything, and a window
+  on it to Today, as Delete List does), a list's Duplicate, Use as Template… (the copy
+  opens; Undo takes it back, or to Trash once it holds anything, and a window on it to
+  Today) and Move List…, a list dragged in the sidebar, New and Delete Section (New Section
+  also opens its name field; a rename is logged as an edit), the "…" menu's Sort, Completed
+  Tasks and Cover, Delete Label (sidebar and
   Settings; Undo puts it back where it sat on each task), Settings' Add, rename and colour
   of a label (a name another label has says so in the tray), Merge labels, a list's Icon &
   Colour…, and the task menu's Duplicate and Use as Template…. The menu's Copy Text and

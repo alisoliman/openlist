@@ -150,7 +150,7 @@ check(recovered.start(task: resetTask, now: date(16, 14)), "reset fixture starts
 store.clearCalendarHistory()
 recovered.tick(now: date(16, 14, 1), checkClockGap: false)
 check(recovered.activeSession == nil, "deleting history cannot leave a ghost active model")
-check(store.workSessions().isEmpty, "history reset removes all saved sessions")
+check(store.workSessions().isEmpty, "the tick after history vanishes saves no session back")
 
 // Exercise recovery against an actual read-only persistent store, rather than
 // mocking the save result. Later reopen the same SQLite file writable so the

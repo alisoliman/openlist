@@ -91,7 +91,7 @@ struct AppCommands: Commands {
             Divider()
             Button("Export List as Markdown…") { exportCurrentList() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(!env.isMainWindowKey || keepsCapture || env.navigator.route.listID == nil)
+                .disabled(!env.isMainWindowKey || keepsCapture || shownListID == nil)
         }
 
         // Edit ▸ find.
@@ -371,9 +371,15 @@ struct AppCommands: Commands {
         env.workbench.createList()
     }
 
+    /// The list on show: a list's page, or the Inbox as triage or as its
+    /// document, which is routed as `.inbox`.
+    private var shownListID: UUID? {
+        env.navigator.route == .inbox ? env.navigator.inboxListID : env.navigator.route.listID
+    }
+
     private func exportCurrentList() {
         guard
-            let listID = env.navigator.route.listID,
+            let listID = shownListID,
             let list = env.store.list(id: listID)
         else { return }
         env.workbench.exportMarkdown(list)

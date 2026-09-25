@@ -31,8 +31,15 @@ extension Workbench {
         registerListCreationUndo(label, listID: id)
         snap(label, icon: "plus.circle", tone: .accent, ids: [id])
         pulse(list: id)
-        namingListID = id
+        namesNewList(id)
         go(.list(id))
+    }
+
+    /// A list just made opens ready to be named, except beside an open
+    /// capture, where the sidebar's New list still makes one, as the
+    /// design's does: its name field would take the keys from the card.
+    func namesNewList(_ id: UUID) {
+        namingListID = captureOpen ? nil : id
     }
 
     /// Shows a top-level list in the sidebar or takes it off. Undo puts a

@@ -219,6 +219,12 @@ try store.persistChanges()
 check(store.recentActivity().count == 300 && !store.recentActivity().contains { $0.blockID == task.id }, "global window can contain none of this task's history")
 check(try store.taskActivity(for: task.id, limit: 50).count == 50, "task page uses independent filter and limit")
 check(try store.taskActivity(for: task.id, limit: 50, offset: 400).count > 0, "old task entries past 300 remain reachable")
+// The inspector's Full history runs the same query: each Load older grows its
+// page by 50, fetching one row past it for the button.
+let grownPage = try store.context.fetch(Store.taskActivityDescriptor(for: task.id, excluding: [], limit: 100 + 1)).map(\.id)
+check(try grownPage.count == 101 && Array(grownPage.prefix(100)) == store.taskActivity(for: task.id, limit: 50).map(\.id)
+        + store.taskActivity(for: task.id, limit: 50, offset: 50).map(\.id),
+      "Full history's grown page and its Load older row are the pages taskActivity reads")
 let old = try store.taskActivity(for: task.id, limit: 10_000).last!
 check(old.change == nil && old.recordedDetail == "Only this old fact was recorded", "old events do not invent absent before values")
 

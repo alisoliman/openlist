@@ -484,12 +484,10 @@ private struct NXInspectorHistoryPage: View {
     init(taskID: UUID, limit: Int, excluded: [UUID], loadOlder: @escaping () -> Void) {
         self.limit = limit
         self.loadOlder = loadOlder
-        // Exclude before applying the limit, so failed attempts can't use up
-        // a page or hide Load older activity.
-        var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.blockID == taskID && !excluded.contains($0.id) },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
-        descriptor.fetchLimit = limit + 1
-        _events = Query(descriptor)
+        // One past the page, which shows Load older activity. The Store's
+        // query excludes before the limit applies, so failed attempts can't
+        // use up a page or hide it.
+        _events = Query(Store.taskActivityDescriptor(for: taskID, excluding: excluded, limit: limit + 1))
     }
 
     /// Activity's 12/1.4, so the saved rows keep the rhythm of the ones above.
