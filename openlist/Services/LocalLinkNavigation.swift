@@ -73,9 +73,7 @@ final class LocalLinkNavigation {
         case let .list(id): destination = .list(id)
         }
         do {
-            var request = try ContentReveal.resolve(destination, blocks: blocks, lists: lists)
-            request.source = .localLink
-            return request
+            return try ContentReveal.resolve(destination, blocks: blocks, lists: lists)
         } catch { throw LocalLinkError.targetUnavailable }
     }
 }

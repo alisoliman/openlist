@@ -17,7 +17,6 @@ final class LibraryMaintenance {
     var error: String?
     var status: String?
     var preview: LibraryBackupPackage.Validated?
-    var lastBackupURL: URL?
     var hasPendingRestore = false
     var isLocalRestore: Bool { startup.isLocalRestore }
     var pendingQuitError: String? { hasPendingRestore ? store.persistenceError : nil }
@@ -60,7 +59,6 @@ final class LibraryMaintenance {
                 let snapshot = try reader.read(at: sourceURL, settings: settings)
                 try LibraryBackupPackage.write(snapshot, to: destination) { try MediaStore.shared.readFile(filename: $0) }
             }.value
-            self.lastBackupURL = destination
             self.status = "Backup created: \(destination.lastPathComponent)"
         }
     }

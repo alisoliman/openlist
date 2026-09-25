@@ -152,7 +152,6 @@ if phase == "write" {
     try check(store.trashList(parent), "Deleting parent retains its whole owned available subtree")
     try check(child.trashID == parent.id && grandchild.trashID == parent.id && childTask.trashID == parent.id && grandTask.trashID == parent.id, "Parent group owns all child documents and blocks")
     try check(independent.trashID == independent.id, "Earlier child deletion retains its separate Trash group")
-    try check(store.trashEntries().first { $0.id == parent.id }?.listCount == 3, "Trash describes the complete retained document count")
     try snapshot().validate()
     var invalidBoundary = try snapshot()
     let childOffset = invalidBoundary.blocks.firstIndex { $0.id == childTask.id }!

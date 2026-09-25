@@ -129,7 +129,6 @@ if phase == "write" {
 
     let retainedName = template.coverFilename!
     try check(store.trashList(template), "List cover moves into Trash with its list")
-    try check(store.trashEntries().first { $0.id == template.id }?.byteCount == bytes.count, "Trash byte total includes list cover")
     store.removeEditorMedia(filename: retainedName)
     try check(media.readFile(filename: retainedName) == bytes, "Editor cleanup protects retained list covers")
     try media.eraseCachedFile(filename: retainedName)

@@ -151,7 +151,7 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         if NSWorkspace.shared.isVoiceOverEnabled, !NSApp.isActive {
             returnTo = returnTo ?? NSWorkspace.shared.frontmostApplication
             panel.orderFrontRegardless()
-            keyOnActivation(panel)
+            keyOnActivation()
             NSApp.activate()
         } else {
             panel.makeKeyAndOrderFront(nil)
@@ -173,7 +173,7 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         }
     }
 
-    private func keyOnActivation(_ panel: NSPanel) {
+    private func keyOnActivation() {
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                                                     object: nil, queue: .main) { [weak self] _ in

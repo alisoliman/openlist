@@ -163,6 +163,8 @@ extension Store {
     }
 
     /// Task history is independent of `recentActivity`, which Changes reads.
+    /// Used by the checks: pages of the same history the inspector's `@Query`
+    /// shows, through `taskActivityDescriptor`.
     func taskActivity(for taskID: UUID, limit: Int = 50, offset: Int = 0) throws -> [ActivityEvent] {
         try context.fetch(Self.taskActivityDescriptor(for: taskID, excluding: Array(uncommittedActivityIDs),
                                                       limit: limit, offset: offset))

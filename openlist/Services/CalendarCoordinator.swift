@@ -942,10 +942,7 @@ final class CalendarCoordinator {
                 store.block(id: block.taskID)?.occurrenceID == block.occurrenceID &&
                 store.block(id: block.taskID)?.isCompleted == false
         }
-        startNudge = next.map {
-            CalendarStartNudge(taskID: $0.taskID, occurrenceID: $0.occurrenceID,
-                scheduledStart: $0.start, graceEndsAt: $0.start.addingTimeInterval(5 * 60))
-        }
+        startNudge = next.map { CalendarStartNudge(taskID: $0.taskID, occurrenceID: $0.occurrenceID) }
     }
 
     private func moveMissedWork(now: Date) {
@@ -996,11 +993,11 @@ final class CalendarCoordinator {
         publish(CalendarPlan(start: plan.start, end: plan.end, blocks: blocks, assessments: assessments), now: now)
     }
 
-    /// Tells the Work panel which tasks just moved, and why.
+    /// Tells the Work panel how many tasks just moved, and why.
     private func report(_ moved: [UUID], message: String) {
         guard !moved.isEmpty else { return }
         rescheduleSummary = CalendarRescheduleSummary(message: "\(moved.count) \(moved.count == 1 ? "task" : "tasks") rescheduled.",
-            movedTaskCount: moved.count, taskIDs: moved, reason: message)
+            reason: message)
     }
 
     /// Store saves also happen for notes, titles and editor selections. Those
@@ -1057,9 +1054,8 @@ final class CalendarCoordinator {
         return nil
     }
 
-    func showWork(for task: Block? = nil, now: Date = .now) {
-        if let task { workSelection = WorkTaskReference(task); workCompletion = nil }
-        else if let session = activeSession, let task = store.block(id: session.taskID) { workSelection = WorkTaskReference(task) }
+    func showWork(now: Date = .now) {
+        if let session = activeSession, let task = store.block(id: session.taskID) { workSelection = WorkTaskReference(task) }
         else if let task = resumableTask { workSelection = WorkTaskReference(task) }
         else if workCompletion == nil { workSelection = suggestedWork(now: now).map(WorkTaskReference.init) }
         isWorkPanelPresented = true

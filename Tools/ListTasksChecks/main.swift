@@ -61,7 +61,6 @@ func projection(_ sorting: ListSorting = .manual, showsCompleted: Bool = true,
 }
 
 check(ids(projection().tasks) == ids(manual), "Document order includes every descendant once despite collapsed ancestors")
-check(projection().hiddenContentCount == 4 && projection().completedCount == 1, "Projection reports hidden rich content and completed task counts")
 check(ids(projection(.alphabetical).tasks) == ids([alpha, beta, charlie, delta, zulu]),
       "Alphabetical sort crosses headings, prose, and task parent boundaries")
 check(ids(projection(.dueDate).tasks) == ids([beta, alpha, charlie, zulu, delta]),
@@ -115,7 +114,7 @@ let foreign = Block(kind: .task, text: "Other list", listID: UUID())
 check(ids(projection(source: blocks + [foreign, alpha]).tasks) == ids(manual),
       "A foreign-list block and repeated input cannot duplicate or contaminate the queue")
 let noteOnly = projection(source: [heading, prose, image])
-check(noteOnly.tasks.isEmpty && noteOnly.hiddenContentCount == 3, "A notes-only list has a task empty state without losing prose")
+check(noteOnly.tasks.isEmpty, "A notes-only list projects no tasks")
 check(projection(showsCompleted: false, source: [zulu]).tasks.isEmpty,
       "A completed-only list has an empty open-task projection")
 

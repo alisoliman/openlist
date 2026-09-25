@@ -3,7 +3,6 @@ import SwiftData
 
 /// A temporary display request; none of these values are persisted on a block.
 struct ContentReveal: Identifiable, Equatable {
-    enum Source: Equatable { case search, localLink }
     enum Anchor: Hashable { case pageHeader, taskTitle(UUID), taskNote(UUID), blockNote(UUID), listSummary(UUID) }
     let id = UUID()
     let destination: SearchDestination
@@ -12,7 +11,6 @@ struct ContentReveal: Identifiable, Equatable {
     let ancestorIDs: Set<UUID>
     let field: SearchField
     let query: String
-    var source: Source = .search
     var isArchived = false
 
     var blockID: UUID? {

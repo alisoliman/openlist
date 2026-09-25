@@ -352,10 +352,6 @@ struct NXStrikeText: View {
             .padding(.vertical, leading / 2)
     }
 
-    /// Kept for call sites not yet moved to `NX.lineHeight`, SwiftUI's own
-    /// line, which it now returns.
-    static func glyphLineHeight(_ size: CGFloat) -> CGFloat { NX.lineHeight(size) }
-
     /// The width `text` needs to sit on one line at `size`.
     static func lineWidth(_ text: String, size: CGFloat = 13.8) -> CGFloat {
         ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width)

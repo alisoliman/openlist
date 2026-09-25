@@ -460,7 +460,7 @@ func checkSchedulingNudges() throws {
         planner.tick(now: date(14, 9, 39), checkClockGap: false)
         check(planner.workExtension?.end == date(14, 10) && planner.workConflict == nil, "an extension grows past another task's pinned time")
         check(pin.start == date(14, 10) && pin.end == date(14, 10, 30) && planner.workExtension?.movedTaskIDs == [pinned.id]
-                && planner.rescheduleSummary?.taskIDs == [pinned.id], "the pinned task moves out of the running work's way, and is named as moved")
+                && planner.rescheduleSummary?.message == "1 task rescheduled.", "the pinned task moves out of the running work's way, and is named as moved")
         check(planner.plan.blocks.first { $0.taskID == pinned.id }?.start == date(14, 10)
                 && planner.visibleBlocks.first { $0.taskID == pinned.id }?.start == date(14, 10), "the plan and the calendar follow the moved pin")
     }
@@ -492,7 +492,7 @@ func checkSchedulingNudges() throws {
         check(next.start == date(14, 13) && next.end == date(14, 13, 20), "the next task moves past lunch to the first free quarter")
         check(later.start == date(14, 13, 30) && later.end == date(14, 14), "the task after it moves on in turn, clear of the meeting")
         check(planner.workExtension?.movedTaskIDs == [feedback.id, scorecard.id], "the extension names the tasks it moved, in time order")
-        check(planner.rescheduleSummary?.taskIDs == [feedback.id, scorecard.id] && planner.rescheduleSummary?.message == "2 tasks rescheduled.",
+        check(planner.rescheduleSummary?.message == "2 tasks rescheduled.",
               "the Work panel reports the placements moved, leading with how many")
         check(drawn(feedback)?.start == date(14, 13) && drawn(scorecard)?.start == date(14, 13, 30), "the calendar draws the moved tasks at their new times")
         let grant = planner.workExtension!
@@ -808,7 +808,7 @@ func checkSchedulingNudges() throws {
               "the Work panel's planned time is the drawn slot, and flexible work has none")
         planner.tick(now: date(14, 9, 20), checkClockGap: false)
         check(planner.plan.blocks.contains { $0.placementID == placement.id } && planner.startNudge?.taskID == pinned.id, "an unstarted pinned block keeps its slot and its Start nudge while the slot runs")
-        check(planner.startNudge?.scheduledStart == date() && planner.startNudge?.graceEndsAt == date(14, 9, 5), "the nudge names the slot's start and has a five-minute grace period")
+        check(planner.startNudge?.occurrenceID == pinned.occurrenceID, "the nudge names the slot's occurrence")
         planner.tick(now: date(14, 9, 31), checkClockGap: false)
         check(planner.plan.assessments.first { $0.taskID == pinned.id }?.conflicts.contains { $0 == AdaptiveScheduler.missedPlacementConflict } == true, "ignoring a pinned slot preserves an explicit missed-pin conflict")
         check(planner.plan.blocks.first { $0.taskID == other.id }?.start == neighbor.start && fixtureStore.workSessions().isEmpty, "missed pins move their remaining work without moving neighbors or inventing activity")
