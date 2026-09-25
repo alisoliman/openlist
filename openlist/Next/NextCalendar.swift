@@ -187,33 +187,38 @@ private struct NXCalendarBody: View {
     }
 
     private func banner(_ block: PlannedBlock, task: Block) -> some View {
-        // The title's exact 13/1.2 lines, raised by half what they trim off
-        // SwiftUI's 16 so the ink sits where CSS centres it; the labels and
-        // Start take the design's line-height 1 boxes, so the banner is its
-        // 48pt, 10 + 28 + 10, until a long title wraps.
+        // The texts' exact 11/1, 13/1.2 and 12/1 lines, raised by half what
+        // they trim off SwiftUI's so the ink sits where CSS centres it, and
+        // Start's line-height 1 box, so the banner is its 48pt, 10 + 28 + 10,
+        // until a text wraps.
         let titleLine = 13 * 1.2
-        return HStack(spacing: 12) {
+        let time = "\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))"
+        // The design's flex row: the title wraps first, then the label and
+        // time, none inside a word; Start keeps to the trailing edge.
+        return NXFlexRow(spacing: 12) {
             NXBreathingDot(color: style.accent, size: 8)
             Text("Planned now")
                 .font(.system(size: 11, weight: .semibold))
                 .kerning(0.66)
                 .textCase(.uppercase)
                 .foregroundStyle(style.accent)
-                .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
-                .fixedSize()
-            // Only the title gives way to a narrow row, wrapping as the design's does.
+                .lineHeight(.exact(points: 11))
+                .offset(y: (11 - NX.lineHeight(11)) / 2)
+                .nxWordFloor(NX.wordFloor("PLANNED NOW", size: 11, weight: .semibold, kerning: 0.66))
+                .layoutPriority(1)
             Text(task.displayTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(NX.ink)
                 .lineHeight(.exact(points: titleLine))
                 .offset(y: (titleLine - NX.lineHeight(13)) / 2)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))")
+                .nxWordFloor(NX.wordFloor(task.displayTitle, size: 13, weight: .semibold))
+            Text(time)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(NX.ink(0.5))
-                .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
-                .fixedSize()
-            Spacer(minLength: 8)
+                .lineHeight(.exact(points: 12))
+                .offset(y: (12 - NX.lineHeight(12)) / 2)
+                .nxWordFloor(NX.wordFloor(time, size: 12, weight: .medium))
+                .layoutPriority(1)
             Button { env.workbench.startWork(task.id) } label: {
                 // The design's 14pt icon box, whatever the symbol's height,
                 // so the button is its 28pt: 7 + 14 + 7.

@@ -220,8 +220,13 @@ final class CalendarCoordinator {
         let categories = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, AvailabilityCategory(rawValue: $0.availabilityCategoryRaw) ?? .work) })
         let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted }))) ?? [])
             .filter { task in task.listID.flatMap { categories[store.resolvedListID($0) ?? $0] } != nil }
-        let inputs = tasks.map { scheduleInput(for: $0, now: now) }
-        let placements = store.placements().filter { !missedPlacementIDs.contains($0.id) }.map { PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID,
+        let saved = store.placements()
+        // A missed pin isn't passed on, but it still keeps its task in the plan.
+        let pinned = Dictionary(grouping: saved.filter(\.isPinned), by: \.taskID)
+        let inputs = tasks.map { task in
+            scheduleInput(for: task, now: now, isPlaced: pinned[task.id]?.contains { $0.occurrenceID == task.occurrenceID } == true)
+        }
+        let placements = saved.filter { !missedPlacementIDs.contains($0.id) }.map { PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID,
                                                                  start: $0.start, end: $0.end, isPinned: $0.isPinned) }
         var active: ActiveScheduleInput?
         if let session = activeSession, session.endedAt == nil, let task = store.block(id: session.taskID), !task.isCompleted,
@@ -799,13 +804,13 @@ final class CalendarCoordinator {
         overrunNudge = nil
     }
 
-    private func scheduleInput(for task: Block, now: Date) -> ScheduleTask {
+    private func scheduleInput(for task: Block, now: Date, isPlaced: Bool) -> ScheduleTask {
         let due = task.dueDate.map { due in task.includesTime ? due : calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: due))! }
         let selected = task.selectedForDay.map { calendar.startOfDay(for: $0) <= calendar.startOfDay(for: now) } ?? false
         let category = AvailabilityCategory(rawValue: store.list(id: task.listID)?.availabilityCategoryRaw ?? "work") ?? .work
         return ScheduleTask(taskID: task.id, occurrenceID: task.occurrenceID, title: task.displayTitle,
             category: category, remainingMinutes: remainingMinutes(for: task, now: now), dueDate: due,
-            selectedForToday: selected, earliestStart: task.deferredUntil,
+            selectedForToday: selected, isPlaced: isPlaced, earliestStart: task.deferredUntil,
             priority: task.priorityRaw, keepTogether: task.keepsSessionsTogether)
     }
 
@@ -972,14 +977,16 @@ final class CalendarCoordinator {
             FixedBusyTime(id: "planned-" + $0.id, title: "other scheduled work", start: $0.start, end: $0.end)
         }
         // A missed preference is no longer a useful suggestion. Future pins stay
-        // fixed; a missed pin is retained as an assessment conflict, not tracking.
-        let placements = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID && $0.isPinned && $0.start > now }.map {
+        // fixed; a missed pin is retained as an assessment conflict, not tracking,
+        // and keeps the task in the plan, as its slot did.
+        let pins = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID && $0.isPinned }
+        let placements = pins.filter { $0.start > now }.map {
             PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID, start: $0.start, end: $0.end, isPinned: true)
         }
-        let input = scheduleInput(for: task, now: now)
+        let input = scheduleInput(for: task, now: now, isPlaced: !pins.isEmpty)
         var replacement = AdaptiveScheduler.plan(tasks: [input], preferences: preferences, busyTimes: busy,
             placements: placements, now: now, calendar: calendar)
-        if store.placements(taskID: task.id).contains(where: { $0.occurrenceID == task.occurrenceID && $0.isPinned && $0.start <= now }) {
+        if pins.contains(where: { $0.start <= now }) {
             for index in replacement.assessments.indices {
                 replacement.assessments[index].conflicts.append(AdaptiveScheduler.missedPlacementConflict)
             }
