@@ -59,14 +59,14 @@ final class Store {
     // Undo can restore the original attachment and image contents as well.
     var isRecordingEditorEdit = false
     var editorMediaBackups: [String: Data] = [:]
-    /// Structural Undo may remove the task currently open in an inspector.
+    /// Structural Undo may remove the task currently open in the inspector.
     @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
     var persistenceError: String?
     var editorNotice: String?
-    /// Why the last export, Copy as Markdown, cover change, image or file
-    /// failed, where a system alert said so before, or a Duplicate, move,
-    /// Copy Content and Subtasks or paste. It stays, red, under the toolbar
-    /// until dismissed; VoiceOver hears it as it appears.
+    /// Why the last export, Copy as Markdown, cover change, image or file,
+    /// Duplicate, move, Copy Content and Subtasks or paste failed. It stays,
+    /// red, under the toolbar until dismissed; VoiceOver hears it as it
+    /// appears.
     var actionError: String?
     /// Takes what ``refuse(_:)`` reports; the window shows it in its tray.
     @ObservationIgnored var onRefusal: ((String) -> Void)?

@@ -606,7 +606,8 @@ final class BlockNSTextView: NSTextView {
     private var geometryUpdatePending = false
 
     /// The enclosing scroll viewport, expressed in text-view coordinates. It
-    /// can extend beyond this row and is intersected across nested inspectors.
+    /// can extend beyond this row and is intersected with every enclosing
+    /// clip view.
     var editorViewport: CGRect {
         guard let contentView = window?.contentView else { return bounds }
         var result = convert(contentView.bounds, from: contentView)
@@ -943,9 +944,9 @@ final class BlockNSTextView: NSTextView {
         })
     }
 
-    /// The sheet's answer, for the text it asked about. The sheet doesn't stop
-    /// the app as the old modal alert did, so a line that changed meanwhile,
-    /// by sync or an agent, keeps its text as it now is.
+    /// The sheet's answer, for the text it asked about. The link sheet
+    /// doesn't block the app, so a line that changed meanwhile, by sync or an
+    /// agent, keeps its text as it now is.
     private func applyLink(_ answer: LinkPrompt.Answer, to range: NSRange, text: String) {
         guard let storage = textStorage, NSMaxRange(range) <= storage.length,
               storage.attributedSubstring(from: range).string == text else { return }

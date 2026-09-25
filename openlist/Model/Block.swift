@@ -220,8 +220,8 @@ extension Block {
     }
 }
 
-/// Optional urgency flag. Superlist's free tier keeps this lightweight, so
-/// this maps to a simple none/low/medium/high scale used for sorting.
+/// Optional urgency flag: a simple none/low/medium/high scale, used for
+/// sorting and the checkbox's priority ring.
 enum TaskPriority: Int, Codable, CaseIterable, Sendable {
     case none = 0
     case low = 1

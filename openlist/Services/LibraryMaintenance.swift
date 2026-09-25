@@ -212,7 +212,7 @@ final class LibraryMaintenance {
     }
 
     private func commitDrafts() async throws {
-        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
         for window in NSApplication.shared.windows { window.makeFirstResponder(nil) }
         await Task.yield()
         try store.persistChanges()

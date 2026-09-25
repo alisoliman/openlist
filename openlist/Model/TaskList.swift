@@ -6,9 +6,8 @@
 import Foundation
 import SwiftData
 
-/// A list document. In Superlist a list is not merely a checklist — it is a
-/// rich document that happens to contain tasks, so its content lives in
-/// `Block` rows keyed by `listID`.
+/// A list document: not merely a checklist but a rich document that happens
+/// to contain tasks, so its content lives in `Block` rows keyed by `listID`.
 @Model
 final class TaskList {
     var id: UUID = UUID()

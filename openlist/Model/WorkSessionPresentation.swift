@@ -40,7 +40,8 @@ extension WorkSession {
         case "Next occurrence": "Ended when the task repeated"
         case "Moved to Trash": "Ended when the task moved to Trash"
         case "Task deleted": "Ended when the task was deleted"
-        // The old editor's name for a text line.
+        // The saved reason for a task turned into text: Store.changeKind
+        // still writes this key, and saved sessions keep it.
         case "Changed to a note": "Ended when the task was turned into text"
         default: nil
         }

@@ -1480,7 +1480,7 @@ final class OutlineEditor {
             env.store.refuse("Only tasks and list items go under another line, two levels deep at most.")
             return
         }
-        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
         let parentID: UUID?
         let aboveID: UUID?
         switch position {

@@ -23,20 +23,20 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var navigator = env.navigator
-        @Bindable var captureEnvironment = env
+        @Bindable var sheets = env
 
         NextShell()
         .ignoresSafeArea()
         .navigationTitle("Openlist")
-        .sheet(item: $captureEnvironment.templateCopyRequest) { request in
+        .sheet(item: $sheets.templateCopyRequest) { request in
             TemplateCopySheet(request: request)
         }
         .sheet(isPresented: $navigator.isShortcutSheetOpen) {
             ShortcutsSheet()
         }
-        .sheet(item: $captureEnvironment.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
-        .sheet(item: $captureEnvironment.listPendingDeletion) { list in DeleteListSheet(list: list).environment(env) }
-        .sheet(item: $captureEnvironment.linkPrompt) { prompt in NXLinkSheet(prompt: prompt).environment(env) }
+        .sheet(item: $sheets.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
+        .sheet(item: $sheets.listPendingDeletion) { list in DeleteListSheet(list: list).environment(env) }
+        .sheet(item: $sheets.linkPrompt) { prompt in NXLinkSheet(prompt: prompt).environment(env) }
         .background {
             RootWindowReader { window in
                 hostWindow.window = window
@@ -176,7 +176,7 @@ struct RootView: View {
         env.performTaskCommand(command, on: env.workbench.targetTasks.map(\.id))
     }
 
-    // MARK: - Quick capture & Dock
+    // MARK: - Initial focus & Dock
 
     /// Drops the window's first responder when arriving somewhere that focus
     /// would be destructive.

@@ -178,8 +178,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   moving too or holds a row that is, so they keep their order. One that can't go (at the
   top or bottom) holds back only the rows that would pass it; the rest still go, closing
   up to it.
-  `Navigator.documentListID` (any list, and the Inbox shown as a document) and
-  `documentOwnsEditorCommands` replace `hasDocumentEditor`.
+  `Navigator.documentListID` (any list, and the Inbox shown as a document) says which
+  list document is on show, and `documentOwnsEditorCommands` whether that document owns
+  the outline's menu commands.
 - The inspector's "Subtask of" crumb and Subtasks section follow the design; Add subtask
   writes the new line in the list document (`Workbench.addSubtask`,
   `OutlineEditor.appendSubtask`), after the task's last line and at its depth, as the
@@ -420,9 +421,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   list, a line command on the lines a paste left selected) pass there; what needs dealing
   with (saving, sync, links, label maintenance, Trash failures, failed undos) stays a
   notice card, all of them in one place under the toolbar. So does an export, Copy as
-  Markdown, cover change or image that fails, and a file that can't be attached or opened,
-  where system alerts were: a red card (`Store.actionError`), one for files that fail
-  together; and a Duplicate, a move that couldn't be saved (from the menu, the sidebar or a
+  Markdown, cover change or image that fails, and a file that can't be attached or opened:
+  a red card (`Store.actionError`), one for files that fail together; and a Duplicate, a move that couldn't be saved (from the menu, the sidebar or a
   drag), Copy Content and Subtasks or its paste that fails. A move refused, which changed
   nothing (another editor operation running, a destination gone), passes in the tray.
   VoiceOver hears each card as it appears (`NextNotices`), but sync's warnings, which no
@@ -443,9 +443,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   Redo of a label or list change, or of a Restore, that fails says so in the tray, keeps
   the log as it was and leaves the stack.
   An edit logged while the tray still shows an earlier change, like a new section's name,
-  takes that tray's Undo away. Deviation: a merge undoes in turn on the window's stack, by
-  ⌘Z or the tray, where the old "Undo merge" card took back the latest merge out of order,
-  keeping later changes. Deviation: "Confirm before deleting a list" stays a preference
+  takes that tray's Undo away. A label merge, a native extra, undoes in turn on the
+  window's stack, by ⌘Z or the tray. Deviation: "Confirm before deleting a list" stays a preference
   (on by default), asked in a Next sheet; the design asks nothing, as Undo covers it.
   Settings' own confirmations, for what no Undo takes back (Clear all activity history,
   Delete everything, Return to original library, Reset access token), are Next sheets too,
@@ -489,8 +488,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - A route to a list or label deleted since (Back to a list now in Trash) shows the dashed
   empty box with Open Trash, Open Lists or Open Tasks. A search hit in the note of a heading
   or text line (only native data gives those notes) shows that note under the line as the
-  design's note block, the match in the accent. Deviation: that "Matched note" card stays
-  where the reveal notices went, as the only place such a note reads.
+  design's note block, the match in the accent. Deviation: the design has no such card, as
+  its search finds only tasks and lists; that "Matched note" card, under the line, is the
+  only place such a note reads.
 - Reminders, item links (Copy Link, widget rows) and search hits land as the design's
   search does, with no notice: on the task's list or the Inbox, its row focused and the
   inspector open. A hit on a line past the design's (heading, text, a note, a list
@@ -513,8 +513,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   a hover fades in over the row an image keeps for it (so no line below moves), edits
   it, and Return or a click away commits it as a step of its own, "Edited caption on
   “Image”", logged as a line's edit is, a line that click opens (the add row's, Add
-  subtask's) staying open with the caret; by pointer or VoiceOver only,
-  as in the old editor, since the keys pass over an image line), the Turn into
+  subtask's) staying open with the caret; by pointer or VoiceOver only, since the keys
+  pass over an image line), the Turn into
   card brings them up for their names after "/" (with no query it shows the design's
   five under its one header, and a single letter filters the five by label as the
   design's does), and a line's Turn Into menu lists them all. From the second letter

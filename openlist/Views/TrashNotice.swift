@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// A failed Trash change, which stays until dismissed. It sits inside the
-/// detail column so it never covers the sidebar or an open inspector,
-/// including at narrow window widths.
+/// A failed Trash change, which stays until dismissed. It shows with the
+/// window's other notices under the toolbar (`NextNotices`), clear of the
+/// sidebar and an open inspector, including at narrow window widths.
 struct TrashNotice: View {
     @Environment(AppEnvironment.self) private var env
 

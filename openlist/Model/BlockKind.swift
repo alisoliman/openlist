@@ -7,9 +7,9 @@ import Foundation
 
 /// The type of a block inside a list document.
 ///
-/// Superlist treats a list as a rich document: it can hold tasks, paragraphs,
-/// headings, bullets, numbered items, quotes, code, dividers and images all in
-/// the same vertical flow, at any nesting depth.
+/// Tasks, text, headings, list items, quotes, code, dividers and images share
+/// one vertical flow. Which lines nest, and how deep, is `OutlinePolicy`'s;
+/// the stored tree can hold more (see `acceptsChildren`).
 enum BlockKind: String, Codable, CaseIterable, Sendable {
     case task
     case paragraph
