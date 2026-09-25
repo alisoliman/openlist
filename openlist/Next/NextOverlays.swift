@@ -518,7 +518,8 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Add to \(list.displayTitle)")
         .accessibilityAddTraits(isOn ? .isSelected : [])
-        .animation(.easeOut(duration: 0.14), value: isOn)
+        // The design's `background 140ms ease`.
+        .animation(NX.cssEase(140), value: isOn)
     }
 }
 

@@ -142,7 +142,7 @@ private struct NXListCard: View {
                         }
                     }
                     .clipShape(Capsule())
-                    .animation(.easeOut(duration: 0.5), value: fraction)
+                    .animation(NX.cssEase(500), value: fraction)
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(peek) { task in
                         HStack(spacing: 7) {
@@ -464,6 +464,7 @@ struct NXHoldButton: View {
     private func reset() {
         timer = nil
         holding = false
-        withAnimation(.easeOut(duration: 0.15)) { progress = 0 }
+        // The fill goes at once as the hold ends, as the design's.
+        progress = 0
     }
 }

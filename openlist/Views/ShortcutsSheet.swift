@@ -165,7 +165,6 @@ struct ShortcutsSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             NXCapsTitle(text: group.title)
                                 .padding(.bottom, 6)
-                                .accessibilityAddTraits(.isHeader)
 
                             ForEach(group.shortcuts.filter { !$0.readsDates || env.settings.parsesNaturalLanguageDates }) { shortcut in
                                 HStack(spacing: 8) {

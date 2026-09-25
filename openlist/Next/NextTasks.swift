@@ -205,7 +205,8 @@ struct NextTasksScreen: View {
     }
 
     /// Every task in the order the lists show it: lists in sidebar order, each in its document's
-    /// order. Like the design, Tasks keeps that order in every grouping rather than sorting.
+    /// order under the list's Sort, as its page draws it. Like the design, Tasks keeps that order
+    /// in every grouping rather than sorting.
     @MainActor
     static func outlineOrder(library: NextLibrary, blocks: [Block]) -> [Block] {
         let blocksByList = Dictionary(grouping: blocks) { $0.listID }
@@ -213,7 +214,8 @@ struct NextTasksScreen: View {
             let tasks = library.tasks(in: list.id)
             guard !tasks.isEmpty else { return [] }
             let taskIDs = Set(tasks.lazy.map(\.id))
-            let ordered = BlockTree.flatten(blocksByList[list.id] ?? [], respectCollapse: false)
+            let rows = BlockTree.flatten(blocksByList[list.id] ?? [], respectCollapse: false)
+            let ordered = BlockTree.sortingTaskRuns(in: rows, by: list.sorting)
                 .compactMap { taskIDs.contains($0.id) ? $0.block : nil }
             // Tasks the outline could not reach still belong on the screen.
             let seen = Set(ordered.lazy.map(\.id))
@@ -352,7 +354,7 @@ private struct NXTasksQueryBar: View {
                         .font(.system(size: 13.5, weight: .medium))
                         .fixedSize()
                         // The design's 13.5/1 line box.
-                        .padding(.vertical, (13.5 - NXStrikeText.glyphLineHeight(13.5)) / 2)
+                        .padding(.vertical, (13.5 - NX.lineHeight(13.5)) / 2)
                         .padding(.bottom, 13)
                         .contentShape(Rectangle())
                 }
@@ -434,14 +436,14 @@ private struct NXTasksQueryBar: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(status.title).font(.system(size: 13.5, weight: on ? .semibold : .medium))
                             .foregroundStyle(on ? NX.ink : NX.ink(0.42))
-                            .padding(.vertical, (13.5 - NXStrikeText.glyphLineHeight(13.5)) / 2)
+                            .padding(.vertical, (13.5 - NX.lineHeight(13.5)) / 2)
                         Text("\(counts[status] ?? 0)")
                             .font(.system(size: 11, weight: .medium))
                             .monospacedDigit()
                             .foregroundStyle(NX.ink(on ? 0.45 : 0.28))
-                            .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
+                            .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
                     }
-                    .animation(.easeOut(duration: 0.16), value: on)
+                    .animation(NX.cssEase(160), value: on)
                     .padding(.bottom, 13)
                     .overlay(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 2).fill(NX.ink)
@@ -593,7 +595,7 @@ private struct NXTasksQueryBar: View {
                         .textCase(.uppercase)
                         .foregroundStyle(NX.ink(0.34))
                         // The design's 9.5/1 line box.
-                        .padding(.vertical, (9.5 - NXStrikeText.glyphLineHeight(9.5)) / 2)
+                        .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
                         .frame(width: 44, alignment: .leading)
                         .padding(.top, 7)
                     NXFlow(spacing: 5) {
@@ -610,7 +612,7 @@ private struct NXTasksQueryBar: View {
             }
             // The design's 10.5/1.3: the extra leading between lines and,
             // halved, above the first and below the last.
-            let footLeading = 10.5 * 1.3 - NXStrikeText.glyphLineHeight(10.5)
+            let footLeading = 10.5 * 1.3 - NX.lineHeight(10.5)
             HStack(spacing: 8) {
                 Text("Words combine — “kyoto overdue #travel”. Anything else matches the title.")
                     .lineSpacing(footLeading)
@@ -646,10 +648,11 @@ private struct NXQueryPill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let list { NXListGlyph(list: list, size: 11) }
+            // A symbol taller than the text, as some are, keeps to its 12 pt box.
+            if let list { NXListGlyph(list: list, size: 11).frame(height: 12) }
             // The design's 12/1 line box, so the pill is 24 pt.
             Text(label).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                .padding(.vertical, (12 - NXStrikeText.glyphLineHeight(12)) / 2)
+                .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
         }
         .foregroundStyle(isOn ? .white : NX.ink(0.7))
         .padding(.vertical, 6)
@@ -659,7 +662,7 @@ private struct NXQueryPill: View {
         .overlay(Capsule().strokeBorder(isOn ? color : NX.ink(0.12), lineWidth: 1))
         .contentShape(Capsule())
         .onTapGesture(perform: action)
-        .animation(.easeOut(duration: 0.14), value: isOn)
+        .animation(NX.cssEase(140), value: isOn)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
@@ -687,7 +690,7 @@ struct NXTextHoverStyle: ButtonStyle {
             configuration.label
                 .foregroundStyle(hovering ? hover : color)
                 .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.16), value: hovering)
+                .animation(NX.cssEase(160), value: hovering)
         }
     }
 }

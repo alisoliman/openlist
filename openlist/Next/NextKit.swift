@@ -81,6 +81,8 @@ struct NXChip: View {
                     }
                 }
                 .font(.system(size: size, weight: quiet ? .medium : .semibold))
+                // The design's 1.2 line box: a chip is 19.2 pt, a quiet one 13.8.
+                .padding(.vertical, (size * 1.2 - NX.lineHeight(size)) / 2)
             }
         }
         .lineLimit(1)
@@ -293,11 +295,13 @@ struct NXScreenHeader<Trailing: View>: View {
                         NXHeaderTitle(text: title)
                     }
                     // Wraps, as the design's, rather than cut off in a narrow window.
+                    // Its 12px/1.2 line box over SwiftUI's line.
                     Text(subtitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(NX.ink(0.48))
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
+                        .padding(.vertical, (12 * 1.2 - NX.lineHeight(12)) / 2)
                 }
             }
             if let progress, progress.total > 0 {
@@ -382,7 +386,7 @@ private struct NXHeaderFlow: Layout {
 }
 
 /// A screen header's title: serif 34 on the design's 1.05 line box, or bold
-/// 27 without serif titles.
+/// 27 on its 1.1 without serif titles. VoiceOver reads it as a heading.
 struct NXHeaderTitle: View {
     @Environment(\.nextStyle) private var style
     let text: String
@@ -393,8 +397,10 @@ struct NXHeaderTitle: View {
             // Long names wrap, as the design's header does, rather than truncate.
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
-            // The design's 34px/1.05 line box, not the serif's taller metrics.
-            .padding(.vertical, style.serifTitles ? NX.serifLeading(34, lineHeight: 1.05) : 0)
+            // The design's 34px/1.05 line box, not the serif's taller metrics,
+            // or its sans 27px/1.1 over SwiftUI's line.
+            .padding(.vertical, style.serifTitles ? NX.serifLeading(34, lineHeight: 1.05) : (27 * 1.1 - NX.lineHeight(27)) / 2)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -424,6 +430,8 @@ private struct NXHeaderTitleField: View {
         if rename.isEditing.wrappedValue {
             NXHeaderTitle(text: draft.isEmpty ? rename.placeholder : draft)
                 .opacity(0)
+                // The field over it is what VoiceOver reads.
+                .accessibilityHidden(true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(alignment: .leading) {
                     TextField(rename.placeholder, text: $draft, selection: $selection, axis: .vertical)

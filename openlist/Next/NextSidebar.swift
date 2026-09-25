@@ -534,7 +534,7 @@ private struct NXSidebarRow<Content: View>: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(on ? NX.ink(0.06) : ring ?? .clear, lineWidth: on ? 0.5 : 1)
                     }
-                    .animation(.easeOut(duration: 0.3), value: pulsing)
+                    .animation(NX.cssEase(300), value: pulsing)
                     .animation(fades ? fade : nil, value: on)
                     .animation(fades ? fade : nil, value: hovering)
             }

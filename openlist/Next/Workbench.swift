@@ -947,7 +947,9 @@ final class Workbench {
     /// is false, as when the rows go to Trash instead.
     func cancelClosing(_ ids: [UUID], restoresWork: Bool = true) {
         for id in ids { closingTasks.removeValue(forKey: id)?.cancel() }
-        withAnimation(style.ease(240)) { for id in ids { closing[id] = nil } }
+        // A plain change, as the design's cancelClose: the rail goes at once
+        // and the row eases its dim, fill, tick and strike back itself.
+        for id in ids { closing[id] = nil }
         for completion in completions where completion.pending.contains(where: ids.contains) {
             let dropped = completion.pending.filter(ids.contains)
             completion.pending.removeAll(where: dropped.contains)
@@ -1044,7 +1046,8 @@ final class Workbench {
         completion.cancelled = pending
         completion.pending = []
         for id in pending { closingTasks.removeValue(forKey: id)?.cancel() }
-        withAnimation(style.ease(260)) { for id in pending { closing[id] = nil } }
+        // A plain change, as the design's Undo, as cancelClosing's.
+        for id in pending { closing[id] = nil }
         // Its saved history is one change, as the batch's Redo's is.
         store.withActivityBatch(UUID()) {
             while completion.changes.canUndo { completion.changes.undo() }

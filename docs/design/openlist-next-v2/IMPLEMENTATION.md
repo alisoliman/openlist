@@ -74,7 +74,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the crumb or the buttons, where the design's clips.
 - A screen header's progress and controls wrap under its title when they don't fit beside
   it, as the design's; a title too long for its line wraps beside the tile, where the
-  design's would drop under it.
+  design's would drop under it. Deviation: a title or subtitle that wraps keeps SwiftUI's
+  own line pitch, as SwiftUI takes no negative line spacing, so only a one-line box is the
+  design's: a two-line title is 80.7 pt against the design's 71.4 in serif and 61.7 against
+  59.4 in sans, and each further subtitle line 15 pt against 14.4.
 - Deviation: in a window under 956 pt, opening details folds the sidebar away while they
   stay open, where the design's inspector only covers the page. The page keeps its width
   under the inspector either way; folding widens the strip left uncovered beside the
@@ -260,6 +263,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   the setting now says (the design keeps an opened fold open when it goes off). A list's new
   Completed Tasks shows on that list at once; Today, labels and other lists keep the fold
   until the next one.
+- Today's open groups, a label's open tasks and Tasks keep the order the lists show their
+  tasks in (lists in sidebar order, each in its document's order under the page's Sort, a
+  native extra), the native counterpart of the design's task order, and none sorts them by
+  date itself; a new task sits where its list put it, where the design's goes after every
+  other. Deviation: a list's and a label's Completed group lists the most recently finished
+  first, as Today's Completed today does, where the design's keeps its tasks' order.
 - A repeat reads in macOS sentence case ("Every day", "Every weekday"; a day's name keeps
   its capital, "Every Wednesday"), where the design title-cases a captured one ("Every
   Day"). The same words show in the inspector, the tray, Markdown export and MCP.
