@@ -141,7 +141,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   never "Trash is empty.".
 - The Lists gallery's subtitle is the design's "N lists in 2 sections", counting the sections
   that hold lists; lists in no section (the "Other lists" shelf, a native extra) and archived
-  ones follow it ("· 1 in Other lists · 2 archived").
+  ones follow it ("· 1 in Other lists · 2 archived"). Deviation: a card's name on two lines is
+  35.4 pt, 0.6 over the design's 14.5/1.2, since `lineSpacing` can't be negative, and
+  `.lineHeight(.exact(points: 17.4))`, which sets lines closer, rounds the name to the
+  screen's pixels (one line 18 pt at 1x, 17.5 on Retina) and, even raised, sets it half a
+  point low; on one line it is the design's 17.4 on every screen.
 - Lists are the design's document (`NextDocument.swift`): `NXDocumentOutline` draws the
   `OutlineEditor` engine, which keeps the design's rules (`OutlinePolicy`), tasks on `NXTaskRowChrome` (the
   Next row's chrome with the live text as its title) and the other kinds in the same

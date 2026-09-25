@@ -334,11 +334,11 @@ extension EnvironmentValues {
 }
 
 /// The design's settings type, a 500 13/1.25 label over a 400 11.5/1.35
-/// hint: the extra leading goes between lines and, halved, above the first
-/// and below the last, as CSS places it.
+/// hint, over SwiftUI's 16pt and 14pt lines: the extra leading goes between
+/// lines and, halved, above the first and below the last, as CSS places it.
 private enum NXSettingType {
-    static let labelLeading = max(0, 13 * 1.25 - NXStrikeText.glyphLineHeight(13))
-    static let hintLeading = max(0, 11.5 * 1.35 - NXStrikeText.glyphLineHeight(11.5))
+    static let labelLeading = max(0, 13 * 1.25 - NX.lineHeight(13))
+    static let hintLeading = max(0, 11.5 * 1.35 - NX.lineHeight(11.5))
 }
 
 /// A label and its hint, with the row's control on the trailing edge.
@@ -527,8 +527,8 @@ struct NXSettingDetail<Content: View>: View {
 // MARK: - Buttons and fields
 
 /// A settings action drawn as the row's value pill, and like it darker on
-/// hover only outside a settings line; a press dims it. A destructive
-/// button is red.
+/// hover only outside a settings line. The fill changes at once, with no
+/// pressed dim, as the other Next buttons' do. A destructive button is red.
 struct NXSettingButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         Pill(configuration: configuration)
@@ -542,7 +542,7 @@ struct NXSettingButtonStyle: ButtonStyle {
 
         var body: some View {
             let destructive = configuration.role == .destructive
-            let active = hovering && isEnabled && !lineTints
+            let active = (hovering || configuration.isPressed) && isEnabled && !lineTints
             configuration.label
                 .frame(height: 12)
                 .font(.system(size: 12, weight: .medium))
@@ -552,11 +552,10 @@ struct NXSettingButtonStyle: ButtonStyle {
                 .padding(.horizontal, 9)
                 .background(destructive ? NX.red.opacity(active ? 0.16 : 0.1) : NX.ink(active ? 0.09 : 0.05),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .opacity(isEnabled ? configuration.isPressed ? 0.8 : 1 : 0.45)
+                .opacity(isEnabled ? 1 : 0.45)
                 .fixedSize()
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.14), value: hovering)
         }
     }
 }

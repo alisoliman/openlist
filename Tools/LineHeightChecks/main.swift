@@ -255,6 +255,48 @@ MainActor.assumeIsolated {
     }
     check(banner(long, width: 800) == 48 && banner("Draft Q3 OKRs", width: 450) == 48, "a Planned now title that fits keeps the banner 48pt")
     check(banner("Reimplementation of the importer", width: 324) == 48, "a word too wide for the narrowest banner truncates the title rather than breaking it")
+
+    // Lists, Activity, Trash and Settings, boxed by the formulas their views
+    // use (the helper and each box's padding, restated here, as the views
+    // don't compile in this target): each is the design's CSS height, unrounded.
+    let settingsLabel = 13 * 1.25 - NX.lineHeight(13), settingsHint = 11.5 * 1.35 - NX.lineHeight(11.5)
+    let settingsRow = exactHeight(VStack(alignment: .leading, spacing: 3) {
+        Text("Hg").font(.system(size: 13, weight: .medium)).lineSpacing(settingsLabel).padding(.vertical, settingsLabel / 2)
+        Text("Hg").font(.system(size: 11.5)).lineSpacing(settingsHint).padding(.vertical, settingsHint / 2)
+    }.padding(.vertical, 12))
+    check(abs(settingsRow - (12 + 16.25 + 3 + 15.525 + 12)) < 0.001, "settings row 13/1.25 over 11.5/1.35", "\(settingsRow)")
+    let caps = exactHeight(Text("HG").font(.system(size: 10.5, weight: .semibold)).kerning(0.735)
+        .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2))
+    check(caps == 10.5, "caps title 600 10.5/1", "\(caps)")
+    // A leading under SwiftUI's own line can't go in lineSpacing, which
+    // can't be negative, so one line takes it as padding: a card name's one
+    // line is 17.4, and two are 35.4 (IMPLEMENTATION.md's deviation).
+    let closed = exactHeight(Text(lines(2)).font(.system(size: 14.5, weight: .semibold))
+        .lineSpacing(14.5 * 1.2 - NX.lineHeight(14.5)))
+    check(closed == 2 * NX.lineHeight(14.5), "a negative lineSpacing leaves 14.5pt lines 18 apart", "\(closed)")
+    for (count, box) in [(1, 17.4), (2, 35.4)] {
+        let cardName = exactHeight(Text(lines(count)).font(.system(size: 14.5, weight: .semibold))
+            .padding(.vertical, (14.5 * 1.2 - NX.lineHeight(14.5)) / 2))
+        check(abs(cardName - box) < 0.001, "\(count)-line card name 600 14.5/1.2", "\(cardName)")
+    }
+    let dayRow = exactHeight(HStack(spacing: 9) {
+        Image(systemName: "checkmark.circle.fill").font(.system(size: 13))
+        Text("Hg").font(.system(size: 12.5)).padding(.vertical, (12.5 * 1.3 - NX.lineHeight(12.5)) / 2)
+        Text("09:41").font(.system(size: 10.5, weight: .medium, design: .monospaced))
+    }.padding(.vertical, 7).padding(.top, 0.5))
+    check(abs(dayRow - 30.75) < 0.001, "day panel row", "\(dayRow)")
+    // Buttons with an icon box as their views give it, whatever the symbol's own height.
+    @MainActor func button(_ icon: String?, symbol: CGFloat, box: CGFloat, label size: CGFloat, padding: CGFloat,
+                           spacing: CGFloat = 5) -> CGFloat {
+        exactHeight(HStack(spacing: spacing) {
+            if let icon { Image(systemName: icon).font(.system(size: symbol)).frame(height: box) }
+            Text("Hg").padding(.vertical, (size - NX.lineHeight(size)) / 2)
+        }.font(.system(size: size, weight: .semibold)).padding(.vertical, padding))
+    }
+    check(button("trash.slash", symbol: 13.5, box: 14, label: 11.5, padding: 7) == 28, "Hold to empty Trash is 28")
+    check(button("arrow.up.bin", symbol: 12, box: 13, label: 11, padding: 6, spacing: 4) == 25, "Restore is 25")
+    check(button(nil, symbol: 0, box: 0, label: 11, padding: 6) == 23, "Hold to erase is 23")
+    check(button(nil, symbol: 0, box: 0, label: 10.5, padding: 5) == 20.5, "Changes' Undo is 20.5")
 }
 
 print(failures == 0 ? "✅ \(checks) line-height checks passed" : "❌ \(failures)/\(checks) failed")

@@ -239,11 +239,11 @@ named for accessibility.
 the task and writes a new subtask line at the end of its subtasks, as one Undo
 step.
 
-The **Activity** screen's heatmap shows 12 weeks of recorded completions with
-daily counts and saved task details. Ordinary tasks count once; recurring tasks
-and subtasks count once per recorded occurrence. Clearing activity history also
-clears the heatmap. See [activity heatmap](docs/ACTIVITY_HEATMAP.md) for
-counting and coverage details.
+The **Activity** screen's heatmap shows 12 weeks of completions that still stand
+(an Undo or reopen takes one back), with daily counts and saved task details.
+Ordinary tasks count once; a repeat, and the subtasks under it, once per cycle.
+Clearing activity history also clears the heatmap. See
+[activity heatmap](docs/ACTIVITY_HEATMAP.md) for counting and coverage details.
 
 Tasks shows every task in its lists' outline order, under **Open**, **Completed**
 or **All**. Its query field combines words: `overdue`, `today`, `tomorrow`, `week`,

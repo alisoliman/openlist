@@ -425,7 +425,7 @@ struct NXDashedEmpty: View {
 
     var body: some View {
         // The extra leading between lines and, halved, above the first and below the last.
-        let leading = 13 * 1.5 - NXStrikeText.glyphLineHeight(13)
+        let leading = 13 * 1.5 - NX.lineHeight(13)
         Text(text)
             .font(.system(size: 13))
             .foregroundStyle(NX.ink(0.45))

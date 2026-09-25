@@ -121,13 +121,19 @@ private struct NXListCard: View {
                 .zIndex(1)
             VStack(alignment: .leading, spacing: 9) {
                 // Long names and paths wrap, as in the design; every card in
-                // the row grows to match.
+                // the row grows to match. The design's 600 14.5/1.2 is 0.6pt
+                // under SwiftUI's 18pt line, which lineSpacing can't close up
+                // (lineHeight(.exact) rounds to the screen's pixels and sets
+                // the name half a point low), so half of it comes off above
+                // and below.
                 Text(list.displayTitle)
                     .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(NX.ink)
                     .lineLimit(2)
-                // The design's 500 11.5/1.3, its extra leading between lines and, halved, around them.
-                let metaLeading = max(0, 11.5 * 1.3 - NXStrikeText.glyphLineHeight(11.5))
+                    .padding(.vertical, (14.5 * 1.2 - NX.lineHeight(14.5)) / 2)
+                // The design's 500 11.5/1.3 over SwiftUI's 14pt line, its extra
+                // leading between lines and, halved, around them.
+                let metaLeading = max(0, 11.5 * 1.3 - NX.lineHeight(11.5))
                 Text(path.isEmpty ? stats : "In \(path) · \(stats)")
                     .font(.system(size: 11.5, weight: .medium))
                     .lineSpacing(metaLeading)
@@ -148,12 +154,12 @@ private struct NXListCard: View {
                         HStack(spacing: 7) {
                             // The design's 9px ring inside its 1.3px border.
                             Circle().strokeBorder(NX.ink(0.28), lineWidth: 1.3).frame(width: 11.6, height: 11.6)
-                            // 400 12/1.3.
+                            // 400 12/1.3, over SwiftUI's 15pt line.
                             Text(task.displayTitle)
                                 .font(.system(size: 12))
                                 .foregroundStyle(NX.ink(0.62))
                                 .lineLimit(1)
-                                .padding(.vertical, max(0, 12 * 1.3 - NXStrikeText.glyphLineHeight(12)) / 2)
+                                .padding(.vertical, max(0, 12 * 1.3 - NX.lineHeight(12)) / 2)
                         }
                     }
                 }
@@ -203,8 +209,9 @@ struct NextTrashScreen: View {
             VStack(alignment: .leading, spacing: 0) {
                 if !rows.isEmpty {
                     HStack(spacing: 10) {
-                        // The design's 400 12.5/1.4, its extra leading between lines and, halved, around them.
-                        let leading = max(0, 12.5 * 1.4 - NXStrikeText.glyphLineHeight(12.5))
+                        // The design's 400 12.5/1.4 over SwiftUI's 15pt line, its extra
+                        // leading between lines and, halved, around them.
+                        let leading = max(0, 12.5 * 1.4 - NX.lineHeight(12.5))
                         Text("Restoring puts a task back in its list, in its old position. Erasing can’t be undone — press and hold.")
                             .font(.system(size: 12.5))
                             .lineSpacing(leading)
@@ -230,7 +237,7 @@ struct NextTrashScreen: View {
                 }
                 // Only a read that worked can say it's empty; the notice says why one didn't.
                 if rows.isEmpty {
-                    if unreadable { NXDashedEmpty(text: "Trash could not be read.").padding(.top, 6) } else { NXTrashEmpty() }
+                    NXDashedEmpty(text: unreadable ? "Trash could not be read." : "Trash is empty.").padding(.top, 6)
                 }
             }
             .padding(.top, 18)
@@ -249,30 +256,6 @@ struct NextTrashScreen: View {
             unreadable = true
             env.store.trashError = "Trash could not be read. \(error.localizedDescription)"
         }
-    }
-}
-
-/// "Trash is empty.", fading in whenever it appears, as the design's does.
-private struct NXTrashEmpty: View {
-    @State private var shown = false
-
-    var body: some View {
-        // The design's 400 13/1.5, its leading halved around the line, in
-        // 34pt of padding inside a 1pt border.
-        let leading = max(0, 13 * 1.5 - NXStrikeText.glyphLineHeight(13))
-        Text("Trash is empty.")
-            .font(.system(size: 13))
-            .lineSpacing(leading)
-            .foregroundStyle(NX.ink(0.45))
-            .padding(.vertical, leading / 2)
-            .frame(maxWidth: .infinity)
-            .padding(35)
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(NX.ink(0.14), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-            .padding(.top, 6)
-            .opacity(shown ? 1 : 0)
-            // The design's fadeIn, whatever the Motion setting.
-            .onAppear { withAnimation(NX.cssEase(240)) { shown = true } }
     }
 }
 
@@ -295,8 +278,9 @@ private struct NXTrashRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 // The design's 400 13.5/1.3 over a 500 11/1 line: each line box
-                // as CSS draws it, the extra leading halved around it.
-                let leading = max(0, 13.5 * 1.3 - NXStrikeText.glyphLineHeight(13.5))
+                // as CSS draws it over SwiftUI's 16pt and 14pt lines, the extra
+                // leading halved around it.
+                let leading = max(0, 13.5 * 1.3 - NX.lineHeight(13.5))
                 Text(title)
                     .font(.system(size: 13.5))
                     .lineSpacing(leading)
@@ -311,15 +295,17 @@ private struct NXTrashRow: View {
                         // The line without its list's glyph, which reads as a symbol's name.
                         .accessibilityLabel(metaText(now: context.date))
                 }
-                .padding(.vertical, (11 - NXStrikeText.glyphLineHeight(11)) / 2)
+                .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // One element, as it reads; Restore and Hold to erase stay buttons of their own.
             .accessibilityElement(children: .combine)
             Button { workbench.restore(entry) } label: {
+                // The design's 13pt icon box and 600 11/1 label, so the button
+                // is its 25pt, 6 + 13 + 6.
                 HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.bin").font(.system(size: 12)).accessibilityHidden(true)
-                    Text("Restore")
+                    Image(systemName: "arrow.up.bin").font(.system(size: 12)).frame(height: 13).accessibilityHidden(true)
+                    Text("Restore").padding(.vertical, (11 - NX.lineHeight(11)) / 2)
                 }
                 .font(.system(size: 11, weight: .semibold))
             }
@@ -407,9 +393,12 @@ struct NXHoldButton: View {
     @State private var confirming = false
 
     var body: some View {
+        // A line-height 1 label and the design's 14pt icon box, whatever the
+        // symbol's own height: Hold to erase is its 23pt, Hold to empty Trash 28.
         HStack(spacing: 5) {
-            if let icon { Image(systemName: icon).font(.system(size: size + 2)) }
+            if let icon { Image(systemName: icon).font(.system(size: size + 2)).frame(height: 14) }
             Text(holding ? holdingTitle ?? title : title)
+                .padding(.vertical, (size - NX.lineHeight(size)) / 2)
         }
         .font(.system(size: size, weight: .semibold))
         .foregroundStyle(NX.redText)

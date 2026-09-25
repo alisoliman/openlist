@@ -129,12 +129,12 @@ private struct NXHeatmapCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NXHeat.gap) {
                 ForEach(0..<weeks, id: \.self) { week in
-                    // The design's 500 10/1.
+                    // The design's 500 10/1, fitted over SwiftUI's 13pt line.
                     Text(monthLabel(week: week))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(NX.ink(0.42))
                         .fixedSize()
-                        .padding(.vertical, (10 - NXStrikeText.glyphLineHeight(10)) / 2)
+                        .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                         .frame(width: NXHeat.cell, alignment: .leading)
                 }
             }
@@ -271,11 +271,11 @@ private struct NXActivityDayPanel: View {
                 .padding(.vertical, NX.serifLeading(22, lineHeight: 1.1))
                 .foregroundStyle(NX.ink)
                 .accessibilityAddTraits(.isHeader)
-            // The design's 500 11.5/1.
+            // The design's 500 11.5/1, fitted over SwiftUI's 14pt line.
             Text(items.isEmpty ? "No completions recorded" : "\(items.count) \(items.count == 1 ? "task" : "tasks") completed")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(NX.ink(0.48))
-                .padding(.vertical, (11.5 - NXStrikeText.glyphLineHeight(11.5)) / 2)
+                .padding(.vertical, (11.5 - NX.lineHeight(11.5)) / 2)
                 .padding(.top, 6)
                 .padding(.bottom, 12)
             VStack(spacing: 2) {
@@ -289,10 +289,12 @@ private struct NXActivityDayPanel: View {
                     let title = item.title.isEmpty ? "Untitled" : item.title
                     HStack(spacing: 9) {
                         Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NX.green)
+                        // The design's 400 12.5/1.3 over SwiftUI's 15pt line.
                         Text(title)
                             .font(.system(size: 12.5))
                             .foregroundStyle(NX.ink)
                             .lineLimit(1)
+                            .padding(.vertical, (12.5 * 1.3 - NX.lineHeight(12.5)) / 2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if let list {
                             NXListGlyph(list: list, size: 10.5).help(list.displayTitle)
@@ -305,6 +307,9 @@ private struct NXActivityDayPanel: View {
                     }
                     .padding(.vertical, 7)
                     .padding(.horizontal, 4)
+                    // The design's 0.5pt top border takes its own half point,
+                    // so the row is its 30.75pt.
+                    .padding(.top, 0.5)
                     .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
                     .contentShape(Rectangle())
                     .onTapGesture { open?() }
@@ -636,12 +641,18 @@ private struct NXChangesSection: View {
         let session = sessionItems()
         let earlier = history.earlier.map(item)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Changes").font(NX.serif(22)).padding(.vertical, NX.serifLeading(22, lineHeight: 1.1)).foregroundStyle(NX.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Text("Every edit, newest first. The latest one can be undone here.")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.45))
+            // The subtitle sits beside the title while it fits whole, and
+            // otherwise wraps onto a line of its own, 10pt under, as the
+            // design's flex-wrap does.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    changesTitle
+                    changesSubtitle.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    changesTitle
+                    changesSubtitle.fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.bottom, 4)
             VStack(alignment: .leading, spacing: 12) {
@@ -652,6 +663,22 @@ private struct NXChangesSection: View {
                 }
             }
         }
+    }
+
+    private var changesTitle: some View {
+        Text("Changes").font(NX.serif(22)).padding(.vertical, NX.serifLeading(22, lineHeight: 1.1)).foregroundStyle(NX.ink)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The design's 500 11.5/1.3 over SwiftUI's 14pt line, its extra leading
+    /// between lines and, halved, around them.
+    private var changesSubtitle: some View {
+        let leading = 11.5 * 1.3 - NX.lineHeight(11.5)
+        return Text("Every edit, newest first. The latest one can be undone here.")
+            .font(.system(size: 11.5, weight: .medium))
+            .lineSpacing(leading)
+            .foregroundStyle(NX.ink(0.45))
+            .padding(.vertical, leading / 2)
     }
 
     private func group(_ title: String, _ items: [NXChangeItem]) -> some View {
@@ -809,13 +836,16 @@ private struct NXChangeRow: View {
             }
             .accessibilityElement(children: .combine)
             if item.canUndo {
-                Button("Undo") { env.workbench.undoLast() }
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.14), rest: NX.ink(0.06), radius: 6,
-                                                    padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
-                                                    foreground: NX.ink(0.6), hoverForeground: style.accent))
-                    // What it takes back, as the tray says it.
-                    .accessibilityLabel("Undo \(item.label)")
+                Button { env.workbench.undoLast() } label: {
+                    // The design's 600 10.5/1, so the pill is its 20.5pt.
+                    Text("Undo").padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
+                }
+                .font(.system(size: 10.5, weight: .semibold))
+                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.14), rest: NX.ink(0.06), radius: 6,
+                                                padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
+                                                foreground: NX.ink(0.6), hoverForeground: style.accent))
+                // What it takes back, as the tray says it.
+                .accessibilityLabel("Undo \(item.label)")
             }
         }
         .padding(.vertical, 8)
