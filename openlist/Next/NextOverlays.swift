@@ -387,7 +387,10 @@ enum NXSearch {
             // Once the new screen is up, so it scrolls to the row.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { workbench.inspect(taskID) }
         } else {
-            let wasTasks = env.navigator.listViewMode(for: request.listID) == .tasks
+            // The saved presentation, not this visit's: an Inbox kept as a
+            // document shows its cards while a widget's Triage is on, and
+            // leaving would otherwise save it as a task list.
+            let wasTasks = env.navigator.savedListViewMode(for: request.listID) == .tasks
             env.navigator.reveal(request)
             if wasTasks { overlays.revealedDocuments.insert(request.listID) }
         }

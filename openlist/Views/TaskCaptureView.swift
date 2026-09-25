@@ -145,6 +145,7 @@ struct TaskCaptureView: View {
         .frame(minHeight: 240)
         .background(Theme.canvas)
         .onAppear { reset(text: request.text) }
+        .onChange(of: request.id) { _, _ in retarget() }
         .onExitCommand(perform: close)
         .onChange(of: draft.parsesNaturalLanguage) { _, _ in
             preserveTitleSelection()
@@ -198,7 +199,7 @@ struct TaskCaptureView: View {
             let block = try env.store.saveCapture(
                 draft.preview, destinationID: destination?.id,
                 selectedForDay: plansForToday ? .now : nil,
-                appendToRoot: request.appendsToSuggestedList
+                appendToRoot: request.appendsToRoot(of: destination, suggested: env.store.list(id: request.suggestedListID))
             )
             savedTaskID = block.id
             savedDestination = destination?.displayTitle ?? "Inbox"
@@ -210,14 +211,30 @@ struct TaskCaptureView: View {
 
     private func reset(text: String = "", preservingDestination: Bool = false) {
         draft = TaskCaptureDraft(text: text, parsesNaturalLanguage: env.settings.parsesNaturalLanguageDates,
-                                 dueTodayWhenUndated: !request.plansForToday && env.settings.defaultDestination == .today)
+                                 dueTodayWhenUndated: request.undatedTaskIsDueToday(newTasksGoTo: env.settings.defaultDestination))
         plansForToday = request.plansForToday
         if !preservingDestination {
-            destinationID = request.appendsToSuggestedList ? request.suggestedListID : env.store.inboxList()?.id
+            destinationID = request.startsInSuggestedList ? request.suggestedListID : env.store.inboxList()?.id
         }
         failure = nil
         savedTaskID = nil
         titleFocus.reset(insertionPoint: (draft.text as NSString).length)
+    }
+
+    /// A new request for a capture already on screen, such as a widget's
+    /// "Add to …" while Quick Add is open. What has been typed stays and takes
+    /// the request's list, or its date from the Today widget, as a fresh
+    /// capture from there would; a plain request leaves the capture alone.
+    private func retarget() {
+        guard savedTaskID == nil, !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            reset(text: request.text)
+            return
+        }
+        guard request.startsInSuggestedList || request.dueTodayWhenUndated else { return }
+        editMetadata {
+            if request.startsInSuggestedList { destinationID = request.suggestedListID }
+            draft.dueTodayWhenUndated = request.undatedTaskIsDueToday(newTasksGoTo: env.settings.defaultDestination)
+        }
     }
 
     private func preserveTitleSelection() {

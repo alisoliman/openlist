@@ -14,20 +14,49 @@ extension TaskActivityState {
     }
 }
 
+/// A cheap stand-in for the completion history, see
+/// `Store.completionHistorySignature()`.
+nonisolated struct CompletionHistorySignature: Equatable, Sendable {
+    var completions: Int
+    var newestID: UUID?
+    var records: Int
+}
+
 extension Store {
     /// A fresh reader publishes only committed completion actions, including
     /// after a failed write leaves retryable models in the live context.
-    func activityHeatmap(now: Date = .now, calendar: Calendar = .current) throws -> ActivityHeatmap {
+    func activityHeatmap(now: Date = .now, calendar: Calendar = .current, weeks: Int = 12) throws -> ActivityHeatmap {
         let reader = ModelContext(context.container)
         reader.autosaveEnabled = false
         let events = try reader.fetch(FetchDescriptor<ActivityEvent>(predicate: #Predicate { $0.kindRaw == "completed" }))
-        let needed = Array(Set(events.filter { $0.change?.completionWasRecurring == nil || $0.change?.completedOccurrenceID == nil }
-            .compactMap { $0.change?.completionID }))
+        // Every read of `change` decodes its JSON, and the history only grows.
+        let changes = events.map(\.change)
+        let needed = Array(Set(changes.filter { $0?.completionWasRecurring == nil || $0?.completedOccurrenceID == nil }
+            .compactMap { $0?.completionID }))
         let records = needed.isEmpty ? [] : try reader.fetch(FetchDescriptor<CompletionRecord>(predicate: #Predicate { needed.contains($0.id) }))
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return ActivityHeatmap(completions: events.map {
-            ActivityCompletion(event: $0, matchingRecord: $0.change?.completionID.flatMap { byID[$0] })
-        }, now: now, calendar: calendar)
+        return ActivityHeatmap(completions: zip(events, changes).map { event, change in
+            ActivityCompletion(event: event, change: change, matchingRecord: change?.completionID.flatMap { byID[$0] })
+        }, now: now, calendar: calendar, weeks: weeks)
+    }
+
+    /// Changes whenever `activityHeatmap` could: a completion is saved,
+    /// synced in or cleared, or a record an older event falls back on goes.
+    /// Two counts and one row, so a caller can keep a heatmap between saves
+    /// that leave the history alone. Read from committed storage, as the
+    /// heatmap is.
+    func completionHistorySignature() throws -> CompletionHistorySignature {
+        let reader = ModelContext(context.container)
+        reader.autosaveEnabled = false
+        let completed = #Predicate<ActivityEvent> { $0.kindRaw == "completed" }
+        var newest = FetchDescriptor<ActivityEvent>(predicate: completed,
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
+        newest.fetchLimit = 1
+        return CompletionHistorySignature(
+            completions: try reader.fetchCount(FetchDescriptor<ActivityEvent>(predicate: completed)),
+            newestID: try reader.fetch(newest).first?.id,
+            records: try reader.fetchCount(FetchDescriptor<CompletionRecord>())
+        )
     }
 
     /// Existing one-way note/star entries must still describe a committed

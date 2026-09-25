@@ -40,8 +40,8 @@ struct NextLibrary {
         self.labels = labels.sorted { $0.sortIndex < $1.sortIndex }
         let active = allLists.filter { hierarchy.activeIDs.contains($0.id) }
         let archived = allLists.filter { hierarchy.isArchived($0.id) }
-        lists = Self.sidebarOrder(active, sections: self.sections, hierarchy: hierarchy)
-        self.archived = Self.nested(archived.sorted { $0.sortIndex < $1.sortIndex }, hierarchy: hierarchy)
+        lists = hierarchy.sidebarOrder(active, sections: self.sections)
+        self.archived = hierarchy.nested(archived.sorted { $0.sortIndex < $1.sortIndex })
         listsByID = Dictionary((active + archived).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         activeListIDs = Set(active.map(\.id))
         labelsByID = Dictionary(labels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -57,44 +57,6 @@ struct NextLibrary {
             for id in Set(task.labelIDs) { openByLabel[id, default: 0] += 1 }
         }
         inboxIDs = hierarchy.inboxIDs
-    }
-
-    /// Inbox first, then top-level lists by section and position, each
-    /// followed by its nested lists.
-    private static func sidebarOrder(_ active: [TaskList], sections: [SidebarSection], hierarchy: ListHierarchy) -> [TaskList] {
-        let sectionRank = Dictionary(sections.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        // Lists with no surviving section sit under "Other lists", pinned ones
-        // first; unpinned ones are only in the gallery.
-        func rank(_ list: TaskList) -> Int {
-            if list.isSystemInbox { return -1 }
-            if let index = list.sectionID.flatMap({ sectionRank[$0] }) { return index }
-            return sections.count + (list.isPinned ? 0 : 1)
-        }
-        let roots = active.filter { hierarchy.parent(of: $0.id) == nil }
-            .sorted { (rank($0), $0.sidebarIndex) < (rank($1), $1.sidebarIndex) }
-        return nested(roots, among: active, hierarchy: hierarchy)
-    }
-
-    /// Each list followed by its nested lists, depth first. Lists whose parent
-    /// is in `lists` come after it rather than at the top level.
-    private static func nested(_ lists: [TaskList], hierarchy: ListHierarchy) -> [TaskList] {
-        let ids = Set(lists.map(\.id))
-        let roots = lists.filter { hierarchy.parent(of: $0.id).map { ids.contains($0.id) } != true }
-        return nested(roots, among: lists, hierarchy: hierarchy)
-    }
-
-    private static func nested(_ roots: [TaskList], among lists: [TaskList], hierarchy: ListHierarchy) -> [TaskList] {
-        let ids = Set(lists.map(\.id))
-        var ordered: [TaskList] = []
-        var seen = Set<UUID>()
-        func visit(_ list: TaskList) {
-            guard seen.insert(list.id).inserted else { return }
-            ordered.append(list)
-            for child in hierarchy.children(of: list.id) where ids.contains(child.id) { visit(child) }
-        }
-        for root in roots { visit(root) }
-        // A list the walk can't reach still belongs in the library.
-        return ordered + lists.filter { !seen.contains($0.id) }
     }
 
     /// Resolves active and archived lists.
@@ -163,12 +125,6 @@ struct NXOutlineRow: Identifiable {
 }
 
 extension TaskList {
-    /// The emoji shown for a list; Inbox has a fixed one.
-    var glyph: String {
-        if isSystemInbox { return "📥" }
-        return icon.isEmpty ? "📋" : icon
-    }
-
     @MainActor var nxColor: Color { isSystemInbox ? NX.inbox : accent.color }
 }
 

@@ -377,7 +377,9 @@ final class Store {
 
     /// External callers must acknowledge a write only after it reaches disk.
     /// Unlike `save()`, this propagates failures so an MCP mutation can roll back.
-    func persistChanges() throws {
+    /// `announcing: false` skips `onDidSave`, for a write nothing downstream
+    /// reads, such as the work heartbeat.
+    func persistChanges(announcing: Bool = true) throws {
         pendingSave?.cancel()
         pendingSave = nil
 
@@ -418,7 +420,7 @@ final class Store {
         pendingReopenedCycleIDs.removeAll()
         persistenceError = nil
         refreshAllReminders()
-        onDidSave?()
+        if announcing { onDidSave?() }
         publishPendingCompletionUndo()
     }
 

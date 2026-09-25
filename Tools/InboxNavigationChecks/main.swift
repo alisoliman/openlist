@@ -66,6 +66,56 @@ let reveal = try ContentReveal.resolve(.block(note.id), blocks: [note], lists: [
 reopened.reveal(reveal)
 check(reopened.hasDocumentEditor && reopened.contentReveal == reveal,
       "Exact-content navigation returns to Document before revealing prose")
+
+// A search reveal while a widget's Triage shows a document Inbox as its cards.
+// Search remembers the lists it turned into documents, and NextShell turns them
+// back into task lists once you leave; these mirror NXSearch.open and
+// NextShell.settleRevealedLists, which live in views.
+var revealedDocuments: Set<UUID> = []
+func searchReveal(_ request: ContentReveal, on navigator: Navigator) {
+    let wasTasks = navigator.savedListViewMode(for: request.listID) == .tasks
+    navigator.reveal(request)
+    if wasTasks { revealedDocuments.insert(request.listID) }
+}
+func settleRevealedLists(_ navigator: Navigator) {
+    for id in revealedDocuments {
+        if navigator.listViewMode(for: id) != .document {
+            revealedDocuments.remove(id)
+        } else if navigator.route != .list(id) {
+            revealedDocuments.remove(id)
+            navigator.setListViewMode(.tasks, for: id)
+        }
+    }
+}
+let triageInboxID = UUID()
+let triaged = Navigator(defaults: defaults)
+triaged.inboxListID = triageInboxID
+triaged.setListViewMode(.document, for: triageInboxID)
+triaged.go(to: .inbox)
+triaged.triageInbox()
+check(triaged.listViewMode(for: triageInboxID) == .tasks && triaged.savedListViewMode(for: triageInboxID) == .document,
+      "Triage shows a document Inbox as its cards while its saved presentation stays a document")
+let triageInbox = TaskList(title: "Inbox", isSystemInbox: true)
+triageInbox.id = triageInboxID
+let inboxNote = Block(kind: .paragraph, text: "Inbox source", listID: triageInboxID)
+searchReveal(try ContentReveal.resolve(.block(inboxNote.id), blocks: [inboxNote], lists: [triageInbox]), on: triaged)
+check(revealedDocuments.isEmpty && triaged.hasDocumentEditor,
+      "A search reveal from Triage opens the Inbox's own document, not a document for this visit only")
+triaged.go(to: .today)
+settleRevealedLists(triaged)
+check(triaged.savedListViewMode(for: triageInboxID) == .document
+      && Navigator(defaults: defaults).listViewMode(for: triageInboxID) == .document,
+      "Leaving it keeps the Inbox a document, rather than saving the cards Triage showed")
+let revealedTasks = UUID()
+let tasksList = TaskList(title: "Tasks list")
+tasksList.id = revealedTasks
+let tasksNote = Block(kind: .paragraph, text: "Hidden note", listID: revealedTasks)
+searchReveal(try ContentReveal.resolve(.block(tasksNote.id), blocks: [tasksNote], lists: [tasksList]), on: triaged)
+check(revealedDocuments == [revealedTasks] && triaged.hasDocumentEditor, "A task list still opens as a document to reveal a note")
+triaged.go(to: .today)
+settleRevealedLists(triaged)
+check(revealedDocuments.isEmpty && Navigator(defaults: defaults).listViewMode(for: revealedTasks) == .tasks,
+      "and is a task list again once you leave")
 let outlineScope = UUID(), inspectorScope = UUID()
 let a = UUID(), b = UUID(), c = UUID()
 navigator.go(to: .inbox)

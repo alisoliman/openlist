@@ -56,6 +56,7 @@ struct RootView: View {
                 env.isMainWindowKey = window?.isKeyWindow == true
                 env.reminderNavigation.windowReady(window != nil)
                 env.localLinks.windowReady(window != nil)
+                env.widgetLinks.windowReady(window != nil)
                 installUndo(in: window)
                 clearInitialFocus(for: env.navigator.route)
             }
@@ -69,6 +70,7 @@ struct RootView: View {
             guard window === hostWindow.window else { return }
             env.reminderNavigation.windowReady(true)
             env.localLinks.windowReady(true)
+            env.widgetLinks.windowReady(true)
             installUndo(in: window)
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
@@ -88,11 +90,13 @@ struct RootView: View {
         .onAppear {
             updateDockBadge()
             env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
+            env.openQuickAdd = { openWindow(id: WindowID.quickAdd) }
         }
         .onDisappear {
             env.isMainWindowKey = false
             env.reminderNavigation.windowReady(false)
             env.localLinks.windowReady(false)
+            env.widgetLinks.windowReady(false)
         }
         .onChange(of: env.navigator.route) { _, route in
             focusClearedFor = nil

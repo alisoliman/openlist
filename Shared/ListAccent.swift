@@ -40,22 +40,30 @@ enum ListAccent: String, Codable, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// Saturated fill used for checkboxes, chips and icon backgrounds.
-    var color: Color {
+    /// The accent as 0xRRGGBB, for places that carry colours as data, such as
+    /// the widget snapshot. Nonisolated so widget timelines and intents can
+    /// read it off the main actor.
+    /// The Inbox's own blue, which it wears instead of a list accent.
+    nonisolated static let inboxHex: UInt32 = 0x3A7BD8
+
+    nonisolated var hex: UInt32 {
         switch self {
-        case .graphite: Color(hex: 0x6E6A73)
-        case .red: Color(hex: 0xD8434B)
-        case .orange: Color(hex: 0xE0861F)
-        case .amber: Color(hex: 0xE8A917)
-        case .green: Color(hex: 0x2F9E6E)
-        case .teal: Color(hex: 0x12807F)
-        case .blue: Color(hex: 0x2F6FE0)
-        case .indigo: Color(hex: 0x5B5BD6)
-        case .violet: Color(hex: 0x7C4DF0)
-        case .pink: Color(hex: 0xB8479A)
-        case .brown: Color(hex: 0xA0694B)
+        case .graphite: 0x6E6A73
+        case .red: 0xD8434B
+        case .orange: 0xE0861F
+        case .amber: 0xE8A917
+        case .green: 0x2F9E6E
+        case .teal: 0x12807F
+        case .blue: 0x2F6FE0
+        case .indigo: 0x5B5BD6
+        case .violet: 0x7C4DF0
+        case .pink: 0xB8479A
+        case .brown: 0xA0694B
         }
     }
+
+    /// Saturated fill used for checkboxes, chips and icon backgrounds.
+    var color: Color { Color(hex: hex) }
 
     /// Tinted background for chips and soft badges.
     var softBackground: Color { color.opacity(0.14) }

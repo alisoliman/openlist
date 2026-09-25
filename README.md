@@ -11,7 +11,7 @@ project and is not affiliated with or endorsed by Superlist.
 
 Download the **Apple Silicon (arm64)** DMG or ZIP from
 [GitHub Releases](https://github.com/alisoliman/openlist/releases/latest).
-Requires an **Apple Silicon Mac (M1 or newer) running macOS 26.5 or later**.
+Requires an **Apple Silicon Mac (M1 or newer) running macOS 27 or later**.
 Intel binaries are not currently published.
 
 Open the DMG and drag `openlist.app` to Applications, or unzip the ZIP and move
@@ -31,8 +31,9 @@ Existing local data is preserved.
 
 ## Build from source
 
-Requires Xcode 26.5 or later and macOS 26.5 or later. CI and release builds use
-`macos-latest` and the newest stable Xcode installed on that Apple Silicon image.
+Requires Xcode 27 or later and macOS 27 or later. CI and release builds run on
+GitHub's `xcode-27` Apple Silicon image with its latest Xcode 27 (currently a
+preview toolchain).
 
 ```sh
 git clone https://github.com/alisoliman/openlist.git
@@ -358,10 +359,24 @@ uses a separate URL scheme. See the [local link and backup/restore contract](doc
 
 ### Widgets
 
-Three macOS widgets — **Today**, **Summary** and **Lists**. The app publishes a small
-JSON snapshot into the shared App Group container and reloads timelines on save;
-the widget never opens the SwiftData store, which keeps cross-process access out
-of the picture entirely.
+Seven desktop widgets, in full colour, dark and the desktop's in-background
+(vibrant) rendering:
+
+| Widget | Sizes | Shows |
+|---|---|---|
+| **Today** | S · M · L | Overdue and due-today tasks, progress, "+ New task" |
+| **Up Next** | S · M | The planned block you should be on now, with Start, Pause and Done, and what's later today |
+| **Quick Add** | S · M | One click to capture; medium adds the Inbox and Triage |
+| **List** | M · L | Any list you choose, optionally with completed tasks |
+| **Agenda** | L · XL | Today's plan around your meetings, or the whole week |
+| **Summary** | S · M | Due, overdue, Inbox and done, plus this week's completions |
+| **Activity** | S · M | Your completion heatmap and streak |
+
+Checkboxes and work controls act without opening Openlist: they run as App
+Intents in the app, which applies them to the store and the toolbar timer. Links
+open the matching screen or Quick Add. The widget never opens the SwiftData
+store; the app publishes a JSON snapshot into the shared App Group container and
+reloads only the widgets a change affects. See [widgets](docs/WIDGETS.md).
 
 ### iCloud
 
@@ -472,7 +487,8 @@ openlist/
                calendar, overlays, Workbench (shared UI state and actions)
   Views/       RootView, document screens, shared pickers, settings
   Design/      Theme
-Shared/        ListAccent, WidgetSnapshot, AppGroup   (app + widget)
+Shared/        ListAccent, WidgetSnapshot, WidgetCommand, WidgetIntents,
+               WidgetLink, AppGroup, Fonts   (app + widget)
 OpenlistWidget/  WidgetKit extension
 MCPTransport/   Local Swift package: authenticated MCP/HTTP transport
 OpenlistMCPHelper/  Bundled native stdio-to-localhost launcher

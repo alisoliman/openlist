@@ -5,6 +5,7 @@
 
 import AppKit
 import Foundation
+import Observation
 import SwiftData
 import SwiftUI
 
@@ -49,16 +50,31 @@ final class AppEnvironment {
     let mcp: MCPIntegration
     let workbench: Workbench
     let libraryMaintenance: LibraryMaintenance?
+    /// Takes widget clicks to their screen once the library and window are ready.
+    let widgetLinks: WidgetLinkRouter
     /// Keeps the widget's shared snapshot up to date.
     private let widgetPublisher: WidgetSnapshotPublisher
+    /// Applies widget buttons: ticking tasks off and the work timer.
+    private let widgetCommands: WidgetCommandProcessor
     /// Retained so the notification centre keeps a live delegate.
     private let notificationDelegate = NotificationDelegate()
     private let calendarNotifications: CalendarNotificationBridge
     private var hasBootstrapped = false
     @ObservationIgnored private var notificationActivityObserver: NSObjectProtocol?
+    @ObservationIgnored private var terminationObserver: NSObjectProtocol?
     @ObservationIgnored private var derivedRecoveryTask: Task<Void, Never>?
 
     var templateCopyRequest: TemplateCopyRequest?
+
+    /// What the Quick Add window captures into. A widget's "Add to …" sets it
+    /// just before opening the window, and the window puts back a plain
+    /// capture when it closes, so the menu and the shortcut never inherit it.
+    var quickAddRequest = TaskCaptureRequest()
+    /// Opens the Quick Add window. Installed by the main window: widget links
+    /// arrive through its scene, and only a view can open windows. So a
+    /// widget's Quick Add brings the main window forward as well; see
+    /// `WidgetLinkRouter`.
+    @ObservationIgnored var openQuickAdd: (() -> Void)?
 
     /// A command awaiting pickup by the focused document view.
     var pendingCommand: EditorCommand?
@@ -106,11 +122,17 @@ final class AppEnvironment {
         navigator = Navigator(defaults: ReviewSession.defaults)
         reminderNavigation = ReminderNavigation(navigator: navigator)
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
-        widgetPublisher = WidgetSnapshotPublisher(store: store)
+        widgetPublisher = WidgetSnapshotPublisher(store: store,
+            sources: .live(calendar: calendar, settings: settings, libraryID: libraryID))
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
         workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar)
+        widgetLinks = WidgetLinkRouter(store: store, navigator: navigator, screens: workbench)
+        widgetCommands = WidgetCommandProcessor(store: store, calendar: calendar, publisher: widgetPublisher)
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
+        // The plan and the running session change without a save. Debounced,
+        // because one Start or Pause reports several times on its way through.
+        calendar.onWidgetStateChange = { [weak widgetPublisher] in widgetPublisher?.scheduleRefresh() }
 
         store.onLabelsMerged = { [weak navigator] sourceID, destinationID in
             navigator?.retargetLabel(from: sourceID, to: destinationID)
@@ -132,13 +154,43 @@ final class AppEnvironment {
         }
         sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
         installNotificationDelegate()
+        installWidgetActions()
         notificationActivityObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
             object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.store.refreshAllReminders()
                     NotificationService.shared.reminders.refresh()
+                    if self?.hasBootstrapped == true { self?.widgetCommands.drainQueue() }
                 }
             }
+        watchWidgetSettings()
+    }
+
+    /// Lets widget buttons and links reach the app. The command handler goes
+    /// in first thing, because an intent can be what launched the app; it
+    /// bootstraps before applying anything.
+    private func installWidgetActions() {
+        widgetCommands.prepare = { [weak self] in self?.bootstrap() }
+        widgetCommands.settleWindowCompletion = { [weak workbench] id in
+            if workbench?.closing[id] != nil { workbench?.flushClosings() }
+        }
+        WidgetCommandRouter.handler = { [weak widgetCommands] command in widgetCommands?.handle(command) }
+        widgetLinks.capture = { [weak self] request in self?.presentQuickAdd(request) }
+    }
+
+    /// Refreshes the widgets when a setting they mirror changes: the accent,
+    /// serif titles, and the first weekday their weeks start on. Settings are
+    /// not saved through the Store, so no save announces them. Runs from init,
+    /// then again after each change it sees.
+    private func watchWidgetSettings() {
+        withObservationTracking {
+            _ = (settings.accent, settings.serifTitles, settings.firstWeekday)
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.widgetPublisher.scheduleRefresh()
+                self?.watchWidgetSettings()
+            }
+        }
     }
 
     /// Wires notification handling once the environment is fully built.
@@ -167,6 +219,22 @@ final class AppEnvironment {
     /// On Calendar the workbench plans the task for today by itself.
     func presentTaskCapture(text: String = "") {
         workbench.openCapture(text: text)
+    }
+
+    /// Opens the Quick Add window for `request`. A window already open keeps
+    /// what has been typed and moves to the request's list.
+    func presentQuickAdd(_ request: TaskCaptureRequest) {
+        quickAddRequest = request
+        openQuickAdd?()
+    }
+
+    /// Opens an Openlist link, whether a widget sent it or someone put it in
+    /// their own text, such as a task note. A widget's link goes where the
+    /// widget would take you. Anything else, including a widget link this
+    /// build cannot open, is read as an item link, whose notice says what is
+    /// wrong with it: a link that silently does nothing explains nothing.
+    func openLink(_ url: URL) {
+        if !widgetLinks.receive(url) { localLinks.receive(url) }
     }
 
     func showCopiedTask(id: UUID, listID: UUID) {
@@ -203,10 +271,19 @@ final class AppEnvironment {
                   let list = store.list(id: task.listID) else { throw ContentReveal.Unavailable.deleted }
             return try ContentReveal.resolve(.block(id), blocks: store.blocks(inList: list.id), lists: store.allLists(includeArchived: true))
         }
-        widgetPublisher.refreshNow()
         sync.checkAccount()
         if sync.state.isEnabled { NSApplication.shared.registerForRemoteNotifications() }
         calendar.bootstrap()
+        // After the calendar, so the first snapshot has the day's plan and the
+        // work the last run left paused.
+        widgetPublisher.refreshNow()
+        // Registered after the calendar's own observer, which pauses running
+        // work as the app quits, so the widgets are left showing that pause.
+        // The publisher writes running work as paused if it gets there first.
+        terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.widgetPublisher.prepareForTermination() }
+            }
         calendarNotifications.update()
         mcp.start(storageAvailable: store.persistenceError == nil)
         if let library = libraryMaintenance,
@@ -226,6 +303,10 @@ final class AppEnvironment {
                 blocks: store.context.fetch(FetchDescriptor<Block>()),
                 lists: store.context.fetch(FetchDescriptor<TaskList>()))
         }
+        widgetLinks.storeReady()
+        // Taps the extension queued while the app was not running.
+        widgetCommands.listenForSignals()
+        widgetCommands.drainQueue()
     }
 
     private func refreshAfterRemoteChange() {
@@ -327,6 +408,8 @@ extension AppEnvironment {
     }
 }
 
+/// Widget links land the way the main window's own navigation does.
+extension Workbench: WidgetLinkScreens {}
 
 private struct PendingTitleCapture {
     let listID: UUID?

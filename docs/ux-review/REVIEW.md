@@ -51,7 +51,7 @@ All implementation changes in the findings table are present in the review branc
 - Adopt the modern `Tab` API for settings. Use native materials and semantic foreground styles; do not add glass cards to every task.
 - Keep model-reading closures short-lived. Never animate retained, deleted SwiftData model views indiscriminately.
 - Use `accessibilityReduceMotion` for custom transitions and `Button`/`Menu` labels for actions.
-- Keep the deployment target at macOS 26.5. Building with Xcode 27 does not justify silently raising the supported OS version.
+- Keep the deployment target at macOS 26.5. Building with Xcode 27 does not justify silently raising the supported OS version. (Superseded: the deployment target was deliberately raised to macOS 27.0 with the widget suite.)
 
 Apple's guidance supports allowing standard components to inherit the platform's current design, grouping toolbar actions by purpose, and sizing windows from content constraints: [Adopting Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/adopting-liquid-glass), [Build a SwiftUI app with the new design](https://developer.apple.com/videos/play/wwdc2025/323/), [WindowResizability](https://developer.apple.com/documentation/swiftui/windowresizability).
 

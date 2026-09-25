@@ -181,10 +181,21 @@ extension Store {
         }
     }
 
+    /// Records that work is still under way. The heartbeat alone changes
+    /// nothing the widgets show or the plan reads (the running session signs
+    /// as "active"), so it saves without announcing and a running session
+    /// does not rebuild the widget snapshot every minute. Other edits waiting
+    /// to save go out with it and are announced as usual.
     func heartbeatWorkSession(_ session: WorkSession, now: Date = .now) {
         guard session.endedAt == nil else { return }
+        let onlyHeartbeat = !context.hasChanges && pendingActivity.isEmpty
         session.lastHeartbeatAt = max(session.startedAt, now)
-        save()
+        guard !isSavingSuspended else { return }
+        do {
+            try persistChanges(announcing: !onlyHeartbeat)
+        } catch {
+            persistenceError = "Your latest changes could not be saved. \(error.localizedDescription)"
+        }
     }
 
     /// Only closed sessions accept corrections; elapsed time remains visible

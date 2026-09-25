@@ -12,12 +12,14 @@ struct TaskNoteLinks: View {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(references) { reference in
                     Button(reference.title, systemImage: "link") {
-                        env.localLinks.receive(reference.url)
+                        env.openLink(reference.url)
                     }
                     .buttonStyle(.borderless)
                     .help(reference.url.absoluteString)
                     .accessibilityValue(reference.url.absoluteString)
-                    .accessibilityHint("Reveal the referenced item in this local library")
+                    .accessibilityHint(WidgetLink(url: reference.url) == nil
+                        ? "Reveal the referenced item in this local library"
+                        : "Open what this link names in Openlist")
                 }
             }
             .font(.callout)

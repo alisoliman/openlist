@@ -80,13 +80,15 @@ struct openlistApp: App {
                     .preferredColorScheme(env.settings.appearance.colorScheme)
                     .environment(\.calendar, env.settings.calendar)
                     .environment(\.openURL, OpenURLAction { url in
+                        // Widget links share the item-link scheme; openLink claims
+                        // the ones this build can open before item-link handling.
                         guard LocalLink.isLocal(url) else { return .systemAction }
-                        env.localLinks.receive(url)
+                        env.openLink(url)
                         return .handled
                     })
                     .task { env.bootstrap() }
                     .onOpenURL { url in
-                        env.localLinks.receive(url)
+                        env.openLink(url)
                         NSApplication.shared.activate(ignoringOtherApps: true)
                     }
                     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])

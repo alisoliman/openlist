@@ -25,7 +25,12 @@ final class CalendarCoordinator {
     @ObservationIgnored var onNudgesChanged: (() -> Void)?
     /// Runs each time the Mac reports you back: waking, the screen, unlocking.
     @ObservationIgnored var onMacReturn: (() -> Void)?
-    private var activeSessionID: UUID?
+    /// Runs when something a widget shows changes without a save: the plan,
+    /// the running session, or the paused work that can resume.
+    @ObservationIgnored var onWidgetStateChange: (() -> Void)?
+    private var activeSessionID: UUID? {
+        didSet { if oldValue != activeSessionID { onWidgetStateChange?() } }
+    }
     var activeSession: WorkSession? {
         guard let activeSessionID else { return nil }
         return store.workSessions().first { $0.id == activeSessionID }
@@ -60,6 +65,8 @@ final class CalendarCoordinator {
     private var usedAutomaticExtension = false
     private var showedFinishHeadsUp = false
     private var busySignature: [String] = []
+    /// Busy time that ended before today, which only the week views show.
+    private var earlierBusySignature: [String] = []
     private var isRefreshingCalendars = false
     private var pendingCalendarChange = false
     private var storeSchedulingSignature: [String] = []
@@ -161,12 +168,16 @@ final class CalendarCoordinator {
 
     func refreshCalendars(now: Date = .now) {
         lastCalendarRefresh = now
-        let start = calendar.startOfDay(for: now)
-        let end = calendar.date(byAdding: .day, value: 28, to: start)!
+        // Planning only looks ahead, but the Calendar screen shows two days
+        // back and the week widget starts on the chosen first weekday. Six
+        // days back covers both, whichever day the week starts on.
+        let today = calendar.startOfDay(for: now)
+        let start = calendar.date(byAdding: .day, value: -6, to: today)!
+        let end = calendar.date(byAdding: .day, value: 28, to: today)!
         isRefreshingCalendars = true
         externalCalendars.refresh(start: start, end: end)
         isRefreshingCalendars = false
-        if busyTimesChanged() {
+        if busyTimesChanged(now: now) {
             if isUpdating { pendingCalendarChange = true }
             else { tick(now: now, checkClockGap: false, materialChange: true) }
         }
@@ -612,6 +623,7 @@ final class CalendarCoordinator {
             overrunNudge = nil
         }
         updateStartNudge(now: now)
+        onWidgetStateChange?()
     }
 
     private func refreshCompletedDisplay() {
@@ -733,11 +745,31 @@ final class CalendarCoordinator {
         return parts.sorted()
     }
 
-    private func busyTimesChanged() -> Bool {
-        let signature = externalCalendars.busyTimes.map { "\($0.id)|\($0.start.timeIntervalSinceReferenceDate)|\($0.end.timeIntervalSinceReferenceDate)" }.sorted()
-        guard signature != busySignature else { return false }
-        busySignature = signature
+    /// Reports whether busy time the planner can see changed. The fetch
+    /// reaches back six days for the week views, but planning never reads
+    /// time that ended before today; an edit there refreshes the widgets
+    /// without replanning, which would move flexible blocks toward the clock.
+    private func busyTimesChanged(now: Date = .now) -> Bool {
+        let signatures = Self.busySignatures(externalCalendars.busyTimes, today: calendar.startOfDay(for: now))
+        let earlierChanged = signatures.earlier != earlierBusySignature
+        earlierBusySignature = signatures.earlier
+        guard signatures.planning != busySignature else {
+            if earlierChanged { onWidgetStateChange?() }
+            return false
+        }
+        busySignature = signatures.planning
         return true
+    }
+
+    /// Busy time split at the start of `today`: what planning can still
+    /// read, and what only the past days of the week views show. Split by
+    /// day, not by the clock, so a meeting ending is not itself a change.
+    static func busySignatures(_ busyTimes: [FixedBusyTime], today: Date) -> (planning: [String], earlier: [String]) {
+        func sign(_ busy: FixedBusyTime) -> String {
+            "\(busy.id)|\(busy.start.timeIntervalSinceReferenceDate)|\(busy.end.timeIntervalSinceReferenceDate)"
+        }
+        return (busyTimes.filter { $0.end > today }.map(sign).sorted(),
+                busyTimes.filter { $0.end <= today }.map(sign).sorted())
     }
 
     // MARK: - Work companion
@@ -964,6 +996,7 @@ final class CalendarCoordinator {
     private func persistResume() {
         defaults.set(resumeTaskID?.uuidString, forKey: "work.resumeTaskID")
         defaults.set(resumeOccurrenceID?.uuidString, forKey: "work.resumeOccurrenceID")
+        onWidgetStateChange?()
     }
 
     private func nextBoundary(for task: Block, at now: Date) -> Date? {

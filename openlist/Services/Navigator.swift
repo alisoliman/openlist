@@ -59,16 +59,30 @@ final class Navigator {
     /// The list a reveal opened as a document for this visit only. Leaving the
     /// list or choosing a presentation ends it; it is never saved.
     private var revealedDocumentListID: UUID?
+    /// The Inbox opened as its triage cards for this visit only, by a widget's
+    /// Triage. Leaving the Inbox or choosing a presentation ends it, as for a
+    /// reveal; the Inbox's saved presentation stays.
+    private var isTriagingInbox = false
 
     /// Lists open as a task list until this Mac chooses Document for them.
     func listViewMode(for listID: UUID) -> ListViewMode {
         if listID == revealedDocumentListID, route == .list(listID) { return .document }
+        if isTriagingInbox, listID == inboxListID, route == .inbox { return .tasks }
         return listViewModes[listID] ?? .tasks
+    }
+
+    /// The presentation this Mac saved for the list, whatever this visit shows.
+    /// A reveal or a widget's Triage changes the view for one visit only, so a
+    /// decision about what to restore afterwards has to read this instead: an
+    /// Inbox kept as a document reads as a task list while it is triaged.
+    func savedListViewMode(for listID: UUID) -> ListViewMode {
+        listViewModes[listID] ?? .tasks
     }
 
     func setListViewMode(_ mode: ListViewMode, for listID: UUID) {
         let shown = listViewMode(for: listID)
         if revealedDocumentListID == listID { revealedDocumentListID = nil }
+        if listID == inboxListID { isTriagingInbox = false }
         if (listViewModes[listID] ?? .tasks) != mode {
             listViewModes[listID] = mode
             defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
@@ -80,6 +94,17 @@ final class Navigator {
             openTaskID = nil
             clearSelection()
         }
+    }
+
+    /// Shows the Inbox on screen as its triage cards, without changing the
+    /// presentation this Mac saved for it: a widget's Triage asks for the cards
+    /// once, and choosing Document in the app is what should stick.
+    func triageInbox() {
+        guard let inboxID = inboxListID, route == .inbox, listViewMode(for: inboxID) == .document else { return }
+        isTriagingInbox = true
+        contentReveal = nil
+        openTaskID = nil
+        clearSelection()
     }
 
     /// Whether the screen on show is a document editor that owns menu commands.
@@ -197,6 +222,7 @@ final class Navigator {
         forwardStack.removeAll()
         route = newRoute
         revealedDocumentListID = nil
+        isTriagingInbox = false
         contentReveal = nil
         openTaskID = nil
         clearSelection()
@@ -208,6 +234,7 @@ final class Navigator {
         forwardStack.append(route)
         route = previous
         revealedDocumentListID = nil
+        isTriagingInbox = false
         contentReveal = nil
         openTaskID = nil
         clearSelection()
@@ -218,6 +245,7 @@ final class Navigator {
         backStack.append(route)
         route = next
         revealedDocumentListID = nil
+        isTriagingInbox = false
         contentReveal = nil
         openTaskID = nil
         clearSelection()
@@ -228,6 +256,7 @@ final class Navigator {
     func replace(with newRoute: AppRoute) {
         route = newRoute
         revealedDocumentListID = nil
+        isTriagingInbox = false
         contentReveal = nil
         openTaskID = nil
         clearSelection()
