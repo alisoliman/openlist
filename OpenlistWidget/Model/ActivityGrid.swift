@@ -36,16 +36,9 @@ nonisolated enum ActivityGrid {
         }
     }
 
-    /// 0 for none, then 1, 2–3, 4–6 and 7 or more.
-    static func band(_ count: Int) -> Int {
-        switch count {
-        case ..<1: 0
-        case 1: 1
-        case 2...3: 2
-        case 4...6: 3
-        default: 4
-        }
-    }
+    /// 0 for none, then 1, 2–3, 4–6 and 7 or more: the Activity screen's
+    /// legend, defined once in `Shared/ActivityBand.swift`.
+    static func band(_ count: Int) -> Int { ActivityBand.level(count) }
 }
 
 /// The figures under the heatmap: "2 today · 2 this week · 49 in September",

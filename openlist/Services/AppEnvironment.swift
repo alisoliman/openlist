@@ -166,6 +166,7 @@ final class AppEnvironment {
         // Quick Add floats over the app in front without activating Openlist.
         widgetLinks.capture = { request in QuickCapturePanel.shared.showFromWidget(request) }
         widgetLinks.activate = { NSApp.activate(ignoringOtherApps: true) }
+        widgetLinks.unavailable = { [weak localLinks] in localLinks?.error = .targetUnavailable }
     }
 
     /// Refreshes the widgets when something they mirror changes without a

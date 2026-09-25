@@ -346,6 +346,8 @@ var captures: [QuickCaptureRequest] = []
 router.capture = { captures.append($0) }
 var activations = 0
 router.activate = { activations += 1 }
+var unavailable = 0
+router.unavailable = { unavailable += 1 }
 func open(_ link: WidgetLink) { router.receive(link.url) }
 
 // A cold launch: the link arrives before bootstrap puts the app on Today.
@@ -394,13 +396,14 @@ check(navigator.route == .list(home.id), "a list link opens the list")
 open(.list(inbox.id))
 check(navigator.route == .inbox, "the Inbox list opens through the screens' own route")
 open(.list(UUID()))
-check(navigator.route == .inbox, "a missing list changes nothing")
+check(navigator.route == .inbox && unavailable == 1, "a missing list leaves the window where it is, and says so")
 
 open(.task(deposit.id))
 check(navigator.route == .list(home.id) && navigator.openTaskID == deposit.id && screens.inspected == [deposit.id],
       "a task link opens its list and inspects the task")
 open(.task(trashed.id))
-check(navigator.route == .list(home.id) && navigator.openTaskID == deposit.id, "a task in Trash changes nothing")
+check(navigator.route == .list(home.id) && navigator.openTaskID == deposit.id && unavailable == 2,
+      "a task in Trash leaves the window where it is, and says so")
 navigator.isShortcutSheetOpen = true
 open(.today)
 check(navigator.route == .today && !navigator.isShortcutSheetOpen, "navigating closes the shortcut sheet")

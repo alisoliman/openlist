@@ -39,6 +39,9 @@ final class WidgetLinkRouter {
     /// Makes Openlist the active app once a link has shown its screen. The
     /// app installs it; Quick Add never calls it.
     var activate: () -> Void = {}
+    /// Says that a task or list link's target is gone, as an item link's
+    /// notice does: a link that silently does nothing explains nothing.
+    var unavailable: () -> Void = {}
     private var pending: [WidgetLink] = []
     private var isStoreReady = false
     private var isWindowReady = false
@@ -120,16 +123,23 @@ final class WidgetLinkRouter {
             activate()
         case let .list(id):
             // Follows a list merged into another since the widget last refreshed.
-            guard let list = store.list(id: id) else { return }
+            guard let list = store.list(id: id) else { return missing() }
             show(screens.route(for: list))
             activate()
         case let .task(id):
             guard let task = store.block(id: id), task.isTask, task.trashID == nil,
-                  let list = store.list(id: task.listID) else { return }
+                  let list = store.list(id: task.listID) else { return missing() }
             show(screens.route(for: list))
             screens.inspectOnScreen(task.id)
             activate()
         }
+    }
+
+    /// Leaves the window where it is, and says why.
+    private func missing() {
+        navigator.isShortcutSheetOpen = false
+        unavailable()
+        activate()
     }
 
     private func show(_ route: AppRoute) {
