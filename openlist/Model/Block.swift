@@ -220,8 +220,8 @@ extension Block {
     }
 }
 
-/// Optional urgency flag. Superlist's free tier keeps this lightweight, so
-/// this maps to a simple none/low/medium/high scale used for sorting.
+/// Optional urgency flag: a simple none/low/medium/high scale, used for
+/// sorting and the checkbox's priority ring.
 enum TaskPriority: Int, Codable, CaseIterable, Sendable {
     case none = 0
     case low = 1
@@ -234,16 +234,6 @@ enum TaskPriority: Int, Codable, CaseIterable, Sendable {
         case .low: "Low"
         case .medium: "Medium"
         case .high: "High"
-        }
-    }
-
-    /// Tint used for the checkbox ring and the detail chip.
-    var accent: ListAccent? {
-        switch self {
-        case .none: nil
-        case .low: .blue
-        case .medium: .orange
-        case .high: .red
         }
     }
 }

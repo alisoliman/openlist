@@ -6,9 +6,9 @@
 import SwiftData
 import SwiftUI
 
-/// Quick presets plus a calendar and optional time, matching how Superlist
-/// lets you type or tap a due date. Each change goes through the workbench,
-/// as the inspector's due pills do: one Undo step, with its tray.
+/// The Schedule popover's Due tab: quick presets plus a calendar and optional
+/// time. Each change goes through the workbench, as the inspector's due pills
+/// do: one Undo step, with its tray.
 struct DueDatePicker: View {
     let block: Block
 

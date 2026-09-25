@@ -312,7 +312,7 @@ struct NextInspector: View {
                     // Save what is being typed first, so it goes to Trash, and
                     // comes back on Undo, with the task and its subtasks: the
                     // trash is a step of its own, which leaves the text alone.
-                    NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+                    NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
                     workbench.trash([task.id])
                 } label: {
                     HStack(spacing: 5) {
@@ -387,7 +387,7 @@ struct NextInspector: View {
             }
         }
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
-        .onReceive(NotificationCenter.default.publisher(for: .commitPendingTaskTitles)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .commitPendingEditorDrafts)) { _ in
             commitTitle()
             commitNote()
         }

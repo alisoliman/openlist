@@ -796,13 +796,10 @@ private struct NXSearchRow: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            Group {
-                if let emoji = hit.emoji { Text(emoji).font(.system(size: NXListGlyph.emojiPointSize(14))) }
-                else { Image(systemName: hit.symbol ?? "square.2.layers.3d") }
-            }
-            .font(.system(size: 14))
-            .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
-            .frame(width: 16)
+            Image(systemName: hit.symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
+                .frame(width: 16)
             VStack(alignment: .leading, spacing: 3) {
                 Text(highlighted(hit.title))
                     .font(.system(size: 13, weight: .medium))

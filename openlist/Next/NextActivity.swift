@@ -44,7 +44,9 @@ struct NextActivityScreen: View {
                 } else if let loadError {
                     NXDashedEmpty(text: loadError)
                 } else {
-                    ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(40)
+                    // The heatmap is read synchronously as the page appears,
+                    // so this space shows for a frame at most.
+                    Color.clear.frame(height: 16).frame(maxWidth: .infinity).padding(40)
                 }
             }
             .padding(.top, 22)

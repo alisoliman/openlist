@@ -38,7 +38,6 @@ struct SlashState: Equatable {
     /// The span the "/" and its query occupy, the whole line as the design's,
     /// so choosing a kind removes exactly what was typed.
     var range: NSRange
-    var caretRect: CGRect
     var viewport: CGRect
     var selectedIndex: Int = 0
 }
@@ -53,7 +52,7 @@ struct BlockRowActions {
     var onFocus: () -> Void = {}
     var onFocusApplied: (Int) -> Void = { _ in }
     var onEscape: () -> Void = {}
-    var onSlashQuery: (String?, NSRange, CGRect, CGRect) -> Void = { _, _, _, _ in }
+    var onSlashQuery: (String?, NSRange, CGRect) -> Void = { _, _, _ in }
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
     var onPasteMultiline: (String) -> Bool = { _ in false }
     var onPasteFragment: () -> Bool = { false }
@@ -539,7 +538,7 @@ final class OutlineEditor {
                 escapedBlockID = blockID
                 hooks.didEscape(blockID)
             },
-            onSlashQuery: { [self] query, range, caretRect, viewport in
+            onSlashQuery: { [self] query, range, viewport in
                 guard let query else {
                     if slash?.blockID == blockID { slash = nil }
                     return
@@ -555,11 +554,10 @@ final class OutlineEditor {
                         existing.selectedIndex = 0
                     }
                     existing.range = range
-                    existing.caretRect = caretRect
                     existing.viewport = viewport
                     slash = existing
                 } else {
-                    slash = SlashState(blockID: blockID, query: query, range: range, caretRect: caretRect, viewport: viewport)
+                    slash = SlashState(blockID: blockID, query: query, range: range, viewport: viewport)
                 }
             },
             onMarkdownPrefix: { [self] kind in
@@ -1482,7 +1480,7 @@ final class OutlineEditor {
             env.store.refuse("Only tasks and list items go under another line, two levels deep at most.")
             return
         }
-        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
         let parentID: UUID?
         let aboveID: UUID?
         switch position {
@@ -1672,7 +1670,7 @@ final class OutlineEditor {
         separateUndoStep()
         pasteEdit(includingNewLabels: true) {
             do {
-                let ids = try env.store.pasteFragment(fragment, in: document, after: blockID)
+                let ids = try env.store.pasteFragment(fragment, inList: document.listID, after: blockID)
                 env.navigator.selection = Set(ids)
                 // The first line pasted that shows takes the caret, as one
                 // settled into Completed or, showing only tasks, one that

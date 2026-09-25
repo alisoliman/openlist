@@ -241,7 +241,8 @@ struct CaptureParse {
         var title = text
         for mark in marks.reversed() { title.removeSubrange(mark.range) }
         title = title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        // As the date parser tidies what it strips: "meet by friday" is "meet".
+        // A joiner left dangling before the date (on/at/by/due) goes with it:
+        // "meet by friday" is "meet".
         if schedule != nil {
             title = title.replacingOccurrences(of: #"\s+(?:on|at|by|due)\s*$"#, with: "",
                                                options: [.regularExpression, .caseInsensitive])

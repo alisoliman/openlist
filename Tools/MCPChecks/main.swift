@@ -140,14 +140,6 @@ if phase == "prepare" {
         "list_id": uuid(workID), "parent_id": uuid(childID), "text": "Nested context", "kind": "bullet",
     ]), "block")
     check(try store.taskActivity(for: noteID).contains { $0.kind == .noteAdded && $0.title == "Nested context" }, "MCP standalone text block preserves its existing noteAdded activity")
-    let editSession = UUID()
-    store.activeTitleDrafts[editSession] = childID
-    try rejects(.updateTask, ["task_id": uuid(childID), "title": "Overwrite draft"], code: "busy")
-    try rejects(.setTaskCompleted, ["task_id": uuid(rootID), "completed": true], code: "busy")
-    try rejects(.moveTask, ["task_id": uuid(rootID), "list_id": uuid(otherID)], code: "busy")
-    try rejects(.updateList, ["list_id": uuid(workID), "is_archived": true], code: "busy")
-    check(try call(.getTask, ["task_id": uuid(childID)])["task"]?.objectValue?["text"] == "Child", "local title editing does not block read tools")
-    store.activeTitleDrafts.removeValue(forKey: editSession)
     root.isCollapsed = true
     store.save()
     let detail = try call(.getTask, ["task_id": uuid(rootID), "limit": 1])

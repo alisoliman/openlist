@@ -15,25 +15,12 @@ extension Store {
     func trashEntries() throws -> [TrashEntry] {
         let lists = try context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.trashID != nil }))
         let blocks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID != nil }))
-        let attachments = try context.fetch(FetchDescriptor<Attachment>())
         func entry(id: UUID, title: String, isList: Bool, metadata: TrashMetadata?) -> TrashEntry {
             let members = blocks.filter { $0.trashID == id }
-            let ids = Set(members.map(\.id))
-            var media: [String: Int] = [:]
-            for list in lists where list.trashID == id {
-                if let name = list.coverFilename { media[name] = list.coverData?.count ?? list.coverMetadata?.byteCount ?? 0 }
-            }
-            for block in members {
-                if let name = block.mediaFilename { media[name] = block.mediaData?.count ?? 0 }
-            }
-            for file in attachments where file.blockID.map(ids.contains) == true {
-                media[file.filename] = file.contentData?.count ?? file.byteCount
-            }
             let root = members.first { $0.id == id }
             let subtasks = root?.isTask == true ? members.filter { $0.isTask && $0.id != id }.count : 0
             return TrashEntry(id: id, title: title, isList: isList, metadata: metadata,
-                blockCount: members.count, byteCount: media.values.reduce(0, +), listCount: lists.filter { $0.trashID == id }.count,
-                subtaskCount: subtasks)
+                blockCount: members.count, subtaskCount: subtasks)
         }
         return (lists.filter { $0.trashID == $0.id }.map {
             entry(id: $0.id, title: $0.displayTitle, isList: true, metadata: $0.trashMetadata)

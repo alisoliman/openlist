@@ -124,6 +124,14 @@ check(kinds(literalParse) == ["label:#home"] && literalParse.schedule == nil && 
 let labelWord = CaptureParse("Plan #friday", reference: captureReference)
 check(kinds(labelWord) == ["label:#friday"] && labelWord.schedule == nil, "A label is never read as a date")
 check(CaptureParse("meet by friday #work", reference: captureReference).title == "meet", "Dangling joiners go with the date")
+for (text, title) in [("buy milk tomorrow", "buy milk"), ("call mum tomorrow at 6pm", "call mum"), ("standup at 9:30am", "standup"),
+                      ("pay rent in 3 days", "pay rent"), ("submit report on friday", "submit report"),
+                      ("water plants every 2 days", "water plants"), ("call at 9 p.m.", "call"), ("dinner tonight", "dinner"),
+                      ("plan the offsite next week", "plan the offsite"), ("upgrade to swift 6.2", "upgrade to swift 6.2"),
+                      ("plain task with no date", "plain task with no date")] {
+    let parsed = CaptureParse(text, reference: captureReference).title
+    check(parsed == title, "“\(text)” saves as “\(title)”, got “\(parsed)”")
+}
 let dateOnly = CaptureParse("tomorrow", reference: captureReference)
 check(dateOnly.title.isEmpty && dateOnly.schedule?.date != nil, "A date typed before any title already previews")
 let designWeek = CaptureParse("Offsite next week", reference: captureReference)

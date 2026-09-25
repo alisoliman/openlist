@@ -21,8 +21,6 @@ struct TrashEntry: Identifiable {
     var isList: Bool
     var metadata: TrashMetadata?
     var blockCount: Int
-    var byteCount: Int
-    var listCount: Int = 0
     /// The tasks under a trashed task, which restore and erase with it.
     var subtaskCount: Int = 0
 

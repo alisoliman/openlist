@@ -81,7 +81,7 @@ func resolve(_ target: LocalLink.Target) throws -> ContentReveal {
 }
 let target = try resolve(.task(taskID))
 check(target.taskID == taskID && target.listID == listID && target.ancestorIDs == [parent.id], "Nested exact task and completed/collapsed ancestor path")
-check(target.source == .localLink && target.query.isEmpty, "Link reveal has no search or title dependency")
+check(target.query.isEmpty && target.field == .text && target.blockID == taskID, "Link reveal has no search or title dependency")
 check(parent.isCompleted && parent.isCollapsed, "Reveal never rewrites completion or collapse")
 let navigator = Navigator()
 let unrelatedListID = UUID()
@@ -95,7 +95,8 @@ links.windowReady(true)
 check(navigator.contentReveal == nil, "Window readiness alone cannot resolve before bootstrap")
 navigator.replace(with: .today) // Existing bootstrap default.
 links.storeReady(resolve: resolve)
-check(navigator.openTaskID == taskID && navigator.contentReveal?.source == .localLink, "Delivery after bootstrap overrides Today exactly once")
+check(navigator.openTaskID == taskID && navigator.contentReveal?.taskID == taskID && navigator.contentReveal?.query.isEmpty == true,
+      "Delivery after bootstrap overrides Today exactly once")
 check(navigator.listViewMode(for: listID) == .tasks && navigator.contentReveal?.ancestorIDs == [parent.id],
       "Exact nested task link keeps the list's Tasks mode, as a search hit on the task does")
 check(navigator.listViewMode(for: unrelatedListID) == .tasks,

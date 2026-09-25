@@ -59,7 +59,7 @@ if phase == "delete" {
     try check(entry.blockCount == 4 && entry.subtaskCount == 1 && entry.nestedSummary == "with 1 subtask and 2 more items",
               "A task's entry says what restores and erases with it")
     func summary(_ blocks: Int, subtasks: Int, isList: Bool = false) -> String? {
-        TrashEntry(id: UUID(), title: "", isList: isList, blockCount: blocks, byteCount: 0, subtaskCount: subtasks).nestedSummary
+        TrashEntry(id: UUID(), title: "", isList: isList, blockCount: blocks, subtaskCount: subtasks).nestedSummary
     }
     try check(summary(1, subtasks: 0) == nil && summary(3, subtasks: 2) == "with 2 subtasks"
               && summary(2, subtasks: 0) == "with 1 nested item" && summary(5, subtasks: 0, isList: true) == nil,

@@ -129,9 +129,7 @@ document containing the checkmark and list SVG layers. Open it in Icon Composer
 to adjust the artwork, background, and glass effects. Both Debug and Release
 select `Openlist` as their app icon; Xcode compiles its default, dark, and mono
 appearances. Local `Dev` selects `openlist/OpenlistDev.icon`, which reuses those
-vector layers with a separate outlined **DEV** badge layer. The older
-`AppIcon.appiconset` and `Tools/generate-app-icon.swift`
-are legacy artwork and do not control the default icon.
+vector layers with a separate outlined **DEV** badge layer.
 
 ## Releases
 

@@ -82,7 +82,7 @@ let listHits = try listResults("project")
 check(listHits.first { $0.id == .list(list.id) }?.context == "List" && listHits.first { $0.id == .list(archived.id) }?.context == "List · Archived",
       "list hits say they're a list rather than repeating their own name")
 check(listHits.allSatisfy { $0.snippet.isEmpty }, "a list hit on its name is the design's two lines")
-check(listHits.allSatisfy { $0.emoji == nil && $0.symbol == "square.2.layers.3d" }, "list hits use the layers symbol")
+check(listHits.allSatisfy { $0.symbol == "square.2.layers.3d" }, "list hits use the layers symbol")
 let child = TaskList(title: "Needle child list")
 child.parentListID = list.id
 let childHit = try SearchProjection(corpus: SearchCorpus(blocks: [], lists: lists + [child]), options: SearchOptions(query: "child list")).hits

@@ -14,10 +14,10 @@ extension Store {
     /// levels deep at most. A line the copied hierarchy holds deeper, as an
     /// older outline can, goes beside the one above it at the second level,
     /// in order. Returns the lines at the paste's top level.
-    func pasteFragment(_ fragment: DocumentFragment, in document: DocumentContext,
+    func pasteFragment(_ fragment: DocumentFragment, inList documentListID: UUID,
                        after anchorID: UUID?) throws -> [UUID] {
         try fragment.validate()
-        guard let listID = resolvedListID(document.listID), let owningList = list(id: listID),
+        guard let listID = resolvedListID(documentListID), let owningList = list(id: listID),
               !owningList.isDeleted else { throw FragmentError.destination }
         let outline = fragment.outline()
         // How many levels each line holds under it.
@@ -38,16 +38,14 @@ extension Store {
         let siblingID: UUID?
         let depth: Int
         if let anchorID {
-            guard let anchor = block(id: anchorID), anchor.listID == listID,
-                  document.rootBlockID == nil || anchor.parentID == document.rootBlockID
-                    || BlockTree.descendants(of: document.rootBlockID!, in: blocks(inList: listID)).contains(where: { $0.id == anchor.id }) else {
+            guard let anchor = block(id: anchorID), anchor.listID == listID else {
                 throw FragmentError.destination
             }
             // The anchor and the lines it's under, nearest first, to step out
-            // along, never past the document's own root.
+            // along, as far as the list's top level.
             let path = [anchor] + BlockTree.ancestors(of: anchor, in: blocks(inList: listID))
             var step = 0
-            while path[step].parentID != document.rootBlockID, step + 1 < path.count,
+            while path[step].parentID != nil, step + 1 < path.count,
                   !fits(under: path[step + 1], at: path.count - 1 - step) {
                 step += 1
             }
@@ -56,15 +54,11 @@ extension Store {
             siblingID = path[step].id
             depth = path.count - 1 - step
         } else {
-            parentID = document.rootBlockID
-            var parentDepth = -1
-            if let parentID {
-                guard let parent = block(id: parentID), parent.listID == listID else { throw FragmentError.destination }
-                parentDepth = BlockTree.ancestors(of: parent, in: blocks(inList: listID)).count
-            }
-            afterIndex = children(of: parentID, listID: listID).map(\.sortIndex).max() ?? 0
+            // With no anchor the lines go at the end of the list's top level.
+            parentID = nil
+            afterIndex = children(of: nil, listID: listID).map(\.sortIndex).max() ?? 0
             siblingID = nil
-            depth = parentDepth + 1
+            depth = 0
         }
         // Where each line goes under the paste's top level: under the line it
         // was copied under while that keeps it two levels deep, or else beside
@@ -104,7 +98,6 @@ extension Store {
             guard ancestry.insert(id).inserted, let saved = savedByID[id] else { throw FragmentError.destination }
             ancestor = saved.parentID
         }
-        if let rootID = document.rootBlockID, !ancestry.contains(rootID) { throw FragmentError.destination }
         var existingLabels = try staged.writer.fetch(FetchDescriptor<TaskLabel>(
             sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.createdAt)]))
         var labelMap: [UUID: UUID] = [:]

@@ -9,10 +9,9 @@ struct WorkCompletionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Label {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(NX.green).accessibilityHidden(true)
                 Text("Done")
-            } icon: {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(NX.green)
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(NX.ink(0.55))

@@ -19,7 +19,7 @@ xcrun swiftc \
     openlist/Next/NextSavedChanges.swift \
     Tools/LogicChecks/main.swift
 
-# 2. Rich-text splicing — needs AppKit and the theme's font metrics.
+# 2. Rich-text splicing — needs AppKit and NXEditor's font metrics.
 xcrun swiftc \
     -swift-version 6 -O \
     -o "$OUT/text-checks" \

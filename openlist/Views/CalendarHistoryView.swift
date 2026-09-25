@@ -1,28 +1,23 @@
 import SwiftData
 import SwiftUI
 
+/// A task's work history, from the inspector: its work sessions and each
+/// time it was completed.
 struct CalendarHistoryView: View {
-    var taskID: UUID? = nil
-    var occurrenceID: UUID? = nil
+    let taskID: UUID
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     @Query(sort: [SortDescriptor(\WorkSession.startedAt, order: .reverse)]) private var allSessions: [WorkSession]
     @Query(sort: [SortDescriptor(\CompletionRecord.completedAt, order: .reverse)]) private var allCompletions: [CompletionRecord]
     @State private var tab = 0
 
-    init(taskID: UUID? = nil, occurrenceID: UUID? = nil) {
-        self.taskID = taskID
-        self.occurrenceID = occurrenceID
-        _tab = State(initialValue: occurrenceID == nil ? 0 : 1)
-    }
-    private var sessions: [WorkSession] { allSessions.filter { (taskID == nil || $0.taskID == taskID) && (occurrenceID == nil || $0.occurrenceID == occurrenceID) } }
-    private var completions: [CompletionRecord] { allCompletions.filter { (taskID == nil || $0.taskID == taskID) && (occurrenceID == nil || $0.occurrenceID == occurrenceID) } }
+    private var sessions: [WorkSession] { allSessions.filter { $0.taskID == taskID } }
+    private var completions: [CompletionRecord] { allCompletions.filter { $0.taskID == taskID } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center) {
-                // One completion's history is titled by its task.
-                NXPanelTitle(occurrenceID == nil ? "Work history" : completions.first?.title ?? "Work history")
+                NXPanelTitle("Work history")
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
@@ -60,7 +55,7 @@ struct CalendarHistoryView: View {
                     }
                 }
             } else {
-                Text(occurrenceID == nil ? "Every completion is listed on its own, so a repeating task shows each time it was done." : "What was recorded when this task was done, under the title it had then.")
+                Text("Every completion is listed on its own, so a repeating task shows each time it was done.")
                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
@@ -75,7 +70,13 @@ struct CalendarHistoryView: View {
                                     Text(record.title).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
                                     Group {
                                         Text(NXFormat.moment(record.completedAt))
-                                        if record.wasRecurring { Label("Repeating task", systemImage: "repeat") }
+                                        if record.wasRecurring {
+                                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                                Image(systemName: "repeat").font(.system(size: 10.5, weight: .medium))
+                                                    .accessibilityHidden(true)
+                                                Text("Repeating task")
+                                            }
+                                        }
                                     }
                                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                                     if !record.plannedIntervals.isEmpty {

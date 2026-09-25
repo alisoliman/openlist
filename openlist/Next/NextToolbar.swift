@@ -11,7 +11,6 @@ import SwiftUI
 struct NextToolbar: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
-    @Environment(\.nextLibrary) private var library
     @Environment(\.nxTrafficLightsInset) private var trafficLightsInset
     let crumb: String
     /// Widths of the back-and-crumb and button groups, which the notch keeps clear of.

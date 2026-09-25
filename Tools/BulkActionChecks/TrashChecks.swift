@@ -51,8 +51,8 @@ func runBulkTrashChecks(at directory: URL) throws {
     let originalFile = BackupAttachment(file)
     var removed = Set<UUID>()
     store.onEditorBlocksRemoved = { removed.formUnion($0) }
-    try grouped(undo) {
-        let succeeded = try store.trashSelection([other.id, child.id, parent.id, other.id], undoManager: undo)
+    grouped(undo) {
+        let succeeded = store.trashBlocks([other, child, parent, other], undoManager: undo)
         check(succeeded, "Multi-list bulk Delete succeeds with repeated and parent-child selection")
     }
     check(removed == [parent.id, child.id, other.id], "Bulk Delete reports every removed descendant exactly once")
@@ -85,9 +85,6 @@ func runBulkTrashChecks(at directory: URL) throws {
     rejects("Stale retained selection cannot partially move a live task") {
         _ = try store.moveSelection([survivor.id, child.id], to: destination.id)
     }
-    rejects("Stale retained selection cannot partially delete a live task") {
-        _ = try store.trashSelection([survivor.id, other.id], undoManager: undo)
-    }
     rejects("Retained parent cannot accept moved content") {
         _ = try store.moveSelection([survivor.id], to: source.id, parentID: parent.id)
     }
@@ -102,24 +99,21 @@ func runBulkTrashChecks(at directory: URL) throws {
     rejects("Permanently erased selection cannot partially move surviving content") {
         _ = try store.moveSelection([survivor.id, erasedIDs[0]], to: destination.id)
     }
-    rejects("Permanently erased selection cannot partially delete surviving content") {
-        _ = try store.trashSelection([survivor.id, erasedIDs[1]])
-    }
     try checkThrowing(try records() == afterErase, "Stale identities after permanent erase cannot recreate or change content")
 
     // Save failure reports failure without registering recovery Undo or changing
     // any live retained fields; the caller can keep the same row selection.
     try store.persistChanges()
     failNextSave = true
-    let failed = try store.trashSelection([survivor.id], undoManager: undo)
+    let failed = store.trashBlocks([survivor], undoManager: undo)
     check(!failed && store.trashError != nil && !undo.canUndo && !survivor.isTrashed,
           "Failed bulk Delete retains the row and reports failure without an Undo")
     try store.persistChanges()
 
     let undoRoot = task("Bulk Delete Undo root", in: source)
     let undoOther = task("Bulk Delete Undo other root", in: otherList)
-    try grouped(undo) {
-        let succeeded = try store.trashSelection([undoRoot.id, undoOther.id], undoManager: undo)
+    grouped(undo) {
+        let succeeded = store.trashBlocks([undoRoot, undoOther], undoManager: undo)
         check(succeeded, "A multi-list Delete is available for stale recovery Undo")
     }
     let undoRootID = undoRoot.id
@@ -226,9 +220,6 @@ func runBulkTrashChecks(at directory: URL) throws {
     }
     rejects("Bulk Move rejects a source alias whose canonical owner is retained") {
         _ = try store.moveSelection([survivor.id, lateTask.id], to: destination.id, undoManager: undo)
-    }
-    rejects("Bulk Delete rejects a source alias whose canonical owner is retained") {
-        _ = try store.trashSelection([survivor.id, lateTask.id], undoManager: undo)
     }
     try checkThrowing(try records() == beforeAliasActions && BackupTaskList(aliasOwner) == retainedOwner
           && Set(store.completionRecords().map(\.id)) == aliasHistory && !undo.canUndo,

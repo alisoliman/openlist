@@ -1,27 +1,23 @@
 import SwiftUI
 
-// The real label picker, attachment row and block text view are hosted. App
-// navigation is isolated; this fixture does not assert its interaction or
-// keyboard behavior.
-enum DetailPicker: String { case due, repeatRule, reminder, labels }
+// The AppEnvironment stand-in the editor, inspector-text and inspector-lifetime
+// checks share, around the real label picker, attachment row, block text view
+// and outline editor. App navigation is isolated; this fixture does not assert
+// its interaction or keyboard behavior.
 @Observable final class AppEnvironment {
     let store: Store
-    var templateCopyRequest: TemplateCopyRequest?
     var activeDocument: DocumentContext?
     var commandToken = 0
     var pendingCommand: EditorCommand?
-    let settings = FixtureSettings()
     let navigator = Navigator()
     let workbench: FixtureWorkbench
     func consumeCommand() -> EditorCommand? { defer { pendingCommand = nil }; return pendingCommand }
-    func copyLink(to target: LocalLink.Target) {}
 
     init(store: Store) {
         self.store = store
         workbench = FixtureWorkbench(store: store)
     }
 }
-final class FixtureSettings { var parsesNaturalLanguageDates = true }
 /// The label picker's edits, straight to the store; the app's go through its workbench.
 final class FixtureWorkbench {
     let store: Store

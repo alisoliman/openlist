@@ -7,7 +7,7 @@ import Foundation
 import SwiftUI
 
 /// Everywhere the sidebar can take you.
-enum AppRoute: Hashable, Codable {
+enum AppRoute: Hashable {
     case inbox
     case today
     case calendar
@@ -221,6 +221,7 @@ final class Navigator {
     /// the place it was left at.
     @ObservationIgnored private var returnedRoute: AppRoute?
 
+    /// Read by the checks: the offset `rememberScrollOffset` saved for `route`.
     func scrollOffset(for route: AppRoute) -> CGFloat? { scrollOffsets[route] }
 
     func rememberScrollOffset(_ offset: CGFloat, for route: AppRoute) {

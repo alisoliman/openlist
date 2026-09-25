@@ -8,9 +8,7 @@ import SwiftData
 
 /// A record of something that happened, powering Activity's Changes and task history.
 ///
-/// In shared Superlist workspaces this feed shows teammate activity. On the
-/// personal side it becomes a personal history: what you completed, created,
-/// rescheduled or moved, grouped by day.
+/// A personal history: what you completed, created, rescheduled or moved.
 @Model
 final class ActivityEvent {
     var id: UUID = UUID()
@@ -128,18 +126,6 @@ enum ActivityKind: String, Codable, CaseIterable, Sendable {
         case .renamed: "Renamed"
         case .completionUndone: "Undid completion of"
         case .restored: "Restored"
-        }
-    }
-
-    var accent: ListAccent {
-        switch self {
-        case .completed: .green
-        case .created, .listCreated: .blue
-        case .scheduled: .violet
-        case .starred: .amber
-        case .deleted, .listDeleted: .red
-        case .labeled: .pink
-        default: .graphite
         }
     }
 }

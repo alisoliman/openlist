@@ -29,7 +29,7 @@ if CommandLine.arguments[2] == "reopen" {
     let fragment = try FragmentClipboard.read(from: clipboard)
     check(try fragment.encoded() == Data(contentsOf: fragmentURL) || fragment == DocumentFragment.decode(Data(contentsOf: fragmentURL)), "Actual private clipboard payload survives source-process exit")
     check(store.block(id: fragment.roots[0]) == nil, "Deleted clipboard source remains absent across processes")
-    let ids = try store.pasteFragment(fragment, in: .init(listID: manifest.listID), after: nil)
+    let ids = try store.pasteFragment(fragment, inList: manifest.listID, after: nil)
     let root = store.block(id: ids[0])!
     check(root.text == fragment.blocks[0].text, "Self-contained serialized clipboard pastes after restart and source deletion")
     let children = BlockTree.descendants(of: root.id, in: store.blocks(inList: manifest.listID))
@@ -90,10 +90,10 @@ try store.persistChanges()
 let fragment = try FragmentContent.capture([root.id, previous.id, root.id], store: store)
 let pendingDestination = TaskList(title: "Unsaved destination")
 store.context.insert(pendingDestination)
-rejects("An unsaved list cannot receive durable children") { _ = try store.pasteFragment(fragment, in: .init(listID: pendingDestination.id), after: nil) }
+rejects("An unsaved list cannot receive durable children") { _ = try store.pasteFragment(fragment, inList: pendingDestination.id, after: nil) }
 let pendingParent = Block(kind: .task, text: "Unsaved parent", listID: target.id)
 store.context.insert(pendingParent)
-rejects("An unsaved parent cannot receive durable children") { _ = try store.pasteFragment(fragment, in: .init(listID: target.id, rootBlockID: pendingParent.id), after: nil) }
+rejects("An unsaved line cannot anchor durable lines") { _ = try store.pasteFragment(fragment, inList: target.id, after: pendingParent.id) }
 let orphanReader = ModelContext(container)
 check(try orphanReader.fetch(FetchDescriptor<Block>()).allSatisfy { $0.listID != pendingDestination.id && $0.parentID != pendingParent.id }, "Fresh disk reader sees no orphan from rejected draft destinations")
 check(store.context.hasChanges && pendingDestination.title == "Unsaved destination" && pendingParent.text == "Unsaved parent", "Rejected destination preserves pending list and task instances")
@@ -152,7 +152,7 @@ undo.groupsByEvent = false
 var pasted: [UUID] = []
 undo.beginUndoGrouping()
 store.undoableEditorEdit(in: target.id, name: "Paste content", undoManager: undo, includingNewLabels: true) {
-    pasted = try! store.pasteFragment(fragment, in: .init(listID: target.id), after: nil)
+    pasted = try! store.pasteFragment(fragment, inList: target.id, after: nil)
 }
 undo.endUndoGrouping()
 let copyID = pasted[0]
@@ -176,12 +176,12 @@ check(try store.taskActivity(for: copyID).map(\.kind).contains(.restored), "Redo
 var active = fragment
 active.blocks[0].isCompleted = false
 active.blocks[0].completedAt = nil
-let activeID = try store.pasteFragment(active, in: .init(listID: target.id), after: nil)[0]
+let activeID = try store.pasteFragment(active, inList: target.id, after: nil)[0]
 check(store.block(id: activeID)?.reminderAt == nil && !NotificationService.shared.scheduled.contains(activeID),
       "An open task's pasted copy leaves its future reminder behind")
 var converted = fragment
 converted.blocks[0].kind = "paragraph"
-let convertedID = try store.pasteFragment(converted, in: .init(listID: target.id), after: nil)[0]
+let convertedID = try store.pasteFragment(converted, inList: target.id, after: nil)[0]
 check(store.attachments(for: convertedID).first?.contentData == blob, "Converted task retains hidden attachment bytes on a non-task block")
 check(try FragmentContent.capture([convertedID], store: store).blocks[0].attachments[0].media.data == blob, "Copying converted task retains its full hidden file payload")
 
@@ -192,7 +192,7 @@ var foreignID: UUID!
 let labelUndo = UndoManager(); labelUndo.groupsByEvent = false
 labelUndo.beginUndoGrouping()
 store.undoableEditorEdit(in: target.id, name: "Paste content", undoManager: labelUndo, includingNewLabels: true) {
-    foreignID = try! store.pasteFragment(foreign, in: .init(listID: target.id), after: nil)[0]
+    foreignID = try! store.pasteFragment(foreign, inList: target.id, after: nil)[0]
 }
 labelUndo.endUndoGrouping()
 let newLabelID = store.block(id: foreignID)!.labelIDs[0]
@@ -211,7 +211,7 @@ let oldNote = root.note
 root.note = "Unsaved live source note"
 target.summary = "Unsaved destination summary"
 let pending = try FragmentContent.capture([root.id], store: store)
-let pendingCopyID = try store.pasteFragment(pending, in: .init(listID: target.id), after: nil)[0]
+let pendingCopyID = try store.pasteFragment(pending, inList: target.id, after: nil)[0]
 check(store.block(id: pendingCopyID)?.note == root.note && store.context.hasChanges, "Successful paste snapshots live source text without flushing its draft")
 let pendingReader = ModelContext(container)
 check(try pendingReader.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == sourceID })).first?.note == oldNote, "Sibling insertion leaves committed source note unchanged")
@@ -226,7 +226,7 @@ retained.note = "Pending source edit"; retainedList.summary = "Pending destinati
 let beforeFiles = try files(), beforeIDs = Set(failing.blocks(inList: target.id).map(\.id)), beforeHistory = try events(failing.context)
 let beforeLabels = Set(failing.allLabels().map(\.id))
 foreign.labels[0].name = "Must not leak"
-rejects("Real read-only writer rejects complete insertion") { _ = try failing.pasteFragment(foreign, in: .init(listID: target.id), after: nil) }
+rejects("Real read-only writer rejects complete insertion") { _ = try failing.pasteFragment(foreign, inList: target.id, after: nil) }
 check(retained.note == "Pending source edit" && retainedList.summary == "Pending destination edit" && failing.context.hasChanges, "Failure preserves retained instances and unsaved editor state")
 check(Set(failing.blocks(inList: target.id).map(\.id)) == beforeIDs && Set(failing.allLabels().map(\.id)) == beforeLabels, "First live fetch has no partial blocks or labels")
 check(try files() == beforeFiles && events(failing.context) == beforeHistory, "Failed writer rolls back all media and history")
@@ -250,7 +250,7 @@ root.labelIDs = knownLabels
 let mediaFolder = media.url(for: "drain").deletingLastPathComponent()
 let attributes = try FileManager.default.attributesOfItem(atPath: mediaFolder.path)
 try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: mediaFolder.path)
-rejects("A real media staging write failure aborts insertion") { _ = try store.pasteFragment(fragment, in: .init(listID: target.id), after: nil) }
+rejects("A real media staging write failure aborts insertion") { _ = try store.pasteFragment(fragment, inList: target.id, after: nil) }
 try FileManager.default.setAttributes([.posixPermissions: attributes[.posixPermissions]!], ofItemAtPath: mediaFolder.path)
 check(try Set(store.blocks(inList: target.id).map(\.id)) == beforeIDs && events(store.context) == beforeHistory, "Media failure leaves no staged tree or Created history")
 
@@ -262,7 +262,7 @@ collision.id = label.id
 let match = TaskLabel(name: "travel", accent: .blue)
 other.context.insert(collision); other.context.insert(match)
 try other.persistChanges()
-let crossID = try other.pasteFragment(fragment, in: .init(listID: otherList.id), after: nil)[0]
+let crossID = try other.pasteFragment(fragment, inList: otherList.id, after: nil)[0]
 check(other.block(id: crossID)?.labelIDs == [match.id] && match.accent == .blue && collision.name == "Unrelated identity collision", "Cross-library matching ignores source UUID collisions and preserves destination color")
 check(other.allLabels().count == 2 && other.block(id: crossID)?.listID == otherList.id, "Cross-library insertion creates no dangling label or source list reference")
 check(other.block(id: crossID)?.inboxMembershipData == nil, "Cross-library paste has no source Inbox membership")
@@ -288,9 +288,8 @@ let tall = try FragmentContent.capture([book.id], store: store)
 func nestedOutline(_ listID: UUID = nestedList.id) -> [String] {
     BlockTree.flatten(store.blocks(inList: listID), respectCollapse: false).map { "\($0.depth) \($0.block.text)" }
 }
-func pastingNested(_ fragment: DocumentFragment, after anchor: Block, in document: DocumentContext = nestedDocument,
-                   _ body: () -> Void) throws {
-    let pastedIDs = try store.pasteFragment(fragment, in: document, after: anchor.id)
+func pastingNested(_ fragment: DocumentFragment, after anchor: Block, _ body: () -> Void) throws {
+    let pastedIDs = try store.pasteFragment(fragment, inList: nestedList.id, after: anchor.id)
     body()
     for id in pastedIDs { store.deleteBlock(store.block(id: id)!) }
     try store.persistChanges()
@@ -317,11 +316,33 @@ try pastingNested(try FragmentContent.capture([seats.id], store: store), after: 
     check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "0 Chapter", "1 Kept under", "0 Seats", "0 Last"],
         "A task pasted beside a line a heading keeps goes beside the heading, not under it")
 }
-try pastingNested(tall, after: pack, in: DocumentContext(listID: nestedList.id, rootBlockID: trip.id)) {
-    check(nestedOutline() == ["0 Trip", "1 Pack", "2 Socks", "1 Book", "2 Flights", "2 Seats", "0 Chapter", "1 Kept under", "0 Last"],
-        "Content that can't step out of its document comes up to the second level, in order")
-}
 check(nestedOutline() == before, "Taking the pasted lines away leaves the document as it was")
+// The paste checks what's saved above the line it goes beside, not only the
+// line: when another writer has moved that line's task out of the list,
+// pasting a single task after the line, which would go beside it under that
+// task, is rejected and writes nothing.
+let staleList = store.createList(title: "Stale parent")
+let staleParent = store.appendBlock(kind: .task, text: "Moved elsewhere", to: .init(listID: staleList.id))
+let staleLine = store.insertChild(kind: .task, text: "Left behind", of: staleParent, at: .last)
+try store.persistChanges()
+let otherWriter = ModelContext(container)
+let staleParentID = staleParent.id
+let movedParent = try otherWriter.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == staleParentID })).first!
+movedParent.listID = tallList.id
+try otherWriter.save()
+func savedIDs() throws -> Set<UUID> {
+    let reader = ModelContext(container)
+    return Set(try reader.fetch(FetchDescriptor<Block>()).map(\.id)).union(try reader.fetch(FetchDescriptor<TaskLabel>()).map(\.id))
+}
+let single = try FragmentContent.capture([seats.id], store: store)
+let savedBeforeStale = try savedIDs()
+rejects("A line whose task has left the list on disk cannot take a paste beside it") {
+    _ = try store.pasteFragment(single, inList: staleList.id, after: staleLine.id)
+}
+check(try savedIDs() == savedBeforeStale && store.children(of: staleParentID, listID: staleList.id).map(\.id) == [staleLine.id],
+    "The rejected paste writes nothing")
+movedParent.listID = staleList.id
+try otherWriter.save()
 let deepIDs = (0..<5).map { _ in UUID() }
 let deep = DocumentFragment(roots: [deepIDs[0]], blocks: [
     FragmentBlock(id: deepIDs[0], parentID: nil, kind: "task", text: "A"),
@@ -332,7 +353,7 @@ let deep = DocumentFragment(roots: [deepIDs[0]], blocks: [
 ], labels: [])
 let deepList = store.createList(title: "Deep paste")
 try store.persistChanges()
-let deepRoots = try store.pasteFragment(deep, in: .init(listID: deepList.id), after: nil)
+let deepRoots = try store.pasteFragment(deep, inList: deepList.id, after: nil)
 check(nestedOutline(deepList.id) == ["0 A", "1 B", "2 C", "2 D", "1 E"] && deepRoots.count == 1,
     "An older outline's lines past two levels come up to the second, in their order, under the same task")
 check(nestedOutline(target.id).allSatisfy { Int($0.prefix(1))! <= OutlinePolicy.maximumDepth },

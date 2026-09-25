@@ -17,7 +17,6 @@ final class LibraryMaintenance {
     var error: String?
     var status: String?
     var preview: LibraryBackupPackage.Validated?
-    var lastBackupURL: URL?
     var hasPendingRestore = false
     var isLocalRestore: Bool { startup.isLocalRestore }
     var pendingQuitError: String? { hasPendingRestore ? store.persistenceError : nil }
@@ -60,7 +59,6 @@ final class LibraryMaintenance {
                 let snapshot = try reader.read(at: sourceURL, settings: settings)
                 try LibraryBackupPackage.write(snapshot, to: destination) { try MediaStore.shared.readFile(filename: $0) }
             }.value
-            self.lastBackupURL = destination
             self.status = "Backup created: \(destination.lastPathComponent)"
         }
     }
@@ -214,7 +212,7 @@ final class LibraryMaintenance {
     }
 
     private func commitDrafts() async throws {
-        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
         for window in NSApplication.shared.windows { window.makeFirstResponder(nil) }
         await Task.yield()
         try store.persistChanges()

@@ -394,7 +394,7 @@ check(!input.isOnFirstLine(trigger) && input.isOnLastLine(wrapped.length), "Arro
 var lastQuery: String?
 var queryRange = NSRange()
 var slashReports = 0
-coordinator.parent.callbacks.onSlashQuery = { query, range, _, _ in lastQuery = query; queryRange = range; slashReports += 1 }
+coordinator.parent.callbacks.onSlashQuery = { query, range, _ in lastQuery = query; queryRange = range; slashReports += 1 }
 input.setSelectedRange(NSRange(location: trigger + 3, length: 0))
 input.insertText("x", replacementRange: input.selectedRange())
 check(slashReports == 1 && lastQuery == nil, "A slash mid-line stays as typed; only one that starts the line opens Turn into")
@@ -840,9 +840,27 @@ check(taskAttributes[.foregroundColor] as? NSColor === NXEditor.ink
     && RichTextCodec.baseAttributes(for: .task)[.foregroundColor] as? NSColor === taskAttributes[.foregroundColor] as? NSColor
     && RichTextCodec.baseAttributes(for: .quote)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
     && RichTextCodec.baseAttributes(for: .paragraph)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
-    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === NXEditor.strikeInk
-    && NXEditor.link === NXEditor.accentViolet,
-    "Editor colours are shared ink and accent tokens, so content signatures stay equal")
+    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === NXEditor.strikeInk,
+    "Editor colours are shared ink tokens, so content signatures stay equal")
+let linkedLine = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Site", kind: .paragraph))
+RichTextCodec.setLink(URL(string: "https://example.com")!, in: linkedLine, range: NSRange(location: 0, length: 4))
+let linkedLineEcho = RichTextCodec.decode(RichTextCodec.encode(linkedLine, kind: .paragraph), plainText: "Site", kind: .paragraph)
+check(linkedLine.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink
+    && linkedLineEcho.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink,
+    "A link run keeps the shared ink in storage, however it was made")
+var accentedEditor = editor
+accentedEditor.accentColor = NXEditor.accentBlue
+let accentedView = BlockNSTextView(frame: .zero)
+accentedEditor.applyAccent(to: accentedView)
+check(accentedView.linkTextAttributes?[.foregroundColor] as? NSColor === NXEditor.accentBlue
+    && accentedView.insertionPointColor === NXEditor.accentBlue
+    && accentedView.linkTextAttributes?[.underlineStyle] as? Int == NSUnderlineStyle.single.rawValue,
+    "Links and the caret take the chosen accent")
+accentedEditor.accentColor = NXEditor.accentGreen
+accentedEditor.applyAccent(to: accentedView)
+check(accentedView.linkTextAttributes?[.foregroundColor] as? NSColor === NXEditor.accentGreen
+    && accentedView.insertionPointColor === NXEditor.accentGreen,
+    "Choosing another accent redraws links in it")
 let writtenTitle = RichTextCodec.restylingCompletion(of: RichTextCodec.decode(nil, plainText: "Written", kind: .task), kind: .task,
                                                      struck: true, dimsCompleted: false)
 check(writtenTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink
@@ -1014,7 +1032,7 @@ check(firstSubtask.parentID == nil, "A list document outdents nested rows to its
 let noteBlock = store.appendBlock(kind: .paragraph, text: "/div", to: outlineDocument)
 let afterNote = store.appendBlock(kind: .paragraph, text: "After", to: outlineDocument)
 store.save()
-listEditor.actions(for: outlineRow(noteBlock, in: listEditor)).onSlashQuery("div", NSRange(location: 0, length: 4), .zero, .zero)
+listEditor.actions(for: outlineRow(noteBlock, in: listEditor)).onSlashQuery("div", NSRange(location: 0, length: 4), .zero)
 check(listEditor.slash?.blockID == noteBlock.id, "Typing a slash query opens the menu on its row")
 listEditor.handleSlashCommand(.confirm)
 let dividerRows = listEditor.visibleRows(in: store.blocks(inList: outlineList.id))
@@ -1075,7 +1093,7 @@ func pasteBlocks() -> [Block] { store.blocks(inList: pasteList.id) }
 for _ in 0..<2 {
     pasteUndo.beginUndoGrouping()
     let pastedID = store.undoableEditorEdit(in: pasteList.id, name: "Paste content", undoManager: pasteUndo, includingNewLabels: true) {
-        try! store.pasteFragment(pastedFragment, in: pasteDocument, after: pasteSource.id)[0]
+        try! store.pasteFragment(pastedFragment, inList: pasteList.id, after: pasteSource.id)[0]
     }
     pasteUndo.endUndoGrouping()
     let drawn = pasteEditor.rowsToDraw(in: pasteBlocks())
@@ -1352,7 +1370,7 @@ store.deleteBlock(snippet)
 let slashed = store.appendBlock(kind: .task, text: "/", to: nextDocument)
 store.save()
 nextActions(slashed).onFocus()
-nextActions(slashed).onSlashQuery("", NSRange(location: 0, length: 1), .zero, .zero)
+nextActions(slashed).onSlashQuery("", NSRange(location: 0, length: 1), .zero)
 nextEditor.handleSlashCommand(.next)
 check(nextActions(slashed).onLineBreak() && slashed.kind == .heading1 && slashed.text.isEmpty && nextEditor.slash == nil
     && notesWritten == [confirm.id], "⇧↩ with the Turn into card open turns the line into the highlighted kind")
@@ -1364,7 +1382,7 @@ let slashHolder = store.appendBlock(kind: .task, text: "Holder", to: nextDocumen
 let unmatched = store.appendBlock(kind: .task, text: "/xyz", to: nextDocument)
 store.save()
 nextActions(unmatched).onFocus()
-nextActions(unmatched).onSlashQuery("xyz", NSRange(location: 0, length: 4), .zero, .zero)
+nextActions(unmatched).onSlashQuery("xyz", NSRange(location: 0, length: 4), .zero)
 nextEditor.handleSlashCommand(.confirm)
 check(nextEditor.slash?.blockID == unmatched.id && unmatched.text == "/xyz" && unmatched.kind == .task,
     "Return with nothing matching keeps the Turn into card up and the line as typed")
@@ -2332,7 +2350,7 @@ let onlyTenugui = store.insertChild(kind: .task, text: "Tenugui", of: onlyShops,
 store.save()
 onlyEditor.appendTask()
 let onlyNew = onlyEditor.focus.blockID!
-onlyActions(onlyNew).onSlashQuery("", NSRange(location: 0, length: 1), .zero, .zero)
+onlyActions(onlyNew).onSlashQuery("", NSRange(location: 0, length: 1), .zero)
 check(onlyEditor.slash == nil, "Showing only tasks, “/” opens no Turn into card")
 // A heading pasted into an empty task goes in after it, as a step of its
 // own: the new task goes once a pasted task takes the caret, as a new line

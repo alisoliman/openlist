@@ -666,7 +666,7 @@ private struct NXDocumentStrike: View {
     var body: some View {
         // The glyph box sits in the task's line box as the text view's
         // inset centres it.
-        let glyph = NXStrikeText.glyphLineHeight(NXEditor.bodyPointSize)
+        let glyph = NX.lineHeight(NXEditor.bodyPointSize)
         GeometryReader { geo in
             // Only its width moves, as the design's: its colour changes at
             // once, so a line reopened in its dwell undraws in grey. The
@@ -735,7 +735,7 @@ private struct NXDocumentNote: View {
                 .id(edit)
         } else {
             let empty = task.note.isEmpty
-            let leading = max(0, 13 * 1.55 - NXStrikeText.glyphLineHeight(13))
+            let leading = max(0, 13 * 1.55 - NX.lineHeight(13))
             Text(empty ? "Add a note…" : task.note)
                 .font(.system(size: 13))
                 .lineSpacing(leading)
@@ -1192,7 +1192,7 @@ private struct NXLineText: View {
             focusToken: context.focus.token,
             convertsPrefixes: !context.tasksOnly,
             isSlashMenuOpen: context.slashBlockID == id,
-            caretColor: env.settings.accent.editorColor,
+            accentColor: env.settings.accent.editorColor,
             onSlashCommand: { editor.handleSlashCommand($0) },
             callbacks: callbacks
         )
@@ -1397,7 +1397,7 @@ private struct NXDocumentAddRow: View {
             // 400 13.5/1.3.
             Text(text)
                 .font(.system(size: 13.5))
-                .padding(.vertical, (13.5 * 1.3 - NXStrikeText.glyphLineHeight(13.5)) / 2)
+                .padding(.vertical, (13.5 * 1.3 - NX.lineHeight(13.5)) / 2)
             Spacer(minLength: 0)
         }
         .foregroundStyle(hovering ? NX.ink(0.55) : NX.ink(0.36))
@@ -1434,7 +1434,7 @@ private struct NXDocumentHints: View {
                     Text(hint.key)
                         .font(NX.mono(10))
                         // The design's line-height 1, inside 2/5 padding.
-                        .padding(.vertical, 2 + (10 - NXStrikeText.glyphLineHeight(10)) / 2)
+                        .padding(.vertical, 2 + (10 - NX.lineHeight(10)) / 2)
                         .padding(.horizontal, 5)
                         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4))
                         .fixedSize()

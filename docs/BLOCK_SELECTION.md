@@ -44,8 +44,7 @@ display order and descendants, and registers one move Undo.
 Trash goes through `Store.trashBlocks` with the selected tasks that still exist
 and everything nested under them, in one transaction with one Undo. It is not
 all-or-nothing across the selection: a row trashed or erased since it was
-selected is skipped and the rest go to Trash. `Store.trashSelection`, which
-refuses a partly unavailable selection, is still checked but no screen uses it.
+selected is skipped and the rest go to Trash.
 
 `setBulkCompletion` and `moveSelection` snapshot the selection first, excluding
 retained and permanently erased blocks, retained lists, and merged list aliases
@@ -76,7 +75,7 @@ and Release verifiers run it on the built Info.plist.
 
 `Tools/run-block-selection-checks.sh` covers the document selection's scope,
 `Tools/run-drag-payload-checks.sh` malformed, cross-session and manifest cases,
-`Tools/run-bulk-action-checks.sh` bulk completion, moves, `trashSelection`,
-stale selections and destinations, save failures and separate-process
+`Tools/run-bulk-action-checks.sh` bulk completion, moves, multi-list Trash and
+its Undo, stale selections and destinations, save failures and separate-process
 reopening, and `Tools/run-trash-checks.sh` the `trashBlocks` path the selection
 bar's Trash takes, including trashing several roots as one change.

@@ -122,7 +122,7 @@ for _ in 0..<3 {
     undo.groupsByEvent = false
     undo.beginUndoGrouping()
     let rootID = store.undoableEditorEdit(in: destination.id, name: "Paste content", undoManager: undo, includingNewLabels: true) {
-        try! store.pasteFragment(fragment, in: .init(listID: destination.id), after: nil)[0]
+        try! store.pasteFragment(fragment, inList: destination.id, after: nil)[0]
     }
     undo.endUndoGrouping()
     let row = BlockRow(block: store.block(id: rootID)!, depth: 0, ordinal: 0, hasChildren: true, isCollapsed: false)

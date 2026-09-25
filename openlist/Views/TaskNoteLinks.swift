@@ -11,8 +11,13 @@ struct TaskNoteLinks: View {
         if !references.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(references) { reference in
-                    Button(reference.title, systemImage: "link") {
+                    Button {
                         env.localLinks.receive(reference.url)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "link").font(.system(size: 10.5, weight: .medium)).accessibilityHidden(true)
+                            Text(reference.title)
+                        }
                     }
                     .buttonStyle(NXPanelButtonStyle(kind: .link))
                     .help(reference.url.absoluteString)

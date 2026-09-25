@@ -124,14 +124,14 @@ let reveal = try ContentReveal.resolve(.block(note.id), blocks: [note], lists: [
 reopened.reveal(reveal)
 check(reopened.listViewMode(for: listID) == .document && reopened.contentReveal == reveal,
       "Exact-content navigation returns to Document before revealing prose")
-let outlineScope = UUID(), inspectorScope = UUID()
+let outlineScope = UUID(), outgoingScope = UUID()
 let a = UUID(), b = UUID(), c = UUID()
 navigator.go(to: .inbox)
 navigator.selectForEditing(a, scope: outlineScope, visible: [a, b, c])
 check(navigator.selection == [a] && navigator.rowSelection.scopeID == outlineScope,
       "Editing an Inbox line selects it in the document's scope")
-navigator.reconcileSelection(scope: inspectorScope, visible: [])
-check(navigator.selection == [a], "An inactive inspector cannot prune the Inbox document's selection")
+navigator.reconcileSelection(scope: outgoingScope, visible: [])
+check(navigator.selection == [a], "Another document's editor cannot prune the Inbox document's selection")
 navigator.reconcileSelection(scope: outlineScope, visible: [c, b])
 check(navigator.selection.isEmpty, "Filtered Inbox visibility prunes a hidden line")
 navigator.selectForEditing(c, scope: outlineScope, visible: [c, a])

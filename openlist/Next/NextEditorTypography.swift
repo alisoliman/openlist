@@ -112,8 +112,6 @@ enum NXEditor {
     nonisolated static let accentBlue = NSColor(srgbRed: 0x2F / 255, green: 0x6F / 255, blue: 0xE0 / 255, alpha: 1)
     nonisolated static let accentGreen = NSColor(srgbRed: 0x1F / 255, green: 0x8A / 255, blue: 0x6D / 255, alpha: 1)
     nonisolated static let accentOrange = NSColor(srgbRed: 0xC2 / 255, green: 0x53 / 255, blue: 0x2B / 255, alpha: 1)
-    /// Links take Next's default accent.
-    nonisolated static let link = accentViolet
 
     /// `NX.ink` (#17161A, #F1EFEC in dark mode) at `alpha`.
     private nonisolated static func inkColor(_ alpha: CGFloat) -> NSColor {

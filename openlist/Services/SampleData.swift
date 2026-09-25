@@ -5,8 +5,9 @@
 
 import Foundation
 
-/// Seeds a small set of lists on first launch so the app opens with something
-/// to look at rather than an empty canvas.
+/// Seeds a small set of lists into an empty debug review-session library (see
+/// `AppEnvironment.bootstrap`), so screenshots and QA open with something to
+/// look at rather than an empty canvas.
 enum SampleData {
     @MainActor
     static func seed(into store: Store) {
@@ -17,7 +18,7 @@ enum SampleData {
 
         store.withoutLogging {
             // A couple of unfiled captures waiting in the Inbox.
-            appendTask(store, to: DocumentContext(listID: inbox.id), "Read the Superlist keyboard shortcuts")
+            appendTask(store, to: DocumentContext(listID: inbox.id), "Press ⌘/ to see the keyboard shortcuts")
             let renew = appendTask(store, to: DocumentContext(listID: inbox.id), "Renew gym membership")
             renew.dueDate = calendar.date(byAdding: .day, value: 3, to: today)
 

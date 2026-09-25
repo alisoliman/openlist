@@ -36,7 +36,7 @@ struct BlockEditorCallbacks {
     /// The `/` menu query changed. `nil` means the menu should close.
     /// `range` covers the "/" and its query, so the outline removes exactly
     /// that span, and only while the line still holds it.
-    var onSlashQuery: (_ query: String?, _ range: NSRange, _ caretRect: CGRect, _ viewport: CGRect) -> Void = { _, _, _, _ in }
+    var onSlashQuery: (_ query: String?, _ range: NSRange, _ viewport: CGRect) -> Void = { _, _, _ in }
     /// A block-kind change requested by a markdown prefix such as `## `.
     var onMarkdownPrefix: (BlockKind) -> Void = { _ in }
     /// A multi-line paste. Return `true` to keep the default insert from
@@ -101,8 +101,10 @@ struct BlockTextView: NSViewRepresentable {
     /// Tab still nests the line, as the design's does. Only a `/` that
     /// starts the block opens it.
     var isSlashMenuOpen: Bool = false
-    /// The insertion point's colour. `nil` keeps AppKit's.
-    var caretColor: NSColor? = nil
+    /// The chosen accent (`NextAccent.editorColor`), drawn as the insertion
+    /// point and as links. `nil` keeps AppKit's caret, with links in Next's
+    /// default accent.
+    var accentColor: NSColor? = nil
     var onSlashCommand: (SlashMenuCommand) -> Void = { _ in }
     var callbacks: BlockEditorCallbacks
 
@@ -139,19 +141,13 @@ struct BlockTextView: NSViewRepresentable {
         // becomeFirstResponder), so a document at rest reads without squiggles.
         view.isContinuousSpellCheckingEnabled = false
         view.usesFindBar = false
-        let linkAttributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NXEditor.link,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-            .cursor: NSCursor.pointingHand,
-        ]
-        view.linkTextAttributes = linkAttributes
 
         context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
                                   dimsStruck: dimsStruck, drawsStrike: drawsStrike)
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
-        if let caretColor { view.insertionPointColor = caretColor }
+        applyAccent(to: view)
         return view
     }
 
@@ -160,7 +156,7 @@ struct BlockTextView: NSViewRepresentable {
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
-        if let caretColor, view.insertionPointColor !== caretColor { view.insertionPointColor = caretColor }
+        applyAccent(to: view)
         if view.textContainerInset.height != verticalInset {
             view.textContainerInset = NSSize(width: 0, height: verticalInset)
             view.invalidateIntrinsicContentSize()
@@ -168,6 +164,20 @@ struct BlockTextView: NSViewRepresentable {
 
         context.coordinator.updateContent(of: view)
         context.coordinator.syncFocus(view: view, shouldFocus: isFocused, caret: pendingCaret, token: focusToken)
+    }
+
+    /// Draws the caret and links in the accent. NSTextView draws a link with
+    /// `linkTextAttributes`, over the storage's ink. Each is set only when its
+    /// colour changes, so an update doesn't disturb the caret or the IME.
+    func applyAccent(to view: BlockNSTextView) {
+        if let accentColor, view.insertionPointColor !== accentColor { view.insertionPointColor = accentColor }
+        let link = accentColor ?? NXEditor.accentViolet
+        guard view.linkTextAttributes?[.foregroundColor] as? NSColor !== link else { return }
+        view.linkTextAttributes = [
+            .foregroundColor: link,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand,
+        ]
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: BlockNSTextView, context: Context) -> CGSize? {
@@ -520,7 +530,7 @@ struct BlockTextView: NSViewRepresentable {
             guard textChanged || view.isSlashMenuOpen, let storage = view.textStorage else { return }
             let text = storage.string as NSString
             guard !view.hasMarkedText(), parent.kind != .code, text.hasPrefix("/") else {
-                parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero, .zero)
+                parent.callbacks.onSlashQuery(nil, NSRange(location: 0, length: 0), .zero)
                 return
             }
             let rect = view.caretRectLocal(at: min(view.selectedRange().location, text.length))
@@ -529,7 +539,7 @@ struct BlockTextView: NSViewRepresentable {
                 if view.isSlashMenuOpen { dismissSlash(in: view) }
                 return
             }
-            parent.callbacks.onSlashQuery(text.substring(from: 1), NSRange(location: 0, length: text.length), rect, viewport)
+            parent.callbacks.onSlashQuery(text.substring(from: 1), NSRange(location: 0, length: text.length), viewport)
         }
     }
 }
@@ -596,7 +606,8 @@ final class BlockNSTextView: NSTextView {
     private var geometryUpdatePending = false
 
     /// The enclosing scroll viewport, expressed in text-view coordinates. It
-    /// can extend beyond this row and is intersected across nested inspectors.
+    /// can extend beyond this row and is intersected with every enclosing
+    /// clip view.
     var editorViewport: CGRect {
         guard let contentView = window?.contentView else { return bounds }
         var result = convert(contentView.bounds, from: contentView)
@@ -710,7 +721,7 @@ final class BlockNSTextView: NSTextView {
     // MARK: Caret geometry
 
     /// Rect of the caret at `location`, in this view's own coordinates. The
-    /// outline adds the row's origin to position the slash menu.
+    /// slash card stays up only while the caret is on the visible page.
     func caretRectLocal(at location: Int) -> CGRect {
         guard let layout = layoutManager, let container = textContainer else { return .zero }
         layout.ensureLayout(for: container)
@@ -933,9 +944,9 @@ final class BlockNSTextView: NSTextView {
         })
     }
 
-    /// The sheet's answer, for the text it asked about. The sheet doesn't stop
-    /// the app as the old modal alert did, so a line that changed meanwhile,
-    /// by sync or an agent, keeps its text as it now is.
+    /// The sheet's answer, for the text it asked about. The link sheet
+    /// doesn't block the app, so a line that changed meanwhile, by sync or an
+    /// agent, keeps its text as it now is.
     private func applyLink(_ answer: LinkPrompt.Answer, to range: NSRange, text: String) {
         guard let storage = textStorage, NSMaxRange(range) <= storage.length,
               storage.attributedSubstring(from: range).string == text else { return }
