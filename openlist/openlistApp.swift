@@ -185,7 +185,7 @@ private struct LibraryFailureView: View {
                             catch { showRecoveryError(error) }
                         }
                     }
-                    .buttonStyle(NXPanelButtonStyle(kind: .destructive))
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                 }
                 Button("Quit Openlist") { ApplicationQuit.request() }
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))

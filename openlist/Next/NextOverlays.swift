@@ -796,7 +796,7 @@ private struct NXSearchRow: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            Image(systemName: hit.symbol ?? "square.2.layers.3d")
+            Image(systemName: hit.symbol)
                 .font(.system(size: 14))
                 .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
                 .frame(width: 16)

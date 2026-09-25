@@ -15,7 +15,7 @@ nonisolated struct SearchHit: Identifiable, Equatable, Sendable {
     let title: String
     let context: String
     let snippet: String
-    let symbol: String?
+    let symbol: String
     let field: SearchField
     /// When an open task is due, for its subtitle.
     var dueDate: Date? = nil

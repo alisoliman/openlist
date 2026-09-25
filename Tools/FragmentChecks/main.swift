@@ -317,6 +317,32 @@ try pastingNested(try FragmentContent.capture([seats.id], store: store), after: 
         "A task pasted beside a line a heading keeps goes beside the heading, not under it")
 }
 check(nestedOutline() == before, "Taking the pasted lines away leaves the document as it was")
+// The paste checks what's saved above the line it goes beside, not only the
+// line: when another writer has moved that line's task out of the list,
+// pasting a single task after the line, which would go beside it under that
+// task, is rejected and writes nothing.
+let staleList = store.createList(title: "Stale parent")
+let staleParent = store.appendBlock(kind: .task, text: "Moved elsewhere", to: .init(listID: staleList.id))
+let staleLine = store.insertChild(kind: .task, text: "Left behind", of: staleParent, at: .last)
+try store.persistChanges()
+let otherWriter = ModelContext(container)
+let staleParentID = staleParent.id
+let movedParent = try otherWriter.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == staleParentID })).first!
+movedParent.listID = tallList.id
+try otherWriter.save()
+func savedIDs() throws -> Set<UUID> {
+    let reader = ModelContext(container)
+    return Set(try reader.fetch(FetchDescriptor<Block>()).map(\.id)).union(try reader.fetch(FetchDescriptor<TaskLabel>()).map(\.id))
+}
+let single = try FragmentContent.capture([seats.id], store: store)
+let savedBeforeStale = try savedIDs()
+rejects("A line whose task has left the list on disk cannot take a paste beside it") {
+    _ = try store.pasteFragment(single, inList: staleList.id, after: staleLine.id)
+}
+check(try savedIDs() == savedBeforeStale && store.children(of: staleParentID, listID: staleList.id).map(\.id) == [staleLine.id],
+    "The rejected paste writes nothing")
+movedParent.listID = staleList.id
+try otherWriter.save()
 let deepIDs = (0..<5).map { _ in UUID() }
 let deep = DocumentFragment(roots: [deepIDs[0]], blocks: [
     FragmentBlock(id: deepIDs[0], parentID: nil, kind: "task", text: "A"),
