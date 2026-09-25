@@ -130,16 +130,4 @@ enum ActivityKind: String, Codable, CaseIterable, Sendable {
         case .restored: "Restored"
         }
     }
-
-    var accent: ListAccent {
-        switch self {
-        case .completed: .green
-        case .created, .listCreated: .blue
-        case .scheduled: .violet
-        case .starred: .amber
-        case .deleted, .listDeleted: .red
-        case .labeled: .pink
-        default: .graphite
-        }
-    }
 }

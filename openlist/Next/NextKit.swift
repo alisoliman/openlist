@@ -262,7 +262,7 @@ struct NXTitleRename {
 
 struct NXScreenHeader<Trailing: View>: View {
     @Environment(\.nextStyle) private var style
-    enum Tile { case icon(String), emoji(String), list(TaskList) }
+    enum Tile { case icon(String), list(TaskList) }
     let tile: Tile
     let color: Color
     let title: String
@@ -280,8 +280,6 @@ struct NXScreenHeader<Trailing: View>: View {
                     switch tile {
                     case let .icon(name):
                         Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
-                    case let .emoji(emoji):
-                        Text(emoji).font(.system(size: 24))
                     case let .list(list):
                         NXListGlyph(list: list, size: 24)
                     }

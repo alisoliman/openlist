@@ -36,7 +36,7 @@ nonisolated struct SearchProjection: Sendable {
             return SearchHit(id: .list(list.id), title: list.displayTitle,
                 context: context.joined(separator: " · "),
                 snippet: field == .summary ? Self.snippet(list.summary, matching: needle) : "",
-                symbol: "square.2.layers.3d", emoji: nil, accent: list.accent, field: field)
+                symbol: "square.2.layers.3d", field: field)
         }
 
         let matchingBlocks = try blocks.enumerated().filter { offset, block in
@@ -72,7 +72,7 @@ nonisolated struct SearchProjection: Sendable {
                 snippet: quotes ? Self.snippet(field == .note ? block.note : block.text, matching: needle) : "",
                 // The design's outline check_circle, as its state reads in the context.
                 symbol: block.isTask ? (completed ? "checkmark.circle" : "circle") : block.symbol,
-                emoji: nil, accent: list?.accent ?? .graphite, field: field,
+                field: field,
                 dueDate: block.isTask && !completed ? block.dueDate : nil,
                 listIcon: list.map { $0.icon.isEmpty ? "📋" : $0.icon }))
         }

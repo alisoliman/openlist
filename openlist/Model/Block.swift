@@ -236,14 +236,4 @@ enum TaskPriority: Int, Codable, CaseIterable, Sendable {
         case .high: "High"
         }
     }
-
-    /// Tint used for the checkbox ring and the detail chip.
-    var accent: ListAccent? {
-        switch self {
-        case .none: nil
-        case .low: .blue
-        case .medium: .orange
-        case .high: .red
-        }
-    }
 }
