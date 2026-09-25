@@ -64,11 +64,42 @@ let coordinator = CalendarCoordinator(store: store, defaults: defaults, external
 coordinator.bootstrap(now: now, monitorsEnabled: false)
 let publisher = WidgetSnapshotPublisher(store: store,
     sources: .live(calendar: coordinator, settings: AppSettings(defaults: defaults), libraryID: UUID()))
-let processor = WidgetCommandProcessor(store: store, calendar: coordinator, publisher: publisher)
+
+/// The window's actions as `Workbench` takes them, for a check with no window:
+/// completing the work in progress pauses it and takes it off the toolbar,
+/// Start and Resume start recording, Pause pauses. The app passes the
+/// processor its `Workbench`, whose tray, change log and Undo these skip.
+final class WindowActions: WidgetTaskActions {
+    let store: Store
+    let calendar: CalendarCoordinator
+    var settled: [UUID] = []
+    init(store: Store, calendar: CalendarCoordinator) {
+        self.store = store
+        self.calendar = calendar
+    }
+    func completeFromWidget(_ id: UUID, at date: Date, now: Date) {
+        guard let task = store.block(id: id) else { return }
+        if calendar.activeSession?.taskID == id { calendar.pause(reason: "Completed", now: now) }
+        if calendar.resumeTaskID == id { calendar.dismissResume() }
+        store.toggleCompletion(task, now: date)
+    }
+    func reopenFromWidget(_ id: UUID, now: Date) {
+        guard let task = store.block(id: id), task.isCompleted else { return }
+        store.toggleCompletion(task, now: now)
+    }
+    func startWorkFromWidget(_ id: UUID, now: Date) {
+        guard let task = store.block(id: id) else { return }
+        calendar.start(task: task, now: now)
+    }
+    func pauseWorkFromWidget(now: Date) {
+        calendar.pause(reason: "Paused", now: now)
+    }
+    func settleCompletion(_ id: UUID) { settled.append(id) }
+}
+let actions = WindowActions(store: store, calendar: coordinator)
+let processor = WidgetCommandProcessor(store: store, calendar: coordinator, publisher: publisher, actions: actions)
 var prepared = 0
 processor.prepare = { prepared += 1 }
-var settled: [UUID] = []
-processor.settleWindowCompletion = { settled.append($0) }
 
 /// A tap on the row the widget drew for `task`, or for another occurrence of it.
 /// Made by the real clock unless `at` says when: that is later than every
@@ -89,7 +120,7 @@ func apply(_ action: WidgetCommand.Action, _ task: Block? = nil, occurrence: UUI
 // MARK: - Completing and reopening
 
 check(processor.apply(tap(.complete, plumber), now: now) && plumber.isCompleted, "a tick completes the task")
-check(settled == [plumber.id], "a tick first settles the window's own dwell on the row")
+check(actions.settled == [plumber.id], "a tick first settles the window's own dwell on the row")
 check(plumber.completedAt == now, "a tap stamped ahead of the app's clock counts as made now")
 check(!apply(.complete, plumber, now: now), "a second tick on a done row changes nothing")
 check(!apply(.complete, deposit, occurrence: UUID(), now: now) && !deposit.isCompleted,
@@ -124,7 +155,7 @@ check(apply(.startWork, okrs, now: now) && coordinator.activeSession?.taskID == 
       "Start records work on the task")
 check(!coordinator.isWorkPanelPresented, "Start never opens the Work panel")
 check(!apply(.startWork, notes, now: date(23, 10, 5)) && coordinator.activeSession?.taskID == okrs.id,
-      "Start while other work runs is ignored: switching is confirmed in the app")
+      "Start while other work runs is ignored: a widget never switches what you are recording")
 check(!apply(.startWork, okrs, occurrence: UUID(), now: date(23, 10, 5)), "Start for another occurrence is ignored")
 
 check(!apply(.pauseWork, okrs, occurrence: UUID(), now: date(23, 10, 10)) && coordinator.activeSession?.taskID == okrs.id,
@@ -141,17 +172,14 @@ check(apply(.resumeWork, okrs, now: date(23, 10, 15)) && coordinator.activeSessi
 check(!apply(.resumeWork, okrs, now: date(23, 10, 16)), "Resume while recording changes nothing")
 
 coordinator.tick(now: date(23, 10, 35), checkClockGap: false)
-check(coordinator.overrunNudge?.needsConfirmation == true && coordinator.activeSession == nil,
-      "fixture: work stops at its estimate to ask before moving the next task")
-check(apply(.resumeWork, okrs, now: date(23, 10, 36)) && coordinator.activeSession?.taskID == okrs.id,
-      "Resume after the estimate is the go-ahead for more time, as in the toolbar")
-check(coordinator.overrunNudge == nil, "and the question is answered")
+check(coordinator.activeSession?.taskID == okrs.id, "work past its estimate keeps recording, and needs no Resume")
 
 check(!apply(.finishWork, notes, now: date(23, 10, 40)) && !notes.isCompleted,
       "Done for a task that is not the work in progress is ignored")
 check(apply(.finishWork, okrs, now: date(23, 10, 40)) && okrs.isCompleted, "Done completes the running task")
 check(coordinator.activeSession == nil && coordinator.resumableTask == nil, "and clears the toolbar timer")
-check(coordinator.workCompletion?.recordedMinutes == 34, "reporting every segment's time, as Complete Current Task does")
+check(store.workSessions(taskID: okrs.id).reduce(0) { $0 + $1.durationMinutes() } == 35,
+      "keeping every segment's time, up to the tap")
 
 check(apply(.startWork, notes, now: date(23, 10, 41)), "fixture: work starts on the next task")
 // A widget still drawing the finished task: its buttons name that task, not the work that followed.
@@ -172,7 +200,7 @@ check(apply(.startWork, review, now: date(23, 10, 50)), "fixture: work starts on
 check(apply(.startWork, book, now: date(23, 10, 55)) == false, "fixture: a second Start is ignored")
 check(apply(.complete, review, now: date(23, 11)) && review.isCompleted && coordinator.activeSession == nil,
       "ticking the running task off completes it and stops recording")
-check(coordinator.workCompletion?.title == "Review the proposal", "it reports as finished work")
+check(coordinator.resumableTask == nil, "it leaves the toolbar timer, as Done does")
 check(store.workSessions(taskID: review.id).first?.endedAt == date(23, 11), "its time is recorded up to the tap")
 
 check(apply(.startWork, book, now: date(23, 11, 1)), "fixture: work on a fourth task")
@@ -233,11 +261,10 @@ check(apply(.complete, watering, at: date(23, 23), now: date(24, 2)) && watering
       "and a repeat that runs from completion rolls forward from the tap")
 
 let late = task("Plan the weekend")
-coordinator.notice = nil
-check(!apply(.startWork, late, now: date(23, 22)) && coordinator.activeSession == nil,
-      "Start outside the list's hours is refused")
-check(coordinator.notice == nil, "without leaving the refusal for the Work panel to show later")
-check(!coordinator.isWorkPanelPresented, "and without opening the Work panel")
+check(apply(.startWork, late, now: date(23, 22)) && coordinator.activeSession?.taskID == late.id,
+      "Start outside the list's hours records, as Start in the app does")
+check(!coordinator.isWorkPanelPresented, "without opening the Work panel")
+check(apply(.pauseWork, late, now: date(23, 22, 5)) && apply(.finishWork, late, now: date(23, 22, 6)), "fixture: and finishes")
 
 // MARK: - The queue
 
@@ -297,12 +324,17 @@ check(wait { signalled.isCompleted } && WidgetCommandQueue.pending().isEmpty,
 final class Screens: WidgetLinkScreens {
     let navigator: Navigator
     var inspected: [UUID] = []
+    var calendarDays: [Date] = []
     init(navigator: Navigator) { self.navigator = navigator }
     func go(_ route: AppRoute) { navigator.go(to: route) }
     func route(for list: TaskList) -> AppRoute { list.isSystemInbox ? .inbox : .list(list.id) }
-    func inspect(_ id: UUID?) {
-        if let id { inspected.append(id) }
+    func inspectOnScreen(_ id: UUID) {
+        inspected.append(id)
         navigator.openTask(id)
+    }
+    func showOnCalendar(_ day: Date) {
+        calendarDays.append(day)
+        navigator.go(to: .calendar)
     }
 }
 
@@ -310,8 +342,10 @@ let navigator = Navigator(defaults: defaults)
 navigator.inboxListID = inbox.id
 let screens = Screens(navigator: navigator)
 let router = WidgetLinkRouter(store: store, navigator: navigator, screens: screens)
-var captures: [TaskCaptureRequest] = []
+var captures: [QuickCaptureRequest] = []
 router.capture = { captures.append($0) }
+var activations = 0
+router.activate = { activations += 1 }
 func open(_ link: WidgetLink) { router.receive(link.url) }
 
 // A cold launch: the link arrives before bootstrap puts the app on Today.
@@ -322,6 +356,9 @@ router.storeReady()
 check(navigator.route == .today, "and for the main window")
 router.windowReady(true)
 check(navigator.route == .calendar, "then lands after bootstrap, which would otherwise overwrite it")
+check(screens.calendarDays.count == 1 && calendar.isDateInToday(screens.calendarDays[0]),
+      "Calendar opens on today's range, whichever range it was left on")
+check(activations == 1, "and brings Openlist forward")
 
 open(.inbox)
 check(navigator.route == .inbox, "Inbox opens the Inbox")
@@ -329,24 +366,25 @@ navigator.setListViewMode(.document, for: inbox.id)
 open(.today)
 check(navigator.route == .today, "Today opens Today")
 open(.triage)
-check(navigator.route == .inbox && navigator.listViewMode(for: inbox.id) == .tasks && !navigator.hasDocumentEditor,
-      "Triage opens the Inbox's card view, even when the Inbox was a document")
+check(navigator.route == .inbox && navigator.listViewMode(for: inbox.id) == .tasks && navigator.documentListID == nil,
+      "Triage opens the Inbox's cards, even when the Inbox was a document")
 check(Navigator(defaults: defaults).listViewMode(for: inbox.id) == .document,
       "for this visit only: the Inbox's saved presentation stays a document")
 open(.today)
 open(.inbox)
-check(navigator.hasDocumentEditor, "so the Inbox opens as its document again next time")
+check(navigator.documentListID == inbox.id, "so the Inbox opens as its document again next time")
 navigator.selection = [deposit.id]
 open(.triage)
-check(navigator.route == .inbox && !navigator.hasDocumentEditor && navigator.selection.isEmpty,
+check(navigator.route == .inbox && navigator.documentListID == nil && navigator.selection.isEmpty,
       "Triage from the Inbox's own document turns it to the cards, leaving the document's selection behind")
-navigator.setListViewMode(.document, for: inbox.id)
-check(navigator.hasDocumentEditor, "Show as Document from the cards goes back to the document")
+open(.inbox)
+check(navigator.route == .inbox && navigator.documentListID == inbox.id,
+      "Inbox from the cards goes back to this Mac's choice, without leaving the Inbox")
 open(.triage)
 navigator.setListViewMode(.tasks, for: inbox.id)
 open(.today)
 open(.inbox)
-check(!navigator.hasDocumentEditor && Navigator(defaults: defaults).listViewMode(for: inbox.id) == .tasks,
+check(navigator.documentListID == nil && Navigator(defaults: defaults).listViewMode(for: inbox.id) == .tasks,
       "choosing Tasks while triaging is a choice, and it is kept")
 navigator.setListViewMode(.document, for: inbox.id)
 open(.activity)
@@ -367,36 +405,22 @@ navigator.isShortcutSheetOpen = true
 open(.today)
 check(navigator.route == .today && !navigator.isShortcutSheetOpen, "navigating closes the shortcut sheet")
 
+let activationsBeforeCapture = activations
 open(.capture(listID: nil))
-check(captures.count == 1 && captures[0].suggestedListID == nil && !captures[0].appendsToSuggestedList,
-      "Quick Add opens on the Inbox")
-check(!captures[0].startsInSuggestedList, "and leaves a draft on screen where it is")
+check(captures == [QuickCaptureRequest()], "Quick Add opens on the Inbox, with no date")
 open(.capture(listID: home.id))
-check(captures.count == 2 && captures[1].suggestedListID == home.id && captures[1].startsInSuggestedList
-      && captures[1].appendsToSuggestedList, "Add to a list files into that list, at the end as from its Tasks screen")
-check(captures[1].appendsToRoot(of: home, suggested: home), "while the task goes into that list")
-check(!captures[1].appendsToRoot(of: inbox, suggested: home),
-      "but not once it goes elsewhere: another list picked, or the Inbox when the list is archived or deleted")
-check(!captures[1].appendsToRoot(of: inbox, suggested: nil), "or when the list is gone")
-check(!captures[0].dueTodayWhenUndated && !captures[1].dueTodayWhenUndated, "neither dates what is typed")
-check(!captures[0].undatedTaskIsDueToday(newTasksGoTo: .inbox) && captures[0].undatedTaskIsDueToday(newTasksGoTo: .today),
-      "an undated task from Quick Add follows the New tasks setting")
+check(captures.last == QuickCaptureRequest(listID: home.id), "Add to a list starts the card on that list")
 open(.captureToday)
-check(captures.count == 3 && captures[2].dueTodayWhenUndated && captures[2].suggestedListID == nil
-      && !captures[2].appendsToSuggestedList, "New task on the Today widget captures into the Inbox, for Today")
-check(captures[2].undatedTaskIsDueToday(newTasksGoTo: .inbox),
-      "which makes an undated task due today, as the app's Today does, whatever the New tasks setting")
-let fromToday = TaskCaptureDraft(text: "Call bank", dueTodayWhenUndated: captures[2].undatedTaskIsDueToday(newTasksGoTo: .inbox))
-check(fromToday.preview.date == calendar.startOfDay(for: .now), "so a task typed there without a date is due today")
-check(!TaskCaptureRequest(plansForToday: true, dueTodayWhenUndated: true).undatedTaskIsDueToday(newTasksGoTo: .today),
-      "a task planned for today stays undated")
+check(captures.last == QuickCaptureRequest(dueToday: true),
+      "New task on the Today widget captures into the Inbox, a task with no date of its own due today")
 open(.capture(listID: inbox.id))
-check(captures.count == 4 && captures[3].suggestedListID == inbox.id && captures[3].startsInSuggestedList
-      && !captures[3].appendsToSuggestedList,
-      "Add to Inbox starts in the Inbox, moving a draft aimed elsewhere, and prepends as every Inbox capture does")
-check(!TaskCaptureRequest(suggestedListID: inbox.id, appendsToSuggestedList: true).appendsToRoot(of: inbox, suggested: inbox),
-      "the Inbox never appends, whoever asks")
-check(navigator.route == .today, "capture leaves the main window where it was")
+check(captures.last == QuickCaptureRequest(listID: inbox.id), "Add to Inbox starts the card on the Inbox")
+check(navigator.route == .today && activations == activationsBeforeCapture,
+      "capture leaves the main window where it was, and Openlist in the background")
+router.windowReady(false)
+open(.capture(listID: nil))
+check(captures.count == 5, "Quick Add opens with the main window closed: it floats over the app in front")
+router.windowReady(true)
 
 for text in ["openlist-dev://widget/today", "openlist://widget/unknown", "openlist://widget/activity?from=widget",
              "openlist://widget/task/not-a-task", "openlist://widget/capture/list", "OPENLIST://WIDGET/calendar/extra"] {
@@ -404,7 +428,7 @@ for text in ["openlist-dev://widget/today", "openlist://widget/unknown", "openli
     check(WidgetLink.isWidgetLink(url), "\(text) is claimed before item-link handling")
     check(!router.receive(url), "\(text) is not one this build opens")
 }
-check(navigator.route == .today && captures.count == 4, "malformed links and the other build's are dropped")
+check(navigator.route == .today && captures.count == 5, "malformed links and the other build's are dropped")
 
 // A widget link pasted into a task note gets a button, which the widget
 // router opens; one it cannot open goes on to item links for their notice.
@@ -425,5 +449,12 @@ open(.calendar)
 check(navigator.route == .today, "with the main window closed, a link waits")
 router.windowReady(true)
 check(navigator.route == .calendar, "and lands once the window is back")
+router.windowReady(false)
+open(.today)
+open(.capture(listID: nil))
+check(navigator.route == .calendar && captures.count == 5,
+      "a capture after a link waiting for the window waits behind it, so links open in the order they came")
+router.windowReady(true)
+check(navigator.route == .today && captures.count == 6, "and both open once the window is back")
 
 print("✅ \(checks) widget action checks passed")

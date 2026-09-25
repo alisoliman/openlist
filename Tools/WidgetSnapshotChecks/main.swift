@@ -104,7 +104,15 @@ task("Write interview feedback", in: hiring, index: 1)
 task("Pack the old bags", in: old, index: 1)
 store.save()
 
+// Done 3 and Done 6 were ticked off in their calendar slots, which the Calendar
+// keeps drawing done; a tick with no slot or recorded work leaves nothing there.
+store.calendarPlannedBlocks = [2, 5].map { index in
+    PlannedBlock(id: "slot-\(index)", taskID: done[index].id, occurrenceID: done[index].occurrenceID,
+                 start: doneDates[index].addingTimeInterval(-1800), end: doneDates[index], isPinned: false,
+                 placementID: nil, conflicts: [])
+}
 for (task, completedAt) in zip(done, doneDates) { store.toggleCompletion(task, now: completedAt) }
+store.calendarPlannedBlocks = []
 let plantersOccurrence = planters.occurrenceID
 store.toggleCompletion(planters, now: date(23, 9, 30))
 check(!planters.isCompleted && planters.occurrenceID != plantersOccurrence, "the fixture repeat rolls forward to a new occurrence")
@@ -170,9 +178,20 @@ check(snapshot.todayItems.allSatisfy { item in
 }, "rows carry the occurrence a tap would complete")
 
 // Inbox
-check(snapshot.inboxCount == 8, "the Inbox count is the triage queue: open top-level captures")
+check(snapshot.inboxCount == 8, "the Inbox count is the triage queue, as the Inbox badge counts it")
 check(snapshot.inboxItems.map(\.title) == (0..<6).map { "Capture \($0)" }, "Inbox rows are newest first, capped at 6")
-check(!snapshot.inboxItems.contains { $0.id == captureStep.id }, "subtasks stay out of triage")
+check(!snapshot.inboxItems.contains { $0.id == captureStep.id }, "a subtask goes with the open task above it, whose card carries it")
+// A subtask under done tasks only is a card of its own, or triage could never reach it.
+let doneCapture = task("Done capture", in: inbox, index: 20)
+let orphanStep = task("Step left open", in: inbox, under: doneCapture, index: 1)
+orphanStep.createdAt = date(23, 9, 30)
+store.save()
+store.toggleCompletion(doneCapture, now: date(23, 9, 40))
+if orphanStep.isCompleted { store.toggleCompletion(orphanStep, now: date(23, 9, 41)) }
+let orphaned = publisher.buildSnapshot(now: now)
+check(orphaned.inboxCount == 9 && orphaned.inboxItems.first?.id == orphanStep.id,
+      "a subtask whose tasks above are done waits in triage itself")
+store.trashBlocks([orphanStep, doneCapture])
 
 // Counts
 check(snapshot.totalOpenCount == 15 + 17 + 9 + 1 + 1, "open work counts active lists only, subtasks included")
@@ -198,11 +217,15 @@ check(kyotoSummary.doneItems.map(\.title) == ["Done 2", "Done 1", "Done 4", "Don
       "done rows are most recent first, capped at 6")
 check(kyotoSummary.doneItems.allSatisfy { $0.isCompleted && $0.completedAt != nil }, "done rows carry their completion")
 check(snapshot.list(id: nil)?.id == kyoto.id, "an unconfigured List widget falls back to the first real list")
-for sorting in [ListSorting.alphabetical, .dueDate] {
-    store.setSorting(sorting, for: kyoto)
-    check(publisher.buildSnapshot(now: now).list(id: kyoto.id)?.openItems.map(\.id) == kyotoSummary.openItems.map(\.id),
-          "a sorted list's rows keep their outline order, as the task screen shows them, with subtasks under their parent")
-}
+// A list's Sort reorders each run of top-level tasks between its headings and
+// prose, as the list's page draws it, each task's subtasks going with it.
+store.setSorting(.alphabetical, for: kyoto)
+check(publisher.buildSnapshot(now: now).list(id: kyoto.id)?.openItems.prefix(10).map(\.id)
+      == (kyotoOpen.prefix(8) + [planters, kyotoOpen[8]]).map(\.id),
+      "a sorted list's rows follow its page: the run before the heading sorted, a subtask under its parent, the heading's task after it")
+store.setSorting(.dueDate, for: kyoto)
+check(publisher.buildSnapshot(now: now).list(id: kyoto.id)?.openItems.map(\.id) == kyotoSummary.openItems.map(\.id),
+      "sorted by due date, the dated repeat leads its run and the undated tasks keep their outline order")
 store.setSorting(.manual, for: kyoto)
 
 // Activity
@@ -311,7 +334,8 @@ check(publisher.buildSnapshot(now: date(23, 10, 52)).work == nil, "stopped work 
 // MARK: - Done today
 
 // Done today follows current state, exactly as the app's Today counts it,
-// while the Activity heatmap keeps every retained completion.
+// while the Activity heatmap counts the completions that still stand, as the
+// Activity screen does: an Undo or a reopen takes one back.
 let noon = date(23, 12)
 let dayStart = publisher.buildSnapshot(now: noon)
 func doneToday() -> Int { publisher.buildSnapshot(now: noon).completedTodayCount }
@@ -323,7 +347,7 @@ store.toggleCompletion(deposit, now: date(23, 11, 1))
 let reopenedDeposit = publisher.buildSnapshot(now: noon)
 check(reopenedDeposit.completedTodayCount == dayStart.completedTodayCount && reopenedDeposit.dueTodayCount == dayStart.dueTodayCount,
       "reopening it takes it off done again")
-check(reopenedDeposit.activity.today == dayStart.activity.today + 1, "the heatmap still counts the retained completion")
+check(reopenedDeposit.activity.today == dayStart.activity.today, "and off the heatmap, as the Activity screen counts it")
 store.toggleCompletion(deposit, now: date(23, 11, 2))
 let undidDeposit = store.undoCompletion(store.completionUndo!.id)
 check(undidDeposit && !deposit.isCompleted, "the fixture undoes a completion")
@@ -341,7 +365,7 @@ let undidRepeat = store.undoCompletion(store.completionUndo!.id)
 check(undidRepeat, "the fixture undoes the repeat's roll-forward")
 let undoneRepeat = publisher.buildSnapshot(now: noon)
 check(undoneRepeat.completedTodayCount == dayStart.completedTodayCount + 1, "undoing a roll-forward leaves done as it was")
-check(undoneRepeat.activity.today == beforeUndo.activity.today, "while the heatmap keeps the completion it retained")
+check(undoneRepeat.activity.today == beforeUndo.activity.today - 1, "while the heatmap gives up the completion the Undo took back")
 let refill = task("Refill the watering can", in: kyoto, under: planters, index: 1)
 store.save()
 store.toggleCompletion(refill, now: date(23, 11, 6))
@@ -431,10 +455,12 @@ check(WidgetSnapshotPublisher.change(from: started, to: { var moved = started; m
 check(WidgetSnapshotPublisher.change(from: started, to: { var paused = started; paused.work?.state = .paused; return paused }()) == .work,
       "pausing is a work change")
 
-// A library with one task and nothing else on the calendar: its unstarted
-// block slides to the next free time every five minutes. With the app in the
-// background that reloads only Up Next and Agenda, and at most every quarter
-// hour, while the file is rewritten each time.
+// A library with one task and nothing else on the calendar. The planner's own
+// suggestion for it slides to the next free time every five minutes, which the
+// Calendar doesn't draw, so neither do the widgets. Its slot, once placed,
+// moving every five minutes with the app in the background reloads only Up
+// Next and Agenda, and at most every quarter hour, while the file is
+// rewritten each time.
 let slideContainer = try ModelContainer(for: schema, configurations: [
     ModelConfiguration(schema: schema, url: directory.appendingPathComponent("Slide.store"), cloudKitDatabase: .none)])
 let slideStore = Store(context: slideContainer.mainContext)
@@ -457,25 +483,33 @@ check(reloads == [.all], "the first snapshot reloads every widget")
 reloads = []
 var slides = 0
 var moment = slideStart
-for _ in 0..<240 {
+for _ in 0..<80 {
     moment = moment.addingTimeInterval(15)
     let before = slideCoordinator.plan.blocks.first?.start
     slideCoordinator.tick(now: moment, checkClockGap: false)
     slider.refreshNow(now: moment)
     if slideCoordinator.plan.blocks.first?.start != before { slides += 1 }
 }
-check(slides == 12, "the unstarted block slid every five minutes")
-check(!reloads.contains(.all), "a sliding plan never reloads Today, Lists, Summary, Quick Add or Activity")
+check(slides == 4 && reloads.isEmpty, "the planner's suggestion slides every five minutes, which no widget draws")
+func moveSlot(to start: Date, at now: Date) {
+    slideStore.setPlacement(for: letter, start: start, end: start.addingTimeInterval(1800), isPinned: false)
+    slideCoordinator.storeDidChange(now: now)
+    slider.refreshNow(now: now)
+}
+for _ in 0..<12 {
+    moment = moment.addingTimeInterval(300)
+    moveSlot(to: moment.addingTimeInterval(600), at: moment)
+}
+check(!reloads.contains(.all), "a moving slot never reloads Today, Lists, Summary, Quick Add or Activity")
 check(reloads.count == 4, "Up Next and Agenda reload once a quarter hour while the app is in the background")
 check(WidgetSnapshotStore.read()?.agenda == slider.buildSnapshot(now: moment).agenda, "the file has the latest plan all the same")
 slider.sources.isAppActive = { true }
 reloads = []
 moment = moment.addingTimeInterval(300)
-slideCoordinator.tick(now: moment, checkClockGap: false)
-slider.refreshNow(now: moment)
+moveSlot(to: moment.addingTimeInterval(600), at: moment)
 check(reloads == [.plan], "with the app in front, a plan change reloads Up Next and Agenda at once")
 slider.sources.isAppActive = { false }
-check(slideCoordinator.start(task: letter, now: moment.addingTimeInterval(10)), "the fixture starts the slid task")
+check(slideCoordinator.start(task: letter, now: moment.addingTimeInterval(10)), "the fixture starts the moved task")
 slider.refreshNow(now: moment.addingTimeInterval(20))
 check(reloads == [.plan, .plan], "starting work reloads Up Next and Agenda at once, in the background too")
 slideCoordinator.complete(task: letter, now: moment.addingTimeInterval(30))
@@ -503,22 +537,6 @@ held.refreshNow()
 check(heldReloads == [.all] && WidgetSnapshotStore.read()?.agenda == agenda, "plan changes soon after a reload are written but held back")
 RunLoop.main.run(until: Date.now.addingTimeInterval(0.8))
 check(heldReloads == [.all, .plan], "then reload Up Next and Agenda once")
-
-// MARK: - Busy time
-
-// Planning reads busy time from the start of today; the six days before are
-// only for the week views, so an edit there refreshes widgets without replanning.
-let busy = [FixedBusyTime(id: "retro", title: "Retro", start: date(21, 15), end: date(21, 16)),
-            FixedBusyTime(id: "review", title: "Review", start: date(23, 9), end: date(23, 9, 30))]
-let signed = CalendarCoordinator.busySignatures(busy, today: date(23))
-var movedRetro = busy
-movedRetro[0].start = date(21, 14)
-let pastEdit = CalendarCoordinator.busySignatures(movedRetro, today: date(23))
-check(pastEdit.planning == signed.planning && pastEdit.earlier != signed.earlier, "moving Monday's meeting leaves the plan's busy time alone")
-var movedReview = busy
-movedReview[1].end = date(23, 10)
-let todayEdit = CalendarCoordinator.busySignatures(movedReview, today: date(23))
-check(todayEdit.planning != signed.planning, "moving this morning's meeting is a planning change, as before")
 
 // MARK: - Day change
 
