@@ -121,7 +121,8 @@ do {
     store.toggleCompletion(untimed, now: local(3, 28, 10))
     check(untimed.dueDate == local(3, 29) && untimed.reminderAt == local(3, 29, 9),
           "A daily repeat without a time reminds at 09:00 on its daylight-saving day")
-    store.deleteBlocks([timed, repeating, untimed]); await service.reminders.waitUntilIdle()
+    for block in [timed, repeating, untimed] { store.deleteBlock(block) }
+    store.save(); await service.reminders.waitUntilIdle()
 }
 
 let navigator = Navigator()
