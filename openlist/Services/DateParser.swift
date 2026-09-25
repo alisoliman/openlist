@@ -10,10 +10,8 @@ struct ParsedSchedule: Equatable {
     var date: Date?
     var includesTime: Bool = false
     var recurrence: Recurrence?
-    /// The text with every recognised phrase removed and whitespace tidied.
-    var cleanedText: String = ""
-    /// Ranges of the input that were consumed, so a caller holding formatted
-    /// text can delete exactly those spans instead of replacing the whole run.
+    /// Ranges of the input that were consumed, so a caller can take exactly
+    /// those spans out of the text it holds.
     var consumedRanges: [NSRange] = []
     /// What each of `consumedRanges` was read as, in the same order, so a
     /// caller can mark up the repeat rule, day and time it found.
@@ -26,10 +24,11 @@ struct ParsedSchedule: Equatable {
 
 /// Recognises natural-language dates, times and repeat rules inside task text.
 ///
-/// Typing "call mum tomorrow at 6pm" sets a due date and strips the phrase,
-/// the same way Superlist's quick entry does. Matching is deliberately
-/// conservative: only unambiguous phrases are consumed so ordinary prose such
-/// as "may" or "march" survives untouched.
+/// In "call mum tomorrow at 6pm" it finds a due date and time and reports
+/// where the phrases are (`consumedRanges`, `consumedParts`); callers such as
+/// `CaptureParse` mark them up and take them out of the title. Matching is
+/// deliberately conservative: only unambiguous phrases are consumed so
+/// ordinary prose such as "may" or "march" survives untouched.
 enum DateParser {
     /// Scans `text` and returns everything it recognised.
     ///
@@ -89,7 +88,6 @@ enum DateParser {
             date: resolved,
             includesTime: includesTime,
             recurrence: recurrenceResult,
-            cleanedText: strip(ranges: consumed, from: ns),
             consumedRanges: consumed,
             consumedParts: consumed.indices.map {
                 $0 < consumedByRecurrence ? .recurrence : $0 < consumedByDay ? .day : .time
@@ -557,28 +555,5 @@ enum DateParser {
             return match
         }
         return nil
-    }
-
-    private static func strip(ranges: [NSRange], from ns: NSString) -> String {
-        guard !ranges.isEmpty else {
-            return (ns as String).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let result = NSMutableString(string: ns)
-        for range in ranges.sorted(by: { $0.location > $1.location }) {
-            result.replaceCharacters(in: range, with: " ")
-        }
-        // Collapse the whitespace left behind, plus dangling joiners like "on".
-        var text = result as String
-        text = text.replacingOccurrences(
-            of: "\\s+",
-            with: " ",
-            options: .regularExpression
-        )
-        text = text.replacingOccurrences(
-            of: "\\s+(on|at|by|due)\\s*$",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

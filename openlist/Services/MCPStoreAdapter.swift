@@ -121,7 +121,6 @@ final class MCPStoreAdapter {
             try args.requirePatch(excluding: ["list_id", "expected_updated_at"])
             let list = try snapshot.list(args.requireUUID("list_id"))
             try checkVersion(args, updatedAt: list.updatedAt)
-            if args["is_archived"] != nil { try checkTitleDrafts(in: snapshot.blocks(in: list.id)) }
             if list.isSystemInbox, args["title"] != nil || args.bool("is_archived") == true {
                 throw MCPToolFailure.invalid("The system Inbox cannot be renamed or archived.")
             }
@@ -154,7 +153,6 @@ final class MCPStoreAdapter {
         case .updateTask:
             try args.requirePatch(excluding: ["task_id", "expected_updated_at"])
             let task = try snapshot.task(args.requireUUID("task_id"), writable: true)
-            try checkTitleDrafts(in: [task])
             try checkVersion(args, updatedAt: task.updatedAt)
             let patch = try TaskPatch(args: args, snapshot: snapshot)
             patch.apply(to: task, store: store)
@@ -162,7 +160,6 @@ final class MCPStoreAdapter {
 
         case .setTaskCompleted:
             let task = try snapshot.task(args.requireUUID("task_id"), writable: true)
-            try checkTitleDrafts(in: [task] + BlockTree.descendants(of: task.id, in: snapshot.blocks(in: task.listID)))
             try checkVersion(args, updatedAt: task.updatedAt)
             let completed = args.bool("completed") == true
             let previousDue = task.dueDate
@@ -175,7 +172,6 @@ final class MCPStoreAdapter {
 
         case .moveTask:
             let task = try snapshot.task(args.requireUUID("task_id"), writable: true)
-            try checkTitleDrafts(in: [task] + BlockTree.descendants(of: task.id, in: snapshot.blocks(in: task.listID)))
             try checkVersion(args, updatedAt: task.updatedAt)
             let list = try snapshot.list(args.requireUUID("list_id"))
             let parent = try args.uuid("parent_id").map { try snapshot.block($0) }
@@ -266,13 +262,6 @@ final class MCPStoreAdapter {
     private func checkVersion(_ args: MCPArguments, updatedAt: Date) throws {
         if let expected = args.string("expected_updated_at"), expected != MCPDates.timestamp(updatedAt) {
             throw MCPToolFailure(code: "conflict", message: "This item changed since it was read. Read it again before deciding whether to apply the edit.")
-        }
-    }
-
-    private func checkTitleDrafts(in blocks: [Block]) throws {
-        let editing = Set(store.activeTitleDrafts.values)
-        guard !blocks.contains(where: { editing.contains($0.id) }) else {
-            throw MCPToolFailure(code: "busy", message: "A task title is being edited in Openlist. Finish editing it before changing that task or its containing list through an agent.")
         }
     }
 }

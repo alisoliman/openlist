@@ -38,6 +38,15 @@ func describe(_ date: Date?) -> String {
     return date.formatted(date: .abbreviated, time: .shortened)
 }
 
+/// The phrases the parser consumed from `text`, in reading order, which a
+/// caller such as `CaptureParse` takes out of the title.
+func consumed(_ parsed: ParsedSchedule, in text: String) -> [String] {
+    let ns = text as NSString
+    return parsed.consumedRanges.sorted { $0.location < $1.location }.map {
+        ns.substring(with: $0).trimmingCharacters(in: .whitespaces)
+    }
+}
+
 // Weekend presets and free-text capture must agree, including both days
 // of the current weekend rather than silently deferring a week.
 do {
@@ -60,7 +69,7 @@ do {
     let parsed = DateParser.parse("buy milk tomorrow", reference: reference)
     let d = day(parsed.date)
     check(d?.day == 4 && d?.month == 6, "tomorrow resolves to the next day", describe(parsed.date))
-    check(parsed.cleanedText == "buy milk", "tomorrow is stripped", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "buy milk tomorrow") == ["tomorrow"], "tomorrow is consumed", "\(consumed(parsed, in: "buy milk tomorrow"))")
     check(!parsed.includesTime, "bare day has no time")
 }
 
@@ -69,14 +78,15 @@ do {
     let d = day(parsed.date)
     check(d?.day == 4 && d?.hour == 18, "tomorrow at 6pm", describe(parsed.date))
     check(parsed.includesTime, "time flag set")
-    check(parsed.cleanedText == "call mum", "phrase stripped", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "call mum tomorrow at 6pm") == ["tomorrow", "at 6pm"], "phrase consumed",
+          "\(consumed(parsed, in: "call mum tomorrow at 6pm"))")
 }
 
 do {
     let parsed = DateParser.parse("standup at 9:30am", reference: reference)
     let d = day(parsed.date)
     check(d?.hour == 9 && d?.minute == 30, "9:30am parsed", describe(parsed.date))
-    check(parsed.cleanedText == "standup", "cleaned", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "standup at 9:30am") == ["at 9:30am"], "time consumed", "\(consumed(parsed, in: "standup at 9:30am"))")
 }
 
 do {
@@ -90,7 +100,7 @@ do {
     let parsed = DateParser.parse("pay rent in 3 days", reference: reference)
     let d = day(parsed.date)
     check(d?.day == 6, "in 3 days", describe(parsed.date))
-    check(parsed.cleanedText == "pay rent", "cleaned", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "pay rent in 3 days") == ["in 3 days"], "offset consumed", "\(consumed(parsed, in: "pay rent in 3 days"))")
 }
 
 do {
@@ -98,7 +108,8 @@ do {
     let parsed = DateParser.parse("submit report on friday", reference: reference)
     let d = day(parsed.date)
     check(d?.day == 5, "upcoming friday", describe(parsed.date))
-    check(parsed.cleanedText == "submit report", "on + weekday stripped", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "submit report on friday") == ["on friday"], "on + weekday consumed",
+          "\(consumed(parsed, in: "submit report on friday"))")
 }
 
 do {
@@ -124,7 +135,8 @@ do {
     let parsed = DateParser.parse("water plants every 2 days", reference: reference)
     check(parsed.recurrence?.frequency == .daily, "every 2 days → daily")
     check(parsed.recurrence?.interval == 2, "interval 2")
-    check(parsed.cleanedText == "water plants", "cleaned", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "water plants every 2 days") == ["every 2 days"], "rule consumed",
+          "\(consumed(parsed, in: "water plants every 2 days"))")
 }
 
 do {
@@ -153,7 +165,7 @@ do {
 do {
     let parsed = DateParser.parse("plain task with no date", reference: reference)
     check(parsed.isEmpty, "nothing matched")
-    check(parsed.cleanedText == "plain task with no date", "text untouched")
+    check(parsed.consumedRanges.isEmpty, "text untouched")
 }
 
 // MARK: - RecurrenceEngine
@@ -268,7 +280,7 @@ do {
     for text in ["upgrade to swift 6.2", "buy 2.5 kg flour", "read chapter 3.1"] {
         let parsed = DateParser.parse(text, reference: reference)
         check(parsed.date == nil, "no date from “\(text)”", describe(parsed.date))
-        check(parsed.cleanedText == text, "“\(text)” left intact", "got “\(parsed.cleanedText)”")
+        check(parsed.consumedRanges.isEmpty, "“\(text)” left intact", "\(consumed(parsed, in: text))")
     }
     // A slash date still parses.
     let slash = DateParser.parse("ship it 25/12", reference: reference)
@@ -279,7 +291,7 @@ do {
     // Dotted meridiem: "\\b" after a "." can never match.
     let parsed = DateParser.parse("call at 9 p.m.", reference: reference)
     check(day(parsed.date)?.hour == 21, "9 p.m. is 21:00", describe(parsed.date))
-    check(!parsed.cleanedText.lowercased().contains("p.m"), "meridiem stripped", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "call at 9 p.m.") == ["at 9 p.m."], "meridiem consumed", "\(consumed(parsed, in: "call at 9 p.m."))")
 
     let plain = DateParser.parse("call at 9pm", reference: reference)
     check(day(plain.date)?.hour == 21, "9pm still 21:00", describe(plain.date))
@@ -293,7 +305,7 @@ do {
     let d = day(parsed.date)
     check(d?.day == 3 && d?.hour == 0, "tonight is due today", describe(parsed.date))
     check(!parsed.includesTime, "tonight carries no time")
-    check(parsed.cleanedText == "dinner", "tonight stripped", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "dinner tonight") == ["tonight"], "tonight consumed", "\(consumed(parsed, in: "dinner tonight"))")
     check(parsed.consumedParts == [.day], "tonight is read as a day")
 
     let timed = DateParser.parse("dinner tonight at 7pm", reference: reference)
@@ -306,7 +318,8 @@ do {
     // from Monday 8 June the Monday after.
     let parsed = DateParser.parse("plan the offsite next week", reference: reference)
     check(day(parsed.date)?.day == 8 && !parsed.includesTime, "next week is next Monday", describe(parsed.date))
-    check(parsed.cleanedText == "plan the offsite", "next week stripped", "got “\(parsed.cleanedText)”")
+    check(consumed(parsed, in: "plan the offsite next week") == ["next week"], "next week consumed",
+          "\(consumed(parsed, in: "plan the offsite next week"))")
     let monday = calendar.date(bySetting: .day, value: 8, of: reference)!
     let fromMonday = DateParser.parse("plan next week", reference: monday)
     check(day(fromMonday.date)?.day == 15, "next week from a Monday is the following Monday", describe(fromMonday.date))

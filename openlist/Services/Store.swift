@@ -96,9 +96,6 @@ final class Store {
     @ObservationIgnored var pendingCompletionUndoChanges: [CompletionUndoChange] = []
     @ObservationIgnored var completionUndoRegistrations: [UUID: CompletionUndoRegistration] = [:]
     var onCompletionUndoAvailable: ((CompletionUndoAction) -> Void)?
-    /// Smart rows commit local title drafts on blur. External writes must not
-    /// overwrite those drafts or be overwritten by their later commit.
-    @ObservationIgnored var activeTitleDrafts: [UUID: UUID] = [:]
 
     /// Called after every successful save, so downstream caches — currently the
     /// widget snapshot — can refresh themselves.
