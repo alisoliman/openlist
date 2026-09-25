@@ -69,6 +69,15 @@ nonisolated struct Recurrence: Codable, Hashable, Sendable {
         return copy
     }
 
+    /// The `endDate` that ends a series on `day`: its last second, so the
+    /// series keeps that day's occurrences and none after, however many hours
+    /// a daylight-saving change gives the day.
+    static func endDate(onDay day: Date, calendar: Calendar = .current) -> Date {
+        let end = calendar.dateInterval(of: .day, for: day)?.end
+            ?? calendar.startOfDay(for: day).addingTimeInterval(86_400)
+        return end.addingTimeInterval(-1)
+    }
+
     var isFinished: Bool {
         if let occurrenceLimit, completedOccurrences >= occurrenceLimit { return true }
         return false

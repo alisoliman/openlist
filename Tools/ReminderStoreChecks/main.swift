@@ -1,6 +1,9 @@
 import Foundation
 import SwiftData
 
+// The Store's dates follow Calendar.current, so the daylight-saving checks
+// below run in Amsterdam whichever zone this Mac is in.
+NSTimeZone.default = TimeZone(identifier: "Europe/Amsterdam")!
 var checks = 0
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     checks += 1
@@ -78,6 +81,48 @@ store.setReminder(date, for: deleted); await service.reminders.waitUntilIdle()
 let deletedID = deleted.id
 store.deleteBlock(deleted); store.save(); await service.reminders.waitUntilIdle()
 check(service.client.requests[deletedID] == nil, "Committed deletion removes request")
+
+// A reminder moves with its task's due date by the calendar, whether the
+// task is rescheduled or repeats, onto and off a daylight-saving day.
+do {
+    let calendar = Calendar.current
+    check(calendar.timeZone.identifier == "Europe/Amsterdam", "Daylight-saving checks run in Amsterdam")
+    func local(_ m: Int, _ d: Int, _ h: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: m, day: d, hour: h))!
+    }
+    let timed = store.appendBlock(kind: .task, text: "DST timed", to: DocumentContext(listID: list.id))
+    store.setDueDate(local(3, 20, 9), includesTime: true, for: timed)
+    store.setReminder(local(3, 19, 9), for: timed)
+    store.setDueDate(local(3, 29, 9), includesTime: true, for: timed)
+    check(timed.reminderAt == local(3, 28, 9), "Rescheduling onto a daylight-saving day keeps a day-before reminder at 09:00")
+    store.setDueDate(local(10, 25, 9), includesTime: true, for: timed)
+    check(timed.reminderAt == local(10, 24, 9), "Rescheduling onto the autumn change keeps a day-before reminder at 09:00")
+
+    let repeating = store.appendBlock(kind: .task, text: "DST repeat", to: DocumentContext(listID: list.id))
+    store.setDueDate(local(3, 28, 9), includesTime: true, for: repeating)
+    store.setReminder(local(3, 27, 9), for: repeating)
+    store.setRecurrence(.daily, for: repeating)
+    store.toggleCompletion(repeating, now: local(3, 28, 10))
+    check(repeating.dueDate == local(3, 29, 9) && repeating.reminderAt == local(3, 28, 9),
+          "A daily repeat onto a daylight-saving day reminds at 09:00 the day before")
+    store.toggleCompletion(repeating, now: local(3, 29, 10))
+    check(repeating.dueDate == local(3, 30, 9) && repeating.reminderAt == local(3, 29, 9),
+          "A daily repeat off a daylight-saving day reminds at 09:00 the day before")
+
+    let untimed = store.appendBlock(kind: .task, text: "DST untimed", to: DocumentContext(listID: list.id))
+    store.setDueDate(local(3, 27), for: untimed)
+    store.setReminder(local(3, 27, 9), for: untimed)
+    store.setDueDate(local(3, 29), for: untimed)
+    check(untimed.reminderAt == local(3, 29, 9), "A due day without a time moved onto a daylight-saving day keeps its 09:00 reminder")
+    store.setDueDate(local(10, 25), for: untimed)
+    check(untimed.reminderAt == local(10, 25, 9), "A due day without a time moved onto the autumn change keeps its 09:00 reminder")
+    store.setDueDate(local(3, 28), for: untimed)
+    store.setRecurrence(.daily, for: untimed)
+    store.toggleCompletion(untimed, now: local(3, 28, 10))
+    check(untimed.dueDate == local(3, 29) && untimed.reminderAt == local(3, 29, 9),
+          "A daily repeat without a time reminds at 09:00 on its daylight-saving day")
+    store.deleteBlocks([timed, repeating, untimed]); await service.reminders.waitUntilIdle()
+}
 
 let navigator = Navigator()
 let navigation = ReminderNavigation(navigator: navigator)

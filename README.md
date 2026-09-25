@@ -634,7 +634,7 @@ status is rebuilt from the saved library and OS inventory after launch; it is no
 synced as a task fact.
 
 Task details and Settings → Notifications show permission problems and scheduling errors.
-Use **Allow notifications** or **Open Notification Settings** for permission, and
+Use **Allow notifications** or **Open notification settings** for permission, and
 **Retry reminder** / **Retry future reminders** for eligible future times. Recovery
 never requests permission automatically and never replays expired reminders.
 Expired intent remains visible. A previously delivered expired alert can remain in
@@ -643,8 +643,10 @@ saved reminder clears obsolete pending and delivered alerts. Calendar nudges use
 separate namespace and ordinary reminder recovery preserves them.
 
 There is at most one reminder request per task UUID. A custom reminder takes
-precedence over an automatic due-time reminder; repeating tasks retain their
-existing relative offset while replacing the occurrence. Saved dates represent
+precedence over an automatic due-time reminder; a rescheduled or repeating task
+carries its reminder along, as far from a due time in calendar days and then
+minutes, and at the same clock time from a due day without a time, across DST
+too, while replacing the occurrence. Saved dates represent
 absolute instants and notification triggers include UTC so travel and DST do not
 reinterpret an already scheduled time. Saved title/list changes update request
 text. Unsaved changes never replace the prior OS request and are labeled separately.

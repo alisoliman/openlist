@@ -12,7 +12,16 @@ struct TemplateCopySheet: View {
         case let .task(id):
             guard let task = env.store.block(id: id) else { return [] }
             return (try? env.store.copySources(for: task)) ?? []
-        case let .list(id): return env.store.blocks(inList: id)
+        // A list's copy holds its nested lists' tasks too.
+        case let .list(id): return env.store.listHierarchy().subtree(of: id).flatMap { env.store.blocks(inList: $0.id) }
+        }
+    }
+
+    /// What the copy holds, in the words the task's and list's own sheets use.
+    private var contents: String {
+        switch request.source {
+        case .task: "A fresh copy with its subtasks, notes and files."
+        case .list: "A fresh copy with its nested lists, tasks, notes and files."
         }
     }
 
@@ -33,7 +42,7 @@ struct TemplateCopySheet: View {
                     .lineLimit(3)
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("Create an independent copy with all nested tasks, notes and files. Tasks start incomplete, with no due dates, reminders or calendar placements.")
+                Text("\(contents) Tasks start open, with no due dates, reminders or planned time.")
                     .foregroundStyle(NX.ink(0.7))
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Labels, priority, stars and formatting are kept. The original stays unchanged.")

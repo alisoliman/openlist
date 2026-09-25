@@ -136,7 +136,7 @@ struct ReminderRecoveryActions: View {
             Button("Allow notifications") { Task { _ = await recovery.requestPermission() } }
                 .disabled(recovery.isRequestingAuthorization)
         case .denied:
-            Button("Open Notification Settings…", action: openNotificationSettings)
+            Button("Open notification settings…", action: openNotificationSettings)
         case .failed:
             Button("Retry reminder") { env.store.refreshAllReminders(); recovery.retry(taskID) }
                 .accessibilityLabel("Retry reminder for \(recovery.intents[taskID]?.title ?? "task")")
