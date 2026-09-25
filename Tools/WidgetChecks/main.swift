@@ -27,7 +27,7 @@ let old = WidgetSnapshotStore.decode(Data(version1.utf8))
 check(old != nil, "A version 1 file still decodes")
 check(old?.version == 1, "A file without a version reads as version 1")
 check(old?.todayItems.first?.title == "Pay the electricity bill" && old?.todayItems.first?.occurrenceID == nil
-      && old?.todayItems.first?.priority == 0, "Version 1 rows decode, new keys at their defaults")
+      && old?.todayItems.first?.priority == 0 && old?.todayItems.first?.isInbox == false, "Version 1 rows decode, new keys at their defaults")
 check(old?.totalOpenCount == 9 && old?.inboxCount == 2 && old?.completedTodayCount == 3, "Version 1 counts keep their meaning")
 check(old?.lists.first?.openCount == 4 && old?.lists.first?.openItems.isEmpty == true, "Version 1 lists decode without rows")
 check(old?.work == nil && old?.agenda.isEmpty == true && old?.activity == nil, "Version 1 has no work, agenda or activity")
@@ -207,8 +207,56 @@ for queued in [[action(.reopen, "k2")], [action(.complete, "k2"), action(.reopen
           && open.lists[kyotoIndex].openCount == 5 && open.todayItems.contains { $0.id == id("k2") },
           "A row the app published done goes back after the list's open rows")
 }
-check([WidgetAction.Kind.startWork, .pauseWork, .resumeWork, .finishWork].allSatisfy(\.isWork)
-      && ![WidgetAction.Kind.complete, .reopen].contains(where: \.isWork), "Only the timer's buttons are work")
+check([WidgetAction.Kind.startWork, .pauseWork, .resumeWork].allSatisfy(\.answersTimer)
+      && ![WidgetAction.Kind.complete, .reopen, .finishWork].contains(where: \.answersTimer),
+      "Only Start, Pause and Resume answer the timer; Done completes the task however long it waits")
+
+// Up Next's Done, queued in the extension before macOS 27 pins it to the app:
+// shown done at once, as the design's finish() ticks the task, and its work gone.
+let finish = WidgetAction(kind: .finishWork, taskID: id("q1"), occurrenceID: id("q1"), createdAt: WidgetSampleData.referenceDate)
+let finished = SnapshotOverlay.apply([finish], to: session)
+let finishedNext = UpNextModel(finished, clock: clock)
+check(finished.work == nil && finishedNext.state == .next && finishedNext.title == "Write interview feedback for Priya",
+      "A queued Done ends the work, and Up Next moves on to the next block")
+check(TodayModel(finished, clock: clock).done == 4 && !TodayModel(finished, clock: clock).rows.contains { $0.id == id("q1") }
+      && finished.agenda.flatMap(\.items).first { $0.taskID == id("q1") }?.isCompleted == true
+      && finished.lists.first { $0.id == id("q3") }?.doneItems.first?.id == id("q1"), "and shows the task done, as a tick does")
+check(SnapshotOverlay.apply([finish, finish], to: session) == finished && SnapshotOverlay.apply([finish], to: finished) == finished,
+      "A Done counts once, and one the app already published changes nothing")
+check(SnapshotOverlay.apply([WidgetAction(kind: .finishWork, taskID: id("q1"), occurrenceID: UUID())], to: session) == session,
+      "A Done on an occurrence that rolled on is ignored")
+var workOnly = session
+workOnly.todayItems.removeAll { $0.id == id("q1") }
+for index in workOnly.lists.indices { workOnly.lists[index].openItems.removeAll { $0.id == id("q1") } }
+let workOnlyFinished = SnapshotOverlay.apply([finish], to: workOnly)
+check(workOnlyFinished.work == nil && UpNextModel(workOnlyFinished, clock: clock).state == .next
+      && workOnlyFinished.completedTodayCount == 4 && workOnlyFinished.totalOpenCount == workOnly.totalOpenCount - 1,
+      "A Done on work past the rows carried still ends it and counts it done")
+// From the row the work carries: its list, Today's due counts and its total
+// settle as they do for a row carried, where Today would read 4 of 10.
+let workListID = session.work!.item!.listID!
+let workList = workOnly.lists.first { $0.id == workListID }!
+let workListFinished = workOnlyFinished.lists.first { $0.id == workListID }!
+check(workListFinished.openCount == workList.openCount - 1 && workListFinished.doneCount == workList.doneCount + 1
+      && workListFinished.doneItems.first?.id == id("q1") && workListFinished.doneItems.first?.isCompleted == true
+      && workOnlyFinished.lists.filter { $0.id != workListID } == workOnly.lists.filter { $0.id != workListID },
+      "and its list counts it done among its latest")
+check(DueCounts(workOnlyFinished, clock: clock) == DueCounts(finished, clock: clock)
+      && TodayModel(workOnlyFinished, clock: clock).total == 9 && TodayModel(finished, clock: clock).total == 9,
+      "and Today and Summary count it off its due day: 4 of 9 done")
+var inboxWork = workOnly
+inboxWork.work!.item!.listID = id("inbox")
+inboxWork.work!.item!.isInbox = true
+inboxWork.inboxCount = WidgetSnapshot.inboxRows + 1
+let inboxWorkFinished = SnapshotOverlay.apply([finish], to: inboxWork)
+check(inboxWorkFinished.inboxCount == WidgetSnapshot.inboxRows && inboxWorkFinished.lists == inboxWork.lists
+      && SnapshotOverlay.apply([finish], to: workOnly).inboxCount == workOnly.inboxCount,
+      "Work on an Inbox task past the newest rows counts one fewer in the Inbox; other work leaves it")
+var olderWork = session
+olderWork.work!.item = nil
+let olderWorkJSON = String(decoding: WidgetSnapshotStore.encode(olderWork)!, as: UTF8.self)
+check(!olderWorkJSON.contains("\"item\"") && WidgetSnapshotStore.decode(Data(olderWorkJSON.utf8))?.work == olderWork.work,
+      "Work written without its row, as an older app does, still decodes")
 
 // MARK: List
 
@@ -299,12 +347,36 @@ var inboxRow = design.todayItems[0]
 inboxRow.id = dueInInbox.inboxItems[1].id
 inboxRow.occurrenceID = inboxRow.id
 inboxRow.listID = id("inbox")
+inboxRow.isInbox = true
 dueInInbox.todayItems.append(inboxRow)
 let inboxTicked = CaptureModel(SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: inboxRow.id, occurrenceID: inboxRow.id)],
                                                      to: dueInInbox), clock: clock)
 check(inboxTicked.count == 4 && inboxTicked.items.map(\.id) == [0, 2, 3, 4].map { dueInInbox.inboxItems[$0].id },
       "A queued tick on an Inbox task leaves Quick Add 4 rows under Inbox 4")
 check(WidgetSnapshot.inboxRows > CaptureModel.shown, "The snapshot carries spare Inbox rows")
+// An Inbox of 9 whose oldest task, due today, is past the 8 newest carried:
+// ticked in Today while the app is quit, Quick Add and Summary still count it gone.
+var fullInbox = design
+fullInbox.inboxItems = (0..<WidgetSnapshot.inboxRows).map {
+    WidgetSnapshot.InboxItem(id: id("inbox-\($0)"), title: "Capture \($0)", createdAt: noon.addingTimeInterval(-Double($0 + 1) * 3_600))
+}
+fullInbox.inboxCount = WidgetSnapshot.inboxRows + 1
+var oldestInbox = design.todayItems[0]
+oldestInbox.id = id("inbox-oldest")
+oldestInbox.occurrenceID = oldestInbox.id
+oldestInbox.listID = id("inbox")
+oldestInbox.isInbox = true
+fullInbox.todayItems.append(oldestInbox)
+check(WidgetSnapshotStore.decode(WidgetSnapshotStore.encode(fullInbox)!) == fullInbox, "A row's Inbox flag round-trips")
+let oldestTicked = SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: oldestInbox.id, occurrenceID: oldestInbox.id)], to: fullInbox)
+check(oldestTicked.inboxCount == 8 && oldestTicked.inboxItems == fullInbox.inboxItems
+      && CaptureModel(oldestTicked, clock: clock).count == 8 && SummaryModel(oldestTicked, clock: clock).inbox == 8
+      && !TodayModel(oldestTicked, clock: clock).rows.contains { $0.id == oldestInbox.id },
+      "A queued Today tick on an Inbox task past the rows carried counts one fewer in the Inbox")
+var elsewhere = fullInbox
+elsewhere.todayItems[elsewhere.todayItems.count - 1].isInbox = false
+check(SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: oldestInbox.id, occurrenceID: oldestInbox.id)], to: elsewhere).inboxCount == 9,
+      "and one in another list leaves the Inbox's count")
 
 // Quick Add's timeline has an entry wherever an age shown moves on, so none stays behind.
 let captureStart = WidgetSampleData.referenceDate
@@ -348,6 +420,37 @@ check(activity.todayIndex == 2 && activity.weeks[20][2] == 2 && activity.weeks[2
 check(activity.streak == 1 && activity.today == 2 && activity.week == 2 && activity.month == 49, "1-day streak; 2 today, 2 this week, 49 in September")
 check(activity.monthName == "September", "The month is named")
 check(ActivityModel(design, clock: clock, weeks: 10).weeks.count == 10, "Small shows 10 weeks")
+// A repeat done today rolls on rather than sit done, so today's done tasks
+// leave it out; the heatmap, the Activity screen's, counts it, today as any day.
+var repeated = design
+repeated.activity!.counts[repeated.activity!.counts.count - 1] = 3
+let repeatedActivity = ActivityModel(repeated, clock: clock, weeks: 21)
+check(repeatedActivity.today == 3 && repeatedActivity.weeks[20][2] == 3 && repeatedActivity.week == 3 && repeatedActivity.month == 50,
+      "A repeat done today counts in the Activity widget's today, as on the screen")
+let repeatedSummary = SummaryModel(repeated, clock: clock)
+check(repeatedSummary.week[2].count == 3 && repeatedSummary.weekTotal == 3 && repeatedSummary.done == 2 && TodayModel(repeated, clock: clock).done == 2,
+      "and in Summary's week, while Done and Today count the tasks done today, as the app's Today")
+var onlyRepeat = repeated
+onlyRepeat.completedTodayCount = 0
+onlyRepeat.activity!.counts[onlyRepeat.activity!.counts.count - 1] = 1
+check(ActivityModel(onlyRepeat, clock: clock, weeks: 21).streak == 1, "and in the streak")
+let dayAfter = ActivityModel(repeated, clock: tomorrow, weeks: 21)
+check(dayAfter.today == 0 && dayAfter.weeks[20][2] == 3 && dayAfter.weeks[20][3] == 0, "The next day it's yesterday's, and today starts at 0")
+var noHeatmap = design
+noHeatmap.activity = nil
+check(ActivityModel(noHeatmap, clock: clock, weeks: 21).today == 2, "A file without a heatmap counts today's done tasks")
+// A tick queued while the app is quit counts on the heatmap too, a reopen of
+// one done today takes it off, and one after midnight counts on the new day.
+check(ActivityModel(ticked, clock: clock, weeks: 21).today == 3 && SummaryModel(ticked, clock: clock).weekTotal == 3,
+      "A queued tick counts in today's cell")
+let sessionReopened = SnapshotOverlay.apply([WidgetAction(kind: .reopen, taskID: id("q4"), occurrenceID: id("q4"))], to: session)
+check(ActivityModel(session, clock: clock, weeks: 21).today == 3 && ActivityModel(sessionReopened, clock: clock, weeks: 21).today == 2
+      && TodayModel(sessionReopened, clock: clock).done == 2, "A queued reopen of a task done today takes it off")
+let afterMidnight = SnapshotOverlay.apply([WidgetAction(kind: .complete, taskID: id("k3"), occurrenceID: id("k3"), createdAt: tomorrow.now)],
+                                          to: design, calendar: tomorrow.calendar)
+let afterMidnightActivity = ActivityModel(afterMidnight, clock: tomorrow, weeks: 21)
+check(afterMidnightActivity.today == 1 && afterMidnightActivity.weeks[20][2] == 2 && afterMidnightActivity.streak == 2
+      && TodayModel(afterMidnight, clock: tomorrow).done == 1, "A tick queued after midnight counts on the new day")
 check([0, 1, 2, 3, 4, 6, 7].map(ActivityModel.opacity) == [0, 0.28, 0.5, 0.5, 0.75, 0.75, 1],
       "The heatmap's steps change at the legend's 1, 2–3, 4–6 and 7+ bands")
 

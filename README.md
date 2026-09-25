@@ -513,8 +513,9 @@ openlist/
                inspector, calendar, overlays, settings, Workbench (shared UI
                state and actions), and the design tokens (NextTheme, NXEditor)
   Views/       RootView, menus, the Work panel, calendar history, shared pickers
-Shared/        ListAccent, WidgetSnapshot, WidgetRoute, WidgetActions,
-               WidgetIntents, AppGroup, Fonts   (app + widget)
+Shared/        ListAccent, ListIcon, EmojiSize, ActivityBand, WidgetSnapshot,
+               WidgetRoute, WidgetActions, WidgetIntents, AppGroup,
+               ReviewSession, Fonts   (app + widget)
 OpenlistWidget/  WidgetKit extension
 MCPTransport/   Local Swift package: authenticated MCP/HTTP transport
 OpenlistMCPHelper/  Bundled native stdio-to-localhost launcher

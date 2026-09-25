@@ -130,7 +130,8 @@ final class WidgetSnapshotPublisher {
                 completedAt: task.completedAt,
                 isStarred: task.isStarred,
                 hasRepeat: task.recurrenceData != nil,
-                priority: task.priorityRaw
+                priority: task.priorityRaw,
+                isInbox: inbox.includes(task)
             )
         }
 
@@ -216,6 +217,7 @@ final class WidgetSnapshotPublisher {
         if let calendarFeed {
             let feed = calendarFeed(now)
             snapshot.work = feed.work
+            if let work = feed.work { snapshot.work?.item = tasks.first { $0.id == work.taskID }.map(item) }
             snapshot.agenda = feed.agenda
         }
         snapshot.activity = activity(now: now, calendar: calendar)

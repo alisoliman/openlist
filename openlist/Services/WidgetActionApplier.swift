@@ -25,7 +25,8 @@ final class WidgetActionApplier {
     private var pendingDrain: Task<Void, Never>?
     private var isDraining = false
 
-    /// Work actions answer the timer as it was; older than this, they're dropped.
+    /// Start, Pause and Resume answer the timer as it was; older than this,
+    /// they're dropped. Done completes the task however long it waited.
     static let workActionLifetime: TimeInterval = 120
 
     init(store: Store, workbench: Workbench, calendar: CalendarCoordinator, publisher: WidgetSnapshotPublisher) {
@@ -62,7 +63,7 @@ final class WidgetActionApplier {
         var takenBack: Set<Int> = []
         var late: WidgetAction?
         for (index, action) in actions.enumerated() where !takenBack.contains(index) {
-            if action.kind.isWork, Date.now.timeIntervalSince(action.createdAt) > Self.workActionLifetime {
+            if action.kind.answersTimer, Date.now.timeIntervalSince(action.createdAt) > Self.workActionLifetime {
                 late = action
                 continue
             }
@@ -84,14 +85,13 @@ final class WidgetActionApplier {
         if let late { reportLate(late) }
     }
 
-    /// A Start, Pause or Done that waited for Openlist longer than the timer
-    /// it answered is dropped, and says so rather than vanish.
+    /// A Start, Pause or Resume that waited for Openlist longer than the
+    /// timer it answered is dropped, and says so rather than vanish.
     private func reportLate(_ action: WidgetAction) {
         let button = switch action.kind {
-        case .startWork: "Start"
         case .pauseWork: "Pause"
         case .resumeWork: "Resume"
-        default: "Done"
+        default: "Start"
         }
         let title = store.block(id: action.taskID).map { " for \(NXFormat.quoted($0.displayTitle))" } ?? ""
         workbench.showTray("A widget’s \(button)\(title) reached Openlist too late to apply",

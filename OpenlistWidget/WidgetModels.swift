@@ -434,8 +434,9 @@ struct SummaryModel: Equatable {
     }
 }
 
-/// Completions per day at the entry's date: the heatmap's counts for past days,
-/// today's completions for today, nothing for days to come.
+/// Completions per day at the entry's date, as the Activity screen counts them:
+/// the heatmap's counts, today's included, so a repeat done today counts; nothing
+/// for days to come. A file without a heatmap counts today's done tasks.
 struct ActivityDays {
     let clock: WidgetClock
     let activity: WidgetSnapshot.Activity?
@@ -444,17 +445,14 @@ struct ActivityDays {
     init(_ snapshot: WidgetSnapshot, clock: WidgetClock) {
         self.clock = clock
         activity = snapshot.activity
-        today = snapshot.completedToday(on: clock)
+        today = snapshot.activity.map { $0.count(on: clock.now, calendar: clock.calendar) } ?? snapshot.completedToday(on: clock)
     }
 
     func count(on day: Date) -> Int? {
         let offset = clock.dayOffset(day)
         if offset > 0 { return nil }
         if offset == 0 { return today }
-        guard let activity else { return 0 }
-        let index = clock.calendar.dateComponents([.day], from: clock.calendar.startOfDay(for: activity.start),
-                                                  to: clock.calendar.startOfDay(for: day)).day ?? -1
-        return activity.counts.indices.contains(index) ? activity.counts[index] : 0
+        return activity?.count(on: day, calendar: clock.calendar) ?? 0
     }
 }
 

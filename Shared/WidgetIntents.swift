@@ -44,8 +44,10 @@ struct SetTaskCompletionIntent: SetValueIntent {
 // timer in its toolbar, so they ask to run in the app's process: in the
 // background, as a ForegroundContinuableIntent did, without bringing it forward.
 // From macOS 27 `allowedExecutionTargets` pins them there. Before it the system
-// may still pick the extension, which queues them like a tick; one the app
-// only finds after the timer has moved on is dropped, with a notice in the tray.
+// may still pick the extension, which queues them like a tick. A Start, Pause
+// or Resume the app only finds after the timer has moved on is dropped, with a
+// notice in the tray; a Done shows done at once and is applied whenever the
+// app opens, as a tick is.
 
 /// Up Next's Start.
 struct StartWorkIntent: AppIntent {
