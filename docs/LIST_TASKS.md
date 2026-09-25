@@ -39,7 +39,7 @@ still choose another destination.
   order captures are made, preserves prior hierarchy and indices, and opens the
   folded headings it goes in.
 - `Tools/run-list-tasks-checks.sh`: `ListTasksProjection`, the flat queue of a
-  list's tasks the List widget shows: mixed headings, collapsed branches, rich
+  list's tasks: mixed headings, collapsed branches, rich
   prose, nested tasks, every sort and stable ties, hidden completed tasks and
   unchanged payloads.
 - `Tools/check.sh`: complete repository regression checks.

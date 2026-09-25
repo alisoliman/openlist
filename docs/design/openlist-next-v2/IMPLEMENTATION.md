@@ -312,45 +312,16 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   into names wrap at words, as the design's; in a column too narrow for a name's longest
   word, in the narrowest windows, the name truncates to one line, where the design's row
   would run past its column.
-- Widgets (`OpenlistWidget/`) depart from `widgets/` where WidgetKit sets the terms. Only a
-  row's circle is its toggle, so a tap elsewhere can't tick a task the widget can't undo;
-  while the tick's intent runs the system dims the rows beside their circles
-  (`invalidatableContent`) in place of the design's faded, struck-through row. A tick made
-  while Openlist is quit, and Up Next's Done, shows done straight away in every widget,
-  from the rows the app last published: a list's first 12 open tasks, Today's first 10
-  overdue and 15 a day, and Inbox's newest 8, spares past the rows a widget draws, so once
-  queued ticks outnumber the spares the rows thin out, the counts still right, until the
-  app opens again, where the design always moves the next open tasks up. Before macOS 27
-  the system may run Up Next's Start, Pause and Resume in the widget, which queues them;
-  one Openlist finds over 2 minutes later, after the timer it answered, is dropped with a
-  notice in the tray, where the design's always acts. A tick and its untick made while
-  it's quit cancel out, so
-  the task keeps its place, its slot and any paused work (the design's tick ends the work);
-  a task the app published done, reopened in the widget, leaves the Agenda, as a reopened
-  task leaves the calendar, and goes after the list's open rows until the app opens again,
-  where the design's goes back to its place. In medium and
-  large a row's title and list line open the task; a small widget takes only its own link,
-  so small Today's titles open Today. Quick Add's Triage link shows the Inbox as triage for
-  that visit even where this Mac shows it as a document; its Inbox link follows this Mac's
-  choice. macOS may make Openlist active as it opens a widget's link, bringing its window
-  forward behind Quick Add's card; the card then gives focus back to the app you were in,
-  and hides Openlist again if it was hidden, when it closes. Large Today's New task opens
-  Quick Add as Today's own add row does, an undated task due today, so it shows in the
-  widget; the design's footer is plain Quick Add. A List widget whose chosen list is gone
-  shows the first list, as an unconfigured one does; with no list besides Inbox it reads
-  "No lists" and opens Lists, where the design always has a list. Large List's add chip
-  names the whole list ("Add to Weekend in Kyoto"), as the app's add row does, where the
-  design's names a short form lists don't have ("Add to Kyoto"); a name too long to fit
-  whole reads "New task", as Today's chip does. Quick Add counts an Inbox task's first hour
-  in minutes ("12m"), a native extra: the design's ages start at "2h". The Activity widget
-  and Summary's week count today as the Activity screen does, every completion saved, a
-  repeat's too, while Today's "N of M done" and Summary's Done tile count the tasks sitting
-  done today, as the app's Today does, so a repeat done today counts in the first and not
-  the second, where the design has one count. The
-  gallery's sample week is the one today falls in: today has the design's Wednesday and
-  every other day its own weekday's meetings (on a weekday today's own move to Wednesday; a
-  weekend's give way), and planned slots stay on their tasks' due days, after any meeting
-  there; on a Wednesday it is the design's own week.
+- Widgets (`OpenlistWidget/`) follow the "Openlist — macOS widgets" design, whose full
+  export is `widgets/` here and whose mockup and logic are in `../openlist-widgets/`; how
+  they are built, and where they depart from it, is in `docs/WIDGETS.md`. On the app's side
+  a widget's tick, Start, Pause, Resume and Done go through the workbench, as the window's
+  own rows and work controls do, so the tray reports them, the change log lists them and
+  Undo takes them back. Their links land as the sidebar's navigation: Triage shows the
+  Inbox as triage for that visit even where this Mac shows it as a document, and Inbox
+  follows this Mac's choice; a task link opens its list with the row focused and the
+  inspector open. Quick Add floats its card over the app you are in, without making
+  Openlist active or bringing its window forward, and gives focus back when it closes.
 - Calendar: running work past its slot follows the design's overrun (the slot grows to the
   next quarter plus 15 min, later placements that day move out of its way, saved and
   undoable, stopping only at meetings and breaks; Undo still moves them back after Pause,
@@ -491,7 +462,7 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   design's note block, the match in the accent. Deviation: the design has no such card, as
   its search finds only tasks and lists; that "Matched note" card, under the line, is the
   only place such a note reads.
-- Reminders, item links (Copy Link, widget rows) and search hits land as the design's
+- Reminders, item links (Copy Link), widget rows and search hits land as the design's
   search does, with no notice: on the task's list or the Inbox, its row focused and the
   inspector open. A hit on a line past the design's (heading, text, a note, a list
   description) opens that list's document for the visit, the Inbox's too, puts the caret at

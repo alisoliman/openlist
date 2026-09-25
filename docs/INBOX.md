@@ -12,9 +12,10 @@ The sidebar counts the tasks still to triage, as the design does: tasks the card
 kept for later or scheduled, a repeating task that **Already done** rolled to its
 next date, and subtasks under an open task, which go with its card, are left
 out. Those the card set aside count again once **Review kept tasks** or a
-relaunch starts triage over. The menu bar and widgets count every open task
-owned by the system Inbox. Standalone notes remain visible and do not inflate
-task counts.
+relaunch starts triage over. The widgets count as the sidebar does, subtasks
+under an open task left out, though they can't see what the card set aside in
+the window; the menu bar counts every open task owned by the system Inbox.
+Standalone notes remain visible and do not inflate task counts.
 
 Inbox opens as triage. One card takes each open task in turn: **File into**
 lists the first nine destinations (keys 1–9), **Or schedule — stays in Inbox**
