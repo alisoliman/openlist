@@ -44,7 +44,8 @@ private final class NXLineage {
 /// first responder when a SwiftUI row, subtask, crumb or pill is clicked, so
 /// the next key would type into the title, the next task's once the panel
 /// moves on, rather than act on the row. A click in the box drawn around a
-/// field is in the field, as in a textarea's padding.
+/// field is in the field, as in a textarea's padding. While capture, search
+/// or the palette is open, the clicks are its card's, drawn over the panel.
 @MainActor
 private final class NXInspectorClicks {
     private var monitor: Any?
@@ -53,8 +54,11 @@ private final class NXInspectorClicks {
     weak var panel: NSView?
     /// The title's and the note box's areas, the padding around the text included.
     private let areas = NSHashTable<NSView>.weakObjects()
+    /// Whether an overlay card covers the panel.
+    private var covered: () -> Bool = { false }
 
-    func install() {
+    func install(covered: @escaping () -> Bool) {
+        self.covered = covered
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
@@ -102,7 +106,7 @@ private final class NXInspectorClicks {
     /// the edit be. One in the box around a field puts the caret there;
     /// anywhere else it ends the edit.
     private func handle(_ event: NSEvent) {
-        guard let window = panel?.window, event.window === window else { return }
+        guard let window = panel?.window, event.window === window, !covered() else { return }
         let point = event.locationInWindow
         // Only what shows of a box counts, not the part scrolled under the bars.
         let area = areas.allObjects.lazy.filter { $0.window === window }
@@ -215,9 +219,11 @@ struct NextInspector: View {
     @State private var holdsNote = false
     @State private var dropTargeted = false
     @State private var clicks = NXInspectorClicks()
-    @FocusState private var focus: Field?
+    @State private var fields = NXInspectorFields()
+    /// The field being written, as its text view reports it.
+    @State private var focus: Field?
 
-    enum Field { case title, note }
+    typealias Field = NXInspectorText.Role
 
     private var workbench: Workbench { env.workbench }
 
@@ -348,17 +354,16 @@ struct NextInspector: View {
         .onAppear {
             load()
             adoptRequestedPicker()
-            clicks.install()
+            let env = env
+            clicks.install { env.workbench.captureOpen || env.navigator.isSearchOpen || env.navigator.isCommandPaletteOpen }
         }
         .onChange(of: task.id) { _, _ in
             // The shell reuses this view for every task. A field being edited
             // lets go first, as a browser blurs it, so the caret doesn't
             // follow to the next task and the keys act on the row; then the
             // old task's drafts are saved before the new one's load.
-            if focus != nil {
-                clicks.endEditing()
-                focus = nil
-            }
+            clicks.endEditing()
+            focus = nil
             commitTitle()
             commitNote()
             if picker?.taskID != task.id { picker = nil }
@@ -366,7 +371,10 @@ struct NextInspector: View {
         }
         .onChange(of: task.text) { _, _ in title.receive(Self.title(of: task)) }
         .onChange(of: task.note) { _, _ in note.receive(task.note) }
-        .onChange(of: focus) { old, _ in
+        .onChange(of: focus) { old, new in
+            // Task ▸ Open Details stands down while the note is written,
+            // leaving ⌘↩ to finish it.
+            workbench.isWritingInspectorNote = new == .note
             if old == .title { commitTitle() }
             if old == .note {
                 // A box the click that ended the note leaves empty closes
@@ -387,6 +395,7 @@ struct NextInspector: View {
             commitTitle()
             commitNote()
             clicks.uninstall()
+            workbench.isWritingInspectorNote = false
         }
     }
 
@@ -408,8 +417,15 @@ struct NextInspector: View {
 
     /// The title as written, so an untitled task shows the field's placeholder, as
     /// the design shows its text, rather than the "Untitled" it goes by elsewhere.
+    /// On one line, as the title is written.
     private static func title(of task: Block) -> String {
-        task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        singleLine(task.text)
+    }
+
+    /// A title as it's kept: one line, as a list document line is, each break
+    /// a space, and trimmed.
+    private static func singleLine(_ text: String) -> String {
+        NXInspectorTextView.oneLine(text).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The task the drafts were loaded from. Unlike `store.block(id:)` this
@@ -424,7 +440,7 @@ struct NextInspector: View {
     /// from, as one Undo step with a Changes entry.
     private func commitTitle() {
         guard let target = draftTarget else { return }
-        if let edited = title.editedValue(normalize: { $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
+        if let edited = title.editedValue(normalize: Self.singleLine),
            !edited.isEmpty, edited != Self.title(of: target) {
             workbench.setTitle(edited, of: target)
         }
@@ -452,9 +468,6 @@ struct NextInspector: View {
 
     private var titleRow: some View {
         let closing = workbench.closing[task.id]
-        // The design's 600 18/1.3: the extra leading goes between lines and,
-        // halved, above the first and below the last, as CSS places it.
-        let leading = 18 * 1.3 - NXStrikeText.glyphLineHeight(18)
         return HStack(alignment: .top, spacing: 10) {
             // As the design's, it only fills: the list row keeps the pop.
             NXCheckbox(filled: task.isCompleted || closing != nil, closing: closing, priority: task.priority,
@@ -462,17 +475,11 @@ struct NextInspector: View {
                 workbench.toggle(task.id)
             }
             .padding(.top, 3)
-            TextField("Task", text: $title.value, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 18, weight: .semibold))
-                .lineSpacing(leading)
-                .foregroundStyle(task.isCompleted ? NX.ink(0.45) : NX.ink)
-                .strikethrough(task.isCompleted, color: NX.ink(0.45))
-                .focused($focus, equals: .title)
-                .onSubmit { focus = nil }
-                // Esc saves and stops editing; the next Esc closes the panel.
-                .onExitCommand { focus = nil }
-                .padding(.vertical, leading / 2)
+            // The design's 600 18/1.3, grey and struck through once done.
+            NXInspectorText(role: .title, text: $title.value, done: task.isCompleted,
+                            caretColor: env.settings.accent.editorColor, fields: fields,
+                            onFocus: { focused(.title, $0) },
+                            onSwitch: showsNote ? { fields.write(.note) } : nil)
                 .background(NXInspectorMark(role: .field, clicks: clicks))
         }
     }
@@ -568,7 +575,10 @@ struct NextInspector: View {
                         let on = task.priority == priority
                         NXInspectorPill(isOn: on) { workbench.setPriority(task.id, priority) } label: {
                             HStack(spacing: 5) {
-                                Circle().fill(on ? .white : Self.priorityColor(priority)).frame(width: 6, height: 6)
+                                // As the design's dot, it changes at once while the pill fades.
+                                Circle()
+                                    .animation(nil) { $0.foregroundStyle(on ? .white : Self.priorityColor(priority)) }
+                                    .frame(width: 6, height: 6)
                                 Text(Self.priorityTitle(priority))
                             }
                         }
@@ -589,11 +599,13 @@ struct NextInspector: View {
                                 .frame(height: 11)
                                 .padding(.vertical, 5)
                                 .padding(.horizontal, 8)
-                                .background(on ? color : color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                // The design's `background 140ms ease`; the text's colour changes at once.
+                                .animation(NX.cssEase(140)) {
+                                    $0.background(on ? color : color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                }
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .animation(.easeOut(duration: 0.14), value: on)
                     }
                     NXInspectorPill(isOn: false) { openPicker(.labels) } label: {
                         HStack(spacing: 4) {
@@ -617,13 +629,13 @@ struct NextInspector: View {
                         Text(task.isStarred ? "Starred" : "Not starred")
                     }
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(task.isStarred ? NX.amberText : NX.ink(0.66))
                     // The design's 13px star sets the line, over its 11.5/1 text.
                     .frame(height: 13)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
-                    .background(task.isStarred ? NX.amber.opacity(0.16) : NX.ink(0.05),
-                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    // Built on the design's pill, it fades as the pill does.
+                    .modifier(NXInspectorPillFade(isOn: task.isStarred, on: (NX.amberText, NX.amber.opacity(0.16)),
+                                                  off: (NX.ink(0.66), NX.ink(0.05))))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -691,7 +703,7 @@ struct NextInspector: View {
         let planned = workbench.isPlanned(task)
         let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
         // The slot line's 500 11/1.4.
-        let slotLeading = 11 * 1.4 - NXStrikeText.glyphLineHeight(11)
+        let slotLeading = 11 * 1.4 - NX.lineHeight(11)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 // The switch speaks for the row.
@@ -764,22 +776,19 @@ struct NextInspector: View {
         showsNote ? nil : { addingNote = true }
     }
 
+    /// The title or note took the keyboard, or let it go.
+    private func focused(_ field: Field, _ isFocused: Bool) {
+        if isFocused { focus = field } else if focus == field { focus = nil }
+    }
+
     private var noteBox: some View {
-        // The design's 400 13/1.55: the extra leading goes between lines and,
-        // halved, inside the 10pt padding.
-        let leading = 13 * 1.55 - NXStrikeText.glyphLineHeight(13)
-        return TextField("Add a note…", text: $note.value, axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .lineSpacing(leading)
-            .foregroundStyle(NX.ink(0.7))
-            .focused($focus, equals: .note)
-            .onExitCommand { focus = nil }
-            .onAppear {
-                // Opened by "Add a note": once the field is on screen, or the focus can miss it.
-                if addingNote { DispatchQueue.main.async { focus = .note } }
-            }
-            .padding(.vertical, 10 + leading / 2)
+        // The design's 400 13/1.55 in 10/12 padding. Opened by "Add a note"
+        // on this task, not one the panel is moving on from, it takes the keyboard.
+        NXInspectorText(role: .note, text: $note.value, caretColor: env.settings.accent.editorColor,
+                        fields: fields, takesKeyboard: addingNote && draftID == task.id,
+                        onFocus: { focused(.note, $0) },
+                        onSwitch: { fields.write(.title) })
+            .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             // A click anywhere in the box is in the note, as in a textarea.
@@ -814,7 +823,7 @@ struct NextInspector: View {
 
     private func activityRow(icon: String, text: String, date: Date) -> some View {
         // 400 12/1.4, which sets the row's height, as in the design.
-        let leading = 12 * 1.4 - NXStrikeText.glyphLineHeight(12)
+        let leading = 12 * 1.4 - NX.lineHeight(12)
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: icon).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
             Text(text).font(.system(size: 12)).lineSpacing(leading).foregroundStyle(NX.ink(0.66))
@@ -870,12 +879,37 @@ struct NXInspectorPill<Label: View>: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .lineLimit(1)
                 .frame(height: line)
-                .foregroundStyle(isOn ? .white : NX.ink(0.66))
                 .padding(padding)
-                .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .modifier(NXInspectorPillFade(isOn: isOn, on: (.white, style.accent), off: (NX.ink(0.66), NX.ink(0.05))))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.14), value: isOn)
+    }
+}
+
+/// The design's pill `transition: background 140ms ease, color 140ms ease`:
+/// the text's and the fill's colours fade, while the label, and the width it
+/// takes, change at once, as CSS moves neither. The colours follow in a step
+/// of their own, since an animation scoped to them wouldn't reach the text.
+private struct NXInspectorPillFade: ViewModifier {
+    let isOn: Bool
+    let on: (text: Color, fill: Color)
+    let off: (text: Color, fill: Color)
+    /// The colours shown, `isOn`'s once it has changed.
+    @State private var shown: Bool
+
+    init(isOn: Bool, on: (text: Color, fill: Color), off: (text: Color, fill: Color)) {
+        self.isOn = isOn
+        self.on = on
+        self.off = off
+        _shown = State(initialValue: isOn)
+    }
+
+    func body(content: Content) -> some View {
+        let colors = shown ? on : off
+        content
+            .foregroundStyle(colors.text)
+            .background(colors.fill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .onChange(of: isOn) { _, now in withAnimation(NX.cssEase(140)) { shown = now } }
     }
 }
