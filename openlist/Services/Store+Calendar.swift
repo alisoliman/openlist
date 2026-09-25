@@ -56,6 +56,20 @@ extension Store {
         save()
     }
 
+    /// Ends a deferral: the task no longer waits for its day. The day it was
+    /// selected for goes with it while still ahead; once that day has come
+    /// the task stays selected, as it's planned for today by then.
+    func clearDeferral(_ block: Block, now: Date = .now) {
+        guard block.isTask, block.deferredUntil != nil else { return }
+        let calendar = Calendar.current
+        if let day = block.selectedForDay, calendar.startOfDay(for: day) > calendar.startOfDay(for: now) {
+            block.selectedForDay = nil
+        }
+        block.deferredUntil = nil
+        block.touch()
+        save()
+    }
+
     func setTaskEstimate(_ minutes: Int, for block: Block) {
         block.schedulingEstimateMinutes = max(0, min(60 * 24 * 28, minutes))
         block.touch()
@@ -110,8 +124,8 @@ extension Store {
         placement.start = start
         placement.end = end
         placement.isPinned = isPinned
-        // A deliberate placement also selects an otherwise undated task.
-        if block.selectedForDay == nil { block.selectedForDay = Calendar.current.startOfDay(for: start) }
+        // A slot doesn't pick the task for its day, as the design's Plan
+        // doesn't; the slot itself keeps the task in the plan.
         block.touch()
         save()
         return placement
@@ -292,26 +306,6 @@ extension Store {
         discardTaskSchedule(for: block, reason: "Completed", now: now)
     }
 
-    /// Reset explicitly removes history as well as current planning choices.
-    func clearCalendarHistory() {
-        do {
-            for session in try context.fetch(FetchDescriptor<WorkSession>()) { context.delete(session) }
-            for record in try context.fetch(FetchDescriptor<CompletionRecord>()) { context.delete(record) }
-            for placement in try context.fetch(FetchDescriptor<SchedulePlacement>()) { context.delete(placement) }
-            calendarPlannedBlocks = []
-            completionUndo = nil
-            completionUndoChanges.removeAll()
-            pendingCompletionUndoChanges.removeAll()
-            for registration in completionUndoRegistrations.values {
-                registration.manager?.removeAllActions(withTarget: registration)
-            }
-            completionUndoRegistrations.removeAll()
-            save()
-        } catch {
-            persistenceError = "Calendar history could not be cleared. \(error.localizedDescription)"
-        }
-    }
-
     /// Completion history is display-only. It must never be passed back to the
     /// scheduler as availability, estimates, or fixed placements.
     func completedCalendarBlocks() -> [PlannedBlock] {
@@ -319,24 +313,38 @@ extension Store {
         return completionRecords().flatMap { record -> [PlannedBlock] in
             let actual = (sessions[record.occurrenceID] ?? []).filter { $0.taskID == record.taskID }.sorted { $0.startedAt < $1.startedAt }
             let tracked = !actual.isEmpty
-            let intervals: [CompletionCalendarInterval]
+            let intervals: [(span: CompletionCalendarInterval, keepsSlot: Bool)]
             if tracked {
-                intervals = actual.map { session in
+                var spans = actual.map { session in
                     let seconds = session.durationMinutes() * 60
                     let maximum = max(0, Date.distantFuture.timeIntervalSince(session.startedAt))
                     let duration = seconds.isFinite ? min(maximum, max(0, seconds)) : maximum
                     return CompletionCalendarInterval(start: session.startedAt, end: session.startedAt.addingTimeInterval(duration))
                 }
+                // Work done in a planned slot keeps the slot, as its running block
+                // did, stretched to any work past either end. Work elsewhere shows
+                // where it happened, and a slot nobody worked in shows nothing.
+                for slot in record.plannedIntervals {
+                    let inside = spans.filter { $0.start < slot.end && $0.end > slot.start }
+                    guard let start = inside.map(\.start).min(), let end = inside.map(\.end).max() else { continue }
+                    spans.removeAll { $0.start < slot.end && $0.end > slot.start }
+                    spans.append(CompletionCalendarInterval(start: min(slot.start, start), end: max(slot.end, end)))
+                }
+                // Only what was merged into a slot still meets one.
+                intervals = spans.sorted { $0.start < $1.start }.map { span in
+                    (span, record.plannedIntervals.contains { $0.start < span.end && $0.end > span.start })
+                }
             } else if !record.plannedIntervals.isEmpty {
-                intervals = record.plannedIntervals
+                intervals = record.plannedIntervals.map { ($0, true) }
             } else {
-                intervals = [CompletionCalendarInterval(start: record.completedAt, end: record.completedAt)]
+                intervals = [(CompletionCalendarInterval(start: record.completedAt, end: record.completedAt), false)]
             }
             return intervals.enumerated().map { index, interval in
                 PlannedBlock(id: "completed-\(record.id.uuidString)-\(index)", taskID: record.taskID,
-                             occurrenceID: record.occurrenceID, start: interval.start, end: interval.end,
+                             occurrenceID: record.occurrenceID, start: interval.span.start, end: interval.span.end,
                              isPinned: false, placementID: nil, conflicts: [],
-                             completionID: record.id, titleSnapshot: record.title, isTimeTracked: tracked)
+                             completionID: record.id, titleSnapshot: record.title, isTimeTracked: tracked,
+                             keepsSlot: interval.keepsSlot)
             }
         }.sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
     }

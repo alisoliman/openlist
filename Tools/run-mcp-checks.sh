@@ -37,14 +37,14 @@ else
         < <(find "$BIN" -path '*/C*.build/module.modulemap' -type f)
 fi
 xcrun swiftc -swift-version 6 -default-isolation MainActor -enable-upcoming-feature MemberImportVisibility "${FLAGS[@]}" "${CHECK_FLAGS[@]}" -o "$OUT/mcp-store-checks" \
-    openlist/Model/*.swift Shared/ListAccent.swift Shared/AppGroup.swift Tools/MCPChecks/ReviewSession.swift openlist/Design/Theme.swift \
+    openlist/Model/*.swift Shared/ListAccent.swift Shared/AppGroup.swift Tools/MCPChecks/ReviewSession.swift openlist/Next/NextEditorTypography.swift \
     openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \
     openlist/Services/Store+Tasks.swift openlist/Services/Store+LabelMerge.swift openlist/Services/Store+Calendar.swift openlist/Services/Store+CompletionUndo.swift openlist/Services/Store+Capture.swift \
     openlist/Services/BlockTree.swift openlist/Services/RichTextCodec.swift \
     openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
     openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
     openlist/Services/ActiveTaskPolicy.swift openlist/Services/AppSettings.swift \
-    openlist/Services/MCPTools.swift openlist/Services/MCPStoreAdapter.swift \
+    openlist/Services/MCPTools.swift openlist/Services/MCPStoreAdapter.swift openlist/Editor/OutlinePolicy.swift \
     openlist/Services/MCPTokenStore.swift openlist/Services/MCPIntegration.swift \
     Tools/EditorChecks/Support.swift Tools/MCPChecks/HelperRoundTrip.swift Tools/MCPChecks/main.swift
 HELPER=${OPENLIST_MCP_HELPER:-"$OUT/openlist-mcp"}

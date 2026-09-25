@@ -1,11 +1,13 @@
 import SwiftData
 import SwiftUI
 
-/// Repeat-rule editor.
+/// Repeat-rule editor. Each change goes through the workbench: one Undo
+/// step, with its tray.
 struct RecurrencePicker: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
 
     @State private var isEnabled = false
     @State private var frequency: Recurrence.Frequency = .weekly
@@ -15,6 +17,7 @@ struct RecurrencePicker: View {
     @State private var ending: Ending = .never
     @State private var endDate: Date = .now
     @State private var occurrenceLimit = 10
+    @State private var picksEndDay = false
 
     /// How a repeat series stops. The model and engine already honour both an
     /// end date and an occurrence count; this is the missing way to set them.
@@ -37,65 +40,69 @@ struct RecurrencePicker: View {
     }
 
     private var liveContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Toggle("Repeat this task", isOn: enabledBinding)
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .font(Theme.Font.body)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                // The switch speaks for the row; its words toggle it too.
+                HStack(spacing: 8) {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(style.accent)
+                    Text("Repeat this task")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(NX.ink)
+                    Spacer(minLength: 6)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { enabledBinding.wrappedValue.toggle() }
+                .accessibilityHidden(true)
+                NXToggle(isOn: isEnabled, label: "Repeat this task") { enabledBinding.wrappedValue.toggle() }
+            }
 
             if isEnabled {
-                Divider()
-                presets
+                section("Quick picks") { presets }
 
-                Divider()
-
-                HStack(spacing: 6) {
-                    Text("Every")
-                        .font(Theme.Font.body)
-
-                    Stepper(value: editing($interval), in: 1...52) {
-                        Text("\(interval)")
-                            .font(Theme.Font.body)
-                            .monospacedDigit()
-                            .frame(minWidth: 18)
-                    }
-
-                    Picker("Repeat frequency", selection: editing($frequency)) {
+                section("Every") {
+                    NXFlow(spacing: 4, alignment: .center) {
+                        NXRepeatStepper(label: "Repeat interval", value: editing($interval), range: 1...52,
+                                        spoken: "\(interval) \(interval == 1 ? frequency.singular : frequency.plural)") {
+                            Text("\(interval)")
+                        }
+                        .padding(.trailing, 4)
                         ForEach(Recurrence.Frequency.allCases, id: \.self) { option in
-                            Text(interval == 1 ? option.singular : option.plural).tag(option)
+                            pill(interval == 1 ? option.singular : option.plural, isOn: frequency == option) {
+                                // Choosing the current value again saves nothing.
+                                guard frequency != option else { return }
+                                editing($frequency).wrappedValue = option
+                            }
                         }
                     }
-                    .labelsHidden()
-                    .frame(width: 96)
                 }
 
                 if frequency == .weekly {
-                    weekdayPicker
+                    section("On") { weekdayPicker }
                 }
 
-                Divider()
-                endCondition
+                section("Ends") { endCondition }
 
-                Picker("Count from", selection: editing($anchor)) {
-                    ForEach(Recurrence.Anchor.allCases, id: \.self) { option in
-                        Text(option.title).tag(option)
+                section("Count from") {
+                    NXFlow(spacing: 4) {
+                        ForEach(Recurrence.Anchor.allCases, id: \.self) { option in
+                            pill(option.title, isOn: anchor == option) {
+                                guard anchor != option else { return }
+                                editing($anchor).wrappedValue = option
+                            }
+                        }
                     }
                 }
-                .pickerStyle(.radioGroup)
-                .font(Theme.Font.body)
 
                 if let rule = block.recurrence {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Next occurrences")
-                            .font(Theme.Font.sectionHeader)
-                            .textCase(.uppercase)
-                            .foregroundStyle(Theme.tertiaryText)
-
-                        ForEach(RecurrenceEngine.upcoming(rule: rule, from: block.dueDate), id: \.self) { date in
-                            Text(date.formatted(date: .complete, time: .omitted))
-                                .font(Theme.Font.metadata)
-                                .foregroundStyle(Theme.secondaryText)
+                    section("Next occurrences") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(RecurrenceEngine.upcoming(rule: rule, from: block.dueDate), id: \.self) { date in
+                                Text(NXFormat.dayLabel(date))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(NX.ink(0.62))
+                            }
                         }
                     }
                 }
@@ -104,82 +111,83 @@ struct RecurrencePicker: View {
         .onAppear(perform: load)
     }
 
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            NXCapsTitle(text: title)
+            content()
+        }
+    }
+
+    /// An inspector pill that says when it is the current choice.
+    private func pill(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        NXInspectorPill(isOn: isOn, action: action) { Text(title) }
+            .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
     @ViewBuilder
     private var endCondition: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker("Ends", selection: editing($ending)) {
+        VStack(alignment: .leading, spacing: 8) {
+            NXFlow(spacing: 4) {
                 ForEach(Ending.allCases) { option in
-                    Text(option.title).tag(option)
+                    pill(option.title, isOn: ending == option) {
+                        guard ending != option else { return }
+                        editing($ending).wrappedValue = option
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             switch ending {
             case .never:
                 EmptyView()
             case .onDate:
-                DatePicker("Repeat end date", selection: editing($endDate), displayedComponents: .date)
-                    .labelsHidden()
+                NXDatePill(label: "Repeat end date", date: endDate, isOpen: picksEndDay) {
+                    withAnimation(style.ease(180)) { picksEndDay.toggle() }
+                }
+                if picksEndDay {
+                    CalendarMonthPicker(selection: endDate, calendar: env.settings.calendar) { day in
+                        editing($endDate).wrappedValue = day
+                        withAnimation(style.ease(180)) { picksEndDay = false }
+                    }
+                    .transition(.opacity)
+                }
             case .afterCount:
-                Stepper(value: editing($occurrenceLimit), in: 1...365) {
+                NXRepeatStepper(label: "Occurrences", value: editing($occurrenceLimit), range: 1...365,
+                                spoken: occurrenceLimit == 1 ? "1 time" : "\(occurrenceLimit) times") {
                     Text("\(occurrenceLimit) times")
-                        .font(Theme.Font.body)
-                        .monospacedDigit()
                 }
             }
         }
     }
 
     private var presets: some View {
-        VStack(spacing: 2) {
-            presetRow("Every day", rule: .daily)
-            presetRow("Every weekday", rule: .weekdaysOnly)
-            presetRow("Every week", rule: .weekly)
-            presetRow("Every month", rule: .monthly)
-            presetRow("Every year", rule: .yearly)
+        NXFlow(spacing: 4) {
+            presetPill("Every day", rule: .daily)
+            presetPill("Every weekday", rule: .weekdaysOnly)
+            presetPill("Every week", rule: .weekly)
+            presetPill("Every month", rule: .monthly)
+            presetPill("Every year", rule: .yearly)
         }
     }
 
-    private func presetRow(_ title: String, rule: Recurrence) -> some View {
-        Button {
-            env.store.setRecurrence(rule, for: block)
+    private func presetPill(_ title: String, rule: Recurrence) -> some View {
+        pill(title, isOn: block.recurrence?.displayText == rule.displayText) {
+            env.workbench.setRecurrence(block.id, rule)
             load()
-        } label: {
-            HStack {
-                Text(title)
-                    .font(Theme.Font.body)
-                Spacer()
-                if block.recurrence?.displayText == rule.displayText {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Theme.accent)
-                }
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
+    /// The days in the order the week starts on, as the month grids under
+    /// Ends and Due have them; each keeps its own weekday number.
     private var weekdayPicker: some View {
-        HStack(spacing: 3) {
-            ForEach(1...7, id: \.self) { day in
-                Button {
+        HStack(spacing: 4) {
+            ForEach(NXHours.weekdays(env.settings.calendar), id: \.self) { day in
+                NXInspectorPill(isOn: weekdays.contains(day)) {
                     if weekdays.contains(day) { weekdays.remove(day) } else { weekdays.insert(day) }
                     apply()
                 } label: {
                     Text(Recurrence.shortWeekdayName(day).prefix(2))
-                        .font(.system(size: 10, weight: .medium))
-                        .frame(width: 30, height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(weekdays.contains(day) ? Theme.accent : Theme.chipFill)
-                        )
-                        .foregroundStyle(weekdays.contains(day) ? Color.white : Theme.secondaryText)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
                 .accessibilityLabel(Recurrence.shortWeekdayName(day))
                 .accessibilityValue(weekdays.contains(day) ? "Selected" : "Not selected")
             }
@@ -215,7 +223,7 @@ struct RecurrencePicker: View {
     private var enabledBinding: Binding<Bool> {
         Binding(get: { isEnabled }, set: { enabled in
             isEnabled = enabled
-            if enabled { apply() } else { env.store.setRecurrence(nil, for: block) }
+            if enabled { apply() } else { env.workbench.setRecurrence(block.id, nil) }
         })
     }
 
@@ -242,12 +250,59 @@ struct RecurrencePicker: View {
             rule.endDate = nil
             rule.occurrenceLimit = nil
         case .onDate:
-            rule.endDate = Calendar.current.startOfDay(for: endDate).addingTimeInterval(86_399)
+            rule.endDate = Recurrence.endDate(onDay: endDate, calendar: env.settings.calendar)
             rule.occurrenceLimit = nil
         case .afterCount:
             rule.endDate = nil
             rule.occurrenceLimit = occurrenceLimit
         }
-        env.store.setRecurrence(rule, for: block)
+        env.workbench.setRecurrence(block.id, rule)
+    }
+}
+
+/// The inspector's estimate stepper: grey minus and plus around the value,
+/// one adjustable control to VoiceOver.
+private struct NXRepeatStepper<Value: View>: View {
+    let label: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    /// The value with its unit, as VoiceOver reads it.
+    let spoken: String
+    @ViewBuilder var text: () -> Value
+
+    var body: some View {
+        HStack(spacing: 8) {
+            step("minus", by: -1)
+            text()
+                .font(.system(size: 12, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(NX.ink)
+                .contentTransition(.numericText())
+                .fixedSize()
+                .frame(minWidth: 18)
+            step("plus", by: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(spoken)
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: change(by: 1)
+            case .decrement: change(by: -1)
+            @unknown default: break
+            }
+        }
+    }
+
+    private func step(_ icon: String, by amount: Int) -> some View {
+        // The stepper speaks as one control; these names are for completeness.
+        NXStepButton(icon: icon, label: amount < 0 ? "Fewer" : "More") { change(by: amount) }
+            .disabled(!range.contains(value + amount))
+            .opacity(range.contains(value + amount) ? 1 : 0.45)
+    }
+
+    private func change(by amount: Int) {
+        let next = min(range.upperBound, max(range.lowerBound, value + amount))
+        if next != value { value = next }
     }
 }

@@ -6,6 +6,28 @@
 import Foundation
 import WidgetKit
 
+/// The actions the main window's rows and work controls use. `Workbench`
+/// provides them in the app, so a widget's tick, Start, Pause, Resume or Done
+/// goes the window's way: the tray reports it, the change log lists it and
+/// Undo takes it back.
+@MainActor
+protocol WidgetTaskActions: AnyObject {
+    /// Completes the task and its open subtasks as of `date`, without the
+    /// window's dwell, which the widget draws for itself. Completing the work
+    /// in progress stops its timer and takes it off the toolbar, as Done does.
+    func completeFromWidget(_ id: UUID, at date: Date, now: Date)
+    func reopenFromWidget(_ id: UUID, now: Date)
+    /// Starts recording `id`, or resumes it when it is the paused work,
+    /// without opening the Work panel.
+    func startWorkFromWidget(_ id: UUID, now: Date)
+    /// Pauses the running work.
+    func pauseWorkFromWidget(now: Date)
+    /// Writes the window's tick of `id` straight away when the row is still
+    /// in its completion dwell, so a widget tap on the same row finds it done
+    /// instead of completing it a second time underneath the window.
+    func settleCompletion(_ id: UUID)
+}
+
 /// Applies what widget buttons ask for: ticking tasks off or reopening them,
 /// and starting, pausing and finishing the work the toolbar timer shows.
 ///
@@ -26,18 +48,16 @@ final class WidgetCommandProcessor {
     private let store: Store
     private let calendar: CalendarCoordinator
     private let publisher: WidgetSnapshotPublisher
+    private let actions: any WidgetTaskActions
     /// Runs before anything is applied: an intent can be what launched the app.
     var prepare: () -> Void = {}
-    /// Writes the main window's tick of a task straight away when the row is
-    /// still in its completion dwell, so a widget tap on the same row finds it
-    /// done instead of completing it a second time underneath the window.
-    var settleWindowCompletion: (UUID) -> Void = { _ in }
     private var isListening = false
 
-    init(store: Store, calendar: CalendarCoordinator, publisher: WidgetSnapshotPublisher) {
+    init(store: Store, calendar: CalendarCoordinator, publisher: WidgetSnapshotPublisher, actions: any WidgetTaskActions) {
         self.store = store
         self.calendar = calendar
         self.publisher = publisher
+        self.actions = actions
     }
 
     deinit {
@@ -101,12 +121,14 @@ final class WidgetCommandProcessor {
         guard let taskID = command.taskID, let occurrenceID = command.occurrenceID else { return false }
         switch command.action {
         case .complete:
-            settleWindowCompletion(taskID)
+            actions.settleCompletion(taskID)
             guard let task = occurrence(taskID, occurrenceID), !task.isCompleted else { return false }
-            complete(task, tappedAt: tappedAt, now: now)
+            actions.completeFromWidget(task.id, at: tappedAt, now: now)
+            return store.block(id: taskID).map { $0.isCompleted || $0.occurrenceID != occurrenceID } ?? false
         case .reopen:
             guard let task = occurrence(taskID, occurrenceID), task.isCompleted else { return false }
-            store.toggleCompletion(task, now: now)
+            actions.reopenFromWidget(task.id, now: now)
+            return store.block(id: taskID)?.isCompleted == false
         case .startWork:
             guard isRecent(command, now: now), let task = occurrence(taskID, occurrenceID), !task.isCompleted else { return false }
             return start(task, now: now)
@@ -114,25 +136,25 @@ final class WidgetCommandProcessor {
             // Only the work the widget drew: a stale Pause never stops work begun since.
             guard isRecent(command, now: now), let session = calendar.activeSession,
                   session.taskID == taskID, session.occurrenceID == occurrenceID else { return false }
-            calendar.pause(reason: "Paused", now: now)
+            actions.pauseWorkFromWidget(now: now)
             return calendar.activeSession == nil
         case .resumeWork:
             guard isRecent(command, now: now), calendar.activeSession == nil, let task = calendar.resumableTask,
                   task.id == taskID, task.occurrenceID == occurrenceID else { return false }
             return start(task, now: now)
         case .finishWork:
-            settleWindowCompletion(taskID)
+            actions.settleCompletion(taskID)
             guard let task = occurrence(taskID, occurrenceID), !task.isCompleted, isWorkTask(task) else { return false }
-            complete(task, tappedAt: tappedAt, now: now)
+            actions.completeFromWidget(task.id, at: tappedAt, now: now)
+            return store.block(id: taskID).map { $0.isCompleted || $0.occurrenceID != occurrenceID } ?? false
         }
-        return true
     }
 
     // MARK: - Actions
 
     /// The occurrence a command names, while it is still a task in an active list.
     private func occurrence(_ taskID: UUID, _ occurrenceID: UUID) -> Block? {
-        guard let task = store.block(id: taskID), task.occurrenceID == occurrenceID,
+        guard let task = store.block(id: taskID), task.occurrenceID == occurrenceID, task.trashID == nil,
               ActiveTaskPolicy(hierarchy: store.listHierarchy()).includes(task) else { return nil }
         return task
     }
@@ -150,48 +172,14 @@ final class WidgetCommandProcessor {
         return calendar.resumableTask?.id == task.id
     }
 
-    /// Completes without the window's dwell, which the widget draws for itself.
-    ///
-    /// The task is done as of the tap, so a tick queued late in the evening and
-    /// applied at the next launch still counts on that day, and a repeat that
-    /// runs from its completion rolls forward from the tap.
-    private func complete(_ task: Block, tappedAt: Date, now: Date) {
-        if let session = calendar.activeSession, session.taskID == task.id, session.occurrenceID == task.occurrenceID {
-            // Closes the running segment and reports the recorded time in the
-            // Work panel, as Complete Current Task does. At `now`, not the tap:
-            // work only records while the app runs, and a running app applies
-            // a tap within moments; completing also replans the day, which has
-            // to start from the time it really is.
-            calendar.complete(task: task, now: now)
-            return
-        }
-        let wasPaused = calendar.resumeTaskID == task.id
-        store.toggleCompletion(task, now: tappedAt)
-        // Finished work leaves the toolbar timer, as it does when ticked in the window.
-        if wasPaused { calendar.dismissResume() }
-    }
-
     /// Starts or resumes recording without opening the Work panel.
     ///
-    /// Taking over from other running work is a switch the app asks you to
-    /// confirm, so a widget never makes it: a Start while something else runs
-    /// comes from a stale widget and is ignored.
+    /// A widget never takes over from other running work: a Start while
+    /// something else runs comes from a widget drawn before that work began,
+    /// and is ignored rather than switching what you are recording.
     private func start(_ task: Block, now: Date) -> Bool {
         guard calendar.activeSession == nil else { return false }
-        let notice = calendar.notice
-        // Work that stopped at its estimate resumes as the toolbar's Resume
-        // does: the tap is the go-ahead for the extra time and the moves it needs.
-        if let nudge = calendar.overrunNudge, nudge.needsConfirmation, nudge.occurrenceID == task.occurrenceID {
-            calendar.acceptMoreTime(now: now)
-        } else {
-            calendar.start(task: task, now: now)
-        }
-        guard calendar.activeSession?.occurrenceID == task.occurrenceID else {
-            // Refused: outside the list's hours or inside busy time. The Work
-            // panel should not later explain a tap it never saw.
-            calendar.notice = notice
-            return false
-        }
-        return true
+        actions.startWorkFromWidget(task.id, now: now)
+        return calendar.activeSession?.occurrenceID == task.occurrenceID
     }
 }

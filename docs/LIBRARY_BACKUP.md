@@ -1,6 +1,6 @@
 # Manual library backup and restore
 
-Settings > Data provides **Back up library** and **Restore backup**. Markdown
+Settings › Data provides **Back up library…** and **Restore backup…**. Markdown
 export remains a readable document export; an `.openlistbackup` directory
 package is the versioned reconstruction format. Current exports use format 5, including retained legacy Inbox metadata, Trash, covers, and list ownership. Formats 1–4 upgrade explicitly; Inbox visibility follows ownership, never the legacy metadata. An older already-queued restore must be cancelled and its backup selected again so that the staged schema and fingerprint can be revalidated.
 
@@ -8,8 +8,15 @@ Backups are **unencrypted**. They contain private task and note text, files,
 labels, calendar history, and activity for subjects that may since have been
 deleted. Store packages somewhere private. Clearing history or deleting data
 in Openlist does not erase previously exported backups or retained recovery
-files. There is no automatic backup schedule, retention cleanup, encryption,
-cloud backup destination, third-party import, or merge import in this slice.
+files. There is no encryption, cloud backup destination, third-party import, or
+merge import.
+
+**Back up library** under Settings › Library also takes a snapshot package each
+day by default, keeping the newest 14 in Openlist's Application Support
+`Backups` folder, and offers **Show Snapshots in Finder**. Its hint is about
+the snapshots only (how many it keeps, or why the last one failed); a backup
+made by hand, a restore and what they report stay under Settings › Data. Only
+packages named like a snapshot are listed or pruned.
 
 ## Snapshot boundary
 
@@ -50,9 +57,9 @@ The contract includes every persisted property of all nine current model types:
 
 | Records | Included state |
 | --- | --- |
-| TaskList | IDs, parent document ownership, Inbox/alias identity, own archive choice, Trash group/recovery metadata, title/summary, icon/color, cover metadata and bytes, ordering, section and display/availability preferences, timestamps |
+| TaskList | IDs, parent document ownership, Inbox/alias identity, own archive choice, Trash group/recovery metadata, title/summary, icon/colour, cover metadata and bytes, ordering, section and display/availability preferences, timestamps |
 | Block | IDs, hierarchy, rich/plain text, all task/recurrence/reminder/calendar payloads, labels, media and timestamps |
-| SidebarSection and TaskLabel | IDs, names/colors, ordering, collapse/default/alias state and timestamps |
+| SidebarSection and TaskLabel | IDs, names/colours, ordering, collapse/default/alias state and timestamps |
 | Attachment | IDs, owning task, filename/display metadata, exact bytes, ordering and timestamps |
 | ActivityEvent | IDs, full history including old snapshots and undecodable legacy detail bytes |
 | WorkSession and CompletionRecord | IDs, occurrence and historical subject references, times, corrections, planned intervals and snapshots |
@@ -70,8 +77,9 @@ recoverable through the bounded hierarchy display. Retained document groups
 must connect to their own Trash root without crossing document boundaries.
 
 Portable settings include completed-task visibility, date parsing, default task
-destination, list-deletion confirmation, first weekday, Today/Lists sorting, and
-calendar estimates, availability, breaks and date overrides. Excluded current-Mac
+destination, list-deletion confirmation, first weekday, the previous design's
+Today and Lists sort choices (carried and validated, though nothing reads them
+now), and calendar estimates, availability, breaks and date overrides. Excluded current-Mac
 state includes appearance, window layout, menu-bar/hotkey controls, device ID,
 permissions, external-calendar connection/selection, MCP credentials/configuration,
 notification delivery state and synchronization configuration. Device IDs inside
@@ -84,7 +92,7 @@ performance at every maximum.
 
 ## Replace, quit, and recover
 
-Choosing a backup only validates it and displays a preview. **Restore and Quit**
+Choosing a backup only validates it and displays a preview. **Restore and quit**
 is explicit replacement confirmation. Open Openlist again after it quits to
 finish. It builds a separate local-only generation; it does not reset, replace
 or merge the original cloud library. The staged store adopts the original
@@ -133,7 +141,7 @@ recorded heartbeat rather than claiming work continued after the backup. The
 original backup bytes and history are retained.
 
 **Return to original library** selects the retained original store and its
-preferences after quit/reopen, including its previous iCloud behavior. Changes
+preferences after quit/reopen, including its previous iCloud behaviour. Changes
 in the restored library are not merged. A readable departing library gets a
 recovery backup. If the restored store is unreadable, explicit return can still
 open a verified original; it retains the unreadable files and reports why a new

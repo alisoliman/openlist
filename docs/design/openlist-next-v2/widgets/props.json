@@ -1,0 +1,44 @@
+{
+ "Root": null,
+ "OpenlistWidget": {
+  "kind": {
+   "editor": "enum",
+   "options": [
+    "today",
+    "upnext",
+    "capture",
+    "list",
+    "agenda",
+    "summary",
+    "activity"
+   ],
+   "default": "today",
+   "tsType": "string"
+  },
+  "size": {
+   "editor": "enum",
+   "options": [
+    "small",
+    "medium",
+    "large",
+    "xl"
+   ],
+   "default": "medium",
+   "tsType": "string"
+  },
+  "mode": {
+   "editor": "enum",
+   "options": [
+    "light",
+    "dark",
+    "dimmed"
+   ],
+   "default": "light",
+   "tsType": "string"
+  },
+  "model": {
+   "editor": null,
+   "tsType": "object"
+  }
+ }
+}

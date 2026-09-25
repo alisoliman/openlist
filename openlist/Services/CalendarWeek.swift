@@ -1,0 +1,170 @@
+import Foundation
+
+/// The days the Calendar shows. The grid, Plan and "Not planned yet" share
+/// them, so a planned block always lands where it can be seen.
+enum CalendarWeek {
+    /// Day and 3 days start today. Week is the week around today that starts
+    /// on `calendar`'s first weekday, the "Week starts on" setting. Given
+    /// another day, they show that day instead of today.
+    static func days(count: Int, from now: Date, calendar: Calendar) -> [Date] {
+        let today = calendar.startOfDay(for: now)
+        let offset = count == 7 ? (calendar.component(.weekday, from: today) - calendar.firstWeekday + 7) % 7 : 0
+        guard let first = calendar.date(byAdding: .day, value: -offset, to: today) else { return [] }
+        return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: first) }
+    }
+
+    /// The Week view's span, from the start of its first day to the end of its last.
+    static func span(from now: Date, calendar: Calendar) -> DateInterval {
+        let days = days(count: 7, from: now, calendar: calendar)
+        let start = days.first ?? calendar.startOfDay(for: now)
+        let end = days.last.flatMap { calendar.date(byAdding: .day, value: 1, to: $0) } ?? start
+        return DateInterval(start: start, end: max(start, end))
+    }
+
+    /// The day the Calendar shows its range from after stepping `step` ranges
+    /// on (or back) from `days`: a day, three days or a week at a time. Nil
+    /// once that range is the one around today again, which it then follows.
+    static func anchor(stepping days: [Date], by step: Int, now: Date, calendar: Calendar) -> Date? {
+        guard let first = days.first,
+              let day = calendar.date(byAdding: .day, value: step * days.count, to: first) else { return nil }
+        return anchor(showing: day, count: days.count, now: now, calendar: calendar)
+    }
+
+    /// The day the Calendar shows its range from so that `day` is in it: nil
+    /// when the range around today has it.
+    static func anchor(showing day: Date, count: Int, now: Date, calendar: Calendar) -> Date? {
+        let current = days(count: count, from: now, calendar: calendar)
+        return current.contains { calendar.isDate($0, inSameDayAs: day) } ? nil : calendar.startOfDay(for: day)
+    }
+
+    /// Whether the range of `count` days built from `start` has `day` in it.
+    static func shows(_ day: Date, count: Int, from start: Date, calendar: Calendar) -> Bool {
+        days(count: count, from: start, calendar: calendar).contains { calendar.isDate($0, inSameDayAs: day) }
+    }
+
+    /// The anchor that brings `day` into the Calendar's range: the one in
+    /// effect (`anchor`, on the day it was set) while its range has the day
+    /// already, so a range stepped or moved to stays put; else the one
+    /// `anchor(showing:)` gives, nil when that's the range around today.
+    static func anchor(revealing day: Date, anchor: Date?, setAt: Date, count: Int, now: Date,
+                       calendar: Calendar) -> Date? {
+        let current = calendar.isDate(setAt, inSameDayAs: now) ? anchor : nil
+        if shows(day, count: count, from: start(anchor: anchor, setAt: setAt, now: now, calendar: calendar), calendar: calendar) {
+            return current
+        }
+        return self.anchor(showing: day, count: count, now: now, calendar: calendar)
+    }
+
+    /// The day the Calendar builds its range from: `anchor`, the day stepped
+    /// to or planned on, else today. An anchor lasts only the day it was set:
+    /// from the next, the Calendar shows the range around today again, as the
+    /// design's always does, whichever range it was on and however it's viewed.
+    static func start(anchor: Date?, setAt: Date, now: Date, calendar: Calendar) -> Date {
+        guard let anchor, calendar.isDate(setAt, inSameDayAs: now) else { return now }
+        return anchor
+    }
+
+    /// Whether a task due at `due` is due soon for "Not planned yet": from a
+    /// week back to the end of the week around today (the settings week, as
+    /// Plan searches it), or four days out when that's later. In the design,
+    /// whose today is a Wednesday, both end on its Sunday.
+    static func isDueSoon(_ due: Date, now: Date, calendar: Calendar) -> Bool {
+        let today = calendar.startOfDay(for: now)
+        guard let from = calendar.date(byAdding: .day, value: -7, to: today),
+              let soon = calendar.date(byAdding: .day, value: 5, to: today) else { return false }
+        return due >= from && due < max(span(from: now, calendar: calendar).end, soon)
+    }
+
+    /// Where Plan puts a task of `duration`: the first free quarter hour in
+    /// its list's hours, clear of `busy`, from now or its deferral. As the
+    /// design's Plan, it looks no further than the week around today while
+    /// that week still has hours long enough for the task; once none are
+    /// left, it goes on into the next week. A deferral past this week gets a
+    /// week of its own.
+    static func slot(duration: TimeInterval, deferredUntil: Date?, category: AvailabilityCategory,
+                     preferences: CalendarPreferences, busy: [DateInterval], now: Date, calendar: Calendar) -> PlanSlot {
+        let quarter: TimeInterval = 15 * 60
+        let from = max(now, deferredUntil ?? now)
+        // On a quarter hour, not before a deferral, and only inside the list's hours:
+        // the scheduler's windows already leave out breaks, overrides and days off,
+        // and follow the wall clock across DST.
+        let earliest = Date(timeIntervalSinceReferenceDate: (from.timeIntervalSinceReferenceDate / quarter).rounded(.up) * quarter)
+        func hours(to end: Date) -> [DateInterval] {
+            earliest < end ? AdaptiveScheduler.availabilityIntervals(for: category, preferences: preferences,
+                                                                    from: earliest, to: end, calendar: calendar) : []
+        }
+        func first(in windows: [DateInterval]) -> DateInterval? {
+            for window in windows {
+                var start = window.start
+                while start.addingTimeInterval(duration) <= window.end {
+                    let slot = DateInterval(start: start, duration: duration)
+                    if !busy.contains(where: { $0.start < slot.end && slot.start < $0.end }) { return slot }
+                    start = start.addingTimeInterval(quarter)
+                }
+            }
+            return nil
+        }
+        let week = span(from: now, calendar: calendar)
+        if let deferredUntil, deferredUntil >= week.end {
+            let end = calendar.date(byAdding: .day, value: 7, to: calendar.startOfDay(for: earliest)) ?? earliest
+            return first(in: hours(to: end)).map(PlanSlot.found) ?? .none(.weekFrom(from))
+        }
+        let thisWeek = hours(to: week.end)
+        if let slot = first(in: thisWeek) { return .found(slot) }
+        // Hours long enough are left this week, only taken: no further, as the design.
+        if thisWeek.contains(where: { $0.duration >= duration }) { return .none(.thisWeek) }
+        let nextWeekEnd = calendar.date(byAdding: .day, value: 7, to: week.end) ?? week.end
+        return first(in: hours(to: nextWeekEnd)).map(PlanSlot.found) ?? .none(.nextWeek)
+    }
+
+    /// The tasks the calendar gives a block that isn't done: running work,
+    /// paused work, or a placement that ends in the week around today or
+    /// later. A missed slot earlier in the week still counts, drawn as
+    /// carried forward; one from an earlier week no longer does, so the task
+    /// can be planned again.
+    static func placedTaskIDs(_ blocks: [PlannedBlock], now: Date, calendar: Calendar) -> Set<UUID> {
+        let start = span(from: now, calendar: calendar).start
+        return Set(blocks.filter { !$0.isCompleted && ($0.isActive || $0.end > start) }.map(\.taskID))
+    }
+
+    /// The block the inspector's "In the calendar …" names, of those the
+    /// calendar draws for the task's occurrence, as the design reads its
+    /// placement, past or done: the running or next one, else the latest
+    /// that still counts as placed (a missed slot, carried forward), else
+    /// where the task was done. Nil once it draws nothing there, or only a
+    /// slot missed before the week, as "Not planned yet" has it.
+    static func shownSlot(of taskID: UUID, occurrenceID: UUID, in blocks: [PlannedBlock], now: Date,
+                          calendar: Calendar) -> PlannedBlock? {
+        let drawn = blocks.filter { $0.taskID == taskID && $0.occurrenceID == occurrenceID }
+        let open = drawn.filter { !$0.isCompleted }
+        if let next = open.filter({ $0.isActive || $0.end > now }).min(by: { $0.start < $1.start }) { return next }
+        let placed = open.filter { !placedTaskIDs([$0], now: now, calendar: calendar).isEmpty }
+        if let missed = placed.max(by: { $0.start < $1.start }) { return missed }
+        return drawn.filter(\.isCompleted).max { $0.start < $1.start }
+    }
+
+    /// The day a calendar nudge's click brings the Calendar's range to: that
+    /// of the block `shownSlot` names, or today while that block is under way,
+    /// as today's column draws it too even from before midnight; else today.
+    static func nudgedDay(of taskID: UUID, occurrenceID: UUID, in blocks: [PlannedBlock], now: Date,
+                          calendar: Calendar) -> Date {
+        guard let slot = shownSlot(of: taskID, occurrenceID: occurrenceID, in: blocks, now: now, calendar: calendar),
+              !slot.isActive, !(slot.start <= now && now < slot.end) else { return now }
+        return slot.start
+    }
+}
+
+/// Where Plan put a task, or how far it looked for a free slot.
+enum PlanSlot: Equatable {
+    case found(DateInterval)
+    case none(Reach)
+
+    enum Reach: Equatable {
+        /// The week around today, which still has hours long enough, all taken.
+        case thisWeek
+        /// This week, out of hours long enough, and the next.
+        case nextWeek
+        /// The week from a deferral past this one.
+        case weekFrom(Date)
+    }
+}

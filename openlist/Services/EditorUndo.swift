@@ -70,6 +70,21 @@ private struct EditorBlockRecord: Equatable {
         mediaHeight = model.mediaHeight
         mediaCaption = model.mediaCaption
     }
+    /// Takes every field `current` has that `expected` doesn't: a change
+    /// something else made since the edit last wrote, which the edit's Undo
+    /// must leave alone.
+    mutating func adopt(changesIn current: Self, since expected: Self) {
+        func take<T: Equatable>(_ field: WritableKeyPath<Self, T>) {
+            if current[keyPath: field] != expected[keyPath: field] { self[keyPath: field] = current[keyPath: field] }
+        }
+        take(\.kindRaw); take(\.text); take(\.richData); take(\.sortIndex); take(\.listID); take(\.parentID)
+        take(\.isCollapsed); take(\.createdAt); take(\.updatedAt); take(\.isCompleted); take(\.completedAt)
+        take(\.dueDate); take(\.includesTime); take(\.reminderAt); take(\.isStarred); take(\.priorityRaw)
+        take(\.recurrenceData); take(\.labelIDs); take(\.note); take(\.inboxMembershipData)
+        take(\.schedulingEstimateMinutes); take(\.selectedForDay); take(\.deferredUntil)
+        take(\.keepsSessionsTogether); take(\.tracksAwayFromMac); take(\.occurrenceID); take(\.mediaFilename)
+        take(\.mediaData); take(\.mediaWidth); take(\.mediaHeight); take(\.mediaCaption)
+    }
     func apply(to model: Block, replacing old: Self?) {
         if old == nil || old?.id != id { model.id = id }
         if old == nil || old?.kindRaw != kindRaw { model.kindRaw = kindRaw }
@@ -147,11 +162,26 @@ private struct EditorSnapshot {
     var labels: [UUID: EditorLabelRecord]
     var hasLabelSnapshot: Bool
 
-    init(store: Store, listIDs: Set<UUID>, includingNewLabels: Bool = false) {
-        self.listIDs = Set(listIDs.map { store.resolvedListID($0) ?? $0 })
-        let models = self.listIDs.flatMap { store.blocks(inList: $0) }
+    /// - Parameter blockIDs: records only these blocks and their attachments,
+    ///   for an edit known to touch nothing else. `nil` records every block.
+    init(store: Store, listIDs: Set<UUID>, blockIDs: Set<UUID>? = nil, includingNewLabels: Bool = false) {
+        let resolved = Set(listIDs.map { store.resolvedListID($0) ?? $0 })
+        self.listIDs = resolved
+        let models: [Block]
+        if let blockIDs {
+            // A line's edit covers a few blocks: fetch those, not their lists.
+            let ids = Array(blockIDs)
+            let descriptor = FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) && $0.trashID == nil })
+            models = ((try? store.context.fetch(descriptor)) ?? []).filter { $0.listID.map(resolved.contains) == true }
+        } else {
+            models = resolved.flatMap { store.blocks(inList: $0) }
+        }
         blocks = Dictionary(uniqueKeysWithValues: models.map { ($0.id, EditorBlockRecord($0)) })
-        attachments = Dictionary(uniqueKeysWithValues: models.flatMap { store.attachments(for: $0.id) }.map { ($0.id, EditorAttachmentRecord($0)) })
+        // One fetch for every block's attachments, not one per block.
+        let owners: [UUID?] = models.map(\.id)
+        let files = (try? store.context.fetch(FetchDescriptor<Attachment>(predicate: #Predicate { owners.contains($0.blockID) })))
+            ?? models.flatMap { store.attachments(for: $0.id) }
+        attachments = Dictionary(files.map { ($0.id, EditorAttachmentRecord($0)) }, uniquingKeysWith: { first, _ in first })
         if includingNewLabels, let models = try? store.context.fetch(FetchDescriptor<TaskLabel>()) {
             labels = Dictionary(models.filter { !$0.isDeleted }.map { ($0.id, EditorLabelRecord($0)) }, uniquingKeysWith: { first, _ in first })
             hasLabelSnapshot = true
@@ -172,6 +202,169 @@ private struct EditorSnapshot {
     }
 }
 
+/// An edit that spans several events, undone as one step: typing in one
+/// line, and whatever else changed while that line held the caret.
+///
+/// Its baseline holds every block the edit has touched, as it was before the
+/// edit first touched it, so the one Undo it registers restores exactly
+/// those and leaves anything else that changed meanwhile alone.
+final class EditorEditSession {
+    fileprivate let listIDs: Set<UUID>
+    fileprivate var baseline: EditorSnapshot
+    fileprivate var media: [String: Data] = [:]
+    /// The blocks the edit may have changed, including ones it created.
+    fileprivate(set) var touchedIDs: Set<UUID>
+    /// The touched blocks and their attachments as the edit itself last left
+    /// them. Whatever differs from these when the edit next writes, or ends,
+    /// something else changed meanwhile, like a completion settling or a
+    /// date picked in the inspector, and the edit's Undo leaves it alone.
+    fileprivate var expected: [UUID: EditorBlockRecord]
+    fileprivate var expectedAttachments: [UUID: EditorAttachmentRecord]
+    /// What the edit's line has saved to its tasks, which saved history leaves
+    /// out as it's saved and records as one entry each once the line ends.
+    fileprivate var history: [UUID: EditorLineTaskHistory] = [:]
+    /// When the line ended, which its entries are dated, whenever they're saved.
+    fileprivate var endedAt: Date?
+
+    fileprivate init(listIDs: Set<UUID>, baseline: EditorSnapshot, touchedIDs: Set<UUID>) {
+        self.listIDs = listIDs
+        self.baseline = baseline
+        self.touchedIDs = touchedIDs
+        expected = baseline.blocks
+        expectedAttachments = baseline.attachments
+    }
+
+    /// Takes a `kind` of change the line saved to task `id`, from `before`
+    /// to `after`, into that task's one entry.
+    func hold(_ kind: ActivityKind, of id: UUID, from before: TaskActivityState?, to after: TaskActivityState?) {
+        var entry = history[id] ?? EditorLineTaskHistory(before: before)
+        entry.after = after
+        entry.kinds.insert(kind)
+        history[id] = entry
+    }
+
+    /// Folds into the baseline what changed in `current` since the edit last
+    /// wrote. `current` holds every touched block that still exists, unless
+    /// `partial`, when it holds only some of them.
+    fileprivate func absorbChanges(in current: EditorSnapshot, partial: Bool = false) {
+        for id in touchedIDs {
+            guard let expected = expected[id] else { continue }
+            if let now = current.blocks[id] {
+                baseline.blocks[id]?.adopt(changesIn: now, since: expected)
+            } else if !partial {
+                // Taken away by something else: the edit's Undo doesn't bring it back.
+                baseline.blocks[id] = nil
+                self.expected[id] = nil
+            }
+        }
+        guard !partial else { return }
+        for (id, now) in current.attachments where now.blockID.map(touchedIDs.contains) == true {
+            if let expected = expectedAttachments[id] {
+                if now != expected { baseline.attachments[id] = now }
+            } else if baseline.attachments[id] == nil {
+                baseline.attachments[id] = now
+            }
+        }
+        for id in expectedAttachments.keys where current.attachments[id] == nil {
+            baseline.attachments[id] = nil
+            expectedAttachments[id] = nil
+        }
+    }
+
+    /// Takes `current` as how the edit left its blocks.
+    fileprivate func expect(_ current: EditorSnapshot) {
+        for id in touchedIDs { expected[id] = current.blocks[id] }
+        expectedAttachments = current.attachments.filter { $0.value.blockID.map(touchedIDs.contains) == true }
+    }
+
+    /// A copy to try a commit on, leaving this session as it is.
+    fileprivate func copy() -> EditorEditSession {
+        let copy = EditorEditSession(listIDs: listIDs, baseline: baseline, touchedIDs: touchedIDs)
+        copy.expected = expected
+        copy.expectedAttachments = expectedAttachments
+        return copy
+    }
+}
+
+/// One task's part in a list document line's edit, as the line's saves left it.
+private struct EditorLineTaskHistory {
+    /// Before the line first saved a change to it; `nil` when it wasn't there yet.
+    let before: TaskActivityState?
+    /// As the line's latest save left it; `nil` once the line took it out.
+    var after: TaskActivityState?
+    var kinds: Set<ActivityKind> = []
+
+    init(before: TaskActivityState?) {
+        self.before = before
+        after = before
+    }
+
+    /// The design's one entry for the line: the task added, its title edited,
+    /// the line taken out as an empty line or, the title as it was, its date.
+    /// None for a task added and taken out again, or left as it was.
+    /// `removed` when the line took it out after its last save as a task.
+    func event(for id: UUID, at date: Date, removed: Bool) -> ActivityEvent? {
+        let kind: ActivityKind
+        let after = removed ? nil : after
+        switch (before, after) {
+        case (nil, nil): return nil
+        case (nil, _?): kind = .created
+        // The only line a line's edit takes out is itself, left empty.
+        case (_?, nil): kind = .deleted
+        case let (before?, after?):
+            if kinds.contains(.renamed), before.title != after.title {
+                kind = .renamed
+            } else if !kinds.isDisjoint(with: [.scheduled, .unscheduled]),
+                      before.dueDate != after.dueDate || before.includesTime != after.includesTime {
+                kind = after.dueDate == nil ? .unscheduled : .scheduled
+            } else {
+                return nil
+            }
+        }
+        guard let subject = after ?? before else { return nil }
+        let event = ActivityEvent(kind: kind, title: subject.title.isEmpty ? "Untitled task" : subject.title,
+                                  blockID: id, listID: subject.listID, listTitle: subject.listTitle, listIcon: subject.listIcon)
+        event.timestamp = date
+        event.change = TaskActivityChange(before: before, after: after, removedEmptyLine: kind == .deleted ? true : nil)
+        return event
+    }
+}
+
+/// List document lines being written, and those ended since the last save.
+/// What a line saves to its own tasks as it's written, the new task at
+/// Return, its title as typed, the line itself when it goes, saved history
+/// takes as one entry per task once the line ends, as the design logs a line.
+struct EditorLineHistory {
+    private struct Open { weak var session: EditorEditSession? }
+    private var open: [Open] = []
+    fileprivate private(set) var ended: [EditorEditSession] = []
+
+    fileprivate var isEmpty: Bool { open.isEmpty && ended.isEmpty }
+    /// Ended ones first: a line ended and opened again on the same task
+    /// before a save made what the earlier one saved.
+    fileprivate var sessions: [EditorEditSession] { ended + open.compactMap(\.session) }
+    /// Whether a line ended since the last save has history to record.
+    var hasEnded: Bool { ended.contains { !$0.history.isEmpty } }
+
+    fileprivate mutating func begin(_ session: EditorEditSession) {
+        open.removeAll { $0.session == nil }
+        open.append(Open(session: session))
+    }
+
+    /// False for a session that isn't open.
+    fileprivate mutating func end(_ session: EditorEditSession) -> Bool {
+        let wasOpen = open.contains { $0.session === session }
+        open.removeAll { $0.session == nil || $0.session === session }
+        guard wasOpen else { return false }
+        session.endedAt = .now
+        ended.append(session)
+        return true
+    }
+
+    /// What the ended lines held is saved history now.
+    mutating func didSave() { ended.removeAll() }
+}
+
 private struct EditorLabelRecord: Equatable {
     var id: UUID
     var name: String
@@ -190,11 +383,16 @@ private struct EditorLabelRecord: Equatable {
 extension Store {
     /// Registers one inverse for a structural edit with the same window undo
     /// manager used by NSTextView. Native typing undo remains native.
-    func undoableEditorEdit<T>(in listID: UUID, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false, _ body: () -> T) -> T {
-        undoableEditorEdit(in: Set([listID]), name: name, undoManager: undoManager, includingNewLabels: includingNewLabels, body)
+    /// `didRegister` runs once the inverse is on the stack, in the same step.
+    /// `name` is read once the edit has run, so it can name what it made.
+    func undoableEditorEdit<T>(in listID: UUID, name: @autoclosure () -> String, undoManager: UndoManager?,
+                               includingNewLabels: Bool = false, didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
+        undoableEditorEdit(in: Set([listID]), name: name(), undoManager: undoManager, includingNewLabels: includingNewLabels,
+                           didRegister: didRegister, body)
     }
 
-    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: String, undoManager: UndoManager?, includingNewLabels: Bool = false, _ body: () -> T) -> T {
+    func undoableEditorEdit<T>(in listIDs: Set<UUID>, name: @autoclosure () -> String, undoManager: UndoManager?,
+                               includingNewLabels: Bool = false, didRegister: (() -> Void)? = nil, _ body: () -> T) -> T {
         guard let undoManager, !isRecordingEditorEdit else { return body() }
         let before = EditorSnapshot(store: self, listIDs: listIDs, includingNewLabels: includingNewLabels)
         isRecordingEditorEdit = true
@@ -206,13 +404,155 @@ extension Store {
         editorMediaBackups = [:]
         let changed = before.changedIDs(comparedTo: after)
         guard !changed.blocks.isEmpty || !changed.attachments.isEmpty else { return result }
+        let label = name()
         (NSApp?.keyWindow?.firstResponder as? NSTextView)?.breakUndoCoalescing()
+        undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
+            guard let undoManager else { return }
+            store.restoreEditorEdit(from: after, to: before, media: media, name: label, undoManager: undoManager)
+        }
+        undoManager.setActionName(label)
+        didRegister?()
+        return result
+    }
+
+    /// Starts an edit that ``commitEditorSession(_:name:undoManager:)`` will
+    /// undo as one step, from how `blockIDs` are now.
+    func beginEditorSession(in listID: UUID, covering blockIDs: Set<UUID>) -> EditorEditSession {
+        let listIDs = Set([listID])
+        let session = EditorEditSession(listIDs: listIDs,
+                                        baseline: EditorSnapshot(store: self, listIDs: listIDs, blockIDs: blockIDs),
+                                        touchedIDs: blockIDs)
+        lineHistory.begin(session)
+        return session
+    }
+
+    /// Ends `session`'s line, committed or not. What it saved to its tasks as
+    /// it was written, left out of saved history then, goes with the next
+    /// save, with what it hasn't saved yet, as one entry per task, dated now.
+    func endEditorSession(_ session: EditorEditSession) {
+        guard lineHistory.end(session) else { return }
+        if context.hasChanges || !session.history.isEmpty { scheduleSave() }
+    }
+
+    /// The line, being written or ended since the last save, that saved this
+    /// `kind` of change to `task`: its title as typed, a date typed into it,
+    /// the new task at Return or the empty line taken out. Whatever else
+    /// changes the task meanwhile, a completion or a date picked, isn't the
+    /// line's, and neither is a move to Trash.
+    func line(saving kind: ActivityKind, to task: Block) -> EditorEditSession? {
+        guard !lineHistory.isEmpty else { return nil }
+        let id = task.id
+        return lineHistory.sessions.first { session in
+            guard session.touchedIDs.contains(id) else { return false }
+            let expected = session.expected[id]
+            switch kind {
+            case .created: return expected != nil && !task.isDeleted && !task.isTrashed
+            case .deleted: return expected == nil && task.isDeleted
+            case .renamed: return expected?.text == task.text
+            case .scheduled, .unscheduled:
+                return expected.map { $0.dueDate == task.dueDate && $0.includesTime == task.includesTime } ?? false
+            default: return false
+            }
+        }
+    }
+
+    /// The entries the lines ended since the last save record, one for each
+    /// task each saved, unless it has been erased for good since.
+    func endedLineActivity() -> [ActivityEvent] {
+        lineHistory.ended.flatMap { session in
+            session.history.compactMap { id, entry -> ActivityEvent? in
+                guard !permanentlyErasedBlockIDs.contains(id) else { return nil }
+                // As the line left it: a line turned into a heading or text
+                // has no task history, as none is saved for one.
+                let last = session.expected[id]
+                if let last, BlockKind(rawValue: last.kindRaw) != .task { return nil }
+                return entry.event(for: id, at: session.endedAt ?? .now, removed: last == nil)
+            }
+        }
+    }
+
+    /// Runs a structural change as part of `session`, registering no Undo of
+    /// its own: whatever it changes, the session's one step restores.
+    func recordInEditorSession<T>(_ session: EditorEditSession, _ body: () -> T) -> T {
+        guard !isRecordingEditorEdit else { return body() }
+        let before = EditorSnapshot(store: self, listIDs: session.listIDs)
+        session.absorbChanges(in: before)
+        isRecordingEditorEdit = true
+        editorMediaBackups = [:]
+        let result = body()
+        let after = EditorSnapshot(store: self, listIDs: session.listIDs)
+        session.media.merge(editorMediaBackups) { first, _ in first }
+        isRecordingEditorEdit = false
+        editorMediaBackups = [:]
+        let changed = before.changedIDs(comparedTo: after)
+        let owners = changed.attachments.flatMap { id in
+            [before.attachments[id]?.blockID, after.attachments[id]?.blockID].compactMap { $0 }
+        }
+        // A block's first change in the session is the one its baseline keeps.
+        for id in changed.blocks.union(owners) where !session.touchedIDs.contains(id) {
+            session.touchedIDs.insert(id)
+            session.baseline.blocks[id] = before.blocks[id]
+            for (attachmentID, record) in before.attachments where record.blockID == id {
+                session.baseline.attachments[attachmentID] = record
+            }
+        }
+        session.expect(after)
+        return result
+    }
+
+    /// Runs a change the session's own line makes to `block` outside any
+    /// structural change, such as its typing, so the session tells it apart
+    /// from what anything else changes in that block.
+    func writeInEditorSession<T>(_ session: EditorEditSession, to block: Block, _ body: () -> T) -> T {
+        let id = block.id
+        let live = { block.modelContext != nil && !block.isDeleted }
+        guard session.touchedIDs.contains(id), live() else { return body() }
+        var current = session.baseline
+        current.blocks = [id: EditorBlockRecord(block)]
+        session.absorbChanges(in: current, partial: true)
+        let result = body()
+        if live() { session.expected[id] = EditorBlockRecord(block) }
+        return result
+    }
+
+    /// Takes the session's blocks as they are now for its baseline. An Undo
+    /// or Redo made while the session is open has already been recorded, so
+    /// the session must not restore past it.
+    func rebaseEditorSession(_ session: EditorEditSession) {
+        session.baseline = EditorSnapshot(store: self, listIDs: session.listIDs, blockIDs: session.touchedIDs)
+        session.expect(session.baseline)
+        session.media = [:]
+    }
+
+    /// Registers the session's one Undo, named `name`. `false`, and nothing
+    /// registered, when its blocks are back as they began.
+    @discardableResult
+    func commitEditorSession(_ session: EditorEditSession, name: String, undoManager: UndoManager?) -> Bool {
+        let after = EditorSnapshot(store: self, listIDs: session.listIDs, blockIDs: session.touchedIDs)
+        session.absorbChanges(in: after)
+        let before = session.baseline
+        let changed = before.changedIDs(comparedTo: after)
+        guard !changed.blocks.isEmpty || !changed.attachments.isEmpty else { return false }
+        guard let undoManager else { return true }
+        let media = session.media
         undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
             guard let undoManager else { return }
             store.restoreEditorEdit(from: after, to: before, media: media, name: name, undoManager: undoManager)
         }
         undoManager.setActionName(name)
-        return result
+        return true
+    }
+
+    /// Whether ``commitEditorSession(_:name:undoManager:)`` would register
+    /// an Undo now, leaving the session as it is. `blockIDs`, blocks the
+    /// session added that are about to go, are left out as gone.
+    func editorSessionHasChanges(_ session: EditorEditSession, excluding blockIDs: Set<UUID> = []) -> Bool {
+        let after = EditorSnapshot(store: self, listIDs: session.listIDs,
+                                   blockIDs: session.touchedIDs.subtracting(blockIDs))
+        let probe = session.copy()
+        probe.absorbChanges(in: after)
+        let changed = probe.baseline.changedIDs(comparedTo: after)
+        return !changed.blocks.isEmpty || !changed.attachments.isEmpty
     }
 
     /// Copy before the async disk deletion, never after it.

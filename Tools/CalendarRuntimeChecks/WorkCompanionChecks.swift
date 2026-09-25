@@ -21,12 +21,8 @@ func checkWorkCompanion() throws {
     check(planner.workSelection == reference, "opening Work selects the currently planned occurrence")
     let anchors = planner.plan.blocks.map(\.start)
     let secondSlot = planner.plan.blocks.first { $0.taskID == second.id }!
-    _ = planner.previewMove(secondSlot, to: date(), now: date())
-    check(planner.plan.blocks.map(\.start) == anchors && fixture.placements().isEmpty, "move previews never mutate saved placements or the current plan")
-    let firstSlot = planner.plan.blocks.first { $0.taskID == first.id }!
-    check(planner.previewMove(firstSlot, to: date(14, 10), now: date()).contains {
-        $0.taskID == second.id && $0.proposedStart == date()
-    }, "preview reports a task moved earlier even when its new slot ends at its old start")
+    check(planner.moveOverlaps(secondSlot, to: date()).isEmpty && planner.plan.blocks.map(\.start) == anchors && fixture.placements().isEmpty,
+          "a move's preview never mutates saved placements or the plan, and never names flexible work, which the calendar doesn't draw")
     planner.quietWork(reference, now: date())
     check(planner.startNudge == nil && planner.plan.blocks.map(\.start) == anchors, "Later quiets the suggestion without moving the plan")
     planner.tick(now: date(14, 9, 5), checkClockGap: false)
@@ -45,12 +41,8 @@ func checkWorkCompanion() throws {
     afterStop.bootstrap(now: date(14, 9, 10), monitorsEnabled: false)
     check(afterStop.resumableTask?.id == first.id && afterStop.activeSession == nil, "a stopped session survives reopening without counting the gap")
     check(planner.requestWork(reference, now: date(14, 9, 10)), "Resume starts another work segment")
-    check(!planner.requestWork(WorkTaskReference(second), now: date(14, 9, 12)), "starting a different task first requests a switch")
-    check(planner.activeSession?.taskID == first.id && fixture.workSessions(taskID: second.id).isEmpty, "switch prompt does not stop or start anything")
-    planner.cancelWorkSwitch()
-    check(planner.activeSession?.taskID == first.id && planner.pendingWorkStart == nil, "Cancel preserves the running task")
-    planner.requestWork(WorkTaskReference(second), now: date(14, 9, 12))
-    check(planner.confirmWorkSwitch(now: date(14, 9, 12)), "explicit switch starts the new task")
+    check(planner.requestWork(WorkTaskReference(second), now: date(14, 9, 12)), "starting a different task switches straight away")
+    check(planner.activeSession?.taskID == second.id && planner.resumableTask == nil, "the switched-from task is not left waiting to resume")
     check(fixture.workSessions().filter { $0.endedAt == nil }.count == 1, "switch leaves exactly one open segment")
     check(fixture.workSessions(taskID: first.id).first?.durationMinutes() == 2, "switch saves the prior segment at the click time")
     planner.complete(task: second, now: date(14, 9, 14))
@@ -67,23 +59,18 @@ func checkWorkCompanion() throws {
     check(!planner.requestWork(stale, now: date(14, 9, 15)), "stale occurrence references cannot start a replacement repeat")
     check(planner.activeSession == nil, "a stale Start never creates a timer")
 
-    // Fresh plan isolates first-displacement consent and stale-impact review.
+    // Start is never refused: outside the list's hours work records with no block to grow.
     first.schedulingEstimateMinutes = 30; first.selectedForDay = date(); first.priorityRaw = 3
     fixture.clearCalendarHistory()
-    planner.replan(now: date())
-    check(planner.requestWork(reference, now: date()), "conflict fixture starts")
-    planner.tick(now: date(14, 9, 30), checkClockGap: false)
-    check(planner.overrunNudge?.needsConfirmation == true && planner.activeSession == nil, "the first conflicting extension pauses recording")
-    check(fixture.workSessions(taskID: first.id).first?.endedAt == date(14, 9, 30), "recording ends at the unapproved boundary")
-    check(!planner.requestWork(reference, now: date(14, 9, 30)), "task-local Start and Resume cannot bypass pending extension approval")
-    let preview = planner.previewContinuation(now: date(14, 9, 30))!
-    check(preview.changes.contains { $0.taskID == second.id && $0.previousStart == date(14, 9, 30) && $0.proposedStart == date(14, 9, 45) }, "preview identifies affected work and its before/after placement")
-    check(!planner.confirmContinuation(preview, now: date(14, 9, 32)), "a changed proposed time requires another review")
-    check(planner.activeSession == nil && planner.continuationProposal != nil, "stale approval keeps recording paused and refreshes the preview")
-    check(planner.confirmContinuation(planner.continuationProposal!, now: date(14, 9, 32)), "reviewed current impact grants explicit continuation")
-    check(planner.activeSession?.startedAt == date(14, 9, 32), "waiting for approval is never recorded")
-    planner.stopWorking(now: date(14, 9, 35))
-    first.isCompleted = true; fixture.save(); planner.tick(now: date(14, 9, 35), checkClockGap: false)
+    planner.replan(now: date(14, 20))
+    check(!planner.isWithinAvailability(reference, now: date(14, 20)), "the evening is outside Work hours")
+    check(planner.requestWork(reference, now: date(14, 20)), "Start working records outside the list's hours")
+    check(planner.activeSession?.startedAt == date(14, 20) && !planner.plan.blocks.contains { $0.isActive }, "work outside the list's hours has no block in the plan")
+    planner.tick(now: date(14, 20, 45), checkClockGap: false)
+    check(planner.activeSession != nil && planner.workExtension == nil && planner.workConflict == nil, "past its estimate outside hours, work simply keeps recording")
+    planner.stopWorking(now: date(14, 20, 50))
+    check(planner.trackedMinutes(for: first, now: date(14, 21)) == 50, "work outside hours records every minute until Stop")
+    first.isCompleted = true; fixture.save(); planner.tick(now: date(14, 20, 50), checkClockGap: false)
     check(planner.resumableTask == nil && planner.workSelection == nil, "external completion invalidates stale Resume and open-panel references")
     withExtendedLifetime(lifetime) {}
 }

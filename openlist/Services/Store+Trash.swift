@@ -15,22 +15,12 @@ extension Store {
     func trashEntries() throws -> [TrashEntry] {
         let lists = try context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.trashID != nil }))
         let blocks = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID != nil }))
-        let attachments = try context.fetch(FetchDescriptor<Attachment>())
         func entry(id: UUID, title: String, isList: Bool, metadata: TrashMetadata?) -> TrashEntry {
             let members = blocks.filter { $0.trashID == id }
-            let ids = Set(members.map(\.id))
-            var media: [String: Int] = [:]
-            for list in lists where list.trashID == id {
-                if let name = list.coverFilename { media[name] = list.coverData?.count ?? list.coverMetadata?.byteCount ?? 0 }
-            }
-            for block in members {
-                if let name = block.mediaFilename { media[name] = block.mediaData?.count ?? 0 }
-            }
-            for file in attachments where file.blockID.map(ids.contains) == true {
-                media[file.filename] = file.contentData?.count ?? file.byteCount
-            }
+            let root = members.first { $0.id == id }
+            let subtasks = root?.isTask == true ? members.filter { $0.isTask && $0.id != id }.count : 0
             return TrashEntry(id: id, title: title, isList: isList, metadata: metadata,
-                blockCount: members.count, byteCount: media.values.reduce(0, +), listCount: lists.filter { $0.trashID == id }.count)
+                blockCount: members.count, subtaskCount: subtasks)
         }
         return (lists.filter { $0.trashID == $0.id }.map {
             entry(id: $0.id, title: $0.displayTitle, isList: true, metadata: $0.trashMetadata)
@@ -41,8 +31,11 @@ extension Store {
 
     /// Selection spans documents. A selected ancestor owns its selected descendants.
     /// Explicit deletion is its own Undo operation, outside structural snapshots.
+    /// A restore's Undo passes the `recoveries` it made: a task it put in
+    /// Recovered items goes back to Trash as it was before, and a Recovered
+    /// items list the restore made goes with it once nothing is left in it.
     @discardableResult
-    func trashBlocks(_ selection: [Block], undoManager: UndoManager? = nil) -> Bool {
+    func trashBlocks(_ selection: [Block], undoManager: UndoManager? = nil, puttingBack recoveries: [TrashRecovery] = []) -> Bool {
         var rootIDs: [UUID] = []
         var removedIDs = Set<UUID>()
         let succeeded = trashTransaction("Content could not be moved to Trash", scope: .subtrees(Set(selection.map(\.id)))) {
@@ -60,17 +53,33 @@ extension Store {
                 let metadata = deletionMetadata(for: members, list: list(id: root.listID), parent: block(id: root.parentID))
                 root.trashMetadataData = try JSONEncoder().encode(metadata)
                 try retain(members, groupID: root.id)
+                // Still where its restore put it, it goes back as Trash had it,
+                // with any label it gained since kept for its next restore.
+                if let recovery = recoveries.first(where: { $0.rootID == root.id }),
+                   root.listID == recovery.listID, root.parentID == nil,
+                   var former = recovery.formerMetadata.flatMap({ try? JSONDecoder().decode(TrashMetadata.self, from: $0) }) {
+                    let known = Set(former.labels.map(\.id))
+                    let gained = metadata.labels.filter { !known.contains($0.id) }
+                    former.labels += gained
+                    root.trashMetadataData = gained.isEmpty ? recovery.formerMetadata : try JSONEncoder().encode(former)
+                    for member in members { member.listID = recovery.formerListIDs[member.id] ?? recovery.formerListIDs[root.id] ?? member.listID }
+                    root.parentID = recovery.formerParentID
+                }
             }
             guard !rootIDs.isEmpty else { throw TrashError.unavailable }
+            try removeEmptiedRecoveryLists(Set(recoveries.filter(\.madeList).map(\.listID)))
         }
         if succeeded {
-            trashNotice = nil
             onEditorBlocksRemoved?(removedIDs)
             if let undoManager {
                 undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
-                    if store.restoreTrash(ids: rootIDs), let undoManager {
+                    // Content erased since is gone for good; Undo restores the rest.
+                    let remaining = rootIDs.filter { !store.permanentlyErasedBlockIDs.contains($0) }
+                    guard !remaining.isEmpty else { return }
+                    if let recoveries = store.restoreTrashRecoveries(ids: remaining), let undoManager {
                         undoManager.registerUndo(withTarget: store) { [weak undoManager] store in
-                            _ = store.trashBlocks(rootIDs.compactMap { store.block(id: $0) }, undoManager: undoManager)
+                            _ = store.trashBlocks(remaining.compactMap { store.block(id: $0) }, undoManager: undoManager,
+                                                  puttingBack: recoveries)
                         }
                         undoManager.setActionName("Move to Trash")
                     }
@@ -100,10 +109,7 @@ extension Store {
             try retain(members, groupID: list.id)
             log(.listDeleted, title: list.displayTitle, list: list)
         }
-        if succeeded {
-            trashNotice = nil
-            onEditorBlocksRemoved?(removedIDs)
-        }
+        if succeeded { onEditorBlocksRemoved?(removedIDs) }
         return succeeded
     }
 
@@ -114,6 +120,51 @@ extension Store {
             trashMediaRollbacks.append { list.coverData = nil }
             list.coverData = bytes
         }
+    }
+
+    /// What a Recovered items list says of itself.
+    static let recoveredItemsSummary = "Content restored from Trash after its list, or the task it was under, was gone."
+
+    /// The Recovered items list a restore puts a task in: the one there is,
+    /// while it's in the library and not archived, known by its title and
+    /// the description the Store gave it, which a list of the user's that's
+    /// only called that lacks; otherwise a new one, pinned.
+    private func recoveredItems(in lists: [TaskList]) -> (list: TaskList, made: Bool) {
+        let hierarchy = ListHierarchy(lists)
+        if let existing = lists.filter({
+            $0.title == "Recovered items" && $0.summary == Self.recoveredItemsSummary && hierarchy.activeIDs.contains($0.id)
+        }).min(by: { $0.sortIndex < $1.sortIndex }) {
+            return (existing, false)
+        }
+        let recovery = TaskList(title: "Recovered items", icon: "🛟", accent: .orange)
+        recovery.summary = Self.recoveredItemsSummary
+        recovery.isPinned = true
+        recovery.sectionID = defaultSection()?.id
+        recovery.sortIndex = (lists.map(\.sortIndex).max() ?? 0) + BlockTree.indexStep
+        recovery.sidebarIndex = (lists.map(\.sidebarIndex).max() ?? 0) + BlockTree.indexStep
+        context.insert(recovery)
+        return (recovery, true)
+    }
+
+    /// Takes out a Recovered items list a restore made once its Undo has
+    /// taken everything back out of it: it held nothing of the user's.
+    private func removeEmptiedRecoveryLists(_ ids: Set<UUID>) throws {
+        guard !ids.isEmpty else { return }
+        let lists = try context.fetch(FetchDescriptor<TaskList>())
+        let blocks = try context.fetch(FetchDescriptor<Block>())
+        for list in lists where ids.contains(list.id) && !list.isTrashed && list.coverFilename == nil
+            && !blocks.contains(where: { $0.listID == list.id }) && !lists.contains(where: { $0.parentListID == list.id }) {
+            context.delete(list)
+        }
+    }
+
+    /// A Recovered items list made before that wording still says each item
+    /// "keeps its former location", which nothing there shows. Only that exact
+    /// text takes the new one; a description edited since is left alone.
+    func rewordRecoveredItemsSummaries() {
+        let former = "Content restored from an unavailable location. Each recovered item keeps its former location."
+        let lists = (try? context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.summary == former }))) ?? []
+        for list in lists { list.summary = Self.recoveredItemsSummary }
     }
 
     /// A sync batch may deliver a child or its blocks after the owning parent
@@ -132,7 +183,7 @@ extension Store {
         guard !arrivingLists.isEmpty || !arrivingBlocks.isEmpty else { return true }
         let groups = Set(arrivingLists.compactMap { hierarchy.retainedGroup(for: $0.id) }
             + arrivingBlocks.compactMap { $0.listID.flatMap { hierarchy.retainedGroup(for: $0) } })
-        return trashTransaction("Synced child documents could not be retained in Trash") {
+        return trashTransaction("Synced nested lists could not be kept in Trash") {
             for group in groups {
                 guard let root = lists.first(where: { $0.id == group && $0.trashID == group }),
                       var metadata = root.trashMetadata else { throw TrashError.invalidRetention }
@@ -150,7 +201,9 @@ extension Store {
 
     private func deletionMetadata(for members: [Block], list: TaskList?, parent: Block?) -> TrashMetadata {
         let labelIDs = Set(members.flatMap(\.labelIDs))
+        // The icon the list shows: Inbox always shows its own, whatever it stores.
         return TrashMetadata(deletedAt: .now, listTitle: list?.displayTitle ?? "Unavailable list",
+            listIcon: list.map { $0.isSystemInbox ? "📥" : $0.icon },
             parentTitle: parent?.displayTitle, labels: allLabels().filter { labelIDs.contains($0.id) }.map { TrashLabel(id: $0.id, name: $0.name, accentRaw: $0.accentRaw, sortIndex: $0.sortIndex, createdAt: $0.createdAt) })
     }
 
@@ -195,28 +248,53 @@ extension Store {
         for update in updates { update() }
     }
 
-    /// Preview uses the same ownership checks as restore, before the user acts.
-    func trashRestoreDestination(_ entry: TrashEntry) -> String {
-        if entry.isList {
-            guard let root = try? context.fetch(FetchDescriptor<TaskList>()).first(where: { $0.id == entry.id }) else { return "Restore list" }
-            if let parentID = root.parentListID, list(id: parentID) == nil {
-                return "Restore list and child documents at top level — original parent is unavailable"
-            }
-            return "Restore list and child documents"
-        }
-        let id = entry.id
-        guard let root = try? context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })).first,
-              let owner = list(id: root.listID), root.parentID == nil || block(id: root.parentID)?.listID == owner.id else {
-            return "Restore to Recovered items — original parent or list is unavailable"
-        }
-        return "Restore to \(entry.metadata?.formerLocation ?? owner.displayTitle)"
+    /// Whether `id` is still in Trash as an entry of its own. An older Redo
+    /// checks first: the entry may have been erased or restored since.
+    func isInTrash(_ id: UUID) -> Bool {
+        let lists = (try? context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.id == id }))) ?? []
+        return lists.contains { $0.trashID == id } || blockIncludingTrash(id: id)?.trashID == id
+    }
+
+    /// Where a list's restore puts it, as its tray and its saved history say:
+    /// under its parent, or at the top level once `parentGone`, and
+    /// "(archived)" when it or that parent is; empty at the top level.
+    func restoredPlace(of list: TaskList, parentGone: Bool) -> String {
+        let parent = parentGone ? nil : list.parentListID.flatMap { self.list(id: $0) }
+        var place = ""
+        if let parent { place = "to \(listHierarchy().path(for: parent.id))" }
+        else if parentGone { place = "to the top level — its parent list is unavailable" }
+        if list.isArchived || parent?.isEffectivelyArchived == true { place += place.isEmpty ? "(archived)" : " (archived)" }
+        return place
+    }
+
+    /// The blocks with these ids, by id, found in the library or in Trash,
+    /// which keeps them until they're erased; `block(id:)` finds only the
+    /// library's.
+    func blocksIncludingTrash(ids: some Sequence<UUID>) -> [UUID: Block] {
+        let wanted = Array(Set(ids))
+        guard !wanted.isEmpty,
+              let blocks = try? context.fetch(FetchDescriptor<Block>(predicate: #Predicate { wanted.contains($0.id) }))
+        else { return [:] }
+        return Dictionary(blocks.filter { !$0.isDeleted }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The block with `id`, in the library or in Trash.
+    func blockIncludingTrash(id: UUID?) -> Block? {
+        id.flatMap { blocksIncludingTrash(ids: [$0])[$0] }
     }
 
     @discardableResult
-    func restoreTrash(ids: [UUID]) -> Bool {
-        guard reconcileRetainedListDescendants() else { return false }
-        var notices: [String] = []
-        let succeeded = trashTransaction("Content could not be restored; it remains in Trash", scope: .groups(Set(ids))) {
+    func restoreTrash(ids: [UUID]) -> Bool { restoreTrashRecoveries(ids: ids) != nil }
+
+    /// Restores as `restoreTrash(ids:)` does, returning what went to
+    /// Recovered items, for its Undo to give `trashBlocks`; nil when nothing
+    /// was restored.
+    func restoreTrashRecoveries(ids: [UUID]) -> [TrashRecovery]? {
+        guard reconcileRetainedListDescendants() else { return nil }
+        var recoveries: [TrashRecovery] = []
+        let restored = trashTransaction("Content could not be restored; it remains in Trash", scope: .groups(Set(ids))) {
+            recoveries = []
+            var recovery: (list: TaskList, made: Bool)?
             let allBlocks = try context.fetch(FetchDescriptor<Block>())
             let allLists = try context.fetch(FetchDescriptor<TaskList>())
             // Restore lists first so a separately retained child can recover its parent.
@@ -234,9 +312,11 @@ extension Store {
                 if let retainedList {
                     let retainedLists = allLists.filter { $0.trashID == id }
                     let unitIDs = Set(retainedLists.map(\.id))
+                    var parentGone = false
                     if let parentID = retainedList.parentListID, !unitIDs.contains(parentID),
                        !allLists.contains(where: { $0.id == parentID && ($0.trashID == nil || ids.contains($0.trashID!)) }) {
                         retainedList.parentListID = nil
+                        parentGone = true
                         metadata.recoveryNote = "Restored from \(metadata.formerLocation). Its parent list is unavailable; the list is now at top level."
                     }
                     for child in retainedLists {
@@ -252,21 +332,24 @@ extension Store {
                         }
                         child.trashID = nil
                     }
+                    // The list's own entry, which its tasks' restores read as one with,
+                    // saying where it went back to as its tray did.
+                    log(.restored, title: retainedList.displayTitle,
+                        detail: restoredPlace(of: retainedList, parentGone: parentGone), list: retainedList)
                 } else if let root {
                     let owner = list(id: root.listID)
                     let parent = block(id: root.parentID)
                     if owner == nil || (root.parentID != nil && parent?.listID != owner?.id) {
-                        let recovery = TaskList(title: "Recovered items", icon: "🛟", accent: .orange)
-                        recovery.summary = "Content restored from an unavailable location. Each recovered item keeps its former location."
-                        recovery.isPinned = true
-                        recovery.sectionID = defaultSection()?.id
-                        recovery.sortIndex = (allLists.map(\.sortIndex).max() ?? 0) + BlockTree.indexStep
-                        recovery.sidebarIndex = (allLists.map(\.sidebarIndex).max() ?? 0) + BlockTree.indexStep
-                        context.insert(recovery)
-                        for member in members { member.listID = recovery.id }
+                        // One Recovered items list, however many go there.
+                        let place = recovery ?? recoveredItems(in: allLists)
+                        recovery = place
+                        recoveries.append(TrashRecovery(rootID: root.id, listID: place.list.id, madeList: place.made,
+                            formerListIDs: Dictionary(members.compactMap { member in member.listID.map { (member.id, $0) } },
+                                                      uniquingKeysWith: { first, _ in first }),
+                            formerParentID: root.parentID, formerMetadata: root.trashMetadataData))
+                        for member in members { member.listID = place.list.id }
                         root.parentID = nil
                         metadata.recoveryNote = "Recovered from \(metadata.formerLocation). The original parent or list is unavailable."
-                        notices.append("\(root.displayTitle) restored to Recovered items from \(metadata.formerLocation).")
                     }
                 }
                 var labels = allLabels()
@@ -297,19 +380,9 @@ extension Store {
                 }
                 if let retainedList { retainedList.trashMetadataData = try JSONEncoder().encode(metadata) }
                 else { root?.trashMetadataData = try JSONEncoder().encode(metadata) }
-                if let note = metadata.recoveryNote, notices.isEmpty { notices.append(note) }
-                if notices.isEmpty {
-                    let owner = retainedList ?? root.flatMap { list(id: $0.listID) }
-                    if let owner, owner.isEffectivelyArchived {
-                        notices.append("Restored to archived list “\(owner.displayTitle)”. Open Lists and choose Show Archived to view it.")
-                    } else if let owner {
-                        notices.append("Restored to “\(owner.displayTitle)”.")
-                    }
-                }
             }
         }
-        if succeeded { trashNotice = notices.isEmpty ? "Restored from Trash." : notices.joined(separator: "\n") }
-        return succeeded
+        return restored ? recoveries : nil
     }
 
     /// The UI must confirm this action. No timer or retention period calls it.
@@ -410,6 +483,22 @@ extension Store {
             return false
         }
     }
+}
+
+/// Where a restore put a task whose list, or the task it was under, was
+/// gone: Recovered items, which the restore made when there was none. Its
+/// Undo gives this back to `Store.trashBlocks`, so the task returns to Trash
+/// as it was, saying where it came from, and a list made for it goes too.
+struct TrashRecovery {
+    let rootID: UUID
+    /// The Recovered items list it went to.
+    let listID: UUID
+    let madeList: Bool
+    /// The lists it, and what it holds, were in before.
+    let formerListIDs: [UUID: UUID]
+    let formerParentID: UUID?
+    /// What Trash kept of it before, its former place included.
+    let formerMetadata: Data?
 }
 
 /// SwiftData rollback can leave retained view instances with attempted values.

@@ -6,6 +6,7 @@ struct AttachmentRow: View {
     let attachment: Attachment
     let onDelete: () -> Void
 
+    @Environment(AppEnvironment.self) private var env
     @State private var isHovering = false
 
     var body: some View {
@@ -21,59 +22,54 @@ struct AttachmentRow: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             } else {
                 Image(systemName: "doc")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.secondaryText)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(NX.ink(0.5))
                     .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Theme.chipFill)
-                    )
+                    .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(attachment.displayName)
-                    .font(Theme.Font.metadata)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(NX.ink)
                     .lineLimit(1)
                 Text(attachment.formattedSize)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.tertiaryText)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(NX.ink(0.4))
             }
 
             Spacer(minLength: 4)
 
             Button("Open attachment", systemImage: "arrow.up.forward.square", action: openAttachment)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
                 .help("Open \(attachment.displayName)")
 
             Button("Remove attachment", systemImage: "trash", action: onDelete)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
                 .accessibilityLabel("Remove attachment \(attachment.displayName)")
                 .help("Remove \(attachment.displayName)")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isHovering ? Theme.rowHover : Color.clear)
-        )
+        .background(isHovering ? NX.ink(0.04) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture(count: 2, perform: openAttachment)
     }
 
+    /// A file that won't open says so in the window's notice.
     private func openAttachment() {
         guard attachment.modelContext != nil, !attachment.isDeleted else { return }
+        let failure = "“\(attachment.displayName)” could not be opened."
         do {
-            guard NSWorkspace.shared.open(try attachment.fileURL()) else {
-                throw CocoaError(.fileReadUnknown)
-            }
+            if !NSWorkspace.shared.open(try attachment.fileURL()) { env.store.actionError = failure }
         } catch {
-            MarkdownExporter.presentError(error, operation: "Open attachment \(attachment.displayName)")
+            env.store.actionError = "\(failure) \(error.localizedDescription)"
         }
     }
 }

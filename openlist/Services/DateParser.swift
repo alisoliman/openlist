@@ -10,21 +10,25 @@ struct ParsedSchedule: Equatable {
     var date: Date?
     var includesTime: Bool = false
     var recurrence: Recurrence?
-    /// The text with every recognised phrase removed and whitespace tidied.
-    var cleanedText: String = ""
-    /// Ranges of the input that were consumed, so a caller holding formatted
-    /// text can delete exactly those spans instead of replacing the whole run.
+    /// Ranges of the input that were consumed, so a caller can take exactly
+    /// those spans out of the text it holds.
     var consumedRanges: [NSRange] = []
+    /// What each of `consumedRanges` was read as, in the same order, so a
+    /// caller can mark up the repeat rule, day and time it found.
+    var consumedParts: [Part] = []
+
+    enum Part: Equatable { case recurrence, day, time }
 
     var isEmpty: Bool { date == nil && recurrence == nil }
 }
 
 /// Recognises natural-language dates, times and repeat rules inside task text.
 ///
-/// Typing "call mum tomorrow at 6pm" sets a due date and strips the phrase,
-/// the same way Superlist's quick entry does. Matching is deliberately
-/// conservative: only unambiguous phrases are consumed so ordinary prose such
-/// as "may" or "march" survives untouched.
+/// In "call mum tomorrow at 6pm" it finds a due date and time and reports
+/// where the phrases are (`consumedRanges`, `consumedParts`); callers such as
+/// `CaptureParse` mark them up and take them out of the title. Matching is
+/// deliberately conservative: only unambiguous phrases are consumed so
+/// ordinary prose such as "may" or "march" survives untouched.
 enum DateParser {
     /// Scans `text` and returns everything it recognised.
     ///
@@ -38,16 +42,8 @@ enum DateParser {
         // phrase when deciding whether a bare past time rolls to tomorrow.
         let consumedByRecurrence = consumed.count
         var day = matchDay(in: ns, reference: reference, consumed: &consumed)
-        var time = matchTime(in: ns, consumed: &consumed)
-
-        // "tonight" is a day *and* a time; matchDay would otherwise swallow it
-        // and leave the task due at midnight.
-        var tonightTime: TimeOfDay?
-        if day == nil, let range = firstMatch(pattern: "\\btonight\\b", in: ns, avoiding: consumed) {
-            consumed.append(range)
-            day = Calendar.current.startOfDay(for: reference)
-            tonightTime = TimeOfDay(hour: 20, minute: 0)
-        }
+        let consumedByDay = consumed.count
+        let time = matchTime(in: ns, consumed: &consumed)
 
         // "at 6pm" on its own means today, or tomorrow if that time has passed.
         if day == nil, time != nil {
@@ -65,8 +61,6 @@ enum DateParser {
                 day = today
             }
         }
-
-        if time == nil, let tonightTime { time = tonightTime }
 
         var resolved: Date?
         var includesTime = false
@@ -94,8 +88,10 @@ enum DateParser {
             date: resolved,
             includesTime: includesTime,
             recurrence: recurrenceResult,
-            cleanedText: strip(ranges: consumed, from: ns),
-            consumedRanges: consumed
+            consumedRanges: consumed,
+            consumedParts: consumed.indices.map {
+                $0 < consumedByRecurrence ? .recurrence : $0 < consumedByDay ? .day : .time
+            }
         )
     }
 
@@ -116,7 +112,8 @@ enum DateParser {
             ("day after tomorrow", { calendar.date(byAdding: .day, value: 2, to: $0) }),
             ("next weekend", { nextWeekend(after: $0, calendar: calendar) }),
             ("this weekend", { upcomingWeekend(from: $0, calendar: calendar) }),
-            ("next week", { calendar.date(byAdding: .weekOfYear, value: 1, to: $0) }),
+            // Next Monday, the start of next week, as the design's capture reads it.
+            ("next week", { nextOccurrence(of: 2, from: $0, calendar: calendar, skipToday: true) }),
             ("next month", { calendar.date(byAdding: .month, value: 1, to: $0) }),
             ("next year", { calendar.date(byAdding: .year, value: 1, to: $0) }),
             ("end of week", { endOfWeek(from: $0, calendar: calendar) }),
@@ -126,6 +123,8 @@ enum DateParser {
             ("tmr", { calendar.date(byAdding: .day, value: 1, to: $0) }),
             ("yesterday", { calendar.date(byAdding: .day, value: -1, to: $0) }),
             ("today", { $0 }),
+            // A day with no time of its own: due today, like the design's capture.
+            ("tonight", { $0 }),
         ]
 
         for (phrase, transform) in keywords {
@@ -274,7 +273,6 @@ enum DateParser {
             ("morning", TimeOfDay(hour: 9, minute: 0)),
             ("afternoon", TimeOfDay(hour: 14, minute: 0)),
             ("evening", TimeOfDay(hour: 18, minute: 0)),
-            ("tonight", TimeOfDay(hour: 20, minute: 0)),
             ("night", TimeOfDay(hour: 20, minute: 0)),
         ]
 
@@ -557,28 +555,5 @@ enum DateParser {
             return match
         }
         return nil
-    }
-
-    private static func strip(ranges: [NSRange], from ns: NSString) -> String {
-        guard !ranges.isEmpty else {
-            return (ns as String).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let result = NSMutableString(string: ns)
-        for range in ranges.sorted(by: { $0.location > $1.location }) {
-            result.replaceCharacters(in: range, with: " ")
-        }
-        // Collapse the whitespace left behind, plus dangling joiners like "on".
-        var text = result as String
-        text = text.replacingOccurrences(
-            of: "\\s+",
-            with: " ",
-            options: .regularExpression
-        )
-        text = text.replacingOccurrences(
-            of: "\\s+(on|at|by|due)\\s*$",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

@@ -490,7 +490,7 @@ class PackagingChecks(unittest.TestCase):
                     "LSMinimumSystemVersion": "27.0",
                     **({"UTExportedTypeDeclarations": [
                         {"UTTypeIdentifier": "app.openlist.block-drag", "UTTypeConformsTo": ["public.data"]},
-                        {"UTTypeIdentifier": "app.openlist.inbox-order", "UTTypeConformsTo": ["public.data"]},
+                        {"UTTypeIdentifier": "app.openlist.list-drag", "UTTypeConformsTo": ["public.data"]},
                         {"UTTypeIdentifier": "solimanali.openlist.library-backup", "UTTypeConformsTo": ["com.apple.package"]},
                     ]} if bundle == self.app else {}),
                     **({"CFBundleURLTypes": [{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "solimanali.openlist.item", "CFBundleURLSchemes": ["openlist"]}]} if bundle == self.app else {}),
@@ -630,7 +630,7 @@ class PackagingChecks(unittest.TestCase):
         plist = self.app / "Contents/Info.plist"
         original = plistlib.loads(plist.read_bytes())
         exports = original["UTExportedTypeDeclarations"]
-        for identifier in ("app.openlist.block-drag", "app.openlist.inbox-order"):
+        for identifier in ("app.openlist.block-drag", "app.openlist.list-drag"):
             for defect in ("missing", "text-only", "duplicate"):
                 changed = [dict(item) for item in exports if item["UTTypeIdentifier"] != identifier]
                 if defect == "text-only":

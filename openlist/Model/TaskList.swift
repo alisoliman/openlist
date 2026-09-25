@@ -6,9 +6,8 @@
 import Foundation
 import SwiftData
 
-/// A list document. In Superlist a list is not merely a checklist — it is a
-/// rich document that happens to contain tasks, so its content lives in
-/// `Block` rows keyed by `listID`.
+/// A list document: not merely a checklist but a rich document that happens
+/// to contain tasks, so its content lives in `Block` rows keyed by `listID`.
 @Model
 final class TaskList {
     var id: UUID = UUID()
@@ -82,9 +81,6 @@ extension TaskList {
     static var availablePredicate: Predicate<TaskList> {
         #Predicate<TaskList> { $0.trashID == nil && $0.mergedIntoID == nil }
     }
-    static var activePredicate: Predicate<TaskList> {
-        #Predicate<TaskList> { $0.trashID == nil && !$0.isArchived && $0.mergedIntoID == nil }
-    }
 
     var isTrashed: Bool { trashID != nil }
     @MainActor var isEffectivelyArchived: Bool { (try? ownershipAncestors().contains { $0.isArchived }) ?? true }
@@ -155,7 +151,8 @@ extension TaskList {
         return trimmed.isEmpty ? "Untitled list" : trimmed
     }
 
-    /// The emoji shown for a list; Inbox has a fixed one.
+    /// The emoji shown for a list, which the widgets draw too; Inbox has a
+    /// fixed one.
     var glyph: String {
         if isSystemInbox { return "📥" }
         return icon.isEmpty ? "📋" : icon

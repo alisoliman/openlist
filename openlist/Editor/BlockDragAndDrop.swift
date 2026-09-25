@@ -15,15 +15,24 @@ enum DropPosition {
     case inside
 }
 
-/// A positional drop target. Dragging starts only in the selection gutter,
-/// leaving native text drags and selected-character copy untouched.
+/// A positional drop target. Dragging starts only at a line's grip, leaving
+/// native text drags and selected-character copy untouched.
 struct BlockDragAndDrop: ViewModifier {
     let row: BlockRow
     /// Reordering is only offered while the stored order is what's on screen —
     /// a sorted view would put the block somewhere other than where it landed.
     var isEnabled: Bool = true
+    /// Whether the middle of the row nests a drop inside it.
+    let holdsDrops: Bool
+    /// The indicators' colour, the document's indent step, their inset past
+    /// the indent, and their corner.
+    let accent: Color
+    var indentStep: CGFloat = 26
+    let indicatorInset: CGFloat
+    let radius: CGFloat
     let onMove: ([UUID], DropPosition) -> Void
-    let onDropText: (String) -> Void
+    /// Text dragged in from another app, with where its indicator showed it.
+    let onDropText: (String, DropPosition) -> Void
 
     @Environment(AppEnvironment.self) private var env
 
@@ -45,14 +54,14 @@ struct BlockDragAndDrop: ViewModifier {
                     of: [UTType(exportedAs: DragPayload.blockTypeIdentifier), .text, .plainText, .utf8PlainText],
                     delegate: RowDropDelegate(
                         row: row,
+                        holdsDrops: holdsDrops,
                         rowHeight: rowHeight,
                         indicator: $indicator,
                         sessionID: env.navigator.blockDragSessionID,
-                        activeLegacyID: { env.navigator.activeLegacyBlockDragID },
                         onMove: onMove,
                         onDropText: onDropText,
-                        onInvalid: { env.store.editorNotice = "This internal drag is invalid or belongs to another library. No rows were changed." },
-                        onUnavailable: { env.store.editorNotice = "The drop target is no longer available. No rows were changed." }
+                        onInvalid: { env.store.refuse("This internal drag is invalid or belongs to another library. No rows were changed.") },
+                        onUnavailable: { env.store.refuse("The drop target is no longer available. No rows were changed.") }
                     )
                 )
         } else {
@@ -64,9 +73,9 @@ struct BlockDragAndDrop: ViewModifier {
     private func indicatorLine(for position: DropPosition) -> some View {
         if indicator == position {
             Capsule()
-                .fill(Theme.accent)
+                .fill(accent)
                 .frame(height: 2)
-                .padding(.leading, CGFloat(row.depth) * Theme.Spacing.indentStep + 20)
+                .padding(.leading, CGFloat(row.depth) * indentStep + indicatorInset)
                 .transition(.opacity)
         }
     }
@@ -74,9 +83,9 @@ struct BlockDragAndDrop: ViewModifier {
     @ViewBuilder
     private var nestingHighlight: some View {
         if indicator == .inside {
-            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .strokeBorder(Theme.accent, lineWidth: 1.5)
-                .padding(.leading, CGFloat(row.depth) * Theme.Spacing.indentStep)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(accent, lineWidth: 1.5)
+                .padding(.leading, CGFloat(row.depth) * indentStep)
         }
     }
 }
@@ -84,12 +93,12 @@ struct BlockDragAndDrop: ViewModifier {
 /// Resolves the drop position from the pointer's location within the row.
 private struct RowDropDelegate: DropDelegate {
     let row: BlockRow
+    let holdsDrops: Bool
     let rowHeight: CGFloat
     @Binding var indicator: DropPosition?
     let sessionID: UUID
-    let activeLegacyID: () -> UUID?
     let onMove: ([UUID], DropPosition) -> Void
-    let onDropText: (String) -> Void
+    let onDropText: (String, DropPosition) -> Void
     let onInvalid: () -> Void
     let onUnavailable: () -> Void
 
@@ -121,7 +130,6 @@ private struct RowDropDelegate: DropDelegate {
             return false
         }
 
-        let legacyID = activeLegacyID()
         if provider.hasItemConformingToTypeIdentifier(DragPayload.blockTypeIdentifier) {
             provider.loadDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier) { data, _ in
                 Task { @MainActor in
@@ -129,7 +137,7 @@ private struct RowDropDelegate: DropDelegate {
                     // not inspect its kind, ID or position after deletion.
                     guard targetIsAvailable else { onUnavailable(); return }
                     guard let data, let value = String(data: data, encoding: .utf8),
-                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID, activeLegacyID: nil) else {
+                          case .blocks(let ids) = DragPayload.blockDrop(value, session: sessionID) else {
                         onInvalid()
                         return
                     }
@@ -142,9 +150,9 @@ private struct RowDropDelegate: DropDelegate {
             guard let string = value as? String else { return }
             Task { @MainActor in
                 guard targetIsAvailable else { onUnavailable(); return }
-                switch DragPayload.blockDrop(string, session: sessionID, activeLegacyID: legacyID) {
+                switch DragPayload.blockDrop(string, session: sessionID) {
                 case .blocks(let ids): onMove(ids, target)
-                case .text(let text): onDropText(text)
+                case .text(let text): onDropText(text, target)
                 case .invalid: onInvalid()
                 }
             }
@@ -153,14 +161,14 @@ private struct RowDropDelegate: DropDelegate {
     }
 
     /// Top third inserts above, bottom third below, and the middle nests —
-    /// but only when the target can actually hold children.
+    /// but only when the target holds drops.
     private func position(for info: DropInfo) -> DropPosition {
         let height = max(1, rowHeight)
         let y = info.location.y
 
         if y < height * 0.3 { return .before }
         if y > height * 0.7 { return .after }
-        return row.block.kind.acceptsChildren ? .inside : .after
+        return holdsDrops ? .inside : .after
     }
 
 }

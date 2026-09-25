@@ -7,26 +7,17 @@ import Foundation
 import SwiftUI
 
 /// Everywhere the sidebar can take you.
-enum AppRoute: Hashable, Codable {
+enum AppRoute: Hashable {
     case inbox
     case today
     case calendar
-    case updates
     case activity
     case tasks
     case lists
     case list(UUID)
     case label(UUID)
-    case completed
     case trash
     case settings
-
-    var isSmartView: Bool {
-        switch self {
-        case .list: false
-        default: true
-        }
-    }
 
     var listID: UUID? {
         if case let .list(id) = self { return id }
@@ -56,122 +47,115 @@ final class Navigator {
     /// Set by the app once the store is ready; nil in standalone checks.
     var inboxListID: UUID?
 
-    /// The list a reveal opened as a document for this visit only. Leaving the
-    /// list or choosing a presentation ends it; it is never saved.
+    /// The list a reveal opened as a document for this visit only, the Inbox
+    /// among them. Leaving the list or choosing a presentation ends it; it is
+    /// never saved.
     private var revealedDocumentListID: UUID?
-    /// The Inbox opened as its triage cards for this visit only, by a widget's
-    /// Triage. Leaving the Inbox or choosing a presentation ends it, as for a
-    /// reveal; the Inbox's saved presentation stays.
-    private var isTriagingInbox = false
 
-    /// Lists open as a task list until this Mac chooses Document for them.
+    /// The Inbox shown as triage for this visit only, as the widget's Triage
+    /// link asks, whatever this Mac chose for it. Leaving the Inbox or
+    /// choosing a presentation ends it; it is never saved.
+    private var isTriageVisit = false
+
+    /// Lists open as their document, and the Inbox as triage, until this Mac
+    /// chooses otherwise for them.
     func listViewMode(for listID: UUID) -> ListViewMode {
-        if listID == revealedDocumentListID, route == .list(listID) { return .document }
-        if isTriagingInbox, listID == inboxListID, route == .inbox { return .tasks }
-        return listViewModes[listID] ?? .tasks
+        if listID == revealedDocumentListID, shows(listID) { return .document }
+        if isTriageVisit, listID == inboxListID, route == .inbox { return .tasks }
+        return listViewModes[listID] ?? defaultViewMode(for: listID)
     }
 
-    /// The presentation this Mac saved for the list, whatever this visit shows.
-    /// A reveal or a widget's Triage changes the view for one visit only, so a
-    /// decision about what to restore afterwards has to read this instead: an
-    /// Inbox kept as a document reads as a task list while it is triaged.
-    func savedListViewMode(for listID: UUID) -> ListViewMode {
-        listViewModes[listID] ?? .tasks
+    /// Turns the Inbox on show to triage until it is left, even where this Mac
+    /// shows it as a document.
+    func showInboxTriage() {
+        guard route == .inbox, let inboxListID else { return }
+        let shown = listViewMode(for: inboxListID)
+        isTriageVisit = true
+        if revealedDocumentListID == inboxListID { revealedDocumentListID = nil }
+        guard shown != .tasks else { return }
+        contentReveal = nil
+        clearSelection()
+    }
+
+    /// Ends a triage visit on show, so the Inbox follows this Mac's choice
+    /// again, as the widget's Inbox link asks.
+    func followInboxPresentation() {
+        guard isTriageVisit, let inboxListID else { return }
+        let shown = listViewMode(for: inboxListID)
+        isTriageVisit = false
+        guard listViewMode(for: inboxListID) != shown else { return }
+        contentReveal = nil
+        clearSelection()
+    }
+
+    private func defaultViewMode(for listID: UUID) -> ListViewMode {
+        listID == inboxListID ? .tasks : .document
     }
 
     func setListViewMode(_ mode: ListViewMode, for listID: UUID) {
         let shown = listViewMode(for: listID)
         if revealedDocumentListID == listID { revealedDocumentListID = nil }
-        if listID == inboxListID { isTriagingInbox = false }
-        if (listViewModes[listID] ?? .tasks) != mode {
+        if listID == inboxListID { isTriageVisit = false }
+        if (listViewModes[listID] ?? defaultViewMode(for: listID)) != mode {
             listViewModes[listID] = mode
             defaults?.set(Dictionary(uniqueKeysWithValues: listViewModes.map { ($0.key.uuidString, $0.value.rawValue) }),
                           forKey: Self.listViewModesKey)
         }
         guard shown != mode else { return }
-        if route == .list(listID) || (route == .inbox && listID == inboxListID) {
+        if shows(listID) {
             contentReveal = nil
-            openTaskID = nil
             clearSelection()
         }
     }
 
-    /// Shows the Inbox on screen as its triage cards, without changing the
-    /// presentation this Mac saved for it: a widget's Triage asks for the cards
-    /// once, and choosing Document in the app is what should stick.
-    func triageInbox() {
-        guard let inboxID = inboxListID, route == .inbox, listViewMode(for: inboxID) == .document else { return }
-        isTriagingInbox = true
-        contentReveal = nil
-        openTaskID = nil
-        clearSelection()
+    /// Whether the page on show is the list's: its own, or the Inbox's.
+    func shows(_ listID: UUID) -> Bool {
+        route == .list(listID) || (route == .inbox && listID == inboxListID)
     }
 
-    /// Whether the screen on show is a document editor that owns menu commands.
-    /// Everything else is a Next screen served by the workbench targets.
-    var hasDocumentEditor: Bool {
+    /// Where a list's content is shown: the Inbox's on the Inbox, as
+    /// everywhere else in the app, and any other list's on its page.
+    func route(showing listID: UUID) -> AppRoute {
+        listID == inboxListID ? .inbox : .list(listID)
+    }
+
+    /// The list whose document is on show: any list, drawn as the Next list
+    /// document in either presentation, or the Inbox shown as a document.
+    var documentListID: UUID? {
         switch route {
-        case let .list(id): listViewMode(for: id) == .document
-        case .inbox: inboxListID.map { listViewMode(for: $0) == .document } ?? false
-        default: false
+        case let .list(id): id
+        case .inbox: inboxListID.flatMap { listViewMode(for: $0) == .document ? $0 : nil }
+        default: nil
         }
     }
 
-    /// The task whose detail panel is open, if any.
+    /// Whether the screen on show is a document that takes the outline's menu
+    /// commands. Everything else is a Next screen served by the workbench
+    /// targets.
+    var documentOwnsEditorCommands: Bool { documentListID != nil }
+
+    /// The task the inspector shows, if any.
     var openTaskID: UUID?
 
-    /// Blocks selected in the current document, for multi-select actions.
+    /// Blocks selected in the current document: the line being written, or
+    /// the line a reveal lands on. The document's menu commands act on them.
     var selection: Set<UUID> = []
     private(set) var rowSelection = BlockSelection()
-    private(set) var isSelectingRows = false
-    private(set) var rowFocusRequest: UUID?
 
     /// Private drag identity is per environment/library, not a persisted block ID.
     let blockDragSessionID = UUID()
-    var activeLegacyBlockDragID: UUID?
-
-    var orderedSelection: [UUID] { rowSelection.ordered(selection) }
-
-    func selectRow(_ id: UUID, gesture: BlockSelection.Gesture, scope: UUID, visible: [UUID]) {
-        rowFocusRequest = nil
-        selection = rowSelection.select(id, gesture: gesture, in: scope, visible: visible, selected: selection)
-        isSelectingRows = true
-    }
-
-    func stepRowSelection(_ direction: Int, extending: Bool, scope: UUID, visible: [UUID]) {
-        selection = rowSelection.step(direction, extending: extending, in: scope, visible: visible, selected: selection)
-        isSelectingRows = true
-        rowFocusRequest = rowSelection.focusID
-    }
-
-    func finishRowFocusRequest(_ id: UUID) {
-        if rowFocusRequest == id { rowFocusRequest = nil }
-    }
 
     func reconcileSelection(scope: UUID, visible: [UUID]) {
         selection = rowSelection.reconcile(in: scope, visible: visible, selected: selection)
     }
 
     func selectForEditing(_ id: UUID, scope: UUID, visible: [UUID]) {
-        rowFocusRequest = nil
-        selection = rowSelection.select(id, gesture: .replace, in: scope, visible: visible, selected: selection)
-        isSelectingRows = false
+        selection = rowSelection.select(id, in: scope, visible: visible, selected: selection)
     }
 
     func clearSelection() {
         selection.removeAll()
         rowSelection.clear()
-        isSelectingRows = false
-        rowFocusRequest = nil
-    }
-
-    func beginBlockDrag(_ id: UUID, scope: UUID, visible: [UUID]) -> String {
-        if rowSelection.scopeID != scope || !selection.contains(id) {
-            selectRow(id, gesture: .replace, scope: scope, visible: visible)
-        }
-        let ids = orderedSelection
-        activeLegacyBlockDragID = ids.count == 1 ? ids.first : nil
-        return DragPayload.encodeBlocks(ids, session: blockDragSessionID)
     }
 
     // Overlays.
@@ -186,23 +170,58 @@ final class Navigator {
     func reveal(_ request: ContentReveal) {
         // Revealing a target is an editing action, including in the same list.
         clearSelection()
-        go(to: .list(request.listID))
-        // Exact-content navigation must reveal notes and collapsed hierarchy,
+        go(to: route(showing: request.listID))
+        // Exact-content navigation must reveal prose and collapsed hierarchy,
         // including when this list was last viewed as a task-only queue. The
         // document is for this visit: the list's saved presentation stays.
-        revealedDocumentListID = request.listID
+        // A task, which opens in the inspector, and a list itself land on the
+        // list as this Mac shows it, as a search hit does; only a line, its
+        // note or a list's description needs the document. The Inbox's
+        // document draws no description, so only a line opens it. A document
+        // this visit already opened stays, as a search hit leaves it; a new
+        // route has ended it already.
+        let revealsLine = request.blockID != nil && request.taskID == nil
+        let revealsSummary = request.listID != inboxListID && request.revealsSummary(for: request.listID)
+        if revealsLine || revealsSummary { revealedDocumentListID = request.listID }
         openTaskID = request.taskID
-        selection = request.blockID.map { [$0] } ?? []
+        // Only a line is selected; a task lands on the workbench's focus, as
+        // a search hit does, so the targets follow the focus from there.
+        selection = revealsLine ? request.blockID.map { [$0] } ?? [] : []
         contentReveal = request
         searchActivation &+= 1
     }
 
-    func finishReveal() { contentReveal = nil }
+    /// Ends a reveal in place: what it exposed folds back, and the line it
+    /// selected lets go, unless the selection has moved on. The document a
+    /// reveal opened lasts the visit.
+    func finishReveal() {
+        if let id = contentReveal?.blockID, selection == [id] { clearSelection() }
+        contentReveal = nil
+    }
 
-    private var backStack: [AppRoute] = []
-    private var forwardStack: [AppRoute] = []
+    /// Lets go of the line a reveal selected once the focus moves to a row,
+    /// as the design's targets follow the focus. A line being written keeps
+    /// its selection, which leaving it clears.
+    func releaseRevealSelection() {
+        guard rowSelection.scopeID == nil, !selection.isEmpty else { return }
+        selection.removeAll()
+    }
+
+    /// A page in the history, and where it was scrolled to when it was left.
+    private struct Visit {
+        var route: AppRoute
+        var scrollOffset: CGFloat?
+    }
+
+    private var backStack: [Visit] = []
+    private var forwardStack: [Visit] = []
+    /// Where each route's page is scrolled to, as the page reports it.
     @ObservationIgnored private var scrollOffsets: [AppRoute: CGFloat] = [:]
+    /// The route Back or Forward just returned to, until its page has taken
+    /// the place it was left at.
+    @ObservationIgnored private var returnedRoute: AppRoute?
 
+    /// Read by the checks: the offset `rememberScrollOffset` saved for `route`.
     func scrollOffset(for route: AppRoute) -> CGFloat? { scrollOffsets[route] }
 
     func rememberScrollOffset(_ offset: CGFloat, for route: AppRoute) {
@@ -212,42 +231,53 @@ final class Navigator {
         scrollOffsets[route] = offset
     }
 
+    /// Where a page appearing for `route` should scroll to: where it was
+    /// left, once, when Back or Forward returned to it. `nil` for a new
+    /// visit, which starts at the top.
+    func takeScrollRestoration(for route: AppRoute) -> CGFloat? {
+        guard returnedRoute == route else { return nil }
+        returnedRoute = nil
+        return scrollOffsets[route]
+    }
+
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
 
-    /// Navigates, pushing the current route onto the back stack.
+    /// Navigates, pushing the current route onto the back stack. The open task
+    /// stays open, as it does going Back and Forward: the inspector belongs to
+    /// the window, not to the screen.
     func go(to newRoute: AppRoute) {
         guard newRoute != route else { return }
-        backStack.append(route)
+        backStack.append(Visit(route: route, scrollOffset: scrollOffsets[route]))
         forwardStack.removeAll()
         route = newRoute
+        startVisit(returning: nil)
         revealedDocumentListID = nil
-        isTriagingInbox = false
+        isTriageVisit = false
         contentReveal = nil
-        openTaskID = nil
         clearSelection()
         trimHistory()
     }
 
     func goBack() {
         guard let previous = backStack.popLast() else { return }
-        forwardStack.append(route)
-        route = previous
+        forwardStack.append(Visit(route: route, scrollOffset: scrollOffsets[route]))
+        route = previous.route
+        startVisit(returning: previous)
         revealedDocumentListID = nil
-        isTriagingInbox = false
+        isTriageVisit = false
         contentReveal = nil
-        openTaskID = nil
         clearSelection()
     }
 
     func goForward() {
         guard let next = forwardStack.popLast() else { return }
-        backStack.append(route)
-        route = next
+        backStack.append(Visit(route: route, scrollOffset: scrollOffsets[route]))
+        route = next.route
+        startVisit(returning: next)
         revealedDocumentListID = nil
-        isTriagingInbox = false
+        isTriageVisit = false
         contentReveal = nil
-        openTaskID = nil
         clearSelection()
     }
 
@@ -255,8 +285,9 @@ final class Navigator {
     /// list you are viewing is deleted underneath you.
     func replace(with newRoute: AppRoute) {
         route = newRoute
+        startVisit(returning: nil)
         revealedDocumentListID = nil
-        isTriagingInbox = false
+        isTriageVisit = false
         contentReveal = nil
         openTaskID = nil
         clearSelection()
@@ -268,8 +299,9 @@ final class Navigator {
         let source = AppRoute.label(sourceID)
         let destination = AppRoute.label(destinationID)
         if route == source { route = destination }
-        backStack = backStack.map { $0 == source ? destination : $0 }
-        forwardStack = forwardStack.map { $0 == source ? destination : $0 }
+        backStack = backStack.map { $0.route == source ? Visit(route: destination, scrollOffset: $0.scrollOffset) : $0 }
+        forwardStack = forwardStack.map { $0.route == source ? Visit(route: destination, scrollOffset: $0.scrollOffset) : $0 }
+        if returnedRoute == source { returnedRoute = nil }
     }
 
     func openTask(_ id: UUID?) {
@@ -280,6 +312,13 @@ final class Navigator {
     func closeTask() {
         openTaskID = nil
         if contentReveal?.taskID != nil { contentReveal = nil }
+    }
+
+    /// The page on show is the route's new visit: back where `visit` left it,
+    /// or from the top.
+    private func startVisit(returning visit: Visit?) {
+        scrollOffsets[route] = visit?.scrollOffset
+        returnedRoute = visit?.scrollOffset == nil ? nil : route
     }
 
     private func trimHistory() {

@@ -13,6 +13,49 @@ nonisolated struct ReminderIntent: Codable, Equatable, Sendable, Identifiable {
     func isEligible(at now: Date) -> Bool { inactiveReason == nil && date > now }
 }
 
+/// How far a reminder is from its task's due time: whole days on the
+/// calendar, so "1 day before" keeps the clock time across a daylight-saving
+/// change, then elapsed seconds, as "10 minutes before" counts them.
+nonisolated struct ReminderOffset: Equatable, Sendable {
+    var days = 0
+    var seconds: TimeInterval = 0
+
+    init(days: Int = 0, minutes: Int = 0) {
+        self.days = days
+        seconds = TimeInterval(minutes * 60)
+    }
+
+    /// The offset of `reminder` from `due`.
+    init(from due: Date, to reminder: Date, calendar: Calendar) {
+        days = calendar.dateComponents([.day], from: due, to: reminder).day ?? 0
+        seconds = reminder.timeIntervalSince(Self.moving(due, days: days, calendar: calendar))
+    }
+
+    /// The reminder this far from `due`.
+    func date(from due: Date, calendar: Calendar) -> Date {
+        Self.moving(due, days: days, calendar: calendar).addingTimeInterval(seconds)
+    }
+
+    /// `reminder` carried along when its task's due date moves. Between two
+    /// due times it keeps its offset. A day without a time reminds at a clock
+    /// time on or around it (9:00 at the due time), so when either due is one
+    /// the reminder keeps its clock time and moves the calendar days the due
+    /// date did, across a daylight-saving change too.
+    static func reminder(_ reminder: Date, movedFrom previousDue: Date, timed wasTimed: Bool,
+                         to newDue: Date, timed isTimed: Bool, calendar: Calendar) -> Date {
+        guard wasTimed, isTimed else {
+            let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: previousDue),
+                                               to: calendar.startOfDay(for: newDue)).day ?? 0
+            return moving(reminder, days: days, calendar: calendar)
+        }
+        return ReminderOffset(from: previousDue, to: reminder, calendar: calendar).date(from: newDue, calendar: calendar)
+    }
+
+    private static func moving(_ date: Date, days: Int, calendar: Calendar) -> Date {
+        days == 0 ? date : calendar.date(byAdding: .day, value: days, to: date) ?? date.addingTimeInterval(TimeInterval(days) * 86_400)
+    }
+}
+
 nonisolated enum ReminderAuthorization: Equatable, Sendable {
     case unknown, notDetermined, denied, authorized, unavailable
 
@@ -30,16 +73,30 @@ nonisolated enum ReminderAuthorization: Equatable, Sendable {
 nonisolated enum ReminderStatus: Equatable, Sendable {
     case checking, accepted, permissionNeeded, denied, expired, inactive(String), failed(String), unavailable
 
+    /// In plain words, as the app speaks elsewhere, not the scheduler's. The
+    /// ones that need the user read whole wherever they show, beside a task's
+    /// title in Settings too; the others show only under the Reminder tab's.
     var title: String {
         switch self {
         case .checking: "Checking reminder…"
-        case .accepted: "Accepted by macOS"
-        case .permissionNeeded: "Saved · notification permission needed"
-        case .denied: "Saved · notifications turned off"
-        case .expired: "Expired · will not be replayed"
-        case .inactive(let reason): "Not scheduled · \(reason)"
-        case .failed: "Saved · scheduling failed"
-        case .unavailable: "Saved · reminders disabled in this review build"
+        case .accepted: "Reminder set"
+        case .permissionNeeded: "Notifications aren’t allowed yet"
+        case .denied: "Notifications are off for Openlist"
+        case .expired: "Already passed"
+        case .inactive(let reason): Self.offTitle(reason)
+        case .failed: "The reminder couldn’t be scheduled"
+        case .unavailable: "Reminders are off in this review build"
+        }
+    }
+
+    /// Why a saved reminder waits, from the reason the Store gives.
+    private static func offTitle(_ reason: String) -> String {
+        switch reason {
+        case "task completed": "Off while the task is done"
+        case "list archived": "Off while the list is archived"
+        case "list unavailable": "Off while its list can’t be found"
+        case "in Trash": "Off while it’s in Trash"
+        default: "Off · \(reason)"
         }
     }
     var needsRecovery: Bool {

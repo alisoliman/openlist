@@ -60,44 +60,50 @@ check(allHits == (try project(options, source: blocks.reversed())), "tied order 
 check(allHits.first { $0.id == .block(paragraph.id) }?.context.contains("Ancestor context › Nested heading") == true, "paragraph exposes ancestor context")
 check(allHits.first { $0.id == .block(paragraph.id) }?.context.contains("Completed") == true, "completed ancestor is explicit")
 let noteHit = allHits.first { $0.id == .block(noteTask.id) }!
-check(noteHit.field == .note && noteHit.snippet.contains("needle target résumé") && noteHit.snippet.hasPrefix("…"), "deep note match gets useful snippet and exact field")
+check(noteHit.field == .note && noteHit.snippet.isEmpty && noteHit.symbol == "circle",
+      "a task's note match is the design's two lines, the row saying it matched in the note")
+check(allHits.first { $0.id == .block(completed.id) }?.symbol == "checkmark.circle", "a done task's hit shows the design's outline check")
+let longNote = Block(kind: .heading2, text: "Long note heading", listID: list.id, sortIndex: 0)
+longNote.note = noteTask.note
+let longNoteHit = try project(options, source: [longNote]).first!
+check(longNoteHit.field == .note && longNoteHit.snippet.contains("needle target résumé") && longNoteHit.snippet.hasPrefix("…"),
+      "a heading's deep note match quotes the passage that matched")
 check(try project(SearchOptions(query: " "), source: blocks).isEmpty, "whitespace query shows no corpus")
 check(try project(SearchOptions(query: "\n needle \t")).count == allHits.count, "query trims all outer whitespace")
-check(try project(SearchOptions(query: "needle", scope: .lists)).isEmpty, "list scope excludes content")
-check(try project(SearchOptions(query: "needle", scope: .notes)).map(\.id) == [.block(paragraph.id)], "notes scope retains existing non-task semantics")
-let tasksOnly = try project(SearchOptions(query: "needle", scope: .tasks))
-check(!tasksOnly.contains { $0.id == .block(paragraph.id) } && tasksOnly.contains { $0.id == noteHit.id }, "task notes remain task-scope matches")
-let noArchived = try project(SearchOptions(query: "needle", includesArchived: false))
-check(!noArchived.contains { $0.id == .block(archivedTask.id) }, "archive option filters content")
+check(allHits.contains { $0.id == .block(archivedTask.id) }, "search finds an archived list's content")
 let noCompleted = try project(SearchOptions(query: "needle", includesCompleted: false))
 check(!noCompleted.contains { $0.id == .block(completed.id) || $0.id == .block(paragraph.id) }, "completion option excludes completed ancestors and tasks")
-check(try project(SearchOptions(query: "project", scope: .lists)).count == 2, "list results include archive and omit merged alias")
-check(try project(SearchOptions(query: "project", scope: .lists, includesArchived: false)).count == 1, "list archive option is explicit")
+/// A search's list hits, which lead its results.
+func listResults(_ query: String) throws -> [SearchHit] {
+    try project(SearchOptions(query: query)).filter { if case .list = $0.id { true } else { false } }
+}
+check(try listResults("project").count == 2, "list results include archive and omit merged alias")
+let listHits = try listResults("project")
+check(listHits.first { $0.id == .list(list.id) }?.context == "List" && listHits.first { $0.id == .list(archived.id) }?.context == "List · Archived",
+      "list hits say they're a list rather than repeating their own name")
+check(listHits.allSatisfy { $0.snippet.isEmpty }, "a list hit on its name is the design's two lines")
+check(listHits.allSatisfy { $0.symbol == "square.2.layers.3d" }, "list hits use the layers symbol")
+let child = TaskList(title: "Needle child list")
+child.parentListID = list.id
+let childHit = try SearchProjection(corpus: SearchCorpus(blocks: [], lists: lists + [child]), options: SearchOptions(query: "child list")).hits
+check(childHit.first?.context == "List · Project collection", "a nested list hit names where it sits")
+check(allHits.first { $0.id == .block(completed.id) }?.context == "Project collection · Completed", "task context puts its state after its place")
+check(allHits.first { $0.id == .block(completed.id) }?.listIcon == "📋"
+      && allHits.first { $0.id == .block(orphan.id) }.map { $0.listIcon == nil && $0.context == "Unavailable list" } == true,
+      "a task hit carries its list's icon apart from the context, for the row to draw")
+let symbolList = TaskList(title: "Symbol list", icon: "checklist")
+let blankList = TaskList(title: "Blank list", icon: "")
+let symbolTask = Block(kind: .task, text: "Symbol needle", listID: symbolList.id, sortIndex: 0)
+let blankTask = Block(kind: .task, text: "Blank needle", listID: blankList.id, sortIndex: 1)
+let iconHits = try SearchProjection(corpus: SearchCorpus(blocks: [symbolTask, blankTask], lists: [symbolList, blankList]),
+                                    options: SearchOptions(query: "needle")).hits
+check(iconHits.first { $0.id == .block(symbolTask.id) }.map { $0.listIcon == "checklist" && $0.context == "Symbol list" } == true,
+      "an SF Symbol list icon never reads as its name in the context")
+check(iconHits.first { $0.id == .block(blankTask.id) }?.listIcon == "📋", "a list with no icon shows the default one")
 for (haystack, needle) in [("café", "CAFE"), ("cafe\u{301}", "CAFÉ"), ("résumé", "resume"), ("ＡＢＣ", "abc"), ("🧑🏽‍💻 note", "🧑🏽‍💻")] {
     check(SearchProjection.matches(haystack, needle), "Unicode match \(needle)")
     check(SearchProjection.snippet(haystack, matching: needle).contains(haystack), "snippet keeps complete graphemes")
 }
-
-var selection = SearchResultSelection()
-let ids = allHits.map(\.id)
-selection.reconcile(ids)
-check(selection.limit == 80 && selection.selected == ids.first, "first page and selection")
-selection.move(1, in: ids)
-check(selection.keyboardDestination(focused: ids[0]) == ids[1], "Tab-focused A then Down to B makes Return activate B before focus transfer")
-selection.reconcile(ids, reset: true)
-for index in 1..<ids.count {
-    selection.move(1, in: ids)
-    check(selection.selected == ids[index] && selection.limit > index, "Down reaches result \(index + 1) including page boundaries")
-}
-selection.move(1, in: ids)
-check(selection.selected == ids.last, "Down stops at final result")
-selection.move(-1, in: ids)
-check(selection.selected == ids[ids.count - 2], "Up moves backward")
-selection.reconcile(Array(ids.prefix(3)))
-check(selection.selected == ids.first, "deletion or filter change reconciles stale selection")
-selection.reconcile(ids, reset: true)
-selection.loadMore(total: ids.count)
-check(selection.limit == 160, "explicit pagination preserves honest count")
 
 let reveal = try ContentReveal.resolve(.block(paragraph.id), query: "needle", blocks: blocks, lists: lists)
 check(reveal.listID == list.id && reveal.taskID == nil && reveal.blockID == paragraph.id, "non-task targets full owner document")
@@ -116,9 +122,26 @@ navigator.reveal(reveal)
 check(navigator.route == .list(list.id) && navigator.openTaskID == nil && navigator.selection == [paragraph.id], "reveal navigation selects exact paragraph and closes inspector")
 navigator.reveal(taskReveal)
 check(navigator.openTaskID == noteTask.id && navigator.contentReveal == taskReveal, "same-list task reveal replaces previous request")
+check(navigator.selection.isEmpty, "a task reveal selects nothing, landing on the focus as a search hit does")
 let activation = navigator.searchActivation
 navigator.closeTask()
 check(navigator.contentReveal == nil && navigator.searchActivation == activation, "closing inspector ends temporary reveal")
+navigator.reveal(reveal)
+navigator.finishReveal()
+check(navigator.contentReveal == nil && navigator.selection.isEmpty && navigator.route == .list(list.id),
+      "finishing a line reveal in place lets its line go and stays on the page")
+navigator.reveal(reveal)
+navigator.selection = [completed.id]
+navigator.finishReveal()
+check(navigator.contentReveal == nil && navigator.selection == [completed.id], "finishing a reveal keeps a selection that moved on")
+navigator.reveal(reveal)
+navigator.releaseRevealSelection()
+check(navigator.selection.isEmpty && navigator.contentReveal == reveal, "the focus moving to a row lets the revealed line go")
+let writingScope = UUID()
+navigator.selectForEditing(paragraph.id, scope: writingScope, visible: [paragraph.id])
+navigator.releaseRevealSelection()
+check(navigator.selection == [paragraph.id], "a line being written keeps its selection")
+navigator.clearSelection()
 navigator.reveal(reveal)
 navigator.go(to: .today)
 check(navigator.contentReveal == nil, "navigation ends temporary expansion")
@@ -139,6 +162,8 @@ check(movedField.field == .note, "resolver follows the live matching field after
 paragraph.text = formerTitle
 paragraph.note = ""
 list.summary = "Hidden description needle"
+let summaryHit = try listResults("needle").first { $0.id == .list(list.id) }
+check(summaryHit?.field == .summary && summaryHit?.snippet.contains("needle") == true, "a list's description match quotes it")
 let summaryRequest = try ContentReveal.resolve(.list(list.id), field: .summary, query: "needle", blocks: blocks, lists: lists)
 navigator.go(to: .list(list.id))
 navigator.reveal(summaryRequest)
@@ -193,6 +218,30 @@ session.update(corpus: SearchCorpus(blocks: blocks, lists: lists))
 for _ in 0..<1000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
 check(session.hits.isEmpty, "deleted hit leaves current search")
 
+// The last answer stays listed while a newer query runs, so typing narrows
+// the list instead of blanking it.
+session.update(options: SearchOptions(query: "needle"))
+for _ in 0..<1000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
+let settled = session.hits
+check(!settled.isEmpty && session.hitsOptions == SearchOptions(query: "needle") && !session.isSlow, "a settled search lists its answer")
+session.update(options: SearchOptions(query: "needle target"))
+check(session.isSearching && session.hits == settled && session.hitsOptions == SearchOptions(query: "needle"),
+      "the previous answer stays listed, marked as older, until the new one arrives")
+for _ in 0..<1000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
+check(session.hitsOptions == SearchOptions(query: "needle target") && session.hits.map(\.id) == [noteHit.id], "the new answer replaces the old")
+session.update(options: SearchOptions(query: " "))
+check(session.hits.isEmpty && !session.isSearching && session.hitsOptions.needle.isEmpty, "clearing the query clears the list at once")
+
+// Open tasks carry their due date for the subtitle; finished ones don't.
+let dueTask = Block(kind: .task, text: "Due soon", listID: list.id)
+dueTask.dueDate = Date(timeIntervalSince1970: 1_800_000_000)
+let doneDue = Block(kind: .task, text: "Due and done", listID: list.id)
+doneDue.dueDate = dueTask.dueDate
+doneDue.isCompleted = true
+let dueHits = try SearchProjection(corpus: SearchCorpus(blocks: [dueTask, doneDue], lists: lists), options: SearchOptions(query: "due")).hits
+check(dueHits.first { $0.id == .block(dueTask.id) }?.dueDate == dueTask.dueDate, "open task hits carry their due date")
+check(dueHits.first { $0.id == .block(doneDue.id) }?.dueDate == nil, "completed task hits show no due date")
+
 // Same saved 10k corpus and query mix as the pre-change benchmark. Timings are
 // evidence, not hardware-dependent pass/fail thresholds.
 let performanceContainer = try ModelContainer(for: Block.self, TaskList.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
@@ -228,7 +277,8 @@ session.update(corpus: corpus)
 let rapidStart = ContinuousClock.now
 for query in ["p", "pr", "pro", "proj", "project", "needle 9999"] { session.update(options: SearchOptions(query: query)); await Task.yield() }
 for _ in 0..<2000 where session.isSearching { try await Task.sleep(for: .milliseconds(2)) }
-check(session.hits.count == 1 && session.hits.first?.snippet.contains("needle 9999") == true, "10k rapid typing publishes only latest query")
+check(session.hits.count == 1 && session.hits.first?.id == .block(performanceBlocks.first { $0.note.hasSuffix("needle 9999") }!.id),
+      "10k rapid typing publishes only latest query")
 print("10k rapid_latest_ms=\(String(format: "%.2f", ms(rapidStart)))")
 let obsolete = Task.detached { try SearchProjection(corpus: corpus, options: SearchOptions(query: "project")) }
 obsolete.cancel()

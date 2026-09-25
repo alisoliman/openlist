@@ -8,9 +8,9 @@ import SwiftData
 
 /// A user-defined grouping of lists in the sidebar.
 ///
-/// Superlist ships one default section named "My lists" that collects pinned
-/// lists until the user makes their own. Deleting a section never deletes the
-/// lists inside it — they simply become unpinned.
+/// The default section, "My lists", is created on first launch, receives new
+/// lists, and can't be deleted. Deleting any other section keeps its lists
+/// pinned, gathered under "Other lists" until they are filed again.
 @Model
 final class SidebarSection {
     var id: UUID = UUID()

@@ -11,32 +11,34 @@ protocol WidgetLinkScreens: AnyObject {
     func go(_ route: AppRoute)
     /// The screen that shows a list: the Inbox list is the Inbox screen.
     func route(for list: TaskList) -> AppRoute
-    /// Opens a task in the inspector, with its row focused.
-    func inspect(_ id: UUID?)
+    /// Opens a task in the inspector with its row focused, once the screen
+    /// just gone to is up, so it scrolls to the row.
+    func inspectOnScreen(_ id: UUID)
+    /// The Calendar on a range that shows `day`, whichever range it was left on.
+    func showOnCalendar(_ day: Date)
 }
 
 /// Takes the app to what a widget was showing when it was clicked.
 ///
 /// Widget links arrive through the same URL handlers as item links, often
-/// while the app is still launching. They wait until the library is open and
-/// the main window is on screen: bootstrap puts every launch on Today, and a
-/// route set before that would be overwritten.
+/// while the app is still launching. Screen links wait until the library is
+/// open and the main window is on screen: bootstrap puts every launch on
+/// Today, and a route set before that would be overwritten. They then bring
+/// Openlist forward.
 ///
-/// Quick Add links wait for the main window too, and it comes forward with
-/// the Quick Add panel even when it was closed, unlike Quick Add from the menu
-/// bar or the shortcut. That is deliberate: only the main scene takes URLs,
-/// so its window is back on screen by the time a link gets here, and it is
-/// what installs the opener Quick Add needs. A capture that left the main
-/// window alone would need the Quick Add scene to take capture URLs itself,
-/// a change to scene matching that these checks cannot cover.
+/// Quick Add links wait for the library only. Quick Add is a panel floating
+/// over whatever app is in front (`QuickCapturePanel`), so it neither needs
+/// the main window nor makes Openlist the active app.
 @MainActor
 final class WidgetLinkRouter {
     private let store: Store
     private let navigator: Navigator
     private let screens: any WidgetLinkScreens
-    /// Opens the Quick Add window for a request. The app installs it; only a
-    /// view can open windows.
-    var capture: ((TaskCaptureRequest) -> Void)?
+    /// Opens Quick Add for a request. The app installs it.
+    var capture: ((QuickCaptureRequest) -> Void)?
+    /// Makes Openlist the active app once a link has shown its screen. The
+    /// app installs it; Quick Add never calls it.
+    var activate: () -> Void = {}
     private var pending: [WidgetLink] = []
     private var isStoreReady = false
     private var isWindowReady = false
@@ -69,56 +71,79 @@ final class WidgetLinkRouter {
         drain()
     }
 
+    /// Opens what can open now, in the order the links came. A screen link
+    /// waiting for the window holds back the ones after it, so a capture
+    /// never jumps ahead of a screen clicked first.
     private func drain() {
-        guard isStoreReady, isWindowReady else { return }
-        let links = pending
-        pending.removeAll()
-        for link in links { open(link) }
+        guard isStoreReady else { return }
+        while let link = pending.first {
+            guard isWindowReady || link.isCapture else { return }
+            pending.removeFirst()
+            open(link)
+        }
     }
 
     private func open(_ link: WidgetLink) {
         switch link {
         case let .capture(listID):
-            // A list's "Add to …" files into that list, and appends as capture
-            // from its own Tasks screen does. The Inbox's prepends, as every
-            // Inbox capture does; it still starts in the Inbox, so it moves a
-            // Quick Add draft aimed at another list. Without a list, Quick Add
-            // starts in the Inbox.
-            let appends = listID.flatMap { store.list(id: $0) }.map { !$0.isSystemInbox } ?? false
-            capture?(TaskCaptureRequest(suggestedListID: listID, startsInSuggestedList: listID != nil,
-                                        appendsToSuggestedList: appends))
+            // A list's "Add to …" starts the card on that list; without one,
+            // Quick Add starts on the Inbox. An open card keeps what has been
+            // typed and moves to the request's list.
+            capture?(QuickCaptureRequest(listID: listID))
         case .captureToday:
             // As New task on the app's Today: still the Inbox, but a task typed
             // without a date is due today, so it lands on the widget it came from.
-            capture?(TaskCaptureRequest(dueTodayWhenUndated: true))
+            capture?(QuickCaptureRequest(dueToday: true))
         case .inbox:
+            // This Mac's choice for the Inbox, even straight after a triage visit.
             show(.inbox)
+            navigator.followInboxPresentation()
+            activate()
         case .triage:
             // Triage is the Inbox's card view, which the document presentation
             // replaces. The cards are for this visit: an Inbox kept as a
             // document stays one the next time it opens. After `show`, since
             // arriving on the Inbox starts a fresh visit.
             show(.inbox)
-            navigator.triageInbox()
+            navigator.showInboxTriage()
+            activate()
         case .today:
             show(.today)
+            activate()
         case .calendar:
-            show(.calendar)
+            // Up Next and Agenda: today's work, whichever range the Calendar was left on.
+            navigator.isShortcutSheetOpen = false
+            screens.showOnCalendar(.now)
+            activate()
         case .activity:
             show(.activity)
+            activate()
         case let .list(id):
             // Follows a list merged into another since the widget last refreshed.
             guard let list = store.list(id: id) else { return }
             show(screens.route(for: list))
+            activate()
         case let .task(id):
-            guard let task = store.block(id: id), task.isTask, let list = store.list(id: task.listID) else { return }
+            guard let task = store.block(id: id), task.isTask, task.trashID == nil,
+                  let list = store.list(id: task.listID) else { return }
             show(screens.route(for: list))
-            screens.inspect(task.id)
+            screens.inspectOnScreen(task.id)
+            activate()
         }
     }
 
     private func show(_ route: AppRoute) {
         navigator.isShortcutSheetOpen = false
         screens.go(route)
+    }
+}
+
+extension WidgetLink {
+    /// Quick Add, which opens without the main window.
+    var isCapture: Bool {
+        switch self {
+        case .capture, .captureToday: true
+        default: false
+        }
     }
 }

@@ -16,18 +16,40 @@ extension WidgetSnapshotSources {
         sources.accentHex = { settings.accent.hex }
         sources.serifTitles = { settings.serifTitles }
         sources.calendar = { settings.calendar }
-        sources.agenda = { interval in agenda(in: interval, coordinator: coordinator) }
+        let meetings = MeetingCache()
+        sources.agenda = { interval in agenda(in: interval, coordinator: coordinator, meetings: meetings) }
         sources.work = { now in work(at: now, coordinator: coordinator, calendar: settings.calendar) }
         sources.isAppActive = { NSApplication.shared.isActive }
         return sources
     }
 
+    /// Meetings, read from the calendars again only when the week or the
+    /// calendars change (`ExternalCalendarSource.revision`): the snapshot is
+    /// rebuilt after every save.
+    @MainActor
+    final class MeetingCache {
+        private var key: [Double] = []
+        private var busy: [FixedBusyTime] = []
+
+        func busyTimes(in interval: DateInterval, from source: ExternalCalendarSource) -> [FixedBusyTime] {
+            let key = [interval.start.timeIntervalSinceReferenceDate, interval.end.timeIntervalSinceReferenceDate, Double(source.revision)]
+            if key != self.key {
+                self.key = key
+                busy = source.busyTimes(in: interval)
+            }
+            return busy
+        }
+    }
+
     /// Meetings and task blocks overlapping `interval`, filtered as the
     /// Calendar screen draws them: events of 20 hours or more are all-day
-    /// busy time rather than meetings.
-    static func agenda(in interval: DateInterval, coordinator: CalendarCoordinator) -> [WidgetSnapshot.AgendaEvent] {
+    /// busy time rather than meetings. Meetings are read for the interval
+    /// itself, since the week starts before today, where the planner's own
+    /// range doesn't reach.
+    static func agenda(in interval: DateInterval, coordinator: CalendarCoordinator,
+                       meetings cache: MeetingCache = MeetingCache()) -> [WidgetSnapshot.AgendaEvent] {
         let store = coordinator.store
-        let meetings = coordinator.externalCalendars.busyTimes.filter {
+        let meetings = cache.busyTimes(in: interval, from: coordinator.externalCalendars).filter {
             $0.end > interval.start && $0.start < interval.end && $0.end.timeIntervalSince($0.start) < 20 * 3600
         }.map {
             WidgetSnapshot.AgendaEvent(id: $0.id, kind: .meeting, title: $0.title, start: $0.start, end: $0.end)
@@ -72,7 +94,7 @@ extension WidgetSnapshotSources {
             // Starting replans the running block from the moment of Start; the
             // slot it was started in is the one the plan showed.
             let started = session.plannedIntervals.first { $0.start <= session.startedAt && session.startedAt < $0.end }
-            let running = coordinator.plan.blocks.first { $0.isActive && $0.occurrenceID == session.occurrenceID }
+            let running = coordinator.visibleBlocks.first { $0.isActive && $0.occurrenceID == session.occurrenceID }
             return mirror(task, state: .working, segmentStartedAt: session.startedAt, priorSeconds: prior,
                           block: started.map { ($0.start, $0.end) } ?? running.map { ($0.start, $0.end) },
                           coordinator: coordinator)
@@ -99,9 +121,8 @@ extension WidgetSnapshotSources {
                                priorSeconds: Double, block: (start: Date, end: Date)?,
                                coordinator: CalendarCoordinator) -> WidgetSnapshot.Work {
         let list = coordinator.store.list(id: task.listID)
-        // The toolbar timer's estimate, so its bar and the widget's fill alike.
-        let defaultEstimate = max(5, Int(coordinator.preferences.defaultEstimateMinutes))
-        let estimate = max(5, task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate)
+        // The Work panel timer's estimate, so its reading and the widget's fill alike.
+        let estimate = max(5, coordinator.estimatedMinutes(for: task))
         return WidgetSnapshot.Work(
             state: state,
             taskID: task.id,
@@ -112,7 +133,7 @@ extension WidgetSnapshotSources {
             accentHex: list?.displayAccentHex ?? ListAccent.graphite.hex,
             segmentStartedAt: segmentStartedAt,
             priorSeconds: priorSeconds,
-            estimateMinutes: Double(estimate),
+            estimateMinutes: estimate,
             blockStart: block?.start,
             blockEnd: block?.end
         )

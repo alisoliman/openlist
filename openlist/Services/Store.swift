@@ -7,11 +7,13 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-/// Identifies the document currently being edited: either a list, or a task's
-/// detail page, which behaves like a miniature list rooted at that task.
+/// Identifies a document: a list, or the subtree under one of its tasks,
+/// which behaves like a miniature list rooted at that task. The list
+/// document edits a whole list; the store appends under a task too, as MCP
+/// adds subtasks.
 struct DocumentContext: Hashable {
     var listID: UUID
-    /// `nil` when editing the list itself; a task id when editing its details.
+    /// `nil` for the list itself; a task id for the subtree under it.
     var rootBlockID: UUID?
 
     init(listID: UUID, rootBlockID: UUID? = nil) {
@@ -24,7 +26,7 @@ struct DocumentContext: Hashable {
 ///
 /// Views own presentation; `Store` owns the rules — how completing a repeating
 /// task rolls it forward, what indenting does to a subtree, which changes are
-/// worth recording in the Updates feed.
+/// worth recording in Activity's Changes.
 @Observable
 @MainActor
 final class Store {
@@ -42,6 +44,11 @@ final class Store {
     /// cache even after deletion. Never publish those attempt identities, and
     /// explicitly delete them again before any subsequent commit.
     private(set) var uncommittedActivityIDs: Set<UUID> = []
+    /// List document lines' own saves to their tasks, which reach saved
+    /// history as one entry each once the line ends.
+    @ObservationIgnored var lineHistory = EditorLineHistory()
+    /// The batch of a change written in several saves; see `withActivityBatch`.
+    @ObservationIgnored var activityBatch: UUID?
 
     /// Set by ``batch(_:)`` so a run of mutations commits once.
     var isSavingSuspended = false
@@ -52,14 +59,23 @@ final class Store {
     // Undo can restore the original attachment and image contents as well.
     var isRecordingEditorEdit = false
     var editorMediaBackups: [String: Data] = [:]
-    /// Structural Undo may remove the task currently open in an inspector.
+    /// Structural Undo may remove the task currently open in the inspector.
     @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
     var persistenceError: String?
     var editorNotice: String?
+    /// Why the last export, Copy as Markdown, cover change, image or file,
+    /// Duplicate, move, Copy Content and Subtasks or paste failed. It stays,
+    /// red, under the toolbar until dismissed; VoiceOver hears it as it
+    /// appears.
+    var actionError: String?
+    /// Takes what ``refuse(_:)`` reports; the window shows it in its tray.
+    @ObservationIgnored var onRefusal: ((String) -> Void)?
+    /// Why the last Trash change failed. Successes report in the tray.
     var trashError: String?
-    var trashNotice: String?
     @ObservationIgnored var permanentlyErasedBlockIDs: Set<UUID> = []
     @ObservationIgnored var trashMediaRollbacks: [() -> Void] = []
+    /// The latest merge, which ``undoLabelMerge(_:)`` takes back when given
+    /// no plan. The window's Undo holds its own merge's plan instead.
     var labelMergeUndo: LabelMergePlan?
     var labelMaintenanceError: String?
     var labelRevision = 0
@@ -80,9 +96,6 @@ final class Store {
     @ObservationIgnored var pendingCompletionUndoChanges: [CompletionUndoChange] = []
     @ObservationIgnored var completionUndoRegistrations: [UUID: CompletionUndoRegistration] = [:]
     var onCompletionUndoAvailable: ((CompletionUndoAction) -> Void)?
-    /// Smart rows commit local title drafts on blur. External writes must not
-    /// overwrite those drafts or be overwritten by their later commit.
-    @ObservationIgnored var activeTitleDrafts: [UUID: UUID] = [:]
 
     /// Called after every successful save, so downstream caches — currently the
     /// widget snapshot — can refresh themselves.
@@ -212,6 +225,46 @@ final class Store {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// Takes a file off its task as one Undo step on `undoManager`, named
+    /// `name`: Undo puts the file back, its bytes and all, and Redo takes it
+    /// off again. `didRegister` runs once the step is on the stack. With no
+    /// undo manager, or no live task to hold it, the file just goes.
+    func removeAttachment(_ attachment: Attachment, name: String, undoManager: UndoManager?,
+                          didRegister: (() -> Void)? = nil) {
+        guard attachment.modelContext != nil, !attachment.isDeleted else { return }
+        let remove = {
+            // Inside the edit, the file's bytes are kept for Undo before the cache lets it go.
+            self.removeEditorMedia(filename: attachment.filename)
+            self.context.delete(attachment)
+            self.save()
+        }
+        guard let owner = block(id: attachment.blockID), let listID = owner.listID else { return remove() }
+        undoableEditorEdit(in: listID, name: name, undoManager: undoManager, didRegister: didRegister, remove)
+    }
+
+    /// Keeps `files`, already copied in, with `owner`, in order after its
+    /// other files, as one Undo step on `undoManager`, named `name`: Undo
+    /// takes them off again, and Redo puts them back, bytes and all.
+    /// `didRegister` runs once the step is on the stack. With no undo
+    /// manager, or a task in no list, the files are just kept.
+    func addAttachments(_ files: [ImportedMedia], to owner: Block, name: String, undoManager: UndoManager?,
+                        didRegister: (() -> Void)? = nil) {
+        guard !files.isEmpty, owner.modelContext != nil, !owner.isDeleted else { return }
+        let ownerID = owner.id
+        let add = {
+            var sortIndex = self.attachments(for: ownerID).last?.sortIndex ?? 0
+            for media in files {
+                sortIndex += BlockTree.indexStep
+                self.context.insert(Attachment(blockID: ownerID, filename: media.filename, displayName: media.displayName,
+                                               contentType: media.contentType, byteCount: media.byteCount,
+                                               sortIndex: sortIndex, contentData: media.data))
+            }
+            self.save()
+        }
+        guard let listID = owner.listID else { return add() }
+        undoableEditorEdit(in: listID, name: name, undoManager: undoManager, didRegister: didRegister, add)
+    }
+
     // MARK: - Bootstrap
 
     /// Creates the Inbox and the default sidebar section on first launch.
@@ -229,6 +282,7 @@ final class Store {
             }
             try reconcileSystemRecords()
             guard reconcileRetainedListDescendants() else { throw TrashError.invalidRetention }
+            rewordRecoveredItemsSummaries()
             save()
         } catch {
             persistenceError = "The Inbox could not be opened. \(error.localizedDescription)"
@@ -277,17 +331,12 @@ final class Store {
         return list
     }
 
-    @discardableResult
-    func deleteList(_ list: TaskList) -> Bool {
-        trashList(list)
-    }
-
     func duplicateList(_ list: TaskList) -> TaskList {
         do {
             let id = try copyList(list, mode: .duplicate)
             return self.list(id: id) ?? list
         } catch {
-            editorNotice = "The list was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
+            actionError = "The list was not duplicated because its content or a file could not be copied. \(error.localizedDescription)"
             return list
         }
     }
@@ -364,6 +413,13 @@ final class Store {
         save()
     }
 
+    /// A one-off refusal that changed nothing, like a drop the list's rules
+    /// don't allow: it passes, as the design's tray does, rather than staying
+    /// pinned like an error. With no window to show it, it waits in `editorNotice`.
+    func refuse(_ message: String) {
+        if let onRefusal { onRefusal(message) } else { editorNotice = message }
+    }
+
     // MARK: - Persistence
 
     func save() {
@@ -389,9 +445,15 @@ final class Store {
                 context.delete(event)
             }
         }
-        if context.hasChanges || !pendingActivity.isEmpty {
+        if context.hasChanges || !pendingActivity.isEmpty || lineHistory.hasEnded {
             context.processPendingChanges()
-            let events = try stagedTaskActivity() + stagedLegacyActivity()
+            let staged = try stagedTaskActivity() + stagedLegacyActivity()
+            // One save is one change, a task each: Changes shows its history
+            // as the one row the log gives it.
+            let batch = activityBatch ?? UUID()
+            for event in staged { event.batchID = batch }
+            // After staging, which holds what the lines saved last.
+            let events = staged + endedLineActivity()
             for event in events { context.insert(event) }
             do {
                 try commitContext(context)
@@ -414,6 +476,7 @@ final class Store {
             }
         }
         pendingActivity.removeAll()
+        lineHistory.didSave()
         activitySuppressedTaskIDs.removeAll()
         pendingRestoredTaskIDs.removeAll()
         pendingCompletionCycleIDs.removeAll()
@@ -469,11 +532,16 @@ final class Store {
         ))
     }
 
-    func recentActivity(limit: Int = 300) -> [ActivityEvent] {
+    /// The newest saved history, optionally only from `start` on or from
+    /// before `end`, and past the first `offset` of it.
+    func recentActivity(limit: Int = 300, since start: Date = .distantPast, before end: Date = .distantFuture,
+                        offset: Int = 0) -> [ActivityEvent] {
         let excluded = Array(uncommittedActivityIDs)
-        var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate { !excluded.contains($0.id) },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
+        var descriptor = FetchDescriptor<ActivityEvent>(predicate: #Predicate {
+            $0.timestamp >= start && $0.timestamp < end && !excluded.contains($0.id)
+        }, sortBy: [SortDescriptor(\.timestamp, order: .reverse), SortDescriptor(\.id)])
         descriptor.fetchLimit = limit
+        descriptor.fetchOffset = offset
         return (try? context.fetch(descriptor)) ?? []
     }
 
@@ -529,10 +597,6 @@ final class Store {
         list.sorting = sorting
         list.touch()
         save()
-    }
-
-    func setShowsCompleted(_ shows: Bool, for list: TaskList) {
-        setCompletedVisibility(shows ? .show : .hide, for: list)
     }
 
     func setCompletedVisibility(_ visibility: TaskList.CompletedVisibility, for list: TaskList) {

@@ -5,21 +5,18 @@ struct LocalLinkNotice: View {
 
     var body: some View {
         if let error = env.localLinks.error {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("Link unavailable", systemImage: "exclamationmark.circle")
-                        .font(.headline)
-                    Text(error.localizedDescription)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // A link that can't open is drawn as a reminder's that can't is, as
+            // the two land alike: grey and untitled, the message saying why. A
+            // library whose link identity can't be read is the app failing,
+            // drawn red as its other failures are.
+            let failed = error == .identityUnavailable
+            NXNoticeCard(icon: failed ? "exclamationmark.triangle" : "exclamationmark.circle", tone: failed ? .error : .info,
+                         message: error.localizedDescription) {
                 Button("Dismiss") { env.localLinks.error = nil }
+                    .buttonStyle(NXPanelButtonStyle(kind: .quiet))
             }
-            .font(.callout)
-            .padding(12)
-            .background(ListAccent.orange.softBackground)
-            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("local-link-error")
+            .nxNoticePlacement()
         }
     }
 }

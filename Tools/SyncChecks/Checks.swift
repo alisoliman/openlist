@@ -236,15 +236,16 @@ import SwiftData
         let retained = Block(kind: .task, text: "Not selected", listID: inbox.id)
         for block in [first, second, retained] { store.context.insert(block) }
         store.save()
-        store.deleteBlocks([first, second])
-        check(store.blocks(inList: inbox.id).map(\.id) == [retained.id], "Selecting both sides of a projected cycle deletes them without skipping both roots")
+        store.trashBlocks([first, second])
+        check(store.blocks(inList: inbox.id).map(\.id) == [retained.id], "Selecting both sides of a projected cycle trashes them without skipping both roots")
 
         let orphan = Block(kind: .task, text: "Missing imported parent", listID: inbox.id, parentID: UUID())
         let child = Block(kind: .task, text: "Orphan's child", listID: inbox.id, parentID: orphan.id)
         for block in [orphan, child] { store.context.insert(block) }
         store.save()
-        store.deleteBlocks(store.blocks(inList: inbox.id))
-        check(store.blocks(inList: inbox.id).isEmpty, "Reset's bulk deletion removes orphaned Inbox subtrees as well as stored roots")
+        store.permanentlyResetLibrary()
+        check(store.blocks(inList: inbox.id).isEmpty && (try? store.trashEntries())?.isEmpty == true,
+              "Delete everything removes orphaned Inbox subtrees as well as stored roots")
     }
 
     @MainActor static func validateRemoteDrafts() {
@@ -288,7 +289,7 @@ import SwiftData
         check(clonedImage.mediaData == imageBytes && clonedImage.mediaFilename != image.mediaFilename, "Duplicate preserves synced image bytes with independent file ownership")
         let clonedTask = store.blocks(inList: duplicate.id).first(where: \.isTask)!
         check(store.attachments(for: clonedTask.id).first?.contentData == fileBytes, "Duplicate preserves synced attachment bytes")
-        store.deleteList(duplicate)
+        store.trashList(duplicate)
         check(image.mediaData == imageBytes && attachment.contentData == fileBytes, "Deleting a copy cannot delete the original synced data")
         let destination = folder.appendingPathComponent("Downloaded.md")
         try MarkdownExporter.write(list: list, store: store, to: destination)
@@ -392,7 +393,9 @@ import SwiftData
         check(BlockTree.flatten([second, first]).map(\.id) == [first.id, second.id], "Concurrent cyclic moves remain visible in deterministic order")
         check(BlockTree.flatten([first, second]).map(\.id) == [first.id, second.id], "Cycle projection is independent of import order")
         check(BlockTree.descendants(of: first.id, in: [first, second]).map(\.id) == [second.id], "Cyclic imports cannot make descendant traversal loop")
-        check(BlockTree.subtaskCounts(in: [first, second])[first.id]?.total == 1, "Cyclic imports cannot overflow task progress recursion")
+        let cyclicIndex = BlockTree.childIndex(of: [first, second])
+        check(cyclicIndex[nil]?.map(\.id) == [first.id] && cyclicIndex[first.id]?.map(\.id) == [second.id] && cyclicIndex[second.id] == nil,
+              "Cyclic imports index as one tree, so counting task progress cannot recurse forever")
         check(first.parentID == second.id && second.parentID == first.id, "Cycle projection never rewrites synced parent fields")
         let delayedParent = Block(kind: .paragraph, text: "Arrives later")
         let child = Block(kind: .task, text: "Already downloaded", parentID: delayedParent.id)

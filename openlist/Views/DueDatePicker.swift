@@ -6,12 +6,14 @@
 import SwiftData
 import SwiftUI
 
-/// Quick presets plus a calendar and optional time, matching how Superlist
-/// lets you type or tap a due date.
+/// The Schedule popover's Due tab: quick presets plus a calendar and optional
+/// time. Each change goes through the workbench, as the inspector's due pills
+/// do: one Undo step, with its tray.
 struct DueDatePicker: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
 
     @State private var selectedDate: Date = .now
     @State private var includesTime = false
@@ -27,42 +29,41 @@ struct DueDatePicker: View {
     }
 
     private var liveContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             typeToSchedule
-            Divider()
-            presets
-            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                NXCapsTitle(text: "Quick picks")
+                presets
+            }
 
             CalendarMonthPicker(selection: block.dueDate, calendar: calendar) { date in
                 selectedDate = date
                 apply()
             }
 
-            Divider()
+            Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
 
-            HStack {
-                Toggle("Include a time", isOn: includesTimeBinding)
-                    .toggleStyle(.checkbox)
-                    .font(Theme.Font.body)
-
-                Spacer()
-
+            HStack(spacing: 8) {
+                // The switch speaks for the row; its words toggle it too.
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(style.accent)
+                    Text("Include a time")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(NX.ink)
+                    Spacer(minLength: 6)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { includesTimeBinding.wrappedValue.toggle() }
+                .accessibilityHidden(true)
                 if includesTime {
-                    DatePicker("Due time", selection: timeBinding, displayedComponents: .hourAndMinute)
-                        .labelsHidden()
-                        .frame(width: 90)
+                    NXTimePill(label: "Due time", minute: CalendarMonthGrid.minute(of: timeValue, calendar: calendar)) { minute in
+                        timeBinding.wrappedValue = CalendarMonthGrid.date(timeValue, atMinute: minute, calendar: calendar)
+                    }
                 }
-            }
-
-            if block.dueDate != nil {
-                Divider()
-                Button("Clear due date") {
-                    env.store.setDueDate(nil, for: block)
-                    load()
-                }
-                .buttonStyle(.plain)
-                .font(Theme.Font.body)
-                .foregroundStyle(ListAccent.red.color)
+                NXToggle(isOn: includesTime, label: "Include a time") { includesTimeBinding.wrappedValue.toggle() }
             }
         }
         .onAppear(perform: load)
@@ -72,48 +73,43 @@ struct DueDatePicker: View {
     // MARK: - Natural language entry
 
     private var typeToSchedule: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("Try “next friday at 9am”", text: $typedPhrase)
-                .textFieldStyle(.roundedBorder)
-                .font(Theme.Font.body)
-                .onSubmit(applyTypedPhrase)
+        VStack(alignment: .leading, spacing: 6) {
+            NXPanelField(icon: "text.cursor") {
+                TextField("Try “next friday at 9am”", text: $typedPhrase)
+                    .onSubmit(applyTypedPhrase)
+            }
 
             if !typedPhrase.isEmpty {
                 let parsed = DateParser.parse(typedPhrase)
                 if let date = parsed.date {
-                    HStack(spacing: 5) {
+                    // An accent chip in capture's chips' words, that wraps
+                    // when a long phrase outgrows the popover.
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: "arrow.turn.down.right")
-                            .font(.system(size: 9))
-                        Text(preview(date, includesTime: parsed.includesTime, recurrence: parsed.recurrence))
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .accessibilityHidden(true)
+                        Text(NXFormat.typedSchedule(date, includesTime: parsed.includesTime,
+                                                    repeat: parsed.recurrence?.displayText))
+                            .font(.system(size: 11, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(Theme.Font.metadata)
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(style.accent)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(style.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 } else {
                     Text("Not recognised yet")
-                        .font(Theme.Font.metadata)
-                        .foregroundStyle(Theme.tertiaryText)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(NX.ink(0.4))
                 }
             }
         }
     }
 
-    private func preview(_ date: Date, includesTime: Bool, recurrence: Recurrence?) -> String {
-        var text = includesTime
-            ? date.formatted(date: .abbreviated, time: .shortened)
-            : date.formatted(date: .abbreviated, time: .omitted)
-        if let recurrence {
-            text += " · \(recurrence.displayText)"
-        }
-        return text
-    }
-
     private func applyTypedPhrase() {
         let parsed = DateParser.parse(typedPhrase)
         guard let date = parsed.date else { return }
-        env.store.setDueDate(date, includesTime: parsed.includesTime, for: block)
-        if let recurrence = parsed.recurrence {
-            env.store.setRecurrence(recurrence, for: block)
-        }
+        env.workbench.setDue(block.id, date: date, includesTime: parsed.includesTime, recurrence: parsed.recurrence)
         typedPhrase = ""
         load()
     }
@@ -121,45 +117,60 @@ struct DueDatePicker: View {
     // MARK: - Presets
 
     private var presets: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 4) {
-            presetRow("Today", symbol: "sun.max", detail: shortWeekday(0)) {
-                env.store.setDueToday(block)
+        NXFlow(spacing: 4) {
+            // As the inspector's pills: a timed task keeps its time.
+            presetPill("Today", symbol: "sun.max", detail: shortWeekday(0), day: day(0)) {
+                env.workbench.schedule([block.id], offset: 0)
             }
-            presetRow("Tomorrow", symbol: "sunrise", detail: shortWeekday(1)) {
-                env.store.setDueTomorrow(block)
+            presetPill("Tomorrow", symbol: "sun.horizon", detail: shortWeekday(1), day: day(1)) {
+                env.workbench.schedule([block.id], offset: 1)
             }
-            presetRow("This weekend", symbol: "beach.umbrella", detail: weekendDetail) {
+            presetPill("This weekend", symbol: "beach.umbrella", detail: weekendDetail, day: weekendDate) {
                 if let date = weekendDate {
-                    env.store.setDueDate(date, for: block)
+                    env.workbench.schedule([block.id], offset: NXFormat.dayOffset(date))
                 }
             }
-            presetRow("Next week", symbol: "calendar", detail: shortWeekday(7)) {
-                env.store.setDueNextWeek(block)
+            presetPill("Next week", symbol: "calendar", detail: shortWeekday(NXFormat.nextWeekOffset()),
+                       day: day(NXFormat.nextWeekOffset())) {
+                env.workbench.schedule([block.id], offset: NXFormat.nextWeekOffset())
             }
+            // The Due row's None, as the design clears a date: a grey pill,
+            // not the red it keeps for deleting things, on while there's none.
+            let none = block.dueDate == nil
+            NXInspectorPill(isOn: none) {
+                env.workbench.schedule([block.id], offset: nil)
+                load()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "xmark").font(.system(size: 10.5, weight: .medium))
+                    Text("None")
+                }
+            }
+            .help(none ? "No due date" : "Clear due date")
+            .accessibilityLabel(none ? "No due date" : "Clear due date")
+            .accessibilityAddTraits(none ? .isSelected : [])
         }
     }
 
-    private func presetRow(_ title: String, symbol: String, detail: String, action: @escaping () -> Void) -> some View {
-        Button {
+    private func presetPill(_ title: String, symbol: String, detail: String, day: Date?,
+                            action: @escaping () -> Void) -> some View {
+        let isOn = day.flatMap { day in block.dueDate.map { calendar.isDate($0, inSameDayAs: day) } } ?? false
+        return NXInspectorPill(isOn: isOn) {
             action()
             load()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.secondaryText)
-                    .frame(width: 16)
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10.5, weight: .medium))
                 Text(title)
-                    .font(.system(size: 12.5))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .help("\(title) · \(detail)")
+        .accessibilityValue(detail)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private func day(_ offset: Int) -> Date? {
+        calendar.date(byAdding: .day, value: offset, to: .now)
     }
 
     private func shortWeekday(_ offset: Int) -> String {
@@ -181,7 +192,8 @@ struct DueDatePicker: View {
     private func load() {
         selectedDate = block.dueDate ?? calendar.startOfDay(for: .now)
         includesTime = block.includesTime
-        timeValue = block.dueDate ?? calendar.date(bySettingHour: 9, minute: 0, second: 0, of: .now) ?? .now
+        // A date without a time starts its time at 9:00, not at midnight.
+        timeValue = block.includesTime ? (block.dueDate ?? .now) : CalendarMonthGrid.date(.now, atMinute: 9 * 60, calendar: calendar)
     }
 
     // Hydration writes only the state above. Bindings persist actual control
@@ -200,6 +212,6 @@ struct DueDatePicker: View {
             let time = calendar.dateComponents([.hour, .minute], from: timeValue)
             result = calendar.date(bySettingHour: time.hour ?? 9, minute: time.minute ?? 0, second: 0, of: result) ?? result
         }
-        env.store.setDueDate(result, includesTime: includesTime, for: block)
+        env.workbench.setDue(block.id, date: result, includesTime: includesTime)
     }
 }

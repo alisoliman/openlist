@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import SwiftData
 import SwiftUI
 
 /// How a screen wants its rows drawn.
@@ -13,43 +14,20 @@ struct NXRowOptions {
     var notes = false
     /// Tasks screen: text-only chips, the open icon hidden until focus.
     var quiet = false
-    /// Outline depth for subtasks on a list screen.
-    var depths: [UUID: Int] = [:]
+    /// The clock the due and done-ago chips read. Screens on a timeline pass its
+    /// date so rows refresh with it; nil reads the time when the row draws.
+    var now: Date?
 }
 
 /// A task row: rail, checkbox, text with strike, chips, selection mark and open icon.
 struct NextTaskRow: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
-    @Environment(\.nextLibrary) private var library
     let task: Block
     var options = NXRowOptions()
-    @State private var hovering = false
-
-    private var workbench: Workbench { env.workbench }
 
     var body: some View {
-        let id = task.id
-        let closing = workbench.closing[id]
-        let flying = workbench.flying.contains(id)
-        let focused = workbench.focusID == id || env.navigator.openTaskID == id
-        let selected = workbench.selection.contains(id)
-        let fresh = workbench.fresh.contains(id)
-        let restored = workbench.restored.contains(id)
-        let chipFresh = workbench.freshChip.contains(id) || fresh
-
-        HStack(alignment: .top, spacing: 0) {
-            if let depth = options.depths[id], depth > 0 {
-                Color.clear.frame(width: CGFloat(depth) * 22, height: 1)
-            }
-            NXCheckbox(filled: task.isCompleted || closing != nil,
-                       closing: closing, priority: task.priority, title: task.displayTitle,
-                       ringing: workbench.pulseTaskID == id && closing != nil) {
-                workbench.toggle(id)
-            }
-            .frame(width: 26, alignment: .leading)
-            .padding(.top, 2.5)
-
+        let closing = env.workbench.closing[task.id]
+        NXTaskRowChrome(task: task, options: options) {
             VStack(alignment: .leading, spacing: 2) {
                 NXStrikeText(text: task.displayTitle,
                              struck: closing ?? task.isCompleted,
@@ -61,76 +39,177 @@ struct NextTaskRow: View {
                         .foregroundStyle(NX.ink(0.45))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        // The design's 1.4 line box, its leading split above and below.
+                        .padding(.vertical, max(0, 12 * 1.4 - NX.lineHeight(12)) / 2)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
 
-            // Narrow rows shed chips from the front (context first, dates and state last)
-            // so the title keeps its room.
-            let chips = NXRowChips.chips(for: task, options: options, library: library, workbench: workbench)
-            ViewThatFits(in: .horizontal) {
-                ForEach(0...chips.count, id: \.self) { dropped in
-                    accessories(Array(chips.dropFirst(dropped)), fresh: chipFresh, selected: selected, focused: focused)
+/// Everything around a task row's title: the dwell rail, checkbox, chips,
+/// selection mark and open icon, and the focus, selection, fresh and closing
+/// states. Screens give it `NXStrikeText`; the list document its live text.
+struct NXTaskRowChrome<Title: View, Buttons: View>: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    @Environment(\.nextLibrary) private var library
+    let task: Block
+    var options = NXRowOptions()
+    var indent: CGFloat = 0
+    /// Chips before the row's own, like the document's subtask progress.
+    var leadingChips: [NXChipModel] = []
+    /// Being written in the list document: the design's editing fill in
+    /// place of the focused card.
+    var editing = false
+    /// The rowIn a fresh row plays, in milliseconds. `nil` plays none, for
+    /// the list document, whose lines play their own whatever their kind.
+    var entrance: Double? = 320
+    /// The whole row drags. The list document's text keeps its own drag.
+    var draggable = true
+    /// The pointer tints the row, as the screens' grouped rows do. The list
+    /// document's lines have no hover of their own.
+    var hoverFill = true
+    /// The open icon comes to full strength under the pointer, as the list
+    /// document's does.
+    var opensOnHover = false
+    /// A click on the row around its title. `nil` is the workbench's click.
+    var onClick: (() -> Void)?
+    @ViewBuilder var title: () -> Title
+    /// Buttons before the open icon, like the document's note button.
+    @ViewBuilder var buttons: () -> Buttons
+    @State private var hovering = false
+    @State private var openHovering = false
+    /// Set once a freshly captured row has played its rowIn entrance.
+    @State private var entered = false
+
+    private var workbench: Workbench { env.workbench }
+
+    var body: some View {
+        // A row's own update can come after its task is deleted, as a new
+        // line's Escape takes it away, and before its list has dropped it.
+        if task.modelContext != nil, !task.isDeleted { row }
+    }
+
+    @ViewBuilder private var row: some View {
+        let id = task.id
+        let closing = workbench.closing[id]
+        let flying = workbench.flying.contains(id)
+        let focused = workbench.focusID == id || env.navigator.openTaskID == id
+        let selected = workbench.selection.contains(id)
+        let fresh = workbench.fresh.contains(id)
+        let entering = fresh && !entered && entrance != nil
+        let restored = workbench.restoredAll || workbench.restored.contains(id)
+        let freshChip = workbench.freshChip.contains(id)
+
+        HStack(alignment: .top, spacing: 0) {
+            if indent > 0 {
+                Color.clear.frame(width: indent, height: 1)
+            }
+            NXCheckbox(filled: task.isCompleted || closing != nil,
+                       closing: closing, priority: task.priority, title: task.displayTitle,
+                       ringing: workbench.pulseTaskID == id && closing != nil) {
+                // A line being written is left first, as a click on the box leaves it in the design.
+                NXDocumentEditing.end()
+                workbench.toggle(id)
+            }
+            .frame(width: 26, alignment: .leading)
+            // Centres the 16pt circle on the title's 20pt first line, as the design's 2px does.
+            .padding(.top, 2)
+
+            title()
+                // The title takes what the chips leave and wraps into it.
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            // Chips claim their natural width first and wrap onto trailing lines
+            // when the row is too narrow, so none is ever hidden. They wrap early
+            // only to keep a title that doesn't fit beside them its first 96pt,
+            // where the design would squeeze it to nothing.
+            NXChipFlow(spacing: 6, titleRoom: min(96, NXStrikeText.lineWidth(task.displayTitle))) {
+                ForEach(leadingChips + NXRowChips.chips(for: task, options: options, library: library, workbench: workbench)) { chip in
+                    // A change pops every chip but the subtask count and done time; a new
+                    // row pops all but those and its list and star.
+                    NXChip(chip: chip, fresh: chip.pops.plays(fresh: fresh, changed: freshChip), quiet: options.quiet)
                 }
+                // It pops in with its own chipIn and goes at once, as the
+                // design's; the chips beside it jump to make room.
+                if selected { NXSelectionMark().transition(.identity) }
+                buttons()
+                Button {
+                    // The inspector takes the keys, not the line being written.
+                    NXDocumentEditing.end()
+                    workbench.inspect(task.id)
+                } label: {
+                    // The design's 15 pt icon box inside its 3 pt padding: a
+                    // 21 pt button, the chip column's tallest, so a row is 32.
+                    Image(systemName: "sidebar.right")
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(width: 15, height: 15)
+                }
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
+                                                padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
+                                                foreground: NX.ink(0.45), hoverForeground: NX.ink))
+                .onHover { openHovering = $0 }
+                // Only the fade is animated, so the icon never trails a reflow.
+                .animation(NX.cssEase(140)) {
+                    $0.opacity(focused || opensOnHover && openHovering ? 1 : options.quiet ? 0 : 0.22)
+                }
+                .help("Open details (↩)")
+                .accessibilityLabel("Open details")
             }
             .padding(.top, 1)
-            .padding(.leading, 8)
+            .padding(.leading, 2)
+            .layoutPriority(1)
         }
         .padding(.vertical, style.rowVerticalPadding)
         .padding(.horizontal, 10)
         .background(alignment: .leading) {
-            if closing != nil { NXDrainRail(duration: style.dwell) }
+            // Gone at once when the dwell ends or is cancelled, as the design's.
+            if closing != nil { NXDrainRail(duration: style.dwell).transition(.identity) }
         }
         .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(background(focused: focused, selected: selected, fresh: fresh, restored: restored))
-                .shadow(color: focused ? NX.shadowWarm.opacity(0.09) : .clear, radius: 8, y: 4)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(focused ? style.accent.opacity(0.25) : selected ? style.accent.opacity(0.19) : .clear, lineWidth: 1)
-                }
-                .animation(style.ease(fresh || restored ? 700 : 180), value: focused)
-                .animation(.easeOut(duration: 0.7), value: fresh)
-                .animation(.easeOut(duration: 0.7), value: restored)
+            let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+            let card = focused && !editing
+            let fill = editing ? NX.ink(0.035) : background(focused: focused, selected: selected, fresh: fresh, restored: restored)
+            let ring = card ? style.accent.opacity(0.25) : selected && !editing ? style.accent.opacity(0.19) : Color.clear
+            // As the design: the fill eases over 700ms, the focus shadow and ring
+            // over 180ms, all on CSS ease. Each animation covers only its colour
+            // or opacity, so a row that resizes in the same update never drags
+            // its background.
+            ZStack {
+                NXRowShadow()
+                    .animation(NX.cssEase(180)) { $0.opacity(card ? 1 : 0) }
+                shape.animation(NX.cssEase(editing ? 180 : 700)) { $0.foregroundStyle(fill) }
+                shape.strokeBorder(lineWidth: 1)
+                    .animation(NX.cssEase(180)) { $0.foregroundStyle(ring) }
+            }
         }
         .contentShape(Rectangle())
-        .opacity(flying ? 0 : closing != nil ? 0.62 : 1)
-        .offset(x: flying ? -56 : 0)
-        .scaleEffect(flying ? 0.97 : 1)
-        .animation(style.standard(280), value: flying)
-        .animation(style.ease(280), value: closing)
-        .zIndex(focused ? 3 : 0)
+        // rowIn: a freshly captured row slides down into place.
+        .opacity(entering ? 0 : 1)
+        .offset(y: entering ? -8 : 0)
+        .scaleEffect(entering ? 0.99 : 1)
+        .onAppear { if fresh { enter() } }
+        .onChange(of: fresh) { _, isFresh in if isFresh, !entered { enter() } }
+        // As the design's `opacity Tms ease, transform Tms cubic-bezier(0.4,0,0.2,1)`:
+        // the closing dim and the fly's fade on CSS ease, only its slide and
+        // shrink on the standard curve.
+        .animation(style.cssEase(280)) { $0.opacity(flying ? 0 : closing != nil ? 0.62 : 1) }
+        .animation(style.standard(280)) { $0.offset(x: flying ? -56 : 0).scaleEffect(flying ? 0.97 : 1) }
+        .zIndex(editing ? 4 : focused ? 3 : 0)
         .onHover { hovering = $0 }
-        .onTapGesture { workbench.click(id, command: NXModifiers.command, shift: NXModifiers.shift) }
+        .onTapGesture {
+            if let onClick { onClick() } else { workbench.click(id, command: NXModifiers.command, shift: NXModifiers.shift) }
+        }
         .simultaneousGesture(TapGesture(count: 2).onEnded { workbench.inspect(id) })
         .contextMenu { NXTaskMenu(ids: workbench.selection.contains(id) ? Array(workbench.selection) : [id]) }
-        .draggable(DragPayload.block.encode(id))
+        .modifier(NXRowDrag(id: id, isEnabled: draggable))
         .id(id)
     }
 
-    private func accessories(_ chips: [NXChipModel], fresh: Bool, selected: Bool, focused: Bool) -> some View {
-        HStack(spacing: 6) {
-            ForEach(chips) { chip in
-                NXChip(chip: chip, fresh: fresh, quiet: options.quiet)
-            }
-            if selected {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(style.accent)
-                    .frame(width: 16, height: 16)
-                    .overlay(Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white))
-                    .transition(.scale(scale: 0.85).combined(with: .opacity))
-            }
-            Button { workbench.inspect(task.id) } label: {
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 12.5, weight: .medium))
-            }
-            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
-                                            padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                            foreground: NX.ink(0.45), hoverForeground: NX.ink))
-            .opacity(focused ? 1 : hovering ? 0.6 : options.quiet ? 0 : 0.22)
-            .help("Open details (↩)")
-            .accessibilityLabel("Open details")
-        }
+    private func enter() {
+        guard let entrance else { entered = true; return }
+        withAnimation(style.ease(entrance)) { entered = true }
     }
 
     private func background(focused: Bool, selected: Bool, fresh: Bool, restored: Bool) -> Color {
@@ -138,7 +217,99 @@ struct NextTaskRow: View {
         if selected { return style.accent.opacity(0.08) }
         if fresh { return style.accent.opacity(0.11) }
         if restored { return style.accent.opacity(0.07) }
-        return hovering ? NX.ink(0.03) : .clear
+        return hovering && hoverFill ? NX.ink(0.03) : .clear
+    }
+}
+
+extension NXTaskRowChrome where Buttons == EmptyView {
+    init(task: Block, options: NXRowOptions = NXRowOptions(), @ViewBuilder title: @escaping () -> Title) {
+        self.init(task: task, options: options, title: title) { EmptyView() }
+    }
+}
+
+/// Drags a whole row to a list in the sidebar, or to a line of the list
+/// document, in this library's own payload: never text a line could take in.
+/// A selected row takes the rows selected alongside it, in screen order, as
+/// a line's grip does and as every other action acts on the selection.
+private struct NXRowDrag: ViewModifier {
+    @Environment(AppEnvironment.self) private var env
+    let id: UUID
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.onDrag { NXBlockDrag.provider(for: draggedIDs, session: env.navigator.blockDragSessionID) }
+        } else {
+            content
+        }
+    }
+
+    private var draggedIDs: [UUID] {
+        let workbench = env.workbench
+        guard workbench.selection.contains(id) else { return [id] }
+        let selected = workbench.selectedVisibleIDs
+        return selected.contains(id) ? selected : [id]
+    }
+}
+
+/// The rows a drag carries, readable only by this app.
+enum NXBlockDrag {
+    static func provider(for ids: [UUID], session: UUID) -> NSItemProvider {
+        let payload = DragPayload.encodeBlocks(ids, session: session)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier, visibility: .ownProcess) { load in
+            load(Data(payload.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+}
+
+/// A focused row's drop shadow on a layer of its own, cut away inside the
+/// row, so it fades at the design's box-shadow pace however far the fill
+/// has eased in underneath.
+private struct NXRowShadow: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(NX.card)
+            .shadow(color: NX.shadowWarm.opacity(0.09), radius: 8, y: 4)
+            .clipShape(Outside(), style: FillStyle(eoFill: true))
+            .allowsHitTesting(false)
+    }
+
+    /// Everywhere the shadow reaches except the row itself.
+    private nonisolated struct Outside: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path(rect.insetBy(dx: -24, dy: -24))
+            path.addRoundedRect(in: rect, cornerSize: CGSize(width: 9, height: 9), style: .continuous)
+            return path
+        }
+    }
+}
+
+/// The accent check a selected row shows, with the design's chipIn entrance.
+struct NXSelectionMark: View {
+    @Environment(\.nextStyle) private var style
+    @State private var shown = false
+
+    var body: some View {
+        // With Reduce Motion it only fades, as the chips do.
+        let risen = shown || !style.slides
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(style.accent)
+            .frame(width: 16, height: 16)
+            .overlay(Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white))
+            .scaleEffect(risen ? 1 : 0.85)
+            .offset(y: risen ? 0 : 3)
+            .opacity(shown ? 1 : 0)
+            .onAppear {
+                // Plays on insertion whether or not the selection change was
+                // animated, at the design's 180ms whatever the Motion setting.
+                withAnimation(NX.cssEase(180)) { shown = true }
+            }
+            // Read with the row's chips, where the check shows.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Selected")
     }
 }
 
@@ -152,22 +323,38 @@ struct NXStrikeText: View {
     var size: CGFloat = 13.8
 
     var body: some View {
+        // The design's 1.45 line height: the extra leading goes between lines
+        // and, halved, above the first and below the last, as CSS places it.
+        let line = NX.lineHeight(size)
+        let leading = max(0, size * 1.45 - line)
         Text(text)
             .font(.system(size: size))
-            .lineSpacing(size * 0.2)
+            .lineSpacing(leading)
             .foregroundStyle(dimmed ? NX.ink(0.42) : NX.ink)
             .fixedSize(horizontal: false, vertical: true)
             .overlay(alignment: .topLeading) {
                 GeometryReader { geo in
-                    let lineHeight = min(geo.size.height, size * 1.45)
-                    Capsule()
+                    // The strike's top edge sits at 52% of the first line. Only
+                    // its width moves, as the design's: its colour changes at
+                    // once, so a row reopened in its dwell undraws in grey.
+                    Rectangle()
                         .fill(closing ? style.accent : NX.ink(0.36))
-                        .frame(width: struck ? geo.size.width + 2 : 0, height: 1.5)
-                        .offset(y: lineHeight * 0.52 - 0.75)
-                        .animation(.timingCurve(0.3, 0.8, 0.2, 1, duration: style.ms(340) / 1000), value: struck)
+                        .frame(width: geo.size.width + 2, height: 1.5)
+                        .mask(alignment: .leading) {
+                            Capsule()
+                                .frame(width: struck ? geo.size.width + 2 : 0)
+                                .animation(.timingCurve(0.3, 0.8, 0.2, 1, duration: style.ms(340) / 1000), value: struck)
+                        }
+                        .offset(y: min(geo.size.height, line) * 0.52)
                 }
                 .allowsHitTesting(false)
             }
+            .padding(.vertical, leading / 2)
+    }
+
+    /// The width `text` needs to sit on one line at `size`.
+    static func lineWidth(_ text: String, size: CGFloat = 13.8) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width)
     }
 }
 
@@ -181,35 +368,54 @@ struct NXCheckbox: View {
     var title = ""
     var ringing = false
     var size: CGFloat = 16
+    /// The list row's pop: the box grows at the dwell's start and the tick
+    /// springs in. Without it, as the design's inspector boxes, only the fill
+    /// fades, over a fixed 200ms, and the outline and tick change at once.
+    var pops = true
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack {
+                // The design's row box: its fill's `background 200*ms ease`, and
+                // its outline's `border-color 160ms ease` whatever the Motion
+                // setting. Its inspector boxes ease only the fill, `background
+                // 200ms ease`, also whatever the setting.
                 Circle()
-                    .fill(filled ? (closing != nil ? style.accent : NX.green) : .clear)
+                    .animation(pops ? style.cssEase(200) : NX.cssEase(200)) {
+                        $0.foregroundStyle(filled ? (closing != nil ? style.accent : NX.green) : .clear)
+                    }
                 Circle()
-                    .strokeBorder(filled ? .clear : (NX.priorityStroke(priority) ?? NX.ink(0.3)), lineWidth: 1.5)
+                    .strokeBorder(lineWidth: 1.5)
+                    .animation(pops ? NX.cssEase(160) : nil) {
+                        $0.foregroundStyle(filled ? .clear : (NX.priorityStroke(priority) ?? NX.ink(0.3)))
+                    }
+                // The design's row tick: a 140ms fade and a 200ms spring, at
+                // those speeds whatever the Motion setting. Its inspector
+                // ticks show and go at once.
                 Image(systemName: "checkmark")
                     .font(.system(size: size * 0.6, weight: .heavy))
                     .foregroundStyle(.white)
-                    .opacity(filled ? 1 : 0)
-                    .scaleEffect(filled ? 1 : 0.3)
-                    .animation(style.spring(200), value: filled)
+                    .animation(pops ? NX.cssEase(140) : nil) { $0.opacity(filled ? 1 : 0) }
+                    .animation(pops ? style.bounce(200) : nil) { $0.scaleEffect(filled || !pops ? 1 : 0.3) }
                     .accessibilityHidden(true)
-                if ringing { NXRing(color: style.accent, size: size) }
             }
             .frame(width: size, height: size)
-            .scaleEffect(style.lively && closing == false ? 1.18 : 1)
-            .animation(style.spring(240), value: closing)
-            .animation(style.ease(200), value: filled)
+            // Without the pop, as the design's inspector boxes, the box keeps its size.
+            .scaleEffect(pops && style.lively && closing == false ? 1.18 : 1)
+            .animation(pops ? style.spring(240) : nil, value: closing)
+            // The box's sibling in the design, so it grows at its own size
+            // whatever the pop does, and shows and goes at once.
+            .overlay {
+                if ringing { NXRing(color: style.accent, size: size).transition(.identity) }
+            }
             .contentShape(Rectangle().inset(by: -5))
         }
         .buttonStyle(.plain)
         // Filled covers the completion dwell too; clicking then cancels it, so it reads as Reopen.
         .accessibilityLabel("\(filled ? "Reopen" : "Complete") \(title.isEmpty ? "task" : title)")
+        // Its value says it's done: "selected" is for a row's selection.
         .accessibilityValue(closing != nil ? "Completing" : filled ? "Completed" : "Open")
-        .accessibilityAddTraits(filled ? .isSelected : [])
     }
 }
 
@@ -225,7 +431,7 @@ struct NXRing: View {
             .strokeBorder(color, lineWidth: 2)
             .frame(width: size, height: size)
             .scaleEffect(grown ? 2.6 : 0.6)
-            .opacity(grown ? 0 : 0.9)
+            .opacity(grown ? 0 : 0.6)
             .allowsHitTesting(false)
             .onAppear { withAnimation(.easeOut(duration: style.ms(640) / 1000)) { grown = true } }
     }
@@ -249,13 +455,70 @@ struct NXDrainRail: View {
 
 // MARK: - Chips
 
+/// The row's chip column, laid out like the design's `flex-wrap: wrap;
+/// justify-content: flex-end`: one line at natural width while it fits, then
+/// further lines, each aligned to the trailing edge. Items keep their order.
+struct NXChipFlow: Layout {
+    var spacing: CGFloat = 6
+    /// Room the chips leave beside them by wrapping sooner, so a narrow row's
+    /// title stays readable. Given up only when one chip needs it.
+    var titleRoom: CGFloat = 0
+
+    private struct Line {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let lines = lines(subviews, width: proposal.width.map { $0 - titleRoom } ?? .infinity)
+        guard !lines.isEmpty else { return .zero }
+        return CGSize(width: lines.map(\.width).max() ?? 0,
+                      height: lines.map(\.height).reduce(0, +) + spacing * CGFloat(lines.count - 1))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        // Wrapping at the widest line reproduces the lines sizeThatFits chose.
+        for line in lines(subviews, width: bounds.width) {
+            var x = bounds.maxX - line.width
+            for (index, size) in line.items {
+                // Centred on the line, as the design's align-items: center.
+                subviews[index].place(at: CGPoint(x: x, y: y + (line.height - size.height) / 2),
+                                      proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += line.height + spacing
+        }
+    }
+
+    private func lines(_ subviews: Subviews, width: CGFloat) -> [Line] {
+        var lines: [Line] = []
+        var line = Line()
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            // Half a point of slack so rounding never wraps a line that fits.
+            if !line.items.isEmpty, line.width + spacing + size.width > width + 0.5 {
+                lines.append(line)
+                line = Line()
+            }
+            line.width += (line.items.isEmpty ? 0 : spacing) + size.width
+            line.height = max(line.height, size.height)
+            line.items.append((index, size))
+        }
+        if !line.items.isEmpty { lines.append(line) }
+        return lines
+    }
+}
+
 enum NXRowChips {
     @MainActor
     static func chips(for task: Block, options: NXRowOptions, library: NextLibrary, workbench: Workbench) -> [NXChipModel] {
         var chips: [NXChipModel] = []
         let done = task.isCompleted
+        let now = options.now ?? .now
         if options.showList, task.listID != options.listID, let list = library.list(task.listID) {
-            chips.append(NXChipModel(id: "list", label: "\(list.glyph) \(list.displayTitle)"))
+            chips.append(NXChipModel(id: "list", label: list.displayTitle, glyph: list, pops: .onChange))
         }
         for id in task.labelIDs {
             if let label = library.label(id) {
@@ -266,6 +529,7 @@ enum NXRowChips {
             chips.append(NXChipModel(id: "repeat", label: recurrence.displayText, icon: "repeat"))
         }
         if task.includesTime, let due = task.dueDate, !done {
+            // Neutral all day, as the design's: only an earlier day reads as late.
             chips.append(NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill", fill: true))
         }
         if !done, workbench.isPlanned(task) {
@@ -274,16 +538,17 @@ enum NXRowChips {
                                      icon: "calendar.badge.clock", tone: .accent))
         }
         if let due = task.dueDate, !done {
-            let overdue = task.isOverdue
-            chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due),
-                                     icon: overdue ? "exclamationmark.circle.fill" : "calendar",
-                                     tone: overdue ? .over : NXFormat.dayOffset(due) == 0 ? .accent : .neutral, fill: overdue))
+            // By day, as the design: earlier days are overdue, a time today never is.
+            let offset = NXFormat.dayOffset(due, now: now)
+            chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due, now: now),
+                                     icon: offset < 0 ? "exclamationmark.circle.fill" : "calendar",
+                                     tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0))
         }
         if task.isStarred {
-            chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true))
+            chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true, pops: .onChange))
         }
         if done, let at = task.completedAt {
-            chips.append(NXChipModel(id: "done", label: NXFormat.relative(at)))
+            chips.append(NXChipModel(id: "done", label: NXFormat.relative(at, now: now), pops: .never))
         }
         return chips
     }
@@ -301,11 +566,43 @@ struct NXGroup: Identifiable {
     var rows: [Block]
     var showHead = true
     var collapsible = false
-    /// Whether the group starts open; collapsing flips it for the session.
+    /// Whether the group starts open, until the user folds it this session.
     var defaultOpen = true
+    /// A Completed group, on Today, a list or a label. These fold as one, as
+    /// the design's completedOpen, so the last fold shows on every screen.
+    var completed = false
+    /// The list a Completed group sits under, whose own new choice there
+    /// shows over the last fold.
+    var listID: UUID?
     var emptyText = ""
     var actionLabel: String?
     var action: (() -> Void)?
+}
+
+extension NXGroup {
+    /// Whether the group shows its rows. A Completed group follows the fold
+    /// they share (`NXCompletedFold`); another's own fold flips its default,
+    /// which is the same wherever it shows.
+    @MainActor
+    func isOpen(in workbench: Workbench) -> Bool {
+        guard collapsible else { return true }
+        if completed {
+            return NXCompletedFold.isOpen(workbench.completedFold, default: defaultOpen, list: listID)
+        }
+        return defaultOpen != workbench.collapsedGroups.contains(id)
+    }
+
+    @MainActor
+    func toggle(in workbench: Workbench) {
+        guard collapsible else { return }
+        if completed {
+            workbench.completedFold = NXCompletedFold(open: !isOpen(in: workbench))
+        } else if workbench.collapsedGroups.contains(id) {
+            workbench.collapsedGroups.remove(id)
+        } else {
+            workbench.collapsedGroups.insert(id)
+        }
+    }
 }
 
 struct NXGroupView: View {
@@ -315,80 +612,110 @@ struct NXGroupView: View {
     var options = NXRowOptions()
 
     var body: some View {
-        let open = isOpen
+        let open = group.isOpen(in: env.workbench)
         VStack(alignment: .leading, spacing: 0) {
             if group.showHead { head(open: open) }
             if open {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(group.rows, id: \.id) { task in
+                        // Rows come and go at once, as the design's, however the
+                        // change was animated: only a fresh row plays its own rowIn.
                         NextTaskRow(task: task, options: options)
-                            .transition(.asymmetric(
-                                insertion: .offset(y: -8).combined(with: .scale(scale: 0.99)).combined(with: .opacity),
-                                removal: .opacity))
+                            .transition(.identity)
                     }
                     if group.rows.isEmpty, !group.emptyText.isEmpty {
+                        // The design's 12.5/1.4: the extra leading between lines
+                        // and, halved, above the first and below the last.
+                        let leading = 12.5 * 1.4 - NX.lineHeight(12.5)
                         Text(group.emptyText)
                             .font(.system(size: 12.5))
                             .foregroundStyle(NX.ink(0.4))
-                            .padding(.vertical, 10)
+                            .lineSpacing(leading)
+                            .padding(.vertical, 10 + leading / 2)
                             .padding(.horizontal, 12)
                     }
                 }
                 .padding(.top, 2)
-                .transition(.opacity)
             }
         }
         .padding(.top, 16)
     }
 
-    private var isOpen: Bool {
-        !group.collapsible || group.defaultOpen != env.workbench.collapsedGroups.contains(group.id)
-    }
-
     private func head(open: Bool) -> some View {
         HStack(spacing: 7) {
-            if let glyph = group.glyph {
-                NXListGlyph(list: glyph, size: 13)
-            } else if let icon = group.icon {
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(group.color)
+            // VoiceOver reads the title and count as one heading, a button
+            // that folds the group when it folds.
+            HStack(spacing: 7) {
+                Group {
+                    if let glyph = group.glyph {
+                        NXListGlyph(list: glyph, size: 13)
+                    } else if let icon = group.icon {
+                        Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(group.color)
+                    }
+                }
+                .accessibilityHidden(true)
+                Text(group.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .fixedSize()
+                if !group.rows.isEmpty {
+                    Text("\(group.rows.count)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NX.ink(0.38))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
+                if group.collapsible {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NX.ink(0.36))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                        // Only the chevron turns, in the design's 180ms whatever the
+                        // Motion setting; the rows show or go at once, as its do.
+                        .animation(NX.cssEase(180), value: open)
+                        .accessibilityHidden(true)
+                }
             }
-            Text(group.title)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(NX.ink)
-                .lineLimit(1)
-                .fixedSize()
-            if !group.rows.isEmpty {
-                Text("\(group.rows.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.38))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-            }
-            if group.collapsible {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(NX.ink(0.36))
-                    .rotationEffect(.degrees(open ? 90 : 0))
-            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            .modifier(NXFoldAccessibility(isEnabled: group.collapsible, open: open, toggle: toggle))
             Spacer(minLength: 8)
             if let label = group.actionLabel, let action = group.action {
-                Button(label, action: action)
-                    .font(.system(size: 11, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), radius: 6,
-                                                    padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
-                                                    foreground: style.accent))
-                    .background(style.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Button(action: action) {
+                    // The design's 600 11/1, so the button is 21 pt and the head 33.
+                    Text(label).padding(.vertical, (11 - NX.lineHeight(11)) / 2)
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), rest: style.accent.opacity(0.08), radius: 6,
+                                                padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
+                                                foreground: style.accent))
             }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
         .contentShape(Rectangle())
-        .onTapGesture {
-            guard group.collapsible else { return }
-            withAnimation(style.ease(180)) {
-                if env.workbench.collapsedGroups.contains(group.id) { env.workbench.collapsedGroups.remove(group.id) }
-                else { env.workbench.collapsedGroups.insert(group.id) }
-            }
+        .onTapGesture(perform: toggle)
+    }
+
+    private func toggle() { group.toggle(in: env.workbench) }
+}
+
+/// A collapsible group head's role for VoiceOver: a button that says
+/// whether the group is open.
+private struct NXFoldAccessibility: ViewModifier {
+    let isEnabled: Bool
+    let open: Bool
+    let toggle: () -> Void
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .accessibilityValue(open ? "Expanded" : "Collapsed")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { toggle() }
+        } else {
+            content
         }
     }
 }
@@ -406,11 +733,15 @@ struct NXAddRow: View {
             Circle()
                 .strokeBorder(NX.ink(0.24), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
                 .frame(width: 15, height: 15)
-            Text(text).font(.system(size: 13.5))
+            // 400 13.5/1.3, as the document's add row.
+            Text(text)
+                .font(.system(size: 13.5))
+                .padding(.vertical, (13.5 * 1.3 - NX.lineHeight(13.5)) / 2)
+            // The design's 500 10/1 key inside 2/5 padding, so the cap is 14 pt.
             Text("N")
                 .font(NX.mono(10))
                 .padding(.horizontal, 5)
-                .padding(.vertical, 2)
+                .padding(.vertical, 2 + (10 - NX.lineHeight(10)) / 2)
                 .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4))
             Spacer()
         }
@@ -420,10 +751,16 @@ struct NXAddRow: View {
         .background(hovering ? NX.ink(0.035) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture { env.workbench.openCapture(listID: listID, forToday: forToday) }
+        .onTapGesture(perform: open)
         .pointerStyle(.horizontalText)
         .padding(.top, 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { open() }
     }
+
+    private func open() { env.workbench.openCapture(listID: listID, forToday: forToday) }
 }
 
 /// Right-click actions for a row or the current selection.
@@ -449,20 +786,37 @@ struct NXTaskMenu: View {
             }
         }
         Button("Due Today", systemImage: "calendar") { workbench.schedule(ids, offset: 0) }
-        Button("Due Tomorrow", systemImage: "sunset") { workbench.schedule(ids, offset: 1) }
+        Button("Due Tomorrow", systemImage: "sun.horizon") { workbench.schedule(ids, offset: 1) }
+        // Both skip completed tasks, so they're off when every target is done,
+        // as the inspector's plan switch and Task ▸'s items are.
+        let plans = workbench.canPlan(tasks)
         Button("Plan for Today", systemImage: "calendar.badge.clock") { workbench.plan(ids) }
+            .disabled(!plans)
         Button("Find a Slot", systemImage: "sparkles") { ids.forEach(workbench.fit) }
-        Button("Star", systemImage: "star") { workbench.star(ids) }
-        Menu("Move to") {
+            .disabled(!plans)
+        // Star toggles, so it reads every target as Task ▸ does: all starred unstars them.
+        let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)
+        Button(unstars ? "Unstar" : "Star", systemImage: unstars ? "star.slash" : "star") { workbench.star(ids) }
+        // The palette's subdirectory_arrow_right.
+        Menu("Move to", systemImage: "arrow.turn.down.right") {
             ForEach(library.lists, id: \.id) { list in
-                Button("\(list.glyph) \(list.displayTitle)") { workbench.move(ids, to: list.id) }
+                NXListMenuButton(list: list) { workbench.move(ids, to: list.id) }
             }
         }
         Divider()
         if ids.count == 1 {
             Button("Open Details", systemImage: "sidebar.right") { workbench.inspect(ids[0]) }
+            // Off where work can't start, a done task included, as Task ▸'s is.
             Button("Start Working", systemImage: "play") { workbench.startWork(ids[0]) }
-            CopyItemLinkButton(target: .task(ids[0]))
+                .disabled(tasks.first.flatMap { env.calendar.validWorkTask(WorkTaskReference($0)) } == nil)
+            CopyItemLinkButton(target: .task(ids[0]), iconed: true)
+            Button("Copy Text", systemImage: "doc.on.clipboard") { workbench.copyText(ids[0]) }
+            Button("Copy Content and Subtasks", systemImage: "list.bullet.clipboard") { workbench.copyContent(ids[0]) }
+            Divider()
+            Button("Duplicate", systemImage: "plus.square.on.square") { workbench.duplicate(ids[0]) }
+            Button("Use as Template…", systemImage: "doc.on.doc") {
+                env.templateCopyRequest = TemplateCopyRequest(source: .task(ids[0]))
+            }
         }
         Divider()
         Button("Move to Trash", systemImage: "trash", role: .destructive) { workbench.trash(ids) }

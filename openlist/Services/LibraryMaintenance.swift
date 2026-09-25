@@ -3,8 +3,9 @@ import Foundation
 import SwiftData
 import UniformTypeIdentifiers
 
-/// The user-visible manual workflow. Bulk work uses immutable values and an
-/// owned Core Data queue; only draft commits and UI state run on the main actor.
+/// The user-visible manual workflow and the automatic daily snapshots. Bulk
+/// work uses immutable values and an owned Core Data queue; only draft commits
+/// and UI state run on the main actor.
 @Observable @MainActor
 final class LibraryMaintenance {
     private static let backupType = UTType(exportedAs: "solimanali.openlist.library-backup", conformingTo: .package)
@@ -16,12 +17,17 @@ final class LibraryMaintenance {
     var error: String?
     var status: String?
     var preview: LibraryBackupPackage.Validated?
-    var lastBackupURL: URL?
     var hasPendingRestore = false
     var isLocalRestore: Bool { startup.isLocalRestore }
     var pendingQuitError: String? { hasPendingRestore ? store.persistenceError : nil }
+    let snapshots = LibrarySnapshots(directory: LibrarySnapshots.defaultDirectory)
+    /// Why the last daily snapshot failed, until one is written.
+    var snapshotError: String?
     @ObservationIgnored private var quitsAfterPreviewDismissal = false
     @ObservationIgnored private var quitTask: Task<Void, Never>?
+    @ObservationIgnored private weak var settings: AppSettings?
+    @ObservationIgnored private var isSnapshotting = false
+    @ObservationIgnored private var dayObserver: NSObjectProtocol?
 
     init(store: Store, storage: LibraryRestoreStorage, startup: LibraryRestoreStorage.Startup,
          defaults: UserDefaults = ReviewSession.defaults) {
@@ -53,9 +59,58 @@ final class LibraryMaintenance {
                 let snapshot = try reader.read(at: sourceURL, settings: settings)
                 try LibraryBackupPackage.write(snapshot, to: destination) { try MediaStore.shared.readFile(filename: $0) }
             }.value
-            self.lastBackupURL = destination
             self.status = "Backup created: \(destination.lastPathComponent)"
         }
+    }
+
+    /// Takes today's snapshot soon after launch if it's due, and again as each
+    /// new day starts while Openlist runs. Review sessions are thrown away, so
+    /// they take none.
+    func startDailySnapshots(settings: AppSettings) {
+        guard self.settings == nil, ReviewSession.identifier == nil else { return }
+        self.settings = settings
+        dayObserver = NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.snapshotIfDue() }
+            }
+        }
+        Task { [weak self] in
+            // Launch opens the library, sync and reminders first.
+            try? await Task.sleep(for: .seconds(10))
+            await self?.snapshotIfDue()
+        }
+    }
+
+    /// Writes a snapshot of the saved library when Daily is on and today has
+    /// none yet, then keeps the newest fourteen. It never takes the focus or
+    /// commits a draft, so it can run while you type.
+    func snapshotIfDue(now: Date = .now) async {
+        guard settings?.takesDailySnapshots == true, !isSnapshotting, !isBusy, !hasPendingRestore,
+              snapshots.isDue(at: now) else { return }
+        isSnapshotting = true
+        defer { isSnapshotting = false }
+        do {
+            let settings = LibraryBackupSettings(defaults: defaults)
+            let reader = try BackupSnapshotReader(schema: AppPersistence.schema)
+            let sourceURL = startup.storeURL
+            let snapshots = snapshots
+            try await Task.detached(priority: .utility) {
+                try FileManager.default.createDirectory(at: snapshots.directory, withIntermediateDirectories: true)
+                let snapshot = try reader.read(at: sourceURL, settings: settings, createdAt: now)
+                try LibraryBackupPackage.write(snapshot, to: snapshots.destination(at: now)) { try MediaStore.shared.readFile(filename: $0) }
+                try snapshots.prune()
+            }.value
+            snapshotError = nil
+        } catch {
+            snapshotError = "The daily snapshot could not be written. \(error.localizedDescription)"
+        }
+    }
+
+    /// Throws when the folder can't be made, for the row that asked to say.
+    func showSnapshots() throws {
+        try FileManager.default.createDirectory(at: snapshots.directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(snapshots.directory)
     }
 
     func chooseBackup() async {
@@ -157,7 +212,7 @@ final class LibraryMaintenance {
     }
 
     private func commitDrafts() async throws {
-        NotificationCenter.default.post(name: .commitPendingTaskTitles, object: nil)
+        NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
         for window in NSApplication.shared.windows { window.makeFirstResponder(nil) }
         await Task.yield()
         try store.persistChanges()

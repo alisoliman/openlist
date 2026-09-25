@@ -19,25 +19,64 @@ enum NXFormat {
         calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)) ?? now
     }
 
-    /// The app's overdue rule (`Block.isOverdue`, TasksProjection): a timed task is late once its
-    /// time passes, an all-day task once its day ends. Ignores completion, so a task still closing
-    /// keeps its place; callers decide where finished tasks go.
-    static func isPastDue(_ task: Block, now: Date = .now) -> Bool {
-        guard let due = task.dueDate else { return false }
-        return due < (task.includesTime ? now : calendar.startOfDay(for: now))
+    /// `day` at the hour and minute of `time`, for a timed task moved to another day.
+    static func day(_ day: Date, at time: Date) -> Date {
+        let parts = calendar.dateComponents([.hour, .minute], from: time)
+        return calendar.date(bySettingHour: parts.hour ?? 0, minute: parts.minute ?? 0, second: 0, of: day) ?? day
+    }
+
+    /// Days from today to "Next week", the coming Monday (`Store.nextWeekDay`).
+    static func nextWeekOffset(now: Date = .now) -> Int {
+        dayOffset(Store.nextWeekDay(from: now, calendar: calendar), now: now)
     }
 
     /// "Today", "Tomorrow", "Yesterday", "Fri 25" within the week, else "3 Oct".
     static func dueLabel(_ date: Date?, now: Date = .now) -> String {
         guard let date else { return "No date" }
-        let offset = dayOffset(date, now: now)
-        switch offset {
-        case 0: return "Today"
-        case 1: return "Tomorrow"
-        case -1: return "Yesterday"
-        case 2..<7: return date.formatted(.dateTime.weekday(.abbreviated).day())
-        default: return date.formatted(.dateTime.day().month(.abbreviated))
-        }
+        return MomentText.day(date, now: now)
+    }
+
+    /// A moment in the plan or in history, the day as `dueLabel` names it, with
+    /// the year when it isn't this one, and the clock: "Today 10:00", "Fri 25
+    /// 10:00", "3 Oct 2025 10:00" (`MomentText.moment`).
+    static func moment(_ date: Date, includesTime: Bool = true, inSentence: Bool = false, now: Date = .now) -> String {
+        MomentText.moment(date, includesTime: includesTime, inSentence: inSentence, now: now)
+    }
+
+    /// `dueLabel`, with the year for a day past the week in another year, for
+    /// dates that may be far off, like a reminder or a repeat's next days:
+    /// `moment`'s day, without its time.
+    static func dayLabel(_ date: Date, now: Date = .now) -> String {
+        MomentText.day(date, now: now, year: true)
+    }
+
+    /// A day and time in the Due row's words, as the inspector's Reminder
+    /// pill reads: "Fri 25 09:00", in a sentence "today 09:00".
+    static func dueAndClock(_ date: Date, inSentence: Bool = false, now: Date = .now) -> String {
+        MomentText.moment(date, year: false, inSentence: inSentence, now: now)
+    }
+
+    /// A reminder macOS holds, as the Reminder tab says it: "Reminds you today
+    /// 09:00", or for a timed task with no reminder of its own, "Reminds you
+    /// at the due time, Fri 25 18:00".
+    static func reminds(at date: Date, atDueTime: Bool, now: Date = .now) -> String {
+        let when = dueAndClock(date, inSentence: true, now: now)
+        return atDueTime ? "Reminds you at the due time, \(when)" : "Reminds you \(when)"
+    }
+
+    /// The Reminder tab's header for a timed task with no reminder of its
+    /// own, which reminds you at its due time: "At the due time · Fri 25 18:00".
+    static func atDueTime(_ due: Date, now: Date = .now) -> String {
+        "At the due time · \(dueAndClock(due, now: now))"
+    }
+
+    /// A new due date as the tray and Changes name it: its day, and its time
+    /// only when the change set that time. A timed task moved to another day
+    /// keeps its time unnamed, as the design's date pills name only the day.
+    static func dueChange(_ due: Date, includesTime: Bool, from old: Date?, oldIncludesTime: Bool,
+                          now: Date = .now) -> String {
+        let keepsTime = oldIncludesTime && old.map { clock($0) } == clock(due)
+        return dueLabel(due, now: now) + (includesTime && !keepsTime ? " \(clock(due))" : "")
     }
 
     static func relativeDay(_ date: Date, now: Date = .now) -> String {
@@ -46,6 +85,18 @@ enum NXFormat {
         if offset == 1 { return "tomorrow" }
         if offset < 0 { return "\(-offset) days ago" }
         return "in \(offset) days"
+    }
+
+    /// A typed day as capture's chip names it: "Fri 25 · in 2 days".
+    static func typedDay(_ date: Date, now: Date = .now) -> String {
+        "\(dueLabel(date, now: now)) · \(relativeDay(date, now: now))"
+    }
+
+    /// A schedule typed in words, as capture's chips read it, in one line:
+    /// "Fri 25 · in 2 days · 09:00 · Every week".
+    static func typedSchedule(_ date: Date, includesTime: Bool, repeat rule: String? = nil, now: Date = .now) -> String {
+        ([typedDay(date, now: now)] + (includesTime ? [clock(date)] : []) + [rule].compactMap(\.self))
+            .joined(separator: " · ")
     }
 
     static func relative(_ date: Date, now: Date = .now) -> String {
@@ -57,10 +108,7 @@ enum NXFormat {
         return days == 1 ? "yesterday" : "\(days) days ago"
     }
 
-    static func clock(_ date: Date) -> String {
-        let parts = calendar.dateComponents([.hour, .minute], from: date)
-        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
-    }
+    static func clock(_ date: Date) -> String { MomentText.clock(date) }
 
     static func short(_ text: String) -> String {
         text.count > 30 ? String(text.prefix(29)) + "…" : text
@@ -68,9 +116,29 @@ enum NXFormat {
 
     static func quoted(_ text: String) -> String { "“\(short(text))”" }
 
+    /// Files kept with a task as the tray names them: "Attached “a.pdf” to
+    /// “Task”", or "Attached 3 files to “Task”", counting only those kept.
+    static func attached(_ names: [String], to task: String) -> String {
+        "Attached \(names.count == 1 ? quoted(names[0]) : "\(names.count) files") to \(task)"
+    }
+
+    /// "“a.pdf” and “b.pdf” could not be attached.", with the first one's
+    /// reason: up to three names, or two and "N other files" past that.
+    static func attachFailures(_ failures: [(name: String, error: Error)]) -> String? {
+        guard let first = failures.first else { return nil }
+        let named = failures.count > 3 ? 2 : failures.count
+        var names = failures.prefix(named).map { quoted($0.name) }
+        if failures.count > named { names.append("\(failures.count - named) other files") }
+        let who = ListFormatter.localizedString(byJoining: names)
+        return "\(who) could not be attached. \(first.error.localizedDescription)"
+    }
+
+    /// Elapsed time as the notch and the Stopped tray show it: "07:42", and "1:05:12" past an hour.
     static func mmss(_ seconds: Double) -> String {
         let total = max(0, Int(seconds))
-        return String(format: "%02d:%02d", total / 60, total % 60)
+        let hours = total / 3600
+        let rest = String(format: "%02d:%02d", total % 3600 / 60, total % 60)
+        return hours > 0 ? "\(hours):\(rest)" : rest
     }
 
     static func minutes(_ value: Int) -> String {
@@ -78,7 +146,10 @@ enum NXFormat {
     }
 }
 
-/// The capture grammar from the design: tokens are coloured as you type.
+/// The capture grammar: the tokens coloured as you type are exactly the ones
+/// Return saves. Dates, times and repeat rules are whatever `DateParser` reads
+/// (none while natural-language dates are off); labels, priority and
+/// estimates are the design's tokens.
 struct CaptureParse {
     enum Kind: String { case repeatRule, date, time, label, priority, estimate }
 
@@ -97,14 +168,14 @@ struct CaptureParse {
     let text: String
     let marks: [Mark]
     let segments: [Segment]
+    /// The text without its tokens: the title Return saves.
     let title: String
+    /// The due date, time and repeat rule read from the text; nil when there are none.
+    let schedule: ParsedSchedule?
 
     /// Labels need whitespace or the start before `#`, as in the store's capture draft,
     /// so `issue#42` and URL fragments stay plain text.
     private static let sources: [(Kind, String)] = [
-        (.repeatRule, #"\bevery\s(?:day|weekday|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"#),
-        (.date, #"\b(?:today|tonight|tomorrow|tmrw|next\sweek|(?:next\s)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|in\s\d+\s(?:days?|weeks?))\b"#),
-        (.time, #"\b(?:at\s)?\d{1,2}(?::\d{2})?\s?(?:am|pm)\b"#),
         (.label, #"(?<!\S)#[\p{L}0-9_-]+"#),
         (.priority, #"!(?:high|med|medium|low|[1-3])\b"#),
         (.estimate, #"~\d+\s?(?:m|min|h)\b"#),
@@ -115,9 +186,7 @@ struct CaptureParse {
         (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { (kind, $0) }
     }
 
-    private static let clockPattern = try? NSRegularExpression(pattern: #"(\d{1,2})(?::(\d{2}))?\s?(am|pm)"#, options: .caseInsensitive)
-
-    init(_ text: String) {
+    init(_ text: String, parsesDates: Bool = true, reference: Date = .now) {
         self.text = text
         var marks: [Mark] = []
         for (kind, regex) in Self.patterns {
@@ -125,6 +194,37 @@ struct CaptureParse {
                 guard let range = Range(match.range, in: text) else { continue }
                 if marks.contains(where: { $0.range.overlaps(range) }) { continue }
                 marks.append(Mark(kind: kind, range: range, raw: String(text[range])))
+            }
+        }
+        var schedule: ParsedSchedule?
+        if parsesDates {
+            // The tokens above are blanked with a character that is neither a
+            // word nor a space, so a date phrase can't reach into or across one.
+            let masked = NSMutableString(string: text)
+            for mark in marks {
+                let range = NSRange(mark.range, in: text)
+                masked.replaceCharacters(in: range, with: String(repeating: "\u{FFFC}", count: range.length))
+            }
+            let parsed = DateParser.parse(masked as String, reference: reference)
+            if !parsed.isEmpty {
+                schedule = parsed
+                for (range, part) in zip(parsed.consumedRanges, parsed.consumedParts) {
+                    guard var found = Range(range, in: text) else { continue }
+                    // A space the phrase took with it stays plain text.
+                    while !found.isEmpty, text[found.lowerBound].isWhitespace {
+                        found = text.index(after: found.lowerBound)..<found.upperBound
+                    }
+                    while !found.isEmpty, text[text.index(before: found.upperBound)].isWhitespace {
+                        found = found.lowerBound..<text.index(before: found.upperBound)
+                    }
+                    guard !found.isEmpty else { continue }
+                    let kind: Kind = switch part {
+                    case .recurrence: .repeatRule
+                    case .day: .date
+                    case .time: .time
+                    }
+                    marks.append(Mark(kind: kind, range: found, raw: String(text[found])))
+                }
             }
         }
         marks.sort { $0.range.lowerBound < $1.range.lowerBound }
@@ -140,17 +240,22 @@ struct CaptureParse {
         if cursor < text.endIndex { segments.append(Segment(id: segments.count, text: String(text[cursor...]))) }
         var title = text
         for mark in marks.reversed() { title.removeSubrange(mark.range) }
+        title = title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        // A joiner left dangling before the date (on/at/by/due) goes with it:
+        // "meet by friday" is "meet".
+        if schedule != nil {
+            title = title.replacingOccurrences(of: #"\s+(?:on|at|by|due)\s*$"#, with: "",
+                                               options: [.regularExpression, .caseInsensitive])
+        }
         self.marks = marks
         self.segments = segments
-        self.title = title.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
+        self.title = title.trimmingCharacters(in: .whitespaces)
+        self.schedule = schedule
     }
 
     func first(_ kind: Kind) -> Mark? { marks.first { $0.kind == kind } }
 
     var labels: [String] { marks.filter { $0.kind == .label }.map { String($0.raw.dropFirst()).lowercased() } }
-
-    var hasPriority: Bool { priority != nil }
 
     /// `!high`/`!3`, `!med`/`!medium`/`!2` and `!low`/`!1`; nil without a token.
     var priority: TaskPriority? {
@@ -171,22 +276,80 @@ struct CaptureParse {
         return min(raw.lowercased().contains("h") ? value * 60 : value, cap)
     }
 
-    /// Text with the design-only tokens (priority, estimate) removed, for the date parser.
-    var schedulingText: String {
-        var result = text
-        for mark in marks.reversed() where mark.kind == .priority || mark.kind == .estimate {
-            result.removeSubrange(mark.range)
-        }
-        return result
+    /// What Return saves, which the capture card's chips preview. A task with
+    /// no date of its own is due today when `dueToday`; `labels` join the ones
+    /// the text names, as a label screen's own label does.
+    func snapshot(dueToday: Bool = false, labels extra: [String] = []) -> CaptureSnapshot {
+        CaptureSnapshot(
+            title: title,
+            date: schedule?.date ?? (dueToday ? NXFormat.day(offset: 0) : nil),
+            includesTime: schedule?.includesTime ?? false,
+            recurrence: schedule?.recurrence,
+            labels: Array(Set(labels + extra)).sorted())
     }
 
-    /// "Today · today" style label for the date token preview.
-    static func timeLabel(_ raw: String) -> String? {
-        guard let match = clockPattern?.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
-              let hourRange = Range(match.range(at: 1), in: raw),
-              let meridiemRange = Range(match.range(at: 3), in: raw) else { return nil }
-        let hour = (Int(raw[hourRange]) ?? 0) % 12 + (raw[meridiemRange].lowercased() == "pm" ? 12 : 0)
-        let minute = Range(match.range(at: 2), in: raw).map { String(raw[$0]) } ?? "00"
-        return String(format: "%02d:", hour) + minute
+    /// The capture card's chips for `preview`, what this text saves, as the
+    /// design's capChips: each token's where it was typed, a typed day as
+    /// "Fri 25 · in 2 days", and Today first when the task is due today with
+    /// no day typed and `forToday`. A time or repeat typed alone shows no day,
+    /// unless the day it saves isn't today: a time already past, or a repeat's
+    /// first day, which the design never saves.
+    func chips(for preview: CaptureSnapshot, forToday: Bool, now: Date = .now) -> [CaptureChip] {
+        var chips: [CaptureChip] = []
+        var showsDay = false, showsTime = false, showsRepeat = false, showsPriority = false
+        let typesDay = first(.date) != nil
+        func day(_ date: Date) -> CaptureChip {
+            let label = NXFormat.typedDay(date, now: now)
+            return CaptureChip(id: "date-\(label)", kind: .day, label: label)
+        }
+        func impliedDay() {
+            guard !typesDay, !showsDay, let date = preview.date, NXFormat.dayOffset(date, now: now) != 0 else { return }
+            chips.append(day(date))
+            showsDay = true
+        }
+        for (index, mark) in marks.enumerated() {
+            let id = "\(index)-\(mark.kind.rawValue)-\(mark.raw.lowercased())"
+            switch mark.kind {
+            case .date:
+                guard !showsDay, let date = preview.date else { continue }
+                chips.append(day(date))
+                showsDay = true
+            case .time:
+                guard !showsTime, preview.includesTime, let date = preview.date else { continue }
+                impliedDay()
+                chips.append(CaptureChip(id: "time", kind: .time, label: NXFormat.clock(date)))
+                showsTime = true
+            case .repeatRule:
+                guard !showsRepeat, preview.recurrence != nil else { continue }
+                impliedDay()
+                chips.append(CaptureChip(id: "repeat", kind: .repeatRule, label: mark.raw))
+                showsRepeat = true
+            case .label:
+                chips.append(CaptureChip(id: id, kind: .label, label: String(mark.raw.dropFirst())))
+            case .priority:
+                // The first one, which is the one Return saves.
+                guard !showsPriority, let priority else { continue }
+                chips.append(CaptureChip(id: "priority", kind: .priority(priority), label: priority.title))
+                showsPriority = true
+            case .estimate:
+                chips.append(CaptureChip(id: id, kind: .estimate, label: "\(mark.raw.dropFirst()) estimate"))
+            }
+        }
+        if forToday, !showsDay, let date = preview.date, NXFormat.dayOffset(date, now: now) == 0 {
+            chips.insert(CaptureChip(id: "date-Today", kind: .day, label: "Today", typed: false), at: 0)
+        }
+        return chips
     }
+}
+
+/// One of the capture card's chips: what it says and what it stands for,
+/// which gives it its icon and tone.
+struct CaptureChip: Equatable {
+    enum Kind: Equatable { case day, time, repeatRule, label, priority(TaskPriority), estimate }
+    let id: String
+    let kind: Kind
+    let label: String
+    /// Whether what was typed brings it, so it pops in as the design's typed
+    /// chips do. The Today a capture for today leads with is simply there.
+    var typed = true
 }

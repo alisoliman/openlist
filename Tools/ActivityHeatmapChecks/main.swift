@@ -40,7 +40,8 @@ if phase == "reopen" {
     let leaf = aliasStore.block(id: aliasLeafID)!
     aliasStore.toggleCompletion(leaf, now: second)
     aliasStore.toggleCompletion(leaf, now: third)
-    check(try aliasStore.activityHeatmap(now: now, calendar: calendar).total == 3, "nested ancestor reopening alias survives process relaunch")
+    // The reopened repeat's own count stays out until it is done again.
+    check(try aliasStore.activityHeatmap(now: now, calendar: calendar).total == 2, "nested ancestor reopening alias survives process relaunch")
     aliasStore.toggleCompletion(middle, now: third)
     check(try aliasStore.activityHeatmap(now: now, calendar: calendar).total == 3, "relaunch preserves the self-recurring task's unadvanced completion cycle")
     check(try snapshot().total == 6, "saved heatmap and retained deleted-owner history survive a process relaunch")
@@ -91,6 +92,46 @@ let facts = [firstFact, firstFact,
 let unique = ActivityHeatmap(completions: facts.reversed(), now: now, calendar: calendar)
 check(unique.total == 3, "duplicates, redo record IDs and ordinary toggles count once; distinct recurring occurrences count separately")
 check(unique.days.first { $0.id == calendar.startOfDay(for: first) }?.count == 2, "first completion dates win independent of fetch ordering")
+// What was taken back leaves the count until it is done again.
+let takenTaskID = UUID()
+let takenTask = ActivityCompletion(taskID: takenTaskID, wasRecurring: false, date: first)
+let takenReopen = ActivityReversal(taskID: takenTaskID, date: second)
+check(ActivityHeatmap(completions: [takenTask], reversals: [takenReopen], now: now, calendar: calendar).total == 0,
+      "a reopened ordinary task leaves the count")
+let takenAgain = ActivityHeatmap(completions: [takenTask, ActivityCompletion(taskID: takenTaskID, wasRecurring: false, date: third)],
+                                 reversals: [takenReopen], now: now, calendar: calendar)
+check(takenAgain.total == 1 && takenAgain.days.first { $0.count > 0 }?.id == calendar.startOfDay(for: third),
+      "a reopened task done again counts once, on the day it was done again")
+check(ActivityHeatmap(completions: [takenTask], reversals: [ActivityReversal(taskID: takenTaskID, date: date("2026-08-31T08:00:00Z"))],
+                      now: now, calendar: calendar).total == 1, "a reopen saved before the completion takes nothing back")
+let takenRecordID = UUID()
+let takenRecord = ActivityCompletion(taskID: UUID(), completionID: takenRecordID, occurrenceID: UUID(), wasRecurring: true, date: first)
+let takenUndo = ActivityReversal(taskID: takenRecord.taskID, completionID: takenRecordID, date: second)
+check(ActivityHeatmap(completions: [takenRecord], reversals: [takenUndo], now: now, calendar: calendar).total == 0,
+      "a completion's Undo takes back the record it removed")
+var takenRedo = takenRecord
+takenRedo.id = UUID()
+takenRedo.recordedAt = third
+let takenRedone = ActivityHeatmap(completions: [takenRecord, takenRedo], reversals: [takenUndo], now: now, calendar: calendar)
+check(takenRedone.total == 1 && takenRedone.days.first { $0.count > 0 }?.id == calendar.startOfDay(for: first),
+      "a Redo saved after the Undo puts the completion back on its own day")
+check(ActivityHeatmap(completions: [takenRecord], reversals: [ActivityReversal(taskID: takenRecord.taskID, completionID: UUID(), date: second)],
+                      now: now, calendar: calendar).total == 1, "another record's Undo takes nothing back")
+let takenCycle = UUID()
+let takenChildID = UUID()
+let takenChild = ActivityCompletion(taskID: takenChildID, occurrenceID: UUID(), cycleID: takenCycle, wasRecurring: true, date: first)
+check(ActivityHeatmap(completions: [takenChild], reversals: [ActivityReversal(taskID: takenChildID, date: second)],
+                      now: now, calendar: calendar).total == 1, "a repeat's subtask reset as the repeat rolls on keeps its cycle's count")
+check(ActivityHeatmap(completions: [takenChild], reversals: [ActivityReversal(taskID: takenChildID, cycleID: takenCycle, date: second)],
+                      now: now, calendar: calendar).total == 0, "a task reopened in the cycle it counted in, its own rule's or a repeat's, leaves the count")
+let takenLaterID = UUID()
+let takenLaterOccurrence = UUID()
+let takenLater = ActivityCompletion(taskID: takenLaterID, occurrenceID: takenLaterOccurrence, wasRecurring: false, date: first)
+check(ActivityHeatmap(completions: [takenLater], reversals: [ActivityReversal(taskID: takenLaterID, cycleID: takenLaterOccurrence,
+                                                                              occurrenceID: takenLaterOccurrence, date: second)],
+                      now: now, calendar: calendar).total == 0, "a reopen whose cycle counted nothing takes back the occurrence it reopened")
+check(ActivityHeatmap(completions: [takenLater], reversals: [ActivityReversal(taskID: takenLaterID, cycleID: UUID(), occurrenceID: UUID(), date: second)],
+                      now: now, calendar: calendar).total == 1, "a reopen of another cycle and occurrence takes nothing back")
 let duplicateID = UUID()
 let incompleteDuplicate = ActivityCompletion(id: duplicateID, taskID: repeatID, completionID: recordID, wasRecurring: nil, date: first)
 let completeDuplicate = ActivityCompletion(id: duplicateID, taskID: repeatID, completionID: recordID, occurrenceID: occurrence, wasRecurring: true, date: first)
@@ -143,9 +184,18 @@ let repeatedTask = UUID()
 check(ActivityHeatmap(completions: [ActivityCompletion(taskID: repeatedTask, wasRecurring: false, date: calendar.date(byAdding: .day, value: -3, to: now)!),
     ActivityCompletion(taskID: repeatedTask, wasRecurring: false, date: yesterday)], now: now, calendar: calendar).streak == 0,
       "an ordinary task completed again counts on its first day only, for the streak too")
-for (count, intensity) in [(0, 0), (1, 1), (2, 2), (3, 2), (4, 3), (6, 3), (7, 4)] {
+let reopenedYesterday = UUID()
+check(ActivityHeatmap(completions: hundredDays + [ActivityCompletion(taskID: reopenedYesterday, wasRecurring: false, date: now)],
+                      reversals: [ActivityReversal(taskID: reopenedYesterday, date: now.addingTimeInterval(-1))],
+                      now: now.addingTimeInterval(60), calendar: calendar).streak == 101
+      && ActivityHeatmap(completions: hundredDays + [ActivityCompletion(taskID: reopenedYesterday, wasRecurring: false, date: now)],
+                         reversals: [ActivityReversal(taskID: reopenedYesterday, date: now.addingTimeInterval(30))],
+                         now: now.addingTimeInterval(60), calendar: calendar).streak == 100,
+      "the streak counts only completions that still stand: one reopened since leaves today's run")
+for (count, band) in [(0, 0), (1, 1), (2, 2), (3, 2), (4, 3), (6, 3), (7, 4)] {
     let day = ActivityHeatmapDay(id: first, completions: (0..<count).map { _ in firstFact }, unclassifiedCount: 0)
-    check(day.intensity == intensity && day.accessibilityDescription.contains(day.countDescription), "legend bands and accessible numeric counts agree")
+    check(ActivityBand.level(day.count) == band && day.accessibilityDescription.contains(day.countDescription),
+          "legend bands and accessible numeric counts agree")
 }
 
 store.bootstrap()
@@ -160,6 +210,7 @@ try store.persistChanges()
 check(try snapshot().total == 1, "actual ordinary complete/reopen/complete is deduplicated")
 let savedFirst = try snapshot().days.flatMap(\.completions).first!
 check(savedFirst.title == "Original title" && savedFirst.listTitle == "Completion-time list", "day details preserve original task and list snapshots")
+check(savedFirst.listID == list.id && savedFirst.listIcon == list.icon, "day details keep the completion's list and its icon for a task since trashed or erased")
 
 let parent = store.appendBlock(kind: .task, text: "Recurring parent", to: .init(listID: list.id))
 store.setDueDate(first, for: parent)
@@ -192,7 +243,7 @@ let finalChildEvent = try store.taskActivity(for: child.id).first { $0.change?.c
 check(finalChildEvent.change?.completionWasRecurring == true, "final parent cycle retains inherited recurrence after its rule is removed")
 check(try snapshot().total == 5, "ordinary task plus two parent and two child occurrences count independently")
 manager.undo()
-check(try snapshot().total == 5, "completion Undo keeps the historical performed actions")
+check(try snapshot().total == 3, "completion Undo takes back the final repeat and the subtask it completed")
 manager.redo()
 check(try snapshot().total == 5, "native Redo does not inflate recurring parent or child counts")
 store.onCompletionUndoAvailable = nil
@@ -275,8 +326,8 @@ let beforeNestedReopen = try batchStore.activityHeatmap(now: now, calendar: cale
 batchStore.toggleCompletion(middle, now: second)
 batchStore.toggleCompletion(leaf, now: second)
 batchStore.toggleCompletion(leaf, now: third)
-check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeNestedReopen,
-      "a leaf inherits its recurring ancestor's preserved reopening alias")
+check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeNestedReopen - 1,
+      "a leaf inherits its recurring ancestor's preserved reopening alias; the reopened repeat's own count is out")
 batchStore.toggleCompletion(leaf, now: third)
 batchStore.toggleCompletion(middle, now: third)
 check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeNestedReopen,
@@ -334,6 +385,62 @@ batchStore.toggleCompletion(bulkLeaf, now: third)
 batchStore.toggleCompletion(bulkMiddle, now: third)
 check(try batchStore.activityHeatmap(now: now, calendar: calendar).total == beforeBulkReopen,
       "bulk Reopen Undo/Redo preserves ancestor aliases for later child and parent completion")
+
+// Taken back once it has settled, as the design's Undo and Reopen take it
+// out of today's count and the day panel: the completion's Undo, a reopen,
+// and the reopen's Undo, which restores the same completion.
+let takenBack = batchStore.appendBlock(kind: .task, text: "Buy milk", to: .init(listID: batchList.id))
+try batchStore.persistChanges()
+func takenBackCount() throws -> Int { try batchStore.activityHeatmap(now: now, calendar: calendar).total }
+func takenBackDay() throws -> Date? {
+    try batchStore.activityHeatmap(now: now, calendar: calendar).days.first { $0.completions.contains { $0.taskID == takenBack.id } }?.id
+}
+let beforeTakenBack = try takenBackCount()
+batchStore.toggleCompletion(takenBack, now: first)
+check(try takenBackCount() == beforeTakenBack + 1, "a settled completion counts")
+bulkManager.undo()
+check(try takenBackCount() == beforeTakenBack && takenBackDay() == nil, "a settled completion's Undo takes it out of the count and the day")
+bulkManager.redo()
+check(try takenBackCount() == beforeTakenBack + 1 && takenBackDay() == calendar.startOfDay(for: first),
+      "its Redo puts it back on the day it was done")
+_ = try batchStore.setBulkCompletion(false, ids: [takenBack.id], now: second)
+check(try takenBackCount() == beforeTakenBack && takenBackDay() == nil, "reopening a completed task takes its count back")
+bulkManager.undo()
+check(try takenBackCount() == beforeTakenBack + 1 && takenBackDay() == calendar.startOfDay(for: first),
+      "the reopen's Undo restores the same completion")
+bulkManager.redo()
+check(try takenBackCount() == beforeTakenBack, "the reopen's Redo takes it back again")
+batchStore.toggleCompletion(takenBack, now: third)
+check(try takenBackCount() == beforeTakenBack + 1 && takenBackDay() == calendar.startOfDay(for: third),
+      "a reopened task done again counts once, on the day it was done again")
+// A repeat's subtask reopened leaves its cycle's count, as any reopened task
+// does; the repeat rolling on with it ticked resets it and keeps the count.
+let takenRepeat = batchStore.appendBlock(kind: .task, text: "Water the planters", to: .init(listID: batchList.id))
+batchStore.setDueDate(first, for: takenRepeat)
+batchStore.setRecurrence(.daily, for: takenRepeat)
+let takenSubtask = batchStore.insertChild(text: "Fill the can", of: takenRepeat)
+try batchStore.persistChanges()
+let beforeSubtask = try takenBackCount()
+batchStore.toggleCompletion(takenSubtask, now: first)
+check(try takenBackCount() == beforeSubtask + 1, "a repeat's ticked subtask counts")
+batchStore.toggleCompletion(takenSubtask, now: first)
+check(try takenBackCount() == beforeSubtask && batchStore.taskActivity(for: takenSubtask.id).first { $0.kind == .reopened }?.change?.completionCycleID != nil,
+      "a repeat's subtask reopened names its cycle and leaves the count")
+batchStore.toggleCompletion(takenSubtask, now: second)
+batchStore.toggleCompletion(takenRepeat, now: second)
+check(try takenBackCount() == beforeSubtask + 2 && !takenSubtask.isCompleted
+        && batchStore.taskActivity(for: takenSubtask.id).first { $0.kind == .reopened }?.change?.completionCycleID == nil,
+      "the repeat rolling on resets its ticked subtask naming no cycle, and both keep their counts")
+// A task done before it had a rule counted as an ordinary task; its reopen,
+// which names the rule's cycle, takes back the occurrence it reopened.
+let takenRuleLater = batchStore.appendBlock(kind: .task, text: "Renew the pass", to: .init(listID: batchList.id))
+try batchStore.persistChanges()
+let beforeRuleLater = try takenBackCount()
+batchStore.toggleCompletion(takenRuleLater, now: first)
+batchStore.setRecurrence(.daily, for: takenRuleLater)
+check(try takenBackCount() == beforeRuleLater + 1 && takenRuleLater.isCompleted, "a task done and then given a rule still counts")
+batchStore.toggleCompletion(takenRuleLater, now: second)
+check(try takenBackCount() == beforeRuleLater && !takenRuleLater.isCompleted, "reopening a task done before it had a rule leaves the count")
 batchStore.onCompletionUndoAvailable = nil
 
 // Failed writes stay retryable, but a fresh history reader sees committed facts.

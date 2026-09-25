@@ -23,7 +23,7 @@ extension CalendarPersistenceChecks {
         check(untrackedRecord.plannedIntervals == savedIntervals, "Completion durably snapshots every displayed split slot before replanning")
         check(store.workSessions(taskID: untracked.id).isEmpty, "Completing an unstarted planned task invents no recorded work")
         let untrackedBlocks = store.completedCalendarBlocks().filter { $0.completionID == untrackedRecord.id }
-        check(untrackedBlocks.map { CompletionCalendarInterval(start: $0.start, end: $0.end) } == savedIntervals && untrackedBlocks.allSatisfy { $0.isCompleted && !$0.isTimeTracked }, "Untracked completed blocks retain planned times with explicit untracked metadata")
+        check(untrackedBlocks.map { CompletionCalendarInterval(start: $0.start, end: $0.end) } == savedIntervals && untrackedBlocks.allSatisfy { $0.isCompleted && !$0.isTimeTracked && $0.keepsSlot }, "Untracked completed blocks retain planned times with explicit untracked metadata")
         untracked.text = "Renamed after completion"
         store.save()
         check(store.completedCalendarBlocks().filter { $0.completionID == untrackedRecord.id }.allSatisfy { $0.titleSnapshot == "Untracked calendar snapshot" }, "Renaming a task never renames its completed occurrence")
@@ -32,7 +32,7 @@ extension CalendarPersistenceChecks {
         store.toggleCompletion(untracked, now: completedAt.addingTimeInterval(60))
         let secondRecord = store.completionRecords(taskID: untracked.id).first!
         let marker = store.completedCalendarBlocks().first { $0.completionID == secondRecord.id }!
-        check(secondRecord.plannedIntervals.isEmpty && marker.start == secondRecord.completedAt && marker.start == marker.end && !marker.isTimeTracked, "Stale previous-occurrence plan never leaks into a newly completed occurrence")
+        check(secondRecord.plannedIntervals.isEmpty && marker.start == secondRecord.completedAt && marker.start == marker.end && !marker.isTimeTracked && !marker.keepsSlot, "Stale previous-occurrence plan never leaks into a newly completed occurrence")
         let secondUndo = store.completionUndo!
         check(store.undoCompletion(secondUndo.id) && store.completionRecords(taskID: untracked.id).count == 1 && !untracked.isCompleted, "Undo removes only the new completion while normal prior history remains")
 
@@ -47,7 +47,7 @@ extension CalendarPersistenceChecks {
         store.toggleCompletion(tracked, now: completedAt)
         let trackedRecord = store.completionRecords(taskID: tracked.id).first!
         var actual = store.completedCalendarBlocks().filter { $0.completionID == trackedRecord.id }
-        check(actual.count == 2 && actual.allSatisfy(\.isTimeTracked) && actual.map(\.durationMinutes) == [15, 20], "Tracked completions show actual sessions with corrected durations, not their planned estimate")
+        check(actual.count == 2 && actual.allSatisfy { $0.isTimeTracked && !$0.keepsSlot } && actual.map(\.durationMinutes) == [15, 20], "Tracked completions show actual sessions with corrected durations, not their planned estimate")
         check(second.endedAt == completedAt && trackedRecord.plannedIntervals.count == 1, "Completion closes active work and separately retains its original planning snapshot")
         check(first.plannedIntervals == originalTrackedPlan && trackedRecord.plannedIntervals == originalTrackedPlan, "Early Start and active overruns cannot replace the original pre-start planned interval")
         store.correctSession(first, minutes: 12)
@@ -55,8 +55,28 @@ extension CalendarPersistenceChecks {
         check(actual.first?.end == nine.addingTimeInterval(720) && actual.last?.end == completedAt, "Later time corrections update actual completed calendar intervals")
         check(trackedRecord.plannedIntervals == originalTrackedPlan, "Correcting recorded time never changes original planned-slot history")
         tracked.text = "Changed live title"
-        store.deleteBlocks([tracked])
+        store.deleteBlock(tracked)
+        store.save()
         check(store.completedCalendarBlocks().filter { $0.completionID == trackedRecord.id }.allSatisfy { $0.titleSnapshot == "Tracked calendar snapshot" && $0.isTimeTracked }, "Deleting or renaming the task preserves immutable completed titles and actual work")
+
+        let inSlot = store.appendBlock(kind: .task, text: "Worked inside its slot", to: .init(listID: list.id))
+        store.calendarPlannedBlocks = [slot(inSlot, nine, 30), slot(inSlot, nine.addingTimeInterval(7_200), 30)]
+        let inside = store.startWorkSession(for: inSlot, deviceID: "completion-check", now: nine.addingTimeInterval(300))!
+        store.pauseWorkSession(inside, reason: "Break", now: nine.addingTimeInterval(900))
+        let overrun = store.startWorkSession(for: inSlot, deviceID: "completion-check", now: nine.addingTimeInterval(1_200))!
+        let elsewhere = nine.addingTimeInterval(3_600)
+        store.pauseWorkSession(overrun, reason: "Break", now: nine.addingTimeInterval(2_100))
+        let away = store.startWorkSession(for: inSlot, deviceID: "completion-check", now: elsewhere)!
+        store.toggleCompletion(inSlot, now: elsewhere.addingTimeInterval(600))
+        let inSlotRecord = store.completionRecords(taskID: inSlot.id).first!
+        let settled = store.completedCalendarBlocks().filter { $0.completionID == inSlotRecord.id }
+        check(away.endedAt == elsewhere.addingTimeInterval(600) && settled.allSatisfy(\.isTimeTracked)
+                && settled.map { CompletionCalendarInterval(start: $0.start, end: $0.end) }
+                == [CompletionCalendarInterval(start: nine, end: nine.addingTimeInterval(2_100)),
+                    CompletionCalendarInterval(start: elsewhere, end: elsewhere.addingTimeInterval(600))]
+                && settled.map(\.keepsSlot) == [true, false],
+              "Work done in a planned slot settles at the slot, stretched past its end, while work elsewhere and an unworked slot keep to what happened")
+        store.calendarPlannedBlocks = []
 
         let legacyTask = store.appendBlock(kind: .task, text: "Legacy completion marker", to: .init(listID: list.id))
         let legacy = CompletionRecord(task: legacyTask, completedAt: completedAt)
@@ -95,7 +115,7 @@ extension CalendarPersistenceChecks {
         manager.endUndoGrouping()
         let action = store.completionUndo!
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: day)!
-        check(notifications == 1 && action.expiresAt.timeIntervalSince(action.createdAt) == 10, "A parent completion publishes one saved ten-second Undo action")
+        check(notifications == 1, "A parent completion publishes one saved Undo action")
         check(parent.deferredUntil == tomorrow && child.deferredUntil == tomorrow && parent.selectedForDay == nil, "Future recurring occurrences and their undated subtasks wait until tomorrow automatically")
         check(work.endedAt == completedAt && store.workSessions(taskID: parent.id).allSatisfy { $0.endedAt != nil }, "Completion pauses work before an Undo can restore task state")
         let changedDue = tomorrow.addingTimeInterval(5 * 86_400)
@@ -130,7 +150,8 @@ extension CalendarPersistenceChecks {
         let latestOccurrence = parent.occurrenceID
         check(!store.undoCompletion(oldAction.id) && parent.occurrenceID == latestOccurrence && store.completionRecords(taskID: parent.id).count == 2, "Undo rejects stale recurring actions after a later occurrence was completed")
         let deletedAction = store.completionUndo!
-        store.deleteBlocks([parent])
+        store.deleteBlock(parent)
+        store.save()
         check(!store.undoCompletion(deletedAction.id) && store.block(id: parent.id) == nil, "Completion Undo never resurrects a deleted task")
         let failureTask = store.appendBlock(kind: .task, text: "Undo save failure", to: .init(listID: list.id))
         store.setPlacement(for: failureTask, start: nine, end: completedAt, isPinned: true)

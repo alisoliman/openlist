@@ -6,9 +6,7 @@ struct CompletionUndoAction: Identifiable {
     var title: String
     var createdAt: Date
     var isReopening = false
-    var expiresAt: Date { createdAt.addingTimeInterval(10) }
     var commandTitle: String { "\(isReopening ? "Reopen" : "Complete") \(title)" }
-    var feedback: String { "\(isReopening ? "Reopened" : "Completed") \(title)" }
 }
 
 /// Only completion-owned fields are captured. Titles, notes, estimates, labels,

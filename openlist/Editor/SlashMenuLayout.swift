@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Anchors the popup to the editable text, including indentation and row padding.
+/// Anchors the Turn into card to the editable text, including indentation and row padding.
 struct EditorTextBoundsKey: PreferenceKey {
     static let defaultValue: [UUID: Anchor<CGRect>] = [:]
     static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
@@ -9,22 +9,16 @@ struct EditorTextBoundsKey: PreferenceKey {
 }
 
 enum SlashMenuLayout {
-    /// Both inputs use native text-view coordinates. Clip to the visible editor,
-    /// choosing above the caret when there is more space there.
-    static func frame(caret: CGRect, viewport: CGRect, preferredHeight: CGFloat) -> CGRect? {
-        let bounds = viewport.insetBy(dx: 8, dy: 8)
-        guard bounds.width > 0, bounds.height > 0, viewport.intersects(caret) else { return nil }
-        let below = max(0, bounds.maxY - caret.maxY - 4)
-        let above = max(0, caret.minY - bounds.minY - 4)
-        let useBelow = below >= preferredHeight || below >= above
-        let height = min(preferredHeight, useBelow ? below : above)
-        guard height >= 32 else { return nil }
-        let width = min(260, bounds.width)
-        return CGRect(
-            x: min(max(caret.minX, bounds.minX), bounds.maxX - width),
-            y: useBelow ? caret.maxY + 4 : caret.minY - 4 - height,
-            width: width,
-            height: height
-        )
+    /// Whether the list document's Turn into card, `height` tall, opens
+    /// above its line rather than 6pt below it, where the design puts it.
+    /// Below whenever it fits on the visible page, else above when it fits
+    /// there, else on the side with more room. `line` and `viewport` share
+    /// one coordinate space.
+    static func cardOpensAbove(line: CGRect, height: CGFloat, viewport: CGRect) -> Bool {
+        guard !viewport.isNull, !viewport.isEmpty else { return false }
+        let below = viewport.maxY - line.maxY - 6
+        guard below < height else { return false }
+        let above = line.minY - viewport.minY - 6
+        return above >= height || above > below
     }
 }

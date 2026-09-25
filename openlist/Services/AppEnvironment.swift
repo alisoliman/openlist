@@ -9,7 +9,7 @@ import Observation
 import SwiftData
 import SwiftUI
 
-/// A picker inside the task detail panel that a keyboard shortcut can summon.
+/// A picker inside the inspector that a keyboard shortcut can summon.
 enum DetailPicker: String, Identifiable {
     case due, repeatRule, reminder, labels
     var id: String { rawValue }
@@ -18,7 +18,6 @@ enum DetailPicker: String, Identifiable {
 /// One-shot instructions sent from menus and shortcuts down into whichever
 /// document view is on screen.
 enum EditorCommand: Equatable {
-    case newTask
     case toggleCompletion
     case openDetails
     case setDueToday
@@ -58,7 +57,7 @@ final class AppEnvironment {
     private let widgetCommands: WidgetCommandProcessor
     /// Retained so the notification centre keeps a live delegate.
     private let notificationDelegate = NotificationDelegate()
-    private let calendarNotifications: CalendarNotificationBridge
+    let calendarNotifications: CalendarNotificationBridge
     private var hasBootstrapped = false
     @ObservationIgnored private var notificationActivityObserver: NSObjectProtocol?
     @ObservationIgnored private var terminationObserver: NSObjectProtocol?
@@ -66,15 +65,9 @@ final class AppEnvironment {
 
     var templateCopyRequest: TemplateCopyRequest?
 
-    /// What the Quick Add window captures into. A widget's "Add to …" sets it
-    /// just before opening the window, and the window puts back a plain
-    /// capture when it closes, so the menu and the shortcut never inherit it.
-    var quickAddRequest = TaskCaptureRequest()
-    /// Opens the Quick Add window. Installed by the main window: widget links
-    /// arrive through its scene, and only a view can open windows. So a
-    /// widget's Quick Add brings the main window forward as well; see
-    /// `WidgetLinkRouter`.
-    @ObservationIgnored var openQuickAdd: (() -> Void)?
+    /// Work ▸ Show Work asked for the Work panel as it opened the main window,
+    /// so its toolbar shows the panel once up. The window's closing clears it.
+    @ObservationIgnored var showsWorkPanelOnOpen = false
 
     /// A command awaiting pickup by the focused document view.
     var pendingCommand: EditorCommand?
@@ -87,23 +80,21 @@ final class AppEnvironment {
     /// honoured everywhere rather than only in the sidebar.
     var listPendingDeletion: TaskList?
     var listPendingMove: TaskList?
+    /// Format ▸ Add Link…'s question, for the window's link sheet.
+    var linkPrompt: LinkPrompt?
 
-    /// Which picker the task detail panel should pop open, set by ⌃D / ⌃L.
+    /// Which picker the inspector should pop open, set by ⇧⌘D / ⇧⌘L.
     var requestedPicker: DetailPicker?
 
-    /// The document menu commands apply to. Several `DocumentView`s can be on
-    /// screen at once — a list plus an open task's detail page — so exactly one
-    /// of them claims each command.
+    /// The document menu commands apply to: the list document on show, which
+    /// claims it, or `nil` on the other screens, whose targets are the
+    /// workbench's.
     var activeDocument: DocumentContext?
 
     /// Whether the main window is key. The Task menu acts on that window's
-    /// rows, so it stays off while Quick Add or Settings has the keyboard.
+    /// rows, so it stays off while Quick Add or the menu bar's popover has
+    /// the keyboard.
     var isMainWindowKey = false
-
-    /// Only captures created by the empty-title flow can be removed on cancel.
-    /// Keeping their inherited defaults distinguishes them from existing blank
-    /// tasks and from a new task the user has already given meaningful details.
-    @ObservationIgnored private var pendingTitleCaptures: [UUID: PendingTitleCapture] = [:]
 
     init(context: ModelContext, sync: ICloudSyncMonitor,
          libraryID: UUID? = nil, libraryStorage: LibraryRestoreStorage? = nil, libraryStartup: LibraryRestoreStorage.Startup? = nil) {
@@ -124,10 +115,12 @@ final class AppEnvironment {
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)
         widgetPublisher = WidgetSnapshotPublisher(store: store,
             sources: .live(calendar: calendar, settings: settings, libraryID: libraryID))
-        calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, navigator: navigator)
-        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar)
+        workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar,
+                              defaults: ReviewSession.defaults)
+        calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, workbench: workbench)
         widgetLinks = WidgetLinkRouter(store: store, navigator: navigator, screens: workbench)
-        widgetCommands = WidgetCommandProcessor(store: store, calendar: calendar, publisher: widgetPublisher)
+        widgetCommands = WidgetCommandProcessor(store: store, calendar: calendar, publisher: widgetPublisher, actions: workbench)
+        assert(WidgetLink.scheme == LocalLink.scheme, "Widget links and item links share the app's URL scheme")
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
         // The plan and the running session change without a save. Debounced,
@@ -143,9 +136,6 @@ final class AppEnvironment {
             if let taskID = navigator.openTaskID, ids.contains(taskID) {
                 requestedPicker = nil
                 navigator.closeTask()
-            }
-            if let rootID = activeDocument?.rootBlockID, ids.contains(rootID) {
-                activeDocument = nil
             }
         }
         store.onDidSave = { [weak widgetPublisher, weak calendar] in
@@ -163,32 +153,33 @@ final class AppEnvironment {
                     if self?.hasBootstrapped == true { self?.widgetCommands.drainQueue() }
                 }
             }
-        watchWidgetSettings()
+        watchWidgetInputs()
     }
 
     /// Lets widget buttons and links reach the app. The command handler goes
-    /// in first thing, because an intent can be what launched the app; it
-    /// bootstraps before applying anything.
+    /// in first thing, because an intent can be what launched the app: App.init
+    /// builds the environment, and the processor bootstraps before applying
+    /// anything.
     private func installWidgetActions() {
         widgetCommands.prepare = { [weak self] in self?.bootstrap() }
-        widgetCommands.settleWindowCompletion = { [weak workbench] id in
-            if workbench?.closing[id] != nil { workbench?.flushClosings() }
-        }
         WidgetCommandRouter.handler = { [weak widgetCommands] command in widgetCommands?.handle(command) }
-        widgetLinks.capture = { [weak self] request in self?.presentQuickAdd(request) }
+        // Quick Add floats over the app in front without activating Openlist.
+        widgetLinks.capture = { request in QuickCapturePanel.shared.showFromWidget(request) }
+        widgetLinks.activate = { NSApp.activate(ignoringOtherApps: true) }
     }
 
-    /// Refreshes the widgets when a setting they mirror changes: the accent,
-    /// serif titles, and the first weekday their weeks start on. Settings are
-    /// not saved through the Store, so no save announces them. Runs from init,
-    /// then again after each change it sees.
-    private func watchWidgetSettings() {
+    /// Refreshes the widgets when something they mirror changes without a
+    /// save: the accent, serif titles, the first weekday their weeks start on,
+    /// and the calendars, whose revision moves with every meeting added, moved
+    /// or renamed, earlier in the week included. Runs from init, then again
+    /// after each change it sees.
+    private func watchWidgetInputs() {
         withObservationTracking {
-            _ = (settings.accent, settings.serifTitles, settings.firstWeekday)
+            _ = (settings.accent, settings.serifTitles, settings.firstWeekday, calendar.externalCalendars.revision)
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.widgetPublisher.scheduleRefresh()
-                self?.watchWidgetSettings()
+                self?.watchWidgetInputs()
             }
         }
     }
@@ -206,41 +197,28 @@ final class AppEnvironment {
     }
 
     func send(_ command: EditorCommand) {
-        if command == .newTask {
-            presentTaskCapture()
-            return
-        }
         pendingCommand = command
         commandToken &+= 1
     }
 
-    /// ⌘N and the screens' Add buttons. The capture lives on the workbench, so
-    /// a main window opened for it shows the capture as soon as it appears.
-    /// On Calendar the workbench plans the task for today by itself.
-    func presentTaskCapture(text: String = "") {
-        workbench.openCapture(text: text)
-    }
-
-    /// Opens the Quick Add window for `request`. A window already open keeps
-    /// what has been typed and moves to the request's list.
-    func presentQuickAdd(_ request: TaskCaptureRequest) {
-        quickAddRequest = request
-        openQuickAdd?()
+    /// File ▸ New Task… (⌘N). The capture lives on the workbench, so a main
+    /// window opened for it shows the capture as soon as it appears. On Today
+    /// the task it makes is due today, as `openCapture` decides.
+    func presentTaskCapture() {
+        workbench.openCapture()
     }
 
     /// Opens an Openlist link, whether a widget sent it or someone put it in
-    /// their own text, such as a task note. A widget's link goes where the
-    /// widget would take you. Anything else, including a widget link this
-    /// build cannot open, is read as an item link, whose notice says what is
-    /// wrong with it: a link that silently does nothing explains nothing.
-    func openLink(_ url: URL) {
-        if !widgetLinks.receive(url) { localLinks.receive(url) }
-    }
-
-    func showCopiedTask(id: UUID, listID: UUID) {
-        navigator.go(to: .list(listID))
-        navigator.selection = [id]
-        navigator.openTask(id)
+    /// their own text, such as a task note, and returns whether it was a
+    /// widget's. A widget's link goes where the widget would take you, and
+    /// brings Openlist forward as it needs. Anything else, including a widget
+    /// link this build cannot open, is read as an item link, whose notice says
+    /// what is wrong with it: a link that silently does nothing explains nothing.
+    @discardableResult
+    func openLink(_ url: URL) -> Bool {
+        if widgetLinks.receive(url) { return true }
+        localLinks.receive(url)
+        return false
     }
 
     func consumeCommand() -> EditorCommand? {
@@ -334,14 +312,21 @@ final class AppEnvironment {
 // MARK: - Convenience
 
 extension AppEnvironment {
+    /// Every Copy Link, from a menu or Task ▸: the link on the clipboard and
+    /// "Link copied" in the tray, or, drawn red as other failed actions are,
+    /// the action notice saying why there is none. The link notice is for a
+    /// link that can't open.
     func copyLink(to target: LocalLink.Target) {
         do {
             let url = try localLinks.link(to: target)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.writeObjects([url as NSURL])
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            workbench.showTray("Link copied", icon: "link")
         } catch {
-            localLinks.error = error as? LocalLinkError ?? .targetUnavailable
+            // In the link notice's words: the library's identity, or the item gone.
+            let reason: LocalLinkError = error as? LocalLinkError == .identityUnavailable ? .identityUnavailable : .targetUnavailable
+            store.actionError = "The link was not copied. \(reason.localizedDescription)"
         }
     }
 
@@ -358,103 +343,10 @@ extension AppEnvironment {
         }
     }
 
-    /// Deletes for real, and steps off the list if it is the one on screen.
+    /// Moves the list to Trash as one change with Undo in the tray, stepping
+    /// off it if it is the one on screen.
     func performDeleteList(_ list: TaskList) {
-        let ownedIDs = Set(store.listHierarchy().subtree(of: list.id).map(\.id))
-        let wasOpen = navigator.route.listID.map(ownedIDs.contains) == true
-        guard store.deleteList(list) else { return }
-        if wasOpen { navigator.replace(with: .today) }
         listPendingDeletion = nil
-    }
-
-    /// Opens a task's detail panel with one of its pickers already showing.
-    func openTask(_ id: UUID, showing picker: DetailPicker?) {
-        requestedPicker = picker
-        navigator.openTask(id)
-    }
-
-    func beginTaskTitleCapture(_ block: Block) {
-        guard block.text.isEmpty else { return }
-        pendingTitleCaptures[block.id] = PendingTitleCapture(block)
-    }
-
-    /// Ends one pending capture. Cancellation only removes a still-empty task
-    /// whose data matches its initial defaults; existing tasks never enter here.
-    func finishTaskTitleCapture(_ id: UUID, discardEmpty: Bool = false) {
-        guard let initial = pendingTitleCaptures.removeValue(forKey: id),
-              let block = store.block(id: id) else { return }
-        let events = (try? store.context.fetch(FetchDescriptor<ActivityEvent>(
-            predicate: #Predicate { $0.blockID == id }
-        ))) ?? []
-        if discardEmpty, initial.canDiscard(block, store: store) {
-            store.deleteBlock(block)
-            for event in events { store.context.delete(event) }
-            navigator.selection.remove(id)
-        } else {
-            // The empty capture's creation event should display its final name.
-            for event in events where event.kind == .created {
-                event.title = block.displayTitle
-            }
-        }
-        store.save()
-    }
-
-    /// Capture behaviour implied by the user's settings.
-    var captureDefaults: CaptureDefaults {
-        CaptureDefaults(
-            parsesNaturalLanguage: settings.parsesNaturalLanguageDates,
-            dueTodayWhenUndated: settings.defaultDestination == .today
-        )
-    }
-}
-
-/// Widget links land the way the main window's own navigation does.
-extension Workbench: WidgetLinkScreens {}
-
-private struct PendingTitleCapture {
-    let listID: UUID?
-    let parentID: UUID?
-    let sortIndex: Double
-    let dueDate: Date?
-    let includesTime: Bool
-    let labelIDs: [UUID]
-    let selectedForDay: Date?
-    let deferredUntil: Date?
-    let estimate: Int
-    let keepTogether: Bool
-    let tracksAway: Bool
-    let occurrenceID: UUID
-
-    init(_ block: Block) {
-        listID = block.listID
-        parentID = block.parentID
-        sortIndex = block.sortIndex
-        dueDate = block.dueDate
-        includesTime = block.includesTime
-        labelIDs = block.labelIDs
-        selectedForDay = block.selectedForDay
-        deferredUntil = block.deferredUntil
-        estimate = block.schedulingEstimateMinutes
-        keepTogether = block.keepsSessionsTogether
-        tracksAway = block.tracksAwayFromMac
-        occurrenceID = block.occurrenceID
-    }
-
-    func canDiscard(_ block: Block, store: Store) -> Bool {
-        guard block.isTask, block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              block.listID == listID, block.parentID == parentID, block.sortIndex == sortIndex,
-              block.dueDate == dueDate, block.includesTime == includesTime, block.labelIDs == labelIDs,
-              !block.isCompleted, block.completedAt == nil, !block.isStarred, block.priorityRaw == 0,
-              block.reminderAt == nil, block.recurrenceData == nil, block.note.isEmpty,
-              block.mediaFilename == nil, block.mediaCaption.isEmpty,
-              block.selectedForDay == selectedForDay, block.deferredUntil == deferredUntil,
-              block.schedulingEstimateMinutes == estimate, block.keepsSessionsTogether == keepTogether,
-              block.tracksAwayFromMac == tracksAway, store.workSessions(taskID: block.id).isEmpty,
-              block.occurrenceID == occurrenceID, store.completionRecords(taskID: block.id).isEmpty,
-              store.placements(taskID: block.id).isEmpty,
-              store.attachments(for: block.id).isEmpty,
-              let listID, store.children(of: block.id, listID: listID).isEmpty
-        else { return false }
-        return true
+        workbench.trashList(list)
     }
 }

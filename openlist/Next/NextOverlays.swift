@@ -14,13 +14,14 @@ final class NXOverlayState {
     @ObservationIgnored let search = SearchSession()
     /// Why the chosen result can't open, shown until the search changes.
     var searchUnavailable: String?
-    /// The search Return was pressed on before its results arrived.
+    /// The search Return was pressed on before its results arrived, with no
+    /// listed row chosen: its first result opens once it's in.
     @ObservationIgnored var pendingSearchOpen: SearchOptions?
-    /// Task lists a search result switched to Document to reveal a note or
-    /// heading; the shell switches each back once you leave it.
-    var revealedDocuments: Set<UUID> = []
     /// The shell's key-handling view, whose window the overlays borrow focus from.
     @ObservationIgnored weak var host: NSView?
+    /// The sidebar's frame in the window, which the shell reports: the
+    /// overlays dim only the main pane, so a field there is never theirs.
+    @ObservationIgnored var sidebarFrame: CGRect = .zero
     @ObservationIgnored private weak var returnView: NSView?
     @ObservationIgnored private var returnRange: NSRange?
     @ObservationIgnored private var activation = 0
@@ -43,6 +44,16 @@ final class NXOverlayState {
         }
         returnRange = (responder as? NSTextView)?.selectedRange()
         rememberedActivation = activation
+    }
+
+    /// Whether the window's field editor is editing a field in the sidebar,
+    /// such as a list's or section's name, rather than one in the main pane.
+    func editsSidebarField() -> Bool {
+        guard sidebarFrame.width > 0, let window = host?.window,
+              let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+              let field = editor.delegate as? NSView else { return false }
+        let x = field.convert(field.bounds, to: nil).midX
+        return x >= sidebarFrame.minX && x <= sidebarFrame.maxX
     }
 
     /// Returns focus to the remembered view and selection when the overlay
@@ -78,7 +89,12 @@ struct NextOverlays: View {
         ZStack(alignment: .top) {
             if workbench.captureOpen {
                 NXOverlayBackdrop(top: 96, close: { workbench.closeCapture() }) {
-                    NXCaptureCard()
+                    NXCaptureCard(draft: workbench, notice: workbench.captureNotice,
+                                  add: { _ = workbench.createFromCapture(keepOpen: $0) })
+                        .animation(style.ease(140), value: workbench.captureNotice)
+                        .onChange(of: workbench.captureText) {
+                            if workbench.captureNotice != nil { workbench.captureNotice = nil }
+                        }
                 }
             } else if navigator.isSearchOpen {
                 NXOverlayBackdrop(top: 72, close: { navigator.isSearchOpen = false }) {
@@ -90,9 +106,11 @@ struct NextOverlays: View {
                 }
             }
         }
-        .animation(style.ease(140), value: workbench.captureOpen)
-        .animation(style.ease(140), value: navigator.isSearchOpen)
-        .animation(style.ease(140), value: navigator.isCommandPaletteOpen)
+        // The design's fadeIn and popIn play at their own speeds whatever the
+        // Motion setting, which paces only rows, screens and the inspector.
+        .animation(NX.cssEase(140), value: workbench.captureOpen)
+        .animation(NX.cssEase(140), value: navigator.isSearchOpen)
+        .animation(NX.cssEase(140), value: navigator.isCommandPaletteOpen)
         // Switching straight from one overlay to another keeps the first
         // remembered responder: the flags only all drop on the final close.
         .onChange(of: workbench.captureOpen || navigator.isSearchOpen || navigator.isCommandPaletteOpen) { wasOpen, isOpen in
@@ -126,24 +144,35 @@ private struct NXOverlayBackdrop<Card: View>: View {
     @State private var shown = false
 
     var body: some View {
+        // The design's popIn; with Reduce Motion the card only fades.
+        let settled = shown || !style.slides
         ZStack(alignment: .top) {
             Color(hex: 0x17161A, opacity: 0.16)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close)
             card()
-                .background(NX.card)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.18), lineWidth: 0.5))
-                .shadow(color: Color(hex: 0x17161A, opacity: 0.3), radius: 35, y: 30)
+                .nxOverlayCard()
                 .padding(.horizontal, 20)
                 .padding(.top, top)
-                .scaleEffect(shown ? 1 : 0.97, anchor: .top)
-                .offset(y: shown ? 0 : -6)
+                .scaleEffect(settled ? 1 : 0.97, anchor: .top)
+                .offset(y: settled ? 0 : -4)
                 .opacity(shown ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .transition(.opacity)
-        .onAppear { withAnimation(style.ease(180)) { shown = true } }
+        // The design's fadeIn as it opens; closed, it goes at once, card and all.
+        .transition(.asymmetric(insertion: .opacity, removal: .identity))
+        .onAppear { withAnimation(NX.ease(180)) { shown = true } }
+    }
+}
+
+extension View {
+    /// The overlay card's surface: the design's 14pt card with its hairline and
+    /// `0 30px 70px` drop, in the window's overlays and the Quick Add panel alike.
+    func nxOverlayCard() -> some View {
+        background(NX.card)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.18), lineWidth: 0.5))
+            .shadow(color: Color(hex: 0x17161A, opacity: 0.3), radius: 35, y: 30)
     }
 }
 
@@ -160,17 +189,185 @@ private struct NXAutofocus: ViewModifier {
     }
 }
 
+/// Reports how far the field editor over this view has scrolled its line
+/// sideways, which it does to keep the caret in view once the text is wider
+/// than the field, so a copy drawn over the field can follow it.
+private struct NXFieldScroll: NSViewRepresentable {
+    let changed: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ScrollReader {
+        let view = ScrollReader()
+        view.changed = changed
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollReader, context: Context) {
+        nsView.changed = changed
+    }
+
+    final class ScrollReader: NSView {
+        var changed: ((CGFloat) -> Void)?
+        private var observers: [NSObjectProtocol] = []
+        private var offset: CGFloat = 0
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard window != nil else { return }
+            let center = NotificationCenter.default
+            // The field editor's clip view moves its bounds as it scrolls.
+            observers.append(center.addObserver(forName: NSView.boundsDidChangeNotification, object: nil,
+                                                queue: .main) { [weak self] note in
+                // Delivered on the main queue; only the posting object crosses in.
+                nonisolated(unsafe) let object = note.object
+                MainActor.assumeIsolated {
+                    guard let self, let clip = object as? NSClipView, clip.window === self.window,
+                          let editor = clip.documentView as? NSTextView, editor.isFieldEditor,
+                          let field = editor.delegate as? NSTextField, self.covers(field) else { return }
+                    self.report(clip.bounds.minX)
+                }
+            })
+            // Once it stops editing, the field draws its text from the start again.
+            observers.append(center.addObserver(forName: NSControl.textDidEndEditingNotification, object: nil,
+                                                queue: .main) { [weak self] note in
+                nonisolated(unsafe) let object = note.object
+                MainActor.assumeIsolated {
+                    guard let self, let field = object as? NSTextField, self.covers(field) else { return }
+                    self.report(0)
+                }
+            })
+        }
+
+        isolated deinit {
+            observers.forEach(NotificationCenter.default.removeObserver)
+        }
+
+        private func covers(_ field: NSTextField) -> Bool {
+            guard let window, field.window === window else { return false }
+            return field.convert(field.bounds, to: nil).intersects(convert(bounds, to: nil))
+        }
+
+        private func report(_ x: CGFloat) {
+            let x = max(0, x)
+            guard x != offset else { return }
+            offset = x
+            changed?(x)
+        }
+    }
+}
+
 // MARK: - Capture
 
-private struct NXCaptureCard: View {
+/// What a capture card types into: the text, where it goes, and what Return
+/// saves. The main window's draft is the workbench's; the Quick Add panel
+/// keeps one of its own, so the two never share half-typed text.
+@MainActor
+protocol NXCaptureDraft: AnyObject, Observable {
+    var store: Store { get }
+    var settings: AppSettings { get }
+    var captureText: String { get set }
+    var captureListID: UUID? { get set }
+    /// Whether a task with no date of its own is due today.
+    var captureForToday: Bool { get }
+    /// The label screen capture opened on; the new task gets that label.
+    var captureLabelID: UUID? { get }
+}
+
+extension NXCaptureDraft {
+    /// The capture text read as the card tints it and Return saves it, with
+    /// dates only while Settings reads them from typed text.
+    func captureParse() -> CaptureParse {
+        CaptureParse(captureText, parsesDates: settings.parsesNaturalLanguageDates)
+    }
+
+    /// What Return saves, which the capture card's chips preview. A task with
+    /// no date of its own is due today when the draft is for today; captured
+    /// on a label screen it also gets that label.
+    func capturePreview(_ parse: CaptureParse) -> CaptureSnapshot {
+        let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
+        return parse.snapshot(dueToday: captureForToday, labels: screenLabel)
+    }
+
+    /// Saves the draft into its list, or Inbox: one capture for the title,
+    /// date, repeat, labels and plan, then the priority and estimate its tokens name.
+    /// Returns the task and the folded headings the capture opened to show
+    /// it, for an Undo that folds them again.
+    func saveCapture(_ parse: CaptureParse) throws -> (block: Block, opened: [UUID]) {
+        let destinationID = captureListID ?? store.inboxList()?.id
+        let folded = (store.list(id: destinationID) ?? store.inboxList()).map { store.foldedSections(atEndOf: $0.id) } ?? []
+        let block = try store.saveCapture(capturePreview(parse), destinationID: destinationID)
+        if let priority = parse.priority { store.setPriority(priority, for: block) }
+        if let minutes = parse.estimateMinutes, minutes > 0 { store.setTaskEstimate(minutes, for: block) }
+        return (block, folded.filter { !$0.isCollapsed }.map(\.id))
+    }
+
+    /// What Return and ⇧↩ do with the draft, the window's card and Quick
+    /// Add's alike: save it, or say on the card why it wasn't saved. Tokens
+    /// with no title save nothing and say nothing, as the design's Return.
+    func addCapture() -> NXCaptureOutcome {
+        let parse = captureParse()
+        guard !parse.title.isEmpty else { return .untitled }
+        do {
+            let saved = try saveCapture(parse)
+            return .saved(saved.block, opened: saved.opened)
+        } catch {
+            return .failed(NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
+                                           failed: true))
+        }
+    }
+
+    /// Tab and Shift-Tab step the destination through Inbox and every list.
+    /// From a list no longer among them, Tab starts at Inbox and Shift-Tab
+    /// at the last list.
+    func cycleCaptureDestination(by delta: Int, among ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        guard let index = ids.firstIndex(where: { $0 == captureListID }) else {
+            captureListID = delta > 0 ? ids.first : ids.last
+            return
+        }
+        captureListID = ids[(index + delta + ids.count) % ids.count]
+    }
+}
+
+/// The main window's capture, which `openCapture` fills for the current screen.
+extension Workbench: NXCaptureDraft {}
+
+/// A line the card shows where there is no tray to say it: what ⇧↩ just
+/// added, or why Return couldn't add the task.
+struct NXCaptureNotice: Equatable {
+    var text: String
+    var failed = false
+}
+
+/// What `addCapture` made of the draft.
+enum NXCaptureOutcome {
+    /// Nothing but tokens, or nothing at all, was typed.
+    case untitled
+    /// The task, and the folded headings the capture opened to show it.
+    case saved(Block, opened: [UUID])
+    /// Why the task wasn't added, for the card; the draft stays.
+    case failed(NXCaptureNotice)
+}
+
+/// The design's capture card, over the main window or in the Quick Add panel.
+/// Its host handles Return, Tab and Escape; `add` is what Return and ⇧↩ do,
+/// offered to assistive technologies as the field's actions.
+struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    @Bindable var draft: Draft
+    var notice: NXCaptureNotice?
+    var add: ((_ keepOpen: Bool) -> Void)?
     @State private var refocus = 0
+    /// How far the field has scrolled its text to keep the caret in view.
+    @State private var scroll: CGFloat = 0
 
     var body: some View {
-        @Bindable var workbench = env.workbench
-        let parse = CaptureParse(workbench.captureText)
+        let parse = draft.captureParse()
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 11) {
                 Circle()
@@ -178,73 +375,122 @@ private struct NXCaptureCard: View {
                     .frame(width: 17, height: 17)
                     .padding(.top, 3)
                 ZStack(alignment: .leading) {
+                    // The tinted copy of the field's text, which scrolls with it
+                    // once the text is wider than the card. VoiceOver reads the field.
                     styled(parse)
                         .font(.system(size: 16))
                         .lineLimit(1)
                         .fixedSize()
+                        .offset(x: -scroll)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .allowsHitTesting(false)
-                    TextField("", text: $workbench.captureText)
+                        .accessibilityHidden(true)
+                    TextField("", text: $draft.captureText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .foregroundStyle(.clear)
                         .modifier(NXAutofocus(refocus: refocus))
+                        .accessibilityLabel("New task")
+                        .accessibilityHint("Type the task. \(readsDates ? "A date, #label" : "A #label"), !priority or ~estimate in the text is read as you type, as in \(example).")
+                        .accessibilityIdentifier("capture.title")
+                        .accessibilityActions {
+                            if let add {
+                                Button("Add task") { add(false) }
+                                Button("Add task and keep capture open") { add(true) }
+                            }
+                        }
                 }
                 .frame(height: 24)
+                .background { NXFieldScroll { scroll = $0 } }
                 .clipped()
             }
             .padding(EdgeInsets(top: 16, leading: 18, bottom: 6, trailing: 18))
 
             NXFlow(spacing: 6) {
-                ForEach(chips(parse)) { NXChip(chip: $0, fresh: true) }
+                ForEach(chips(parse)) { NXChip(chip: $0, fresh: $0.pops != .never) }
             }
             .frame(minHeight: 22, alignment: .leading)
             .padding(EdgeInsets(top: 6, leading: 46, bottom: 12, trailing: 18))
 
-            HStack(alignment: .center, spacing: 8) {
-                NXFlow(spacing: 6) {
-                    Text("Add to")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.45))
-                        .padding(.trailing, 2)
-                        .frame(height: 23)
-                    ForEach(library.lists) { list in
-                        destination(list, isOn: workbench.captureListID == list.id)
-                    }
+            if let notice, notice.failed {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10.5, weight: .semibold))
+                    Text(notice.text).fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Text("⇥ destination · ↩ add · ⇧↩ add another")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.4))
-                    .fixedSize()
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(NX.redText)
+                .padding(EdgeInsets(top: 0, leading: 46, bottom: 12, trailing: 18))
+                .transition(.opacity)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .background(NX.ink(0.02))
-            .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
+
+            destinations
+                .padding(.vertical, 10)
+                .background(NX.ink(0.02))
+                .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
         }
         .frame(maxWidth: 600)
     }
 
-    /// The typed text with its tokens tinted, plus the placeholder ghost.
-    private func styled(_ parse: CaptureParse) -> Text {
-        guard !parse.text.isEmpty else {
-            return Text("Pay deposit friday 6pm #travel ~15m").foregroundStyle(NX.ink(0.3))
+    /// "Add to" and the lists wrap like the design's flex row, with the key
+    /// hints on the trailing edge of the last line.
+    private var destinations: some View {
+        NXFlow(spacing: 6, alignment: .center, pinsLastToTrailing: true) {
+            destinationChips
+            hints
         }
-        var result = AttributedString()
-        for segment in parse.segments {
-            var run = AttributedString(segment.text)
-            if let kind = segment.kind {
-                let tone = Self.tone(kind, accent: style.accent)
-                run.foregroundColor = tone
-                run.backgroundColor = tone.opacity(0.1)
-                run.underlineStyle = Text.LineStyle(pattern: .solid, color: tone.opacity(0.33))
-            } else {
-                run.foregroundColor = NX.ink
+        .padding(.horizontal, 14)
+    }
+
+    @ViewBuilder private var destinationChips: some View {
+        Text("Add to")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(NX.ink(0.45))
+            .padding(.trailing, 2)
+            .frame(height: 23)
+        ForEach(library.lists) { list in
+            destination(list, isOn: draft.captureListID == list.id)
+        }
+    }
+
+    /// The key hints, or for a moment what ⇧↩ just added.
+    @ViewBuilder private var hints: some View {
+        if let notice, !notice.failed {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 10.5, weight: .semibold))
+                Text(notice.text)
             }
-            result += run
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(NX.greenText)
+            .lineLimit(1)
+            .fixedSize()
+        } else {
+            Text("⇥ destination · ↩ add · ⇧↩ add another")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(NX.ink(0.4))
+                .fixedSize()
         }
-        return Text(result)
+    }
+
+    /// Whether Settings reads dates from typed text, which the ghost and the
+    /// field's hint promise only while it does.
+    private var readsDates: Bool { draft.settings.parsesNaturalLanguageDates }
+
+    /// The design's ghost, without its date while dates aren't read.
+    private var example: String { readsDates ? "Pay deposit friday 6pm #travel ~15m" : "Pay deposit #travel ~15m" }
+
+    /// The typed text with its tokens tinted, plus the placeholder ghost.
+    private func styled(_ parse: CaptureParse) -> some View {
+        guard !parse.text.isEmpty else {
+            return Text(example).foregroundStyle(NX.ink(0.3)).textRenderer(NXTokenRenderer())
+        }
+        let text = parse.segments.reduce(Text(verbatim: "")) { text, segment in
+            guard let kind = segment.kind else { return Text("\(text)\(Text(verbatim: segment.text).foregroundStyle(NX.ink))") }
+            let tone = Self.tone(kind, accent: style.accent)
+            let token = Text(verbatim: segment.text).foregroundStyle(tone)
+                .customAttribute(NXCaptureToken(segment: segment.id, tone: tone))
+            return Text("\(text)\(token)")
+        }
+        return text.textRenderer(NXTokenRenderer())
     }
 
     static func tone(_ kind: CaptureParse.Kind, accent: Color) -> Color {
@@ -255,64 +501,45 @@ private struct NXCaptureCard: View {
         }
     }
 
-    /// Date, time and repeat come from the same whole-text draft the save path
-    /// reads, so the chips show what Return will store.
+    /// Every token previews as soon as it's typed, from the same parse and
+    /// draft Return saves, so the chips show what it will store, in the order
+    /// the tokens were typed (`CaptureParse.chips`). Only a typed token's chip
+    /// pops in; the Today and the label screen's label, which nothing typed
+    /// brought, never pop.
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
-        let workbench = env.workbench
-        // Only a titled capture saves; until then, show just where it will be due.
-        let preview = parse.title.isEmpty
-            ? TaskCaptureDraft.Preview(title: "", date: workbench.captureForToday ? NXFormat.day(offset: 0) : nil)
-            : workbench.captureDraft(parse).preview
-        var chips: [NXChipModel] = []
-        if workbench.capturePlansForToday {
-            chips.append(NXChipModel(id: "plan-today", label: "Plan for today", icon: "sun.max", tone: .accent))
-        }
-        if let date = preview.date {
-            let due = NXFormat.dueLabel(date)
-            let relative = NXFormat.relativeDay(date)
-            let label = relative.caseInsensitiveCompare(due) == .orderedSame ? due : "\(due) · \(relative)"
-            chips.append(NXChipModel(id: "date-\(label)", label: label, icon: "calendar", tone: .accent))
-            if preview.includesTime {
-                chips.append(NXChipModel(id: "time", label: NXFormat.clock(date), icon: "bell", tone: .accent))
-            }
-        }
-        if let recurrence = preview.recurrence {
-            chips.append(NXChipModel(id: "repeat", label: parse.first(.repeatRule)?.raw ?? recurrence.displayText,
-                                     icon: "repeat", tone: .accent))
-        }
-        for (index, mark) in parse.marks.enumerated() {
-            let id = "\(index)-\(mark.kind.rawValue)-\(mark.raw.lowercased())"
-            switch mark.kind {
+        var chips = parse.chips(for: draft.capturePreview(parse), forToday: draft.captureForToday).map { chip in
+            switch chip.kind {
+            case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent, pops: chip.typed ? .withRow : .never)
+            case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
+            case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
             case .label:
-                let name = String(mark.raw.dropFirst())
-                let color = library.labels.first { $0.name.lowercased() == name.lowercased() }?.nxColor ?? Color(hex: 0x12807F)
-                chips.append(NXChipModel(id: id, label: name, tone: .label(color)))
-            case .estimate:
-                chips.append(NXChipModel(id: id, label: "\(mark.raw.dropFirst()) estimate", icon: "timer", tone: .accent))
-            case .date, .time, .repeatRule, .priority:
-                break
+                NXChipModel(id: chip.id, label: chip.label, tone: .label(
+                    library.labels.first { $0.name.lowercased() == chip.label.lowercased() }?.nxColor ?? Color(hex: 0x12807F)))
+            case let .priority(priority):
+                NXChipModel(id: chip.id, label: chip.label, icon: "exclamationmark", tone: Self.priorityTone(priority),
+                            fill: priority == .high)
+            case .estimate: NXChipModel(id: chip.id, label: chip.label, icon: "timer", tone: .accent)
             }
         }
         // A label screen adds its own label, unless the text names it already.
-        if let label = workbench.captureLabelID.flatMap({ env.store.label(id: $0) }),
+        if let label = draft.captureLabelID.flatMap({ env.store.label(id: $0) }),
            !parse.labels.contains(label.name.lowercased()) {
-            chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor)))
-        }
-        if let priority = parse.priority {
-            let tone: NXTone = switch priority {
-            case .high: .over
-            case .medium: .amber
-            case .low, .none: .neutral
-            }
-            chips.append(NXChipModel(id: "priority", label: priority.title, icon: "exclamationmark", tone: tone,
-                                     fill: priority == .high))
+            chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor), pops: .never))
         }
         return chips
     }
 
+    private static func priorityTone(_ priority: TaskPriority) -> NXTone {
+        switch priority {
+        case .high: .over
+        case .medium: .amber
+        case .low, .none: .neutral
+        }
+    }
+
     private func destination(_ list: TaskList, isOn: Bool) -> some View {
         Button {
-            env.workbench.captureListID = list.id
+            draft.captureListID = list.id
             refocus += 1
         } label: {
             HStack(spacing: 4) {
@@ -323,10 +550,52 @@ private struct NXCaptureCard: View {
             .padding(.horizontal, 8)
             .foregroundStyle(isOn ? Color.white : NX.ink(0.66))
             .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .fixedSize()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.14), value: isOn)
+        .accessibilityLabel("Add to \(list.displayTitle)")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        // The design's `background 140ms ease`.
+        .animation(NX.cssEase(140), value: isOn)
+    }
+}
+
+/// Marks a capture token's runs so `NXTokenRenderer` can draw its chip. The
+/// segment tells one token from the next, since a token set in more than one
+/// font (a fallback for another script, say) arrives as several runs.
+private struct NXCaptureToken: TextAttribute {
+    let segment: Int
+    let tone: Color
+}
+
+/// Draws each token on a softly rounded tint with a 1.5pt rule along the
+/// inside of its bottom edge, behind the unchanged glyphs, so the tinted
+/// text still lines up with the field typed into underneath.
+private struct NXTokenRenderer: TextRenderer {
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        for line in layout {
+            // One chip per token, across all of its runs.
+            var chips: [(token: NXCaptureToken, bounds: CGRect)] = []
+            for run in line {
+                guard let token = run[NXCaptureToken.self] else { continue }
+                let bounds = run.typographicBounds.rect
+                if let last = chips.last, last.token.segment == token.segment {
+                    chips[chips.count - 1].bounds = last.bounds.union(bounds)
+                } else {
+                    chips.append((token, bounds))
+                }
+            }
+            for (token, bounds) in chips {
+                let chip = Path(roundedRect: bounds, cornerRadius: 5, style: .continuous)
+                context.fill(chip, with: .color(token.tone.opacity(0.1)))
+                var rule = context
+                rule.clip(to: chip)
+                rule.fill(Path(CGRect(x: bounds.minX, y: bounds.maxY - 1.5, width: bounds.width, height: 1.5)),
+                          with: .color(token.tone.opacity(0.33)))
+            }
+            for run in line { context.draw(run) }
+        }
     }
 }
 
@@ -335,8 +604,8 @@ private struct NXCaptureCard: View {
 /// The app's search (tasks, notes, headings, list titles and summaries,
 /// archived lists, diacritic-insensitive) in the Next overlay.
 enum NXSearch {
-    /// Results listed at once; typing more narrows the rest.
-    static let shownLimit = 30
+    /// Results listed at once, as the design's; typing more narrows them.
+    static let shownLimit = 12
 
     @MainActor
     static func options(_ workbench: Workbench) -> SearchOptions {
@@ -346,31 +615,44 @@ enum NXSearch {
         return options
     }
 
-    /// The listed results; none while the session still answers an older query.
+    /// The listed results. The last answer stays listed while the query typed
+    /// since is searched, so the list narrows rather than blanking; an empty
+    /// field lists nothing, even before the session hears of it.
     @MainActor
     static func hits(_ session: SearchSession, workbench: Workbench) -> [SearchHit] {
-        guard !session.isSearching, session.options == options(workbench) else { return [] }
+        guard !options(workbench).needle.isEmpty else { return [] }
         return Array(session.hits.prefix(shownLimit))
     }
 
-    /// Whether the results for the query typed now are still to come.
+    /// Whether the results for the query typed now are still to come; the
+    /// listed ones answer an older query.
     @MainActor
     static func isAnswering(_ session: SearchSession, workbench: Workbench) -> Bool {
         let options = options(workbench)
-        return !options.needle.isEmpty && (session.isSearching || session.options != options)
+        return !options.needle.isEmpty && (session.isSearching || session.hitsOptions != options)
+    }
+
+    /// Whether Return waits for the answer to open its first result. Typing
+    /// puts the choice back on the first row, so a choice further down was
+    /// made among the listed rows, and it opens as they are.
+    @MainActor
+    static func waitsForAnswer(_ session: SearchSession, workbench: Workbench) -> Bool {
+        workbench.searchIndex == 0 && isAnswering(session, workbench: workbench)
     }
 
     /// Tasks open in the inspector on their Next screen and lists on theirs.
     /// Notes, headings, summaries and archived content are revealed in the
-    /// list's document, as the app's search always has; a task list goes back
-    /// to Tasks once you leave it.
+    /// list's document, as the app's search always has, for the visit only:
+    /// the list's saved presentation stays (`Navigator.reveal`). A listed
+    /// result opens with the query it was found for, even while a newer one
+    /// is searched.
     @MainActor
     static func open(_ hit: SearchHit, env: AppEnvironment, library: NextLibrary, overlays: NXOverlayState) {
         let workbench = env.workbench
         let request: ContentReveal
         do {
             let context = env.store.context
-            request = try ContentReveal.resolve(hit.id, field: hit.field, query: options(workbench).needle,
+            request = try ContentReveal.resolve(hit.id, field: hit.field, query: overlays.search.hitsOptions.needle,
                                                 blocks: context.fetch(FetchDescriptor<Block>()),
                                                 lists: context.fetch(FetchDescriptor<TaskList>()))
         } catch {
@@ -387,12 +669,7 @@ enum NXSearch {
             // Once the new screen is up, so it scrolls to the row.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { workbench.inspect(taskID) }
         } else {
-            // The saved presentation, not this visit's: an Inbox kept as a
-            // document shows its cards while a widget's Triage is on, and
-            // leaving would otherwise save it as a task list.
-            let wasTasks = env.navigator.savedListViewMode(for: request.listID) == .tasks
             env.navigator.reveal(request)
-            if wasTasks { overlays.revealedDocuments.insert(request.listID) }
         }
     }
 }
@@ -418,6 +695,8 @@ private struct NXSearchCard: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let overlays: NXOverlayState
+    /// The result the pointer just moved the highlight to.
+    @State private var pointedID: SearchDestination?
 
     var body: some View {
         @Bindable var workbench = env.workbench
@@ -443,6 +722,9 @@ private struct NXSearchCard: View {
                     .background(workbench.searchIncludesCompleted ? style.accent : NX.ink(0.06),
                                 in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .fixedSize()
+                    // The design's on/off pill.
+                    .accessibilityAddTraits(.isToggle)
+                    .accessibilityValue(workbench.searchIncludesCompleted ? "On" : "Off")
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
@@ -450,12 +732,18 @@ private struct NXSearchCard: View {
 
             NXOverlayList {
                 ForEach(Array(hits.enumerated()), id: \.element.id) { offset, hit in
-                    NXSearchRow(hit: hit, needle: options.needle, isOn: offset == index)
+                    NXSearchRow(hit: hit, needle: session.hitsOptions.needle, isOn: offset == index)
                         .id(hit.id)
-                        .onHover { if $0 { workbench.searchIndex = offset } }
+                        .onHover { inside in
+                            guard inside, offset != index else { return }
+                            pointedID = hit.id
+                            workbench.searchIndex = offset
+                        }
+                        // The row clicked opens, even while a newer query is searched.
                         .onTapGesture { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
+                        .accessibilityAction { NXSearch.open(hit, env: env, library: library, overlays: overlays) }
                 }
-                Text(footer(hits, session: session, options: options))
+                Text(footer(hits, session: session, typed: options))
                     .font(.system(size: 12.5))
                     .foregroundStyle(NX.ink(0.42))
                     .multilineTextAlignment(.center)
@@ -465,19 +753,22 @@ private struct NXSearchCard: View {
             .modifier(NXScrollToIndex(ids: hits.map(\.id), index: index))
         }
         .frame(maxWidth: 640)
+        .modifier(NXAnnounceHighlight(id: hits.indices.contains(index) ? hits[index].id : nil,
+                                      spoken: hits.indices.contains(index) ? NXSearchRow.spoken(hits[index]) : nil,
+                                      pointed: $pointedID))
         .background { NXSearchCorpus(session: session) }
         .onChange(of: options, initial: true) { _, updated in
             overlays.searchUnavailable = nil
             session.update(options: updated)
         }
-        // Return pressed before the answer opens the chosen result once it
+        // Return pressed before the answer opens its first result once it
         // arrives, unless the query changed in between.
         .onChange(of: NXSearch.isAnswering(session, workbench: workbench)) { _, answering in
             guard !answering, let pending = overlays.pendingSearchOpen else { return }
             overlays.pendingSearchOpen = nil
-            let hits = NXSearch.hits(session, workbench: workbench)
-            guard pending == NXSearch.options(workbench), !hits.isEmpty else { return }
-            NXSearch.open(hits[min(workbench.searchIndex, hits.count - 1)], env: env, library: library, overlays: overlays)
+            guard pending == NXSearch.options(workbench),
+                  let first = NXSearch.hits(session, workbench: workbench).first else { return }
+            NXSearch.open(first, env: env, library: library, overlays: overlays)
         }
         .onDisappear {
             session.cancel()
@@ -485,13 +776,14 @@ private struct NXSearchCard: View {
         }
     }
 
-    private func footer(_ hits: [SearchHit], session: SearchSession, options: SearchOptions) -> String {
+    /// Describes the listed results; "Searching…" only once a search is slow.
+    private func footer(_ hits: [SearchHit], session: SearchSession, typed: SearchOptions) -> String {
         if let unavailable = overlays.searchUnavailable { return unavailable }
-        if options.needle.isEmpty { return "Search tasks, notes and lists" }
-        if session.isSearching || session.options != options { return "Searching…" }
-        let total = session.hits.count
-        if hits.count < total { return "Showing \(hits.count) of \(total) · keep typing to narrow" }
-        if !hits.isEmpty { return "\(total) \(total == 1 ? "result" : "results") · ↑↓ choose · ↩ open" }
+        let options = session.hitsOptions
+        if typed.needle.isEmpty || (options.needle.isEmpty && !session.isSlow) { return "Search tasks, notes and lists" }
+        if session.isSlow { return "Searching…" }
+        // The rows listed, as the design counts them.
+        if !hits.isEmpty { return "\(hits.count) \(hits.count == 1 ? "result" : "results") · ↑↓ choose · ↩ open" }
         return "Nothing matches “\(options.needle)”" + (options.includesCompleted ? "" : " — try including completed")
     }
 }
@@ -503,15 +795,11 @@ private struct NXSearchRow: View {
     let isOn: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            Group {
-                if let emoji = hit.emoji { Text(emoji) }
-                else { Image(systemName: hit.symbol ?? "square.stack") }
-            }
-            .font(.system(size: 14))
-            .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
-            .frame(width: 16)
-            .padding(.top, 1)
+        HStack(spacing: 11) {
+            Image(systemName: hit.symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
+                .frame(width: 16)
             VStack(alignment: .leading, spacing: 3) {
                 Text(highlighted(hit.title))
                     .font(.system(size: 13, weight: .medium))
@@ -524,7 +812,7 @@ private struct NXSearchRow: View {
                         .foregroundStyle(NX.ink(0.7))
                         .lineLimit(2)
                 }
-                Text(hit.context)
+                context
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(NX.ink(0.45))
                     .lineLimit(1)
@@ -537,6 +825,26 @@ private struct NXSearchRow: View {
         .background(isOn ? style.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(isOn ? style.accent.opacity(0.2) : .clear, lineWidth: 1))
         .contentShape(Rectangle())
+        // One result, which Return opens while it's highlighted.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.spoken(hit))
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// The title, the matched passage and where it is, as VoiceOver reads them.
+    static func spoken(_ hit: SearchHit) -> String {
+        let context = hit.context + (hit.dueDate.map { ", " + NXFormat.dueLabel($0) } ?? "")
+            + (hit.field == .note ? ", matched in note" : "")
+        return [hit.title, hit.snippet, context].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    /// Where the hit is, after its list's icon, as the design's `emoji + " " + name`,
+    /// then its due day, and "matched in note" when only its note matched.
+    private var context: Text {
+        let text = hit.context + (hit.dueDate.map { " · " + NXFormat.dueLabel($0) } ?? "")
+            + (hit.field == .note ? " · matched in note" : "")
+        guard let icon = hit.listIcon else { return Text(verbatim: text) }
+        return Text("\(NXListGlyph.text(icon, size: 11)) \(text)")
     }
 
     /// Tints the match with the same folding the search used.
@@ -599,7 +907,7 @@ enum NXPalette {
             (.today, "sun.max", "Go to Today", "G T"),
             (.calendar, "calendar", "Go to Calendar", "G C"),
             (.tasks, "checklist", "Go to Tasks", "G A"),
-            (.lists, "square.stack", "Go to Lists", "G L"),
+            (.lists, "square.2.layers.3d", "Go to Lists", "G L"),
             (.activity, "square.grid.2x2", "Go to Activity", "G H"),
             (.trash, "trash", "Go to Trash", ""),
             (.settings, "gearshape", "Open Settings", "⌘,"),
@@ -609,7 +917,7 @@ enum NXPalette {
                       run: act { workbench.complete($0) }),
             NXCommand(id: "today", icon: "calendar", label: "Due today", key: "T", needsTarget: true,
                       run: act { workbench.schedule($0, offset: 0) }),
-            NXCommand(id: "tomorrow", icon: "sunrise", label: "Due tomorrow", key: "M", needsTarget: true,
+            NXCommand(id: "tomorrow", icon: "sun.horizon", label: "Due tomorrow", key: "M", needsTarget: true,
                       run: act { workbench.schedule($0, offset: 1) }),
             NXCommand(id: "plan", icon: "calendar.badge.clock", label: "Plan for today", key: "P", needsTarget: true,
                       run: act { workbench.plan($0) }),
@@ -637,7 +945,7 @@ enum NXPalette {
             NXCommand(id: "go-\(label)", icon: icon, label: label, key: key, navigates: true) { workbench.go(route) }
         }
         all += library.destinations.map { list in
-            NXCommand(id: "open-\(list.id)", icon: "square.stack", label: "Open \(list.displayTitle)", navigates: true) {
+            NXCommand(id: "open-\(list.id)", icon: "square.2.layers.3d", label: "Open \(list.displayTitle)", navigates: true) {
                 workbench.go(.list(list.id))
             }
         }
@@ -666,6 +974,8 @@ private struct NXPaletteCard: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let overlays: NXOverlayState
+    /// The command the pointer just moved the highlight to.
+    @State private var pointedID: String?
 
     var body: some View {
         @Bindable var workbench = env.workbench
@@ -701,13 +1011,40 @@ private struct NXPaletteCard: View {
             NXOverlayList {
                 ForEach(Array(commands.enumerated()), id: \.element.id) { offset, command in
                     NXPaletteRow(command: command, isOn: offset == index)
-                        .onHover { if $0 { workbench.paletteIndex = offset } }
+                        .onHover { inside in
+                            guard inside, offset != index else { return }
+                            pointedID = command.id
+                            workbench.paletteIndex = offset
+                        }
                         .onTapGesture { NXPalette.run(command, env: env, overlays: overlays) }
+                        .accessibilityAction { NXPalette.run(command, env: env, overlays: overlays) }
                 }
             }
             .modifier(NXScrollToIndex(ids: commands.map(\.id), index: index))
         }
         .frame(maxWidth: 560)
+        .modifier(NXAnnounceHighlight(id: commands.indices.contains(index) ? commands[index].id : nil,
+                                      spoken: commands.indices.contains(index) ? commands[index].label : nil,
+                                      pointed: $pointedID))
+    }
+}
+
+/// Tells VoiceOver which row Return now runs, from the field: after ↑ or ↓,
+/// or when typing brings a new row to the top. A row the pointer highlighted
+/// isn't read out, as the pointer following VoiceOver's cursor would have it
+/// spoken twice.
+private struct NXAnnounceHighlight<ID: Hashable>: ViewModifier {
+    let id: ID?
+    let spoken: String?
+    @Binding var pointed: ID?
+
+    func body(content: Content) -> some View {
+        content.onChange(of: id) { _, id in
+            let byPointer = id != nil && id == pointed
+            pointed = nil
+            guard !byPointer, id != nil, let spoken else { return }
+            AccessibilityNotification.Announcement(spoken).post()
+        }
     }
 }
 
@@ -746,6 +1083,10 @@ private struct NXPaletteRow: View {
         .padding(.horizontal, 10)
         .background(isOn ? style.accent : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
+        // One command, which Return runs while it's highlighted.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(command.label)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .id(command.id)
     }
 }

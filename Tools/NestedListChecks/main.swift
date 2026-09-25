@@ -50,7 +50,7 @@ if phase == "write" {
     let childID = child.id, taskID = childTask.id
     try store.persistChanges()
     try check(child.parentListID == parent.id && nestedTask.listID == child.id && nestedTask.parentID == childTask.id, "Document ownership is independent of task indentation")
-    try check(store.listHierarchy().ancestors(of: grandchild.id).map(\.id) == [parent.id, child.id], "Breadcrumbs preserve ancestor order")
+    try check(store.listHierarchy().ancestors(of: grandchild.id).map(\.id) == [parent.id, child.id], "Ancestor paths preserve order")
     try check(!store.moveList(parent, under: grandchild.id) && !store.moveList(child, under: child.id), "Self and descendant moves are rejected")
     try check(!store.moveList(child, under: store.inboxList()!.id), "Inbox cannot own documents")
     try check(store.createChildList(in: store.inboxList()!) == nil, "Inbox child creation is rejected")
@@ -97,6 +97,17 @@ if phase == "write" {
     try check(MarkdownExporter.markdown(for: parent, store: store).contains("Document: Project › Research"), "Clipboard export identifies each document path")
     do { try MarkdownExporter.write(list: parent, store: store, to: export); fatalError("Overwrote an existing export") }
     catch { checks += 1 }
+    let everyList = directory.appendingPathComponent("Every list")
+    try FileManager.default.createDirectory(at: everyList, withIntermediateDirectories: false)
+    var exported = 0
+    try MarkdownExporter.writeAll(store: store, to: everyList) { exported += $0 }
+    let written = try FileManager.default.contentsOfDirectory(atPath: everyList.path)
+    try check(written.contains("Project") && written.contains("Other project.md") && !written.contains("Project.md")
+        && !written.contains { $0.hasPrefix("Research") || $0.hasPrefix("Sources") },
+        "Export every list writes each top-level list once, a parent as a folder of its nested lists")
+    try check(try FileManager.default.contentsOfDirectory(atPath: everyList.appendingPathComponent("Project").path)
+        .filter { $0.hasSuffix(".md") }.count == 3, "Export every list keeps the parent's nested lists in its folder")
+    try check(exported == store.allLists(includeArchived: true).count, "Export every list counts each list, nested ones included, once")
 
     let beforeMove = BackupTaskList(child)
     let rejecting = Store(context: context, commitContext: { _ in throw CocoaError(.fileWriteOutOfSpace) })
@@ -141,7 +152,6 @@ if phase == "write" {
     try check(store.trashList(parent), "Deleting parent retains its whole owned available subtree")
     try check(child.trashID == parent.id && grandchild.trashID == parent.id && childTask.trashID == parent.id && grandTask.trashID == parent.id, "Parent group owns all child documents and blocks")
     try check(independent.trashID == independent.id, "Earlier child deletion retains its separate Trash group")
-    try check(store.trashEntries().first { $0.id == parent.id }?.listCount == 3, "Trash describes the complete retained document count")
     try snapshot().validate()
     var invalidBoundary = try snapshot()
     let childOffset = invalidBoundary.blocks.firstIndex { $0.id == childTask.id }!
@@ -177,7 +187,7 @@ if phase == "write" {
     let orphan = store.createList(title: "Missing parent child")
     let missingID = UUID(); orphan.parentListID = missingID
     try store.persistChanges()
-    try check(store.listHierarchy().parent(of: orphan.id) == nil && store.listHierarchy().recoveryContext(for: orphan.id) != nil && store.list(id: orphan.id) != nil, "Missing parent preserves ownership reference and recoverable top-level access")
+    try check(store.listHierarchy().parent(of: orphan.id) == nil && orphan.parentListID == missingID && store.list(id: orphan.id) != nil, "Missing parent preserves ownership reference and recoverable top-level access")
     let laterParent = TaskList(title: "Later parent"); laterParent.id = missingID; context.insert(laterParent)
     try store.persistChanges()
     try check(store.listHierarchy().parent(of: orphan.id)?.id == missingID, "An arriving parent reconnects the original child")
@@ -189,6 +199,33 @@ if phase == "write" {
     try check(!store.moveList(other, under: cycleA.id), "Moves into imported cycles are rejected")
     try check(store.moveList(cycleA, under: nil), "An explicit move repairs an imported cycle")
     try store.persistChanges()
+
+    // Sidebar, gallery and search rows share a body-local graph for paths and membership.
+    let owner = TaskList(title: "Owner"), descendant = TaskList(title: "Child")
+    descendant.parentListID = owner.id
+    var projected = [owner, descendant]
+    try check(ListHierarchy(projected).path(for: descendant.id) == "Owner › Child", "Shared row projection includes the current owning path")
+    owner.title = "Renamed owner"
+    try check(ListHierarchy(projected).path(for: descendant.id) == "Renamed owner › Child", "Rebuilding the parent projection reflects ancestor rename")
+    owner.isArchived = true
+    var projection = ListHierarchy(projected)
+    try check(!projection.activeIDs.contains(descendant.id) && projection.isArchived(descendant.id),
+        "Shared active membership and card archive state change together")
+    owner.isArchived = false
+    descendant.parentListID = UUID()
+    projection = ListHierarchy(projected)
+    try check(projection.ancestors(of: descendant.id).isEmpty && projection.parent(of: descendant.id) == nil
+        && projection.path(for: descendant.id) == "Child" && descendant.parentListID != nil,
+        "Shared projection represents an unavailable parent without a stale path")
+    let arriving = TaskList(title: "Arriving owner"); arriving.id = descendant.parentListID!
+    projected.append(arriving)
+    projection = ListHierarchy(projected)
+    try check(projection.path(for: descendant.id) == "Arriving owner › Child" && projection.parent(of: descendant.id)?.id == arriving.id,
+        "Late parent arrival updates shared row paths and reconnects the parent")
+    descendant.parentListID = owner.id
+    try check(ListHierarchy(projected).path(for: descendant.id) == "Renamed owner › Child",
+        "Moving a document updates the shared row projection to its new parent")
+
     let expected = try snapshot(); try expected.validate()
     try JSONEncoder().encode(expected).write(to: directory.appendingPathComponent("expected.json"))
 } else {

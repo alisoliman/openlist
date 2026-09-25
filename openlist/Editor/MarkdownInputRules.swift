@@ -8,9 +8,9 @@ import Foundation
 
 /// Type-to-format rules applied as the user writes.
 ///
-/// Two families: block prefixes (`## `, `- `, `[] `) that change the whole
-/// block's kind, and inline pairs (`**bold**`, `` `code` ``) that restyle a
-/// span the moment the closing delimiter is typed.
+/// Two families: the design's block prefixes (`## `, `- `, `[] `) that change
+/// the whole block's kind, and inline pairs (`**bold**`, `` `code` ``) that
+/// restyle a span the moment the closing delimiter is typed.
 enum MarkdownInputRules {
     struct BlockPrefixMatch {
         /// The characters to delete, including the trailing space.
@@ -18,32 +18,26 @@ enum MarkdownInputRules {
         var kind: BlockKind
     }
 
-    /// Block-level prefixes, longest first so `###` beats `#`.
+    /// The list document's block prefixes, the design's, longest first so
+    /// `##` beats `#`. Anything else stays as typed.
     private static let blockPrefixes: [(String, BlockKind)] = [
-        ("### ", .heading3),
         ("## ", .heading2),
         ("# ", .heading1),
         ("[] ", .task),
         ("[ ] ", .task),
-        ("- [ ] ", .task),
-        ("- [] ", .task),
         ("* ", .bullet),
         ("- ", .bullet),
-        ("+ ", .bullet),
         ("> ", .quote),
-        ("``` ", .code),
-        ("1. ", .numbered),
-        ("1) ", .numbered),
-        ("--- ", .divider),
     ]
 
     /// Detects a markdown prefix the user just *typed* at the start of a block.
     ///
     /// Two guards matter. The caret must sit immediately after the prefix, so
-    /// pasting a paragraph beginning "- " converts nothing. And the change must
-    /// have been an insertion — otherwise backspacing the "x" out of
-    /// `--- xSection` would leave `--- Section`, match the divider rule, and
-    /// silently destroy the rest of the line.
+    /// typing further along a line that starts with "- " converts nothing (a
+    /// paste or drop is `matchPastedPrefix`'s). And the change must have been
+    /// an insertion — otherwise backspacing the "x" out of `# xSection` would
+    /// leave `# Section`, match the heading rule, and turn a line the user
+    /// was editing into a heading.
     static func matchBlockPrefix(
         in storage: NSTextStorage,
         caret: Int,
@@ -65,28 +59,19 @@ enum MarkdownInputRules {
         return nil
     }
 
-    /// Where the active `/` menu trigger starts, or `nil` if there isn't one.
-    ///
-    /// A trigger is a `/` at the start of the block or after whitespace, with
-    /// no whitespace between it and the caret.
-    static func slashTriggerIndex(in text: NSString, caret: Int) -> Int? {
-        guard caret > 0, caret <= text.length else { return nil }
-
-        var index = caret - 1
-        while index >= 0 {
-            let scalar = text.character(at: index)
-            let character = Character(UnicodeScalar(scalar) ?? " ")
-
-            if character == "/" {
-                // Must start the block or follow whitespace.
-                if index == 0 { return index }
-                let previous = Character(UnicodeScalar(text.character(at: index - 1)) ?? " ")
-                return previous.isWhitespace ? index : nil
+    /// The design's prefix a paste or drop at the start of a block left it
+    /// starting with, as the design's change converts a pasted `# Packing`
+    /// into a heading "Packing". `- [ ] ` reads as a list item there, as only
+    /// `- ` matches at its start, as in the design's anchored pattern. A code
+    /// block keeps what's pasted.
+    static func matchPastedPrefix(in storage: NSTextStorage, kind: BlockKind) -> BlockPrefixMatch? {
+        guard kind != .code else { return nil }
+        let text = storage.string as NSString
+        for (prefix, kind) in blockPrefixes {
+            let prefixLength = (prefix as NSString).length
+            if text.length >= prefixLength, text.substring(to: prefixLength) == prefix {
+                return BlockPrefixMatch(range: NSRange(location: 0, length: prefixLength), kind: kind)
             }
-            if character.isWhitespace || character.isNewline { return nil }
-            // A long run without a slash is ordinary text.
-            if caret - index > 24 { return nil }
-            index -= 1
         }
         return nil
     }
@@ -184,12 +169,79 @@ enum MarkdownInputRules {
         var text: String
         var depth: Int
         var isCompleted: Bool
+        /// The line's note, as Openlist content carries one. Markdown writes
+        /// a task's note as `> ` lines under it instead.
+        var note = ""
     }
 
-    /// External Markdown has no internal fidelity promise. When conversion
-    /// would lose whitespace, code fences, or unsupported indentation, keep
-    /// the complete source as one literal paragraph instead of guessing.
-    static func parseClipboard(_ source: String) -> [ParsedLine] {
+    /// Pasted text as a list document's lines, which hold one line each, as
+    /// the design's do. Markdown that reads as lines comes in as
+    /// `parseMarkdown` reads it. Anything else comes in as written, a text
+    /// line for each of its lines, trimmed as the design's commit trims a
+    /// line, and a fenced block as one code line, which keeps its breaks and
+    /// indent. The breaks around the text, as copied lines end with one,
+    /// aren't lines.
+    static func pasteLines(_ text: String) -> [ParsedLine] {
+        let source = text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .newlines)
+        if let lines = readingAsLines(source) { return lines }
+        var result: [ParsedLine] = []
+        // The open fence's character and length, its indent, and the code so far.
+        var fence: (mark: Character, length: Int, indent: Int)?
+        var code: [String] = []
+        func closeFence() {
+            if code.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+                result.append(ParsedLine(kind: .code, text: code.joined(separator: "\n"), depth: 0, isCompleted: false))
+            }
+            fence = nil
+            code = []
+        }
+        for line in source.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let run = trimmed.prefix { $0 == trimmed.first }
+            if let open = fence {
+                if run.first == open.mark, run.count >= open.length, run.count == trimmed.count {
+                    closeFence()
+                } else {
+                    // Code lines lose only the fence's own indent.
+                    code.append(String(line.dropFirst(min(open.indent, line.prefix { $0 == " " }.count))))
+                }
+            } else if let mark = run.first, mark == "`" || mark == "~", run.count >= 3,
+                      mark == "~" || !trimmed.dropFirst(run.count).contains("`") {
+                fence = (mark, run.count, line.prefix { $0 == " " }.count)
+            } else if !trimmed.isEmpty {
+                result.append(ParsedLine(kind: .paragraph, text: trimmed, depth: 0, isCompleted: false))
+            }
+        }
+        // A fence left open runs to the end, as Markdown's does.
+        if fence != nil { closeFence() }
+        return result
+    }
+
+    /// Openlist content as a list document's lines, for Paste and Match
+    /// Style: each line's kind, place, text without its styling, completion
+    /// and note, read from the content itself. Its Markdown is written for
+    /// other apps, escaped, with a task's star, labels and files as text. A
+    /// quote comes in as text, as `> ` makes it, and an image, which has no
+    /// text, stays out. A code line keeps its breaks; the others' text comes
+    /// in on one line, as the design's lines hold it.
+    static func pasteLines(of fragment: DocumentFragment) -> [ParsedLine] {
+        let byID = Dictionary(fragment.blocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let children = Dictionary(grouping: fragment.blocks, by: \.parentID)
+        var stack = fragment.roots.reversed().map { ($0, 0) }
+        var lines: [ParsedLine] = []
+        while let (id, depth) = stack.popLast(), let block = byID[id] {
+            stack += (children[id] ?? []).reversed().map { ($0.id, depth + 1) }
+            guard let kind = BlockKind(rawValue: block.kind), kind != .image else { continue }
+            let text = kind == .code ? block.text : block.text.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+            lines.append(ParsedLine(kind: kind == .quote ? .paragraph : kind, text: text, depth: depth,
+                                    isCompleted: kind == .task && block.isCompleted, note: block.note))
+        }
+        return lines
+    }
+
+    /// `source` as Markdown lines, or nil when it doesn't read as them.
+    private static func readingAsLines(_ source: String) -> [ParsedLine]? {
         let lines = source.components(separatedBy: .newlines)
         let parsed = parseMarkdown(source)
         let unsupported = source.contains("```") || source.contains("~~~")
@@ -206,10 +258,7 @@ enum MarkdownInputRules {
             return (index == 0 && line.depth != 0) || line.depth > previousDepth + 1
                 || (line.depth > 0 && line.kind == .paragraph)
         }
-        if unsupported || malformedIndent {
-            return source.isEmpty ? [] : [ParsedLine(kind: .paragraph, text: source, depth: 0, isCompleted: false)]
-        }
-        return parsed
+        return unsupported || malformedIndent ? nil : parsed
     }
 
     static func parseMarkdown(_ source: String) -> [ParsedLine] {

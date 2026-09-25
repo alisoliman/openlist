@@ -11,7 +11,7 @@ import SwiftUI
 struct NextToolbar: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
-    @Environment(\.nextLibrary) private var library
+    @Environment(\.nxTrafficLightsInset) private var trafficLightsInset
     let crumb: String
     /// Widths of the back-and-crumb and button groups, which the notch keeps clear of.
     @State private var leadingWidth: CGFloat = 0
@@ -28,18 +28,23 @@ struct NextToolbar: View {
                     Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
                         .frame(width: 17, height: 17)
                 }
-                .buttonStyle(NXHoverButtonStyle(hover: env.navigator.canGoBack ? NX.ink(0.06) : .clear, radius: 6,
+                // No hover fill, as the design's: only its colour says whether it can go back.
+                .buttonStyle(NXHoverButtonStyle(hover: .clear, radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: env.navigator.canGoBack ? NX.ink(0.6) : NX.ink(0.2)))
                 .disabled(!env.navigator.canGoBack)
                 .help("Back (⌘[)")
+                .accessibilityLabel("Back")
 
                 // While you work the crumb gives the notch its room past 200 pt.
-                NXWidthCap(working ? 200 : .infinity) {
-                    Text(crumb)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(NX.ink(0.4))
-                        .lineLimit(1)
+                // Its first 80 pt outlast the Undo label.
+                NXWidthFloor(80) {
+                    NXWidthCap(working ? 200 : .infinity) {
+                        Text(crumb)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(NX.ink(0.4))
+                            .lineLimit(1)
+                    }
                 }
                 .padding(.leading, 4)
             }
@@ -49,13 +54,15 @@ struct NextToolbar: View {
 
             HStack(spacing: 6) {
                 if let undo = workbench.undoLabel {
-                    toolButton(icon: "arrow.uturn.backward", help: "Undo \(undo) (⌘Z)") {
-                        if !working {
-                            // Hug the label; truncate only past 180 pt.
-                            Text(undo).font(.system(size: 11.5, weight: .medium)).lineLimit(1).frame(maxWidth: 180).fixedSize()
-                        }
-                    } action: { workbench.undoLast() }
-                    .transition(.opacity)
+                    // A narrow bar truncates the label, then drops it, before
+                    // Actions and New task give up anything.
+                    ViewThatFits(in: .horizontal) {
+                        NXNotchIdeal(titleRoom: 60) { undoButton(undo, labelled: !working) }
+                        undoButton(undo, labelled: false)
+                    }
+                    // The design's fadeIn, 200ms ease, as it shows; it goes at
+                    // once, and its label changes in place.
+                    .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(200)), removal: .identity))
                 }
                 toolButton(icon: "bolt", help: "Actions (⌘K)") {
                     if !working {
@@ -63,6 +70,8 @@ struct NextToolbar: View {
                         NXKey("⌘K", opacity: 0.6)
                     }
                 } action: { env.navigator.isCommandPaletteOpen.toggle() }
+                .fixedSize()
+                .accessibilityLabel("Actions")
 
                 Button { workbench.openCapture() } label: {
                     HStack(spacing: 5) {
@@ -80,11 +89,16 @@ struct NextToolbar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .fixedSize()
                 .help("New task (N)")
+                .accessibilityLabel("New task")
             }
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { trailingWidth = $0 }
+            // The buttons keep their room; the crumb truncates first, down to its floor.
+            .layoutPriority(1)
         }
-        .padding(.horizontal, 18)
+        .padding(.leading, 18 + trafficLightsInset)
+        .padding(.trailing, 18)
         .frame(height: 52)
         .background {
             Color.clear.contentShape(Rectangle()).gesture(WindowDragGesture())
@@ -92,20 +106,35 @@ struct NextToolbar: View {
         .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
         .overlay(alignment: .top) {
             // Centred, but never over the crumb or the buttons.
-            NXNotchPlacement(leading: 18 + leadingWidth + 8, trailing: 18 + trailingWidth + 8) {
-                if working { NXWorkNotch().transition(.move(edge: .top)) }
+            NXNotchPlacement(leading: 18 + trafficLightsInset + leadingWidth + 8, trailing: 18 + trailingWidth + 8) {
+                // The design's notchDrop, at its own 420ms whatever the Motion
+                // setting; it goes at once when the work ends, and the labels
+                // beside it change at once, as the design's do.
+                if working {
+                    NXWorkNotch().transition(.asymmetric(insertion: style.slide(.move(edge: .top)).animation(NX.ease(420)),
+                                                         removal: .identity))
+                }
             }
         }
         .popover(isPresented: $calendar.isWorkPanelPresented, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
-            WorkPopover().environment(env)
+            WorkPopover().environment(env).environment(\.nextStyle, style)
+        }
+        // Asked for as the window opened, as Work ▸ Show Work does with it
+        // closed, the panel shows once the bar it hangs from is up. Any other
+        // ask with no window to show it in, as a notification's Start makes,
+        // has lapsed: the window doesn't open onto it hours later.
+        .onAppear {
+            let asked = env.showsWorkPanelOnOpen
+            env.showsWorkPanelOnOpen = false
+            guard calendar.isWorkPanelPresented else { return }
+            calendar.isWorkPanelPresented = false
+            if asked { DispatchQueue.main.async { calendar.isWorkPanelPresented = true } }
         }
         .onChange(of: recordingAnnouncement) { _, announcement in
             guard let announcement else { return }
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                 userInfo: [.announcement: announcement, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         }
-        .animation(style.ease(420), value: working)
-        .animation(.easeOut(duration: 0.2), value: workbench.undoLabel)
         .zIndex(40)
     }
 
@@ -113,11 +142,24 @@ struct NextToolbar: View {
     private var recordingAnnouncement: String? {
         let calendar = env.calendar
         if let notice = calendar.notice { return notice }
+        if let conflict = calendar.workConflict, let session = calendar.activeSession, session.occurrenceID == conflict.occurrenceID {
+            return "Still recording. \(session.title) is running into \(workbench.conflictLabel(conflict, inSentence: true))."
+        }
         if let session = calendar.activeSession { return "Recording work on \(session.title)." }
-        if calendar.overrunNudge?.needsConfirmation == true { return "Recording paused. Review the plan before continuing." }
         if let summary = calendar.workCompletion { return "Completed \(summary.title). Recording stopped." }
-        if let task = calendar.resumableTask { return "Recording stopped for \(task.displayTitle). The task is still open." }
+        if let task = calendar.resumableTask { return "Paused \(task.displayTitle). No time is being recorded." }
         return nil
+    }
+
+    /// Undo, named after the latest change when `labelled`: the name hugs its
+    /// text up to 180 pt and truncates past that, or where the bar is short.
+    private func undoButton(_ undo: String, labelled: Bool) -> some View {
+        toolButton(icon: "arrow.uturn.backward", help: "Undo \(undo) (⌘Z)") {
+            if labelled {
+                NXWidthCap(180) { Text(undo).font(.system(size: 11.5, weight: .medium)).lineLimit(1) }
+            }
+        } action: { workbench.undoLast() }
+        .accessibilityLabel("Undo \(undo)")
     }
 
     private func toolButton<Label: View>(icon: String, help: String, @ViewBuilder label: () -> Label,
@@ -153,37 +195,18 @@ struct NXWorkNotch: View {
                                                                                   : env.workbench.defaultEstimate)) * 60
                 let over = elapsed > estimate
                 // The whole notch while the bar has room for it and a few words
-                // of the title; then just the timer and Stop; then nothing,
-                // rather than covering the crumb or the buttons.
+                // of the title; then, as the design's title shrinks to nothing,
+                // the notch without it, then without its chip too; then
+                // nothing, rather than covering the crumb or the buttons.
+                // Pause or Resume, Done and Stop stay while it shows.
                 ViewThatFits(in: .horizontal) {
                     NXNotchIdeal(titleRoom: 60) {
                         // Hugs its content up to 440 pt, and narrows (the title truncating) when the bar has less room.
                         NXWidthCap(440) {
                             HStack(spacing: 10) {
                                 panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: false)
-                                if let nudge = env.calendar.overrunNudge, nudge.taskID == task.id {
-                                    extensionChip(nudge)
-                                } else if let extended = env.calendar.workExtension, extended.taskID == task.id {
-                                    // The time already given stays visible once the nudge is gone.
-                                    Text("+\(extended.minutes)m")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(NX.amberText)
-                                        .padding(.vertical, 3)
-                                        .padding(.horizontal, 6)
-                                        .background(NX.amber.opacity(0.16), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                                        .fixedSize()
-                                        .help("Extended by \(extended.minutes) min")
-                                        .accessibilityLabel("Extended by \(extended.minutes) minutes")
-                                        .transition(.scale(scale: 0.85).combined(with: .opacity))
-                                }
-                                controls {
-                                    notchButton(paused ? "play.fill" : "pause.fill", help: paused ? "Resume" : "Pause",
-                                                color: NX.ink(0.6), hover: NX.ink(0.06)) { workbench.toggleWorkPause() }
-                                    notchButton("checkmark", help: "Done", color: NX.green, hover: NX.green.opacity(0.12), weight: .bold) {
-                                        workbench.finishWork()
-                                    }
-                                    notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
-                                }
+                                chip(task, paused: paused)
+                                controls(paused: paused)
                             }
                             .padding(.leading, 14)
                             .padding(.trailing, 5)
@@ -191,17 +214,8 @@ struct NXWorkNotch: View {
                         }
                         .modifier(NXNotchChrome(progress: elapsed / estimate, over: over))
                     }
-                    // The Work panel it opens has pause, Done and the plan.
-                    HStack(spacing: 10) {
-                        panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: true)
-                        controls {
-                            notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
-                        }
-                    }
-                    .padding(.leading, 14)
-                    .padding(.trailing, 5)
-                    .frame(height: 38)
-                    .modifier(NXNotchChrome(progress: elapsed / estimate, over: over))
+                    compactNotch(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, chipped: true)
+                    compactNotch(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, chipped: false)
                     Color.clear.frame(width: 0, height: 0)
                 }
             }
@@ -233,12 +247,6 @@ struct NXWorkNotch: View {
                     .monospacedDigit()
                     .foregroundStyle(over ? NX.amberText : style.accent)
                     .fixedSize()
-                if !compact {
-                    Text("of \(Int(estimate / 60)) min")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.4))
-                        .fixedSize()
-                }
             }
             .contentShape(Rectangle())
         }
@@ -249,11 +257,51 @@ struct NXWorkNotch: View {
         .accessibilityValue("\(NXFormat.mmss(elapsed)) of \(Int(estimate / 60)) minutes")
     }
 
-    /// The icon buttons after a hairline.
-    private func controls<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 1) { content() }
-            .padding(.leading, 5)
-            .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5, height: 22) }
+    /// The notch without its title, and without its chip unless `chipped`.
+    private func compactNotch(_ task: Block, paused: Bool, elapsed: Double, estimate: Double, over: Bool,
+                              chipped: Bool) -> some View {
+        HStack(spacing: 10) {
+            panelButton(task, paused: paused, elapsed: elapsed, estimate: estimate, over: over, compact: true)
+            if chipped { chip(task, paused: paused) }
+            controls(paused: paused)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 5)
+        .frame(height: 38)
+        .modifier(NXNotchChrome(progress: elapsed / estimate, over: over))
+    }
+
+    /// What the work ran into, in red, in place of the time it was given, in
+    /// amber. Paused, the notch reads as the work did when it paused, as its block does.
+    @ViewBuilder
+    private func chip(_ task: Block, paused: Bool) -> some View {
+        let workbench = env.workbench
+        if let conflict = env.calendar.displayedWorkConflict, conflict.occurrenceID == task.occurrenceID {
+            let sentence = workbench.conflictLabel(conflict, inSentence: true)
+            extensionChip(workbench.conflictLabel(conflict), color: NX.redText, fill: NX.red.opacity(0.12))
+                .help(paused ? "Ran into \(sentence)" : "Still recording. Running into \(sentence)")
+                .accessibilityLabel((paused ? "Ran into " : "Running into ") + sentence)
+        } else if let extended = env.calendar.displayedWorkExtension, extended.occurrenceID == task.occurrenceID {
+            extensionChip("+\(extended.minutes)m", color: NX.amberText, fill: NX.amber.opacity(0.16))
+                .help("Extended by \(extended.minutes) min")
+                .accessibilityLabel("Extended by \(extended.minutes) minutes")
+        }
+    }
+
+    /// Pause or Resume, Done and Stop, after a hairline as tall as the
+    /// buttons, as the design's wrapper draws its left border.
+    private func controls(paused: Bool) -> some View {
+        let workbench = env.workbench
+        return HStack(spacing: 1) {
+            notchButton(paused ? "play.fill" : "pause.fill", help: paused ? "Resume" : "Pause",
+                        color: NX.ink(0.6), hover: NX.ink(0.06)) { workbench.toggleWorkPause() }
+            notchButton("checkmark", help: "Done", color: NX.green, hover: NX.green.opacity(0.12), weight: .bold) {
+                workbench.finishWork()
+            }
+            notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
+        }
+        .padding(.leading, 5)
+        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) }
     }
 
     private func toggleWorkPanel() {
@@ -265,23 +313,17 @@ struct NXWorkNotch: View {
         }
     }
 
-    @ViewBuilder
-    private func extensionChip(_ nudge: CalendarOverrunNudge) -> some View {
-        let minutes = max(1, Int(nudge.proposedEnd.timeIntervalSince(nudge.estimatedEnd) / 60))
-        let conflict = nudge.needsConfirmation && nudge.movedTaskCount > 0
-        Button { env.calendar.acceptMoreTime() } label: {
-            Text(conflict ? "+\(minutes)m · moves \(nudge.movedTaskCount)" : "+\(minutes)m")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(conflict ? NX.redText : NX.amberText)
-                .padding(.vertical, 3)
-                .padding(.horizontal, 6)
-                .background(conflict ? NX.red.opacity(0.12) : NX.amber.opacity(0.16),
-                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .fixedSize()
-        }
-        .buttonStyle(.plain)
-        .help("Give this task more time")
-        .transition(.scale(scale: 0.85).combined(with: .opacity))
+    /// The chip after the timer: the minutes the work was given, or what it ran into.
+    private func extensionChip(_ label: String, color: Color, fill: Color) -> some View {
+        Text(label)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .background(fill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .fixedSize()
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
     }
 
     private func notchButton(_ icon: String, help: String, color: Color, hover: Color, weight: Font.Weight = .semibold,
@@ -292,6 +334,8 @@ struct NXWorkNotch: View {
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8, padding: EdgeInsets(), foreground: color,
                                         hoverForeground: color == NX.green ? NX.green : NX.ink))
         .help(help)
+        // Named as the design's titles name them, not by the symbol.
+        .accessibilityLabel(help)
     }
 }
 
@@ -344,10 +388,29 @@ private struct NXNotchChrome: ViewModifier {
     }
 }
 
+/// Keeps at least `floor` of the content's width, or all of it when narrower,
+/// however little the bar offers, so the crumb shows a word or two before the
+/// Undo label, which outranks it, keeps its room.
+private struct NXWidthFloor: Layout {
+    let floor: CGFloat
+    init(_ floor: CGFloat) { self.floor = floor }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let ideal = content.sizeThatFits(.unspecified).width
+        let width = max(proposal.width ?? ideal, min(ideal, floor))
+        return content.sizeThatFits(ProposedViewSize(width: width, height: proposal.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
 /// Reports an ideal width of at most `titleRoom` past the content's narrowest,
-/// so `ViewThatFits` keeps the full notch while its title can show a few
-/// words, not only while the whole title fits. Proposed a width, it passes
-/// it on unchanged.
+/// so `ViewThatFits` keeps the full notch, or the named Undo, while its title
+/// can show a few words, not only while the whole title fits. Proposed a
+/// width, it passes it on unchanged.
 private struct NXNotchIdeal: Layout {
     let titleRoom: CGFloat
 

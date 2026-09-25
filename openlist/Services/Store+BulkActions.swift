@@ -113,18 +113,6 @@ private struct BulkMoveExpansion {
 }
 
 extension Store {
-    /// Resolve the entire displayed selection before entering durable Trash.
-    /// An unavailable row cannot turn an explicit bulk Delete into a partial one.
-    @discardableResult
-    func trashSelection(_ ids: [UUID], undoManager: UndoManager? = nil) throws -> Bool {
-        guard !isSavingSuspended, !isRecordingEditorEdit else { throw BulkActionError.busy }
-        let snapshot = try BulkSelectionSnapshot(ids: ids, store: self)
-        let roots = snapshot.roots(of: snapshot.ordered)
-        guard !roots.isEmpty else { throw BulkActionError.unavailable }
-        _ = try snapshot.subtree(roots)
-        return trashBlocks(roots, undoManager: undoManager)
-    }
-
     /// Explicit Complete/Reopen never toggles mixed-state selections. Completing
     /// a selected parent covers selected children once; reopening does not cascade.
     @discardableResult

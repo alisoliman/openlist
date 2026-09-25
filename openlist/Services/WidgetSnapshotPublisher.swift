@@ -246,7 +246,17 @@ final class WidgetSnapshotPublisher {
         let blocks = outlineBlocks()
         let tasks = ActiveTaskPolicy(hierarchy: hierarchy).tasks(in: blocks)
         let inbox = InboxPolicy(hierarchy: hierarchy)
-        let taskIDs = Set(tasks.map(\.id))
+        let tasksByID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        /// Whether an open task sits above this one, through its parent tasks.
+        func isUnderOpenTask(_ task: Block) -> Bool {
+            var seen: Set<UUID> = [task.id]
+            var parentID = task.parentID
+            while let id = parentID, let parent = tasksByID[id], seen.insert(id).inserted {
+                if !parent.isCompleted { return true }
+                parentID = parent.parentID
+            }
+            return false
+        }
         var blocksByList: [UUID: [Block]] = [:]
         for block in blocks {
             if let listID = block.listID, listsByID[listID] != nil { blocksByList[listID, default: []].append(block) }
@@ -267,8 +277,10 @@ final class WidgetSnapshotPublisher {
 
         for task in tasks where !task.isCompleted {
             totalOpen += 1
-            // Triage takes top-level captures only, as the Inbox badge counts them.
-            if inbox.includes(task), task.parentID.map(taskIDs.contains) != true { waiting.append(task) }
+            // Triage takes what the Inbox badge counts: a subtask goes with the
+            // open task above it, whose card carries it; one under done tasks
+            // only is a card of its own.
+            if inbox.includes(task), !isUnderOpenTask(task) { waiting.append(task) }
 
             guard let due = task.dueDate else { continue }
             let isOverdue = task.includesTime ? due < now : due < todayStart
@@ -345,29 +357,28 @@ final class WidgetSnapshotPublisher {
     /// Siblings keep their order and the walk its roots, so the outline is
     /// the same as the one built from every block.
     private func outlineBlocks() -> [Block] {
-        let tasks = (try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" }))) ?? []
+        // A model deleted since the last save still turns up in a fetch.
+        let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" }))) ?? [])
+            .filter { !$0.isDeleted }
         var blocks = tasks
         var fetched = Set(tasks.map(\.id))
         var missing = Set(tasks.compactMap(\.parentID)).subtracting(fetched)
         while !missing.isEmpty {
             fetched.formUnion(missing)
             let ids = Array(missing)
-            let parents = (try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && ids.contains($0.id) }))) ?? []
+            let parents = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && ids.contains($0.id) }))) ?? [])
+                .filter { !$0.isDeleted }
             blocks += parents
             missing = Set(parents.compactMap(\.parentID)).subtracting(fetched)
         }
         return blocks
     }
 
-    /// Open tasks in outline order, as the list's task screen shows them;
-    /// the list's sort only reorders runs of tasks inside its document.
-    /// Subtasks are included: the list screen shows them, the open and done
-    /// counts include them, and ticking one off from a widget is the same
-    /// action as in the app.
+    /// Open tasks in the order the list's page draws them. Subtasks are
+    /// included: the list shows them, the open and done counts include them,
+    /// and ticking one off from a widget is the same action as in the app.
     private func summary(of list: TaskList, blocks: [Block], hierarchy: ListHierarchy) -> WidgetSnapshot.ListSummary {
-        let tasks = blocks.contains(where: \.isTask)
-            ? ListTasksProjection(blocks: blocks, listID: list.id, sorting: .manual, showsCompleted: true).tasks
-            : []
+        let tasks = blocks.contains(where: \.isTask) ? orderedTasks(of: list, blocks: blocks) : []
         let open = tasks.filter { !$0.isCompleted }
         let done = tasks.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
         return WidgetSnapshot.ListSummary(
@@ -382,6 +393,25 @@ final class WidgetSnapshotPublisher {
             openItems: open.prefix(Limit.openItems).map { item($0, list: list) },
             doneItems: done.prefix(Limit.doneItems).map { item($0, list: list) }
         )
+    }
+
+    /// The list's tasks in its page's order: the document's outline, with the
+    /// list's Sort reordering each run of top-level tasks between its prose
+    /// and headings. Unsorted, the tasks and the blocks they sit under give
+    /// that order; a sorted list reads its whole document, since the prose
+    /// between runs is what keeps them apart.
+    private func orderedTasks(of list: TaskList, blocks: [Block]) -> [Block] {
+        var owned = blocks
+        if list.sorting != .manual {
+            let listID = list.id
+            owned = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
+                $0.trashID == nil && $0.listID == listID
+            }))) ?? []).filter { !$0.isDeleted }
+        }
+        var seen: Set<UUID> = []
+        owned = owned.filter { $0.listID == list.id && !$0.isTrashed && seen.insert($0.id).inserted }
+        return BlockTree.sortingTaskRuns(in: BlockTree.flatten(owned, respectCollapse: false), by: list.sorting)
+            .map(\.block).filter(\.isTask)
     }
 
     private func item(_ task: Block, list: TaskList?) -> WidgetSnapshot.Item {

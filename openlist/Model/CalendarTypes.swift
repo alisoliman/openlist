@@ -47,6 +47,21 @@ nonisolated struct AvailabilityProfile: Codable, Equatable, Sendable {
             ($0, [AvailabilityWindow(startMinute: 18 * 60, endMinute: 21 * 60)])
         }))
     }
+
+    /// The date's own hours, when an override sets them; the latest one wins.
+    func override(on day: Date, calendar: Calendar) -> AvailabilityOverride? {
+        overrides.last { calendar.isDate($0.date, inSameDayAs: day) }
+    }
+
+    /// The hours available on `day`: its override's, else its weekday's.
+    func windows(on day: Date, calendar: Calendar) -> [AvailabilityWindow] {
+        override(on: day, calendar: calendar)?.windows ?? weekly[calendar.component(.weekday, from: day), default: []]
+    }
+
+    /// The breaks on `day`: its override's, else its weekday's.
+    func breaks(on day: Date, calendar: Calendar) -> [AvailabilityWindow] {
+        override(on: day, calendar: calendar)?.breaks ?? breaks[calendar.component(.weekday, from: day), default: []]
+    }
 }
 
 nonisolated struct CalendarPreferences: Codable, Equatable, Sendable {
@@ -72,13 +87,16 @@ struct ScheduleTask: Identifiable, Sendable {
     /// Exclusive cutoff. Date-only due dates should be normalized to next midnight by the caller.
     var dueDate: Date?
     var selectedForToday: Bool
+    /// The occurrence has a pinned slot, a missed one included: Plan picks no
+    /// day, so the slot alone keeps the task's work in the plan.
+    var isPlaced: Bool
     var earliestStart: Date?
     /// Larger numbers represent higher priority.
     var priority: Int
     var keepTogether: Bool
 
     init(taskID: UUID, occurrenceID: UUID, title: String, category: AvailabilityCategory = .work,
-         remainingMinutes: Double = 30, dueDate: Date? = nil, selectedForToday: Bool = false,
+         remainingMinutes: Double = 30, dueDate: Date? = nil, selectedForToday: Bool = false, isPlaced: Bool = false,
          earliestStart: Date? = nil, priority: Int = 0, keepTogether: Bool = false) {
         self.taskID = taskID
         self.occurrenceID = occurrenceID
@@ -87,6 +105,7 @@ struct ScheduleTask: Identifiable, Sendable {
         self.remainingMinutes = remainingMinutes
         self.dueDate = dueDate
         self.selectedForToday = selectedForToday
+        self.isPlaced = isPlaced
         self.earliestStart = earliestStart
         self.priority = priority
         self.keepTogether = keepTogether
@@ -129,6 +148,10 @@ struct PlannedBlock: Identifiable, Sendable {
     var completionID: UUID? = nil
     var titleSnapshot: String? = nil
     var isTimeTracked: Bool = false
+    /// A done block drawn at the slot it was planned in, stretched to any
+    /// work past its ends, as the design's done placement, rather than where
+    /// recorded work happened.
+    var keepsSlot: Bool = false
     var isCompleted: Bool { completionID != nil }
     var durationMinutes: Double { max(0, end.timeIntervalSince(start) / 60) }
 }
@@ -147,6 +170,9 @@ enum TaskScheduleStatus: String, Codable, Sendable {
     }
 }
 
+/// The planner's rating of a task's deadline coverage. It stays inside the
+/// planner and its checks: no screen shows it, its reason or its conflicts,
+/// as the calendar draws only placed work.
 struct TaskScheduleAssessment: Identifiable, Sendable {
     var id: UUID { occurrenceID }
     var taskID: UUID

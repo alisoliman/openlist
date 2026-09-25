@@ -82,6 +82,10 @@ final class AppSettings {
     var mcpPort: Int {
         didSet { defaults.set(mcpPort, forKey: Key.mcpPort) }
     }
+    /// Takes a library snapshot each day, keeping the last fourteen.
+    var takesDailySnapshots: Bool {
+        didSet { defaults.set(takesDailySnapshots, forKey: Key.dailySnapshots) }
+    }
 
     // MARK: Interface
 
@@ -121,7 +125,7 @@ final class AppSettings {
         let defaultQuickCaptureHotKey = true
         #endif
         defaults.register(defaults: [
-            Key.showsCompleted: true,
+            Key.showsCompleted: false,
             Key.naturalLanguage: true,
             Key.menuBarExtra: true,
             Key.quickCaptureHotKey: defaultQuickCaptureHotKey,
@@ -133,6 +137,7 @@ final class AppSettings {
             Key.mcpPort: defaultMCPPort,
             Key.serifTitles: true,
             Key.undoDwell: 5,
+            Key.dailySnapshots: true,
         ])
 
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -148,6 +153,7 @@ final class AppSettings {
         mcpEnabled = defaults.bool(forKey: Key.mcpEnabled)
         mcpAllowsWrites = defaults.bool(forKey: Key.mcpAllowsWrites)
         mcpPort = defaults.integer(forKey: Key.mcpPort)
+        takesDailySnapshots = defaults.bool(forKey: Key.dailySnapshots)
         accent = NextAccent(rawValue: defaults.string(forKey: Key.accent) ?? "") ?? .violet
         density = NextDensity(rawValue: defaults.string(forKey: Key.density) ?? "") ?? .comfortable
         serifTitles = defaults.bool(forKey: Key.serifTitles)
@@ -187,6 +193,7 @@ final class AppSettings {
         static let reducesMotion = "settings.reducesMotion"
         static let undoDwell = "settings.undoDwellSeconds"
         static let tasksFilterStyle = "settings.tasksFilterStyle"
+        static let dailySnapshots = "settings.dailySnapshots"
     }
 }
 
