@@ -75,7 +75,13 @@ struct CalendarHistoryView: View {
                                     Text(record.title).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
                                     Group {
                                         Text(NXFormat.moment(record.completedAt))
-                                        if record.wasRecurring { Label("Repeating task", systemImage: "repeat") }
+                                        if record.wasRecurring {
+                                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                                Image(systemName: "repeat").font(.system(size: 10.5, weight: .medium))
+                                                    .accessibilityHidden(true)
+                                                Text("Repeating task")
+                                            }
+                                        }
                                     }
                                     .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
                                     if !record.plannedIntervals.isEmpty {

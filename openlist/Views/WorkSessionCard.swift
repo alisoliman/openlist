@@ -152,10 +152,9 @@ struct WorkSessionCard: View {
     }
 
     private func detail(_ text: String, icon: String) -> some View {
-        Label {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: icon).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45)).accessibilityHidden(true)
             Text(text).font(.system(size: 12.5)).foregroundStyle(NX.ink(0.72)).fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: icon).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45))
         }
     }
 

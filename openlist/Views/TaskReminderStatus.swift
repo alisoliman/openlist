@@ -38,9 +38,9 @@ struct TaskReminderStatus: View {
                         Button("Retry reminder status", action: retryStatus)
                     }
                     if !matchesSaved {
-                        Label(recovery.libraryReadError != nil ? "Reminder status unavailable"
+                        Self.line(recovery.libraryReadError != nil ? "Reminder status unavailable"
                             : !recovery.hasSnapshot ? "Checking saved reminder…" : "Reminder changes are not yet saved",
-                            systemImage: "exclamationmark.circle")
+                            icon: "exclamationmark.circle")
                         if let saved {
                             Text("Last saved reminder: \(NXFormat.dueAndClock(saved.date)).")
                         }
@@ -51,7 +51,7 @@ struct TaskReminderStatus: View {
                         // no reminder of its own.
                         let accepted = status == .accepted && !recovery.isSimulated
                         let title = accepted ? date.map { NXFormat.reminds(at: $0, atDueTime: block.reminderAt == nil) } : nil
-                        Label(title ?? recovery.title(for: status), systemImage: Self.symbol(for: status))
+                        Self.line(title ?? recovery.title(for: status), icon: Self.symbol(for: status))
                             .accessibilityValue(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "")
                             .help(accepted ? "How it shows depends on Focus and your notification settings."
                                 : date.map { NXFormat.dueAndClock($0) } ?? "Reminder status")
@@ -68,6 +68,16 @@ struct TaskReminderStatus: View {
                 .task { recovery.refresh() }
             }
         }
+    }
+
+    /// A status line: its symbol, as the attention notice's, then its text,
+    /// heard as one element.
+    private static func line(_ title: String, icon: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: icon).font(.system(size: 10.5, weight: .medium)).accessibilityHidden(true)
+            Text(title)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// A reminder waiting on the user rings with a badge, one that won't come

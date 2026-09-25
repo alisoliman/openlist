@@ -9,13 +9,9 @@ struct WorkTaskChooser: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Find a task", text: $search)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(NX.ink)
-                .padding(.vertical, 7)
-                .padding(.horizontal, 10)
-                .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            NXPanelField(icon: "magnifyingglass") {
+                TextField("Find a task", text: $search)
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(candidates) { task in
@@ -31,7 +27,8 @@ struct WorkTaskChooser: View {
                                                         padding: EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10)))
                     }
                     if candidates.isEmpty {
-                        Text("No matching tasks").font(.system(size: 12.5)).foregroundStyle(NX.ink(0.45)).padding()
+                        Text("No matching tasks").font(.system(size: 12)).foregroundStyle(NX.ink(0.45))
+                            .padding(.horizontal, 9).padding(.vertical, 6)
                     }
                 }
             }.frame(maxHeight: 300)

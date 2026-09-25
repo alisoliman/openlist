@@ -107,33 +107,7 @@ struct openlistApp: App {
                     }
                     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
             } else {
-                ContentUnavailableView {
-                    Label("Your saved data could not be opened", systemImage: "externaldrive.badge.exclamationmark")
-                } description: {
-                    Text("Your existing database has not been replaced. Check available disk space and file permissions, then restart Openlist.\n\n\(startupError ?? "")")
-                        .textSelection(.enabled)
-                } actions: {
-                    if (try? recoveryStorage.canCancelPending()) == true {
-                        Button("Cancel pending restore and quit") {
-                            do { try recoveryStorage.cancelPending(); ApplicationQuit.request() }
-                            catch { showRecoveryError(error) }
-                        }
-                    }
-                    if (try? recoveryStorage.selection())?.generation != nil {
-                        Button("Return to original and quit") {
-                            let alert = NSAlert()
-                            alert.messageText = "Return to the original library?"
-                            alert.informativeText = "Open Openlist again after it quits. The original library will be verified before opening; this restored library's files will be retained for recovery."
-                            alert.addButton(withTitle: "Return to Original and Quit")
-                            alert.addButton(withTitle: "Cancel")
-                            if alert.runModal() == .alertFirstButtonReturn {
-                                do { try recoveryStorage.queueReturnToOriginal(); ApplicationQuit.request() }
-                                catch { showRecoveryError(error) }
-                            }
-                        }
-                    }
-                    Button("Quit Openlist") { ApplicationQuit.request() }
-                }
+                LibraryFailureView(message: startupError ?? "", storage: recoveryStorage)
             }
         }
         .defaultSize(width: 1_180, height: 780)
@@ -157,13 +131,6 @@ struct openlistApp: App {
         .menuBarExtraStyle(.window)
     }
 
-    private func showRecoveryError(_ error: Error) {
-        let alert = NSAlert()
-        alert.messageText = "Recovery could not be prepared"
-        alert.informativeText = error.localizedDescription
-        alert.runModal()
-    }
-
     private var menuBarBinding: Binding<Bool> {
         Binding(
             get: { env?.settings.showsMenuBarExtra ?? false },
@@ -174,4 +141,66 @@ struct openlistApp: App {
 
 enum WindowID {
     static let main = "main"
+}
+
+/// The window when the library can't open: no shell, tray or notices, just
+/// what happened and the ways out, on Next paper with the panels' title and
+/// buttons.
+private struct LibraryFailureView: View {
+    let message: String
+    let storage: LibraryRestoreStorage
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 34))
+                .foregroundStyle(NX.ink(0.4))
+                .accessibilityHidden(true)
+            NXPanelTitle("Your saved data could not be opened")
+                .multilineTextAlignment(.center)
+            Text("Your existing database has not been replaced. Check available disk space and file permissions, then restart Openlist.\n\n\(message)")
+                .font(.system(size: 12.5))
+                .foregroundStyle(NX.ink(0.6))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 460)
+                .textSelection(.enabled)
+            HStack(spacing: 8) {
+                if (try? storage.canCancelPending()) == true {
+                    Button("Cancel pending restore and quit") {
+                        do { try storage.cancelPending(); ApplicationQuit.request() }
+                        catch { showRecoveryError(error) }
+                    }
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+                }
+                if (try? storage.selection())?.generation != nil {
+                    Button("Return to original and quit") {
+                        let alert = NSAlert()
+                        alert.messageText = "Return to the original library?"
+                        alert.informativeText = "Open Openlist again after it quits. The original library will be verified before opening; this restored library's files will be retained for recovery."
+                        alert.addButton(withTitle: "Return to Original and Quit")
+                        alert.addButton(withTitle: "Cancel")
+                        if alert.runModal() == .alertFirstButtonReturn {
+                            do { try storage.queueReturnToOriginal(); ApplicationQuit.request() }
+                            catch { showRecoveryError(error) }
+                        }
+                    }
+                    .buttonStyle(NXPanelButtonStyle(kind: .destructive))
+                }
+                Button("Quit Openlist") { ApplicationQuit.request() }
+                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+            }
+            .padding(.top, 6)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(NX.paper)
+    }
+
+    private func showRecoveryError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Recovery could not be prepared"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+    }
 }

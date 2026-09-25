@@ -323,7 +323,9 @@ private struct LibraryRestorePreview: View {
                 Text(error).font(.system(size: 12)).foregroundStyle(NX.redText).textSelection(.enabled)
             }
             HStack(spacing: 6) {
-                if library.isBusy { ProgressView().controlSize(.small) }
+                if library.isBusy {
+                    Text("Working with library…").font(.system(size: 11.5)).foregroundStyle(NX.ink(0.48))
+                }
                 Spacer()
                 Button("Cancel", role: .cancel) { library.preview = nil }
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))

@@ -458,8 +458,9 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   reminder is), and Trash's hold-to-erase asks
   VoiceOver, which can't hold, in the confirmation sheet. Deviation: the only system alerts
   left are the window's shown when the library can't open, which has no shell, tray or
-  notices; their buttons keep the system's Title Case, where that window's own buttons are
-  in sentence case.
+  notices; their buttons keep the system's Title Case, where that window's own buttons,
+  drawn in `NXPanelButtonStyle` under an `NXPanelTitle` on Next paper, are in sentence
+  case.
 - Activity › Changes › This session is the log, with the saved history it didn't write
   merged in (MCP, another Mac). What a list document line saves to its task while it's
   written (the new task at Return, its title as typed, the line itself when it goes)
