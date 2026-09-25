@@ -905,6 +905,32 @@ func checkSchedulingNudges() throws {
         planner.tick(now: date(14, 10, 1), checkClockGap: false)
         check(missed(), "the slot is missed once the slot itself is over")
     }
+    do {
+        // Plan pins a task without picking it for today, so once its slot is
+        // missed the pin alone keeps undated work in the plan, carried forward.
+        let (fixtureStore, planner, lifetime) = try fixture()
+        defer { withExtendedLifetime(lifetime) {} }
+        let placed = add("Planned, never picked", to: fixtureStore, priority: 1)
+        placed.selectedForDay = nil
+        let picked = add("Picked for today", to: fixtureStore, priority: 3)
+        fixtureStore.setPlacement(for: placed, start: date(14, 9, 30), end: date(14, 10), isPinned: true)
+        fixtureStore.setPlacement(for: picked, start: date(14, 10), end: date(14, 10, 30), isPinned: true)
+        planner.bootstrap(now: date(), monitorsEnabled: false)
+        check(placed.selectedForDay == nil && planner.plan.assessments.first { $0.taskID == placed.id }?.status == .scheduled,
+              "an unpicked undated task is planned at its pin")
+        func carried(_ now: Date) -> Bool {
+            let blocks = planner.plan.blocks.filter { $0.taskID == placed.id }
+            let assessment = planner.plan.assessments.first { $0.taskID == placed.id }
+            return !blocks.isEmpty && blocks.allSatisfy { !$0.isPinned && $0.start >= now }
+                && assessment?.conflicts.contains(AdaptiveScheduler.missedPlacementConflict) == true
+        }
+        planner.tick(now: date(14, 11), checkClockGap: false)
+        check(carried(date(14, 11)), "a missed pin replans an unpicked undated task's work, flagged as carried forward")
+        fixtureStore.toggleCompletion(picked, now: date(14, 11, 1))
+        planner.storeDidChange(now: date(14, 11, 1))
+        check(carried(date(14, 11, 1)) && placed.selectedForDay == nil, "a material replan keeps it in the plan, still unpicked")
+        check(planner.suggestedWork(now: date(14, 11, 1))?.id == placed.id, "the Work panel suggests it once nothing comes before it")
+    }
 }
 try checkSchedulingNudges()
 try checkWorkCompanion()

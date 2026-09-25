@@ -87,13 +87,16 @@ struct ScheduleTask: Identifiable, Sendable {
     /// Exclusive cutoff. Date-only due dates should be normalized to next midnight by the caller.
     var dueDate: Date?
     var selectedForToday: Bool
+    /// The occurrence has a pinned slot, a missed one included: Plan picks no
+    /// day, so the slot alone keeps the task's work in the plan.
+    var isPlaced: Bool
     var earliestStart: Date?
     /// Larger numbers represent higher priority.
     var priority: Int
     var keepTogether: Bool
 
     init(taskID: UUID, occurrenceID: UUID, title: String, category: AvailabilityCategory = .work,
-         remainingMinutes: Double = 30, dueDate: Date? = nil, selectedForToday: Bool = false,
+         remainingMinutes: Double = 30, dueDate: Date? = nil, selectedForToday: Bool = false, isPlaced: Bool = false,
          earliestStart: Date? = nil, priority: Int = 0, keepTogether: Bool = false) {
         self.taskID = taskID
         self.occurrenceID = occurrenceID
@@ -102,6 +105,7 @@ struct ScheduleTask: Identifiable, Sendable {
         self.remainingMinutes = remainingMinutes
         self.dueDate = dueDate
         self.selectedForToday = selectedForToday
+        self.isPlaced = isPlaced
         self.earliestStart = earliestStart
         self.priority = priority
         self.keepTogether = keepTogether

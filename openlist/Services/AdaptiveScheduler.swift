@@ -118,7 +118,7 @@ enum AdaptiveScheduler {
 
         let placedIDs = Set(placements.filter { $0.end > now || $0.isPinned }.map(\.occurrenceID))
         let candidates = uniqueTasks.filter { task in
-            task.selectedForToday || task.earliestStart != nil || placedIDs.contains(task.occurrenceID) || active?.occurrenceID == task.occurrenceID ||
+            task.selectedForToday || task.isPlaced || task.earliestStart != nil || placedIDs.contains(task.occurrenceID) || active?.occurrenceID == task.occurrenceID ||
                 (task.dueDate.map { $0 <= horizon } ?? false)
         }
         let todayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!

@@ -205,6 +205,20 @@ check(missedPlan.assessments[0].conflicts == [AdaptiveScheduler.missedPlacementC
       && missedPlan.assessments[0].reason == "All remaining work has scheduled time.",
       "A missed pin is flagged by its conflict alone; the assessment's reason stays its status's own")
 check(missedPlan.blocks[0].start == now && !missedPlan.blocks[0].isActive, "Missed pin replans without pretending the task started")
+// Plan pins a task without picking it for today: the pin alone keeps
+// undated work in the plan, where it was put, with nothing more beside it.
+let placedOnly = plan([task(1, today: false)], placements: [pinned])
+check(placedOnly.blocks.count == 1 && placedOnly.blocks[0].isPinned && placedOnly.blocks[0].start == eleven
+      && placedOnly.assessments.first?.status == .scheduled, "A pin alone keeps unpicked undated work in the plan at its slot")
+// The runtime keeps a missed pin back from the plan, so the task says it was
+// placed: its work still replans from now, as a picked task's would.
+var placedTask = task(1, today: false)
+placedTask.isPlaced = true
+let carriedForward = plan([placedTask])
+check(carriedForward.blocks.count == 1 && !carriedForward.blocks[0].isPinned && carriedForward.blocks[0].start == now
+      && carriedForward.assessments.first?.status == .scheduled, "A placed task with no pin passed still replans its unpicked undated work")
+check(plan([task(1, today: false)]).blocks.isEmpty && plan([task(1, today: false)]).assessments.isEmpty,
+      "Unplaced, unpicked undated work stays out of the plan")
 let wrongPin = PlacementInput(id: UUID(), taskID: task(99).taskID, occurrenceID: task(1).occurrenceID, start: eleven, end: noon, isPinned: true)
 check(plan([task(1)], placements: [wrongPin]).blocks.allSatisfy { !$0.isPinned }, "Mismatched task and occurrence cannot capture another task's pin")
 let shortPinned = plan([task(1, minutes: 15)], placements: [pinned])

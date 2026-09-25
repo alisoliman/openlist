@@ -295,7 +295,10 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   where the design keeps it two; and Return on such a heading opens its new line after them,
   where the design's opens it right under the heading.
 - Inbox triage skips a subtask while an open task above it waits, as that task's card
-  carries it; one under done tasks only is triaged as its own card.
+  carries it; one under done tasks only is triaged as its own card. The triage card's File
+  into names wrap at words, as the design's; in a column too narrow for a name's longest
+  word, in the narrowest windows, the name truncates to one line, where the design's row
+  would run past its column.
 - Widgets (`OpenlistWidget/`) depart from `widgets/` where WidgetKit sets the terms. Only a
   row's circle is its toggle, so a tap elsewhere can't tick a task the widget can't undo;
   while the tick's intent runs the system dims the rows beside their circles
@@ -354,7 +357,11 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   done block's own check reopens it there.
   The Work panel's "N tasks rescheduled" and Start notifications come only from blocks the
   calendar draws, not from the planner's own sessions, and no Start comes while work is
-  running or paused, as the design's "Planned now" hides then.
+  running or paused, as the design's "Planned now" hides then. A long Planned now title
+  wraps and the banner grows, as the design's, never inside a word; its label and time keep
+  to one line until the title is down to its longest word, where the design's flex row
+  squeezes all three at once. Where not even that word fits beside them, in the narrowest
+  windows, the title truncates to one line, where the design's row would run past the banner.
 - Calendar week: the design's week always has today on a Wednesday. Natively, Plan keeps to
   the week around today while it has hours long enough for the task (the design's "No free
   slot this week"), then goes on into the next week, as a deferral past it gets its own. A

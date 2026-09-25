@@ -124,8 +124,8 @@ extension Store {
         placement.start = start
         placement.end = end
         placement.isPinned = isPinned
-        // A deliberate placement also selects an otherwise undated task.
-        if block.selectedForDay == nil { block.selectedForDay = Calendar.current.startOfDay(for: start) }
+        // A slot doesn't pick the task for its day, as the design's Plan
+        // doesn't; the slot itself keeps the task in the plan.
         block.touch()
         save()
         return placement

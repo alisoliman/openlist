@@ -397,7 +397,11 @@ private struct NXScrollRestoration: ViewModifier {
 }
 
 /// Section title used on Lists, Activity, Settings, the inspector and the
-/// Inbox's triage card: the design's 600 10.5/1. VoiceOver reads it as a heading.
+/// Inbox's triage card: the design's 600 10.5/1, on exact 10.5pt lines,
+/// which trim SwiftUI's 13 from below, so a title that wraps stacks at 10.5
+/// a line. Raised by half the trim, and by the half point lower an exact
+/// line sets a half-point size's baseline, one line inks where it did.
+/// VoiceOver reads it as a heading.
 struct NXCapsTitle: View {
     let text: String
     var body: some View {
@@ -407,7 +411,8 @@ struct NXCapsTitle: View {
             .kerning(0.735)
             .textCase(.uppercase)
             .foregroundStyle(NX.ink(0.36))
-            .padding(.vertical, (10.5 - NXStrikeText.glyphLineHeight(10.5)) / 2)
+            .lineHeight(.exact(points: 10.5))
+            .offset(y: (10.5 - NX.lineHeight(10.5)) / 2 - 0.5)
     }
 }
 

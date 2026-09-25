@@ -1148,17 +1148,15 @@ extension Workbench {
     private func replacePlacements(of task: Block, with spans: [PlacementSpan], label: String, icon: String, showing start: Date) {
         let id = task.id
         let occurrenceID = task.occurrenceID
-        let fields = [TaskFields(task)]
         let previous = store.placements(taskID: id).filter { $0.occurrenceID == occurrenceID }
             .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+        // Only the slots change: as the design's Plan, placing picks no day
+        // for the task, so Today and the row's planned chip stay as they were.
         setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
-        // Planning also selects the task for its day when no day is; Undo puts back only what it changed.
-        let placed = store.block(id: id).map { [TaskFields($0)] } ?? fields
         // Both directions rebuild the occurrence's whole placement set, so any
         // number of Undo and Redo steps leaves exactly one set.
         registerUndo(label, undo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: previous)
-            workbench.restore(fields, over: placed)
             workbench.calendar.replan()
         }, redo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
@@ -1229,13 +1227,10 @@ extension Workbench {
         // Reopening gives the task a new occurrence, with no slot of its own yet.
         guard let reopened = store.block(id: id), !reopened.isCompleted, !spans.isEmpty else { return }
         let occurrenceID = reopened.occurrenceID
-        let fields = [TaskFields(reopened)]
         setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
-        let placed = store.block(id: id).map { [TaskFields($0)] } ?? fields
         // Grouped with the reopen, so Undo takes the slots back before the task closes again.
         registerUndo("Reopened \(describe([reopened]))", undo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: [])
-            workbench.restore(fields, over: placed)
             workbench.calendar.replan()
         }, redo: { workbench in
             workbench.setPlacements(of: id, occurrenceID: occurrenceID, to: spans)
