@@ -153,8 +153,10 @@ struct ListGlyph: View {
                 .foregroundStyle(style.listColor(accentHex))
         } else {
             // Vibrant rendering keeps the emoji's shape but not its colours.
-            Text(icon)
-                .font(.system(size: size * 15 / 28))
+            // The design's 15 px on a 28-point tile, drawn as large as the
+            // design draws it rather than at Core Text's larger size.
+            Text(verbatim: icon)
+                .font(.system(size: EmojiSize.points(forDesign: size * 15 / 28)))
                 .grayscale(style.isVibrant ? 1 : 0)
                 .brightness(style.isVibrant ? 0.3 : 0)
         }

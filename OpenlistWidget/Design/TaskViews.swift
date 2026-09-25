@@ -9,6 +9,11 @@ import WidgetKit
 
 /// The 15-point checkbox. Tapping it ticks the task off (or reopens it)
 /// through `ToggleTaskIntent`, without opening the app.
+///
+/// A toggle rather than a button, so the system draws it ticked the moment
+/// it is tapped, while the intent runs in the app and until the reload after
+/// it takes the row away. A tick queued for the app (`TaskCheck.closing`)
+/// draws the same.
 struct TaskCheckbox: View {
     let item: WidgetSnapshot.Item
     let check: TaskCheck
@@ -22,33 +27,42 @@ struct TaskCheckbox: View {
     }
 
     var body: some View {
-        Button(intent: ToggleTaskIntent(taskID: item.id, occurrenceID: item.occurrenceID, completed: check == .open)) {
-            mark
+        Toggle(isOn: check != .open, intent: ToggleTaskIntent(taskID: item.id, occurrenceID: item.occurrenceID, completed: check == .open)) {
+            Text(check == .open ? "Complete \(item.title)" : "Reopen \(item.title)")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(check == .open ? "Complete \(item.title)" : "Reopen \(item.title)")
+        .toggleStyle(TaskCheckStyle(ring: style.checkColor(for: item, isLate: isLate), isCompleted: item.isCompleted, style: style))
     }
+}
 
-    private var mark: some View {
+/// The checkbox's circle: the ring while open, the accent disc a touch larger
+/// while closing (ticked, but not yet completed in the snapshot), and the
+/// green disc once done.
+private struct TaskCheckStyle: ToggleStyle {
+    let ring: Color
+    /// Completed in the published snapshot.
+    let isCompleted: Bool
+    let style: WidgetStyle
+
+    func makeBody(configuration: Configuration) -> some View {
+        let closing = configuration.isOn && !isCompleted
         ZStack {
-            switch check {
-            case .open:
-                Circle()
-                    .strokeBorder(style.checkColor(for: item, isLate: isLate), lineWidth: 1.5)
-                    .widgetAccentable()
-            case .closing, .done:
+            if configuration.isOn {
                 // Only the disc is accentable: a tinted checkmark would vanish
                 // into the tinted disc behind it.
                 Circle()
-                    .fill(check == .closing ? style.acc : style.green)
+                    .fill(closing ? style.acc : style.green)
                     .widgetAccentable()
                 Image(systemName: "checkmark")
                     .font(.system(size: 7.5, weight: .heavy))
                     .foregroundStyle(style.onAcc)
+            } else {
+                Circle()
+                    .strokeBorder(ring, lineWidth: 1.5)
+                    .widgetAccentable()
             }
         }
         .frame(width: 15, height: 15)
-        .scaleEffect(check == .closing ? 1.12 : 1)
+        .scaleEffect(closing ? 1.12 : 1)
         .contentShape(Circle())
     }
 }
@@ -84,16 +98,23 @@ struct TaskRow: View {
         HStack(alignment: .top, spacing: 8) {
             TaskCheckbox(item: item, state: state)
                 .padding(.top, 1)
-            switch layout {
-            case .standard:
-                AppLink(.task(item.id)) { standardDetails }
-                    .accessibilityLabel(accessibilityText)
-            case .compact:
-                compactDetails
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(accessibilityText)
+            Group {
+                switch layout {
+                case .standard:
+                    AppLink(.task(item.id)) { standardDetails }
+                        .accessibilityLabel(accessibilityText)
+                case .compact:
+                    compactDetails
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(accessibilityText)
+                }
             }
+            // While a tick's intent runs in the app, the system dims the row
+            // beside its circle, until the reload that follows settles it out.
+            .invalidatableContent()
         }
+        // A tick queued for the app has no intent running, so the row fades
+        // itself until the app applies it.
         .opacity(check == .closing ? 0.55 : 1)
     }
 
@@ -102,7 +123,7 @@ struct TaskRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 title.lineLimit(1).textStyle(12, .medium, lineHeight: 1.3)
                 if showsList, !item.listName.isEmpty {
-                    Text(listLine)
+                    listLine
                         .foregroundStyle(style.faint)
                         .lineLimit(1)
                         .textStyle(10, .medium, lineHeight: 1.2)
@@ -136,7 +157,7 @@ struct TaskRow: View {
                     .lineLimit(1)
                     .textStyle(10, .medium, lineHeight: 1.2)
             } else if showsList, !item.listName.isEmpty {
-                Text(listLine)
+                listLine
                     .foregroundStyle(style.faint)
                     .lineLimit(1)
                     .textStyle(10, .medium, lineHeight: 1.2)
@@ -153,8 +174,8 @@ struct TaskRow: View {
 
     private var check: TaskCheck { state.check(for: item) }
     private var dueText: String { state.dueText(for: item) }
-    private var listLine: String {
-        WidgetFormat.listLine(icon: item.listIcon, name: item.listName, includesIcon: !style.isVibrant)
+    private var listLine: Text {
+        Text(listIcon: item.listIcon, name: item.listName, size: 10, includesIcon: !style.isVibrant)
     }
 
     /// A row being ticked off keeps its red "3d late" until it settles out.
@@ -169,6 +190,20 @@ struct TaskRow: View {
         if !dueText.isEmpty { parts.append(dueText) }
         if item.isStarred { parts.append("starred") }
         return parts.joined(separator: ", ")
+    }
+}
+
+extension Text {
+    /// A list line, "🗻 Weekend in Kyoto", set at `size`, with the words
+    /// `WidgetFormat.listLine` gives. The emoji is drawn as large as the
+    /// design draws it at that size, not at Core Text's larger one (`EmojiSize`).
+    init(listIcon icon: String, name: String, size: CGFloat, includesIcon: Bool) {
+        guard WidgetFormat.listLine(icon: icon, name: name, includesIcon: includesIcon) != name else {
+            self.init(verbatim: name)
+            return
+        }
+        let emoji = Text(verbatim: icon).font(.system(size: EmojiSize.points(forDesign: size)))
+        self = name.isEmpty ? emoji : Text("\(emoji) \(name)")
     }
 }
 

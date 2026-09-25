@@ -65,10 +65,12 @@ coordinator.bootstrap(now: now, monitorsEnabled: false)
 let publisher = WidgetSnapshotPublisher(store: store,
     sources: .live(calendar: coordinator, settings: AppSettings(defaults: defaults), libraryID: UUID()))
 
-/// The window's actions as `Workbench` takes them, for a check with no window:
-/// completing the work in progress pauses it and takes it off the toolbar,
-/// Start and Resume start recording, Pause pauses. The app passes the
-/// processor its `Workbench`, whose tray, change log and Undo these skip.
+/// The window's actions reduced to what the processor's own rules need, so
+/// this suite checks those rules without building the window: completing the
+/// work in progress pauses it and takes it off the toolbar, Start and Resume
+/// start recording, Pause pauses. The app passes the processor its
+/// `Workbench`, whose subtasks, dwell, tray, change log and Undo these skip;
+/// `Tools/run-widget-workbench-checks.sh` drives the processor through a real one.
 final class WindowActions: WidgetTaskActions {
     let store: Store
     let calendar: CalendarCoordinator
@@ -125,6 +127,7 @@ check(plumber.completedAt == now, "a tap stamped ahead of the app's clock counts
 check(!apply(.complete, plumber, now: now), "a second tick on a done row changes nothing")
 check(!apply(.complete, deposit, occurrence: UUID(), now: now) && !deposit.isCompleted,
       "a tick for another occurrence is ignored")
+check(actions.settled == [plumber.id, plumber.id], "and settles nothing of the window's: a stale tap cuts no dwell short")
 check(!processor.apply(WidgetCommand(action: .complete, taskID: deposit.id), now: now) && !deposit.isCompleted,
       "a tick naming no occurrence is ignored")
 check(!processor.apply(WidgetCommand(action: .complete, occurrenceID: deposit.occurrenceID), now: now) && !deposit.isCompleted,
@@ -268,6 +271,30 @@ check(apply(.pauseWork, late, now: date(23, 22, 5)) && apply(.finishWork, late, 
 
 // MARK: - The queue
 
+// An earlier build's widget queued each tap as a file of its own in
+// `widget-actions/`, which nothing reads now; the app adopts them at launch.
+let earlier = task("Ticked by an earlier widget")
+let earlierFolder = AppGroup.containerURL!.appendingPathComponent("widget-actions", isDirectory: true)
+try FileManager.default.createDirectory(at: earlierFolder, withIntermediateDirectories: true)
+let earlierTapped = date(23, 10, 20)
+let earlierTap = """
+{"id":"\(UUID().uuidString)","kind":"complete","taskID":"\(earlier.id.uuidString)",\
+"occurrenceID":"\(earlier.occurrenceID.uuidString)","createdAt":"\(ISO8601DateFormatter().string(from: earlierTapped))"}
+"""
+try Data(earlierTap.utf8).write(to: earlierFolder.appendingPathComponent("780300000.000-tap.json"))
+try Data("not a tap".utf8).write(to: earlierFolder.appendingPathComponent("broken.json"))
+WidgetCommandProcessor.adoptEarlierQueue()
+check(!FileManager.default.fileExists(atPath: earlierFolder.path), "the earlier queue's folder is removed once read")
+let adopted = WidgetCommandQueue.pending(now: date(23, 10, 30))
+check(adopted.count == 1 && adopted[0].action == .complete && adopted[0].taskID == earlier.id
+      && adopted[0].occurrenceID == earlier.occurrenceID && adopted[0].issuedAt == earlierTapped,
+      "and its taps join the queue, dated as they were made")
+processor.drainQueue(now: date(23, 10, 30))
+check(earlier.isCompleted && earlier.completedAt == earlierTapped && WidgetCommandQueue.pending().isEmpty,
+      "so a tap made before the update still lands")
+WidgetCommandProcessor.adoptEarlierQueue()
+check(WidgetCommandQueue.pending().isEmpty, "with the folder gone, adopting again changes nothing")
+
 let snapshotURL = AppGroup.snapshotURL!
 let queuedDone = task("Queued tick")
 let queuedStale = task("Queued stale tick")
@@ -323,15 +350,9 @@ check(wait { signalled.isCompleted } && WidgetCommandQueue.pending().isEmpty,
 
 final class Screens: WidgetLinkScreens {
     let navigator: Navigator
-    var inspected: [UUID] = []
     var calendarDays: [Date] = []
     init(navigator: Navigator) { self.navigator = navigator }
     func go(_ route: AppRoute) { navigator.go(to: route) }
-    func route(for list: TaskList) -> AppRoute { list.isSystemInbox ? .inbox : .list(list.id) }
-    func inspectOnScreen(_ id: UUID) {
-        inspected.append(id)
-        navigator.openTask(id)
-    }
     func showOnCalendar(_ day: Date) {
         calendarDays.append(day)
         navigator.go(to: .calendar)
@@ -393,16 +414,33 @@ open(.activity)
 check(navigator.route == .activity, "Activity opens Activity")
 open(.list(home.id))
 check(navigator.route == .list(home.id), "a list link opens the list")
+check(navigator.contentReveal?.destination == .list(home.id) && navigator.contentReveal?.taskID == nil,
+      "a list link lands as an item link to the list does")
 open(.list(inbox.id))
 check(navigator.route == .inbox, "the Inbox list opens through the screens' own route")
 open(.list(UUID()))
 check(navigator.route == .inbox && unavailable == 1, "a missing list leaves the window where it is, and says so")
 
+
+navigator.isSearchOpen = true
+navigator.isCommandPaletteOpen = true
 open(.task(deposit.id))
-check(navigator.route == .list(home.id) && navigator.openTaskID == deposit.id && screens.inspected == [deposit.id],
-      "a task link opens its list and inspects the task")
+check(navigator.route == .list(home.id) && navigator.openTaskID == deposit.id && navigator.contentReveal?.taskID == deposit.id,
+      "a task link opens its list and inspects the task, as an item link does")
+check(!navigator.isSearchOpen && !navigator.isCommandPaletteOpen, "closing search and the command palette first")
+// A widget lists subtasks under folded parents and, with Show completed,
+// done tasks, which the page may be hiding: the link shows its path.
+let folder = task("Pack for Kyoto")
+folder.isCollapsed = true
+let tucked = task("Pack the rail passes")
+tucked.parentID = folder.id
+store.save()
+open(.task(tucked.id))
+check(navigator.route == .list(home.id) && navigator.openTaskID == tucked.id
+      && navigator.contentReveal?.ancestorIDs == [folder.id] && navigator.contentReveal?.visiblePath == [folder.id, tucked.id],
+      "a task under a folded parent is revealed, its parent unfolded for the visit")
 open(.task(trashed.id))
-check(navigator.route == .list(home.id) && navigator.openTaskID == deposit.id && unavailable == 2,
+check(navigator.route == .list(home.id) && navigator.openTaskID == tucked.id && unavailable == 2,
       "a task in Trash leaves the window where it is, and says so")
 navigator.isShortcutSheetOpen = true
 open(.today)

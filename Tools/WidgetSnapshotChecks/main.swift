@@ -156,12 +156,16 @@ check(NextAccent.allCases.map(\.hex) == [0x7C4DF0, 0x2F6FE0, 0x1F8A6D, 0xC2532B]
 check(snapshot.firstWeekday == 2, "the settings' first weekday is published")
 
 // Today
-let expectedToday = (10..<20).map { "Overdue \($0)" } + [retro.displayTitle, deposit.displayTitle]
-check(snapshot.todayItems.map(\.title) == expectedToday, "today holds overdue then due work, soonest first, capped at 12")
-check(snapshot.overdueCount == 12 && snapshot.dueTodayCount == 2, "counts include the rows past the cap")
-check(!snapshot.todayItems.contains { $0.id == plumber.id || $0.id == keys.id }, "the cap drops the latest rows")
-check(snapshot.dueToday == [WidgetSnapshot.Due(date: date(23), includesTime: false), WidgetSnapshot.Due(date: date(23, 18), includesTime: true)],
-      "every task behind the due-today count is published, past the rows' cap, so each can turn late on time")
+let expectedToday = (10..<16).map { "Overdue \($0)" } + [deposit, plumber, keys].map(\.displayTitle)
+check(snapshot.todayItems.map(\.title) == expectedToday,
+      "today holds overdue then due work, each soonest first and capped at 6, so a backlog leaves today's own rows")
+check(snapshot.overdueCount == 11 && snapshot.dueTodayCount == 3, "counts include the rows past the cap")
+check(!snapshot.todayItems.contains { $0.id == retro.id }, "the cap drops the latest overdue rows")
+check(snapshot.todayItems.first { $0.id == plumber.id }.map { !$0.isOverdue(at: now, calendar: calendar) } == true,
+      "late goes by day, as the app's Today: a task due at 09:00 is still due today at 10:40")
+check(snapshot.dueToday == [WidgetSnapshot.Due(date: date(23), includesTime: false), WidgetSnapshot.Due(date: date(23, 9), includesTime: true),
+                            WidgetSnapshot.Due(date: date(23, 18), includesTime: true)],
+      "every task behind the due-today count is published, so a widget past midnight counts each as late")
 // Tomorrow
 check(Set(snapshot.tomorrowItems.map(\.id)) == [passports.id, planters.id],
       "tomorrow's rows are the open work due tomorrow, a repeat's next occurrence included")
@@ -223,9 +227,44 @@ store.setSorting(.alphabetical, for: kyoto)
 check(publisher.buildSnapshot(now: now).list(id: kyoto.id)?.openItems.prefix(10).map(\.id)
       == (kyotoOpen.prefix(8) + [planters, kyotoOpen[8]]).map(\.id),
       "a sorted list's rows follow its page: the run before the heading sorted, a subtask under its parent, the heading's task after it")
+// The order is kept between rebuilds, and worked out again from the whole
+// document when what it depends on changes.
+func sortedKyoto() -> [UUID] { publisher.buildSnapshot(now: now).list(id: kyoto.id)?.openItems.prefix(10).map(\.id) ?? [] }
+let splitting = Block(kind: .paragraph, text: "Before the trains", listID: kyoto.id, sortIndex: 3.5)
+store.context.insert(splitting)
+store.save()
+check(sortedKyoto() == ([kyotoOpen[0], kyotoOpen[1], kyotoOpen[2], kyotoOpen[3], planters] + kyotoOpen[4..<8] + [kyotoOpen[8]]).map(\.id),
+      "a paragraph added between tasks splits their run, and each part sorts on its own")
+store.setText("Before the trains, and the ferry", for: splitting)
+store.save()
+check(sortedKyoto() == ([kyotoOpen[0], kyotoOpen[1], kyotoOpen[2], kyotoOpen[3], planters] + kyotoOpen[4..<8] + [kyotoOpen[8]]).map(\.id),
+      "typing in the paragraph leaves the order as it was")
+store.setText("A planter to water", for: planters)
+store.save()
+check(sortedKyoto().first == planters.id, "renaming a task in an alphabetical list moves it")
+store.setText("Water the planters", for: planters)
+store.context.delete(splitting)
+store.save()
+check(sortedKyoto() == (kyotoOpen.prefix(8) + [planters, kyotoOpen[8]]).map(\.id), "taking the paragraph away joins the run again")
 store.setSorting(.dueDate, for: kyoto)
 check(publisher.buildSnapshot(now: now).list(id: kyoto.id)?.openItems.map(\.id) == kyotoSummary.openItems.map(\.id),
       "sorted by due date, the dated repeat leads its run and the undated tasks keep their outline order")
+// A model deleted and not yet saved still turns up in a fetch, of the tasks
+// and of a sorted list's whole document alike; the snapshot leaves it out.
+let unsavedSorted = task("Deleted before the save", in: kyoto, index: 0.25)
+let unsavedPlain = task("Also deleted before the save", in: someday, index: 0.25)
+store.save()
+let beforeDeleting = publisher.buildSnapshot(now: now)
+check(beforeDeleting.list(id: kyoto.id)?.openItems.contains { $0.id == unsavedSorted.id } == true
+      && beforeDeleting.list(id: someday.id)?.openItems.first?.id == unsavedPlain.id, "fixture: a sorted and a plain list each have the task")
+store.context.delete(unsavedSorted)
+store.context.delete(unsavedPlain)
+let unsavedSnapshot = publisher.buildSnapshot(now: now)
+check(!unsavedSnapshot.lists.contains { $0.openItems.contains { [unsavedSorted.id, unsavedPlain.id].contains($0.id) } },
+      "tasks deleted but not yet saved are left out of a sorted list and of one in its own order")
+check(unsavedSnapshot.list(id: kyoto.id)?.openCount == beforeDeleting.list(id: kyoto.id).map { $0.openCount - 1 }
+      && unsavedSnapshot.totalOpenCount == beforeDeleting.totalOpenCount - 2, "and out of the counts")
+store.save()
 store.setSorting(.manual, for: kyoto)
 
 // Activity
@@ -254,6 +293,23 @@ check(okrsBlock?.listName == "Q3 planning" && okrsBlock?.accentHex == ListAccent
       "planned blocks carry their task and list")
 check(snapshot.agenda.contains { $0.title == "Done 3" && $0.isCompleted }, "completed work from earlier in the week is kept")
 check(!snapshot.agenda.contains { $0.title == "Done 6" }, "last week's completions are not")
+// The week's meetings are read again only once the calendars reload, as an
+// edit in Calendar makes them: a snapshot follows every save.
+var edited = events
+edited[0] = FixedBusyTime(id: "standup", title: "Standup, moved", start: date(21, 11), end: date(21, 11, 30))
+external.editFixture(edited)
+let kept = publisher.buildSnapshot(now: now).agenda.first { $0.id == "standup" }
+check(kept?.title == "Standup" && kept?.start == date(21, 9, 30), "until the calendars reload, the week's meetings are the ones already read")
+let revision = external.revision
+external.refresh(start: date(23), end: date(30))
+check(external.revision != revision, "fixture: the calendars reload")
+let moved = publisher.buildSnapshot(now: now).agenda.first { $0.id == "standup" }
+check(moved?.title == "Standup, moved" && moved?.start == date(21, 11) && moved?.end == date(21, 11, 30),
+      "a meeting moved and renamed earlier in the week reaches the snapshot once they do")
+external.editFixture(events)
+external.refresh(start: date(23), end: date(30))
+check(publisher.buildSnapshot(now: now).agenda.filter { $0.kind == .meeting }.map(\.title) == ["Standup", "Board prep"],
+      "fixture: the meetings are put back")
 
 // MARK: - Work
 
@@ -409,14 +465,14 @@ check(publisher.buildSnapshot(now: date(23, 12, 31)).activity.today == beforeKey
 // MARK: - Tomorrow
 
 // Tomorrow's rows are ordered and capped as today's are, and all its due dates
-// are published, so each can turn late on time once a widget moves them in.
+// are published, so a widget that starts the day with them counts each.
 let beforeErrands = publisher.buildSnapshot(now: noon)
 let errandsTomorrow = (0..<13).map { task("Errand \($0)", in: errands, index: Double($0), due: date(24, 20 - $0), time: true) }
 store.save()
 let withErrands = publisher.buildSnapshot(now: noon)
 let tomorrowDates = withErrands.tomorrowItems.compactMap(\.dueDate)
-check(withErrands.tomorrowItems.count == 12 && tomorrowDates.count == 12 && tomorrowDates == tomorrowDates.sorted(),
-      "tomorrow's rows are soonest first, capped at 12")
+check(withErrands.tomorrowItems.count == 6 && tomorrowDates.count == 6 && tomorrowDates == tomorrowDates.sorted(),
+      "tomorrow's rows are soonest first, capped at 6")
 check(!withErrands.tomorrowItems.contains { $0.id == errandsTomorrow[0].id }, "the cap drops tomorrow's latest rows")
 check(withErrands.dueTomorrow.count == beforeErrands.dueTomorrow.count + 13
       && withErrands.dueTomorrow.map(\.date) == withErrands.dueTomorrow.map(\.date).sorted()

@@ -16,7 +16,7 @@ final class ExternalCalendarSource {
     private let defaults: UserDefaults
     private var observer: NSObjectProtocol?
     private var range: DateInterval?
-    private let fixtureBusyTimes: [FixedBusyTime]?
+    private var fixtureBusyTimes: [FixedBusyTime]?
     private(set) var calendars: [ExternalCalendarDescriptor] = []
     private(set) var selectedCalendarIDs: Set<String>
     private(set) var busyTimes: [FixedBusyTime] = []
@@ -26,7 +26,7 @@ final class ExternalCalendarSource {
     private(set) var error: String?
     var onChange: (() -> Void)?
     /// Bumped on every reload, so readers of `busyTimes(in:)` can keep what
-    /// they read until the calendars change, and observers of it see changes
+    /// they read until the calendars reload, and observers of it see changes
     /// `busyTimes` doesn't show, like a meeting renamed or one earlier in the week.
     private(set) var revision = 0
 
@@ -59,6 +59,14 @@ final class ExternalCalendarSource {
             self.error = error.localizedDescription
             updateAuthorization()
         }
+    }
+
+    /// A fixture's meetings edited, as in Calendar, for the checks. Like an
+    /// edit there, it leaves `revision` alone until the calendars reload, so
+    /// readers that keep what they read see it only then.
+    func editFixture(_ busyTimes: [FixedBusyTime]) {
+        guard fixtureBusyTimes != nil else { return }
+        fixtureBusyTimes = busyTimes
     }
 
     func refresh(start: Date, end: Date) {

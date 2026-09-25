@@ -17,8 +17,13 @@ nonisolated struct ListEntity: AppEntity {
     var path: String
     var icon: String
 
+    /// "🗻 Weekend in Kyoto". An icon naming an SF Symbol, from synced or
+    /// older data, is drawn as the symbol beside the path, never printed.
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(icon.isEmpty ? path : "\(icon) \(path)")")
+        if ListIcon.isSymbolName(icon) {
+            return DisplayRepresentation(title: "\(path)", image: .init(systemName: icon))
+        }
+        return DisplayRepresentation(title: "\(WidgetFormat.listLine(icon: icon, name: path))")
     }
 
     init(id: UUID, title: String, path: String, icon: String) {

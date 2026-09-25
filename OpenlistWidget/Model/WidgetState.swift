@@ -20,8 +20,8 @@ nonisolated enum TaskCheck: Equatable, Sendable {
 /// here; the app removes a command once applied, which makes replaying every
 /// pending one idempotent. And counters were computed when the app wrote the
 /// file, possibly hours ago, while rows judge lateness at the entry's date, so
-/// the late and done counts are brought forward to that date too, and past
-/// midnight the next day's published work becomes today's.
+/// past midnight the late and done counts are brought forward to that date
+/// too, and the next day's published work becomes today's.
 nonisolated struct WidgetState: Equatable, Sendable {
     private(set) var snapshot: WidgetSnapshot
     /// Occurrences ticked off in the widget and still waiting for the app.
@@ -63,6 +63,18 @@ nonisolated struct WidgetState: Equatable, Sendable {
         WidgetFormat.dueText(for: item, now: now, calendar: calendar)
     }
 
+    /// Today's rows: late work, then the rest of today, each in the app's
+    /// order, `limit` in all. Late work leaves two rows to today's when there
+    /// are that many, so a long backlog never pushes the day's own work out
+    /// of the large widget's sections. A row keeps its section while it is
+    /// being ticked off, so the rows don't reshuffle before the app settles it.
+    func todaySections(limit: Int = .max) -> (late: [WidgetSnapshot.Item], rest: [WidgetSnapshot.Item]) {
+        let late = snapshot.todayItems.filter { $0.isOverdue(at: now, calendar: calendar) }
+        let rest = snapshot.todayItems.filter { !$0.isOverdue(at: now, calendar: calendar) }
+        let lateShown = min(late.count, max(0, limit - min(2, rest.count)))
+        return (Array(late.prefix(lateShown)), Array(rest.prefix(max(0, limit - lateShown))))
+    }
+
     /// "2 of 9 done": today's completions against everything due by today.
     var todayProgress: (done: Int, total: Int) {
         let done = snapshot.completedTodayCount
@@ -78,14 +90,14 @@ nonisolated struct WidgetState: Equatable, Sendable {
 
     private mutating func bringCountsForward() {
         let written = snapshot.generatedAt
-        guard now > written else { return }
-        if !calendar.isDate(now, inSameDayAs: written) {
-            snapshot.completedTodayCount = 0
-            startNextDay()
-        }
-        // A timed task passing its time, or midnight passing, makes a
-        // due-today task late; the counters follow. `dueToday` holds every
-        // task behind the count, where the rows stop at the display cap.
+        // Lateness goes by day, as the app's Today counts it, so nothing
+        // turns late before midnight.
+        guard now > written, !calendar.isDate(now, inSameDayAs: written) else { return }
+        snapshot.completedTodayCount = 0
+        startNextDay()
+        // Midnight passing makes the day's work late; the counters follow.
+        // `dueToday` holds every task behind the count, where the rows stop
+        // at the display cap.
         let calendar = calendar, now = now
         let turned = { (due: WidgetSnapshot.Due) in
             !due.isOverdue(at: written, calendar: calendar) && due.isOverdue(at: now, calendar: calendar)
@@ -98,15 +110,14 @@ nonisolated struct WidgetState: Equatable, Sendable {
 
     /// The app republishes at midnight only while it runs, so the snapshot
     /// carries the day after it was written: its work becomes today's here,
-    /// and the pass above moves any already past its time to late. Two days
-    /// on, that is late too; what the second day holds is not published.
+    /// while the day before's turns late in the pass above. Two days on,
+    /// that is late too; what the second day holds is not published.
     private mutating func startNextDay() {
-        // Rows go in the app's order, soonest first, which puts every one of
-        // tomorrow's after today's. When today's rows were capped, the rows
-        // left out come before tomorrow's, so tomorrow's only count.
-        if snapshot.todayItems.count >= snapshot.overdueCount + snapshot.dueTodayCount {
-            snapshot.todayItems += snapshot.tomorrowItems
-        }
+        // Tomorrow's rows are today's now, after the day before's, which are
+        // all late. The app caps the overdue, due-today and tomorrow rows
+        // separately, each at more than a widget draws, so rows a cap left
+        // out never come before the rows a widget shows.
+        snapshot.todayItems += snapshot.tomorrowItems
         // Both are soonest first, and tomorrow's all come later.
         snapshot.dueToday += snapshot.dueTomorrow
         snapshot.dueTodayCount += snapshot.dueTomorrow.count
@@ -245,18 +256,21 @@ nonisolated struct WidgetState: Equatable, Sendable {
                 snapshot.overdueCount += 1
             } else {
                 snapshot.dueTodayCount += 1
-                // So the timeline still moves it to late on time.
+                // So it still turns late at midnight.
                 let entry = WidgetSnapshot.Due(date: due, includesTime: item.includesTime)
                 snapshot.dueToday.insert(entry, at: snapshot.dueToday.firstIndex { $0.date > due } ?? snapshot.dueToday.endIndex)
             }
         }
-        // Agenda events stay as they are. The task's only events are its
-        // completed sessions, which remain history after a reopen; the app
-        // plans the reopened task afresh, under a new occurrence.
-        // Done today follows the task's state, as the app counts it. Activity
-        // does not: its heatmap keeps a reopened completion as history.
-        if let completedAt = item.completedAt, calendar.isDate(completedAt, inSameDayAs: now) {
-            snapshot.completedTodayCount = max(0, snapshot.completedTodayCount - 1)
+        // The app takes a reopened task's done block off the calendar, and
+        // plans it afresh under a new occurrence, so its blocks go here too.
+        snapshot.agenda.removeAll { $0.taskID == taskID && $0.occurrenceID == occurrence }
+        // Done today follows the task's state, as the app counts it, and the
+        // heatmap takes the completion back, as the Activity screen does.
+        if let completedAt = item.completedAt {
+            if calendar.isDate(completedAt, inSameDayAs: now) {
+                snapshot.completedTodayCount = max(0, snapshot.completedTodayCount - 1)
+            }
+            removeCompletion(on: completedAt)
         }
     }
 
@@ -363,6 +377,29 @@ nonisolated struct WidgetState: Equatable, Sendable {
         if calendar.isDate(day, equalTo: today, toGranularity: .month) { activity.month += 1 }
         // Today only joins the streak once something is done.
         if day == today, before == 0 { activity.streak += 1 }
+        snapshot.activity = activity
+    }
+
+    /// Takes a reopened completion back off the heatmap and its totals, on
+    /// the day it was made, as the app's heatmap does.
+    private mutating func removeCompletion(on date: Date) {
+        var activity = snapshot.activity
+        let day = calendar.startOfDay(for: date)
+        let today = calendar.startOfDay(for: now)
+        // Without published days, today's total says whether today has any left.
+        var left = activity.days.isEmpty && day == today ? max(0, activity.today - 1) : nil
+        if let index = activity.days.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: day) }) {
+            activity.days[index].count = max(0, activity.days[index].count - 1)
+            left = activity.days[index].count
+        }
+        // The totals are only read without published days, and then only
+        // for the entry's day, week and month.
+        if day == today { activity.today = max(0, activity.today - 1) }
+        if calendar.isDate(day, equalTo: today, toGranularity: .weekOfYear) { activity.week = max(0, activity.week - 1) }
+        if calendar.isDate(day, equalTo: today, toGranularity: .month) { activity.month = max(0, activity.month - 1) }
+        // Today leaves the streak once nothing done is left on it. Earlier
+        // days' counts are what the widget reads the streak from.
+        if day == today, left == 0 { activity.streak = max(0, activity.streak - 1) }
         snapshot.activity = activity
     }
 }

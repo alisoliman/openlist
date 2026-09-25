@@ -23,9 +23,9 @@ extension WidgetSnapshotSources {
         return sources
     }
 
-    /// Meetings, read from the calendars again only when the week or the
-    /// calendars change (`ExternalCalendarSource.revision`): the snapshot is
-    /// rebuilt after every save.
+    /// Meetings, read from the calendars again only when the week changes or
+    /// the calendars reload (`ExternalCalendarSource.revision`): the snapshot
+    /// is rebuilt after every save.
     @MainActor
     final class MeetingCache {
         private var key: [Double] = []

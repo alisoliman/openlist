@@ -9,11 +9,6 @@ import Foundation
 /// the app, so a widget link lands exactly as a click in the sidebar would.
 protocol WidgetLinkScreens: AnyObject {
     func go(_ route: AppRoute)
-    /// The screen that shows a list: the Inbox list is the Inbox screen.
-    func route(for list: TaskList) -> AppRoute
-    /// Opens a task in the inspector with its row focused, once the screen
-    /// just gone to is up, so it scrolls to the row.
-    func inspectOnScreen(_ id: UUID)
     /// The Calendar on a range that shows `day`, whichever range it was left on.
     func showOnCalendar(_ day: Date)
 }
@@ -27,8 +22,9 @@ protocol WidgetLinkScreens: AnyObject {
 /// Openlist forward.
 ///
 /// Quick Add links wait for the library only. Quick Add is a panel floating
-/// over whatever app is in front (`QuickCapturePanel`), so it neither needs
-/// the main window nor makes Openlist the active app.
+/// over whatever app is in front (`QuickCapturePanel`), so it needs no main
+/// window, and the router never activates Openlist for it. macOS may, as it
+/// opens the link; the card undoes that as it closes.
 @MainActor
 final class WidgetLinkRouter {
     private let store: Store
@@ -124,15 +120,35 @@ final class WidgetLinkRouter {
         case let .list(id):
             // Follows a list merged into another since the widget last refreshed.
             guard let list = store.list(id: id) else { return missing() }
-            show(screens.route(for: list))
-            activate()
+            reveal(.list(list.id))
         case let .task(id):
             guard let task = store.block(id: id), task.isTask, task.trashID == nil,
-                  let list = store.list(id: task.listID) else { return missing() }
-            show(screens.route(for: list))
-            screens.inspectOnScreen(task.id)
-            activate()
+                  store.list(id: task.listID) != nil else { return missing() }
+            reveal(.block(task.id))
         }
+    }
+
+    /// Lands on a list or a task as an item link does (`LocalLinkNavigation`):
+    /// a task's row focused with the inspector open, and the folded parents
+    /// and done lines on its path shown for the visit, since a widget lists
+    /// subtasks and completed tasks the page may be hiding.
+    private func reveal(_ destination: SearchDestination) {
+        let request: ContentReveal
+        do {
+            let lists = store.allLists(includeArchived: true)
+            var blocks: [Block] = []
+            if case let .block(id) = destination, let listID = store.block(id: id)?.listID {
+                blocks = store.blocks(inList: listID)
+            }
+            request = try ContentReveal.resolve(destination, blocks: blocks, lists: lists)
+        } catch {
+            return missing()
+        }
+        navigator.isSearchOpen = false
+        navigator.isCommandPaletteOpen = false
+        navigator.isShortcutSheetOpen = false
+        navigator.reveal(request)
+        activate()
     }
 
     /// Leaves the window where it is, and says why.

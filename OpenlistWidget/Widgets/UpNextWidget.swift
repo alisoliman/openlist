@@ -87,7 +87,7 @@ private struct SessionColumn: View {
                     .textStyle(15, .semibold, lineHeight: 1.25)
                     .padding(.top, 10)
                 if !listLine.isEmpty {
-                    Text(listLine)
+                    Text(listIcon: upNext.listIcon, name: upNext.listName, size: 10.5, includesIcon: !style.isVibrant)
                         .foregroundStyle(style.sub)
                         // "Next: Board prep at 14:00" keeps its time on a
                         // second line rather than truncating it away.

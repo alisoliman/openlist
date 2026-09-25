@@ -39,9 +39,12 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         var priority: Int
         var createdAt: Date
 
+        /// Late by day, as the app's Today screen and the design count it: due
+        /// on an earlier day. A timed task whose time has passed today is
+        /// still due today.
         func isOverdue(at now: Date, calendar: Calendar = .current) -> Bool {
             guard !isCompleted, let dueDate else { return false }
-            return includesTime ? dueDate < now : dueDate < calendar.startOfDay(for: now)
+            return dueDate < calendar.startOfDay(for: now)
         }
     }
 
@@ -130,13 +133,14 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         }
     }
 
-    /// When an open task due today turns late.
+    /// When an open task is due: it turns late at the midnight after that day.
     struct Due: Codable, Equatable, Sendable {
         var date: Date
         var includesTime: Bool
 
+        /// By day, as `Item.isOverdue`.
         func isOverdue(at now: Date, calendar: Calendar = .current) -> Bool {
-            includesTime ? date < now : date < calendar.startOfDay(for: now)
+            date < calendar.startOfDay(for: now)
         }
     }
 
@@ -182,16 +186,17 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// `Calendar.firstWeekday` the app uses (1 = Sunday … 7 = Saturday).
     var firstWeekday: Int = Calendar.current.firstWeekday
 
-    /// Overdue and due-today work, soonest first.
+    /// Overdue work, then work due today, each soonest first and capped on
+    /// its own, so a long backlog never leaves today without rows.
     var todayItems: [Item] = []
     var overdueCount: Int = 0
     var dueTodayCount: Int = 0
     /// Every open task behind `dueTodayCount`, soonest first and not capped
-    /// like `todayItems`, so a widget can move them to late on time.
+    /// like `todayItems`, so a widget can move them to late at midnight.
     var dueToday: [Due] = []
-    /// Tomorrow's rows (capped like `todayItems`) and due dates (uncapped), so
-    /// a widget can start the new day on time when the app has not run since
-    /// midnight to republish.
+    /// Tomorrow's rows (capped like today's) and due dates (uncapped), so a
+    /// widget can start the new day at midnight when the app has not run
+    /// since to republish.
     var tomorrowItems: [Item] = []
     var dueTomorrow: [Due] = []
     /// Done today exactly as the app's Today counts it: tasks completed today.

@@ -319,9 +319,12 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   own rows and work controls do, so the tray reports them, the change log lists them and
   Undo takes them back. Their links land as the sidebar's navigation: Triage shows the
   Inbox as triage for that visit even where this Mac shows it as a document, and Inbox
-  follows this Mac's choice; a task link opens its list with the row focused and the
-  inspector open. Quick Add floats its card over the app you are in, without making
-  Openlist active or bringing its window forward, and gives focus back when it closes.
+  follows this Mac's choice; a task link lands as an item link does, on its list with the
+  row focused, the inspector open and the folded parents and done lines on its path shown.
+  Quick Add floats its card over the app you are in. macOS may make Openlist active as it
+  opens a widget's link, bringing its window forward behind the card; the card then gives
+  focus back to the app you were in, and hides Openlist again if it was hidden, when it
+  closes. With VoiceOver on, Openlist activates on purpose so VoiceOver reads the card.
 - Calendar: running work past its slot follows the design's overrun (the slot grows to the
   next quarter plus 15 min, later placements that day move out of its way, saved and
   undoable, stopping only at meetings and breaks; Undo still moves them back after Pause,

@@ -24,8 +24,7 @@ nonisolated enum WidgetData {
 }
 
 /// Today, Quick Add, Summary and Activity: the day's data, with extra entries
-/// only where a task turns late, an Inbox capture's age changes or a waiting
-/// tap expires.
+/// only where an Inbox capture's age changes or a waiting tap expires.
 nonisolated struct SnapshotProvider: TimelineProvider {
     func placeholder(in context: Context) -> SnapshotEntry {
         .sample(now: .now)

@@ -24,7 +24,8 @@ protocol WidgetTaskActions: AnyObject {
     func pauseWorkFromWidget(now: Date)
     /// Writes the window's tick of `id` straight away when the row is still
     /// in its completion dwell, so a widget tap on the same row finds it done
-    /// instead of completing it a second time underneath the window.
+    /// instead of completing it a second time underneath the window. Only
+    /// that tick: the window's other rows keep their dwell.
     func settleCompletion(_ id: UUID)
 }
 
@@ -78,6 +79,34 @@ final class WidgetCommandProcessor {
         WidgetCommandQueue.remove(Set(queued.map(\.id)))
     }
 
+    /// Moves taps an earlier build's widget queued, one file each in
+    /// `widget-actions/`, onto the queue, and removes that folder: no build
+    /// reads it any more, so a tap left there would never land. Cheap once
+    /// the folder is gone, so it runs at every launch.
+    static func adoptEarlierQueue(in container: URL? = AppGroup.containerURL) {
+        guard let folder = container?.appendingPathComponent("widget-actions", isDirectory: true),
+              FileManager.default.fileExists(atPath: folder.path) else { return }
+        /// What that build wrote for a tap. Its kinds are the actions' names.
+        struct EarlierTap: Decodable {
+            var id: UUID
+            var kind: WidgetCommand.Action
+            var taskID: UUID
+            var occurrenceID: UUID?
+            var createdAt: Date
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
+        let taps = files.compactMap { url in (try? Data(contentsOf: url)).flatMap { try? decoder.decode(EarlierTap.self, from: $0) } }
+        // Oldest first, so a later tap on the same task still supersedes an earlier one.
+        for tap in taps.sorted(by: { $0.createdAt < $1.createdAt }) {
+            WidgetCommandQueue.append(WidgetCommand(id: tap.id, action: tap.kind, taskID: tap.taskID,
+                                                    occurrenceID: tap.occurrenceID, issuedAt: tap.createdAt))
+        }
+        try? FileManager.default.removeItem(at: folder)
+    }
+
     /// Applies the commands the extension queued while it could not reach the app.
     func drainQueue(now: Date = .now) {
         let queued = WidgetCommandQueue.pending(now: now)
@@ -121,8 +150,11 @@ final class WidgetCommandProcessor {
         guard let taskID = command.taskID, let occurrenceID = command.occurrenceID else { return false }
         switch command.action {
         case .complete:
+            // A row the window has just ticked is still open, in its dwell:
+            // settled first, the tap finds it done. A stale tap settles nothing.
+            guard let task = occurrence(taskID, occurrenceID) else { return false }
             actions.settleCompletion(taskID)
-            guard let task = occurrence(taskID, occurrenceID), !task.isCompleted else { return false }
+            guard !task.isCompleted else { return false }
             actions.completeFromWidget(task.id, at: tappedAt, now: now)
             return store.block(id: taskID).map { $0.isCompleted || $0.occurrenceID != occurrenceID } ?? false
         case .reopen:
@@ -143,8 +175,9 @@ final class WidgetCommandProcessor {
                   task.id == taskID, task.occurrenceID == occurrenceID else { return false }
             return start(task, now: now)
         case .finishWork:
+            guard let task = occurrence(taskID, occurrenceID), isWorkTask(task) else { return false }
             actions.settleCompletion(taskID)
-            guard let task = occurrence(taskID, occurrenceID), !task.isCompleted, isWorkTask(task) else { return false }
+            guard !task.isCompleted else { return false }
             actions.completeFromWidget(task.id, at: tappedAt, now: now)
             return store.block(id: taskID).map { $0.isCompleted || $0.occurrenceID != occurrenceID } ?? false
         }

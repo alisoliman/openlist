@@ -50,7 +50,11 @@ final class WidgetSnapshotPublisher {
     /// No widget size shows more rows than these, and the file is decoded on
     /// every timeline request.
     private enum Limit {
-        static let todayItems = 12
+        /// Each of Today's groups, overdue, due today and tomorrow, on its
+        /// own: more than a widget draws of any, so rows a cap leaves out
+        /// never come before the rows a widget shows, even once a widget
+        /// starts the next day with them (`WidgetState`).
+        static let todayItems = 6
         static let inboxItems = 6
         static let openItems = 12
         static let doneItems = 6
@@ -98,6 +102,17 @@ final class WidgetSnapshotPublisher {
     /// run of held-back plan changes.
     private var pendingPlanReload: Task<Void, Never>?
     private var activityCache: ActivityCache?
+    /// Each sorted list's task order, and the key it was worked out for.
+    private var sortedOrders: [UUID: SortedOrder] = [:]
+
+    /// A sorted list's tasks in its page's order. That order runs through the
+    /// prose between the list's runs of tasks, so working it out reads the
+    /// whole document, while most rebuilds (the editor's autosave as you
+    /// type, a sliding plan) leave it as it was.
+    private struct SortedOrder {
+        var key: Int
+        var ids: [UUID]
+    }
 
     /// The Activity section and what it was built from. Building it reads the
     /// whole completion history, which most refreshes (a typing pause, a
@@ -267,8 +282,8 @@ final class WidgetSnapshotPublisher {
         let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
         let dayAfterStart = calendar.date(byAdding: .day, value: 1, to: tomorrowStart) ?? tomorrowStart
 
-        var dueSoon: [Block] = []
-        var overdue = 0
+        var overdue: [Block] = []
+        var dueNow: [Block] = []
         var dueToday: [WidgetSnapshot.Due] = []
         var dueNext: [Block] = []
         var dueTomorrow: [WidgetSnapshot.Due] = []
@@ -283,13 +298,13 @@ final class WidgetSnapshotPublisher {
             if inbox.includes(task), !isUnderOpenTask(task) { waiting.append(task) }
 
             guard let due = task.dueDate else { continue }
-            let isOverdue = task.includesTime ? due < now : due < todayStart
-            if isOverdue {
-                overdue += 1
-                dueSoon.append(task)
+            // By day, as the app's Today: a timed task whose time has passed
+            // is still due today.
+            if due < todayStart {
+                overdue.append(task)
             } else if due < tomorrowStart {
                 dueToday.append(WidgetSnapshot.Due(date: due, includesTime: task.includesTime))
-                dueSoon.append(task)
+                dueNow.append(task)
             } else if due < dayAfterStart {
                 // Tomorrow's work, which the widget moves into today at
                 // midnight. The app republishes then only if it is running;
@@ -302,7 +317,8 @@ final class WidgetSnapshotPublisher {
         // Ties go by capture order, as the app's Today, then by id: the fetch
         // returns tasks in no fixed order, and a snapshot whose rows swapped
         // places would reload every widget with nothing changed.
-        dueSoon.sort(by: Self.byDueDate)
+        overdue.sort(by: Self.byDueDate)
+        dueNow.sort(by: Self.byDueDate)
         dueNext.sort(by: Self.byDueDate)
         waiting.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt > $1.createdAt }
 
@@ -314,10 +330,12 @@ final class WidgetSnapshotPublisher {
         snapshot.accentHex = sources.accentHex()
         snapshot.serifTitles = sources.serifTitles()
         snapshot.firstWeekday = calendar.firstWeekday
-        snapshot.todayItems = dueSoon.prefix(Limit.todayItems).map { task in
+        // Capped group by group, so a long backlog still leaves today's own
+        // work rows to draw.
+        snapshot.todayItems = (overdue.prefix(Limit.todayItems) + dueNow.prefix(Limit.todayItems)).map { task in
             item(task, list: task.listID.flatMap { listsByID[$0] })
         }
-        snapshot.overdueCount = overdue
+        snapshot.overdueCount = overdue.count
         snapshot.dueTodayCount = dueToday.count
         snapshot.dueToday = dueToday.sorted(by: Self.byDate)
         // Ordered and capped as today's rows are, which they join after them.
@@ -330,9 +348,12 @@ final class WidgetSnapshotPublisher {
             WidgetSnapshot.InboxItem(id: $0.id, title: $0.displayTitle, createdAt: $0.createdAt)
         }
         snapshot.totalOpenCount = totalOpen
+        var orders: [UUID: SortedOrder] = [:]
         snapshot.lists = hierarchy.sidebarOrder(lists, sections: store.allSections()).map {
-            summary(of: $0, blocks: blocksByList[$0.id] ?? [], hierarchy: hierarchy)
+            summary(of: $0, blocks: blocksByList[$0.id] ?? [], hierarchy: hierarchy, orders: &orders)
         }
+        // Only the lists still sorted keep an order.
+        sortedOrders = orders
 
         let weekStart = Self.weekStart(containing: now, calendar: calendar)
         let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
@@ -380,8 +401,9 @@ final class WidgetSnapshotPublisher {
     /// Open tasks in the order the list's page draws them. Subtasks are
     /// included: the list shows them, the open and done counts include them,
     /// and ticking one off from a widget is the same action as in the app.
-    private func summary(of list: TaskList, blocks: [Block], hierarchy: ListHierarchy) -> WidgetSnapshot.ListSummary {
-        let tasks = blocks.contains(where: \.isTask) ? orderedTasks(of: list, blocks: blocks) : []
+    private func summary(of list: TaskList, blocks: [Block], hierarchy: ListHierarchy,
+                         orders: inout [UUID: SortedOrder]) -> WidgetSnapshot.ListSummary {
+        let tasks = blocks.contains(where: \.isTask) ? orderedTasks(of: list, blocks: blocks, orders: &orders) : []
         let open = tasks.filter { !$0.isCompleted }
         let done = tasks.filter(\.isCompleted).sorted { left, right in
             left.completedAt == right.completedAt ? left.id.uuidString < right.id.uuidString : Block.byCompletionDate(left, right)
@@ -403,20 +425,63 @@ final class WidgetSnapshotPublisher {
     /// The list's tasks in its page's order: the document's outline, with the
     /// list's Sort reordering each run of top-level tasks between its prose
     /// and headings. Unsorted, the tasks and the blocks they sit under give
-    /// that order; a sorted list reads its whole document, since the prose
-    /// between runs is what keeps them apart.
-    private func orderedTasks(of list: TaskList, blocks: [Block]) -> [Block] {
-        var owned = blocks
-        if list.sorting != .manual {
-            let listID = list.id
-            owned = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
-                $0.trashID == nil && $0.listID == listID
-            }))) ?? []).filter { !$0.isDeleted }
-        }
+    /// that order. A sorted list reads its whole document, since the prose
+    /// between runs is what keeps them apart, but only when its order may
+    /// have changed: its tasks or the blocks they sit under moved or changed
+    /// what the Sort reads, the Sort itself changed, or a block came or went
+    /// at the top level, where the runs are. Typing leaves the order be.
+    private func orderedTasks(of list: TaskList, blocks: [Block], orders: inout [UUID: SortedOrder]) -> [Block] {
         var seen: Set<UUID> = []
-        owned = owned.filter { $0.listID == list.id && !$0.isTrashed && seen.insert($0.id).inserted }
-        return BlockTree.sortingTaskRuns(in: BlockTree.flatten(owned, respectCollapse: false), by: list.sorting)
+        let owned = blocks.filter { $0.listID == list.id && !$0.isTrashed && seen.insert($0.id).inserted }
+        guard list.sorting != .manual else { return Self.outlineTasks(owned, sorting: .manual) }
+        let key = sortingKey(of: list, blocks: owned)
+        let tasksByID = Dictionary(owned.filter(\.isTask).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if let cached = sortedOrders[list.id], cached.key == key {
+            orders[list.id] = cached
+            return cached.ids.compactMap { tasksByID[$0] }
+        }
+        let listID = list.id
+        seen = []
+        let document = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
+            $0.trashID == nil && $0.listID == listID
+        }))) ?? []).filter { !$0.isDeleted && !$0.isTrashed && seen.insert($0.id).inserted }
+        let tasks = Self.outlineTasks(document, sorting: list.sorting)
+        orders[list.id] = SortedOrder(key: key, ids: tasks.map(\.id))
+        return tasks
+    }
+
+    private static func outlineTasks(_ blocks: [Block], sorting: ListSorting) -> [Block] {
+        BlockTree.sortingTaskRuns(in: BlockTree.flatten(blocks, respectCollapse: false), by: sorting)
             .map(\.block).filter(\.isTask)
+    }
+
+    /// What a sorted list's order is worked out from, short of its prose:
+    /// the Sort, every task and block above one, in place and in what the
+    /// Sort reads, and how many blocks sit at the top level, a count the
+    /// store answers without reading them. Summed, so the order a fetch
+    /// returned the blocks in does not matter.
+    private func sortingKey(of list: TaskList, blocks: [Block]) -> Int {
+        func hash(_ body: (inout Hasher) -> Void) -> Int {
+            var hasher = Hasher()
+            body(&hasher)
+            return hasher.finalize()
+        }
+        let sorting = list.sorting
+        let listID = list.id
+        let roots = (try? store.context.fetchCount(FetchDescriptor<Block>(predicate: #Predicate {
+            $0.trashID == nil && $0.listID == listID && $0.parentID == nil
+        }))) ?? -1
+        var key = hash { $0.combine(sorting); $0.combine(roots) }
+        for block in blocks {
+            key &+= hash {
+                $0.combine(block.id); $0.combine(block.parentID); $0.combine(block.sortIndex); $0.combine(block.kindRaw)
+                guard block.isTask else { return }
+                $0.combine(block.createdAt); $0.combine(block.isCompleted); $0.combine(block.dueDate)
+                $0.combine(block.includesTime); $0.combine(block.priorityRaw)
+                if sorting == .alphabetical { $0.combine(block.displayTitle) }
+            }
+        }
+        return key
     }
 
     private func item(_ task: Block, list: TaskList?) -> WidgetSnapshot.Item {

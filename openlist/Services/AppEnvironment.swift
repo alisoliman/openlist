@@ -163,7 +163,8 @@ final class AppEnvironment {
     private func installWidgetActions() {
         widgetCommands.prepare = { [weak self] in self?.bootstrap() }
         WidgetCommandRouter.handler = { [weak widgetCommands] command in widgetCommands?.handle(command) }
-        // Quick Add floats over the app in front without activating Openlist.
+        // Quick Add floats over the app in front. The link may have made
+        // Openlist active; the card gives focus back as it closes.
         widgetLinks.capture = { request in QuickCapturePanel.shared.showFromWidget(request) }
         widgetLinks.activate = { NSApp.activate(ignoringOtherApps: true) }
         widgetLinks.unavailable = { [weak localLinks] in localLinks?.error = .targetUnavailable }
@@ -171,9 +172,11 @@ final class AppEnvironment {
 
     /// Refreshes the widgets when something they mirror changes without a
     /// save: the accent, serif titles, the first weekday their weeks start on,
-    /// and the calendars, whose revision moves with every meeting added, moved
-    /// or renamed, earlier in the week included. Runs from init, then again
-    /// after each change it sees.
+    /// and the calendars, whose revision moves on every reload, so a meeting
+    /// added, moved or renamed earlier in the week is read again. That is on
+    /// an EventKit change and on the coordinator's periodic refresh, whether
+    /// or not a meeting changed. Runs from init, then again after each change
+    /// it sees.
     private func watchWidgetInputs() {
         withObservationTracking {
             _ = (settings.accent, settings.serifTitles, settings.firstWeekday, calendar.externalCalendars.revision)
@@ -283,7 +286,9 @@ final class AppEnvironment {
                 lists: store.context.fetch(FetchDescriptor<TaskList>()))
         }
         widgetLinks.storeReady()
-        // Taps the extension queued while the app was not running.
+        // Taps the extension queued while the app was not running, an
+        // earlier build's queue included.
+        WidgetCommandProcessor.adoptEarlierQueue()
         widgetCommands.listenForSignals()
         widgetCommands.drainQueue()
     }

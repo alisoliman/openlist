@@ -8,8 +8,9 @@ import Foundation
 /// When each kind of widget needs a fresh entry.
 ///
 /// Widgets cannot run code on their own, so anything that changes with the
-/// clock (a task turning late, the Up Next countdown, the agenda's now line)
-/// has to be an entry prepared in advance. The app reloads the timelines a
+/// clock (an Inbox capture's age, the Up Next countdown, the agenda's now
+/// line) has to be an entry prepared in advance. Tasks turn late by day, at
+/// the reload a minute past midnight. The app reloads the timelines a
 /// change affects: every widget for tasks, counts and lists; only Up Next and
 /// Agenda when just the plan moved, at most every quarter hour while the app
 /// is in the background. These dates cover the time in between.
@@ -17,19 +18,12 @@ nonisolated enum TimelineSchedule {
     /// Entries far enough apart to stay inside WidgetKit's budget.
     static let maximumEntries = 120
 
-    /// Now, the moment each timed task still due today turns late, each
-    /// moment an Inbox capture's age label changes ("now", "15m", "2h"), and
-    /// each moment a pending tap stops being drawn.
+    /// Now, each moment an Inbox capture's age label changes ("now", "15m",
+    /// "2h"), and each moment a pending tap stops being drawn.
     static func snapshotDates(for snapshot: WidgetSnapshot, pending: [WidgetCommand] = [], now: Date, calendar: Calendar = .current) -> [Date] {
-        // Every task behind the due-today count, not just the rows shown, so
-        // the counters move on time as well as the rows.
-        let turns = snapshot.dueToday.compactMap { due -> Date? in
-            guard due.includesTime, due.date > now, calendar.isDate(due.date, inSameDayAs: now) else { return nil }
-            return due.date
-        }
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
         let ages = snapshot.inboxItems.flatMap { ageChanges(of: $0.createdAt, after: now, until: midnight) }
-        return tidy([now] + turns + ages + expiries(of: pending, after: now, calendar: calendar), now: now)
+        return tidy([now] + ages + expiries(of: pending, after: now, calendar: calendar), now: now)
     }
 
     /// Up Next: a minute at a time for the next 90 minutes while a block

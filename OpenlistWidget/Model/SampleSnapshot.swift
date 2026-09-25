@@ -12,7 +12,7 @@ extension WidgetSnapshot {
     /// Everything is relative: tasks keep their day offsets and clock times,
     /// and the week is laid out with today as its third day, as in the
     /// mockup. Counters are derived from the rows with the app's own rules
-    /// (a timed task is late once its time passes), so the sample is always
+    /// (a task is late once its day has passed), so the sample is always
     /// self-consistent, whatever the time.
     nonisolated static func sample(now: Date = .now, work: Work.State? = nil, calendar: Calendar = .current) -> WidgetSnapshot {
         let today = calendar.startOfDay(for: now)

@@ -52,7 +52,8 @@ check(sample.todayItems.map(\.title) == [
     "Close out Q2 retro actions", "Reserve the Nishiki market tour", "Fix the dripping bathroom tap",
     "Draft Q3 OKRs", "Write interview feedback for Priya", "Pay the ryokan deposit", "Ask Mika to water the planters",
 ], "the sample's Today rows follow the mockup: by day, timed before untimed")
-check(sample.overdueCount == 4 && sample.dueTodayCount == 3, "the sample counts a 10:00 task as late at 10:40, as the app does")
+check(sample.overdueCount == 3 && sample.dueTodayCount == 4,
+      "the sample counts late by day, as the app's Today does: a 10:00 task is still due today at 10:40")
 check(sample.completedTodayCount == 2 && sample.inboxCount == 6 && sample.inboxItems.count == 6, "the sample has two done today and six Inbox captures")
 check(sample.lists.map(\.title) == ["Inbox", "Weekend in Kyoto", "Home", "Reading", "Q3 planning", "Hiring loop"], "the sample lists come Inbox first")
 check(sample.list(id: nil)?.id == kyoto, "the default list is the first real one")
@@ -166,7 +167,7 @@ do {
     let ticked = WidgetState(snapshot: sample, pending: [tap(.complete, "q4")], now: now, calendar: calendar)
     check(ticked.check(for: item("q4")) == .closing, "a pending tick draws the row closing")
     check(ticked.snapshot.todayItems.contains { $0.id == q4 }, "the closing row stays until the app applies it")
-    check(ticked.snapshot.overdueCount == 3 && ticked.snapshot.completedTodayCount == 3, "a tick moves a late task to done")
+    check(ticked.snapshot.overdueCount == 2 && ticked.snapshot.completedTodayCount == 3, "a tick moves a late task to done")
     check(ticked.todayProgress == (3, 9), "progress already shows the tick")
     check(item("q4", in: ticked.snapshot).isOverdue(at: now, calendar: calendar), "a closing row keeps its late colour and section until the app settles it")
     let q3 = ticked.snapshot.lists.first { $0.title == "Q3 planning" }!
@@ -188,10 +189,23 @@ do {
     check(kyotoList.openItems.last?.id == k6 && kyotoList.doneItems.isEmpty, "a reopened row moves to the open rows")
     check(kyotoList.openCount == 6 && kyotoList.doneCount == 0, "reopening restores the list's counts")
     check(reopened.snapshot.completedTodayCount == 1, "reopening today's completion takes it off done today")
-    check(reopened.snapshot.activity == sample.activity, "Activity keeps a reopened completion as history, as the app's heatmap does")
+    let reopenedActivity = reopened.snapshot.activity
+    check(reopenedActivity.days.last?.count == 1 && reopenedActivity.today == 1 && reopenedActivity.week == 1 && reopenedActivity.month == 48,
+          "and Activity takes it back off its day and the totals, as the app's heatmap does")
+    check(reopenedActivity.streak == sample.activity.streak && ActivityStats(activity: reopenedActivity, now: now, calendar: reopened.calendar).streak == 1,
+          "a day with a completion left keeps its place in the streak")
+    let bothReopened = WidgetState(snapshot: sample, pending: [tap(.reopen, "k6"), tap(.reopen, "q6")], now: now, calendar: calendar)
+    check(bothReopened.snapshot.activity.days.last?.count == 0 && bothReopened.snapshot.activity.streak == 0
+          && ActivityStats(activity: bothReopened.snapshot.activity, now: now, calendar: bothReopened.calendar).streak == 0,
+          "reopening all of today's completions takes today out of the streak")
+    var noDaysDone = sample
+    noDaysDone.activity = WidgetSnapshot.Activity(streak: 3, today: 1, week: 4, month: 9)
+    let noDaysReopened = WidgetState(snapshot: noDaysDone, pending: [tap(.reopen, "k6")], now: now, calendar: calendar).snapshot.activity
+    check(noDaysReopened.today == 0 && noDaysReopened.week == 3 && noDaysReopened.month == 8 && noDaysReopened.streak == 2,
+          "without published days the app's totals give the completion back, and today leaves the streak once it has none")
 
-    // A finished session stays on the agenda as history; reopening the task
-    // does not turn that past block back into planned work.
+    // The app takes a reopened task's done block off the calendar, and plans
+    // it afresh under a new occurrence, so the Agenda drops the block too.
     var withHistory = sample
     let k6Row = item("k6")
     withHistory.agenda.append(WidgetSnapshot.AgendaEvent(
@@ -199,7 +213,8 @@ do {
         taskID: k6, occurrenceID: k6Row.occurrenceID, isCompleted: true
     ))
     let reopenedHistory = WidgetState(snapshot: withHistory, pending: [command(.reopen, k6, occurrence: k6Row.occurrenceID)], now: now, calendar: calendar)
-    check(reopenedHistory.snapshot.agenda.filter { $0.taskID == k6 }.allSatisfy(\.isCompleted), "reopening leaves the task's completed blocks done")
+    check(!reopenedHistory.snapshot.agenda.contains { $0.taskID == k6 } && reopenedHistory.snapshot.agenda.count == sample.agenda.count,
+          "reopening takes the task's done block off the agenda, and nothing else")
 
     let started = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1")], now: now, calendar: calendar)
     let work = started.snapshot.work
@@ -235,7 +250,7 @@ do {
     let finished = WidgetState(snapshot: sample, pending: [tap(.startWork, "q1"), command(.finishWork, q1, occurrence: q1Occurrence, at: at(10, 41))],
                                now: at(10, 42), calendar: calendar)
     check(finished.snapshot.work == nil && finished.check(for: item("q1")) == .closing, "Done ends the session and ticks the task")
-    check(finished.snapshot.overdueCount == 3, "finishing a late task takes it off the late count")
+    check(finished.snapshot.dueTodayCount == 3 && finished.snapshot.overdueCount == 3, "finishing a task due today takes it off the due-today count")
     check(finished.upNext.phase == .next && finished.upNext.title == "Write interview feedback for Priya", "Up Next moves on after Done")
 
     let working = WidgetSnapshot.sample(now: now, work: .working, calendar: calendar)
@@ -335,7 +350,7 @@ do {
     // The app rolls a repeat forward rather than complete it, so Today does
     // not count it as done; Activity counts every completion.
     let repeated = WidgetState(snapshot: sample, pending: [tap(.complete, "k4")], now: now, calendar: calendar)
-    check(repeated.check(for: item("k4")) == .closing && repeated.snapshot.dueTodayCount == 2 && !repeated.snapshot.dueToday.contains { $0.date == today },
+    check(repeated.check(for: item("k4")) == .closing && repeated.snapshot.dueTodayCount == 3 && !repeated.snapshot.dueToday.contains { $0.date == today },
           "a ticked repeat leaves today's due work")
     check(repeated.snapshot.completedTodayCount == 2 && repeated.todayProgress == (2, 8), "but is not done today: the app has it open again")
     let repeatList = repeated.snapshot.lists.first { $0.id == kyoto }!
@@ -344,7 +359,8 @@ do {
     check(repeated.snapshot.activity.today == 3 && repeated.snapshot.activity.days.last?.count == 3, "Activity still counts the repeat")
 
     let later = WidgetState(snapshot: sample, now: at(11, 31), calendar: calendar)
-    check(later.snapshot.overdueCount == 5 && later.snapshot.dueTodayCount == 2, "the late count follows a timed task passing its time")
+    check(later.snapshot.overdueCount == 3 && later.snapshot.dueTodayCount == 4 && !item("q1", in: later.snapshot).isOverdue(at: at(11, 31), calendar: calendar),
+          "a timed task whose time has passed is still due today, as on the app's Today")
     let tomorrow = WidgetState(snapshot: sample, now: at(0, 30, day: 1), calendar: calendar)
     check(tomorrow.snapshot.completedTodayCount == 0, "done today starts again after midnight")
     check(tomorrow.snapshot.overdueCount == 7 && tomorrow.snapshot.dueTodayCount == 1, "yesterday's due tasks count as late after midnight, and tomorrow's are due")
@@ -358,7 +374,7 @@ do {
     let morning = WidgetState(snapshot: written, now: at(8, day: 1), calendar: calendar)
     check(morning.snapshot.todayItems.last?.id == q2 && morning.snapshot.dueTodayCount == 1 && morning.snapshot.overdueCount == 7,
           "the next morning, tomorrow's task is due today and the rest of the evening's work is late")
-    check(morning.snapshot.dueToday == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)], "and moves to late on time")
+    check(morning.snapshot.dueToday == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)], "and turns late at the next midnight")
     check(morning.snapshot.tomorrowItems.isEmpty && morning.snapshot.dueTomorrow.isEmpty, "tomorrow's work is merged once")
     let tickedMorning = WidgetState(snapshot: written, pending: [tap(.complete, "q2", in: written, at: at(8, 5, day: 1))], now: at(8, 10, day: 1), calendar: calendar)
     check(tickedMorning.snapshot.dueTodayCount == 0 && tickedMorning.snapshot.dueToday.isEmpty && tickedMorning.snapshot.completedTodayCount == 1,
@@ -371,15 +387,18 @@ do {
     timedTomorrow.tomorrowItems[0].dueDate = at(9, day: 1)
     timedTomorrow.tomorrowItems[0].includesTime = true
     timedTomorrow.dueTomorrow = [WidgetSnapshot.Due(date: at(9, day: 1), includesTime: true)]
-    let pastMidnight = WidgetState(snapshot: timedTomorrow, now: at(0, 1, day: 1), calendar: calendar)
-    check(TimelineSchedule.snapshotDates(for: pastMidnight.snapshot, now: at(0, 1, day: 1), calendar: calendar).contains(at(9, day: 1)),
-          "the timeline built after midnight has an entry when tomorrow's timed task turns late")
-    check(WidgetState(snapshot: timedTomorrow, now: at(9, 30, day: 1), calendar: calendar).snapshot.overdueCount == 8, "and it is late after its time")
+    var quietTomorrow = timedTomorrow
+    quietTomorrow.inboxItems = []
+    let pastMidnight = WidgetState(snapshot: quietTomorrow, now: at(0, 1, day: 1), calendar: calendar)
+    check(TimelineSchedule.snapshotDates(for: pastMidnight.snapshot, now: at(0, 1, day: 1), calendar: calendar) == [at(0, 1, day: 1)],
+          "the timeline built after midnight has no entry at tomorrow's task's time")
+    let afterItsTime = WidgetState(snapshot: timedTomorrow, now: at(9, 30, day: 1), calendar: calendar).snapshot
+    check(afterItsTime.overdueCount == 7 && afterItsTime.dueTodayCount == 1, "since it is still due today after its time")
     var capped = written
     capped.overdueCount += 5
     let cappedMorning = WidgetState(snapshot: capped, now: at(8, day: 1), calendar: calendar)
-    check(!cappedMorning.snapshot.todayItems.contains { $0.id == q2 } && cappedMorning.snapshot.dueTodayCount == 1,
-          "when today's rows were capped, tomorrow's only count: the rows left out come before them")
+    check(cappedMorning.snapshot.todayItems.last?.id == q2 && cappedMorning.snapshot.dueTodayCount == 1,
+          "tomorrow's rows join today's even when the day's rows were capped: each group's cap is more than a widget draws")
 }
 
 // MARK: - Entries
@@ -391,6 +410,45 @@ do {
           "the configured list is shown")
     check(entry.at(at(12)).date == at(12) && entry.at(at(12)).list == entry.list, "an entry moved in time keeps its data and configuration")
     check(entry.state.calendar.firstWeekday == 2, "entries use the app's first weekday")
+}
+
+// MARK: - Today's sections
+
+do {
+    let base = WidgetState(snapshot: sample, now: now, calendar: calendar)
+    let all = base.todaySections()
+    check(all.late.map(\.title) == ["Close out Q2 retro actions", "Reserve the Nishiki market tour", "Fix the dripping bathroom tap"]
+          && all.rest.count == 4, "Today's rows split into late work and the rest of today")
+    let five = base.todaySections(limit: 5)
+    check(five.late.count == 3 && five.rest.map(\.title) == ["Draft Q3 OKRs", "Write interview feedback for Priya"],
+          "large Today's five rows hold the late work and today's first")
+
+    // Six more tasks, all late, ahead of the sample's.
+    var backlog = sample
+    let extra = (1...6).map { offset -> WidgetSnapshot.Item in
+        var row = item("q4")
+        row.id = UUID()
+        row.occurrenceID = UUID()
+        row.title = "Backlog \(offset)"
+        row.dueDate = at(0, day: -10 + offset)
+        return row
+    }
+    backlog.todayItems = extra + backlog.todayItems
+    backlog.overdueCount += extra.count
+    let crowded = WidgetState(snapshot: backlog, now: now, calendar: calendar)
+    let crowdedFive = crowded.todaySections(limit: 5)
+    check(crowdedFive.late.map(\.title) == ["Backlog 1", "Backlog 2", "Backlog 3"]
+          && crowdedFive.rest.map(\.title) == ["Draft Q3 OKRs", "Write interview feedback for Priya"],
+          "a long backlog leaves two of large Today's rows to today's own work")
+    check(crowded.todaySections(limit: 3).late.count == 1 && crowded.todaySections(limit: 3).rest.count == 2, "as it does when fewer rows fit")
+    var lone = backlog
+    lone.todayItems.removeAll { !$0.isOverdue(at: now, calendar: calendar) && $0.title != "Draft Q3 OKRs" }
+    let loneFive = WidgetState(snapshot: lone, now: now, calendar: calendar).todaySections(limit: 5)
+    check(loneFive.late.count == 4 && loneFive.rest.count == 1, "late work fills the rows today's work leaves")
+    var noneDue = backlog
+    noneDue.todayItems.removeAll { !$0.isOverdue(at: now, calendar: calendar) }
+    check(WidgetState(snapshot: noneDue, now: now, calendar: calendar).todaySections(limit: 5).late.count == 5,
+          "and every row, with nothing due today")
 }
 
 // MARK: - Up Next through the day
@@ -475,7 +533,7 @@ do {
 do {
     func due(_ key: String) -> String { WidgetFormat.dueText(for: item(key), now: now, calendar: calendar) }
     check(due("q4") == "3d late" && due("h1") == "1d late", "late tasks say how many days")
-    check(due("q1") == "10:00" && item("q1").isOverdue(at: now, calendar: calendar), "a timed task shows its time, and is late once it passes")
+    check(due("q1") == "10:00" && !item("q1").isOverdue(at: now, calendar: calendar), "a timed task shows its time, and is due today until the day is over")
     check(due("p1") == "11:30" && due("k4") == "Repeats", "timed and repeating tasks due today")
     check(due("q2") == "Tomorrow" && due("k1") == "Sat 26" && due("k5") == "Sun 27" && due("h3") == "Tue 29", "the coming week uses day names")
     check(due("k6") == "Done" && due("h2") == "", "done and undated tasks")
@@ -659,20 +717,20 @@ do {
 do {
     var quietInbox = sample
     quietInbox.inboxItems = []
-    check(TimelineSchedule.snapshotDates(for: quietInbox, now: now, calendar: calendar) == [now, at(11, 30), at(18)],
-          "Today gets an entry when each timed task turns late")
+    check(TimelineSchedule.snapshotDates(for: quietInbox, now: now, calendar: calendar) == [now],
+          "Today gets no entry at a timed task's time: tasks turn late at midnight, when the timeline reloads")
     let hourly = TimelineSchedule.snapshotDates(for: sample, now: now, calendar: calendar)
-    check(hourly.contains(at(11, 40)) && hourly.contains(at(23, 40)) && hourly.contains(at(11, 30)) && !hourly.contains(at(11)),
+    check(hourly.contains(at(11, 40)) && hourly.contains(at(23, 40)) && !hourly.contains(at(11)),
           "Inbox ages get an entry on each capture's own hour marks, not the clock's")
     check(TimelineSchedule.nextDay(after: now, calendar: calendar) == at(0, 1, day: 1), "timelines reload a minute past midnight")
     check(TimelineSchedule.reload(after: hourly, now: now, calendar: calendar) == at(0, 1, day: 1), "a day that fits in the timeline reloads after midnight")
     var fresh = quietInbox
     fresh.inboxItems = [WidgetSnapshot.InboxItem(id: UUID(), title: "Fresh", createdAt: at(10, 38))]
     let freshDates = TimelineSchedule.snapshotDates(for: fresh, now: now, calendar: calendar)
-    check([at(10, 43), at(10, 48), at(11, 33), at(11, 38), at(12, 38), at(23, 38)].allSatisfy(freshDates.contains) && freshDates.count == 1 + 2 + 11 + 13,
+    check([at(10, 43), at(10, 48), at(11, 33), at(11, 38), at(12, 38), at(23, 38)].allSatisfy(freshDates.contains) && freshDates.count == 1 + 11 + 13,
           "a fresh capture gets an entry every five minutes for its first hour, then hourly")
 
-    // Every task due today turns late on time, including those past the
+    // Every task due today turns late at midnight, including those past the
     // snapshot's row cap: here 14 late tasks fill the rows, and the one due at
     // 15:00 exists only in `dueToday`.
     var crowdedRows = quietInbox
@@ -682,35 +740,37 @@ do {
     crowdedRows.dueTodayCount = 1
     crowdedRows.dueToday = [WidgetSnapshot.Due(date: at(15), includesTime: true)]
     let atFour = WidgetState(snapshot: crowdedRows, now: at(16), calendar: calendar)
-    check(atFour.snapshot.overdueCount == 15 && atFour.snapshot.dueTodayCount == 0 && atFour.snapshot.dueToday.isEmpty,
-          "a task past the row cap moves to late when its time passes")
-    check(TimelineSchedule.snapshotDates(for: crowdedRows, now: now, calendar: calendar) == [now, at(15)], "and gets an entry at that moment")
+    check(atFour.snapshot.overdueCount == 14 && atFour.snapshot.dueTodayCount == 1, "a task past the row cap is still due today after its time")
+    let pastMidnightCrowded = WidgetState(snapshot: crowdedRows, now: at(0, 30, day: 1), calendar: calendar)
+    check(pastMidnightCrowded.snapshot.overdueCount == 15 && pastMidnightCrowded.snapshot.dueTodayCount == 1
+          && pastMidnightCrowded.snapshot.dueToday == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)],
+          "and late after midnight, when tomorrow's work is due")
+    check(TimelineSchedule.snapshotDates(for: crowdedRows, now: now, calendar: calendar) == [now], "with no entry at its time")
 
-    // Ticks and unticks keep `dueToday` in step with the count, so entries
-    // before and after a task's time agree.
+    // Ticks and unticks keep `dueToday` in step with the count, so the day
+    // starts right at midnight.
     let tickedP1 = WidgetState(snapshot: sample, pending: [tap(.complete, "p1")], now: now, calendar: calendar)
-    check(tickedP1.snapshot.dueTodayCount == 2 && !tickedP1.snapshot.dueToday.contains { $0.date == at(11, 30) }
-          && !TimelineSchedule.snapshotDates(for: tickedP1.snapshot, now: now, calendar: calendar).contains(at(11, 30)),
+    check(tickedP1.snapshot.dueTodayCount == 3 && !tickedP1.snapshot.dueToday.contains { $0.date == at(11, 30) },
           "a task ticked off leaves the due-today dates")
     let tickedLater = WidgetState(snapshot: sample, pending: [tap(.complete, "p1")], now: at(11, 31), calendar: calendar)
-    check(tickedP1.todayProgress == (3, 9) && tickedLater.todayProgress == (3, 9) && tickedLater.snapshot.overdueCount == 4,
+    check(tickedP1.todayProgress == (3, 9) && tickedLater.todayProgress == (3, 9) && tickedLater.snapshot.overdueCount == 3,
           "a pending tick counts the same once its time has passed")
     var doneAtThree = sample
     let kyotoIndex = doneAtThree.lists.firstIndex { $0.id == kyoto }!
     doneAtThree.lists[kyotoIndex].doneItems[0].dueDate = at(15)
     doneAtThree.lists[kyotoIndex].doneItems[0].includesTime = true
     let untickedAtThree = WidgetState(snapshot: doneAtThree, pending: [tap(.reopen, "k6")], now: now, calendar: calendar)
-    check(untickedAtThree.snapshot.dueTodayCount == 4 && untickedAtThree.snapshot.dueToday.map(\.date) == [today, at(11, 30), at(15), at(18)]
-          && TimelineSchedule.snapshotDates(for: untickedAtThree.snapshot, now: now, calendar: calendar).contains(at(15)),
-          "a task unticked before its time is due today again, with an entry when it turns late")
+    check(untickedAtThree.snapshot.dueTodayCount == 5 && untickedAtThree.snapshot.dueToday.map(\.date) == [today, at(10), at(11, 30), at(15), at(18)]
+          && !TimelineSchedule.snapshotDates(for: untickedAtThree.snapshot, now: now, calendar: calendar).contains(at(15)),
+          "a task unticked is due today again, among the dates that turn late at midnight")
     let untickedLater = WidgetState(snapshot: doneAtThree, pending: [tap(.reopen, "k6")], now: at(15, 30), calendar: calendar)
-    check(untickedLater.snapshot.overdueCount == 6 && untickedLater.snapshot.dueTodayCount == 2, "and late once its time has passed")
+    check(untickedLater.snapshot.overdueCount == 3 && untickedLater.snapshot.dueTodayCount == 5, "and still due today once its time has passed")
 
     // A tap waiting for the app is drawn until the app would drop it, so the
     // timelines have an entry at that moment.
     let waiting = [tap(.complete, "q4", at: at(8)), tap(.pauseWork, "q1")]
     check(TimelineSchedule.snapshotDates(for: quietInbox, pending: waiting, now: now, calendar: calendar)
-          == [now, now.addingTimeInterval(121), at(11, 30), at(14), at(18)], "a waiting tap gets an entry when it expires")
+          == [now, now.addingTimeInterval(121), at(14)], "a waiting tap gets an entry when it expires")
     check(TimelineSchedule.upNextDates(for: WidgetSnapshot.sample(now: now, work: .paused, calendar: calendar), pending: waiting, now: now, calendar: calendar)
           .contains(now.addingTimeInterval(121)), "including while Up Next holds still")
     check(TimelineSchedule.agendaDates(for: sample, pending: [tap(.complete, "q4", at: at(8, 7))], now: now, calendar: calendar).contains(at(14, 7)),

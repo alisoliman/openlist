@@ -6,12 +6,7 @@
 import Foundation
 
 /// Widget links land the way the main window's own navigation does.
-extension Workbench: WidgetLinkScreens {
-    func inspectOnScreen(_ id: UUID) {
-        // Once the new screen is up, so it scrolls to the row, as a search hit does.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in self?.inspect(id) }
-    }
-}
+extension Workbench: WidgetLinkScreens {}
 
 /// Widget buttons act as the window's own rows and work controls do, so the
 /// tray, the change log and Undo treat them alike.
@@ -34,6 +29,6 @@ extension Workbench: WidgetTaskActions {
     }
 
     func settleCompletion(_ id: UUID) {
-        if closing[id] != nil { flushClosings() }
+        settleClosing(of: id)
     }
 }

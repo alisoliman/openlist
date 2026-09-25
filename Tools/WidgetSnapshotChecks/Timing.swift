@@ -17,9 +17,11 @@ func runTimingChecks(directory: URL, now: Date) throws {
     let today = calendar.startOfDay(for: now)
 
     var tasks: [Block] = []
+    var lists: [TaskList] = []
     store.isLoggingSuspended = true
     for listIndex in 0..<50 {
         let list = TaskList(title: "List \(listIndex)", icon: "📋", accent: .blue)
+        lists.append(list)
         list.sortIndex = Double(listIndex)
         list.sidebarIndex = Double(listIndex)
         store.context.insert(list)
@@ -76,6 +78,11 @@ func runTimingChecks(directory: URL, now: Date) throws {
     check(snapshot.lists[1].openItems.first?.title == "Task 0.0.0", "a list's rows still follow its outline")
     let runs = 5
     let unchanged = (0..<runs).map { _ in time { _ = publisher.buildSnapshot(now: now) } }.reduce(0, +) / Double(runs)
+    // A sorted list's order reads its whole document, prose and all, but
+    // only when the order may have changed: not on a rebuild that leaves it.
+    for list in lists.prefix(25) { store.setSorting(.dueDate, for: list) }
+    let firstSorted = time { _ = publisher.buildSnapshot(now: now) }
+    let sortedUnchanged = (0..<runs).map { _ in time { _ = publisher.buildSnapshot(now: now) } }.reduce(0, +) / Double(runs)
     store.toggleCompletion(tasks[0], now: now)
     let completed = time { snapshot = publisher.buildSnapshot(now: now) }
     check(snapshot.activity.today == WidgetSnapshotPublisher(store: store).buildSnapshot(now: now).activity.today,
@@ -86,6 +93,9 @@ func runTimingChecks(directory: URL, now: Date) throws {
     let history = time { _ = try? store.activityHeatmap(now: now, calendar: calendar, weeks: 21) }
     print(String(format: "⏱  snapshot rebuild, 5k tasks, 20k prose blocks, 10k completions: first %.0f ms, "
                  + "then %.0f ms while the history is unchanged, %.0f ms after a completion "
-                 + "(reading every block takes %.0f ms, the history %.0f ms)", first, unchanged, completed, everyBlock, history))
+                 + "(reading every block takes %.0f ms, the history %.0f ms); with half the lists sorted, "
+                 + "%.0f ms once, then %.0f ms", first, unchanged, completed, everyBlock, history, firstSorted, sortedUnchanged))
     check(unchanged < everyBlock + history, "a rebuild that leaves the history alone costs less than reading every block and the history once")
+    check(sortedUnchanged < unchanged + everyBlock / 4,
+          "a rebuild that leaves sorted lists alone does not read their documents again")
 }

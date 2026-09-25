@@ -1076,6 +1076,14 @@ final class Workbench {
         relog(completion.mark)
     }
 
+    /// Writes the completion `id` is dwelling in now, the rest of its batch
+    /// with it, as its dwell ending would. Other rows' dwell, and rows flying
+    /// to or from Trash, carry on.
+    func settleClosing(of id: UUID) {
+        guard let completion = completions.first(where: { $0.pending.contains(id) }) else { return }
+        settle(completion)
+    }
+
     /// Settles every pending completion, trash and restore now. Runs before
     /// quitting, so a row that showed as done, deleted or restored is saved that way.
     func flushClosings() {

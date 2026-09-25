@@ -11,7 +11,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/widget-snaps
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   openlist/Services/AdaptiveScheduler.swift openlist/Services/ExternalCalendarSource.swift \
   openlist/Services/MacWorkMonitor.swift openlist/Services/CalendarCoordinator.swift openlist/Services/AppSettings.swift \
-  openlist/Services/ActiveTaskPolicy.swift openlist/Services/ListTasksProjection.swift \
+  openlist/Services/ActiveTaskPolicy.swift \
   openlist/Services/WidgetSnapshotPublisher.swift openlist/Services/WidgetCalendarBridge.swift \
   Tools/EditorChecks/Support.swift Tools/WidgetSnapshotChecks/Timing.swift Tools/WidgetSnapshotChecks/main.swift
 "$OUT/widget-snapshot-checks" "$OUT" "$(uuidgen)"

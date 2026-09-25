@@ -287,12 +287,12 @@ private struct TodayRows: View {
     var layout = TaskRow.Layout.standard
 
     var body: some View {
-        let shown = Array(today.rows.prefix(limit))
+        let sections = today.sections(limit: limit)
+        let shown = showsSections ? sections.late + sections.rest : Array(today.rows.prefix(limit))
         let hidden = today.hiddenCount(showing: shown.count)
         VStack(alignment: .leading, spacing: spacing) {
             if showsSections {
-                let late = shown.filter(today.isOverdue)
-                let rest = shown.filter { !today.isOverdue($0) }
+                let late = sections.late, rest = sections.rest
                 if !late.isEmpty {
                     SectionLabel(title: "Overdue", isLate: true)
                         .padding(.top, 2)
@@ -380,9 +380,9 @@ private struct TodayClear: View {
 /// What every family reads from the entry's state, worked out once.
 private nonisolated struct TodayDigest {
     let state: WidgetState
-    /// Late work first, then the rest of today, each in the app's order. The
-    /// app sorts by due date, which puts an untimed task due today ahead of
-    /// one whose time has already passed; the widget groups by lateness.
+    /// Late work first, then the rest of today, each in the app's order.
+    /// The app publishes them so; past midnight the widget's own new day
+    /// adds tomorrow's rows after the day before's, which are late by then.
     let rows: [WidgetSnapshot.Item]
     let late: Int
     let done: Int
@@ -391,9 +391,8 @@ private nonisolated struct TodayDigest {
 
     init(state: WidgetState) {
         self.state = state
-        let items = state.snapshot.todayItems
-        let isLate = { (item: WidgetSnapshot.Item) in item.isOverdue(at: state.now, calendar: state.calendar) }
-        rows = items.filter(isLate) + items.filter { !isLate($0) }
+        let sections = state.todaySections()
+        rows = sections.late + sections.rest
         late = state.snapshot.overdueCount
         (done, total) = state.todayProgress
     }
@@ -408,6 +407,11 @@ private nonisolated struct TodayDigest {
     /// not reshuffle under the pointer before the app settles it out.
     func isOverdue(_ item: WidgetSnapshot.Item) -> Bool {
         item.isOverdue(at: now, calendar: calendar)
+    }
+
+    /// The large family's OVERDUE and DUE TODAY rows.
+    func sections(limit: Int) -> (late: [WidgetSnapshot.Item], rest: [WidgetSnapshot.Item]) {
+        state.todaySections(limit: limit)
     }
 
     /// Rows beyond the first `count`. The snapshot caps its rows, so this
