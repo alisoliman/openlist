@@ -1192,7 +1192,7 @@ private struct NXLineText: View {
             focusToken: context.focus.token,
             convertsPrefixes: !context.tasksOnly,
             isSlashMenuOpen: context.slashBlockID == id,
-            caretColor: env.settings.accent.editorColor,
+            accentColor: env.settings.accent.editorColor,
             onSlashCommand: { editor.handleSlashCommand($0) },
             callbacks: callbacks
         )

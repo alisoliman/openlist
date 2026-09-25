@@ -840,9 +840,27 @@ check(taskAttributes[.foregroundColor] as? NSColor === NXEditor.ink
     && RichTextCodec.baseAttributes(for: .task)[.foregroundColor] as? NSColor === taskAttributes[.foregroundColor] as? NSColor
     && RichTextCodec.baseAttributes(for: .quote)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
     && RichTextCodec.baseAttributes(for: .paragraph)[.foregroundColor] as? NSColor === NXEditor.secondaryInk
-    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === NXEditor.strikeInk
-    && NXEditor.link === NXEditor.accentViolet,
-    "Editor colours are shared ink and accent tokens, so content signatures stay equal")
+    && RichTextCodec.baseAttributes(for: .task, isCompleted: true)[.strikethroughColor] as? NSColor === NXEditor.strikeInk,
+    "Editor colours are shared ink tokens, so content signatures stay equal")
+let linkedLine = NSMutableAttributedString(attributedString: RichTextCodec.decode(nil, plainText: "Site", kind: .paragraph))
+RichTextCodec.setLink(URL(string: "https://example.com")!, in: linkedLine, range: NSRange(location: 0, length: 4))
+let linkedLineEcho = RichTextCodec.decode(RichTextCodec.encode(linkedLine, kind: .paragraph), plainText: "Site", kind: .paragraph)
+check(linkedLine.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink
+    && linkedLineEcho.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink,
+    "A link run keeps the shared ink in storage, however it was made")
+var accentedEditor = editor
+accentedEditor.accentColor = NXEditor.accentBlue
+let accentedView = BlockNSTextView(frame: .zero)
+accentedEditor.applyAccent(to: accentedView)
+check(accentedView.linkTextAttributes?[.foregroundColor] as? NSColor === NXEditor.accentBlue
+    && accentedView.insertionPointColor === NXEditor.accentBlue
+    && accentedView.linkTextAttributes?[.underlineStyle] as? Int == NSUnderlineStyle.single.rawValue,
+    "Links and the caret take the chosen accent")
+accentedEditor.accentColor = NXEditor.accentGreen
+accentedEditor.applyAccent(to: accentedView)
+check(accentedView.linkTextAttributes?[.foregroundColor] as? NSColor === NXEditor.accentGreen
+    && accentedView.insertionPointColor === NXEditor.accentGreen,
+    "Choosing another accent redraws links in it")
 let writtenTitle = RichTextCodec.restylingCompletion(of: RichTextCodec.decode(nil, plainText: "Written", kind: .task), kind: .task,
                                                      struck: true, dimsCompleted: false)
 check(writtenTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === NXEditor.ink

@@ -101,8 +101,10 @@ struct BlockTextView: NSViewRepresentable {
     /// Tab still nests the line, as the design's does. Only a `/` that
     /// starts the block opens it.
     var isSlashMenuOpen: Bool = false
-    /// The insertion point's colour. `nil` keeps AppKit's.
-    var caretColor: NSColor? = nil
+    /// The chosen accent (`NextAccent.editorColor`), drawn as the insertion
+    /// point and as links. `nil` keeps AppKit's caret, with links in Next's
+    /// default accent.
+    var accentColor: NSColor? = nil
     var onSlashCommand: (SlashMenuCommand) -> Void = { _ in }
     var callbacks: BlockEditorCallbacks
 
@@ -139,19 +141,13 @@ struct BlockTextView: NSViewRepresentable {
         // becomeFirstResponder), so a document at rest reads without squiggles.
         view.isContinuousSpellCheckingEnabled = false
         view.usesFindBar = false
-        let linkAttributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NXEditor.link,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-            .cursor: NSCursor.pointingHand,
-        ]
-        view.linkTextAttributes = linkAttributes
 
         context.coordinator.apply(attributedText, to: view, kind: kind, isCompleted: isCompleted,
                                   dimsStruck: dimsStruck, drawsStrike: drawsStrike)
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
-        if let caretColor { view.insertionPointColor = caretColor }
+        applyAccent(to: view)
         return view
     }
 
@@ -160,7 +156,7 @@ struct BlockTextView: NSViewRepresentable {
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
-        if let caretColor, view.insertionPointColor !== caretColor { view.insertionPointColor = caretColor }
+        applyAccent(to: view)
         if view.textContainerInset.height != verticalInset {
             view.textContainerInset = NSSize(width: 0, height: verticalInset)
             view.invalidateIntrinsicContentSize()
@@ -168,6 +164,20 @@ struct BlockTextView: NSViewRepresentable {
 
         context.coordinator.updateContent(of: view)
         context.coordinator.syncFocus(view: view, shouldFocus: isFocused, caret: pendingCaret, token: focusToken)
+    }
+
+    /// Draws the caret and links in the accent. NSTextView draws a link with
+    /// `linkTextAttributes`, over the storage's ink. Each is set only when its
+    /// colour changes, so an update doesn't disturb the caret or the IME.
+    func applyAccent(to view: BlockNSTextView) {
+        if let accentColor, view.insertionPointColor !== accentColor { view.insertionPointColor = accentColor }
+        let link = accentColor ?? NXEditor.accentViolet
+        guard view.linkTextAttributes?[.foregroundColor] as? NSColor !== link else { return }
+        view.linkTextAttributes = [
+            .foregroundColor: link,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand,
+        ]
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: BlockNSTextView, context: Context) -> CGSize? {

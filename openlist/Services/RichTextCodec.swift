@@ -136,9 +136,11 @@ enum RichTextCodec {
                 result.addAttribute(.font, value: font(baseFont, adding: traits), range: range)
             }
 
+            // A link keeps a neutral ink here; the text view draws it in the
+            // chosen accent (`BlockTextView.applyAccent`).
             if let link = attributes[.link] {
                 result.addAttribute(.link, value: link, range: range)
-                result.addAttribute(.foregroundColor, value: NXEditor.link, range: range)
+                result.addAttribute(.foregroundColor, value: NXEditor.ink, range: range)
                 result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
 
@@ -366,7 +368,7 @@ enum RichTextCodec {
         guard range.length > 0 else { return }
         if let url {
             attributed.addAttribute(.link, value: url, range: range)
-            attributed.addAttribute(.foregroundColor, value: NXEditor.link, range: range)
+            attributed.addAttribute(.foregroundColor, value: NXEditor.ink, range: range)
             attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
         } else {
             attributed.removeAttribute(.link, range: range)
