@@ -6,12 +6,26 @@ nonisolated enum ICloudConfiguration {
     static let containerIdentifier = "iCloud.solimanali.openlist"
 
     static var unavailableReason: String? {
-        #if OPENLIST_DEV
+        #if OPENLIST_DEV && os(iOS)
+        return "iCloud is disabled in Openlist Dev. Development data stays on this iPhone."
+        #elseif OPENLIST_DEV
         return "iCloud is disabled in Openlist Dev. Development data stays on this Mac."
         #else
         if ReviewSession.identifier != nil {
             return "iCloud is disabled for this isolated review session."
         }
+        #if os(iOS)
+        // iOS has no public API to read a process's entitlements. The build
+        // setting that fills the iCloud environment entitlement also fills
+        // this key, so a build signed without iCloud has neither. Deciding
+        // here matters: an unentitled process opens a CloudKit-backed store
+        // without an error, then crashes as soon as it makes a CKContainer.
+        guard let environment = Bundle.main.object(forInfoDictionaryKey: "OpenlistICloudEnvironment") as? String,
+              environment == "Development" || environment == "Production" else {
+            return "This build is not provisioned for iCloud. Your data stays on this iPhone."
+        }
+        return nil
+        #else
         guard let task = SecTaskCreateFromSelf(nil) else {
             return "This build's iCloud signing permissions could not be read."
         }
@@ -29,6 +43,7 @@ nonisolated enum ICloudConfiguration {
             return "This build is not provisioned for iCloud. Use a signed build with the Openlist iCloud container. Your data remains on this Mac."
         }
         return nil
+        #endif
         #endif
     }
 }

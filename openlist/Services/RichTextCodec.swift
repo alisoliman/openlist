@@ -3,7 +3,11 @@
 //  openlist
 //
 
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 
 /// Custom attribute marking a run as inline code, so it survives a round trip
@@ -23,6 +27,11 @@ extension NSAttributedString.Key {
 /// back in: only the symbolic traits (bold, italic) and code-ness are read,
 /// then re-applied on top of the base font for the block's current kind. That
 /// is what lets a bold word stay bold when a paragraph becomes a heading.
+///
+/// The Mac and the iPhone read and write the same archives, synced through
+/// `Block.richData`. Only the font primitives at the end differ per platform
+/// (AppKit's font manager, UIKit's font descriptors); every rule about what
+/// is stored lives once, above them.
 enum RichTextCodec {
     /// Heading 1 was once system bold at this size, so a run styled inside an
     /// older heading was archived bold along with its own trait.
@@ -40,7 +49,7 @@ enum RichTextCodec {
         // recording that would keep the weight after a change to body text.
         let baseFont = NXEditor.nsFont(for: kind)
         normalised.enumerateAttribute(.font, in: full) { value, range, _ in
-            guard let font = value as? NSFont, font.isEquivalent(to: baseFont) else { return }
+            guard let font = value as? PlatformFont, font.isEquivalent(to: baseFont) else { return }
             normalised.removeAttribute(.font, range: range)
         }
 
@@ -68,19 +77,17 @@ enum RichTextCodec {
         // Fold inline-code runs into a monospaced font so RTF can carry them.
         normalised.enumerateAttribute(.openlistInlineCode, in: full) { value, range, _ in
             guard (value as? Bool) == true else { return }
-            let existing = normalised.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
-            let traits = existing.map { NSFontManager.shared.traits(of: $0) } ?? []
-            var weight: NSFont.Weight = traits.contains(.boldFontMask) ? .bold : .regular
-            if traits.contains(.boldFontMask) { weight = .bold }
+            let existing = normalised.attribute(.font, at: range.location, effectiveRange: nil)
+            let weight: PlatformFont.Weight = fontTraits(of: existing).bold ? .bold : .regular
             normalised.addAttribute(
                 .font,
-                value: NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: weight),
+                value: PlatformFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: weight),
                 range: range
             )
         }
         normalised.removeAttribute(.openlistInlineCode, range: full)
 
-        return normalised.rtf(from: full, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+        return rtf(from: normalised)
     }
 
     // MARK: - Decoding
@@ -91,11 +98,7 @@ enum RichTextCodec {
 
         guard
             let data,
-            let stored = try? NSAttributedString(
-                data: data,
-                options: [.documentType: NSAttributedString.DocumentType.rtf],
-                documentAttributes: nil
-            ),
+            let stored = attributedString(fromRTF: data),
             // A stale archive whose text no longer matches the plain-text
             // mirror is discarded rather than shown out of date.
             stored.string.replacingOccurrences(of: "\u{fffc}", with: "") == plainText
@@ -108,27 +111,27 @@ enum RichTextCodec {
         let baseFont = NXEditor.nsFont(for: kind)
 
         stored.enumerateAttributes(in: full) { attributes, range, _ in
-            var traits: NSFontTraitMask = []
+            var traits: FontTraits = []
             var isCode = false
 
-            if let font = attributes[.font] as? NSFont {
-                let mask = NSFontManager.shared.traits(of: font)
+            if let font = attributes[.font] as? PlatformFont {
+                let mask = self.traits(of: font)
                 // That bold was the old heading's weight, not the user's: the
                 // heading's own weight draws it, and the next `encode` stores
                 // the run without it.
                 let isLegacyHeadingWeight = kind == .heading1
                     && abs(font.pointSize - legacyHeading1PointSize) < 0.01
-                if mask.contains(.boldFontMask), !isLegacyHeadingWeight { traits.insert(.boldFontMask) }
-                if mask.contains(.italicFontMask) { traits.insert(.italicFontMask) }
-                isCode = font.fontDescriptor.symbolicTraits.contains(.monoSpace)
+                if mask.contains(boldTrait), !isLegacyHeadingWeight { traits.insert(boldTrait) }
+                if mask.contains(italicTrait) { traits.insert(italicTrait) }
+                isCode = isMonospaced(font)
                     || (font.fontName.lowercased().contains("mono") && kind != .code)
             }
 
             if isCode, kind != .code {
-                let weight: NSFont.Weight = traits.contains(.boldFontMask) ? .bold : .regular
+                let weight: PlatformFont.Weight = traits.contains(boldTrait) ? .bold : .regular
                 result.addAttribute(
                     .font,
-                    value: NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: weight),
+                    value: PlatformFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: weight),
                     range: range
                 )
                 result.addAttribute(.openlistInlineCode, value: true, range: range)
@@ -226,19 +229,34 @@ enum RichTextCodec {
     /// system face at the same size: converting it would return the base font
     /// unchanged, so the styling would neither show nor survive the next
     /// `encode`. Code keeps its monospaced face either way.
-    static func font(_ base: NSFont, adding traits: NSFontTraitMask) -> NSFont {
-        let manager = NSFontManager.shared
-        func converting(_ font: NSFont) -> NSFont {
+    static func font(_ base: PlatformFont, adding traits: FontTraits) -> PlatformFont {
+        func converting(_ font: PlatformFont) -> PlatformFont {
             var font = font
-            for trait: NSFontTraitMask in [.boldFontMask, .italicFontMask] where traits.contains(trait) {
-                font = manager.convert(font, toHaveTrait: trait)
+            for trait in [boldTrait, italicTrait] where traits.contains(trait) {
+                font = adding(trait, to: font)
             }
             return font
         }
         let styled = converting(base)
-        let wanted = traits.intersection([.boldFontMask, .italicFontMask])
-        guard !base.isFixedPitch, !manager.traits(of: styled).isSuperset(of: wanted) else { return styled }
+        let wanted = traits.intersection([boldTrait, italicTrait])
+        guard !isFixedPitch(base), !self.traits(of: styled).isSuperset(of: wanted) else { return styled }
         return converting(.systemFont(ofSize: base.pointSize))
+    }
+
+    /// `font` made bold, then italic, as far as its own family goes. Unlike
+    /// `font(_:adding:)`, a face without the variant stays as it is.
+    static func converting(_ font: PlatformFont, bold: Bool, italic: Bool) -> PlatformFont {
+        var font = font
+        if bold { font = adding(boldTrait, to: font) }
+        if italic { font = adding(italicTrait, to: font) }
+        return font
+    }
+
+    /// Whether a `.font` attribute value is bold and italic, for serializers
+    /// that write the traits out rather than the font.
+    static func fontTraits(of value: Any?) -> (bold: Bool, italic: Bool) {
+        let traits = (value as? PlatformFont).map { self.traits(of: $0) } ?? []
+        return (traits.contains(boldTrait), traits.contains(italicTrait))
     }
 
     // MARK: - Editing helpers
@@ -292,29 +310,28 @@ enum RichTextCodec {
 
     /// Toggles a font trait across `range`, matching the behaviour of ⌘B / ⌘I.
     static func toggleTrait(
-        _ trait: NSFontTraitMask,
+        _ trait: FontTraits,
         in attributed: NSMutableAttributedString,
         range: NSRange,
         kind: BlockKind
     ) {
         guard range.length > 0 else { return }
-        let manager = NSFontManager.shared
         let baseFont = NXEditor.nsFont(for: kind)
 
         // Turn the trait off only when every character already has it.
         var allHaveTrait = true
         attributed.enumerateAttribute(.font, in: range) { value, _, stop in
-            let font = (value as? NSFont) ?? baseFont
-            if !manager.traits(of: font).contains(trait) {
+            let font = (value as? PlatformFont) ?? baseFont
+            if !traits(of: font).contains(trait) {
                 allHaveTrait = false
                 stop.pointee = true
             }
         }
 
         attributed.enumerateAttribute(.font, in: range) { value, subrange, _ in
-            let font = (value as? NSFont) ?? baseFont
+            let font = (value as? PlatformFont) ?? baseFont
             let updated = allHaveTrait
-                ? manager.convert(font, toNotHaveTrait: trait)
+                ? removing(trait, from: font)
                 : Self.font(font, adding: trait)
             attributed.addAttribute(.font, value: updated, range: subrange)
         }
@@ -357,7 +374,7 @@ enum RichTextCodec {
             attributed.addAttribute(.openlistInlineCode, value: true, range: range)
             attributed.addAttribute(
                 .font,
-                value: NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: .regular),
+                value: PlatformFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: .regular),
                 range: range
             )
         }
@@ -383,6 +400,49 @@ enum RichTextCodec {
     }
 }
 
+// MARK: - Platform font primitives
+
+#if os(macOS)
+extension RichTextCodec {
+    /// The font class the platform's text system keeps in `.font`.
+    typealias PlatformFont = NSFont
+    /// Bold and italic, as the platform's font API names them.
+    typealias FontTraits = NSFontTraitMask
+
+    static var boldTrait: FontTraits { .boldFontMask }
+    static var italicTrait: FontTraits { .italicFontMask }
+
+    static func traits(of font: NSFont) -> NSFontTraitMask {
+        NSFontManager.shared.traits(of: font)
+    }
+
+    /// The font manager's conversion, which returns `font` itself when its
+    /// family has no such face.
+    static func adding(_ trait: NSFontTraitMask, to font: NSFont) -> NSFont {
+        NSFontManager.shared.convert(font, toHaveTrait: trait)
+    }
+
+    static func removing(_ trait: NSFontTraitMask, from font: NSFont) -> NSFont {
+        NSFontManager.shared.convert(font, toNotHaveTrait: trait)
+    }
+
+    static func isMonospaced(_ font: NSFont) -> Bool {
+        font.fontDescriptor.symbolicTraits.contains(.monoSpace)
+    }
+
+    static func isFixedPitch(_ font: NSFont) -> Bool { font.isFixedPitch }
+
+    fileprivate static func rtf(from text: NSAttributedString) -> Data? {
+        text.rtf(from: NSRange(location: 0, length: text.length),
+                 documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+    }
+
+    fileprivate static func attributedString(fromRTF data: Data) -> NSAttributedString? {
+        try? NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf],
+                                documentAttributes: nil)
+    }
+}
+
 extension NSFont {
     /// Same family, size and traits — used to spot runs that carry no styling
     /// beyond their block's base font.
@@ -390,3 +450,66 @@ extension NSFont {
         fontName == other.fontName && abs(pointSize - other.pointSize) < 0.01
     }
 }
+#else
+extension RichTextCodec {
+    typealias PlatformFont = UIFont
+    typealias FontTraits = UIFontDescriptor.SymbolicTraits
+
+    static var boldTrait: FontTraits { .traitBold }
+    static var italicTrait: FontTraits { .traitItalic }
+
+    static func traits(of font: UIFont) -> UIFontDescriptor.SymbolicTraits {
+        font.fontDescriptor.symbolicTraits
+    }
+
+    /// Like AppKit's font manager: `font` itself when its family has no such
+    /// face, so `font(_:adding:)` can fall back to the system face.
+    static func adding(_ trait: UIFontDescriptor.SymbolicTraits, to font: UIFont) -> UIFont {
+        restyled(font, traits: font.fontDescriptor.symbolicTraits.union(trait))
+    }
+
+    static func removing(_ trait: UIFontDescriptor.SymbolicTraits, from font: UIFont) -> UIFont {
+        restyled(font, traits: font.fontDescriptor.symbolicTraits.subtracting(trait))
+    }
+
+    private static func restyled(_ font: UIFont, traits: UIFontDescriptor.SymbolicTraits) -> UIFont {
+        guard traits != font.fontDescriptor.symbolicTraits,
+              let descriptor = font.fontDescriptor.withSymbolicTraits(traits) else { return font }
+        return UIFont(descriptor: descriptor, size: font.pointSize)
+    }
+
+    static func isMonospaced(_ font: UIFont) -> Bool {
+        font.fontDescriptor.symbolicTraits.contains(.traitMonoSpace)
+    }
+
+    static func isFixedPitch(_ font: UIFont) -> Bool { isMonospaced(font) }
+
+    /// Written at the Mac's point scale, so an archive from the iPhone reads
+    /// on the Mac exactly like one the Mac wrote. UIKit otherwise writes RTF
+    /// at its own text scale, every size about 30% larger.
+    fileprivate static func rtf(from text: NSAttributedString) -> Data? {
+        try? text.data(from: NSRange(location: 0, length: text.length), documentAttributes: [
+            .documentType: NSAttributedString.DocumentType.rtf,
+            .textScaling: NSTextScalingType.standard.rawValue,
+            .sourceTextScaling: NSTextScalingType.standard.rawValue,
+        ])
+    }
+
+    /// Read at the Mac's point scale too, so sizes compare as they do there
+    /// (the legacy heading check in `decode`).
+    fileprivate static func attributedString(fromRTF data: Data) -> NSAttributedString? {
+        try? NSAttributedString(data: data, options: [
+            .documentType: NSAttributedString.DocumentType.rtf,
+            .targetTextScaling: NSTextScalingType.standard.rawValue,
+        ], documentAttributes: nil)
+    }
+}
+
+extension UIFont {
+    /// Same family, size and traits — used to spot runs that carry no styling
+    /// beyond their block's base font.
+    func isEquivalent(to other: UIFont) -> Bool {
+        fontName == other.fontName && abs(pointSize - other.pointSize) < 0.01
+    }
+}
+#endif

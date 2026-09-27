@@ -3,6 +3,12 @@ import CoreData
 import Foundation
 
 nonisolated enum ICloudError {
+    #if os(iOS)
+    private static let settingsName = "Settings"
+    #else
+    private static let settingsName = "System Settings"
+    #endif
+
     static func message(for error: Error) -> String {
         let errors = nestedErrors(error as NSError, depth: 0)
         for error in errors {
@@ -11,7 +17,7 @@ nonisolated enum ICloudError {
                 case .quotaExceeded:
                     return "Your iCloud storage is full. Free up iCloud space to resume syncing."
                 case .notAuthenticated:
-                    return "Sign in to your Apple Account in System Settings to resume syncing."
+                    return "Sign in to your Apple Account in \(settingsName) to resume syncing."
                 case .networkFailure, .networkUnavailable:
                     return "Cannot reach iCloud. Check your internet connection; transfers will retry automatically."
                 case .serviceUnavailable, .requestRateLimited, .zoneBusy:

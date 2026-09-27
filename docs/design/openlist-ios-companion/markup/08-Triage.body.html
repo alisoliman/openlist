@@ -1,0 +1,76 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="Triage"><div class="ol" data-theme="light" style="width: 390px; height: 844px;"><div class="scroll nodock" style="height: 844px;">
+  <div class="topbar">
+    <a class="ib bare" href="Inbox.dc.html" aria-label="Close triage"><svg class="i s22" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"></path></svg></a>
+    <span class="lbl" style="padding: 0px 10px; font-size: 15px; font-weight: 600;"><span class="sc-interp">1</span> of 6</span>
+  </div>
+  <div class="prog" style="margin-top: 6px;"><span style="width: 0%; background: var(--info);"></span></div>
+
+  
+  <div class="card" style="margin-top: 24px; padding: 20px 16px; display: flex; flex-direction: column; gap: 22px;">
+    <div>
+      <div class="caps blue">Triage</div>
+      <div style="font-size: 22px; line-height: 28px; margin-top: 8px;"><span class="sc-interp">Gift ideas for Mika’s birthday</span></div>
+      <div class="lbl" style="margin-top: 6px;">Captured <span class="sc-interp">4 days ago</span></div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <span class="gh" style="padding: 0px;">Move to</span>
+      <div class="chips">
+        <button class="chip">🗻 Weekend in Kyoto</button>
+        <button class="chip">🏡 Home</button>
+        <button class="chip">📚 Reading</button>
+        <button class="chip">💼 Q3 planning</button>
+        <button class="chip">🎯 Hiring loop</button>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <span class="gh" style="padding: 0px;">When</span>
+      <div class="chips">
+        <button class="chip">Today</button>
+        <button class="chip">Tomorrow</button>
+        <button class="chip">This weekend</button>
+        <button class="chip" aria-label="Pick a date"><svg class="i s18" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: auto; display: flex; align-items: center; gap: 12px;">
+    <button class="ib lg bad" aria-label="Delete"><svg class="i s22" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4.5h6V7"></path></svg></button>
+    <button class="ib lg ok" aria-label="Already done"><svg class="i s22" viewBox="0 0 24 24" style="stroke-width: 2.2;"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+    <button class="btn ink" style="margin-left: auto; height: 56px; padding: 0px 26px;">Later</button>
+  </div>
+  
+
+  </div></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { idx: 0 };
+  }
+  renderVals() {
+    var self = this;
+    var items = [
+      { text: 'Gift ideas for Mika’s birthday', age: '4 days ago' },
+      { text: 'Return the library books', age: '3 days ago' },
+      { text: 'Look into a standing desk for the study', age: '2 days ago' },
+      { text: 'Call the dentist back about the crown', age: 'yesterday' },
+      { text: 'Cancel the gym trial before it renews', age: '5 hours ago' },
+      { text: 'Send Jun the photos from Nara', age: '2 hours ago' }
+    ];
+    var idx = this.state.idx;
+    return {
+      theme: this.props.theme ?? 'light',
+      item: items[Math.min(idx, items.length - 1)],
+      pos: Math.min(idx + 1, 6),
+      pct: Math.round((Math.min(idx, 6) / 6) * 100),
+      hasCard: idx < items.length,
+      empty: idx >= items.length,
+      next: function () { self.setState({ idx: self.state.idx + 1 }); }
+    };
+  }
+}
+</script>
+
+
+</body></html>

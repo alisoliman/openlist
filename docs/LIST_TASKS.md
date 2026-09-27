@@ -42,4 +42,8 @@ still choose another destination.
   (`BlockTree`), which the List widget follows too: mixed headings, collapsed
   branches, rich prose, nested tasks, every sort within each run of top-level
   tasks, stable ties and unchanged payloads.
+- `Tools/run-shared-logic-checks.sh`: the list page projection
+  (`BlockTree.visibleRows`, `completedFold`, `listPage`) the Mac's outline and
+  the iPhone's list page share, against the outline's previous projection, and
+  a viewer's own folds, which never write the synced ones.
 - `Tools/check.sh`: complete repository regression checks.

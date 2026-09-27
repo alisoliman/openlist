@@ -521,6 +521,32 @@ class PipelineChecks(unittest.TestCase):
                 self.assertIn("swift --version", workflow)
                 self.assertIn("uname -m", workflow)
 
+    def test_ci_runs_ios_checks_without_credentials(self):
+        workflow = (TOOLS.parent / ".github/workflows/ci.yml").read_text()
+        ios = workflow[workflow.index("\n  ios:"):]
+        self.assertIn("runs-on: xcode-27", ios)
+        self.assertRegex(ios, r"uses: maxim-lobanov/setup-xcode@[0-9a-f]{40}\b")
+        self.assertIn('[[ $(xcodebuild -version | head -n 1) == "Xcode 27."* ]]', ios)
+        self.assertLess(ios.index("xcode-version: latest"), ios.index("./Tools/run-ios-checks.sh"))
+        self.assertNotIn("secrets.", ios)
+        self.assertLess(workflow.index("./Tools/check.sh"), workflow.index("\n  ios:"))
+        script = (TOOLS / "run-ios-checks.sh").read_text()
+        self.assertIn("CODE_SIGNING_ALLOWED=NO", script)
+        self.assertIn("ICLOUD_CONTAINER_ENVIRONMENT=)", script)
+        self.assertIn(" ios-core ", (TOOLS / "check.sh").read_text())
+
+    def test_ios_entitlements_stay_out_of_the_release_signer(self):
+        packaging = (TOOLS / "package-release.sh").read_text() + (TOOLS / "prepare-release-signing.py").read_text()
+        self.assertNotIn("OpenlistiOS", packaging)
+        widget = plistlib.loads((TOOLS.parent / "Config/OpenlistiOSWidget.entitlements").read_bytes())
+        self.assertEqual(widget, {"com.apple.security.application-groups": ["group.solimanali.openlist"]})
+        app = plistlib.loads((TOOLS.parent / "Config/OpenlistiOS.entitlements").read_bytes())
+        self.assertEqual(app["com.apple.developer.icloud-container-identifiers"], [CONTAINER])
+        self.assertEqual(app["com.apple.developer.icloud-container-environment"], "$(ICLOUD_CONTAINER_ENVIRONMENT)")
+        self.assertEqual(app["aps-environment"], "$(APS_ENVIRONMENT)")
+        info = plistlib.loads((TOOLS.parent / "Config/OpenlistiOS-Info.plist").read_bytes())
+        self.assertEqual(info["OpenlistICloudEnvironment"], "$(ICLOUD_CONTAINER_ENVIRONMENT)")
+
     def test_checked_in_app_entitlements_match_the_release_policy(self):
         source = plistlib.loads((TOOLS.parent / "Config/openlist.entitlements").read_bytes())
         resolved = signing.prepare_entitlements(profile_fixture(), source)

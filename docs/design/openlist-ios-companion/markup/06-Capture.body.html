@@ -1,0 +1,52 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="Capture"><div class="ol" data-theme="light" style="width: 390px; height: 844px;"><div class="scroll" aria-hidden="true">
+  <div class="topbar"><span class="eyebrow warm">Wednesday 23 September</span></div>
+  <div class="vt">Today</div>
+  <div class="card" style="margin-top: 20px; height: 84px;"></div></div><div class="scrim"></div><div class="sheet" role="dialog" aria-label="New task" style="bottom: 291px; padding: 0px 20px 20px;">
+  <div class="grabber"></div>
+  <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px -10px 0px;">
+    <a class="tlink" href="Main.dc.html">Cancel</a>
+    <a class="btn primary" href="Main.dc.html" style="height: 36px; padding: 0px 18px; font-size: 15px; margin-right: 10px;">Add</a>
+  </div>
+
+  <div style="margin-top: 10px; font-size: 20px; line-height: 28px;">Buy yen for the trip <span class="tok due">fri</span> <span class="tok due">6pm</span> <span class="tok" style="color: var(--muted);">~15m</span> <span class="tok" style="color: var(--teal);">#travel</span><span style="display: inline-block; width: 2px; height: 24px; background: var(--accent); vertical-align: -5px; margin-left: 2px;"></span></div>
+
+  <div class="chips" style="margin-top: 14px;">
+    <span class="chip sm" style="color: var(--accent-text);">Fri 25, 18:00</span>
+    <span class="chip sm">15 min</span>
+    <span class="chip sm" style="color: var(--teal);">#travel</span>
+  </div>
+
+  <div style="display: flex; gap: 8px; margin: 16px -20px 0px; padding: 0px 20px; overflow: hidden;">
+    
+      <button class="chip on" aria-pressed="true"><span class="sc-interp">📥 Inbox</span></button>
+    
+      <button class="chip" aria-pressed="false"><span class="sc-interp">🗻 Weekend in Kyoto</span></button>
+    
+      <button class="chip" aria-pressed="false"><span class="sc-interp">🏡 Home</span></button>
+    
+      <button class="chip" aria-pressed="false"><span class="sc-interp">💼 Q3 planning</span></button>
+    
+  </div></div><div class="kbd" aria-label="System keyboard"><span class="caps">System keyboard</span></div></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { dest: 'inbox' };
+  }
+  renderVals() {
+    var self = this;
+    var all = [['inbox', '📥 Inbox'], ['kyoto', '🗻 Weekend in Kyoto'], ['home', '🏡 Home'], ['q3', '💼 Q3 planning']];
+    return {
+      theme: this.props.theme ?? 'light',
+      dests: all.map(function (d) {
+        var on = self.state.dest === d[0];
+        return { label: d[1], on: on ? 'true' : 'false', cls: on ? 'chip on' : 'chip', pick: function () { self.setState({ dest: d[0] }); } };
+      })
+    };
+  }
+}
+</script>
+
+
+</body></html>

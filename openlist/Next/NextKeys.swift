@@ -170,7 +170,7 @@ final class NextKeyHandler {
             switch key {
             // Tab never leaves the field; without Shift it takes the completion, if there is one.
             case Key.tab:
-                let ghost = NXTaskQuery(library: library).parse(workbench.tasksQuery).ghost
+                let ghost = TaskQuery(library: library).parse(workbench.tasksQuery).ghost
                 if flags.isEmpty, !ghost.isEmpty { workbench.tasksQuery += ghost + " " }
                 return true
             case Key.escape:

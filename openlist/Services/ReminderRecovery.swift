@@ -11,6 +11,12 @@ final class ReminderRecovery {
     private(set) var recoveryError: String?
     private(set) var libraryReadError: String?
     let isSimulated: Bool
+    /// The most reminders the OS keeps pending for the app, or nil where it
+    /// keeps them all. iOS keeps only an app's 64 soonest local notifications
+    /// and silently drops the rest, so there the soonest are added and the
+    /// others wait (`.queued`) until earlier ones pass: every pass, on each
+    /// save, activation and expiry, moves the next ones up.
+    let pendingLimit: Int?
     private(set) var authorizationError: String?
     private(set) var isRequestingAuthorization = false
     private(set) var isRefreshing = false
@@ -23,9 +29,11 @@ final class ReminderRecovery {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var expiryTask: Task<Void, Never>?
 
-    init(client: any ReminderNotificationClient, isSimulated: Bool = false, now: @escaping () -> Date = Date.init) {
+    init(client: any ReminderNotificationClient, isSimulated: Bool = false, pendingLimit: Int? = nil,
+         now: @escaping () -> Date = Date.init) {
         self.client = client
         self.isSimulated = isSimulated
+        self.pendingLimit = pendingLimit
         self.now = now
     }
 
@@ -145,6 +153,12 @@ final class ReminderRecovery {
         }
     }
 
+    #if os(iOS)
+    private static let systemName = "iOS"
+    #else
+    private static let systemName = "macOS"
+    #endif
+
     private func matches(_ pending: ReminderIntent, _ saved: ReminderIntent) -> Bool {
         pending.id == saved.id && pending.occurrenceID == saved.occurrenceID
             && pending.title == saved.title && pending.listName == saved.listName
@@ -189,8 +203,14 @@ final class ReminderRecovery {
                 return
             }
             let eligible = saved.filter { $0.value.isEligible(at: now()) }
+            // Past the limit, a later reminder gives its place to a sooner one.
+            let admitted = pendingLimit.map { limit in
+                Set(eligible.values.sorted { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }
+                    .prefix(max(0, limit)).map(\.id))
+            }
             let stale = Set(pendingByID.keys.filter { id in
-                guard permission == .authorized, let intent = eligible[id], let existing = pendingByID[id] else { return true }
+                guard permission == .authorized, let intent = eligible[id], let existing = pendingByID[id],
+                      admitted?.contains(id) != false else { return true }
                 return !matches(existing, intent)
             })
             // Expired delivered reminders can remain useful in Notification
@@ -208,6 +228,7 @@ final class ReminderRecovery {
                 case .unknown: statuses[intent.id] = .failed("Notification authorization could not be determined."); continue
                 case .authorized: break
                 }
+                if let admitted, !admitted.contains(intent.id) { statuses[intent.id] = .queued; continue }
                 if let existing = pendingByID[intent.id], matches(existing, intent) {
                     statuses[intent.id] = .accepted
                     continue
@@ -227,7 +248,7 @@ final class ReminderRecovery {
                     } else if confirmed.contains(where: { matches($0, intent) }) {
                         statuses[intent.id] = .accepted
                     } else {
-                        statuses[intent.id] = .failed("macOS did not report this reminder as a pending request. Retry while its time is still in the future.")
+                        statuses[intent.id] = .failed("\(Self.systemName) did not report this reminder as a pending request. Retry while its time is still in the future.")
                     }
                 } catch {
                     guard generation == revision else { needsPass = true; return }
@@ -246,7 +267,7 @@ final class ReminderRecovery {
                     statuses[intent.id] = .expired
                 } else if statuses[intent.id] == .accepted,
                           !finalPending.contains(where: { matches($0, intent) }) {
-                    statuses[intent.id] = .failed("macOS no longer reports this reminder as pending. Retry while its time is still in the future.")
+                    statuses[intent.id] = .failed("\(Self.systemName) no longer reports this reminder as pending. Retry while its time is still in the future.")
                 }
             }
             retryIDs.subtract(retry)

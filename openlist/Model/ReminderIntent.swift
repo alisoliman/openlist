@@ -72,6 +72,9 @@ nonisolated enum ReminderAuthorization: Equatable, Sendable {
 
 nonisolated enum ReminderStatus: Equatable, Sendable {
     case checking, accepted, permissionNeeded, denied, expired, inactive(String), failed(String), unavailable
+    /// Saved, and waiting for sooner reminders to pass before the OS takes
+    /// it: iOS keeps only an app's soonest pending notifications.
+    case queued
 
     /// In plain words, as the app speaks elsewhere, not the scheduler's. The
     /// ones that need the user read whole wherever they show, beside a task's
@@ -86,6 +89,7 @@ nonisolated enum ReminderStatus: Equatable, Sendable {
         case .inactive(let reason): Self.offTitle(reason)
         case .failed: "The reminder couldn’t be scheduled"
         case .unavailable: "Reminders are off in this review build"
+        case .queued: "Waits for sooner reminders"
         }
     }
 

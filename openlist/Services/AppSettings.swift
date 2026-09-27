@@ -112,6 +112,12 @@ final class AppSettings {
     var tasksFilterStyle: TasksFilterStyle {
         didSet { defaults.set(tasksFilterStyle.rawValue, forKey: Key.tasksFilterStyle) }
     }
+    /// The iPhone's Haptics setting: ticks, holds and selections answer with
+    /// the system's feedback. Per device, like every setting here; the Mac
+    /// has no haptics and never reads it.
+    var playsHaptics: Bool {
+        didSet { defaults.set(playsHaptics, forKey: Key.haptics) }
+    }
 
     private let defaults: UserDefaults
 
@@ -138,6 +144,7 @@ final class AppSettings {
             Key.serifTitles: true,
             Key.undoDwell: 5,
             Key.dailySnapshots: true,
+            Key.haptics: true,
         ])
 
         appearance = Appearance(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
@@ -161,6 +168,7 @@ final class AppSettings {
         reducesMotion = defaults.bool(forKey: Key.reducesMotion)
         undoDwellSeconds = min(8, max(2, defaults.integer(forKey: Key.undoDwell)))
         tasksFilterStyle = TasksFilterStyle(rawValue: defaults.string(forKey: Key.tasksFilterStyle) ?? "") ?? .query
+        playsHaptics = defaults.bool(forKey: Key.haptics)
     }
 
     /// A calendar honouring the user's chosen first day of the week.
@@ -194,6 +202,7 @@ final class AppSettings {
         static let undoDwell = "settings.undoDwellSeconds"
         static let tasksFilterStyle = "settings.tasksFilterStyle"
         static let dailySnapshots = "settings.dailySnapshots"
+        static let haptics = "settings.haptics"
     }
 }
 

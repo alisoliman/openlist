@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 
 /// Serializes stored inline formatting independently of the editor's heading,
@@ -31,13 +35,13 @@ enum InlineMarkdown {
         for character in attributed.string {
             let text = String(character)
             let attributes = attributed.attributes(at: offset, effectiveRange: nil)
-            let traits = (attributes[.font] as? NSFont).map { NSFontManager.shared.traits(of: $0) } ?? []
+            let traits = RichTextCodec.fontTraits(of: attributes[.font])
             let link = (attributes[.link] as? URL)?.absoluteString ?? attributes[.link] as? String
             characters.append(CharacterStyle(
                 text: text,
                 link: link,
-                bold: traits.contains(.boldFontMask),
-                italic: traits.contains(.italicFontMask),
+                bold: traits.bold,
+                italic: traits.italic,
                 struck: (attributes[.openlistStrikethrough] as? Bool) == true,
                 code: (attributes[.openlistInlineCode] as? Bool) == true
             ))

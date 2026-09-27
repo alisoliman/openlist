@@ -26,6 +26,17 @@ nonisolated struct ICloudSyncState {
 
     var isEnabled: Bool { unavailableReason == nil }
 
+    // How the status names the device, the settings app and the system.
+    #if os(iOS)
+    static let deviceName = "iPhone"
+    static let settingsName = "Settings"
+    static let systemName = "iOS"
+    #else
+    static let deviceName = "Mac"
+    static let settingsName = "System Settings"
+    static let systemName = "macOS"
+    #endif
+
     var title: String {
         guard isEnabled else { return "Local only" }
         switch account {
@@ -44,11 +55,11 @@ nonisolated struct ICloudSyncState {
         if let unavailableReason { return unavailableReason }
         switch account {
         case .checking:
-            return "Checking this Mac's Apple Account. Your changes are saved locally."
+            return "Checking this \(Self.deviceName)'s Apple Account. Your changes are saved locally."
         case .signedOut:
-            return "Sign in to your Apple Account in System Settings and enable iCloud for Openlist. Local changes are kept while iCloud is unavailable."
+            return "Sign in to your Apple Account in \(Self.settingsName) and enable iCloud for Openlist. Local changes are kept while iCloud is unavailable."
         case .restricted:
-            return "This Mac's account or parental controls restrict iCloud. Your data is still saved locally."
+            return "This \(Self.deviceName)'s account or parental controls restrict iCloud. Your data is still saved locally."
         case .temporarilyUnavailable:
             return "iCloud is temporarily unavailable. Local changes will sync automatically when it is available again."
         case let .failed(message):
@@ -57,7 +68,7 @@ nonisolated struct ICloudSyncState {
             if let error = failures[.setup] ?? failures[.upload] ?? failures[.download] {
                 return "Local data is kept. iCloud will retry automatically. \(error)"
             }
-            return "Lists, tasks, notes, labels, images and attachments sync privately through your Apple Account. Offline edits are saved on this Mac and transferred when iCloud is available."
+            return "Lists, tasks, notes, labels, images and attachments sync privately through your Apple Account. Offline edits are saved on this \(Self.deviceName) and transferred when iCloud is available."
         }
     }
 

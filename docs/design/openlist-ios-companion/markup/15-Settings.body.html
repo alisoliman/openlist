@@ -1,0 +1,65 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="Settings"><div class="ol" data-theme="light" style="width: 390px; height: 990px;"><div class="scroll nodock">
+  <div class="topbar">
+    <span></span>
+    <a class="tlink strong" href="Lists.dc.html">Done</a>
+  </div>
+  <h1 class="vt">Settings</h1>
+
+  <section class="group">
+    <div class="gh">Tasks</div>
+    <div class="card">
+      <div class="srow"><span class="stile" style="background: var(--accent);"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>Show done in lists<button class="tg" role="switch" aria-checked="false" aria-label="Show done in lists" style="margin-left: auto;"></button></div>
+      <div class="srow"><span class="stile" style="background: var(--today); color: var(--on-today);"><svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg></span>Week starts on<span class="val">Monday<svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="srow"><span class="stile" style="background: var(--accent);"><svg class="i" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></span>Undo window<span class="val">5 s<svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+    </div>
+  </section>
+
+  <section class="group">
+    <div class="gh">Motion</div>
+    <div class="card">
+      <div class="srow"><span class="stile" style="background: var(--teal);"><svg class="i" viewBox="0 0 24 24"><path d="M4 12c3-6 5-6 8 0s5 6 8 0"></path></svg></span>Reduce motion<button class="tg" role="switch" aria-checked="false" aria-label="Reduce motion" style="margin-left: auto;"></button></div>
+      <div class="srow"><span class="stile" style="background: var(--teal);"><svg class="i" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"></rect><path d="M3 9v6M21 9v6"></path></svg></span>Haptics<button class="tg on" role="switch" aria-checked="true" aria-label="Haptics" style="margin-left: auto;"></button></div>
+    </div>
+  </section>
+
+  <section class="group">
+    <div class="gh">Calendar</div>
+    <div class="card">
+      <div class="srow"><span class="stile" style="background: var(--info); color: var(--on-info);"><svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg></span>Calendar access<span class="val" style="color: var(--success-text);">On</span></div>
+      <div class="srow"><span class="stile" style="background: var(--info); color: var(--on-info);"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 2.5M9.5 2.5h5"></path></svg></span>Plan hours<span class="val">09–17 · 18–21<svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+    </div>
+  </section>
+
+  <section class="group">
+    <div class="gh">Library</div>
+    <div class="card">
+      <a class="srow" href="Activity.dc.html"><span class="stile" style="background: var(--accent);"><svg class="i" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"></path></svg></span>Activity<span class="val"><svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></a>
+      <a class="srow" href="Trash.dc.html"><span class="stile" style="background: var(--danger); color: var(--on-danger);"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4.5h6V7"></path></svg></span>Trash<span class="val">3<svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></a>
+      <div class="srow"><span class="stile" style="background: var(--info); color: var(--on-info);"><svg class="i" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 9.5a4.2 4.2 0 0 1-.5 8.5z"></path></svg></span>iCloud sync<span class="val" style="color: var(--success-text);">Synced just now</span></div>
+    </div>
+  </section>
+
+  <p class="lbl" style="margin-top: 24px; text-align: center;">More on your Mac: MCP, Calendar and advanced options.<br>Openlist 2.0 (214)</p></div></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:990}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { showDone: false, reduce: false, haptics: true };
+  }
+  renderVals() {
+    var self = this;
+    var t = {}, f = {}, a = {};
+    ['showDone', 'reduce', 'haptics'].forEach(function (k) {
+      var on = !!self.state[k];
+      t[k] = on ? 'tg on' : 'tg';
+      a[k] = on ? 'true' : 'false';
+      f[k] = function () { var s = {}; s[k] = !self.state[k]; self.setState(s); };
+    });
+    return { theme: this.props.theme ?? 'light', t: t, f: f, a: a };
+  }
+}
+</script>
+
+
+</body></html>

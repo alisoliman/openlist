@@ -1,0 +1,30 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="TodayClear"><div class="ol" data-theme="dark" style="width: 390px; height: 844px;"><div class="scroll" style="height: 844px;">
+  <div class="topbar">
+    <span class="eyebrow warm">Wednesday 23 September</span>
+    <a class="ib bare" href="Calendar.dc.html" aria-label="Show as timeline"><svg class="i s22" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg></a>
+  </div>
+  <h1 class="vt">Today</h1>
+
+  <div style="flex: 1 1 0%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding-bottom: 40px;">
+    <div style="width: 56px; height: 56px; border-radius: 999px; background: var(--surface); color: var(--today); display: grid; place-items: center; box-shadow: var(--shadow-card), var(--card-ring);"><svg class="i s24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></div>
+    <h2 style="font-family: var(--serif); font-size: 28px; line-height: 32px; font-weight: 400; margin-top: 6px;">Today is clear</h2>
+    <p class="lbl" style="font-size: 15px; line-height: 20px; max-width: 250px;">1 finished today. Nothing is overdue, due, planned or starred.</p>
+    <a class="tlink" href="Main.dc.html" style="margin-top: 2px;">Look at tomorrow</a>
+  </div></div><nav class="dock" aria-label="Tabs">
+  <div class="tabbar">
+    <a class="tab on" href="Main.dc.html" aria-current="page" aria-label="Today"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></a>
+    <a class="tab" href="Inbox.dc.html" aria-label="Inbox"><svg class="i" viewBox="0 0 24 24"><path d="M3 13h5l1.5 2.5h5L16 13h5"></path><path d="M5.5 5h13L21 13v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5z"></path></svg></a>
+    <a class="tab" href="Lists.dc.html" aria-label="Lists"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"></rect><rect x="13" y="4" width="7" height="7" rx="2"></rect><rect x="4" y="13" width="7" height="7" rx="2"></rect><rect x="13" y="13" width="7" height="7" rx="2"></rect></svg></a>
+  </div>
+  <a class="fab" href="Capture.dc.html" aria-label="New task"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg></a></nav></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;dark&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  renderVals() {
+    return { theme: this.props.theme ?? 'dark' };
+  }
+}
+</script>
+
+
+</body></html>

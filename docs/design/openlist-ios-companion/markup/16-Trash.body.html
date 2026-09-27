@@ -1,0 +1,76 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="Trash"><div class="ol" data-theme="light" style="width: 390px; height: 844px;"><div class="scroll nodock">
+  <div class="topbar">
+    <a class="back" href="Settings.dc.html"><svg class="i s22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"></path></svg>Settings</a>
+  </div>
+  <h1 class="vt">Trash</h1>
+  <div class="sub"><span class="sc-interp">2</span> items · hold × to erase one for good</div>
+
+  
+  <div class="card plain" style="margin-top: 20px;">
+    
+      <div class="li two" style="padding-right: 6px;">
+        <span class="tb"><span class="tt"><span class="sc-interp">Prep board update slides (duplicate)</span></span><span class="ts"><span class="sc-interp">Q3 planning</span> · <span class="sc-interp">3h ago</span></span></span>
+        <button class="tlink" style="font-size: 15px;">Restore</button>
+        <button class="ib bare" aria-label="Hold to erase Prep board update slides (duplicate)" style="color: var(--muted);"><svg class="i s18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+      </div>
+    
+      <div class="li two" style="padding-right: 6px;">
+        <span class="tb"><span class="tt"><span class="sc-interp">Old packing list draft</span></span><span class="ts"><span class="sc-interp">Weekend in Kyoto</span> · <span class="sc-interp">yesterday</span></span></span>
+        <button class="tlink" style="font-size: 15px;">Restore</button>
+        <button class="ib bare" aria-label="Hold to erase Old packing list draft" style="color: var(--muted);"><svg class="i s18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+      </div>
+    
+  </div>
+  <button class="btn block" style="margin-top: 16px; color: var(--danger); background: var(--danger-soft);">Hold to empty Trash</button>
+  
+  </div><div class="tray" role="status">
+  <span style="flex: 1 1 0%; min-width: 0px;"><span class="sc-interp">Restored to Home</span></span>
+  <button class="undo">Undo</button>
+  <span class="drain" style="width: 64%;"></span></div></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { gone: { x2: true }, last: 'x2' };
+  }
+  renderVals() {
+    var self = this;
+    var all = [
+      { id: 'x3', text: 'Prep board update slides (duplicate)', from: 'Q3 planning', when: '3h ago' },
+      { id: 'x1', text: 'Old packing list draft', from: 'Weekend in Kyoto', when: 'yesterday' },
+      { id: 'x2', text: 'Try the new ramen place', from: 'Home', when: '3 days ago' }
+    ];
+    var gone = this.state.gone;
+    var items = all.filter(function (x) { return !gone[x.id]; }).map(function (x) {
+      return {
+        text: x.text, from: x.from, when: x.when,
+        eraseLabel: 'Hold to erase ' + x.text,
+        restore: function () {
+          var g = Object.assign({}, self.state.gone);
+          g[x.id] = true;
+          self.setState({ gone: g, last: x.id });
+        }
+      };
+    });
+    var last = all.filter(function (x) { return x.id === self.state.last; })[0];
+    return {
+      theme: this.props.theme ?? 'light',
+      items: items,
+      count: items.length,
+      hasItems: items.length > 0,
+      empty: items.length === 0,
+      hasTray: !!last,
+      trayText: last ? 'Restored to ' + last.from : '',
+      undo: function () {
+        var g = Object.assign({}, self.state.gone);
+        delete g[self.state.last];
+        self.setState({ gone: g, last: null });
+      }
+    };
+  }
+}
+</script>
+
+
+</body></html>

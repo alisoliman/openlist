@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftData
 
 enum FragmentContent {
@@ -144,11 +148,10 @@ enum FragmentContent {
     static func styles(from text: NSAttributedString) -> [FragmentTextStyle] {
         var result: [FragmentTextStyle] = []
         text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { attributes, range, _ in
-            let font = attributes[.font] as? NSFont
-            let traits = font.map { NSFontManager.shared.traits(of: $0) } ?? []
+            let traits = RichTextCodec.fontTraits(of: attributes[.font])
             let link = (attributes[.link] as? URL)?.absoluteString ?? attributes[.link] as? String
             let style = FragmentTextStyle(location: range.location, length: range.length,
-                bold: traits.contains(.boldFontMask), italic: traits.contains(.italicFontMask),
+                bold: traits.bold, italic: traits.italic,
                 strikethrough: (attributes[.openlistStrikethrough] as? Bool) == true,
                 code: (attributes[.openlistInlineCode] as? Bool) == true, link: link)
             if style.bold || style.italic || style.strikethrough || style.code || style.link != nil { result.append(style) }
@@ -160,11 +163,9 @@ enum FragmentContent {
         let text = NSMutableAttributedString(string: block.text, attributes: RichTextCodec.baseAttributes(for: .paragraph))
         for style in block.styles {
             let range = NSRange(location: style.location, length: style.length)
-            var font = style.code ? NSFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: .regular)
+            let base = style.code ? RichTextCodec.PlatformFont.monospacedSystemFont(ofSize: NXEditor.codePointSize, weight: .regular)
                 : NXEditor.nsFont(for: .paragraph)
-            if style.bold { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
-            if style.italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
-            text.addAttribute(.font, value: font, range: range)
+            text.addAttribute(.font, value: RichTextCodec.converting(base, bold: style.bold, italic: style.italic), range: range)
             if style.code { text.addAttribute(.openlistInlineCode, value: true, range: range) }
             if style.strikethrough {
                 text.addAttribute(.openlistStrikethrough, value: true, range: range)

@@ -47,6 +47,13 @@ For running from Xcode, configure signing for the app and widget as described in
 [CONTRIBUTING.md](CONTRIBUTING.md). They share the App Group
 `Y5UE64R7TQ.solimanali.openlist`.
 
+The iPhone companion (iOS 27, iPhone only) lives in the same project and syncs
+through the same iCloud container. `./Tools/run-ios-checks.sh` builds it
+without an Apple account and runs its unit and UI tests on a throwaway iOS 27
+simulator; in Xcode, run the `OpenlistiOS` scheme. See
+[the iPhone companion](CONTRIBUTING.md#iphone-companion) for its identities,
+signing and sync environments.
+
 See [contributing and releases](CONTRIBUTING.md), [security reporting](SECURITY.md),
 and the [MIT license](LICENSE).
 
@@ -529,9 +536,13 @@ Shared/        ListAccent, ListIcon, EmojiSize, ActivityBand, WidgetSnapshot,
                WidgetCommand, WidgetIntents, WidgetKind, WidgetLink, AppGroup,
                ReviewSession, Fonts   (app + widget)
 OpenlistWidget/  WidgetKit extension
+OpenlistiOS/     iPhone app: App/, Platform/ (iOS stand-ins for Mac-only services)
+OpenlistiOSWidget/  iPhone widget extension
+SharediOS/       iOS-only code and resources for the iPhone app and widget
+OpenlistiOSTests/, OpenlistiOSUITests/  iPhone unit (Swift Testing) and UI tests
 MCPTransport/   Local Swift package: authenticated MCP/HTTP transport
 OpenlistMCPHelper/  Bundled native stdio-to-localhost launcher
-Config/          entitlements and the extension Info.plist
+Config/          entitlements and Info.plists (Mac and iPhone)
 Tools/           regression suites, live CloudSyncChecks, release tooling
 ```
 
@@ -632,7 +643,11 @@ rest of the desktop — and needs Screen Recording (capture) plus Accessibility
 Quick Add instead of the main window.
 
 `Tools/add-widget-target.py` regenerates the widget target in the project file and
-is idempotent.
+is idempotent. `Tools/add-ios-targets.py` adds the iPhone targets once and, on
+every run, rewrites which Mac files they share from `Tools/iOS/shared-sources.txt`;
+`./Tools/run-ios-core-checks.sh` (in `check.sh`) type-checks both iPhone targets
+against the iOS SDK, and `./Tools/run-ios-checks.sh` runs their tests on a
+simulator.
 
 ### Reminder scheduling and recovery
 

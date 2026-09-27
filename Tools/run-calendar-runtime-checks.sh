@@ -12,5 +12,5 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/calendar-run
   openlist/Services/AdaptiveScheduler.swift openlist/Services/ExternalCalendarSource.swift \
   openlist/Services/MacWorkMonitor.swift openlist/Services/CalendarCoordinator.swift \
   Tools/EditorChecks/Support.swift Tools/CalendarRuntimeChecks/CalendarHistoryReset.swift \
-  Tools/CalendarRuntimeChecks/WorkCompanionChecks.swift Tools/CalendarRuntimeChecks/main.swift
+  Tools/CalendarRuntimeChecks/WorkCompanionChecks.swift Tools/CalendarRuntimeChecks/WorkPresenceChecks.swift Tools/CalendarRuntimeChecks/main.swift
 "$OUT/calendar-runtime-checks" "$(uuidgen)"

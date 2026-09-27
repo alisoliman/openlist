@@ -3,14 +3,21 @@
 //  openlist
 //
 
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 
 extension WidgetSnapshotSources {
     /// Reads settings, the day's plan and the work timer the way the app's own
     /// screens do, so a widget shows the same day as the window.
+    ///
+    /// `isAppActive` says whether the app is in front, when a snapshot skips
+    /// its throttle. An iPhone scene can pass its own phase.
     static func live(calendar coordinator: CalendarCoordinator, settings: AppSettings,
-                     libraryID: UUID?) -> WidgetSnapshotSources {
+                     libraryID: UUID?, isAppActive: @escaping @MainActor () -> Bool = appIsActive) -> WidgetSnapshotSources {
         var sources = WidgetSnapshotSources()
         sources.libraryID = libraryID
         sources.accentHex = { settings.accent.hex }
@@ -19,8 +26,16 @@ extension WidgetSnapshotSources {
         let meetings = MeetingCache()
         sources.agenda = { interval in agenda(in: interval, coordinator: coordinator, meetings: meetings) }
         sources.work = { now in work(at: now, coordinator: coordinator, calendar: settings.calendar) }
-        sources.isAppActive = { NSApplication.shared.isActive }
+        sources.isAppActive = isAppActive
         return sources
+    }
+
+    static func appIsActive() -> Bool {
+        #if os(macOS)
+        NSApplication.shared.isActive
+        #else
+        UIApplication.shared.applicationState == .active
+        #endif
     }
 
     /// Meetings, read from the calendars again only when the week changes or

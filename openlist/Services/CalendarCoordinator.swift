@@ -1,6 +1,29 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import SwiftData
+
+/// How running work on this device treats time the app didn't observe.
+///
+/// The Mac's rule is the default: a gap in the clock, or an open record found
+/// at launch, is no evidence that work went on while the app was away, so the
+/// work pauses where the app last saw it. An iPhone app is suspended while
+/// its user gets on with the task, and a Live Activity says the clock runs,
+/// so its policy keeps recording until an explicit Pause or Done.
+struct WorkPresencePolicy {
+    /// Whether a gap in the timer (the Mac asleep, the app suspended) pauses
+    /// running work at the last observed time.
+    var pausesAfterClockGap = true
+    /// Whether `bootstrap` carries on this device's open session instead of
+    /// closing it at its last heartbeat, for example while its Live Activity
+    /// is still showing. Asked only at launch, and only about a session whose
+    /// task can still be worked on; one it declines is paused as on the Mac.
+    var adoptsOpenSession: (WorkSession) -> Bool = { _ in false }
+
+    /// The Mac's rules.
+    static var pausesWhenUnobserved: WorkPresencePolicy { WorkPresencePolicy() }
+}
 
 /// Owns the live clock on this Mac. Plans are derived, never synced as generated
 /// events; task choices, explicit placements and work records use the main Store.
@@ -61,7 +84,10 @@ final class CalendarCoordinator {
     var notice: String?
     private let defaults: UserDefaults
     private let deviceID: String
+    private let presence: WorkPresencePolicy
+    #if os(macOS)
     private let monitor = MacWorkMonitor()
+    #endif
     private var timer: Timer?
     private var isUpdating = false
     private var hasStarted = false
@@ -103,9 +129,11 @@ final class CalendarCoordinator {
     private var missedPlacementIDs: Set<UUID> = []
     private var calendar: Calendar { .current }
 
-    init(store: Store, defaults: UserDefaults = ReviewSession.defaults, externalCalendars: ExternalCalendarSource? = nil) {
+    init(store: Store, defaults: UserDefaults = ReviewSession.defaults, externalCalendars: ExternalCalendarSource? = nil,
+         presence: WorkPresencePolicy = .pausesWhenUnobserved) {
         self.store = store
         self.defaults = defaults
+        self.presence = presence
         workNotificationsEnabled = defaults.bool(forKey: "work.notificationsEnabled")
         quietUntil = defaults.dictionary(forKey: "work.quietUntil") as? [String: Double] ?? [:]
         resumeTaskID = defaults.string(forKey: "work.resumeTaskID").flatMap(UUID.init(uuidString:))
@@ -128,36 +156,74 @@ final class CalendarCoordinator {
             guard let self, !self.isRefreshingCalendars, self.busyTimesChanged() else { return }
             self.tick(checkClockGap: false, materialChange: true)
         }
+        #if os(macOS)
         monitor.onUnavailable = { [weak self] reason in self?.handleMacUnavailable(reason: reason) }
         monitor.onReturn = { [weak self] in self?.handleMacReturn() }
         monitor.onTerminate = { [weak self] in self?.pause(reason: "Openlist closed") }
+        #endif
     }
 
     func bootstrap(now: Date = .now, monitorsEnabled: Bool = true) {
         guard !hasStarted else { return }
         hasStarted = true
         // A saved open record is not evidence that work continued while the app
-        // was absent. Recover only this Mac's session, at its last heartbeat.
+        // was absent. Recover only this Mac's session, at its last heartbeat,
+        // unless the presence policy carries it on.
         var recoveryFailed = false
+        var adopted: (session: WorkSession, task: Block)?
         for session in store.workSessions() where session.deviceID == deviceID && session.endedAt == nil {
+            if adopted == nil, let task = adoptableTask(for: session), presence.adoptsOpenSession(session) {
+                adopted = (session, task)
+                continue
+            }
             if !store.pauseWorkSession(session, reason: "Openlist restarted", now: min(now, session.lastHeartbeatAt)) {
                 recoveryFailed = true
             }
             resumeTaskID = session.taskID
             resumeOccurrenceID = session.occurrenceID
         }
+        if let adopted { adopt(adopted.session, task: adopted.task, now: now) }
         validateWorkReferences()
         if recoveryFailed { notice = store.persistenceError ?? "Previous work could not be recovered. Try again after saving is available." }
         else if resumeTaskID != nil { notice = "Previous work was paused at its last recorded time. Resume when ready." }
         refreshCalendars(now: now)
         replan(now: now)
         if monitorsEnabled {
+            #if os(macOS)
             monitor.start()
+            #endif
             timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
             }
             if let timer { RunLoop.main.add(timer, forMode: .common) }
         }
+    }
+
+    /// The task an open session of this device can carry on recording:
+    /// the same occurrence, still open, in a list that's still there.
+    private func adoptableTask(for session: WorkSession) -> Block? {
+        guard let task = store.block(id: session.taskID), task.isTask, !task.isCompleted,
+              task.occurrenceID == session.occurrenceID,
+              store.list(id: task.listID)?.isEffectivelyArchived == false else { return nil }
+        return task
+    }
+
+    /// Makes an open session found at launch the running work again, set up
+    /// as `start` sets up a new one. Its record already holds the time since
+    /// it started.
+    private func adopt(_ session: WorkSession, task: Block, now: Date) {
+        activeSessionID = session.id
+        let baseline = baselineEnd(for: session, task: task, now: now)
+        estimatedWorkEnd = baseline
+        approvedWorkEnd = plannedWorkEnd(for: session, task: task, estimate: baseline)
+        activeBoundary = nextBoundary(for: task, at: now)
+        awayLimit = nil
+        lastObservedAt = now
+        resumeTaskID = nil
+        resumeOccurrenceID = nil
+        pausedWork = nil
+        persistResume()
+        workSelection = WorkTaskReference(task)
     }
 
     func estimatedMinutes(for task: Block) -> Double {
@@ -435,7 +501,8 @@ final class CalendarCoordinator {
                 clearActiveState()
                 needsPlan = true
             } else if let task = store.block(id: session.taskID) {
-                let gap = checkClockGap ? lastObservedAt.flatMap { now.timeIntervalSince($0) > 75 ? $0 : nil } : nil
+                let gap = checkClockGap && presence.pausesAfterClockGap
+                    ? lastObservedAt.flatMap { now.timeIntervalSince($0) > 75 ? $0 : nil } : nil
                 // A gap in the timer is time away too, for work that tracks away.
                 let awayEnd = awayLimit ?? (task.tracksAwayFromMac ? gap.flatMap { nextBoundary(for: task, at: $0, stopsAtPins: true) } : nil)
                 if store.list(id: task.listID)?.isEffectivelyArchived != false {

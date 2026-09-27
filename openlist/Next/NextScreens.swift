@@ -82,21 +82,15 @@ private struct NXTodayPage: View {
     }
 
     /// Today's groups from the library's tasks in outline order. Each open
-    /// group keeps that order, as the design's are plain filters of its tasks.
+    /// group keeps that order, as the design's are plain filters of its tasks
+    /// (`TodayAgenda`, whose rules the phone's Today shares).
     @MainActor
     static func model(tasks: [Block], workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
                       isUnplaced: @escaping (UUID) -> Bool) -> Model {
-        let visible = tasks.filter { !$0.isCompleted || workbench.closing[$0.id] != nil }
-        func offset(_ task: Block) -> Int? { task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
-        // By day, as the design: Overdue is earlier days only, so a timed
-        // task whose time has passed stays in Due today.
-        let overdue = visible.filter { (offset($0) ?? 0) < 0 }
-        let due = visible.filter { offset($0) == 0 }
-        let planned = visible.filter { workbench.isPlanned($0) && (offset($0) ?? 1) > 0 }
-        let starred = visible.filter { $0.isStarred && (offset($0) ?? 1) > 0 && !workbench.isPlanned($0) }
-        let doneToday = tasks
-            .filter { $0.isCompleted && $0.completedAt.map { NXFormat.dayOffset($0, now: now) == 0 } == true }
-            .sorted(by: Block.byCompletionDate)
+        let agenda = TodayAgenda(tasks: tasks, closing: Set(workbench.closing.keys), now: now,
+                                 isPlanned: workbench.isPlanned)
+        let (overdue, due, planned, starred, doneToday) = (agenda.overdue, agenda.due, agenda.planned, agenda.starred,
+                                                           agenda.doneToday)
 
         var groups: [NXGroup] = []
         if !overdue.isEmpty {
@@ -121,8 +115,7 @@ private struct NXTodayPage: View {
             groups.append(NXGroup(id: "done", title: "Completed today", icon: "checkmark.circle.fill", color: NX.green,
                                   rows: doneToday, collapsible: true, defaultOpen: showsCompleted, completed: true))
         }
-        let open = overdue.count + due.count + planned.count + starred.count
-        return Model(groups: groups, progress: (doneToday.count, doneToday.count + open), clear: open == 0)
+        return Model(groups: groups, progress: agenda.progress, clear: agenda.isClear)
     }
 
     private func todayClear(done: Int) -> some View {
@@ -266,12 +259,8 @@ struct NextListScreen: View {
     static func completedGroups(_ tasks: [Block], in listID: UUID, workbench: Workbench, showsCompleted: Bool,
                                 inDocument: Set<UUID> = [], tasksOnly: Bool = false) -> [NXGroup] {
         let byID = tasksOnly ? Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
-        let done = tasks.filter {
-            $0.isCompleted && workbench.closing[$0.id] == nil && !inDocument.contains($0.id)
-                && ($0.parentID == nil
-                    || tasksOnly && !BlockTree.hasTaskAncestor($0) { byID[$0] ?? workbench.store.block(id: $0) })
-        }
-            .sorted(by: Block.byCompletionDate)
+        let done = BlockTree.completedFold(of: tasks, drawn: inDocument, closing: Set(workbench.closing.keys),
+                                           tasksOnly: tasksOnly) { byID[$0] ?? workbench.store.block(id: $0) }
         guard !done.isEmpty else { return [] }
         return [NXGroup(id: "ldone", title: "Completed", icon: "checkmark.circle.fill", color: NX.green, rows: done,
                         collapsible: true, defaultOpen: showsCompleted, completed: true, listID: listID)]

@@ -1,0 +1,75 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="TaskDetail"><div class="ol" data-theme="light" style="width: 390px; height: 844px;"><div class="scroll">
+  <div class="topbar">
+    <a class="back" href="Main.dc.html"><svg class="i s22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"></path></svg>Today</a>
+    <div class="end">
+      <button class="ib bare" aria-pressed="false" aria-label="Star" style="color: var(--muted);"><svg class="i s22" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9 6.8 19.6l1-5.8L3.5 9.7l5.9-.8z"></path></svg></button>
+      <button class="ib bare" aria-label="More"><svg class="i s22" viewBox="0 0 24 24" style="stroke-width: 2.8;"><path d="M5 12h.01M12 12h.01M19 12h.01"></path></svg></button>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: flex-start; gap: 14px; margin-top: 12px;">
+    <button class="cb big" aria-label="Complete Draft Q3 OKRs"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+    <h1 class="tt" style="font-size: 22px; line-height: 28px; font-weight: 700; white-space: normal;">Draft Q3 OKRs</h1>
+  </div>
+  <p style="margin: 10px 0px 0px 42px; font-size: 15px; line-height: 21px; color: var(--muted);">Keep it to three objectives. Pull last quarter’s numbers from the board deck.</p>
+
+  <div class="card flat" style="margin-top: 24px;">
+    <button class="srow"><span class="lbl" style="width: 76px; font-size: 15px;">When</span><span class="due">Today, 10:00–<span class="sc-interp">11:30</span></span><span class="val"><svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></button>
+    <button class="srow"><span class="lbl" style="width: 76px; font-size: 15px;">Priority</span><span>High</span><span class="val"><svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></button>
+    <button class="srow"><span class="lbl" style="width: 76px; font-size: 15px;">List</span><span>💼 Q3 planning</span><span class="val"><svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></button>
+    <button class="srow"><span class="lbl" style="width: 76px; font-size: 15px;">Labels</span><span>#focus</span><span class="val"><svg class="i s16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></button>
+  </div>
+
+  <div class="card flat" style="margin-top: 16px;">
+    <div class="srow">
+      <span>Plan for today</span>
+      <button class="tg on" role="switch" aria-checked="true" aria-label="Plan for today" style="margin-left: auto;"></button>
+    </div>
+    <div class="srow">
+      <span>Estimate</span>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 2px;">
+        <button class="ib" aria-label="5 minutes less" style="width: 36px; height: 36px;"><svg class="i s18" viewBox="0 0 24 24"><path d="M5 12h14"></path></svg></button>
+        <span style="min-width: 68px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums;"><span class="sc-interp">90</span> min</span>
+        <button class="ib" aria-label="5 minutes more" style="width: 36px; height: 36px;"><svg class="i s18" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <a class="gh" href="Activity.dc.html" style="margin-top: 16px; min-height: 44px;">History<svg class="i s16" viewBox="0 0 24 24" style="margin-left: auto;"><path d="M9 6l6 6-6 6"></path></svg></a></div><div class="dock">
+  <button class="ib lg" aria-label="Move to Trash" style="background: var(--surface); color: var(--danger); box-shadow: var(--shadow-card), var(--card-ring);"><svg class="i s22" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4.5h6V7"></path></svg></button>
+  <a class="btn primary" href="Working.dc.html" style="flex: 1 1 0%; height: 56px; font-size: 17px; box-shadow: var(--shadow-fab);"><svg class="i fill" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"></path></svg>Start working</a></div></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { plan: true, est: 90, star: false, done: false };
+  }
+  renderVals() {
+    var self = this;
+    var s = this.state;
+    var endMin = 10 * 60 + s.est;
+    var hh = Math.floor(endMin / 60), mm = endMin % 60;
+    return {
+      theme: this.props.theme ?? 'light',
+      est: s.est,
+      end: (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm,
+      planCls: s.plan ? 'tg on' : 'tg',
+      planChecked: s.plan ? 'true' : 'false',
+      togglePlan: function () { self.setState({ plan: !self.state.plan }); },
+      less: function () { self.setState({ est: Math.max(5, self.state.est - 5) }); },
+      more: function () { self.setState({ est: Math.min(480, self.state.est + 5) }); },
+      starCls: s.star ? 'i s22 fill' : 'i s22',
+      starColor: s.star ? 'var(--today)' : 'var(--muted)',
+      starPressed: s.star ? 'true' : 'false',
+      toggleStar: function () { self.setState({ star: !self.state.star }); },
+      cbCls: s.done ? 'cb big done' : 'cb big',
+      titleCls: s.done ? 'tt done' : 'tt',
+      toggleDone: function () { self.setState({ done: !self.state.done }); }
+    };
+  }
+}
+</script>
+
+
+</body></html>

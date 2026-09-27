@@ -250,7 +250,7 @@ extension Workbench {
     }
 
     func isPlanned(_ task: Block) -> Bool {
-        task.selectedForDay.map { Calendar.current.startOfDay(for: $0) <= Calendar.current.startOfDay(for: .now) } ?? false
+        task.isPlanned(on: .now)
     }
 
     /// Whether Plan for Today and Find a Slot reach any of `tasks`: both skip

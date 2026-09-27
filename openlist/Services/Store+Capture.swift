@@ -6,15 +6,18 @@
 import Foundation
 import SwiftData
 
-/// What an interactive capture saves: the title, and the date, repeat and
-/// labels its tokens named, as the capture card's chips previewed them.
-/// Building one never creates model records.
+/// What an interactive capture saves: the title, and the date, repeat,
+/// labels, priority and estimate its tokens named, as the capture card's
+/// chips previewed them. Building one never creates model records.
 struct CaptureSnapshot {
     var title: String
     var date: Date?
     var includesTime = false
     var recurrence: Recurrence?
     var labels: [String] = []
+    var priority: TaskPriority = .none
+    /// Minutes of work the task takes; 0 leaves it on each device's default.
+    var estimateMinutes = 0
 }
 
 extension Store {
@@ -47,6 +50,9 @@ extension Store {
             block.includesTime = snapshot.includesTime
             block.recurrence = snapshot.recurrence?.anchored(to: snapshot.date)
             block.labelIDs = snapshot.labels.compactMap { findOrCreateLabel(named: $0)?.id }
+            block.priority = snapshot.priority
+            // Within the calendar's four-week limit, as `setTaskEstimate` keeps it.
+            block.schedulingEstimateMinutes = max(0, min(60 * 24 * 28, snapshot.estimateMinutes))
             log(.created, title: block.displayTitle, block: block, list: destination)
             try persistChanges()
             scheduleReminderIfNeeded(for: block)
