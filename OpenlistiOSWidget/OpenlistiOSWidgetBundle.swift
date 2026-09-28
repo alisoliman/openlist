@@ -23,12 +23,33 @@ struct OpenlistiOSWidgetBundle: WidgetBundle {
 /// off (medium), and a ring of how much is done (Lock Screen).
 struct TodayWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: WidgetKind.today, provider: SnapshotProvider()) { entry in
+        StaticConfiguration(kind: WidgetKind.today, provider: TodayPlanProvider()) { entry in
             TodayWidgetView(entry: entry)
         }
         .configurationDisplayName("Today")
         .description("How much of today is done, and what’s next.")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular])
+    }
+}
+
+/// Today's timeline: the snapshot's own dates, and each start and end of
+/// the day's blocks, for the small size's "next".
+nonisolated struct TodayPlanProvider: TimelineProvider {
+    func placeholder(in context: Context) -> SnapshotEntry {
+        .sample(now: .now)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping @Sendable (SnapshotEntry) -> Void) {
+        completion(context.isPreview ? .sample(now: .now) : WidgetData.entry(at: .now))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<SnapshotEntry>) -> Void) {
+        let entry = WidgetData.entry(at: .now)
+        let calendar = entry.state.calendar
+        let dates = TimelineSchedule.todayPlanDates(for: entry.state.snapshot, pending: entry.pending, now: entry.date,
+                                                    calendar: calendar)
+        completion(WidgetData.timeline(entry, dates: dates, reload: TimelineSchedule.reload(after: dates, now: entry.date,
+                                                                                           calendar: calendar)))
     }
 }
 

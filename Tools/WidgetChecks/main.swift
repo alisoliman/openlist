@@ -724,6 +724,11 @@ do {
     let hourly = TimelineSchedule.snapshotDates(for: sample, now: now, calendar: calendar)
     check(hourly.contains(at(11, 40)) && hourly.contains(at(23, 40)) && !hourly.contains(at(11)),
           "Inbox ages get an entry on each capture's own hour marks, not the clock's")
+    let planDates = TimelineSchedule.todayPlanDates(for: quietInbox, now: now, calendar: calendar)
+    let ahead = quietInbox.agenda.filter { calendar.isDate($0.start, inSameDayAs: now) }.flatMap { [$0.start, $0.end] }
+        .filter { $0 > now && calendar.isDate($0, inSameDayAs: now) }
+    check(!ahead.isEmpty && ahead.allSatisfy(planDates.contains) && planDates.first == now,
+          "the iPhone's Today gets an entry at each start and end ahead, so its \"next\" moves on")
     check(TimelineSchedule.nextDay(after: now, calendar: calendar) == at(0, 1, day: 1), "timelines reload a minute past midnight")
     check(TimelineSchedule.reload(after: hourly, now: now, calendar: calendar) == at(0, 1, day: 1), "a day that fits in the timeline reloads after midnight")
     var fresh = quietInbox

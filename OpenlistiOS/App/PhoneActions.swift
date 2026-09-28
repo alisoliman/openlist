@@ -265,33 +265,49 @@ final class PhoneActions {
         let before = calendar.activeSession.flatMap { store.block(id: $0.taskID) } ?? calendar.resumableTask
         let previous = before.map(WorkTaskReference.init)
         let resumes = calendar.resumableTask?.id == task.id
+        let running = calendar.activeSession?.id
         guard calendar.start(task: task, now: now), let session = calendar.activeSession else {
             fail(calendar.notice ?? "Work could not be started.")
             return false
         }
         haptics.play(.impact)
+        // Already running: nothing started, so there's nothing to take back.
+        guard session.id != running else { return true }
         let sessionID = session.id
         let text = "\(resumes ? "Resumed" : "Started") “\(task.displayTitle)”"
+        let offered = Date.now
         offerToScene(text, sessionID: sessionID) { [weak self] in
-            self?.undoStart(sessionID, of: task, previous: previous)
+            self?.undoStart(sessionID, of: task, previous: previous, offered: offered)
         }
         return true
     }
+
+    /// How long a start can be taken back whole. After it, Undo only stops
+    /// the work: the time recorded in it stays.
+    static let startUndoWindow: TimeInterval = 10 * 60
 
     /// Work already running when the app opened on a review session's
     /// fixture, taken as this session's latest step, so Activity offers its
     /// Undo as the design draws it.
     func adoptStart(of session: WorkSession, task: Block) {
         let sessionID = session.id
+        let offered = Date.now
         offerToScene("Started “\(task.displayTitle)”", sessionID: sessionID) { [weak self] in
-            self?.undoStart(sessionID, of: task, previous: nil)
+            self?.undoStart(sessionID, of: task, previous: nil, offered: offered)
         }
     }
 
     /// Takes a start back: stops the work, deletes the session it made, and
-    /// hands resuming back to the work before it.
-    private func undoStart(_ sessionID: UUID, of task: Block, previous: WorkTaskReference?) {
+    /// hands resuming back to the work before it. Past `startUndoWindow` it
+    /// only stops the work, so time worked is never deleted.
+    private func undoStart(_ sessionID: UUID, of task: Block, previous: WorkTaskReference?, offered: Date) {
         if calendar.activeSession?.id == sessionID { calendar.pause(reason: "Undone", now: clock.now) }
+        guard Date.now.timeIntervalSince(offered) <= Self.startUndoWindow else {
+            latest = nil
+            haptics.play(.soft)
+            afterUndo?()
+            return
+        }
         if let made = store.workSessions(taskID: task.id).first(where: { $0.id == sessionID }) {
             store.context.delete(made)
             store.save()

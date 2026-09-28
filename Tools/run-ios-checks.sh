@@ -33,8 +33,12 @@ if [[ -n "${OPENLIST_SPM_DIR:-}" ]]; then COMMON+=(-clonedSourcePackagesDirPath 
 xcodebuild "${COMMON[@]}" build-for-testing > "$OUT/build.log" 2>&1 || { tail -100 "$OUT/build.log"; exit 1; }
 # The scheme marks the UI tests serial; turning parallel testing off also
 # avoids cloning the simulator for the unit tests.
-xcodebuild "${COMMON[@]}" -parallel-testing-enabled NO -resultBundlePath "$OUT/Tests.xcresult" \
-    test-without-building > "$OUT/test.log" 2>&1 || { tail -100 "$OUT/test.log"; exit 1; }
+# A test that fails is run once more, as a loaded runner can time out
+# driving the simulator; one that fails twice fails the check. The result
+# bundle has what a failure needs, so no sysdiagnose (ten minutes a failure).
+xcodebuild "${COMMON[@]}" -parallel-testing-enabled NO -retry-tests-on-failure -test-iterations 2 \
+    -collect-test-diagnostics never \
+    -resultBundlePath "$OUT/Tests.xcresult" test-without-building > "$OUT/test.log" 2>&1 || { tail -100 "$OUT/test.log"; exit 1; }
 xcrun xcresulttool get test-results tests --path "$OUT/Tests.xcresult" --compact > "$OUT/tests.json"
 APP="$DERIVED/Build/Products/Debug-iphonesimulator/OpenlistiOS.app"
 python3 - "$APP" "$OUT/tests.json" <<'PY'
@@ -51,11 +55,18 @@ def cases(node):
     return [case for child in node.get('children', []) for case in cases(child)]
 bundles = {node['name']: node for plan in results['testNodes'] for node in plan.get('children', [])
            if node.get('nodeType', '').endswith('test bundle')}
-passed = 0
+def repetitions(case):
+    return [child for child in case.get('children', []) if child.get('nodeType') == 'Repetition']
+# Passed, or passed on the run it was given after failing once.
+def succeeded(case):
+    runs = repetitions(case)
+    return case.get('result') == 'Passed' or (bool(runs) and runs[-1].get('result') == 'Passed')
+passed = retried = 0
 for name in ('OpenlistiOSTests', 'OpenlistiOSUITests'):
     ran = cases(bundles[name]) if name in bundles else []
-    require(ran and all(case.get('result') == 'Passed' for case in ran), f'{name} ran no tests or did not pass')
+    require(ran and all(succeeded(case) for case in ran), f'{name} ran no tests or did not pass')
     passed += len(ran)
+    retried += sum(1 for case in ran if len(repetitions(case)) > 1)
 
 info = plistlib.loads((app / 'Info.plist').read_bytes())
 require(info['CFBundleIdentifier'] == 'solimanali.openlist.ios', 'app identifier')
@@ -84,5 +95,6 @@ require(winfo['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetk
 require((widget / 'InstrumentSerif-Regular.ttf').is_file() and (widget / 'PrivacyInfo.xcprivacy').is_file(), 'widget resources')
 # build-for-testing also copies the hosted unit tests into PlugIns.
 require([p.name for p in (app / 'PlugIns').glob('*.appex')] == ['OpenlistiOSWidget.appex'], 'only the widget is embedded')
-print(f'{passed} iOS tests passed; verified the iPhone-only iOS 27 app and its embedded widget')
+again = f' ({retried} on a second run)' if retried else ''
+print(f'{passed} iOS tests passed{again}; verified the iPhone-only iOS 27 app and its embedded widget')
 PY

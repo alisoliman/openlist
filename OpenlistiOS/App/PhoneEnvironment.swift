@@ -244,6 +244,9 @@ final class PhoneEnvironment {
         if sync.state.isEnabled { platform.registerForRemoteNotifications() }
         // A pinned clock stops the calendar's own ticks, which read the system clock.
         calendar.bootstrap(now: clock.now, monitorsEnabled: platform.runsCalendarClock && !clock.isPinned)
+        // Only now is the work in hand known: a sync before would end the
+        // activity of work still running.
+        liveActivity?.isReady = true
         // After the calendar, so the first snapshot has the day's plan.
         widgetPublisher.refreshNow(now: clock.now)
         links.storeReady()

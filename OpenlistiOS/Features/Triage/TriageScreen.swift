@@ -27,7 +27,9 @@ struct TriageScreen: View {
         let reviewed = session.reviewed(queue: queue)
         let total = reviewed + queue.count
         let card = queue.first
-        OLScreen(identifier: PhoneRoute.triage.screenIdentifier, scrolls: false) {
+        // A card with many lists, or at large text sizes, scrolls; the
+        // finished state fills the screen.
+        OLScreen(identifier: PhoneRoute.triage.screenIdentifier, scrolls: card != nil) {
             OLTopBar {
                 OLIconButton("xmark", label: "Close triage", kind: .bare, iconSize: 22) { navigator.dismissCover() }
                     .accessibilityIdentifier("triage.close")
@@ -60,6 +62,7 @@ struct TriageScreen: View {
                     .frame(maxHeight: .infinity)
             }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let card { buttons(card) }
         }

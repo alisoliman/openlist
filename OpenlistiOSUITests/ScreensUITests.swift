@@ -137,7 +137,8 @@ final class ScreensUITests: XCTestCase {
         field.typeText("Buy yen for the trip fri 6pm ~15m #travel")
         XCTAssertTrue(app.element(beginningWith: "Saves as Fri 25, 18:00, 15 min, #travel").waitForExistence(timeout: 5))
         snap(app, "capture")
-        app.buttons["Add"].tap()
+        // Return adds, as the Done key says.
+        field.typeText("\n")
         app.waitForScreenToClose("screen.capture")
         XCTAssertTrue(app.screen("tray").staticTexts["Added to Inbox"].waitForExistence(timeout: 5))
         app.dock("inbox").tap()

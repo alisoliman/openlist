@@ -56,8 +56,8 @@ final class PhoneNavigator {
     }
     #endif
 
-    /// A cover waiting for the sheet on show to go first.
-    @ObservationIgnored private var pendingCover: Task<Void, Never>?
+    /// A sheet or cover waiting for the one on show to go first.
+    @ObservationIgnored private var pendingModal: Task<Void, Never>?
 
     func path(for tab: PhoneTab) -> [PhoneRoute] {
         switch tab {
@@ -231,12 +231,11 @@ final class PhoneNavigator {
             tab = route.home
             setPath([route], for: tab)
         case .triage:
-            dismissModals()
+            // Whatever is up closes first, inside present(cover:).
             tab = .inbox
             inboxPath = []
             present(cover: .triage)
         case .working:
-            if sheet != nil { sheet = nil }
             present(cover: .working)
         case .timeline:
             // A link to the timeline lands on today, whichever day was browsed.
@@ -262,8 +261,8 @@ final class PhoneNavigator {
     func dismissCover() { cover = nil }
 
     func dismissModals() {
-        pendingCover?.cancel()
-        pendingCover = nil
+        pendingModal?.cancel()
+        pendingModal = nil
         sheet = nil
         cover = nil
     }
@@ -280,25 +279,29 @@ final class PhoneNavigator {
     }
 
     private func present(sheet newSheet: PhoneSheet) {
-        pendingCover?.cancel()
-        pendingCover = nil
-        cover = nil
-        sheet = newSheet
+        guard sheet != newSheet || pendingModal != nil else { return }
+        presentOnceClosed { $0.sheet = newSheet }
     }
 
-    /// Covers present from the root, which can't present one while a sheet is
-    /// up: the sheet goes first, then the cover once it has.
     private func present(cover newCover: PhoneCover) {
-        guard sheet != nil else {
-            cover = newCover
-            return
-        }
+        guard cover != newCover || pendingModal != nil else { return }
+        presentOnceClosed { $0.cover = newCover }
+    }
+
+    /// Sheets and covers present from the root, which can't present one while
+    /// another is up or going: whatever is up goes first, then the next once
+    /// it has, however the change came (a tap, a link, a notification).
+    private func presentOnceClosed(_ present: @escaping @MainActor (PhoneNavigator) -> Void) {
+        pendingModal?.cancel()
+        pendingModal = nil
+        guard sheet != nil || cover != nil else { return present(self) }
         sheet = nil
-        pendingCover?.cancel()
-        pendingCover = Task { [weak self] in
+        cover = nil
+        pendingModal = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(450))
-            guard !Task.isCancelled else { return }
-            self?.cover = newCover
+            guard !Task.isCancelled, let self else { return }
+            pendingModal = nil
+            present(self)
         }
     }
 

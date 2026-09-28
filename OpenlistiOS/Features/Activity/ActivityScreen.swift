@@ -140,8 +140,12 @@ struct ActivityScreen: View {
     /// change since.
     private func canUndo(_ change: ActivityChange) -> Bool {
         guard let latest = env.actions.latest else { return false }
-        // Work started: the row of the session that start made.
-        guard change.isSaved else { return latest.sessionID.map { $0.uuidString == change.id } ?? false }
+        // Work started: the row of the session that start made, while the
+        // start can still be taken back whole.
+        guard change.isSaved else {
+            return Date.now.timeIntervalSince(latest.at) <= PhoneActions.startUndoWindow
+                && latest.sessionID.map { $0.uuidString == change.id } ?? false
+        }
         let delay = change.date.timeIntervalSince(latest.at)
         return delay >= -2 && delay <= env.actions.dwell + 5
     }

@@ -450,6 +450,19 @@ struct ScreenLogicTests {
         #expect(phone.env.calendar.resumableTask?.id == draft.id)
     }
 
+    /// Start working on the task already running starts nothing, so it
+    /// offers no Undo that could take its recorded time.
+    @Test func startingTheRunningTaskOffersNoUndo() throws {
+        let phone = try TestPhone(seeded: true)
+        let draft = try #require(phone.task("Draft Q3 OKRs"))
+        let running = try #require(phone.env.calendar.activeSession)
+        let offered = try #require(phone.env.actions.latest)
+        Thread.sleep(forTimeInterval: 0.02)
+        #expect(phone.env.actions.startWork(draft))
+        #expect(phone.env.calendar.activeSession?.id == running.id)
+        #expect(phone.env.actions.latest?.at == offered.at, "No new step, so no new Undo")
+    }
+
     /// The fixture's running work is the session's latest step, as the
     /// design's Activity draws it with Undo; Undo stops it and takes it out.
     @Test func theFixturesRunningWorkCanBeUndone() throws {

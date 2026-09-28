@@ -75,6 +75,12 @@ struct CaptureScreen: View {
                 .focused($isFocused)
                 .submitLabel(.done)
                 .onSubmit { add(snapshot(parse)) }
+                // A field that wraps takes Return as a new line; here it adds.
+                .onChange(of: text) { _, typed in
+                    guard typed.contains("\n") else { return }
+                    text = typed.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+                    add(snapshot(CaptureParse(text, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)))
+                }
                 .accessibilityIdentifier("capture.field")
         }
     }

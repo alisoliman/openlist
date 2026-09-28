@@ -116,6 +116,22 @@ struct NavigationTests {
         #expect(navigator.topRoute == .taskDetail(Self.id))
     }
 
+    /// A link to Working while Settings (a cover) is up waits for it to go:
+    /// the root presents one modal at a time.
+    @Test func aCoverWaitsForTheModalOnShowToClose() async throws {
+        let navigator = PhoneNavigator()
+        navigator.open(.settings)
+        navigator.show(.working)
+        #expect(navigator.sheet == nil && navigator.cover == nil)
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(navigator.cover == .working)
+        // And a sheet waits for a cover the same way.
+        navigator.open(.capture(CaptureRequest()))
+        #expect(navigator.cover == nil && navigator.sheet == nil)
+        try await Task.sleep(for: .milliseconds(700))
+        guard case .capture = navigator.sheet else { Issue.record("No capture sheet"); return }
+    }
+
     @Test func captureTakesTheListOnShow() {
         let navigator = PhoneNavigator()
         #expect(navigator.captureRequest.listID == nil)

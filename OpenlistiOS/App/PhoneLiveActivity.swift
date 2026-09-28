@@ -8,11 +8,27 @@ import Foundation
 
 /// Keeps the work Live Activity in step with the calendar: one for the work
 /// in hand while it runs or is paused, none once it stops or is done.
+///
+/// ActivityKit is asked one step at a time, for the latest wanted state: the
+/// calendar reports one change several times over, and steps run side by
+/// side would each start an activity.
 @MainActor
 final class PhoneLiveActivity {
     private let environment: () -> PhoneEnvironment?
     private var lastState: WorkActivityAttributes.ContentState?
     private var lastKey: String?
+    /// Off until the calendar has bootstrapped. Before then no work is in
+    /// hand yet, and a sync would end the activity of work still running.
+    var isReady = false
+
+    private enum Wanted {
+        case none
+        case show(ActivityContent<WorkActivityAttributes.ContentState>, WorkActivityAttributes, key: String)
+    }
+
+    /// The state the next step brings the activities to.
+    private var wanted: Wanted?
+    private var updating: Task<Void, Never>?
 
     init(environment: @escaping () -> PhoneEnvironment?) {
         self.environment = environment
@@ -29,7 +45,7 @@ final class PhoneLiveActivity {
 
     /// Starts, updates or ends the activity for how the work stands now.
     func sync() {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled, let env = environment() else { return }
+        guard isReady, ActivityAuthorizationInfo().areActivitiesEnabled, let env = environment() else { return }
         let now = env.now
         let work = PhoneWork(env: env, now: now)
         guard let task = work.task, work.state != .planned else { return endAll() }
@@ -60,9 +76,25 @@ final class PhoneLiveActivity {
         lastState = state
         let content = ActivityContent(state: state, staleDate: nil)
         let attributes = WorkActivityAttributes(taskID: task.id.uuidString, occurrenceID: task.occurrenceID.uuidString)
-        Task {
-            // One the system turned down is asked for again at the next change.
-            if await !Self.show(content, attributes: attributes), lastKey == key { lastState = nil }
+        want(.show(content, attributes, key: key))
+    }
+
+    /// Queues `state`, replacing any not yet begun, and runs the queue.
+    private func want(_ state: Wanted) {
+        wanted = state
+        guard updating == nil else { return }
+        updating = Task { [weak self] in
+            while let next = self?.wanted {
+                self?.wanted = nil
+                switch next {
+                case .none:
+                    await Self.endEvery()
+                case let .show(content, attributes, key):
+                    // One the system turned down is asked for again at the next change.
+                    if await !Self.show(content, attributes: attributes), self?.lastKey == key { self?.lastState = nil }
+                }
+            }
+            self?.updating = nil
         }
     }
 
@@ -99,11 +131,13 @@ final class PhoneLiveActivity {
     private func endAll() {
         lastKey = nil
         lastState = nil
-        guard !Activity<WorkActivityAttributes>.activities.isEmpty else { return }
-        Task {
-            for activity in Activity<WorkActivityAttributes>.activities {
-                await activity.end(nil, dismissalPolicy: .immediate)
-            }
+        guard !Activity<WorkActivityAttributes>.activities.isEmpty || updating != nil else { return }
+        want(.none)
+    }
+
+    nonisolated private static func endEvery() async {
+        for activity in Activity<WorkActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
 }

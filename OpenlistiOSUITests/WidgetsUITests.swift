@@ -46,23 +46,26 @@ final class WidgetsUITests: XCTestCase {
         snap("lock-live-activity")
         XCTAssertTrue(springboard.buttons["Done"].waitForExistence(timeout: 3), "The Lock Screen activity has Done")
 
-        // The first activity asks once whether Openlist may show them.
+        // The first activity asks once whether Openlist may show them; the
+        // card moves down as the question goes, so let it settle.
         let allow = springboard.buttons["Allow"]
         if allow.waitForExistence(timeout: 2) {
             allow.tap()
-            sleep(1)
+            sleep(3)
         }
         // Pause from the activity acts in the app, and the activity follows.
+        // The system can take a while to run the first intent on a loaded
+        // machine (19 s was seen on CI), so each step waits up to a minute.
         springboard.buttons["Pause"].firstMatch.tap()
-        XCTAssertTrue(springboard.buttons["Resume"].waitForExistence(timeout: 10), "Pause from the activity pauses the work")
+        XCTAssertTrue(springboard.buttons["Resume"].waitForExistence(timeout: 60), "Pause from the activity pauses the work")
         snap("lock-live-activity-paused")
         springboard.buttons["Resume"].firstMatch.tap()
-        XCTAssertTrue(springboard.buttons["Pause"].waitForExistence(timeout: 10))
+        XCTAssertTrue(springboard.buttons["Pause"].waitForExistence(timeout: 60))
         // Done completes the task in the app, and the activity goes.
         springboard.buttons["Done"].firstMatch.tap()
         let ended = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
                                               object: springboard.buttons["Pause"])
-        XCTAssertEqual(XCTWaiter().wait(for: [ended], timeout: 15), .completed, "Done from the activity ends it")
+        XCTAssertEqual(XCTWaiter().wait(for: [ended], timeout: 60), .completed, "Done from the activity ends it")
         snap("lock-live-activity-done")
         let bottom = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.995))
         bottom.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))

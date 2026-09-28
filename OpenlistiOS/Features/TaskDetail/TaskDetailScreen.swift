@@ -78,6 +78,12 @@ private struct TaskDetailPage: View {
                     .focused($focus, equals: .title)
                     .submitLabel(.done)
                     .onSubmit { commitTitle() }
+                    // A field that wraps takes Return as a new line; here it's Done.
+                    .onChange(of: title.value) { _, typed in
+                        guard typed.contains("\n") else { return }
+                        title.value = typed.replacingOccurrences(of: "\n", with: "")
+                        focus = nil
+                    }
                     .accessibilityIdentifier("detail.title")
             }
             .padding(.top, 12)
