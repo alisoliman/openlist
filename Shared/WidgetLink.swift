@@ -19,6 +19,7 @@ import Foundation
 ///     openlist://widget/today
 ///     openlist://widget/calendar
 ///     openlist://widget/activity
+///     openlist://widget/working
 ///     openlist://widget/task/<uuid>
 ///     openlist://widget/list/<uuid>
 nonisolated enum WidgetLink: Equatable, Sendable {
@@ -33,6 +34,8 @@ nonisolated enum WidgetLink: Equatable, Sendable {
     case today
     case calendar
     case activity
+    /// The work under way: Working on the iPhone, from its Live Activity.
+    case working
     case task(UUID)
     case list(UUID)
 
@@ -66,6 +69,7 @@ nonisolated enum WidgetLink: Equatable, Sendable {
         case .today: ["today"]
         case .calendar: ["calendar"]
         case .activity: ["activity"]
+        case .working: ["working"]
         case .task(let id): ["task", id.uuidString.lowercased()]
         case .list(let id): ["list", id.uuidString.lowercased()]
         }
@@ -93,6 +97,7 @@ nonisolated enum WidgetLink: Equatable, Sendable {
             case "today": self = .today
             case "calendar": self = .calendar
             case "activity": self = .activity
+            case "working": self = .working
             default: return nil
             }
         case 2 where parts == ["capture", "today"]:

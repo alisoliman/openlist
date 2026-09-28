@@ -109,8 +109,9 @@ final class WidgetLinkRouter {
         case .today:
             show(.today)
             activate()
-        case .calendar:
-            // Up Next and Agenda: today's work, whichever range the Calendar was left on.
+        case .calendar, .working:
+            // Up Next and Agenda: today's work, whichever range the Calendar
+            // was left on. The iPhone's Live Activity's link lands there too.
             navigator.isShortcutSheetOpen = false
             screens.showOnCalendar(.now)
             activate()

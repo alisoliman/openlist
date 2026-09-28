@@ -376,6 +376,8 @@ do {
           "the next morning, tomorrow's task is due today and the rest of the evening's work is late")
     check(morning.snapshot.dueToday == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)], "and turns late at the next midnight")
     check(morning.snapshot.tomorrowItems.isEmpty && morning.snapshot.dueTomorrow.isEmpty, "tomorrow's work is merged once")
+    check(!written.todayPlan.isEmpty && morning.snapshot.todayPlan.isEmpty && morning.snapshot.plannedTodayCount == 0,
+          "the iPhone's plan was the evening's: the next morning its rows fall back to what's due")
     let tickedMorning = WidgetState(snapshot: written, pending: [tap(.complete, "q2", in: written, at: at(8, 5, day: 1))], now: at(8, 10, day: 1), calendar: calendar)
     check(tickedMorning.snapshot.dueTodayCount == 0 && tickedMorning.snapshot.dueToday.isEmpty && tickedMorning.snapshot.completedTodayCount == 1,
           "ticking it off counts it once")
@@ -722,6 +724,11 @@ do {
     let hourly = TimelineSchedule.snapshotDates(for: sample, now: now, calendar: calendar)
     check(hourly.contains(at(11, 40)) && hourly.contains(at(23, 40)) && !hourly.contains(at(11)),
           "Inbox ages get an entry on each capture's own hour marks, not the clock's")
+    let planDates = TimelineSchedule.todayPlanDates(for: quietInbox, now: now, calendar: calendar)
+    let ahead = quietInbox.agenda.filter { calendar.isDate($0.start, inSameDayAs: now) }.flatMap { [$0.start, $0.end] }
+        .filter { $0 > now && calendar.isDate($0, inSameDayAs: now) }
+    check(!ahead.isEmpty && ahead.allSatisfy(planDates.contains) && planDates.first == now,
+          "the iPhone's Today gets an entry at each start and end ahead, so its \"next\" moves on")
     check(TimelineSchedule.nextDay(after: now, calendar: calendar) == at(0, 1, day: 1), "timelines reload a minute past midnight")
     check(TimelineSchedule.reload(after: hourly, now: now, calendar: calendar) == at(0, 1, day: 1), "a day that fits in the timeline reloads after midnight")
     var fresh = quietInbox

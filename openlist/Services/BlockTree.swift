@@ -92,11 +92,15 @@ enum BlockTree {
     ///   - root: the parent to start from — `nil` for a list document, or a
     ///     task's id for the subtree under it.
     ///   - respectCollapse: when `true`, subtrees of collapsed blocks are skipped.
+    ///   - expanding: blocks shown open whatever their stored fold says.
+    ///   - collapsing: blocks shown folded whatever their stored fold says,
+    ///     as a viewer that keeps its folds to itself, without syncing them.
     static func flatten(
         _ blocks: [Block],
         root: UUID? = nil,
         respectCollapse: Bool = true,
-        expanding: Set<UUID> = []
+        expanding: Set<UUID> = [],
+        collapsing: Set<UUID> = []
     ) -> [BlockRow] {
         // Bucket by parent once so the recursion is linear rather than O(n²).
         let byParent = childIndex(of: blocks, root: root)
@@ -119,17 +123,18 @@ enum BlockTree {
                 previousKind = block.kind
 
                 let kids = byParent[block.id] ?? []
+                let isCollapsed = (block.isCollapsed || collapsing.contains(block.id)) && !expanding.contains(block.id)
                 rows.append(
                     BlockRow(
                         block: block,
                         depth: depth,
                         ordinal: ordinal,
                         hasChildren: !kids.isEmpty,
-                        isCollapsed: block.isCollapsed && !expanding.contains(block.id)
+                        isCollapsed: isCollapsed
                     )
                 )
 
-                if !kids.isEmpty && !(respectCollapse && block.isCollapsed && !expanding.contains(block.id)) {
+                if !kids.isEmpty && !(respectCollapse && isCollapsed) {
                     visit(parent: block.id, depth: depth + 1)
                 }
             }
@@ -168,6 +173,24 @@ enum BlockTree {
             if descendants(of: top.id, using: index).contains(where: { $0.isTask && !$0.isCompleted }) {
                 result.insert(top.id)
             }
+        }
+        return result
+    }
+
+    /// Only the tasks among `rows`, each as deep as the tasks above it: the
+    /// Tasks presentation of a list, where a heading, list item or text line
+    /// holding tasks leaves them at its own depth among the tasks.
+    static func taskOutline(_ rows: [BlockRow]) -> [BlockRow] {
+        var result: [BlockRow] = []
+        // The document depth and task depth of each task on the current path.
+        var path: [(depth: Int, taskDepth: Int)] = []
+        for var row in rows {
+            while let last = path.last, last.depth >= row.depth { path.removeLast() }
+            guard row.block.isTask else { continue }
+            let taskDepth = path.last.map { $0.taskDepth + 1 } ?? 0
+            path.append((row.depth, taskDepth))
+            row.depth = taskDepth
+            result.append(row)
         }
         return result
     }

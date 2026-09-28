@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>OpenlistDevelopment</key><true/>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    <key>UIAppFonts</key>
+    <array><string>InstrumentSerif-Regular.ttf</string></array>
+    <key>UTExportedTypeDeclarations</key>
+    <array><dict>
+        <key>UTTypeIdentifier</key><string>app.openlist.plan-drag</string>
+        <key>UTTypeDescription</key><string>Openlist Task to Plan</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+    </dict></array>
+    <key>CFBundleURLTypes</key>
+    <array><dict>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>CFBundleURLName</key><string>solimanali.openlist.dev.item</string>
+        <key>CFBundleURLSchemes</key><array><string>openlist-dev</string></array>
+    </dict></array>
+</dict>
+</plist>

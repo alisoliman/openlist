@@ -5,7 +5,15 @@ import Foundation
 nonisolated enum ReviewSession {
     static var identifier: String? {
         #if DEBUG
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "OpenlistReviewSession") as? String,
+        #if os(iOS)
+        // UI tests can't rewrite the Info.plist for each run, but they can
+        // set XCUIApplication.launchEnvironment.
+        let supplied = ProcessInfo.processInfo.environment["OpenlistReviewSession"]
+            ?? Bundle.main.object(forInfoDictionaryKey: "OpenlistReviewSession") as? String
+        #else
+        let supplied = Bundle.main.object(forInfoDictionaryKey: "OpenlistReviewSession") as? String
+        #endif
+        guard let value = supplied,
               !value.isEmpty, value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
         else { return nil }
         return value

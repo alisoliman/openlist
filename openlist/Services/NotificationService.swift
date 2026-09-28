@@ -24,15 +24,26 @@ final class NotificationService {
     static let calendarLaterAction = "openlist.calendar.later"
     static let calendarOpenPlanAction = "openlist.calendar.open-plan"
 
+    /// iOS keeps only an app's 64 soonest pending local notifications and
+    /// drops the rest without a word. Calendar nudges are delivered at once,
+    /// so they never hold one of those places.
+    #if os(iOS)
+    static let pendingReminderLimit: Int? = 64
+    #else
+    static let pendingReminderLimit: Int? = nil
+    #endif
+
     private lazy var center = UNUserNotificationCenter.current()
     lazy var reminders: ReminderRecovery = {
+        let limit = Self.pendingReminderLimit
         if ReviewSession.identifier != nil {
             if Bundle.main.object(forInfoDictionaryKey: "OpenlistReviewReminderSimulation") as? Bool == true {
-                return ReminderRecovery(client: ReviewReminderClient(defaults: ReviewSession.defaults), isSimulated: true)
+                return ReminderRecovery(client: ReviewReminderClient(defaults: ReviewSession.defaults), isSimulated: true,
+                                        pendingLimit: limit)
             }
-            return ReminderRecovery(client: SystemReminderNotificationClient(center: nil, isEnabled: false))
+            return ReminderRecovery(client: SystemReminderNotificationClient(center: nil, isEnabled: false), pendingLimit: limit)
         }
-        return ReminderRecovery(client: SystemReminderNotificationClient(center: center, isEnabled: true))
+        return ReminderRecovery(client: SystemReminderNotificationClient(center: center, isEnabled: true), pendingLimit: limit)
     }()
     private var hasRequestedAuthorization = false
     private var calendarCategoryInstallation: Task<Void, Never>?

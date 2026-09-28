@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import UniformTypeIdentifiers
 
@@ -183,6 +185,7 @@ enum MarkdownExporter {
         return parts.isEmpty ? "" : "  " + parts.map(InlineMarkdown.escape).joined(separator: " ")
     }
 
+    #if os(macOS)
     // MARK: - Save panel
 
     /// Asks where, then writes the list's export there. `true` once it's
@@ -245,4 +248,5 @@ enum MarkdownExporter {
             return false
         }
     }
+    #endif
 }

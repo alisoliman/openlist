@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import CloudKit
 import CoreData
 import Foundation
@@ -41,11 +45,17 @@ final class ICloudSyncMonitor {
             monitor.state.accountChanged()
             monitor.checkAccount()
         }
-        observe(NSApplication.didBecomeActiveNotification) { monitor in
+        observe(Self.didBecomeActive) { monitor in
             monitor.checkAccount()
             monitor.scheduleRemoteRefresh()
         }
     }
+
+    #if os(macOS)
+    private static let didBecomeActive = NSApplication.didBecomeActiveNotification
+    #else
+    private static let didBecomeActive = UIApplication.didBecomeActiveNotification
+    #endif
 
     isolated deinit {
         refreshTask?.cancel()
@@ -78,7 +88,7 @@ final class ICloudSyncMonitor {
                 case .restricted: state.account = .restricted
                 case .temporarilyUnavailable: state.account = .temporarilyUnavailable
                 case .couldNotDetermine: state.account = .failed("Try checking again when you are online.")
-                @unknown default: state.account = .failed("This version of macOS returned an unknown account status.")
+                @unknown default: state.account = .failed("This version of \(ICloudSyncState.systemName) returned an unknown account status.")
                 }
             } catch {
                 guard !Task.isCancelled, let self else { return }
@@ -134,6 +144,7 @@ final class ICloudSyncMonitor {
     }
 }
 
+#if os(macOS)
 @MainActor
 final class OpenlistApplicationDelegate: NSObject, NSApplicationDelegate {
     var sync: ICloudSyncMonitor?
@@ -192,3 +203,4 @@ final class OpenlistApplicationDelegate: NSObject, NSApplicationDelegate {
             .error("Remote notification registration failed: \(error.localizedDescription)")
     }
 }
+#endif

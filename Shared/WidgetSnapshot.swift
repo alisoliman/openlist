@@ -203,6 +203,13 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// A reopen or Undo takes one away; a repeat that rolls forward is open
     /// again, so it is not counted, there or here.
     var completedTodayCount: Int = 0
+    /// The rest of what the iPhone's Today holds: open tasks planned for today
+    /// or starred with no due date by today, which `overdueCount` and
+    /// `dueTodayCount` leave out. Its widgets count "2 of 13" with them.
+    var plannedTodayCount: Int = 0
+    /// Today's run as the iPhone's Today draws it: overdue first, then due and
+    /// planned by their time today, the untimed last (`TodayAgenda.schedule`).
+    var todayPlan: [Item] = []
     var inboxCount: Int = 0
     /// Newest first.
     var inboxItems: [InboxItem] = []
@@ -240,6 +247,8 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         tomorrowItems = value(.tomorrowItems, empty.tomorrowItems)
         dueTomorrow = value(.dueTomorrow, empty.dueTomorrow)
         completedTodayCount = value(.completedTodayCount, empty.completedTodayCount)
+        plannedTodayCount = value(.plannedTodayCount, empty.plannedTodayCount)
+        todayPlan = value(.todayPlan, empty.todayPlan)
         inboxCount = value(.inboxCount, empty.inboxCount)
         inboxItems = value(.inboxItems, empty.inboxItems)
         totalOpenCount = value(.totalOpenCount, empty.totalOpenCount)
@@ -265,6 +274,8 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         try container.encode(tomorrowItems, forKey: .tomorrowItems)
         try container.encode(dueTomorrow, forKey: .dueTomorrow)
         try container.encode(completedTodayCount, forKey: .completedTodayCount)
+        try container.encode(plannedTodayCount, forKey: .plannedTodayCount)
+        try container.encode(todayPlan, forKey: .todayPlan)
         try container.encode(inboxCount, forKey: .inboxCount)
         try container.encode(inboxItems, forKey: .inboxItems)
         try container.encode(totalOpenCount, forKey: .totalOpenCount)
@@ -279,6 +290,7 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
         case version, generatedAt
         case libraryID, accentHex, serifTitles, firstWeekday
         case todayItems, overdueCount, dueTodayCount, dueToday, tomorrowItems, dueTomorrow, completedTodayCount
+        case plannedTodayCount, todayPlan
         case inboxCount, inboxItems, totalOpenCount, lists
         case weekStart, agenda, work, activity
     }

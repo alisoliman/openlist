@@ -287,4 +287,30 @@ do {
           && moved(local(3, 29, 1, 30), local(3, 29, 3, 30), timed: true, local(3, 30, 3, 30), timed: true) == local(3, 30, 2, 30),
           "Between due times a reminder keeps its days and minutes")
 }
+// iOS keeps only an app's soonest pending notifications. Under a limit the
+// soonest are added and the rest wait, then move up as earlier ones pass.
+do {
+    let cappedClient = FakeReminderClient()
+    let capped = ReminderRecovery(client: cappedClient, pendingLimit: 2, now: { clock })
+    let soon = intent(date: clock.addingTimeInterval(60)), next = intent(date: clock.addingTimeInterval(120))
+    let later = intent(date: clock.addingTimeInterval(180)), done = intent(date: clock.addingTimeInterval(30), inactive: "task completed")
+    capped.reconcile([later, next, soon, done]); await capped.waitUntilIdle()
+    check(Set(cappedClient.requests.keys) == [soon.id, next.id] && capped.statuses[later.id] == .queued
+          && capped.statuses[soon.id] == .accepted && capped.statuses[next.id] == .accepted
+          && capped.statuses[done.id] == .inactive("task completed"),
+          "Under a pending limit only the soonest reminders are added and the rest wait")
+    check(capped.statuses[later.id]?.needsRecovery == false && ReminderStatus.queued.title == "Waits for sooner reminders",
+          "A waiting reminder needs nothing from the user and says so plainly")
+    let sooner = intent(date: clock.addingTimeInterval(90))
+    capped.reconcile([later, next, soon, done, sooner]); await capped.waitUntilIdle()
+    check(Set(cappedClient.requests.keys) == [soon.id, sooner.id] && capped.statuses[next.id] == .queued,
+          "A new sooner reminder takes the place of the latest one, which is withdrawn")
+    clock = clock.addingTimeInterval(100)
+    capped.refresh(); await capped.waitUntilIdle()
+    check(capped.statuses[soon.id] == .expired && capped.statuses[sooner.id] == .expired
+          && Set(cappedClient.requests.keys) == [next.id, later.id] && capped.statuses[later.id] == .accepted,
+          "Once earlier reminders pass, waiting ones are added")
+    check(ReminderRecovery(client: FakeReminderClient()).pendingLimit == nil && NotificationService.pendingReminderLimit == nil,
+          "The Mac keeps every reminder pending")
+}
 print("\(checks) reminder recovery checks passed")

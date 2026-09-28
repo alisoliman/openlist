@@ -124,6 +124,10 @@ nonisolated struct WidgetState: Equatable, Sendable {
         // Merged once: a tick or reopen then finds them only as today's.
         snapshot.tomorrowItems = []
         snapshot.dueTomorrow = []
+        // The iPhone's plan was the day before's: its rows fall back to
+        // what's due, carried forward above, until the app writes today's.
+        snapshot.todayPlan = []
+        snapshot.plannedTodayCount = 0
     }
 
     // MARK: - Pending commands

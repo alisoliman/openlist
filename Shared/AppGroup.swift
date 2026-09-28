@@ -12,7 +12,13 @@ import Security
 /// snapshot alongside. The widget reads the snapshot, and only ever writes to
 /// the command queue (`widget-commands.json`) the app applies.
 nonisolated enum AppGroup {
-    #if OPENLIST_DEV
+    #if os(iOS) && OPENLIST_DEV
+    static let identifier = "group.solimanali.openlist.dev"
+    #elseif os(iOS)
+    // iOS App Groups are registered on the team and must carry the group.
+    // prefix. The Mac keeps its team-prefixed group, which holds its store.
+    static let identifier = "group.solimanali.openlist"
+    #elseif OPENLIST_DEV
     static let identifier = "Y5UE64R7TQ.solimanali.openlist.dev"
     #else
     static let identifier = "Y5UE64R7TQ.solimanali.openlist"
@@ -28,7 +34,7 @@ nonisolated enum AppGroup {
             try? FileManager.default.createDirectory(at: review, withIntermediateDirectories: true)
             return review
         }
-        #if OPENLIST_DEV
+        #if OPENLIST_DEV && os(macOS)
         // Ad-hoc local builds have no authorized App Group. Never ask to open
         // the production group; keep their data in this app's private sandbox.
         if let task = SecTaskCreateFromSelf(nil),
@@ -42,6 +48,8 @@ nonisolated enum AppGroup {
         try? FileManager.default.createDirectory(at: development, withIntermediateDirectories: true)
         return development
         #else
+        // An unentitled build gets nil here. iOS has no SecTask API, so its
+        // Dev build takes this path too.
         return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
         #endif
     }

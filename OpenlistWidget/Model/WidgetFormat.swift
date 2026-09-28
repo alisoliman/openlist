@@ -93,30 +93,13 @@ nonisolated enum WidgetFormat {
         "in \(max(1, minutes(from: now, to: start))) min"
     }
 
-    /// How long ago an Inbox capture arrived: "now", "15m", "2h", "1d".
-    ///
-    /// Minutes count in fives. A widget only redraws at its timeline's
-    /// entries, and `ageChange(of:after:)` gives one for every change of this
-    /// label, so a finer label would either be wrong between entries or cost
-    /// an entry a minute.
-    static func age(of date: Date, now: Date) -> String {
-        let seconds = max(0, now.timeIntervalSince(date))
-        switch seconds {
-        case ..<300: return "now"
-        case ..<3600: return "\(Int(seconds / 300) * 5)m"
-        case ..<86_400: return "\(Int(seconds / 3600))h"
-        default: return "\(Int(seconds / 86_400))d"
-        }
-    }
+    /// How long ago an Inbox capture arrived: "now", "15m", "2h", "1d", in
+    /// five-minute steps a timeline can keep up with (`CompactText.age`,
+    /// which the phone's Inbox rows share).
+    static func age(of date: Date, now: Date) -> String { CompactText.age(of: date, now: now) }
 
-    /// The next moment after `now` when `age(of:now:)` reads differently:
-    /// every five minutes through the first hour, then on each whole hour
-    /// and each whole day since the capture.
-    static func ageChange(of date: Date, after now: Date) -> Date {
-        let seconds = max(0, now.timeIntervalSince(date))
-        let step: TimeInterval = seconds < 3600 ? 300 : seconds < 86_400 ? 3600 : 86_400
-        return date.addingTimeInterval(((seconds / step).rounded(.down) + 1) * step)
-    }
+    /// The next moment after `now` when `age(of:now:)` reads differently.
+    static func ageChange(of date: Date, after now: Date) -> Date { CompactText.ageChange(of: date, after: now) }
 
     // MARK: - Labels
 

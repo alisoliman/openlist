@@ -26,6 +26,14 @@ nonisolated enum TimelineSchedule {
         return tidy([now] + ages + expiries(of: pending, after: now, calendar: calendar), now: now)
     }
 
+    /// The iPhone's Today, whose small size draws what's next: Today's dates
+    /// plus every start and end still ahead today, so "next" moves on while
+    /// the app, suspended, publishes nothing.
+    static func todayPlanDates(for snapshot: WidgetSnapshot, pending: [WidgetCommand] = [], now: Date, calendar: Calendar = .current) -> [Date] {
+        tidy(snapshotDates(for: snapshot, pending: pending, now: now, calendar: calendar)
+            + boundaries(of: snapshot, after: now, calendar: calendar), now: now)
+    }
+
     /// Up Next: a minute at a time for the next 90 minutes while a block
     /// counts down or work is recording, plus every start and end today and
     /// each moment a pending tap stops being drawn.

@@ -1,0 +1,93 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="Inbox"><div class="ol" data-theme="light" style="width: 390px; height: 844px;"><div class="scroll">
+  <div class="topbar">
+    <span class="eyebrow blue"><span class="sc-interp">6</span> to triage</span>
+  </div>
+  <h1 class="vt">Inbox</h1>
+
+  <a class="btn primary block" href="Triage.dc.html" style="margin-top: 20px;">Triage one by one</a>
+
+  <div class="card" style="margin-top: 16px;">
+    
+      <div class="li">
+        <button class="cb" aria-label="Complete Send Jun the photos from Nara"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+        <a class="tt" href="TaskDetail.dc.html"><span class="sc-interp">Send Jun the photos from Nara</span></a>
+        <span class="tr"><span class="sc-interp">2h</span></span>
+      </div>
+    
+      <div class="li">
+        <button class="cb" aria-label="Complete Cancel the gym trial before it renews"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+        <a class="tt" href="TaskDetail.dc.html"><span class="sc-interp">Cancel the gym trial before it renews</span></a>
+        <span class="tr"><span class="sc-interp">5h</span></span>
+      </div>
+    
+      <div class="li">
+        <button class="cb" aria-label="Complete Call the dentist back about the crown"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+        <a class="tt" href="TaskDetail.dc.html"><span class="sc-interp">Call the dentist back about the crown</span></a>
+        <span class="tr"><span class="sc-interp">1d</span></span>
+      </div>
+    
+      <div class="li">
+        <button class="cb" aria-label="Complete Look into a standing desk for the study"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+        <a class="tt" href="TaskDetail.dc.html"><span class="sc-interp">Look into a standing desk for the study</span></a>
+        <span class="tr"><span class="sc-interp">2d</span></span>
+      </div>
+    
+      <div class="li">
+        <button class="cb" aria-label="Complete Return the library books"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+        <a class="tt" href="TaskDetail.dc.html"><span class="sc-interp">Return the library books</span></a>
+        <span class="tr"><span class="sc-interp">3d</span></span>
+      </div>
+    
+      <div class="li">
+        <button class="cb" aria-label="Complete Gift ideas for Mika’s birthday"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
+        <a class="tt" href="TaskDetail.dc.html"><span class="sc-interp">Gift ideas for Mika’s birthday</span></a>
+        <span class="tr"><span class="sc-interp">4d</span></span>
+      </div>
+    
+  </div></div><nav class="dock" aria-label="Tabs">
+  <div class="tabbar">
+    <a class="tab" href="Main.dc.html" aria-label="Today"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></a>
+    <a class="tab on" href="Inbox.dc.html" aria-current="page" aria-label="Inbox"><svg class="i" viewBox="0 0 24 24"><path d="M3 13h5l1.5 2.5h5L16 13h5"></path><path d="M5.5 5h13L21 13v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5z"></path></svg><span class="badge"><span class="sc-interp">6</span></span></a>
+    <a class="tab" href="Lists.dc.html" aria-label="Lists"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"></rect><rect x="13" y="4" width="7" height="7" rx="2"></rect><rect x="4" y="13" width="7" height="7" rx="2"></rect><rect x="13" y="13" width="7" height="7" rx="2"></rect></svg></a>
+  </div>
+  <a class="fab" href="Capture.dc.html" aria-label="New task"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg></a></nav></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { done: {} };
+  }
+  renderVals() {
+    var self = this;
+    var data = [
+      ['i6', 'Send Jun the photos from Nara', '2h'],
+      ['i5', 'Cancel the gym trial before it renews', '5h'],
+      ['i1', 'Call the dentist back about the crown', '1d'],
+      ['i2', 'Look into a standing desk for the study', '2d'],
+      ['i3', 'Return the library books', '3d'],
+      ['i4', 'Gift ideas for Mika’s birthday', '4d']
+    ];
+    var left = 0;
+    var items = data.map(function (d) {
+      var done = !!self.state.done[d[0]];
+      if (!done) left++;
+      return {
+        text: d[1], age: d[2],
+        cb: done ? 'cb done' : 'cb',
+        tt: done ? 'tt done' : 'tt',
+        aria: (done ? 'Reopen ' : 'Complete ') + d[1],
+        toggle: function () {
+          var next = Object.assign({}, self.state.done);
+          next[d[0]] = !next[d[0]];
+          self.setState({ done: next });
+        }
+      };
+    });
+    return { theme: this.props.theme ?? 'light', items: items, left: left };
+  }
+}
+</script>
+
+
+</body></html>

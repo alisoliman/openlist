@@ -3,10 +3,21 @@
 //  openlist
 //
 
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+
+#if os(macOS)
+/// The image type the platform's views draw.
+typealias PlatformImage = NSImage
+#else
+typealias PlatformImage = UIImage
+#endif
 
 /// Owns the on-disk copies of images and attachments referenced by blocks.
 ///
@@ -26,8 +37,11 @@ nonisolated final class MediaStore: @unchecked Sendable {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? URL.temporaryDirectory
-        #if OPENLIST_DEV
+        #if OPENLIST_DEV && os(macOS)
         let defaultBase = AppGroup.containerURL ?? base.appendingPathComponent("Openlist Dev", isDirectory: true)
+        #elseif OPENLIST_DEV
+        // iOS keeps the library out of the App Group, as `StoreLocation` does.
+        let defaultBase = base.appendingPathComponent("Openlist Dev", isDirectory: true)
         #else
         let defaultBase = base
         #endif
@@ -70,7 +84,7 @@ nonisolated final class MediaStore: @unchecked Sendable {
         let type = values?.contentType ?? UTType(filenameExtension: ext) ?? .data
 
         var pixelSize = CGSize.zero
-        if type.conforms(to: .image), let image = NSImage(contentsOf: destination) {
+        if type.conforms(to: .image), let image = Self.loadImage(at: destination) {
             pixelSize = Self.pixelSize(of: image)
         }
 
@@ -191,16 +205,29 @@ nonisolated final class MediaStore: @unchecked Sendable {
         }
     }
 
-    func image(named filename: String, data: Data? = nil) -> NSImage? {
-        if let data { return NSImage(data: data) }
-        return NSImage(contentsOf: url(for: filename))
+    func image(named filename: String, data: Data? = nil) -> PlatformImage? {
+        if let data { return PlatformImage(data: data) }
+        return Self.loadImage(at: url(for: filename))
     }
 
-    private static func pixelSize(of image: NSImage) -> CGSize {
+    private static func loadImage(at url: URL) -> PlatformImage? {
+        #if os(macOS)
+        NSImage(contentsOf: url)
+        #else
+        UIImage(contentsOfFile: url.path)
+        #endif
+    }
+
+    private static func pixelSize(of image: PlatformImage) -> CGSize {
+        #if os(macOS)
         if let rep = image.representations.first {
             return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
         }
         return image.size
+        #else
+        if let cgImage = image.cgImage { return CGSize(width: cgImage.width, height: cgImage.height) }
+        return CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        #endif
     }
 }
 

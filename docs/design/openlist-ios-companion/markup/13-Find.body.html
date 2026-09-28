@@ -1,0 +1,75 @@
+<body>
+<div id="dc-root"><div class="sc-host" data-sc-name="Find"><div class="ol" data-theme="light" style="width: 390px; height: 844px;"><div class="scroll">
+  <div class="topbar">
+    <a class="back" href="Lists.dc.html"><svg class="i s22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"></path></svg>Lists</a>
+  </div>
+  <h1 class="vt">Find</h1>
+
+  <label class="field" style="margin-top: 20px;">
+    <svg class="i s18" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M20 20l-4.2-4.2"></path></svg>
+    <span class="chip sm" style="height: 28px; background: var(--surface); color: var(--teal); flex-shrink: 0;">#travel</span>
+    <input type="search" placeholder="Add words or filters" aria-label="Find tasks">
+  </label>
+
+  <div class="chips" style="margin-top: 12px;">
+    <button class="chip sm">today</button>
+    <button class="chip sm">overdue</button>
+    <button class="chip sm">starred</button>
+    <button class="chip sm" aria-pressed="false">done</button>
+  </div>
+
+  <section class="group">
+    <div class="gh"><span class="sc-interp">4</span> tasks</div>
+    <div class="card">
+      <a class="li two" href="TaskDetail.dc.html">
+        <span class="cb late"></span>
+        <span class="tb"><span class="tt">Reserve the Nishiki market tour</span><span class="ts">Weekend in Kyoto</span></span>
+        <span class="tr late">2d late</span>
+      </a>
+      <a class="li two" href="TaskDetail.dc.html">
+        <span class="cb"></span>
+        <span class="tb"><span class="tt">Renew passports</span><span class="ts">Weekend in Kyoto</span></span>
+        <span class="tr due">Sat</span>
+      </a>
+      <a class="li two" href="TaskDetail.dc.html">
+        <span class="cb"></span>
+        <span class="tb"><span class="tt">Pick up JR passes at Kyoto Station</span><span class="ts">Weekend in Kyoto</span></span>
+        <span class="tr">Sun</span>
+      </a>
+      <a class="li two" href="TaskDetail.dc.html">
+        <span class="cb"></span>
+        <span class="tb"><span class="tt">Book the ryokan</span><span class="ts">Weekend in Kyoto</span></span>
+        <span class="tr star"><svg class="i s16 fill" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9 6.8 19.6l1-5.8L3.5 9.7l5.9-.8z"></path></svg></span>
+      </a>
+      
+    </div>
+  </section></div><nav class="dock" aria-label="Tabs">
+  <div class="tabbar">
+    <a class="tab" href="Main.dc.html" aria-label="Today"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></a>
+    <a class="tab" href="Inbox.dc.html" aria-label="Inbox, 6 to triage"><svg class="i" viewBox="0 0 24 24"><path d="M3 13h5l1.5 2.5h5L16 13h5"></path><path d="M5.5 5h13L21 13v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5z"></path></svg><span class="badge">6</span></a>
+    <a class="tab on" href="Lists.dc.html" aria-current="page" aria-label="Lists"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"></rect><rect x="13" y="4" width="7" height="7" rx="2"></rect><rect x="4" y="13" width="7" height="7" rx="2"></rect><rect x="13" y="13" width="7" height="7" rx="2"></rect></svg></a>
+  </div>
+  <a class="fab" href="Capture.dc.html" aria-label="New task"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg></a></nav></div></div></div>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;},&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { withDone: false };
+  }
+  renderVals() {
+    var self = this;
+    var w = this.state.withDone;
+    return {
+      theme: this.props.theme ?? 'light',
+      withDone: w,
+      count: w ? 5 : 4,
+      doneCls: w ? 'chip sm on' : 'chip sm',
+      donePressed: w ? 'true' : 'false',
+      toggleDone: function () { self.setState({ withDone: !self.state.withDone }); }
+    };
+  }
+}
+</script>
+
+
+</body></html>

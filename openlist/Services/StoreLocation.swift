@@ -11,13 +11,20 @@ import Foundation
 /// app opens this database, including MCP operations; widgets read a separate
 /// JSON snapshot. If the group is unavailable, the existing private Application
 /// Support path is used.
+///
+/// iOS always uses the private path. A suspended iOS app that holds a lock on
+/// a SQLite file in a shared container is terminated, and nothing but the
+/// app reads the store; the group only carries the snapshot and the widget
+/// command queue.
 nonisolated enum StoreLocation {
     /// Directory holding `Openlist.store`, creating it if needed.
     static var directory: URL {
+        #if os(macOS)
         if let group = AppGroup.containerURL {
             let url = group.appendingPathComponent("Store", isDirectory: true)
             if ensureDirectory(url) { return url }
         }
+        #endif
 
         let base = (FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)

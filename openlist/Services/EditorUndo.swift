@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftData
 
 // Value records keep undo independent of SwiftData objects invalidated by save.
@@ -405,7 +409,9 @@ extension Store {
         let changed = before.changedIDs(comparedTo: after)
         guard !changed.blocks.isEmpty || !changed.attachments.isEmpty else { return result }
         let label = name()
+        #if os(macOS)
         (NSApp?.keyWindow?.firstResponder as? NSTextView)?.breakUndoCoalescing()
+        #endif
         undoManager.registerUndo(withTarget: self) { [weak undoManager] store in
             guard let undoManager else { return }
             store.restoreEditorEdit(from: after, to: before, media: media, name: label, undoManager: undoManager)

@@ -122,6 +122,119 @@ Release-verifier regressions run through the script's own shebang, macOS's
 explicitly fail-closed: do not rely on `set -e` to reject metadata mismatches,
 especially when a `[[ ... ]]` condition contains command substitution.
 
+### iPhone companion
+
+The iOS 27 app `OpenlistiOS`, its widget extension `OpenlistiOSWidget` and
+their test bundles (`OpenlistiOSTests`, Swift Testing, hosted by the app;
+`OpenlistiOSUITests`, XCUITest) share the Mac project. The app is iPhone-only
+and portrait, and syncs with the Mac through the same CloudKit container.
+
+```sh
+./Tools/run-ios-core-checks.sh   # part of check.sh: type-checks both iOS targets, no simulator
+./Tools/run-ios-checks.sh        # unsigned build, unit and UI tests on a throwaway simulator
+```
+
+`run-ios-checks.sh` needs the iOS 27 simulator runtime
+(`xcodebuild -downloadPlatform iOS`). It creates an iPhone 18 Pro simulator
+(`OPENLIST_IOS_DEVICE_TYPE` picks another), deletes it afterwards, verifies the
+built bundles and leaves its logs and `Tests.xcresult` in `build/ios`. CI runs it
+as the separate `ios` job. It builds with `CODE_SIGNING_ALLOWED=NO` and an empty
+`ICLOUD_CONTAINER_ENVIRONMENT`, so the app runs local-only.
+
+The iPhone companion compiles the same Model, Store and service sources as
+the Mac, listed in `Tools/iOS/shared-sources.txt`; its own replacements for
+Mac-only pieces live in `OpenlistiOS/Platform/`. To share another file, add a
+line there and run `python3 Tools/add-ios-targets.py`, which writes the list
+into the project's exception sets; don't tick target membership in Xcode's File
+inspector. `run-ios-core-checks.sh` fails while the project and the list
+disagree, when a Mac UI file from `openlist/Next`, `Views` or `Editor` joins
+iOS, or when a `Model` file is missing (both apps must build the same CloudKit
+schema), then type-checks what the project compiles in Debug, Dev and Release.
+Keep platform differences in shared files behind `#if os(macOS)` in place, and
+never add iOS-only files to `openlist/` or `Shared/`: code the iOS app and
+widget share goes in `SharediOS/`, which also holds the privacy manifest both
+bundles carry. Logic both apps' screens need (Today's set, the Inbox queue, the
+task query language, capture, list page rows, the phone's compact wording)
+lives in UI-free shared files the Mac views call, not in the views;
+`./Tools/run-shared-logic-checks.sh` covers it. Both devices read and write
+`Block.richData`: after changing `RichTextCodec` or either platform's
+`NXEditor`, run `./Tools/make-rich-text-fixtures.sh` (it needs the iOS 27
+simulator runtime) and commit the regenerated
+`Tools/RichTextParityChecks/Fixtures`, which
+`./Tools/run-rich-text-parity-checks.sh` decodes on the Mac.
+
+The **OpenlistiOS** scheme runs, tests and analyzes `Debug` and profiles and
+archives `Release`. Its test action launches the host app in the review session
+`HostedTests`, and every UI test starts the app with its own
+`OpenlistReviewSession` launch variable (Debug builds only), so tests get an
+isolated store, media and defaults, with iCloud and system notifications off.
+**Openlist iOS Dev** uses `Dev` throughout: `solimanali.openlist.ios.dev`
+("Openlist Dev"), the `group.solimanali.openlist.dev` App Group, the
+`openlist-dev` URL scheme and no iCloud.
+
+| | App | Widget |
+|---|---|---|
+| Debug, Release | `solimanali.openlist.ios` | `solimanali.openlist.ios.widget` |
+| Dev | `solimanali.openlist.ios.dev` | `solimanali.openlist.ios.dev.widget` |
+
+A review session's first launch seeds the library the iPhone mockups show
+(`OpenlistiOS/Fixtures/PhoneFixture.swift`), never outside one. Debug builds
+also read these launch variables in a review session, for UI tests and
+screenshots (`xcrun simctl launch` passes them as `SIMCTL_CHILD_<name>`):
+
+| Variable | Effect |
+|---|---|
+| `OpenlistFixtureNow` | Pins the app's clock (`AppClock`) to an ISO 8601 moment; `2026-09-23T10:40:00` is the mockups' |
+| `OpenlistOpenRoute` | Opens a screen at launch: `timeline`, `inbox`, `lists`, `settings`, `trash`, `capture`, `working`, `triage`, `activity`, `find:#travel`, `list:<title>`, `task:<title>` |
+| `OpenlistShowTray` | Shows its text in the tray, with Undo |
+| `OpenlistCaptureText` | Types its text into the Capture sheet |
+| `OpenlistComponentGallery=1` | Opens the design components' gallery (`OpenlistGalleryPage` 0–4 shows one part); Settings links to it too |
+
+The app's code is in `OpenlistiOS/`: `App/` (entry, `PhoneEnvironment`,
+navigation, the actions coordinator and tray), `Design/` (the `OL` components;
+the colour tokens are in `SharediOS/OLTokens.swift` for the widget too),
+`Features/<Feature>/`, `Platform/` and `Fixtures/`. Screens act on tasks through
+`PhoneActions`, which keeps the Mac's completion dwell and Undo, and read the
+time from `env.clock`, never `.now`.
+
+Screens read the library from `\.phoneLibrary`, the Mac's `NextLibrary` built
+once a render from the root's queries (`App/PhoneLibrary.swift`), and word rows
+through `PhoneTaskRow`. What's worked on now (Today's Now card, Working, the
+timeline's working block and the Live Activity) is `PhoneWork`, read from the
+calendar coordinator. The widget extension draws Today, Inbox and Up next from
+the published snapshot with the Mac widgets' model, and the work Live Activity
+from `SharediOS/WorkActivity.swift`, which the app starts, updates and ends
+(`App/PhoneLiveActivity.swift`); its buttons are the widgets' intents, run in
+the app. A review session's calendar is a fixture holding the mockups' Design
+sync meeting, and its Live Activity counts on the system clock. Review sessions
+keep the widget snapshot out of the App Group, so placed widgets there show
+their placeholder and the gallery its sample.
+
+iOS App Groups carry the `group.` prefix, so the iPhone uses
+`group.solimanali.openlist` where the Mac keeps its team-prefixed group; the two
+never share files, only the CloudKit container `iCloud.solimanali.openlist`.
+iOS Debug syncs with Mac Debug in the CloudKit Development environment, iOS
+Release (TestFlight) with the notarized Mac Release in Production, and neither
+Dev build syncs. Model changes therefore pass the
+[production schema gate](#required-production-schema-gate) before either
+platform ships. `ICLOUD_CONTAINER_ENVIRONMENT` fills both the iCloud
+environment entitlement and the Info.plist key `OpenlistICloudEnvironment`,
+which the app reads before it opens CloudKit, because iOS offers no API to read
+the process's entitlements and an unentitled `CKContainer` crashes. Keep the
+two driven by that one variable.
+
+Signing is automatic with team `Y5UE64R7TQ`. Simulator builds sign to run
+locally and need no provisioning profile. Device builds need explicit App IDs
+for the app (iCloud with the CloudKit container, Push Notifications and App
+Groups) and the widget (App Groups), and the `group.solimanali.openlist` group
+registered on the team; Xcode, or `xcodebuild -allowProvisioningUpdates`, sets
+these up for a developer allowed to change the team's identifiers. iOS uses the
+`aps-environment` entitlement and `UIBackgroundModes: remote-notification`.
+Give the widget the App Group only, never CloudKit or push. The iOS entitlements
+(`Config/OpenlistiOS*.entitlements`) never go through
+`Tools/prepare-release-signing.py`, which signs only the Mac app; iOS
+distribution is not automated yet.
+
 ### App icon
 
 The default app icon is `openlist/Openlist.icon`, an editable Icon Composer

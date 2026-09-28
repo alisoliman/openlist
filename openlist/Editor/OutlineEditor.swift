@@ -286,54 +286,18 @@ final class OutlineEditor {
     /// The reveal to act on, once search has stepped aside.
     var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
 
-    /// Every row of `live` in display order, done tasks included, showing
-    /// what `expanding` folds away too. Done subtasks stay where they were
-    /// ticked, as in the design.
-    private func projectedRows(of live: [Block], expanding: Set<UUID> = []) -> [BlockRow] {
-        BlockTree.sortingTaskRuns(in: BlockTree.flatten(live,
-            expanding: expanding.union(reveal?.ancestorIDs ?? [])), by: sorting)
-    }
-
     /// The rows to draw: every row without the done top-level tasks,
     /// which the host lists apart, unless a task under one is still open, and
     /// without the sections of collapsed headings. Done subtasks stay in place.
+    /// The projection is `BlockTree.visibleRows`, which the phone's list
+    /// page shares; the outline adds what a search or link reveals and the
+    /// tasks it keeps on show as they're ticked.
     func visibleRows(in blocks: [Block]) -> [BlockRow] {
         let live = blocks.filter { $0.modelContext != nil && !$0.isDeleted }
-        let kept = (reveal?.visiblePath ?? []).union(completedTasksKeptVisible)
-        // Only tasks fold what's under them: what a heading, list item or
-        // text line has folded still shows. A heading folds its section
-        // instead, further down.
-        let unfolding = Set(live.lazy.filter { !OutlinePolicy.folds($0.kind) && $0.isCollapsed }.map(\.id))
-        if tasksOnly {
-            // A heading folds nothing here either: its section shows, as
-            // tasks under the tasks above. Done tasks go by their depth
-            // among the tasks, so one a heading, list item or text line
-            // holds with no task above it leaves, as a top-level task.
-            let rows = Self.taskOutline(projectedRows(of: live, expanding: unfolding))
-            return BlockTree.hidingCompletedTasks(in: rows, revealing: kept
-                .union(BlockTree.completedTasksHoldingOpenTasks(in: live, atTaskLevel: true)))
-        }
-        let rows = projectedRows(of: live, expanding: unfolding)
-        // A revealed line shows through the headings folding it away.
-        let unfolded = reveal?.blockID.map { Set(BlockTree.enclosingSections(of: $0, in: rows)) } ?? []
-        return BlockTree.hidingCompletedTasks(in: BlockTree.hidingCollapsedSections(in: rows, revealing: unfolded),
-                                              revealing: kept.union(BlockTree.completedTasksHoldingOpenTasks(in: live)))
-    }
-
-    /// Only the tasks among `rows`, each as deep as the tasks above it.
-    private static func taskOutline(_ rows: [BlockRow]) -> [BlockRow] {
-        var result: [BlockRow] = []
-        // The document depth and task depth of each task on the current path.
-        var path: [(depth: Int, taskDepth: Int)] = []
-        for var row in rows {
-            while let last = path.last, last.depth >= row.depth { path.removeLast() }
-            guard row.block.isTask else { continue }
-            let taskDepth = path.last.map { $0.taskDepth + 1 } ?? 0
-            path.append((row.depth, taskDepth))
-            row.depth = taskDepth
-            result.append(row)
-        }
-        return result
+        return BlockTree.visibleRows(of: live, sorting: sorting, tasksOnly: tasksOnly,
+                                     expanding: reveal?.ancestorIDs ?? [],
+                                     keeping: (reveal?.visiblePath ?? []).union(completedTasksKeptVisible),
+                                     revealing: reveal?.blockID)
     }
 
     /// ``visibleRows(in:)``, for the renderer to draw this pass. The outline

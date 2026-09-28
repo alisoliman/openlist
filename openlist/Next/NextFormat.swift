@@ -285,7 +285,9 @@ struct CaptureParse {
             date: schedule?.date ?? (dueToday ? NXFormat.day(offset: 0) : nil),
             includesTime: schedule?.includesTime ?? false,
             recurrence: schedule?.recurrence,
-            labels: Array(Set(labels + extra)).sorted())
+            labels: Array(Set(labels + extra)).sorted(),
+            priority: priority ?? .none,
+            estimateMinutes: estimateMinutes ?? 0)
     }
 
     /// The capture card's chips for `preview`, what this text saves, as the

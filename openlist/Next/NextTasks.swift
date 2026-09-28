@@ -9,186 +9,29 @@ import SwiftUI
 
 // MARK: - Query language
 
-/// The Tasks filter's word language: dates, flags, list keys and `#labels`
-/// combine, and anything else matches the title.
-struct NXTaskQuery {
-    enum Kind { case date, flag, list, label }
-
-    struct Word {
-        let word: String
-        let kind: Kind
-        var listID: UUID?
-        var labelID: UUID?
-        var color: Color?
-    }
-
-    struct Segment: Identifiable {
-        let id: Int
-        let text: String
-        let kind: Kind?
-        let color: Color?
-    }
-
-    struct Filter {
-        var lists: [UUID] = []
-        var due: [String] = []
-        var labels: [UUID] = []
-        var flags: [String] = []
-        var text: [String] = []
-    }
-
-    static let dateWords = ["overdue", "today", "tomorrow", "week", "later", "undated"]
-    static let flagWords = ["starred", "planned", "high"]
-
-    let vocab: [Word]
-    private let listKeys: [UUID: String]
-    private let labelKeys: [UUID: String]
-
-    /// Every word means one thing: date and flag words are reserved, then each list claims its
-    /// last title word (else its full slug, else a numbered slug), then labels, then extra title words.
+/// The Tasks field's reading of the shared word language (`TaskQuery`), over
+/// the window's library and workbench.
+extension TaskQuery {
     @MainActor
     init(library: NextLibrary) {
-        var taken = Set(Self.dateWords + Self.flagWords + ["inbox"])
-        var listKeys: [UUID: String] = [:]
-        for list in library.lists {
-            let words = Self.titleWords(list)
-            listKeys[list.id] = list.isSystemInbox ? "inbox"
-                : Self.claim(words.last ?? "list", fallback: words.isEmpty ? "list" : words.joined(separator: "-"), in: &taken)
-        }
-        var labelKeys: [UUID: String] = [:]
-        for label in library.labels {
-            let slug = "#" + label.name.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: "-")
-            labelKeys[label.id] = Self.claim(slug, fallback: slug, in: &taken)
-        }
-        var vocab = Self.dateWords.map { Word(word: $0, kind: .date) } + Self.flagWords.map { Word(word: $0, kind: .flag) }
-        for list in library.lists {
-            guard let key = listKeys[list.id] else { continue }
-            var keys = [key]
-            for word in Self.titleWords(list) where word.count >= 4 && !taken.contains(word) {
-                taken.insert(word)
-                keys.append(word)
-            }
-            vocab += keys.map { Word(word: $0, kind: .list, listID: list.id, color: list.nxColor) }
-        }
-        for label in library.labels {
-            guard let key = labelKeys[label.id] else { continue }
-            vocab.append(Word(word: key, kind: .label, labelID: label.id, color: label.nxColor))
-        }
-        self.vocab = vocab
-        self.listKeys = listKeys
-        self.labelKeys = labelKeys
-    }
-
-    func key(for list: TaskList) -> String { listKeys[list.id] ?? "list" }
-
-    func key(for label: TaskLabel) -> String { labelKeys[label.id] ?? "#" }
-
-    @MainActor
-    private static func titleWords(_ list: TaskList) -> [String] {
-        list.displayTitle.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
-    }
-
-    /// `base` if free, else `fallback`, else `fallback-2`, `-3`…; marks the result as taken.
-    private static func claim(_ base: String, fallback: String, in taken: inout Set<String>) -> String {
-        var key = taken.contains(base) ? fallback : base
-        var suffix = 2
-        while taken.contains(key) {
-            key = "\(fallback)-\(suffix)"
-            suffix += 1
-        }
-        taken.insert(key)
-        return key
-    }
-
-    func parse(_ query: String) -> (segments: [Segment], filter: Filter, ghost: String) {
-        var segments: [Segment] = []
-        var filter = Filter()
-        var index = 0
-        var current = ""
-        var currentIsSpace: Bool?
-        func flush() {
-            guard !current.isEmpty else { return }
-            defer { current = ""; index += 1 }
-            if currentIsSpace == true {
-                segments.append(Segment(id: index, text: current, kind: nil, color: nil))
-                return
-            }
-            let lower = current.lowercased()
-            guard let hit = vocab.first(where: { $0.word == lower }) else {
-                segments.append(Segment(id: index, text: current, kind: nil, color: nil))
-                filter.text.append(lower)
-                return
-            }
-            segments.append(Segment(id: index, text: current, kind: hit.kind, color: hit.color))
-            switch hit.kind {
-            case .list: filter.lists.append(hit.listID!)
-            case .label: filter.labels.append(hit.labelID!)
-            case .date: filter.due.append(lower)
-            case .flag: filter.flags.append(lower)
-            }
-        }
-        for character in query {
-            let isSpace = character.isWhitespace
-            if currentIsSpace != isSpace { flush(); currentIsSpace = isSpace }
-            current.append(character)
-        }
-        flush()
-
-        var ghost = ""
-        if let last = query.split(whereSeparator: \.isWhitespace).last, query.last?.isWhitespace == false {
-            let lower = last.lowercased()
-            if !vocab.contains(where: { $0.word == lower }), let match = vocab.first(where: { $0.word.hasPrefix(lower) }) {
-                ghost = String(match.word.dropFirst(lower.count))
-            }
-        }
-        return (segments, filter, ghost)
+        self.init(lists: library.lists, labels: library.labels)
     }
 
     @MainActor
     func apply(_ query: String, to pool: [Block], workbench: Workbench, now: Date = .now) -> [Block] {
-        let filter = parse(query).filter
-        // By day, as the design and the row chips: overdue is earlier days, so a
-        // time already past today still counts as today.
-        func dueMatches(_ word: String, _ offset: Int?) -> Bool {
-            switch word {
-            case "overdue": offset.map { $0 < 0 } ?? false
-            case "today": offset == 0
-            case "tomorrow": offset == 1
-            case "week": offset.map { (0...6).contains($0) } ?? false
-            case "later": offset.map { $0 > 6 } ?? false
-            default: offset == nil
-            }
-        }
-        return pool.filter { task in
-            let offset = task.dueDate.map { NXFormat.dayOffset($0, now: now) }
-            let title = task.displayTitle.lowercased()
-            return (filter.lists.isEmpty || task.listID.map(filter.lists.contains) == true)
-                && (filter.due.isEmpty || filter.due.contains { dueMatches($0, offset) })
-                && (filter.labels.isEmpty || filter.labels.contains { task.labelIDs.contains($0) })
-                && filter.flags.allSatisfy { flag in
-                    switch flag {
-                    case "starred": task.isStarred
-                    case "planned": workbench.isPlanned(task)
-                    default: task.priority == .high
-                    }
-                }
-                && filter.text.allSatisfy { title.contains($0) }
-        }
+        apply(query, to: pool, now: now, isPlanned: workbench.isPlanned)
     }
+}
 
-    /// Adds or removes one word, leaving a trailing space to keep typing.
-    static func toggle(_ word: String, in query: String) -> String {
-        var parts = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        if let index = parts.firstIndex(where: { $0.lowercased() == word }) {
-            parts.remove(at: index)
-        } else {
-            parts.append(word)
+extension TaskQuery.Segment {
+    /// A list or label pill in its list's or label's colour; nil for the rest.
+    @MainActor
+    func color(in library: NextLibrary) -> Color? {
+        switch kind {
+        case .list: library.list(listID)?.nxColor
+        case .label: labelID.flatMap(library.label)?.nxColor
+        default: nil
         }
-        return parts.isEmpty ? "" : parts.joined(separator: " ") + " "
-    }
-
-    static func words(in query: String) -> Set<String> {
-        Set(query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init))
     }
 }
 
@@ -209,18 +52,7 @@ struct NextTasksScreen: View {
     /// in every grouping rather than sorting.
     @MainActor
     static func outlineOrder(library: NextLibrary, blocks: [Block]) -> [Block] {
-        let blocksByList = Dictionary(grouping: blocks) { $0.listID }
-        return library.lists.flatMap { list -> [Block] in
-            let tasks = library.tasks(in: list.id)
-            guard !tasks.isEmpty else { return [] }
-            let taskIDs = Set(tasks.lazy.map(\.id))
-            let rows = BlockTree.flatten(blocksByList[list.id] ?? [], respectCollapse: false)
-            let ordered = BlockTree.sortingTaskRuns(in: rows, by: list.sorting)
-                .compactMap { taskIDs.contains($0.id) ? $0.block : nil }
-            // Tasks the outline could not reach still belong on the screen.
-            let seen = Set(ordered.lazy.map(\.id))
-            return ordered + tasks.filter { !seen.contains($0.id) }
-        }
+        library.tasksInOutlineOrder(blocks: blocks)
     }
 
     @MainActor
@@ -233,7 +65,7 @@ struct NextTasksScreen: View {
             }
         }
         if queryMode {
-            pool = NXTaskQuery(library: library).apply(workbench.tasksQuery, to: pool, workbench: workbench, now: now)
+            pool = TaskQuery(library: library).apply(workbench.tasksQuery, to: pool, workbench: workbench, now: now)
         } else {
             if !workbench.tasksListFilter.isEmpty {
                 pool = pool.filter { $0.listID.map(workbench.tasksListFilter.contains) == true }
@@ -461,7 +293,7 @@ private struct NXTasksQueryBar: View {
 
     private func field(query: String, focused: Bool, hasQuery: Bool) -> some View {
         let workbench = env.workbench
-        let parsed = NXTaskQuery(library: library).parse(query)
+        let parsed = TaskQuery(library: library).parse(query)
         // The overlay can't follow the field editor's scroll, so once the query outgrows the
         // field the real text shows instead and scrolls with the caret.
         let overflowing = queryWidth + 4 > fieldWidth
@@ -559,9 +391,9 @@ private struct NXTasksQueryBar: View {
     }
 
     @ViewBuilder
-    private func segmentText(_ segment: NXTaskQuery.Segment) -> some View {
+    private func segmentText(_ segment: TaskQuery.Segment) -> some View {
         if let kind = segment.kind {
-            let color = segment.color ?? (kind == .flag ? NX.amberText : style.accent)
+            let color = segment.color(in: library) ?? (kind == .flag ? NX.amberText : style.accent)
             let fill = kind == .flag ? NX.amber : color
             Text(segment.text)
                 .foregroundStyle(color)
@@ -575,8 +407,8 @@ private struct NXTasksQueryBar: View {
     }
 
     private func pillPopover(query: String, width: CGFloat) -> some View {
-        let words = NXTaskQuery.words(in: query)
-        let vocabulary = NXTaskQuery(library: library)
+        let words = TaskQuery.words(in: query)
+        let vocabulary = TaskQuery(library: library)
         let rows: [(String, [(word: String, label: String, color: Color, list: TaskList?)])] = [
             ("When", [("overdue", "Overdue"), ("today", "Today"), ("tomorrow", "Tomorrow"), ("week", "This week"),
                       ("later", "Later"), ("undated", "No date")].map { ($0.0, $0.1, style.accent, nil) }),
@@ -598,10 +430,10 @@ private struct NXTasksQueryBar: View {
                         .frame(width: 44, alignment: .leading)
                         .padding(.top, 7)
                     NXFlow(spacing: 5) {
-                        // NXTaskQuery gives every list and label its own word, so words identify pills.
+                        // TaskQuery gives every list and label its own word, so words identify pills.
                         ForEach(pills, id: \.word) { pill in
                             NXQueryPill(label: pill.label, list: pill.list, color: pill.color, isOn: words.contains(pill.word)) {
-                                env.workbench.tasksQuery = NXTaskQuery.toggle(pill.word, in: env.workbench.tasksQuery)
+                                env.workbench.tasksQuery = TaskQuery.toggle(pill.word, in: env.workbench.tasksQuery)
                                 fieldFocused = true
                             }
                         }
