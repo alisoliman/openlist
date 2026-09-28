@@ -49,7 +49,7 @@ struct NextInboxScreen: View {
                     .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 7,
                                                     padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
                                                     foreground: NX.ink(0.45), hoverForeground: NX.ink))
-                    .help("Show notes and headings")
+                    .help("Document")
                     .accessibilityLabel("Show as Document")
                 }
             }
@@ -99,7 +99,7 @@ struct NextInboxDocumentScreen: View {
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 7,
                                                 padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
-                .help("Triage one task at a time")
+                .help("Triage")
                 .accessibilityLabel("Show as Triage")
             }
             NXDocumentOutline(list: inbox)
@@ -269,7 +269,7 @@ private struct NXTriageCard: View {
                     }
                 }
             }
-            Text("T today · M tomorrow · dots show what’s already due")
+            Text("T today · M tomorrow")
                 .font(.system(size: 10.5, weight: .medium))
                 .lineSpacing(hintLeading)
                 .foregroundStyle(NX.ink(0.4))
@@ -378,7 +378,6 @@ private struct NXTriageListRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
-        .help("File into \(list.displayTitle) (\(key))")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("File into \(list.displayTitle)")
         .accessibilityValue("\(count) open")
@@ -425,7 +424,6 @@ private struct NXTriageDay: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
-        .help(load == 0 ? "Nothing due" : "\(load) already due")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Schedule for " + (offset == 0 ? "today" : offset == 1 ? "tomorrow"
             : date.formatted(.dateTime.weekday(.wide).day().month(.wide))))
@@ -449,7 +447,7 @@ private struct NXTriageEmpty: View {
                 .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 4) {
                 Text("Inbox triaged").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
-                Text("\(workbench.reviewed) reviewed this session. Tasks you kept or scheduled stay in Inbox until you file them.")
+                Text("\(workbench.reviewed) reviewed this session.")
                     .font(.system(size: 13))
                     .lineSpacing(summaryLeading)
                     .foregroundStyle(NX.ink(0.56))

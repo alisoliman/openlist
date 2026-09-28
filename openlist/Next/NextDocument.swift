@@ -432,7 +432,6 @@ private struct NXLineGrip: View {
         .onDrag { provider() } preview: {
             NXLineDragPreview(title: row.block.kind.isVoid ? row.block.kind.title : row.block.displayTitle, count: ids.count)
         }
-        .help("Drag to move")
         .accessibilityHidden(true)
     }
 
@@ -604,7 +603,6 @@ private struct NXDocumentTask: View {
                 .animation(NX.cssEase(140)) {
                     $0.opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : 0.2)
                 }
-                .help("Note · Space")
                 .accessibilityLabel(noteOpen ? "Hide note" : "Show note")
             }
         }
@@ -1358,7 +1356,6 @@ private struct NXSlashCard: View {
             if inside, !typing { editor.highlightSlashResult(index) }
         }
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .help(option.kind.subtitle)
     }
 }
 

@@ -80,7 +80,6 @@ struct MenuBarView: View {
                                         padding: EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10),
                                         foreground: NX.ink(0.36), hoverForeground: NX.ink(0.55)))
         .padding(6)
-        .help(QuickCaptureHotKey.shared.isRegistered ? "Quick Add (⇧⌥Space)" : "Quick Add")
     }
 
     /// A small-caps heading with the design's group count, the first
@@ -157,7 +156,6 @@ struct MenuBarView: View {
             }
             .buttonStyle(NXHoverButtonStyle(radius: 6, padding: EdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5),
                                             foreground: NX.ink(0.45), hoverForeground: NX.ink))
-            .help("Quit")
             .accessibilityLabel("Quit Openlist")
         }
         .padding(6)

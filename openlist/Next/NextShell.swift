@@ -78,23 +78,22 @@ struct NextShell: View {
     }
 
     /// A narrow window gives the page the sidebar's room while the inspector
-    /// covers its right, and gets the sidebar back once the inspector closes
-    /// or there's room again; a native extra. The inspector overlays the page,
-    /// as the design's does, so the page keeps its width: what folding helps
-    /// is the strip left uncovered beside the sidebar and the 360pt inspector,
-    /// 804pt in the design's 1400pt window. It folds only while that strip
-    /// would be narrower than the inspector, under 956pt, where past the
-    /// page's 40pt margin rows show less than 320pt (4pt at the 640pt
-    /// minimum), and comes back 120pt wider, so a resize doesn't flip it.
-    /// View ▸ Hide Sidebar is separate, so this never shows a sidebar the user hid.
+    /// takes its right, and gets the sidebar back once the inspector closes
+    /// or there's room again; a native extra. The inspector squeezes the page
+    /// rather than covering it, so what folding helps is the page's width
+    /// beside the sidebar and the 360pt inspector. It folds only while the
+    /// page would be narrower than the inspector, under 956pt, where past its
+    /// 40pt margins rows show less than 280pt, and comes back 120pt wider,
+    /// so a resize doesn't flip it. View ▸ Hide Sidebar is separate, so this
+    /// never shows a sidebar the user hid.
     private func adaptSidebar() {
         let workbench = env.workbench
         let inspecting = env.navigator.openTaskID.flatMap { env.store.block(id: $0) }
             .map { $0.isTask && $0.trashID == nil } ?? false
-        let uncovered = width - 236 - 360
+        let page = width - 236 - 360
         var folded = workbench.isSidebarFoldedForRoom
-        if inspecting && uncovered < 360 { folded = true }
-        else if !inspecting || uncovered >= 480 { folded = false }
+        if inspecting && page < 360 { folded = true }
+        else if !inspecting || page >= 480 { folded = false }
         guard folded != workbench.isSidebarFoldedForRoom else { return }
         if folded { endSidebarEditing() }
         withAnimation(workbench.style.ease(280)) { workbench.isSidebarFoldedForRoom = folded }
@@ -117,34 +116,29 @@ private struct NextMain: View {
 
     var body: some View {
         let inspected = env.navigator.openTaskID.flatMap { env.store.block(id: $0) }.flatMap { $0.isTask && $0.trashID == nil ? $0 : nil }
-        ZStack(alignment: .topLeading) {
-            VStack(spacing: 0) {
-                NextToolbar(crumb: crumb)
-                // Clear of the inspector, which would cover their buttons.
-                NextNotices()
-                    .padding(.trailing, inspected == nil ? 0 : 360)
-                NextRoutedScreen()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .clipped()
-            }
-
-            // The panel itself is what comes and goes, so it slides by its own
-            // width rather than the whole window's.
-            ZStack(alignment: .topTrailing) {
+        VStack(spacing: 0) {
+            NextToolbar(crumb: crumb)
+            // The inspector takes the right of the window under the toolbar,
+            // and the page gives it the room instead of going under it.
+            HStack(spacing: 0) {
+                ZStack {
+                    VStack(spacing: 0) {
+                        NextNotices()
+                        NextRoutedScreen()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .clipped()
+                    }
+                    NXBottomBars()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .allowsHitTesting(workbench.tray != nil || !workbench.selection.isEmpty)
+                        .zIndex(35)
+                }
                 if let inspected {
                     NextInspector(task: inspected)
                         .transition(style.slide(.move(edge: .trailing)))
+                        .zIndex(30)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            .padding(.top, 52)
-            .zIndex(30)
-
-            NXBottomBars()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.trailing, inspected == nil ? 0 : 360)
-                .allowsHitTesting(workbench.tray != nil || !workbench.selection.isEmpty)
-                .zIndex(35)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(NX.paper)
@@ -268,14 +262,13 @@ private struct NXNoRows: ViewModifier {
 
 // MARK: - Page scaffold
 
-/// The scrolling page every screen sits in: 26/40/120 padding, an 880pt
-/// measure unless wide, a click-to-clear background, scroll-to-focus,
+/// The scrolling page every screen sits in: 26/40/120 padding, the full
+/// width beside the sidebar and inspector, a click-to-clear background, scroll-to-focus,
 /// scrolling to what a search hit or link reveals in a list document, and,
 /// as a native extra, the place Back and Forward return it to.
 struct NXPage<Content: View>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
-    var wide = false
     /// Row IDs in on-screen order, published for j/k and ⌘A.
     var rowIDs: [UUID] = []
     @ViewBuilder var content: () -> Content
@@ -299,7 +292,7 @@ struct NXPage<Content: View>: View {
                     Color.clear.frame(height: 0).id(ContentReveal.Anchor.pageHeader)
                     content()
                 }
-                .frame(maxWidth: wide ? .infinity : 880, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.top, 26)
                 .padding(.horizontal, 40)
                 .padding(.bottom, 120)

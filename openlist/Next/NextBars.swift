@@ -73,7 +73,6 @@ struct NXSelectionBar: View {
             .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.1), radius: 8,
                                             padding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7),
                                             foreground: .white.opacity(0.7), hoverForeground: .white))
-            .help("Clear selection (Esc)")
             .accessibilityLabel("Clear selection")
         }
     }
@@ -95,7 +94,7 @@ struct NXSelectionBar: View {
                                         padding: EdgeInsets(top: 7, leading: fit == .icons ? 7 : 9,
                                                             bottom: 7, trailing: fit == .icons ? 7 : 9),
                                         foreground: .white))
-        .help("\(title) (\(key))")
+        .nxHelp(fit == .icons ? title : nil)
         .accessibilityLabel(title)
     }
 }

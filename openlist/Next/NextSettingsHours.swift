@@ -364,7 +364,6 @@ private struct NXRemoveButton: View {
                                         padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
                                         foreground: NX.ink(0.4), hoverForeground: NX.redText))
         .accessibilityLabel(label)
-        .help(label)
     }
 }
 

@@ -110,7 +110,7 @@ private final class NXInspectorClicks {
         let point = event.locationInWindow
         // Only what shows of a box counts, not the part scrolled under the bars.
         let area = areas.allObjects.lazy.filter { $0.window === window }
-            .map { $0.convert($0.visibleRect, to: nil) }.first { $0.contains(point) }
+            .map { Self.shownFrame(of: $0) }.first { $0.contains(point) }
         guard area != nil || editedFrame(in: window) != nil else { return }
         if let hit = window.contentView?.hitTest(point),
            hit is NSScroller || sequence(first: hit, next: \.superview).contains(where: { $0 is NSText || $0 is NSTextField }) {
@@ -130,7 +130,7 @@ private final class NXInspectorClicks {
     private func editedFrame(in window: NSWindow) -> CGRect? {
         guard let panel, let editor = window.firstResponder as? NSText else { return nil }
         let field = editor.delegate as? NSView ?? editor
-        let frame = field.convert(field.visibleRect, to: nil)
+        let frame = Self.shownFrame(of: field)
         return panel.convert(panel.bounds, to: nil).contains(CGPoint(x: frame.midX, y: frame.midY)) ? frame : nil
     }
 
@@ -171,6 +171,13 @@ private final class NXInspectorClicks {
         let length = (editor.string as NSString).length
         let index = editor.characterIndexForInsertion(at: clamped)
         editor.setSelectedRange(NSRange(location: index == NSNotFound ? length : min(index, length), length: 0))
+    }
+
+    /// What shows of `view`, in the window. A view no longer clips to its
+    /// bounds, so its visible rect can reach past them, over the whole
+    /// scroll view it's in; only the part inside its bounds counts.
+    private static func shownFrame(of view: NSView) -> CGRect {
+        view.convert(view.visibleRect.intersection(view.bounds), to: nil)
     }
 
     private static func center(of view: NSView) -> CGPoint {
@@ -222,6 +229,9 @@ struct NextInspector: View {
     @State private var fields = NXInspectorFields()
     /// The field being written, as its text view reports it.
     @State private var focus: Field?
+    /// Activity opens on request, and stays open from task to task while
+    /// the panel does.
+    @State private var showsActivity = false
 
     typealias Field = NXInspectorText.Role
 
@@ -251,7 +261,6 @@ struct NextInspector: View {
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
                                                 padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
                                                 foreground: NX.ink(0.45)))
-                .help("Close (Esc)")
                 .accessibilityLabel("Close details")
             }
             .padding(.vertical, 12)
@@ -347,8 +356,8 @@ struct NextInspector: View {
                     .allowsHitTesting(false)
             }
         }
+        // Docked beside the page, it's divided from it rather than floating over it.
         .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) }
-        .shadow(color: NX.shadowWarm.opacity(0.1), radius: 17, x: -14)
         .contentShape(Rectangle())
         .onTapGesture {}
         .onAppear {
@@ -524,13 +533,12 @@ struct NextInspector: View {
                 NXFlow(spacing: 4) {
                     ForEach(options, id: \.label) { option in
                         let custom = option.label == customLabel
-                        let pill = NXInspectorPill(isOn: isDue(option.offset)) {
+                        NXInspectorPill(isOn: isDue(option.offset)) {
                             if custom { openPicker(.due) }
                             else { workbench.schedule([task.id], offset: option.offset) }
                         } label: {
                             Text(option.label)
                         }
-                        if custom { pill.help("Date and time (⇧⌘D)") } else { pill }
                     }
                     // Native addition: the design has no picker. It wraps with the
                     // pills, as the design's row already does at this width.
@@ -540,7 +548,6 @@ struct NextInspector: View {
                             if task.includesTime, let due = task.dueDate { Text(NXFormat.clock(due)).monospacedDigit() }
                         }
                     }
-                    .help("Date and time (⇧⌘D)")
                     .accessibilityLabel("Due date and time")
                 }
                 .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
@@ -553,7 +560,6 @@ struct NextInspector: View {
                         Text(recurrence?.displayText ?? "Never")
                     }
                 }
-                .help(recurrence?.displayText ?? "Repeat this task")
                 .popover(isPresented: pickerBinding(.repeatRule), arrowEdge: .bottom) { schedulePopover(.repeatRule) }
             }
             GridRow {
@@ -613,7 +619,6 @@ struct NextInspector: View {
                             if library.labels.isEmpty { Text("Add label") }
                         }
                     }
-                    .help("Find or create a label (⇧⌘L)")
                     .accessibilityLabel("Edit labels")
                     .popover(isPresented: pickerBinding(.labels), arrowEdge: .bottom) {
                         LabelPicker(block: task).id(task.id).environment(env)
@@ -639,7 +644,6 @@ struct NextInspector: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Star (F)")
             }
         }
     }
@@ -702,8 +706,6 @@ struct NextInspector: View {
     private var planCard: some View {
         let planned = workbench.isPlanned(task)
         let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
-        // The slot line's 500 11/1.4.
-        let slotLeading = 11 * 1.4 - NX.lineHeight(11)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 // The switch speaks for the row.
@@ -715,32 +717,19 @@ struct NextInspector: View {
                 NXToggle(isOn: planned, label: "Plan for today") { workbench.plan([task.id]) }
                     .disabled(task.isCompleted)
             }
-            // Planning skips completed tasks, so the switch says so. The row
-            // carries the tooltip, which a disabled switch wouldn't show.
+            // Planning skips completed tasks, so the switch fades.
             .opacity(task.isCompleted ? 0.45 : 1)
-            .contentShape(Rectangle())
-            .help(task.isCompleted ? "Completed tasks can’t be planned" : "Plan for today (P)")
             HStack(spacing: 8) {
-                Text("Estimate").font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.5))
+                Text("Duration").font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.5))
                 Spacer(minLength: 6)
-                NXStepButton(icon: "minus", label: "Shorter estimate") { workbench.setEstimate(task.id, delta: -5) }
-                // Like the design's 44pt cell, a wider value overflows it evenly.
-                Text("\(estimate) min")
-                    .font(.system(size: 12, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(NX.ink)
-                    .contentTransition(.numericText())
-                    .fixedSize()
-                    .frame(width: 44)
-                NXStepButton(icon: "plus", label: "Longer estimate") { workbench.setEstimate(task.id, delta: 5) }
+                NXStepButton(icon: "minus", label: "Shorter") { workbench.setEstimate(task.id, delta: -5) }
+                // Its draft belongs to one task.
+                NXDurationField(minutes: estimate) { workbench.setEstimate(task.id, minutes: $0) }
+                    .id(task.id)
+                NXStepButton(icon: "plus", label: "Longer") { workbench.setEstimate(task.id, delta: 5) }
             }
-            .padding(.top, 11)
-            Text(slotText)
-                .font(.system(size: 11, weight: .medium))
-                .lineSpacing(slotLeading)
-                .foregroundStyle(NX.ink(0.45))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, slotLeading / 2)
+            .padding(.top, 9)
+            slotRow
                 .padding(.top, 9)
             // Its popover, sheet and expansion belong to one task.
             NXInspectorPlanOptions(task: task)
@@ -752,16 +741,33 @@ struct NextInspector: View {
         .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
     }
 
-    /// Reads a slot the calendar grid draws for the task, as the design reads
-    /// its placement, past or done ones too: see `CalendarWeek.shownSlot`.
-    private var slotText: String {
-        guard let placement = CalendarWeek.shownSlot(of: task.id, occurrenceID: task.occurrenceID, in: env.calendar.visibleBlocks,
-                                                     now: .now, calendar: env.settings.calendar) else {
-            return "Not in the calendar yet — ⌘K › Find a slot"
+    /// The slot the calendar grid draws for the task, as the design reads its
+    /// placement, past or done ones too (see `CalendarWeek.shownSlot`), which
+    /// shows it there; without one, Find a slot plans it.
+    @ViewBuilder private var slotRow: some View {
+        if let placement = CalendarWeek.shownSlot(of: task.id, occurrenceID: task.occurrenceID, in: env.calendar.visibleBlocks,
+                                                  now: .now, calendar: env.settings.calendar) {
+            let offset = NXFormat.dayOffset(placement.start)
+            let day = offset == 0 ? "Today" : placement.start.formatted(.dateTime.weekday(.abbreviated).day())
+            Button { workbench.showOnCalendar(slotOf: task.id, occurrenceID: task.occurrenceID) } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar").font(.system(size: 10.5, weight: .semibold))
+                    Text("\(day) \(NXFormat.clock(placement.start))–\(NXFormat.clock(placement.end))").monospacedDigit()
+                }
+            }
+            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+            .padding(.leading, -5)
+            .accessibilityLabel("In the calendar \(day), \(NXFormat.clock(placement.start)) to \(NXFormat.clock(placement.end))")
+        } else if !task.isCompleted {
+            Button { workbench.fit(task.id) } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkles").font(.system(size: 10.5, weight: .semibold))
+                    Text("Find a slot")
+                }
+            }
+            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+            .padding(.leading, -5)
         }
-        let offset = NXFormat.dayOffset(placement.start)
-        let day = offset == 0 ? "today" : placement.start.formatted(.dateTime.weekday(.abbreviated).day())
-        return "In the calendar \(day), \(NXFormat.clock(placement.start))–\(NXFormat.clock(placement.end))"
     }
 
     // MARK: Note & activity
@@ -800,24 +806,29 @@ struct NextInspector: View {
         // Newest first, like the log, with the capture always last.
         let entries = workbench.entries(for: task.id)
         return VStack(alignment: .leading, spacing: 0) {
-            NXInspectorHeading(title: "Activity") { EmptyView() }
-                .padding(.bottom, 8)
-            // Each row, the capture's too, plays the design's liftIn as it
-            // appears: with the panel, for another task or as a change logs
-            // it. A row Undo takes back, or the last task's, goes at once, as
-            // the design's does.
-            ForEach(entries) { entry in
-                activityRow(icon: entry.icon, text: entry.label, date: entry.at)
-                    .modifier(NXLiftIn(animation: NX.cssEase(220)))
-                    .transition(.identity)
+            NXInspectorFold(title: "Activity", isExpanded: $showsActivity)
+            if showsActivity {
+                // Each row, the capture's too, plays the design's liftIn as it
+                // appears: with the section, for another task or as a change
+                // logs it. A row Undo takes back, or the last task's, goes at
+                // once, as the design's does.
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(entries) { entry in
+                        activityRow(icon: entry.icon, text: entry.label, date: entry.at)
+                            .modifier(NXLiftIn(animation: NX.cssEase(220)))
+                            .transition(.identity)
+                    }
+                    activityRow(icon: "plus.circle", text: "Captured in \(captured)", date: task.createdAt)
+                        .modifier(NXLiftIn(animation: NX.cssEase(220)))
+                        .transition(.identity)
+                        .id(task.id)
+                    NXInspectorHistory(task: task)
+                        .id(task.id)
+                        .padding(.top, 6)
+                }
+                .padding(.top, 8)
+                .transition(.opacity)
             }
-            activityRow(icon: "plus.circle", text: "Captured in \(captured)", date: task.createdAt)
-                .modifier(NXLiftIn(animation: NX.cssEase(220)))
-                .transition(.identity)
-                .id(task.id)
-            NXInspectorHistory(task: task)
-                .id(task.id)
-                .padding(.top, 6)
         }
     }
 

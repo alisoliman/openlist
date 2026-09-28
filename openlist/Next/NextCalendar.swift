@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NextCalendarScreen: View {
     @Environment(AppEnvironment.self) private var env
@@ -12,7 +13,7 @@ struct NextCalendarScreen: View {
     var body: some View {
         let workbench = env.workbench
         let days = workbench.calendarDays
-        NXPage(wide: true) {
+        NXPage {
             // The range comes from the timeline's date, so a screen left open
             // overnight moves to the new day with its header, from whatever
             // range it was stepped or planned to the day before.
@@ -87,7 +88,6 @@ private struct NXCalendarStepper: View {
                 .frame(width: 12, height: 12)
         }
         .buttonStyle(buttonStyle(horizontal: 6))
-        .help(label)
         .accessibilityLabel(label)
     }
 
@@ -119,6 +119,7 @@ private struct NXCalendarBody: View {
     let dates: [Date]
     let now: Date
     @State private var meetings = NXCalendarMeetings()
+    @State private var drag = NXCalendarDrag()
 
     var body: some View {
         let range = hourRange
@@ -131,6 +132,7 @@ private struct NXCalendarBody: View {
                 NXUnplannedColumn(now: now)
             }
         }
+        .environment(drag)
     }
 
     /// 8–21 by default, stretched to fit anything scheduled outside it.
@@ -454,6 +456,7 @@ private struct NXHourGutter: View {
 private struct NXDayColumn: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
+    @Environment(NXCalendarDrag.self) private var drag
     let date: Date
     let now: Date
     let range: ClosedRange<Int>
@@ -519,6 +522,14 @@ private struct NXDayColumn: View {
                     }
                 }
 
+                if let target = drag.target, cal.isDate(target.day, inSameDayAs: date) {
+                    NXDropGhost(target: target)
+                        .frame(width: max(0, geo.size.width - 6), height: max(18, top(target.end) - top(target.start) - 2))
+                        .offset(x: 3, y: top(target.start) + 1)
+                        .animation(NX.cssEase(90), value: target)
+                        .zIndex(4)
+                }
+
                 if isToday, let y = Self.offset(of: now, range: range) {
                     // From the time down, as the design's: the line starts where
                     // today's shading ends, its dot 0.5pt above its middle.
@@ -539,6 +550,8 @@ private struct NXDayColumn: View {
             .animation(NX.ease(420), value: layout.mapValues { [$0.top, $0.height, Double($0.lane), Double($0.laneCount)] })
         }
         .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.07)).frame(width: 0.5) }
+        .onDrop(of: [NXCalendarDrag.type], delegate: NXDayDrop(date: date, range: range, drag: drag, workbench: env.workbench,
+                                                               session: env.navigator.blockDragSessionID))
     }
 
     private func x(_ slot: CalendarOverlapLayout.Placement, _ width: CGFloat) -> CGFloat {
@@ -649,8 +662,10 @@ private struct NXCalendarBlock: View {
     let height: CGFloat
     let isToday: Bool
     let isPastDay: Bool
+    @Environment(NXCalendarDrag.self) private var drag
     @State private var entered = true
     @State private var hovering = false
+    @State private var pointer = NXPointer()
     /// Briefly true after running work pushed this block to a new time.
     @State private var shifted = false
     @State private var shifts = 0
@@ -675,6 +690,9 @@ private struct NXCalendarBlock: View {
         let ring: Color = working ? .clear : done ? NX.green.opacity(0.28) : missed ? NX.red.opacity(0.35) : color.opacity(0.25)
         let fresh = workbench.freshBlockTaskID == block.taskID
         let title = task?.displayTitle ?? block.titleSnapshot ?? "Task"
+        // A slot of open work moves; running work and what's done stay put.
+        let movable = block.placementID != nil && !block.isActive && !done && task?.occurrenceID == block.occurrenceID
+        let lifted = drag.target != nil && drag.source?.block?.id == block.id
 
         VStack(alignment: .leading, spacing: 1) {
             HStack(alignment: .top, spacing: 5) {
@@ -747,9 +765,18 @@ private struct NXCalendarBlock: View {
         .offset(y: entered ? 0 : -8)
         .scaleEffect(entered ? 1 : 0.99)
         .opacity(entered ? 1 : 0)
+        .opacity(lifted ? 0.35 : 1)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .onContinuousHover { phase in
+            if case let .active(point) = phase { pointer.y = point.y }
+        }
         .onTapGesture(perform: open)
+        .modifier(NXCalendarDragSource(isEnabled: movable) {
+            // Held where the pointer was, so the block keeps under it as it moves.
+            NXCalendarDrag.Source(taskID: block.taskID, block: block, minutes: max(5, Int(block.durationMinutes.rounded())),
+                                  grab: Double(pointer.y + 1) / NXCal.hourHeight * 60)
+        })
         // The design's `background 240ms ease, box-shadow 240ms ease`.
         .animation(NX.cssEase(240), value: done)
         .animation(NX.cssEase(240), value: working)
@@ -829,13 +856,13 @@ private struct NXUnplannedColumn: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    @Environment(NXCalendarDrag.self) private var drag
     let now: Date
 
     var body: some View {
         let tasks = unplanned
-        // The design's 11.5/1.45 hint and 12/1.45 empty state: the extra
-        // leading between lines and, halved, above the first and below the last.
-        let hintLeading = 11.5 * 1.45 - NX.lineHeight(11.5)
+        // The design's 12/1.45 empty state: the extra leading between lines
+        // and, halved, above the first and below the last.
         let emptyLeading = 12 * 1.45 - NX.lineHeight(12)
         VStack(alignment: .leading, spacing: 8) {
             // 600 12.5/1 and 500 11/1.
@@ -845,14 +872,7 @@ private struct NXUnplannedColumn: View {
                 Text("\(tasks.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.4))
                     .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
             }
-            .padding(EdgeInsets(top: 4, leading: 2, bottom: 2, trailing: 2))
-            Text("Due soon or picked for today. Plan finds the next free slot around meetings and your hours.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(NX.ink(0.5))
-                .lineSpacing(hintLeading)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, hintLeading / 2)
-                .padding(EdgeInsets(top: 0, leading: 2, bottom: 4, trailing: 2))
+            .padding(EdgeInsets(top: 4, leading: 2, bottom: 6, trailing: 2))
             ForEach(tasks) { task in
                 // Each card plays the design's liftIn as it appears, the Calendar
                 // opening too. A planned one goes at once and the cards under
@@ -875,6 +895,19 @@ private struct NXUnplannedColumn: View {
             }
         }
         .transaction(value: tasks.map(\.id)) { $0.animation = nil }
+        // A block held over the column comes off the calendar when dropped.
+        .overlay {
+            if drag.unplanning {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(style.accent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .background(style.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(-6)
+                    .allowsHitTesting(false)
+            }
+        }
+        .contentShape(Rectangle())
+        .onDrop(of: [NXCalendarDrag.type], delegate: NXUnplanDrop(drag: drag, workbench: env.workbench,
+                                                                  session: env.navigator.blockDragSessionID))
     }
 
     private var unplanned: [Block] {
@@ -940,8 +973,233 @@ private struct NXUnplannedColumn: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
         .contentShape(Rectangle())
         .onTapGesture { env.workbench.inspect(task.id) }
+        // Held by its middle, as its preview is, to land on the calendar.
+        .modifier(NXCalendarDragSource(isEnabled: true, preview: { NXDragPreview(task: task, minutes: minutes) }) {
+            NXCalendarDrag.Source(taskID: task.id, block: nil, minutes: minutes, grab: Double(minutes) / 2)
+        })
         // Keeps the Plan button its own element under the card's tap target.
         .accessibilityElement(children: .contain)
         .accessibilityAction(named: "Open details") { env.workbench.inspect(task.id) }
     }
+}
+
+// MARK: - Drag and drop
+
+/// What the Calendar has picked up and where it would land: a block moved to
+/// another time, or a task from Not planned yet given one.
+@Observable
+private final class NXCalendarDrag {
+    static let type = UTType(exportedAs: DragPayload.blockTypeIdentifier)
+
+    struct Source: Sendable {
+        let taskID: UUID
+        /// The slot being moved; nil for a task being planned.
+        let block: PlannedBlock?
+        let minutes: Int
+        /// How far below its start the item is held, in minutes.
+        let grab: Double
+    }
+
+    struct Target: Equatable {
+        let day: Date
+        let start: Date
+        let end: Date
+        /// Not in the past, which nothing can be planned for.
+        let isOpen: Bool
+    }
+
+    enum Landing: Sendable { case at(Date), off }
+
+    var source: Source?
+    var target: Target?
+    /// A block is over Not planned yet.
+    var unplanning = false
+
+    func begin(_ source: Source) {
+        self.source = source
+        target = nil
+        unplanning = false
+    }
+
+    /// Lands what was picked up once the drop's payload proves it's the drag
+    /// begun here, not one left over from a drag that ended elsewhere.
+    func land(_ info: DropInfo, _ landing: Landing, workbench: Workbench, session: UUID) -> Bool {
+        let source = self.source
+        self.source = nil
+        target = nil
+        unplanning = false
+        guard let source, let provider = info.itemProviders(for: [Self.type]).first else { return false }
+        provider.loadDataRepresentation(forTypeIdentifier: DragPayload.blockTypeIdentifier) { data, _ in
+            let value = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+            Task { @MainActor in
+                guard DragPayload.blockDrop(value, session: session) == .blocks([source.taskID]) else { return }
+                switch (landing, source.block) {
+                case let (.at(start), block?): workbench.movePlacement(block, to: start)
+                case let (.at(start), nil): workbench.plan(source.taskID, at: start)
+                case let (.off, block?): workbench.unplace(block)
+                case (.off, nil): break
+                }
+            }
+        }
+        return true
+    }
+}
+
+/// Picks an item up in the rows' own payload, so a list in the sidebar takes
+/// it as it takes a row, and tells the Calendar what it is.
+private struct NXCalendarDragSource<Preview: View>: ViewModifier {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(NXCalendarDrag.self) private var drag
+    let isEnabled: Bool
+    /// The picture dragged; nil drags the view as it's drawn.
+    var preview: (() -> Preview)?
+    let source: () -> NXCalendarDrag.Source
+
+    func body(content: Content) -> some View {
+        if !isEnabled {
+            content
+        } else if let preview {
+            content.onDrag(provider, preview: preview)
+        } else {
+            content.onDrag(provider)
+        }
+    }
+
+    private func provider() -> NSItemProvider {
+        let source = source()
+        drag.begin(source)
+        return NXBlockDrag.provider(for: [source.taskID], session: env.navigator.blockDragSessionID)
+    }
+}
+
+extension NXCalendarDragSource where Preview == EmptyView {
+    init(isEnabled: Bool, source: @escaping () -> NXCalendarDrag.Source) {
+        self.init(isEnabled: isEnabled, preview: nil, source: source)
+    }
+}
+
+/// A day column taking a drop: the time under the pointer, snapped to the
+/// quarter hour, drawn as a ghost until it lands.
+private struct NXDayDrop: DropDelegate {
+    let date: Date
+    let range: ClosedRange<Int>
+    let drag: NXCalendarDrag
+    let workbench: Workbench
+    let session: UUID
+
+    func validateDrop(info: DropInfo) -> Bool { drag.source != nil }
+
+    func dropEntered(info: DropInfo) { aim(info) }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        aim(info)
+        return DropProposal(operation: drag.target?.isOpen == false ? .forbidden : .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if isHere(drag.target) { drag.target = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let target = drag.target, isHere(target), target.isOpen else {
+            drag.target = nil
+            return false
+        }
+        return drag.land(info, .at(target.start), workbench: workbench, session: session)
+    }
+
+    private func isHere(_ target: NXCalendarDrag.Target?) -> Bool {
+        target.map { Calendar.current.isDate($0.day, inSameDayAs: date) } ?? false
+    }
+
+    private func aim(_ info: DropInfo) {
+        guard let source = drag.source else { return }
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: date)
+        let minute = CalendarOverlapLayout.dropMinute(y: Double(info.location.y), hourHeight: Double(NXCal.hourHeight), hours: range,
+                                                      grab: source.grab, duration: source.minutes)
+        let start = CalendarOverlapLayout.time(minute: minute, on: day, calendar: cal)
+        let target = NXCalendarDrag.Target(day: day, start: start, end: start.addingTimeInterval(TimeInterval(source.minutes * 60)),
+                                           isOpen: start >= .now)
+        drag.unplanning = false
+        if drag.target != target { drag.target = target }
+    }
+}
+
+/// Not planned yet taking a block off the calendar.
+private struct NXUnplanDrop: DropDelegate {
+    let drag: NXCalendarDrag
+    let workbench: Workbench
+    let session: UUID
+
+    func validateDrop(info: DropInfo) -> Bool { drag.source?.block != nil }
+
+    func dropEntered(info: DropInfo) {
+        drag.target = nil
+        drag.unplanning = true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func dropExited(info: DropInfo) { drag.unplanning = false }
+
+    func performDrop(info: DropInfo) -> Bool {
+        drag.land(info, .off, workbench: workbench, session: session)
+    }
+}
+
+/// Where a dragged item would land, with its times.
+private struct NXDropGhost: View {
+    @Environment(\.nextStyle) private var style
+    let target: NXCalendarDrag.Target
+
+    var body: some View {
+        let color = target.isOpen ? style.accent : NX.red
+        Text("\(NXFormat.clock(target.start))–\(NXFormat.clock(target.end))")
+            .font(.system(size: 9.5, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(target.isOpen ? style.accent : NX.redText)
+            .lineLimit(1)
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(color.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A card dragged from Not planned yet, drawn as the block it would become.
+private struct NXDragPreview: View {
+    @Environment(\.nextStyle) private var style
+    @Environment(\.nextLibrary) private var library
+    let task: Block
+    let minutes: Int
+
+    var body: some View {
+        let color = library.list(task.listID)?.nxColor ?? style.accent
+        VStack(alignment: .leading, spacing: 2) {
+            Text(task.displayTitle)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(NX.ink)
+                .lineLimit(2)
+            Text("\(minutes) min")
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(NX.ink(0.5))
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 7)
+        .frame(width: 150, height: min(160, max(30, CGFloat(minutes) / 60 * NXCal.hourHeight)), alignment: .topLeading)
+        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(NX.card, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(color.opacity(0.35), lineWidth: 1))
+    }
+}
+
+/// Where the pointer last was over a block, kept out of the view's state so
+/// following it redraws nothing.
+private final class NXPointer {
+    var y: CGFloat = 0
 }

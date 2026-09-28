@@ -31,7 +31,7 @@ struct TaskDeferralPicker: View {
                 NXCapsTitle(text: "Resume planning on")
                 CalendarMonthPicker(selection: date, calendar: env.settings.calendar, earliest: .now) { date = $0 }
             }
-            Text("Its slots come off the calendar. On this day it’s picked for today, and Plan looks for time from then on. The due date stays the same.")
+            Text("Its slots come off the calendar until then.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(NX.ink(0.5))
                 .fixedSize(horizontal: false, vertical: true)

@@ -154,7 +154,6 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                 .animation(NX.cssEase(140)) {
                     $0.opacity(focused || opensOnHover && openHovering ? 1 : options.quiet ? 0 : 0.22)
                 }
-                .help("Open details (↩)")
                 .accessibilityLabel("Open details")
             }
             .padding(.top, 1)

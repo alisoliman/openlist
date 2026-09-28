@@ -400,10 +400,17 @@ extension Workbench {
                                  didRegister: { self.logEdit(label, ids: [id]) }, change)
     }
 
+    /// The inspector's Duration, five minutes shorter or longer.
     func setEstimate(_ id: UUID, delta: Int) {
         guard let task = store.block(id: id) else { return }
         let current = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
-        store.setTaskEstimate(min(240, max(5, current + delta)), for: task)
+        store.setTaskEstimate(min(DurationText.maximumMinutes, max(5, current + delta)), for: task)
+    }
+
+    /// The inspector's Duration, as typed there.
+    func setEstimate(_ id: UUID, minutes: Int) {
+        guard let task = store.block(id: id), minutes > 0 else { return }
+        store.setTaskEstimate(min(DurationText.maximumMinutes, minutes), for: task)
     }
 
     // MARK: Files
@@ -1059,14 +1066,7 @@ extension Workbench {
         guard let task = store.block(id: id), !task.isCompleted else { return }
         let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
         let now = Date.now
-        let category = store.list(id: task.listID).map { hours(for: $0) } ?? .work
-        // Around meetings and whatever the calendar shows for other tasks:
-        // their placements, running work and done blocks.
-        let busy = calendar.externalCalendars.busyTimes.map { DateInterval(start: $0.start, end: $0.end) }
-            + calendar.visibleBlocks.filter { $0.taskID != id && $0.end > $0.start }.map { DateInterval(start: $0.start, end: $0.end) }
-        let slot = CalendarWeek.slot(duration: TimeInterval(minutes * 60), deferredUntil: task.deferredUntil, category: category,
-                                     preferences: calendar.preferences, busy: busy, now: now, calendar: settings.calendar)
-        switch slot {
+        switch calendar.freeSlot(for: task, minutes: minutes, weekCalendar: settings.calendar, now: now) {
         case let .found(slot):
             place(task, start: slot.start, end: slot.end, dayOffset: NXFormat.dayOffset(slot.start, now: now))
         case let .none(reach):
@@ -1145,6 +1145,27 @@ extension Workbench {
         }
         let label = "Moved \(NXFormat.quoted(task.displayTitle)) · \(NXFormat.dueLabel(start)) \(NXFormat.clock(start))"
         replacePlacements(of: task, with: spans, label: label, icon: "calendar", showing: start)
+    }
+
+    /// A task dragged onto the Calendar: a slot as long as its estimate at
+    /// `start`, in place of any it had, as Plan's is.
+    func plan(_ id: UUID, at start: Date) {
+        guard let task = store.block(id: id), !task.isCompleted else { return }
+        let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
+        place(task, start: start, end: start.addingTimeInterval(TimeInterval(minutes * 60)), dayOffset: NXFormat.dayOffset(start))
+    }
+
+    /// A block dragged off the Calendar onto Not planned yet: its slot comes
+    /// off, one step with the tray and Undo. The occurrence's other slots stay.
+    func unplace(_ block: PlannedBlock) {
+        guard let placementID = block.placementID, !block.isActive, let task = store.block(id: block.taskID),
+              task.isTask, !task.isCompleted, task.occurrenceID == block.occurrenceID else { return }
+        let placements = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+        guard placements.contains(where: { $0.id == placementID }) else { return }
+        let spans = placements.filter { $0.id != placementID }
+            .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+        replacePlacements(of: task, with: spans, label: "Took \(NXFormat.quoted(task.displayTitle)) off the calendar",
+                          icon: "calendar.badge.minus", showing: block.start)
     }
 
     /// Puts the occurrence's placements at `spans` as one step, announced as

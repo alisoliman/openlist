@@ -73,7 +73,6 @@ struct NXListMenu<Options: View>: View {
             }
             if list.isArchived || !archived {
                 Button(list.isArchived ? "Unarchive List" : "Archive List") { workbench.setArchived(!list.isArchived, for: list) }
-                    .help("Archived lists stay here and stop contributing tasks or reminders.")
             }
             Divider()
             Button("Delete List", role: .destructive) { env.requestDeleteList(list) }

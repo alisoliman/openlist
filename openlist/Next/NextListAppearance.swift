@@ -51,7 +51,6 @@ struct ListAppearancePicker: View {
                             .padding(5)
                     }
                     .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 8, padding: EdgeInsets()))
-                    .help(accent.title)
                     .accessibilityLabel("\(accent.title) list colour")
                     .accessibilityAddTraits(isOn ? .isSelected : [])
                 }

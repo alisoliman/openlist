@@ -509,6 +509,78 @@ do {
           "a repeat's deeper subtask stays left out past a parent the row doesn't hold")
 }
 
+// MARK: - Durations
+
+do {
+    let typed: [(String, Int?)] = [
+        ("45", 45), ("45m", 45), ("45 min", 45), (" 45 Minutes ", 45), ("1h", 60), ("1 hour", 60),
+        ("1h30", 90), ("1h30m", 90), ("1h 30m", 90), ("1 h 30 min", 90), ("1 hour and 30 minutes", 90),
+        ("1.5h", 90), ("1,5 h", 90), ("1.5", 90), ("0.25 hours", 15), ("1:15", 75), ("0:45", 45), ("2hrs", 120),
+        ("", nil), ("soon", nil), ("0", nil), ("-5", nil), ("30 45", nil), ("1h 2h", nil), ("30m 1h", nil),
+        ("1:5", nil), ("1:75", nil), ("1h 30m 5", nil), ("5 days", nil), ("1..5h", nil), ("99999h", nil),
+    ]
+    for (text, expected) in typed {
+        let minutes = DurationText.minutes(from: text)
+        check(minutes == expected, "“\(text)” reads as \(expected.map { "\($0) min" } ?? "no duration")", "\(String(describing: minutes))")
+    }
+    check(DurationText.text(for: 30) == "30 min" && DurationText.text(for: 60) == "1 h" && DurationText.text(for: 95) == "1 h 35 min",
+          "durations show in hours and minutes")
+    for minutes in [5, 45, 60, 90, 125, 600] {
+        check(DurationText.minutes(from: DurationText.text(for: minutes)) == minutes, "\(minutes) min reads back as shown")
+    }
+}
+
+// MARK: - Note Markdown
+
+do {
+    /// The kinds of span that cover exactly `piece`, its `nth` occurrence in `text`.
+    func kinds(_ text: String, _ piece: String, nth: Int = 0) -> [NoteMarkdown.Kind] {
+        let source = text as NSString
+        var range = NSRange(location: 0, length: 0)
+        var from = 0
+        for _ in 0...nth {
+            range = source.range(of: piece, range: NSRange(location: from, length: source.length - from))
+            from = NSMaxRange(range)
+        }
+        return NoteMarkdown.spans(in: text).filter { $0.range == range }.map(\.kind)
+    }
+    check(kinds("# Plan", "# ") == [.marker] && kinds("# Plan", "Plan") == [.heading(1)], "a heading's hashes are syntax, its text the heading")
+    check(kinds("### Small", "Small") == [.heading(3)], "three hashes are the third level")
+    check(kinds("####x", "####x").isEmpty && NoteMarkdown.spans(in: "#tag").isEmpty, "a tag or four hashes aren't a heading")
+    let inline = "Some **bold**, *slanted*, ~~gone~~ and `code *here*`"
+    check(kinds(inline, "bold") == [.bold] && kinds(inline, "**") == [.marker] && kinds(inline, "**", nth: 1) == [.marker],
+          "bold text between its markers", "\(NoteMarkdown.spans(in: inline))")
+    check(kinds(inline, "slanted") == [.italic] && kinds(inline, "gone") == [.strike], "italic and struck text")
+    check(kinds(inline, "code *here*") == [.code] && kinds(inline, "here").isEmpty, "nothing inside code is emphasis")
+    check(kinds("_under_ score", "under") == [.italic], "underscores slant too")
+    check(NoteMarkdown.spans(in: "2 * 3 * 4 and snake_case_name").isEmpty, "arithmetic and snake case stay as written")
+    let link = "Read [the spec](https://example.com/a_b_c) first"
+    check(kinds(link, "the spec") == [.link] && kinds(link, "[") == [.marker] && kinds(link, "](https://example.com/a_b_c)") == [.marker],
+          "a link shows its text, its address is syntax")
+    let bare = "See https://example.com/x_y_z. Then"
+    check(kinds(bare, "https://example.com/x_y_z") == [.url], "a bare address, without the full stop after it", "\(NoteMarkdown.spans(in: bare))")
+    check(!NoteMarkdown.spans(in: bare).contains { $0.kind == .italic }, "an address's underscores aren't emphasis")
+    check(kinds("- milk", "- milk") == [.listItem(indent: 2)] && kinds("- milk", "- ") == [.bullet], "a bullet hangs its item")
+    check(kinds("  12. twelfth", "  12. twelfth") == [.listItem(indent: 6)], "a numbered item hangs past its number")
+    check(kinds("- [x] shipped", "shipped") == [.done] && kinds("- [x] shipped", "- [x] ") == [.bullet], "a ticked item's text is done")
+    check(kinds("- [ ] todo", "todo").isEmpty, "an open item's text is plain")
+    check(kinds("> quoted", "quoted") == [.quote] && kinds("> quoted", "> ") == [.marker], "a quote's text, its mark syntax")
+    check(kinds("---", "---") == [.bullet], "a rule stays shown")
+    let fence = "```\nlet *x* = 1\n```\n*after*"
+    check(kinds(fence, "let *x* = 1") == [.codeBlock] && kinds(fence, "x").isEmpty, "a fenced block is code, with no emphasis")
+    check(kinds(fence, "after") == [.italic], "emphasis resumes after the fence")
+    check(NoteMarkdown.spans(in: "").isEmpty && NoteMarkdown.spans(in: "plain words\nmore").isEmpty, "plain text has no spans")
+
+    check(NoteMarkdown.continuation(of: "- a") == .next("- ") && NoteMarkdown.continuation(of: "  * b") == .next("  * "),
+          "Return starts the next bullet at the same depth")
+    check(NoteMarkdown.continuation(of: "3. c") == .next("4. ") && NoteMarkdown.continuation(of: "9) d") == .next("10) "),
+          "a numbered list counts on")
+    check(NoteMarkdown.continuation(of: "- [x] d") == .next("- [ ] "), "the next task starts unticked")
+    check(NoteMarkdown.continuation(of: "- ") == .end(bulletLength: 2) && NoteMarkdown.continuation(of: "- [ ] ") == .end(bulletLength: 6),
+          "Return on an empty item ends the list")
+    check(NoteMarkdown.continuation(of: "text") == nil && NoteMarkdown.continuation(of: "-dash") == nil, "other lines just break")
+}
+
 // MARK: - Summary
 
 print("")

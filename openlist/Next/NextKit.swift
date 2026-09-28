@@ -239,6 +239,11 @@ struct NXStepButton: View {
 }
 
 extension View {
+    /// A tooltip only where there's something the control doesn't already say.
+    @ViewBuilder func nxHelp(_ text: String?) -> some View {
+        if let text { help(text) } else { self }
+    }
+
     /// The design's warm card shadow: hairline plus a soft drop.
     func nxCardShadow(radius: CGFloat = 12, hairline: Double = 0.12, drop: Double = 0.09, y: CGFloat = 14, blur: CGFloat = 40) -> some View {
         self
@@ -453,7 +458,6 @@ private struct NXHeaderTitleField: View {
                 .contentShape(Rectangle())
                 .onTapGesture { rename.isEditing.wrappedValue = true }
                 .pointerStyle(.horizontalText)
-                .help("Rename")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction(named: "Rename") { rename.isEditing.wrappedValue = true }
         }

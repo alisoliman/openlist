@@ -222,17 +222,22 @@ one task at a time: file it, schedule it, mark it done, discard it or keep it fo
 later. Its header button shows it as a document instead. See
 [Inbox](docs/INBOX.md) for behaviour and compatibility.
 
-Task details end with **Activity**: this session's changes and, under **Full
-history**, a paginated timeline of committed title, date/time, completion,
+Task details end with **Activity**, folded until you open it: this session's
+changes and, under **Full history**, a paginated timeline of committed title, date/time, completion,
 recurrence, and list-move changes, with the creation and completion times. It
 shares history with Activity's **Changes**; **Clear all activity history…** in
 Settings › Data clears both after confirmation. Older entries retain only the
 facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md) for save,
 retention, and export behaviour.
 
-The inspector keeps the title and active metadata above notes and subtasks.
-Empty notes and files use add actions rather than empty forms; removing a file
-can be undone. Its footer has **Trash** and **Start working**; **Copy Link** is in the
+Task details open beside the page, which narrows to make room rather than
+going under the panel; every page uses the window's full width. The inspector
+keeps the title and active metadata above notes and subtasks. Empty notes and
+files use add actions rather than empty forms; removing a file can be undone.
+Notes are written in Markdown: headings, bold, italic, strikethrough, code,
+links, lists, tasks and quotes show as they read, with their syntax faint while
+the note is written and hidden otherwise. Return on a list item starts the next
+one, and on an empty item ends the list. The note is kept as the text typed. Its footer has **Trash** and **Start working**; **Copy Link** is in the
 task's menu and in Task ▸ **Copy Link**. Priority and label controls remain
 named for accessibility.
 **Add subtask** goes to the task's list document, opening it if needed, unfolds
@@ -261,9 +266,13 @@ picked for today or due soon wait under **Not planned yet** until **Plan** or
 **Task → Find a Slot** places them; undated backlog stays unscheduled. A rolling
 four-week plan behind it drives the Work panel's suggestion and deadline
 coverage. Lists inherit separate work or personal hours, with weekly
-breaks and date overrides. Estimates start at an editable 30 minutes. Work can
-split into sessions, with a 25-minute minimum by default and a per-task
-**Keep task together** option.
+breaks and date overrides. A task's **Duration** starts at an editable 30
+minutes; type it as `45`, `1h30`, `1.5 hours` or `1:15`, or step it by five
+minutes. Work can split into sessions, with a 25-minute minimum by default and a
+per-task **Keep together** option. Drag a block to another time or day to move
+it, or a task from **Not planned yet** onto the grid to place it; a block dropped
+on **Not planned yet** comes off the calendar. Drops snap to the quarter hour
+and never land in the past.
 
 The **Work** panel (**Work → Show Work**, or the toolbar's work notch while
 working) shows a suggestion's planned time, duration, deadline, and source.
@@ -469,8 +478,13 @@ Dock badge, and local-first storage with native SwiftData/CloudKit sync.
 Openlist ships a native MCP server and stdio launcher. Enable it in
 **Settings > AI Agents**, copy a client configuration, and keep Openlist running.
 Agents can read lists, tasks and notes, or optionally create, edit, complete,
-move and archive them. Their writes follow the list document's rules: tasks and
-list items go under a task or list item, two levels deep at most. Access is off
+move and archive them. Task edits cover notes, dates, reminders, priority,
+labels, duration, repeat rules, Plan for today, deferral and session options.
+Agents can read the calendar's planned slots and the Mac's busy times, put a
+task at a time or in the next free slot, take slots off, set a list's work or
+personal hours, edit document lines or turn them into tasks, and move content
+to Trash, where it can be restored. Their writes follow the list document's
+rules: tasks and list items go under a task or list item, two levels deep at most. Access is off
 by default, read-only unless you allow changes, and protected by a
 Keychain-backed token on a localhost-only endpoint.
 No Node/Python runtime or cloud service is required.

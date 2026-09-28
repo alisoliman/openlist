@@ -18,7 +18,7 @@ struct NextActivityScreen: View {
     @State private var loadError: String?
 
     var body: some View {
-        NXPage(wide: true) {
+        NXPage {
             NXScreenHeader(tile: .icon("square.grid.2x2.fill"), color: style.accent, title: "Activity",
                            subtitle: "What you finished and what changed")
             Group {
@@ -675,7 +675,7 @@ private struct NXChangesSection: View {
     /// between lines and, halved, around them.
     private var changesSubtitle: some View {
         let leading = 11.5 * 1.3 - NX.lineHeight(11.5)
-        return Text("Every edit, newest first. The latest one can be undone here.")
+        return Text("Every edit, newest first.")
             .font(.system(size: 11.5, weight: .medium))
             .lineSpacing(leading)
             .foregroundStyle(NX.ink(0.45))

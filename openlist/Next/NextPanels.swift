@@ -297,9 +297,9 @@ struct NXSheetError: View {
 
 extension View {
     /// Where the window's notices sit: under the toolbar, in line with the
-    /// screen's content column.
+    /// screen's content.
     func nxNoticePlacement() -> some View {
-        frame(maxWidth: 880, alignment: .leading)
+        frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 40)
             .padding(.top, 10)
             .frame(maxWidth: .infinity, alignment: .leading)

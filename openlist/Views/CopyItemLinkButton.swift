@@ -16,6 +16,5 @@ struct CopyItemLinkButton: View {
                 Button("Copy Link") { env.copyLink(to: target) }
             }
         }
-        .help("Copy a link to this item in this Mac’s Openlist library")
     }
 }

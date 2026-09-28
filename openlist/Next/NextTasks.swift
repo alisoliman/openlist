@@ -359,7 +359,6 @@ private struct NXTasksQueryBar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(NXTextHoverStyle(color: NX.ink(0.42), hover: NX.ink))
-                .help("Group by list, date or nothing")
             }
             .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.space)).maxX }) { clusterEnd = $0 }
             .overlay(alignment: .topTrailing) {

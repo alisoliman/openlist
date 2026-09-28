@@ -117,3 +117,21 @@ extension CalendarOverlapLayout {
                              matchingPolicy: .nextTime, repeatedTimePolicy: .first, direction: .forward) ?? next
     }
 }
+
+// MARK: - Dropping on the day column
+
+extension CalendarOverlapLayout {
+    /// The minute after midnight where an item `duration` minutes long starts
+    /// when dropped `y` points down a day column drawn from `hours`, each hour
+    /// `hourHeight` tall, held `grab` minutes below its start: snapped to
+    /// `step` minutes, starting inside the hours drawn and ending by midnight.
+    static func dropMinute(y: Double, hourHeight: Double, hours: ClosedRange<Int>, grab: Double,
+                           duration: Int, step: Int = 15) -> Int {
+        guard hourHeight > 0, y.isFinite, grab.isFinite, step > 0 else { return hours.lowerBound * 60 }
+        let raw = Double(hours.lowerBound * 60) + y / hourHeight * 60 - grab
+        let snapped = Int((raw / Double(step)).rounded()) * step
+        let lowest = hours.lowerBound * 60
+        let highest = min(hours.upperBound * 60 - step, 1440 - max(duration, 0))
+        return max(lowest, min(highest, snapped))
+    }
+}

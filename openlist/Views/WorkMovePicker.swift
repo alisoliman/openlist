@@ -43,9 +43,6 @@ struct WorkMovePicker: View {
                     }
                 }
             }
-            Text("The block moves on your calendar, as long as it is. The due date stays the same.")
-                .font(.system(size: 12)).foregroundStyle(NX.ink(0.5))
-                .fixedSize(horizontal: false, vertical: true)
             if !overlaps.isEmpty {
                 Text("It would overlap:").font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.72))
                 ScrollView { WorkMoveOverlapsView(overlaps: overlaps) }

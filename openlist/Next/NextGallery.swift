@@ -52,7 +52,7 @@ struct NextListsGallery: View {
 
     var body: some View {
         let shelves = shelves
-        NXPage(wide: true) {
+        NXPage {
             NXScreenHeader(tile: .icon("square.2.layers.3d.fill"), color: NX.lists, title: "Lists", subtitle: subtitle(shelves))
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(shelves) { shelf in
@@ -212,7 +212,7 @@ struct NextTrashScreen: View {
                         // The design's 400 12.5/1.4 over SwiftUI's 15pt line, its extra
                         // leading between lines and, halved, around them.
                         let leading = max(0, 12.5 * 1.4 - NX.lineHeight(12.5))
-                        Text("Restoring puts a task back in its list, in its old position. Erasing can’t be undone — press and hold.")
+                        Text("Erasing can’t be undone.")
                             .font(.system(size: 12.5))
                             .lineSpacing(leading)
                             .foregroundStyle(NX.ink(0.5))
@@ -312,7 +312,6 @@ private struct NXTrashRow: View {
             .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), rest: style.accent.opacity(0.1), radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
                                             foreground: style.accent, hoverForeground: style.accent))
-            .help("Put it back where it was")
             NXHoldButton(title: "Hold to erase", holdingTitle: "Keep holding…", size: 11,
                          padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9), radius: 7, rest: 0.08,
                          confirmation: "Erase “\(title)”?") {
