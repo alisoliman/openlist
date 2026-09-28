@@ -147,7 +147,6 @@ struct ShortcutsSheet: View {
                 }
                 .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
                 .accessibilityLabel("Close keyboard shortcuts")
-                .help("Close (Esc)")
                 .keyboardShortcut(.escape, modifiers: [])
             }
             .padding(.horizontal, 22)

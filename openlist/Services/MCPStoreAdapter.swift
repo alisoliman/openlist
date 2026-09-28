@@ -7,6 +7,7 @@ import SwiftData
 @MainActor
 final class MCPStoreAdapter {
     let store: Store
+    var calendar: (any MCPCalendarAccess)?
 
     init(store: Store) { self.store = store }
 
@@ -20,7 +21,7 @@ final class MCPStoreAdapter {
                 throw MCPToolFailure(code: "read_only", message: "Write access is off. Enable Allow changes in Openlist Settings > AI Agents.")
             }
             let args = try MCPArguments(arguments, for: tool)
-            let snapshot = try Snapshot(context: store.context)
+            let snapshot = try Snapshot(context: store.context, defaultMinutes: store.calendarDefaultEstimateMinutes)
             if tool.isReadOnly {
                 return try result(execute(tool, args: args, snapshot: snapshot))
             }
@@ -93,7 +94,7 @@ final class MCPStoreAdapter {
                 case "today":
                     // The app's Today: overdue, due today, planned for today and starred.
                     return task.isCompleted ? task.isCompletedToday
-                        : task.isDueOnOrBeforeToday || task.isStarred || isPlannedForToday(task)
+                        : task.isDueOnOrBeforeToday || task.isStarred || task.isPlannedForToday
                 case "overdue": return task.isOverdue
                 case "starred": return task.isStarred
                 default: return true
@@ -130,11 +131,14 @@ final class MCPStoreAdapter {
             if let archived = args.bool("is_archived"), archived != list.isArchived {
                 store.setArchived(archived, for: list)
             }
+            if let hours = args.string("hours"), hours != list.availabilityCategoryRaw {
+                store.setAvailabilityCategory(hours, for: list)
+            }
             return .object(["list": snapshot.listValue(list)])
 
         case .createTask:
             let title = try args.nonempty("title")
-            let patch = try TaskPatch(args: args, snapshot: snapshot)
+            let patch = try TaskPatch(args: args, snapshot: snapshot, task: nil)
             let parent = try args.uuid("parent_id").map { try snapshot.block($0) }
             let list: TaskList
             if let id = args.uuid("list_id") ?? parent?.listID {
@@ -154,7 +158,10 @@ final class MCPStoreAdapter {
             try args.requirePatch(excluding: ["task_id", "expected_updated_at"])
             let task = try snapshot.task(args.requireUUID("task_id"), writable: true)
             try checkVersion(args, updatedAt: task.updatedAt)
-            let patch = try TaskPatch(args: args, snapshot: snapshot)
+            let patch = try TaskPatch(args: args, snapshot: snapshot, task: task)
+            if task.isCompleted, patch.plans {
+                throw MCPToolFailure.invalid("Reopen the task before planning it.")
+            }
             patch.apply(to: task, store: store)
             return .object(["task": snapshot.blockValue(task)])
 
@@ -216,6 +223,105 @@ final class MCPStoreAdapter {
                 throw MCPToolFailure.invalid("The label must contain a name after any # prefix.")
             }
             return .object(["label": snapshot.labelValue(label)])
+
+        case .listCalendar:
+            let first = try args.string("start_date").map { try MCPDates.parseDay($0) } ?? Calendar.current.startOfDay(for: .now)
+            let days = args.integer("days") ?? 7
+            guard let end = Calendar.current.date(byAdding: .day, value: days, to: first) else {
+                throw MCPToolFailure.invalid("The range could not be read.")
+            }
+            let span = DateInterval(start: first, end: end)
+            let slots = try snapshot.slots().filter { $0.end > span.start && $0.start < span.end }
+            // Busy times come from the running app; null says they're unknown, not free.
+            let busy = calendar.map { calendar in
+                MCPValue.array(calendar.busyTimes(in: span).sorted { $0.start < $1.start }.map { time in
+                    .object([
+                        "title": .string(time.title), "start": .string(MCPDates.timestamp(time.start)),
+                        "end": .string(MCPDates.timestamp(time.end)),
+                        "all_day": .bool(time.end.timeIntervalSince(time.start) >= 20 * 3600),
+                    ])
+                })
+            }
+            return .object([
+                "start_date": .string(MCPDates.day(first)), "days": .int(days),
+                "slots": .array(slots.map { snapshot.slotValue($0, withTask: true) }),
+                "busy": busy ?? .null,
+                "default_duration_minutes": .int(snapshot.defaultMinutes),
+                "time_zone": .string(TimeZone.current.identifier),
+            ])
+
+        case .scheduleTask:
+            let task = try snapshot.task(args.requireUUID("task_id"), writable: true)
+            try checkVersion(args, updatedAt: task.updatedAt)
+            guard !task.isCompleted else { throw MCPToolFailure.invalid("Reopen the task before planning it.") }
+            let minutes = args.integer("duration_minutes") ?? snapshot.durationMinutes(of: task)
+            let slot: DateInterval
+            if let text = args.string("start") {
+                let start = try MCPDates.parse(text, allowsDay: false).date
+                // A minute's grace, for a start read as "now" a moment ago.
+                guard start >= Date.now.addingTimeInterval(-60) else {
+                    throw MCPToolFailure.invalid("start must not be in the past.")
+                }
+                slot = DateInterval(start: start, duration: TimeInterval(minutes * 60))
+            } else {
+                guard let calendar else {
+                    throw MCPToolFailure(code: "unavailable", message: "Openlist's calendar isn't running. Give a start time.")
+                }
+                guard let found = calendar.freeSlot(for: task, minutes: minutes) else {
+                    throw MCPToolFailure(code: "no_free_slot", message: "No free slot \(minutes) minutes long this week or next inside the list's hours. Give a start time or a shorter duration_minutes.")
+                }
+                slot = found
+            }
+            for placement in try snapshot.placements(of: task) { store.removePlacement(placement) }
+            guard let placed = store.setPlacement(for: task, start: slot.start, end: slot.end, isPinned: true) else {
+                throw MCPToolFailure.invalid("The task could not be planned.")
+            }
+            return .object(["task": snapshot.blockValue(task), "slot": snapshot.slotValue(placed)])
+
+        case .unscheduleTask:
+            let task = try snapshot.task(args.requireUUID("task_id"), writable: true)
+            try checkVersion(args, updatedAt: task.updatedAt)
+            var slots = try snapshot.placements(of: task)
+            if let slotID = args.uuid("slot_id") {
+                slots = slots.filter { $0.id == slotID }
+                guard !slots.isEmpty else { throw MCPToolFailure.missing("That slot isn't one of the task's.") }
+            }
+            for slot in slots { store.removePlacement(slot) }
+            return .object(["task": snapshot.blockValue(task), "removed": .int(slots.count)])
+
+        case .updateBlock:
+            try args.requirePatch(excluding: ["block_id", "expected_updated_at"])
+            let block = try snapshot.block(args.requireUUID("block_id"))
+            try checkVersion(args, updatedAt: block.updatedAt)
+            guard !block.isTask else { throw MCPToolFailure.invalid("Use openlist_update_task for tasks.") }
+            guard block.kind != .divider, block.kind != .image else {
+                throw MCPToolFailure.invalid("Dividers and images have no text or kind to change.")
+            }
+            try snapshot.checkWritable(block)
+            let text = try args["text"].map { _ in try args.nonempty("text") }
+            if let raw = args.string("kind"), let kind = BlockKind(rawValue: raw), kind != block.kind {
+                // The list document's rules: only tasks and list items sit
+                // under a line or have lines under them.
+                if !OutlinePolicy.nests(kind), block.parentID != nil || snapshot.height(of: block) > 0 {
+                    throw MCPToolFailure.invalid("Only tasks and list items go under a line or have lines under them. Move the line or the lines under it first.")
+                }
+                if kind == .task, snapshot.isUnderCompletedTask(block) {
+                    throw MCPToolFailure.invalid("Reopen the completed task above before turning a line under it into a task.")
+                }
+                store.changeKind(block, to: kind)
+            }
+            if let text { store.setText(text, for: block) }
+            return .object(["block": snapshot.blockValue(block)])
+
+        case .trashBlock:
+            let block = try snapshot.block(args.requireUUID("block_id"))
+            try checkVersion(args, updatedAt: block.updatedAt)
+            try snapshot.checkWritable(block)
+            let trashed: MCPValue = .object(["id": .string(block.id.uuidString), "title": .string(block.displayTitle), "kind": .string(block.kindRaw)])
+            guard store.trashBlocks([block]) else {
+                throw MCPToolFailure(code: "storage_error", message: store.trashError ?? "The content could not be moved to Trash.")
+            }
+            return .object(["trashed": trashed])
         }
     }
 
@@ -247,13 +353,6 @@ final class MCPStoreAdapter {
         ]
     }
 
-    /// Planned for a day that has come, as the app's Today and its Dock badge
-    /// count a task.
-    private func isPlannedForToday(_ task: Block) -> Bool {
-        let calendar = Calendar.current
-        return task.selectedForDay.map { calendar.startOfDay(for: $0) <= calendar.startOfDay(for: .now) } ?? false
-    }
-
     private func matches(_ query: String?, in fields: [String]) -> Bool {
         guard let query, !query.isEmpty else { return true }
         return fields.contains { $0.localizedCaseInsensitiveContains(query) }
@@ -263,6 +362,15 @@ final class MCPStoreAdapter {
         if let expected = args.string("expected_updated_at"), expected != MCPDates.timestamp(updatedAt) {
             throw MCPToolFailure(code: "conflict", message: "This item changed since it was read. Read it again before deciding whether to apply the edit.")
         }
+    }
+}
+
+private extension Block {
+    /// Planned for a day that has come, as the app's Today and its Dock badge
+    /// count a task.
+    var isPlannedForToday: Bool {
+        let calendar = Calendar.current
+        return selectedForDay.map { calendar.startOfDay(for: $0) <= calendar.startOfDay(for: .now) } ?? false
     }
 }
 
@@ -276,8 +384,21 @@ private struct TaskPatch {
     let priority: TaskPriority?
     let starred: Bool?
     let labels: [TaskLabel]?
+    let changesDuration: Bool
+    /// Nil returns to the default.
+    let duration: Int?
+    let changesRepeat: Bool
+    let repeatRule: Recurrence?
+    let plannedForToday: Bool?
+    let changesDeferral: Bool
+    let deferredUntil: Date?
+    let keepTogether: Bool?
+    let trackAway: Bool?
 
-    init(args: MCPArguments, snapshot: Snapshot) throws {
+    /// Picks the task for a day, which a completed task can't be.
+    var plans: Bool { plannedForToday == true || deferredUntil != nil }
+
+    init(args: MCPArguments, snapshot: Snapshot, task: Block?) throws {
         title = try args["title"].map { _ in try args.nonempty("title") }
         note = args.string("note")
         changesDue = args["due_date"] != nil
@@ -298,6 +419,52 @@ private struct TaskPatch {
             }
             return labels
         }
+        changesDuration = args["duration_minutes"] != nil
+        duration = args.integer("duration_minutes")
+        changesRepeat = args["repeat"] != nil
+        // Null stops repeating. (MCPValue takes nil as its own null, so this doesn't map one.)
+        if let rule = args["repeat"], rule != .null {
+            repeatRule = try Self.rule(rule, replacing: task?.recurrence)
+        } else {
+            repeatRule = nil
+        }
+        plannedForToday = args.bool("planned_for_today")
+        changesDeferral = args["deferred_until"] != nil
+        deferredUntil = try args.string("deferred_until").map { text in
+            let day = try MCPDates.parseDay(text)
+            guard day >= Calendar.current.startOfDay(for: .now) else {
+                throw MCPToolFailure.invalid("deferred_until must be today or later.")
+            }
+            return day
+        }
+        if plannedForToday != nil, changesDeferral {
+            throw MCPToolFailure.invalid("Use planned_for_today or deferred_until, not both.")
+        }
+        keepTogether = args.bool("keep_together")
+        trackAway = args.bool("track_away")
+    }
+
+    /// A repeat rule from its fields, keeping the count of occurrences
+    /// already done under the rule it replaces.
+    private static func rule(_ value: MCPValue, replacing existing: Recurrence?) throws -> Recurrence {
+        let fields = value.objectValue ?? [:]
+        guard let frequency = fields["frequency"]?.stringValue.flatMap(Recurrence.Frequency.init(rawValue:)) else {
+            throw MCPToolFailure.invalid("repeat.frequency is required.")
+        }
+        var rule = Recurrence(frequency: frequency, interval: fields["interval"]?.intValue ?? 1)
+        if let weekdays = fields["weekdays"]?.arrayValue {
+            guard frequency == .weekly else { throw MCPToolFailure.invalid("repeat.weekdays applies to weekly rules only.") }
+            rule.weekdays = Set(weekdays.compactMap(\.intValue))
+        }
+        if let day = fields["day_of_month"]?.intValue {
+            guard frequency == .monthly else { throw MCPToolFailure.invalid("repeat.day_of_month applies to monthly rules only.") }
+            rule.dayOfMonth = day
+        }
+        rule.anchor = fields["anchor"]?.stringValue.flatMap(Recurrence.Anchor.init(rawValue:)) ?? .dueDate
+        rule.endDate = try fields["end_date"]?.stringValue.map { Recurrence.endDate(onDay: try MCPDates.parseDay($0)) }
+        rule.occurrenceLimit = fields["occurrence_limit"]?.intValue
+        rule.completedOccurrences = existing?.completedOccurrences ?? 0
+        return rule
     }
 
     func apply(to task: Block, store: Store) {
@@ -314,6 +481,23 @@ private struct TaskPatch {
             store.clearLabels(on: task)
             for label in labels { store.addLabel(label, to: task) }
         }
+        if changesDuration, (duration ?? 0) != task.schedulingEstimateMinutes { store.setTaskEstimate(duration ?? 0, for: task) }
+        // After the due date, which a rule repeats from.
+        if changesRepeat, repeatRule?.anchored(to: task.dueDate) != task.recurrence { store.setRecurrence(repeatRule, for: task) }
+        if let keepTogether, keepTogether != task.keepsSessionsTogether { store.setKeepTogether(keepTogether, for: task) }
+        if let trackAway, trackAway != task.tracksAwayFromMac { store.setTracksAway(trackAway, for: task) }
+        if let plannedForToday, plannedForToday != task.isPlannedForToday || plannedForToday && task.deferredUntil != nil {
+            if plannedForToday { store.selectForToday(task) } else { store.deselectForToday(task) }
+        }
+        if changesDeferral {
+            if let deferredUntil {
+                if task.deferredUntil.map({ !Calendar.current.isDate($0, inSameDayAs: deferredUntil) }) ?? true {
+                    store.deferTask(task, to: deferredUntil)
+                }
+            } else if task.deferredUntil != nil {
+                store.clearDeferral(task)
+            }
+        }
         store.scheduleReminderIfNeeded(for: task)
     }
 }
@@ -322,9 +506,14 @@ private struct Snapshot {
     let lists: [TaskList]
     let blocks: [Block]
     let labels: [TaskLabel]
+    /// Minutes a task without its own duration is planned for.
+    let defaultMinutes: Int
     private let listAliases: [UUID: UUID]
+    private let context: ModelContext
 
-    init(context: ModelContext) throws {
+    init(context: ModelContext, defaultMinutes: Int) throws {
+        self.context = context
+        self.defaultMinutes = defaultMinutes
         let records = try context.fetch(FetchDescriptor<TaskList>(sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.id)]))
         let hierarchy = ListHierarchy(records)
         lists = records.filter { hierarchy.availableIDs.contains($0.id) }
@@ -373,6 +562,54 @@ private struct Snapshot {
 
     func blocks(in listID: UUID?) -> [Block] { blocks.filter { $0.listID == listID } }
 
+    /// A line in a list that isn't archived, which can change.
+    func checkWritable(_ block: Block) throws {
+        if let listID = block.listID, try list(listID).isEffectivelyArchived {
+            throw MCPToolFailure.invalid("Restore the archived list before changing its content.")
+        }
+    }
+
+    /// Whether a completed task is above `block` in its list document.
+    func isUnderCompletedTask(_ block: Block) -> Bool {
+        BlockTree.ancestors(of: block, in: blocks(in: block.listID)).contains { $0.isTask && $0.isCompleted }
+    }
+
+    func durationMinutes(of task: Block) -> Int {
+        task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultMinutes
+    }
+
+    /// The task's slots for its current occurrence, read afresh so a write's
+    /// result shows the slots it left, earliest first.
+    func placements(of task: Block) throws -> [SchedulePlacement] {
+        let id = task.id
+        return try context.fetch(FetchDescriptor<SchedulePlacement>(predicate: #Predicate { $0.taskID == id }, sortBy: [SortDescriptor(\.start)]))
+            .filter { !$0.isDeleted && $0.occurrenceID == task.occurrenceID && $0.end > $0.start }
+    }
+
+    /// Every slot the calendar draws for planned work: open tasks' current
+    /// occurrences, in lists that aren't archived, earliest first.
+    func slots() throws -> [SchedulePlacement] {
+        let open = Dictionary(blocks.filter { task in
+            task.isTask && !task.isCompleted && task.listID.flatMap { try? list($0) }.map { !$0.isEffectivelyArchived } == true
+        }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return try context.fetch(FetchDescriptor<SchedulePlacement>(sortBy: [SortDescriptor(\.start)])).filter {
+            !$0.isDeleted && $0.end > $0.start && open[$0.taskID]?.occurrenceID == $0.occurrenceID
+        }
+    }
+
+    func slotValue(_ slot: SchedulePlacement, withTask: Bool = false) -> MCPValue {
+        var value: [String: MCPValue] = [
+            "id": .string(slot.id.uuidString), "start": .string(MCPDates.timestamp(slot.start)),
+            "end": .string(MCPDates.timestamp(slot.end)), "pinned": .bool(slot.isPinned),
+        ]
+        if withTask, let task = blocks.first(where: { $0.id == slot.taskID }) {
+            value["task_id"] = .string(task.id.uuidString)
+            value["title"] = .string(task.displayTitle)
+            value["list_id"] = task.listID.map { .string($0.uuidString) } ?? .null
+        }
+        return .object(value)
+    }
+
     /// Checks that a `kind` of line, with `height` levels of lines under it,
     /// can go under `parent` in `list`, by the list document's own rules
     /// (`OutlinePolicy`): anything at the root; under a line, only a task or
@@ -407,7 +644,7 @@ private struct Snapshot {
             "display_title": .string(list.displayTitle), "summary": .string(list.summary),
             "icon": .string(list.icon), "accent": .string(list.accentRaw),
             "is_inbox": .bool(list.isSystemInbox), "is_archived": .bool(list.isArchived),
-            "is_effectively_archived": .bool(list.isEffectivelyArchived),
+            "is_effectively_archived": .bool(list.isEffectivelyArchived), "hours": .string(list.availabilityCategoryRaw),
             "parent_list_id": list.parentListID.map { .string($0.uuidString) } ?? .null,
             "created_at": .string(MCPDates.timestamp(list.createdAt)), "updated_at": .string(MCPDates.timestamp(list.updatedAt)),
         ])
@@ -445,6 +682,12 @@ private struct Snapshot {
                 "planned_for": block.selectedForDay.map { .string(MCPDates.day($0)) } ?? .null,
                 "label_ids": .array(block.labelIDs.map { .string($0.uuidString) }),
                 "recurrence": recurrenceValue(block.recurrence),
+                "duration_minutes": .int(durationMinutes(of: block)),
+                "duration_is_default": .bool(block.schedulingEstimateMinutes == 0),
+                "deferred_until": block.deferredUntil.map { .string(MCPDates.day($0)) } ?? .null,
+                "keep_together": .bool(block.keepsSessionsTogether),
+                "track_away": .bool(block.tracksAwayFromMac),
+                "calendar_slots": .array(((try? placements(of: block)) ?? []).map { slotValue($0) }),
             ]
             value.merge(fields) { _, new in new }
         } else if block.kind == .image {

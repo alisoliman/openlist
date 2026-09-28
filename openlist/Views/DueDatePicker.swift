@@ -146,7 +146,6 @@ struct DueDatePicker: View {
                     Text("None")
                 }
             }
-            .help(none ? "No due date" : "Clear due date")
             .accessibilityLabel(none ? "No due date" : "Clear due date")
             .accessibilityAddTraits(none ? .isSelected : [])
         }
@@ -164,7 +163,6 @@ struct DueDatePicker: View {
                 Text(title)
             }
         }
-        .help("\(title) · \(detail)")
         .accessibilityValue(detail)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }

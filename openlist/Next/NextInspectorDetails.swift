@@ -22,6 +22,31 @@ struct NXInspectorHeading<Accessory: View>: View {
     }
 }
 
+/// A lower section's heading that opens and closes it, like Activity's.
+struct NXInspectorFold: View {
+    @Environment(\.nextStyle) private var style
+    let title: String
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        Button { withAnimation(style.ease(220)) { isExpanded.toggle() } } label: {
+            HStack(spacing: 6) {
+                NXCapsTitle(text: title)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(NX.ink(0.36))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+    }
+}
+
 /// A quiet action row, like the design's "Add subtask": ink 0.42, ink on hover.
 struct NXInspectorQuietAction: View {
     let icon: String
@@ -51,6 +76,66 @@ struct NXInspectorQuietAction: View {
 }
 
 // MARK: - Planning
+
+/// A task's duration, typed as it's said: "45", "1h30", "1.5 hours". A click
+/// opens it for typing, all of it selected; Return or leaving the field sets
+/// it, and Esc, or text that isn't a duration, puts back what it was. The
+/// field is there only while typed in, so focus never wanders into it.
+struct NXDurationField: View {
+    @Environment(\.nextStyle) private var style
+    let minutes: Int
+    let onCommit: (Int) -> Void
+    /// What's being typed; nil shows the duration.
+    @State private var draft: String?
+    @FocusState private var focused: Bool
+
+    private var shown: String { DurationText.text(for: minutes) }
+
+    var body: some View {
+        Group {
+            if draft != nil {
+                TextField("Duration", text: Binding(get: { draft ?? "" }, set: { draft = $0 }))
+                    .textFieldStyle(.plain)
+                    .focused($focused)
+                    .onSubmit {
+                        if !commit() { NSSound.beep() }
+                    }
+                    .onExitCommand { draft = nil }
+                    .onChange(of: focused) { _, now in
+                        if !now, !commit() { draft = nil }
+                    }
+                    // Once it's on screen, or the focus can miss it.
+                    .onAppear { DispatchQueue.main.async { focused = true } }
+            } else {
+                Button { draft = shown } label: {
+                    Text(shown).frame(maxWidth: .infinity).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .monospacedDigit()
+        .multilineTextAlignment(.center)
+        .foregroundStyle(NX.ink)
+        .frame(width: 76)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 7)
+        .background(NX.ink(draft != nil ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .strokeBorder(draft != nil ? style.accent.opacity(0.6) : .clear, lineWidth: 1))
+        .accessibilityLabel("Duration")
+        .accessibilityValue(shown)
+    }
+
+    /// Sets what's typed, when it's a duration, and shows it.
+    private func commit() -> Bool {
+        guard let draft else { return true }
+        guard let typed = DurationText.minutes(from: draft) else { return false }
+        if typed != minutes { onCommit(typed) }
+        self.draft = nil
+        return true
+    }
+}
 
 /// Calendar planning beyond the day toggle and estimate: deferral, how
 /// sessions run and what has been recorded.
@@ -93,30 +178,34 @@ struct NXInspectorPlanOptions: View {
         let calendar = env.calendar
         let estimate = Int(calendar.estimatedMinutes(for: task))
         let personal = library.list(task.listID)?.availabilityCategoryRaw == "personal"
+        let suggestion = env.store.suggestedDuration(for: task).flatMap { $0.minutes != estimate ? $0 : nil }
+        let ownEstimate = task.schedulingEstimateMinutes != 0
         return VStack(alignment: .leading, spacing: 9) {
-            if let suggestion = env.store.suggestedDuration(for: task), suggestion.minutes != estimate {
-                hint(suggestion.description, action: "Use \(suggestion.minutes) min") {
-                    env.store.setTaskEstimate(suggestion.minutes, for: task)
+            if suggestion != nil || ownEstimate {
+                HStack(spacing: 6) {
+                    if let suggestion {
+                        Button("Use \(DurationText.text(for: suggestion.minutes))") { env.store.setTaskEstimate(suggestion.minutes, for: task) }
+                            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+                            .accessibilityHint(suggestion.description)
+                    }
+                    if ownEstimate {
+                        Button("Reset to \(DurationText.text(for: Int(calendar.preferences.defaultEstimateMinutes)))") {
+                            env.store.setTaskEstimate(0, for: task)
+                        }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+                    }
                 }
+                .padding(.leading, -5)
             }
-            if task.schedulingEstimateMinutes != 0 {
-                hint("This task has its own estimate.",
-                     action: "Use default (\(Int(calendar.preferences.defaultEstimateMinutes)) min)") {
-                    env.store.setTaskEstimate(0, for: task)
-                }
-            }
-            toggle("Keep task together", isOn: task.keepsSessionsTogether) {
+            toggle("Keep together", isOn: task.keepsSessionsTogether) {
                 env.store.setKeepTogether(!task.keepsSessionsTogether, for: task)
             }
-            .help("Plan the remaining work as one block instead of splitting it")
-            toggle("Track work away from this Mac", isOn: task.tracksAwayFromMac) {
+            toggle("Track away from this Mac", isOn: task.tracksAwayFromMac) {
                 env.store.setTracksAway(!task.tracksAwayFromMac, for: task)
             }
-            .help(task.tracksAwayFromMac ? "Tracking continues through lock or sleep."
-                  : "Locking or sleeping pauses active work.")
             HStack(spacing: 6) {
                 Image(systemName: personal ? "house" : "briefcase").font(.system(size: 10.5))
-                Text("\(personal ? "Personal" : "Work") hours, from this task’s list")
+                Text(personal ? "Personal hours" : "Work hours")
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(NX.ink(0.45))
@@ -127,7 +216,7 @@ struct NXInspectorPlanOptions: View {
                         .padding(.leading, -5)
                 }
                 Spacer(minLength: 6)
-                Text("\(Int(calendar.trackedMinutes(for: task).rounded())) min recorded")
+                Text("\(DurationText.text(for: Int(calendar.trackedMinutes(for: task).rounded()))) recorded")
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(NX.ink(0.45))
@@ -138,18 +227,6 @@ struct NXInspectorPlanOptions: View {
         }
         .padding(.top, 9)
         .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
-    }
-
-    private func hint(_ text: String, action title: String, perform: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(NX.ink(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-            Button(title, action: perform)
-                .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
-                .padding(.leading, -5)
-        }
     }
 
     private func toggle(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -220,7 +297,6 @@ struct NXInspectorSubtasks: View {
                 NXInspectorSubtaskRow(row: row)
             }
             NXInspectorQuietAction(icon: "plus", title: "Add subtask", fills: true) { workbench.addSubtask(to: task.id) }
-                .help("Add a subtask in the list")
         }
     }
 
@@ -334,7 +410,6 @@ struct NXInspectorParentCrumb: View {
         .buttonStyle(.plain)
         // Its hover shows at once, as the design's style-hover.
         .onHover { hovering = $0 }
-        .help("Show “\(parent.displayTitle)”")
         .accessibilityLabel("Subtask of \(parent.displayTitle)")
         // The design's -4 above and -8 below, so it sits close over the title.
         .padding(.top, -4)
@@ -364,7 +439,6 @@ struct NXInspectorFiles: View {
                 }
                 if attachments.isEmpty {
                     NXInspectorQuietAction(icon: "paperclip", title: "Attach a file") { files.choose(for: task) }
-                        .help("Attach files, or drop them on the panel")
                 }
             }
             // The icons line up with the panel's edge.
@@ -382,7 +456,6 @@ struct NXInspectorFiles: View {
                     }
                     .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                     .padding(.trailing, -5)
-                    .help("Attach files, or drop them on the panel")
                     .accessibilityLabel("Attach files to task")
                 }
                 ForEach(attachments) { attachment in
@@ -455,7 +528,6 @@ struct NXInspectorHistory: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             NXDisclosureButton("Full history", isExpanded: $expanded)
-                .help("Newest first. Clearing activity history in Settings › Data also clears this.")
             // Queried only when open, so a closed disclosure fetches no history.
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {

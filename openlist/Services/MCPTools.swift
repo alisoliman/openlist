@@ -16,10 +16,15 @@ enum OpenlistMCPTool: String, CaseIterable {
     case moveTask = "openlist_move_task"
     case appendBlock = "openlist_append_block"
     case createLabel = "openlist_create_label"
+    case listCalendar = "openlist_list_calendar"
+    case scheduleTask = "openlist_schedule_task"
+    case unscheduleTask = "openlist_unschedule_task"
+    case updateBlock = "openlist_update_block"
+    case trashBlock = "openlist_trash_block"
 
     var isReadOnly: Bool {
         switch self {
-        case .listLists, .getList, .listTasks, .getTask, .listLabels: true
+        case .listLists, .getList, .listTasks, .getTask, .listLabels, .listCalendar: true
         default: false
         }
     }
@@ -32,6 +37,7 @@ enum OpenlistMCPTool: String, CaseIterable {
         let title = MCPField.text("Literal title; dates and #labels are not parsed.", min: 1, max: 1_000)
         let listID = MCPField.uuid("List ID returned by openlist_list_lists.")
         let taskID = MCPField.uuid("Task ID returned by a read tool.")
+        let blockID = MCPField.uuid("Block ID returned by openlist_get_list or openlist_get_task.")
         let parentID = MCPField.uuid("Optional parent task or list item in the destination list, as the list document nests lines: two levels deep at most. Null means the document root.", nullable: true)
         let note = MCPField.text("Plain-text task note. An empty string clears it.", max: 100_000)
         let labelIDs = MCPField.array(MCPField.uuid("An existing label ID."), max: 100)
@@ -44,6 +50,14 @@ enum OpenlistMCPTool: String, CaseIterable {
             "priority": MCPField.integer("0 = none, 1 = low, 2 = medium, 3 = high.", min: 0, max: 3),
             "starred": MCPField.boolean("Whether the task is starred."),
             "label_ids": labelIDs,
+            "duration_minutes": MCPField.integer("How long the task takes, which the calendar plans for. Null returns to the default in Settings > Calendar.",
+                                                 min: 1, max: 40_320, nullable: true),
+            "repeat": MCPField.repeatRule,
+            "planned_for_today": MCPField.boolean("Pick the task for today, as the app's Plan for today does, or unpick it. Unpicking also ends a deferral."),
+            "deferred_until": MCPField.text("YYYY-MM-DD, today or later: the task's work waits for that day, which picks it for then, and its calendar slots come off. Null ends the deferral. Not with planned_for_today.",
+                                            max: 10, nullable: true),
+            "keep_together": MCPField.boolean("Plan the remaining work as one uninterrupted session instead of splitting it."),
+            "track_away": MCPField.boolean("Keep recording work while the Mac is locked or asleep."),
         ]
         let properties: [String: MCPValue]
         let required: [String]
@@ -92,6 +106,7 @@ enum OpenlistMCPTool: String, CaseIterable {
                 "list_id": listID, "title": title, "expected_updated_at": expected,
                 "summary": MCPField.text("List description. Empty clears it.", max: 100_000),
                 "is_archived": MCPField.boolean("Archive or restore the list. Archiving hides its tasks from active views and cancels their reminders without deleting content."),
+                "hours": MCPField.choice(["work", "personal"], "Which hours in Settings > Calendar the list's tasks are planned in."),
             ]
             required = ["list_id"]
             description = "Rename a list, change its summary, or archive/restore it. Supply at least one changed field. The Inbox cannot be renamed or archived. No permanent deletion."
@@ -129,6 +144,41 @@ enum OpenlistMCPTool: String, CaseIterable {
             properties = ["name": MCPField.text("Label name, optionally prefixed with #.", min: 1, max: 80)]
             required = ["name"]
             description = "Find or create a label by name (case-insensitive). Returns its ID for label_ids. Does not attach it to a task."
+        case .listCalendar:
+            properties = [
+                "start_date": MCPField.text("First day, YYYY-MM-DD in the Mac's time zone. Default today.", max: 10),
+                "days": MCPField.integer("How many days from start_date. Default 7.", min: 1, max: 31),
+            ]
+            required = []
+            description = "Read the calendar as the app draws it: each task's planned slots and, while Openlist runs, the busy times of the Mac's calendars. Use it to find free time before openlist_schedule_task."
+        case .scheduleTask:
+            properties = [
+                "task_id": taskID, "expected_updated_at": expected,
+                "start": MCPField.text("RFC 3339 timestamp with a time zone, not in the past. Omit to take the next free slot around busy times and other planned work, inside the list's hours, this week or next.", max: 40),
+                "duration_minutes": MCPField.integer("The slot's length. Default the task's duration.", min: 5, max: 1_440),
+            ]
+            required = ["task_id"]
+            description = "Put an open task on the calendar at start, or in the next free slot, as the app's Plan does. Replaces the task's other slots. Its due date and whether it's picked for today stay as they are."
+        case .unscheduleTask:
+            properties = [
+                "task_id": taskID, "expected_updated_at": expected,
+                "slot_id": MCPField.uuid("One slot from calendar_slots to take off. Omit to take off every slot."),
+            ]
+            required = ["task_id"]
+            description = "Take a task's planned slots off the calendar. The task, its due date and whether it's picked for today stay as they are."
+        case .updateBlock:
+            properties = [
+                "block_id": blockID, "expected_updated_at": expected,
+                "text": MCPField.text("The line's new literal text.", min: 1, max: 100_000),
+                "kind": MCPField.choice(["paragraph", "heading1", "heading2", "heading3", "bullet", "numbered", "quote", "code", "task"],
+                                        "Turn the line into another kind. Headings, paragraphs, quotes and code stay at the document root with nothing under them; task turns the line into an open task."),
+            ]
+            required = ["block_id"]
+            description = "Edit a document line that isn't a task: its text or its kind. Use openlist_update_task for tasks."
+        case .trashBlock:
+            properties = ["block_id": blockID, "expected_updated_at": expected]
+            required = ["block_id"]
+            description = "Move a task or document line, with everything under it, to Trash. It can be restored from Trash in the app; nothing is erased."
         }
 
         let additive = [.createList, .createTask, .appendBlock, .createLabel].contains(self)
@@ -176,9 +226,30 @@ private enum MCPField {
         .object(["type": "boolean", "description": .string(description)])
     }
 
-    static func integer(_ description: String, min: Int, max: Int) -> MCPValue {
-        .object(["type": "integer", "description": .string(description), "minimum": .int(min), "maximum": .int(max)])
+    static func integer(_ description: String, min: Int, max: Int, nullable: Bool = false) -> MCPValue {
+        .object(["type": nullable ? ["integer", "null"] : "integer", "description": .string(description),
+                 "minimum": .int(min), "maximum": .int(max)])
     }
+
+    /// A repeat rule as openlist_get_task returns it, or null to stop repeating.
+    static let repeatRule: MCPValue = .object([
+        "type": ["object", "null"],
+        "description": "Repeat rule, as openlist_get_task returns it; null stops repeating. A task without a due date gets today's.",
+        "properties": .object([
+            "frequency": choice(["daily", "weekly", "monthly", "yearly"], "How often it repeats."),
+            "interval": integer("Every how many days, weeks, months or years. Default 1.", min: 1, max: 365),
+            "weekdays": .object([
+                "type": "array", "description": "Weekly rules only: the days it falls on, 1 = Sunday … 7 = Saturday. Default the due date's weekday.",
+                "items": integer("A weekday, 1 = Sunday … 7 = Saturday.", min: 1, max: 7), "maxItems": 7, "uniqueItems": true,
+            ]),
+            "day_of_month": integer("Monthly rules only. Default the due date's day.", min: 1, max: 31),
+            "anchor": choice(["dueDate", "completionDate"], "dueDate repeats on schedule; completionDate counts from when it's done. Default dueDate."),
+            "end_date": text("YYYY-MM-DD: the last day it repeats.", max: 10),
+            "occurrence_limit": integer("Stop after this many occurrences.", min: 1, max: 10_000),
+        ]),
+        "required": ["frequency"],
+        "additionalProperties": false,
+    ])
 
     static func choice(_ values: [String], _ description: String) -> MCPValue {
         .object(["type": "string", "description": .string(description), "enum": .array(values.map(MCPValue.string))])
@@ -340,6 +411,13 @@ enum MCPDates {
             throw MCPToolFailure.invalid("The timestamp is not a valid calendar date.")
         }
         return (date, true)
+    }
+
+    /// A YYYY-MM-DD day, never a timestamp.
+    static func parseDay(_ text: String) throws -> Date {
+        let parsed = try parse(text)
+        guard !parsed.includesTime else { throw MCPToolFailure.invalid("Use a YYYY-MM-DD date.") }
+        return parsed.date
     }
 
     private static var dayFormatter: DateFormatter {

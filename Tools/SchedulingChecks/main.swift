@@ -321,7 +321,7 @@ check(!placedNow.contains(task(1).taskID), "A slot missed before the Week view's
 check(placedNow.contains(task(2).taskID) && placedNow.contains(task(3).taskID), "Yesterday's carried-forward slot and a later one still count as placed")
 check(!placedNow.contains(task(4).taskID) && placedNow.contains(task(5).taskID), "A done block doesn't count, running work does")
 
-// The inspector's "In the calendar …" names a block the grid draws, as the
+// The inspector's slot line names a block the grid draws, as the
 // design reads any placement, past or done: the running or next one, else the
 // latest still placed, else where the task was done.
 @MainActor

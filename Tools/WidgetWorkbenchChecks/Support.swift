@@ -33,6 +33,7 @@ final class MCPIntegration {
         var title: String { rawValue }
     }
     private(set) var status = Status.off
+    var calendar: (any MCPCalendarAccess)?
     init(store: Store, settings: AppSettings) {}
     var url: String { "" }
     var isRunning: Bool { false }

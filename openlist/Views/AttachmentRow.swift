@@ -46,13 +46,11 @@ struct AttachmentRow: View {
             Button("Open attachment", systemImage: "arrow.up.forward.square", action: openAttachment)
                 .labelStyle(.iconOnly)
                 .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
-                .help("Open \(attachment.displayName)")
 
             Button("Remove attachment", systemImage: "trash", action: onDelete)
                 .labelStyle(.iconOnly)
                 .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
                 .accessibilityLabel("Remove attachment \(attachment.displayName)")
-                .help("Remove \(attachment.displayName)")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)

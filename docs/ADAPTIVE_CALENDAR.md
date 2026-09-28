@@ -26,9 +26,10 @@ before: a date without a time permits work through the end of that local day; a
 date with a time is an exact cutoff. Existing starred work remains in Today but
 starring alone does not automatically put it on the calendar.
 
-The default estimate is **30 minutes**. Edit a task’s estimate in its inspector,
-or change the inherited default in **Settings > Calendar**. **Use default**
-removes an individual override. An estimate is the expected total active time for
+The default estimate is **30 minutes**. Edit a task’s **Duration** in its
+inspector, typed as `45`, `45m`, `1h30`, `1.5 hours` or `1:15` or stepped by five
+minutes with **−** and **+**, or change the inherited default in **Settings >
+Calendar**. **Reset to …** under **More options** removes an individual override. An estimate is the expected total active time for
 the current occurrence, so previously recorded work reduces its remaining time.
 
 That plan first considers deadlines at risk, then work selected for today,
@@ -36,7 +37,7 @@ then other upcoming deadlines. Earlier deadlines and task priority break ties;
 priority orders tasks selected for today. Flexible work uses available slots,
 with overflow moving into later days. Work can split into sessions with a
 configurable **25-minute** minimum by default. Short tasks can use shorter slots.
-Turn on **Keep task together** to require one uninterrupted session for the
+Turn on **Keep together** to require one uninterrupted session for the
 remaining work.
 
 ## Available hours and meetings
@@ -118,7 +119,7 @@ Undo takes a deferral back, placements included; **Clear** ends one, keeping the
 task selected for today once its day has come.
 
 Lock, screen sleep, system sleep, and inactive user-session notifications pause
-active work and offer **Resume** on return. **Track work away from this Mac** is
+active work and offer **Resume** on return. **Track away from this Mac** is
 a per-task exception: elapsed work can continue while locked or asleep, up to the
 next meeting, break, pinned time, or the end of available hours, where it pauses
 as if the Mac had been left then. Leaving the Mac outside those hours or during
@@ -140,8 +141,17 @@ overlap), and the move is pinned the same way, one change with Undo in the tray.
 None of these changes the task’s due date or picks it for today, so a placed task
 shows in Today only when it is due by today, picked for today or starred.
 
+Drag and drop does the same on the grid. Drag a block to another time or day and
+it moves there, as long as it is, as **Move planned time…** moves it; drag a task
+from **Not planned yet** onto a day and it’s placed there for its estimate, as
+**Plan** places it. A dashed outline shows the start and end the drop would take,
+snapped to the quarter hour where the block was held. A time already past shows
+red and takes nothing. Drop a block on **Not planned yet** to take that slot off
+the calendar. Running work and done blocks stay where they are. Each drop is one
+change with Undo in the tray.
+
 Pins can conflict with meetings, other pins, active work, availability, breaks,
-deadlines, or the **Keep task together** choice. A conflicting pin does not count
+deadlines, or the **Keep together** choice. A conflicting pin does not count
 as safe deadline coverage, which the planner rates without showing. A missed pin
 stays on the calendar as **carried forward**, and the task’s details show where
 the calendar has it, while the rolling plan replans the unfinished work: the slot
@@ -210,7 +220,7 @@ Suggestions use recorded active work from similar **completed** tasks: earlier
 occurrences of the same task or titles sharing substantial words. Up to 20 matching
 completed occurrences contribute to a median rounded to five minutes. Planned
 estimates and unfinished work are not training examples. **More options** in task
-details explains its sample count and offers **Use … min**. Suggestions never
+details offers **Use …**, whose VoiceOver hint gives its sample count. Suggestions never
 change estimates without that approval.
 
 ## Local storage and iCloud

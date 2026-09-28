@@ -115,7 +115,6 @@ private struct NXLabelSettingsRow: View {
 
             if hasDuplicates {
                 Button("Merge duplicates") { requestMerge(label.name) }
-                    .help("Choose a matching label to keep")
             }
 
             Button {
@@ -129,7 +128,6 @@ private struct NXLabelSettingsRow: View {
                                             padding: EdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5),
                                             foreground: NX.ink(0.4), hoverForeground: NX.redText))
             .accessibilityLabel("Delete label \(label.name)")
-            .help("Delete label \(label.name)")
         }
         .onAppear {
             nameDraft.reset(to: label.name)
@@ -182,7 +180,6 @@ private struct NXLabelSwatch: View {
         .accessibilityValue(label.accent.title)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { choose() }
-        .help("Change colour for \(label.name)")
     }
 
     private func choose() {

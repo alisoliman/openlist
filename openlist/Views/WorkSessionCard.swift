@@ -86,7 +86,7 @@ struct WorkSessionCard: View {
                             caption("\(minutes(env.calendar.recordedMinutes(for: previous))) recorded in the last session")
                         }
                         if let plan {
-                            // The Calendar's 24-hour times, as the inspector's "In the calendar today, 10:00–11:30".
+                            // The Calendar's 24-hour times, as the inspector's slot line, "Today 10:00–11:30".
                             detail("\(NXFormat.moment(plan.start, now: context.date))–\(NXFormat.clock(plan.end)) · \(Int(plan.durationMinutes)) min",
                                    icon: "calendar")
                         } else {

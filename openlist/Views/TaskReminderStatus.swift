@@ -53,8 +53,6 @@ struct TaskReminderStatus: View {
                         let title = accepted ? date.map { NXFormat.reminds(at: $0, atDueTime: block.reminderAt == nil) } : nil
                         Self.line(title ?? recovery.title(for: status), icon: Self.symbol(for: status))
                             .accessibilityValue(date.map { Store.absoluteDateText($0, includesTime: true) } ?? "")
-                            .help(accepted ? "How it shows depends on Focus and your notification settings."
-                                : date.map { NXFormat.dueAndClock($0) } ?? "Reminder status")
                         if case .failed(let message) = status { Text(message).textSelection(.enabled) }
                         if let error = recovery.authorizationError { Text(error) }
                         ReminderRecoveryActions(taskID: block.id, status: status)

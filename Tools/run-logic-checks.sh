@@ -7,13 +7,15 @@ cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
-# 1. Date parsing, recurrence, the change log's writes and saved changes — Foundation only.
+# 1. Date and duration parsing, note Markdown, recurrence, the change log's writes and saved changes — Foundation only.
 xcrun swiftc \
     -swift-version 6 -O \
     -o "$OUT/logic-checks" \
     openlist/Model/Recurrence.swift \
     openlist/Services/RegexCache.swift \
     openlist/Services/DateParser.swift \
+    openlist/Services/DurationText.swift \
+    openlist/Services/NoteMarkdown.swift \
     openlist/Services/RecurrenceEngine.swift \
     openlist/Next/NextLogWrites.swift \
     openlist/Next/NextSavedChanges.swift \

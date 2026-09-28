@@ -48,6 +48,7 @@ struct NXInspectorText: NSViewRepresentable {
         view.onFocus = onFocus
         view.onSwitch = onSwitch
         if view.insertionPointColor != caretColor { view.insertionPointColor = caretColor }
+        if view.accent !== caretColor { view.accent = caretColor }
         if view.isDone != done { view.isDone = done }
         // Set from outside: another task's, a commit's trim, or Undo.
         if view.string != text { view.show(text) }
@@ -108,8 +109,9 @@ final class NXInspectorFields {
 }
 
 /// The text view behind `NXInspectorText`. The note keeps the list
-/// document's note keys: Return breaks the line; Esc, Tab and ⌘Return
-/// finish it; ⇧Tab goes back to the title. The title stays one line, as
+/// document's note keys: Return breaks the line, or goes on to a list's next
+/// item; Esc, Tab and ⌘Return finish it; ⇧Tab goes back to the title. It's
+/// written in Markdown, drawn as it reads: see `styleMarkdown`. The title stays one line, as
 /// the design's line input does: Return, Esc and ⇧Tab finish it, Tab goes
 /// on to the note when one shows, and a paste's or a drop's line breaks
 /// become spaces. At rest either shows its text alone, as the design's
@@ -118,6 +120,10 @@ final class NXInspectorTextView: NSTextView {
     private(set) var role: NXInspectorText.Role = .note
     var isDone = false {
         didSet { if isDone != oldValue { restyle(); needsDisplay = true } }
+    }
+    /// The note's links, in the caret's accent.
+    var accent: NSColor = .controlAccentColor {
+        didSet { if accent !== oldValue { restyle() } }
     }
     var onFocus: ((Bool) -> Void)?
     var onSwitch: (() -> Void)?
@@ -131,6 +137,13 @@ final class NXInspectorTextView: NSTextView {
     private var checksSpelling = false
     /// Where its typing goes, still known once it has left the window.
     private weak var typingUndo: UndoManager?
+    /// Leaves the note's Markdown syntax out of the text drawn at rest.
+    private let hider = NXSyntaxHider()
+    /// What the note was last styled from, so an unchanged note isn't styled again.
+    private var styledKey: (text: String, hides: Bool, accent: NSColor)?
+    /// The character a click that's giving the note the keyboard landed on,
+    /// read before its syntax shows and moves the text under the pointer.
+    private var clickedIndex: Int?
 
     static let titleFont = NSFont.systemFont(ofSize: 18, weight: .semibold)
     static let noteFont = NSFont.systemFont(ofSize: 13)
@@ -182,6 +195,7 @@ final class NXInspectorTextView: NSTextView {
         layout.addTextContainer(container)
         storage.addLayoutManager(layout)
         let view = NXInspectorTextView(frame: .zero, textContainer: container)
+        layout.delegate = view.hider
         view.role = role
         view.isRichText = false
         view.importsGraphics = false
@@ -219,6 +233,8 @@ final class NXInspectorTextView: NSTextView {
         undoManager?.removeAllActions(withTarget: storage)
         let selection = selectedRange()
         storage.setAttributedString(NSAttributedString(string: text, attributes: attributes))
+        styledKey = nil
+        restyle()
         let location = min(selection.location, storage.length)
         setSelectedRange(NSRange(location: location, length: min(selection.length, storage.length - location)))
         invalidateIntrinsicContentSize()
@@ -231,6 +247,7 @@ final class NXInspectorTextView: NSTextView {
     func restyle() {
         let attributes = self.attributes
         typingAttributes = attributes
+        if role == .note { return styleMarkdown() }
         guard !hasMarkedText(), let storage = textStorage, storage.length > 0 else { return }
         let whole = NSRange(location: 0, length: storage.length)
         let color = attributes[.foregroundColor] as? NSColor
@@ -248,6 +265,77 @@ final class NXInspectorTextView: NSTextView {
         storage.endEditing()
     }
 
+    // Shared instances, as above.
+    private static let syntaxInk = NXEditor.ink.withAlphaComponent(0.3)
+    private static let quoteInk = NXEditor.ink.withAlphaComponent(0.5)
+    private static let codeFill = NXEditor.ink.withAlphaComponent(0.06)
+    private static let codeFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    private static let headingFonts = [16, 14.5, 13].map { NSFont.systemFont(ofSize: $0, weight: .semibold) }
+
+    /// The note's Markdown as it reads: headings, bold, italic, struck and
+    /// code text, links, hanging list items, quotes and ticked items, with
+    /// their syntax faint while it's written and left out at rest. Only the
+    /// look changes; the note stays the text typed.
+    private func styleMarkdown() {
+        guard !hasMarkedText(), let storage = textStorage else { return }
+        let hides = !isWriting
+        let key = (text: storage.string, hides: hides, accent: accent)
+        if let styledKey, styledKey.text == key.text, styledKey.hides == hides, styledKey.accent === accent { return }
+        let hidingChanged = styledKey?.hides != hides
+        styledKey = key
+        let whole = NSRange(location: 0, length: storage.length)
+        guard whole.length > 0 else { return }
+        storage.beginEditing()
+        storage.setAttributes(Self.noteAttributes, range: whole)
+        for span in NoteMarkdown.spans(in: storage.string) where span.range.length > 0 && NSMaxRange(span.range) <= whole.length {
+            style(span, in: storage, hides: hides)
+        }
+        storage.endEditing()
+        // The syntax comes and goes with the glyphs, which the attributes alone don't redo.
+        if hidingChanged { layoutManager?.invalidateGlyphs(forCharacterRange: whole, changeInLength: 0, actualCharacterRange: nil) }
+        invalidateIntrinsicContentSize()
+        needsDisplay = true
+    }
+
+    private func style(_ span: NoteMarkdown.Span, in storage: NSTextStorage, hides: Bool) {
+        let range = span.range
+        switch span.kind {
+        case let .heading(level):
+            storage.addAttributes([.font: Self.headingFonts[min(max(level, 1), 3) - 1], .foregroundColor: NXEditor.ink], range: range)
+        case .bold:
+            convertFonts(in: storage, range: range, to: .boldFontMask)
+        case .italic:
+            convertFonts(in: storage, range: range, to: .italicFontMask)
+        case .strike, .done:
+            storage.addAttributes([.strikethroughStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: Self.doneInk], range: range)
+        case .code, .codeBlock:
+            storage.addAttributes([.font: Self.codeFont, .backgroundColor: Self.codeFill], range: range)
+        case .link, .url:
+            storage.addAttributes([.foregroundColor: accent, .underlineStyle: NSUnderlineStyle.single.rawValue], range: range)
+        case let .listItem(indent):
+            // Wrapped lines hang past the bullet.
+            let bullet = (storage.string as NSString).substring(with: NSRange(location: range.location, length: min(indent, range.length)))
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineSpacing = Self.noteLeading
+            paragraph.headIndent = ceil((bullet as NSString).size(withAttributes: [.font: Self.noteFont]).width)
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: range)
+        case .quote:
+            storage.addAttribute(.foregroundColor, value: Self.quoteInk, range: range)
+        case .bullet:
+            storage.addAttribute(.foregroundColor, value: Self.syntaxInk, range: range)
+        case .marker:
+            storage.addAttribute(.foregroundColor, value: Self.syntaxInk, range: range)
+            if hides { storage.addAttribute(.nxHiddenSyntax, value: true, range: range) }
+        }
+    }
+
+    private func convertFonts(in storage: NSTextStorage, range: NSRange, to trait: NSFontTraitMask) {
+        storage.enumerateAttribute(.font, in: range) { value, run, _ in
+            guard let font = value as? NSFont else { return }
+            storage.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: trait), range: run)
+        }
+    }
+
     func height(fittingWidth width: CGFloat) -> CGFloat {
         let font = role == .title ? Self.titleFont : Self.noteFont
         guard let container = textContainer, let layout = layoutManager else { return Self.lineBox(role) }
@@ -261,8 +349,17 @@ final class NXInspectorTextView: NSTextView {
     // MARK: Keyboard
 
     override func becomeFirstResponder() -> Bool {
-        guard super.becomeFirstResponder() else { return false }
+        if role == .note, !isWriting, let event = NSApp.currentEvent, event.type == .leftMouseDown, event.window === window {
+            let point = convert(event.locationInWindow, from: nil)
+            clickedIndex = bounds.contains(point) ? characterIndexForInsertion(at: point) : nil
+        }
+        guard super.becomeFirstResponder() else {
+            clickedIndex = nil
+            return false
+        }
         isWriting = true
+        // The Markdown's syntax shows while it's written.
+        if role == .note { styleMarkdown() }
         isContinuousSpellCheckingEnabled = checksSpelling
         typingUndo = undoManager
         updateDragTypeRegistration()
@@ -276,6 +373,7 @@ final class NXInspectorTextView: NSTextView {
         // As a blurred input shows no selection. An overlay that borrows the
         // keyboard noted it first, and puts it back when it closes.
         setSelectedRange(NSRange(location: NSMaxRange(selectedRange()), length: 0))
+        if role == .note { styleMarkdown() }
         stopCheckingSpelling()
         updateDragTypeRegistration()
         dropTyping()
@@ -329,6 +427,16 @@ final class NXInspectorTextView: NSTextView {
         }
     }
 
+    /// A click that gave the note the keyboard puts the caret on the
+    /// character it was on as the note read at rest.
+    override func mouseDown(with event: NSEvent) {
+        let clicked = clickedIndex
+        clickedIndex = nil
+        super.mouseDown(with: event)
+        guard let clicked, clicked != NSNotFound, selectedRange().length == 0 else { return }
+        setSelectedRange(NSRange(location: min(clicked, (string as NSString).length), length: 0))
+    }
+
     override func doCommand(by selector: Selector) {
         if !handle(selector) { super.doCommand(by: selector) }
     }
@@ -347,9 +455,10 @@ final class NXInspectorTextView: NSTextView {
         case #selector(insertBacktab(_:)):
             if role == .note, let onSwitch { onSwitch() } else { finish() }
         // Every line break finishes the title, as Return submits an input.
+        // In the note, Return goes on to a list's next item.
         case #selector(insertNewline(_:)), #selector(insertNewlineIgnoringFieldEditor(_:)),
              #selector(insertLineBreak(_:)), #selector(insertParagraphSeparator(_:)):
-            guard role == .title else { return false }
+            guard role == .title else { return selector == #selector(insertNewline(_:)) && continueList() }
             finish()
         default:
             return false
@@ -381,6 +490,30 @@ final class NXInspectorTextView: NSTextView {
     }
 
     private func finish() { window?.makeFirstResponder(nil) }
+
+    /// Return on a list item starts the next, with the same bullet, the
+    /// number after or an open box; on an empty one it takes the bullet off,
+    /// ending the list. Anywhere else it's an ordinary line break.
+    private func continueList() -> Bool {
+        let text = string as NSString
+        let caret = selectedRange()
+        guard caret.length == 0, !hasMarkedText(), caret.location <= text.length else { return false }
+        let line = text.lineRange(for: NSRange(location: caret.location, length: 0))
+        var end = NSMaxRange(line)
+        if end > line.location, text.character(at: end - 1) == 10 { end -= 1 }
+        switch NoteMarkdown.continuation(of: text.substring(with: NSRange(location: line.location, length: end - line.location))) {
+        case let .next(bullet)?:
+            insertText("\n" + bullet, replacementRange: caret)
+        case let .end(length)?:
+            let bullet = NSRange(location: line.location, length: length)
+            guard shouldChangeText(in: bullet, replacementString: "") else { return true }
+            textStorage?.replaceCharacters(in: bullet, with: "")
+            didChangeText()
+        case nil:
+            return false
+        }
+        return true
+    }
 
     // MARK: One-line title
 
@@ -432,5 +565,32 @@ final class NXInspectorTextView: NSTextView {
             .draw(in: NSRect(origin: textContainerOrigin, size: NSSize(
                 width: bounds.width, height: bounds.height - textContainerInset.height * 2
             )))
+    }
+}
+
+extension NSAttributedString.Key {
+    /// Markdown syntax the note leaves out while it isn't being written.
+    nonisolated static let nxHiddenSyntax = NSAttributedString.Key("openlist.hiddenSyntax")
+}
+
+/// Draws no glyphs for the note's hidden syntax, so the text at rest reads
+/// as its Markdown renders while the characters stay where they are.
+nonisolated final class NXSyntaxHider: NSObject, NSLayoutManagerDelegate {
+    func layoutManager(_ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+                       properties: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>,
+                       font: NSFont, forGlyphRange glyphRange: NSRange) -> Int {
+        guard let storage = layoutManager.textStorage, glyphRange.length > 0 else { return 0 }
+        var hidden: [NSLayoutManager.GlyphProperty]?
+        for index in 0..<glyphRange.length {
+            let character = characterIndexes[index]
+            guard character < storage.length, storage.attribute(.nxHiddenSyntax, at: character, effectiveRange: nil) != nil else { continue }
+            if hidden == nil { hidden = Array(UnsafeBufferPointer(start: properties, count: glyphRange.length)) }
+            hidden?[index] = .null
+        }
+        guard let hidden else { return 0 }
+        hidden.withUnsafeBufferPointer { buffer in
+            layoutManager.setGlyphs(glyphs, properties: buffer.baseAddress!, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
+        }
+        return glyphRange.length
     }
 }

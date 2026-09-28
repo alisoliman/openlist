@@ -227,7 +227,6 @@ struct NextListScreen: View {
                                                         foreground: NX.ink(0.55), hoverForeground: NX.ink))
                         .font(.system(size: 12, weight: .medium))
                         .fixedSize()
-                        .help("Return this list to the sidebar and active tasks")
                 }
                 NXListOptions(list: list) { describing = true }
             }
@@ -358,7 +357,6 @@ private struct NXListOptions: View {
                                         foreground: NX.ink(0.45), hoverForeground: NX.ink))
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("List options")
         .accessibilityLabel("List options")
         .popover(isPresented: $appearanceOpen, arrowEdge: .bottom) {
             ListAppearancePicker(list: list).environment(env)

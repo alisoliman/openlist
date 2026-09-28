@@ -52,6 +52,17 @@ func id(_ value: [String: MCPValue], _ key: String) -> UUID {
 }
 func uuid(_ id: UUID) -> MCPValue { .string(id.uuidString) }
 
+/// The app's calendar as the calendar tools see it, with busy times and a
+/// free slot set by each check.
+final class FixtureCalendar: MCPCalendarAccess {
+    var busy: [FixedBusyTime] = []
+    var slot: Date?
+    func busyTimes(in span: DateInterval) -> [FixedBusyTime] { busy.filter { $0.end > span.start && $0.start < span.end } }
+    func freeSlot(for task: Block, minutes: Int) -> DateInterval? {
+        slot.map { DateInterval(start: $0, duration: TimeInterval(minutes * 60)) }
+    }
+}
+
 final class FixtureTokenStore: MCPTokenStorage {
     var token: String
     var reads = 0
@@ -78,8 +89,9 @@ if phase == "prepare" {
     var saved = 0
     store.onDidSave = { saved += 1 }
     let readOnly = OpenlistMCPTool.catalog(allowsWrites: false)
-    check(readOnly.count == 5 && readOnly.allSatisfy { $0.annotations.readOnlyHint == true }, "default catalog contains only reads")
-    check(OpenlistMCPTool.catalog(allowsWrites: true).count == 13, "write catalog includes every supported tool")
+    check(readOnly.count == 6 && readOnly.allSatisfy { $0.annotations.readOnlyHint == true }, "default catalog contains only reads")
+    check(OpenlistMCPTool.catalog(allowsWrites: true).count == 18, "write catalog includes every supported tool")
+    check(OpenlistMCPTool.trashBlock.definition.annotations.destructiveHint == true, "moving content to Trash is marked destructive")
     check(OpenlistMCPTool.setTaskCompleted.definition.annotations.idempotentHint == false, "recurring completion does not claim idempotency")
     check(OpenlistMCPTool.allCases.allSatisfy { $0.definition.annotations.openWorldHint == false }, "tools stay within Openlist")
     for tool in OpenlistMCPTool.allCases where !tool.isReadOnly {
@@ -263,6 +275,115 @@ if phase == "prepare" {
     try rejects(.updateList, ["list_id": uuid(inbox.id), "title": "Renamed"])
     check(work.title == "MCP work" && saved > 0, "mutations preserve unrelated content and publish successful saves")
 
+    // Planning: duration, repeat rules, picking for today, deferral, sessions.
+    let planID = id(try call(.createTask, [
+        "title": "Plan over MCP", "list_id": uuid(workID), "duration_minutes": 50,
+        "repeat": ["frequency": "weekly", "weekdays": [2, 4]], "keep_together": true, "track_away": true,
+        "planned_for_today": true,
+    ]), "task")
+    let plan = store.block(id: planID)!
+    check(plan.schedulingEstimateMinutes == 50 && plan.keepsSessionsTogether && plan.tracksAwayFromMac, "planning fields apply on capture")
+    check(plan.recurrence?.frequency == .weekly && plan.recurrence?.weekdays == [2, 4] && plan.dueDate != nil,
+          "a repeat rule applies, with today's date to repeat from")
+    check(plan.selectedForDay.map(Calendar.current.isDateInToday) == true, "a task can be picked for today on capture")
+    try rejects(.updateTask, ["task_id": uuid(planID), "repeat": ["frequency": "daily", "weekdays": [2]]])
+    try rejects(.updateTask, ["task_id": uuid(planID), "repeat": ["frequency": "weekly", "day_of_month": 3]])
+    try rejects(.updateTask, ["task_id": uuid(planID), "repeat": ["interval": 2]])
+    try rejects(.updateTask, ["task_id": uuid(planID), "repeat": ["frequency": "weekly", "every": 2]])
+    try rejects(.updateTask, ["task_id": uuid(planID), "repeat": ["frequency": "weekly", "weekdays": [8]]])
+    try rejects(.updateTask, ["task_id": uuid(planID), "deferred_until": "2020-01-01"])
+    try rejects(.updateTask, ["task_id": uuid(planID), "deferred_until": "2030-01-01T10:00:00Z"])
+    try rejects(.updateTask, ["task_id": uuid(planID), "planned_for_today": false, "deferred_until": .null])
+    try rejects(.updateTask, ["task_id": uuid(planID), "duration_minutes": 0])
+    let planVersion = plan.updatedAt
+    _ = try call(.updateTask, [
+        "task_id": uuid(planID), "duration_minutes": 50, "keep_together": true, "planned_for_today": true,
+        "repeat": ["frequency": "weekly", "weekdays": [2, 4]],
+    ])
+    check(plan.updatedAt == planVersion, "repeating identical planning fields changes nothing")
+    let monthly = try call(.updateTask, [
+        "task_id": uuid(planID), "duration_minutes": .null,
+        "repeat": ["frequency": "monthly", "interval": 2, "day_of_month": 15, "anchor": "completionDate",
+                   "occurrence_limit": 6, "end_date": "2031-12-31"],
+    ])["task"]!.objectValue!
+    let rule = plan.recurrence
+    check(rule?.dayOfMonth == 15 && rule?.interval == 2 && rule?.anchor == .completionDate && rule?.occurrenceLimit == 6
+          && rule?.endDate.map { MCPDates.day($0) } == "2031-12-31", "a structured rule sets every field")
+    check(monthly["recurrence"]?.objectValue?["day_of_month"] == 15, "the task's result reads the rule back")
+    check(plan.schedulingEstimateMinutes == 0 && monthly["duration_minutes"] == .int(store.calendarDefaultEstimateMinutes)
+          && monthly["duration_is_default"] == true, "a null duration returns to the default")
+    _ = try call(.updateTask, ["task_id": uuid(planID), "repeat": .null, "keep_together": false, "track_away": false])
+    check(plan.recurrence == nil && !plan.keepsSessionsTogether && !plan.tracksAwayFromMac, "a null rule stops repeating, and sessions settings clear")
+
+    // The calendar: slots at a time, in a free slot, read back and taken off.
+    try rejects(.scheduleTask, ["task_id": uuid(planID)], code: "unavailable")
+    try rejects(.scheduleTask, ["task_id": uuid(planID), "start": "2020-01-01T10:00:00Z"])
+    let slotStart = Calendar.current.date(byAdding: .day, value: 2, to: startOfToday)!.addingTimeInterval(10 * 3600)
+    let scheduled = try call(.scheduleTask, ["task_id": uuid(planID), "start": .string(MCPDates.timestamp(slotStart))])
+    var slots = store.placements(taskID: planID)
+    check(slots.count == 1 && slots[0].isPinned && slots[0].start == slotStart
+          && slots[0].end == slotStart.addingTimeInterval(TimeInterval(store.calendarDefaultEstimateMinutes * 60)),
+          "a slot at start is pinned and as long as the task's duration")
+    check(scheduled["task"]?.objectValue?["calendar_slots"]?.arrayValue?.count == 1, "the task's result lists its slot")
+    _ = try call(.scheduleTask, ["task_id": uuid(planID), "start": .string(MCPDates.timestamp(slotStart)), "duration_minutes": 90])
+    slots = store.placements(taskID: planID)
+    check(slots.count == 1 && slots[0].end == slotStart.addingTimeInterval(90 * 60), "scheduling again replaces the slot, at the length given")
+    let fixtureCalendar = FixtureCalendar()
+    adapter.calendar = fixtureCalendar
+    fixtureCalendar.busy = [FixedBusyTime(id: "standup", title: "Standup", start: slotStart.addingTimeInterval(-3600), end: slotStart.addingTimeInterval(-1800))]
+    fixtureCalendar.slot = slotStart.addingTimeInterval(7200)
+    let found = try call(.scheduleTask, ["task_id": uuid(planID)])
+    check(found["slot"]?.objectValue?["start"] == .string(MCPDates.timestamp(slotStart.addingTimeInterval(7200)))
+          && store.placements(taskID: planID).count == 1, "without a start, the calendar's free slot is taken")
+    let week = try call(.listCalendar, ["start_date": .string(MCPDates.day(startOfToday)), "days": 7])
+    check(week["slots"]?.arrayValue?.contains { $0.objectValue?["task_id"] == uuid(planID) && $0.objectValue?["title"] == "Plan over MCP" } == true,
+          "the calendar lists planned slots with their tasks")
+    check(week["busy"]?.arrayValue?.first?.objectValue?["title"] == "Standup", "busy times come from the app's calendar")
+    check(try call(.listCalendar, ["start_date": .string(MCPDates.day(Calendar.current.date(byAdding: .day, value: 20, to: startOfToday)!)), "days": 1])["slots"]?.arrayValue?.isEmpty == true,
+          "slots outside the range are left out")
+    try rejects(.listCalendar, ["start_date": "tomorrow"])
+    fixtureCalendar.slot = nil
+    try rejects(.scheduleTask, ["task_id": uuid(planID)], code: "no_free_slot")
+    adapter.calendar = nil
+    check(try call(.listCalendar)["busy"] == .null, "without the app's calendar, busy times read as unknown rather than free")
+    try rejects(.unscheduleTask, ["task_id": uuid(planID), "slot_id": uuid(UUID())], code: "not_found")
+    let removed = try call(.unscheduleTask, ["task_id": uuid(planID), "slot_id": uuid(store.placements(taskID: planID)[0].id)])
+    check(removed["removed"] == 1 && store.placements(taskID: planID).isEmpty, "a slot comes off the calendar")
+    _ = try call(.scheduleTask, ["task_id": uuid(planID), "start": .string(MCPDates.timestamp(slotStart))])
+    let deferDay = Calendar.current.date(byAdding: .day, value: 3, to: startOfToday)!
+    _ = try call(.updateTask, ["task_id": uuid(planID), "deferred_until": .string(MCPDates.day(deferDay))])
+    check(plan.deferredUntil == deferDay && plan.selectedForDay.map { Calendar.current.isDate($0, inSameDayAs: deferDay) } == true
+          && store.placements(taskID: planID).isEmpty, "deferring picks the day and takes the task's slots off")
+    _ = try call(.updateTask, ["task_id": uuid(planID), "deferred_until": .null])
+    check(plan.deferredUntil == nil && plan.selectedForDay == nil, "ending a deferral before its day unpicks the task")
+    _ = try call(.setTaskCompleted, ["task_id": uuid(planID), "completed": true])
+    try rejects(.updateTask, ["task_id": uuid(planID), "planned_for_today": true])
+    try rejects(.scheduleTask, ["task_id": uuid(planID), "start": .string(MCPDates.timestamp(slotStart))])
+    _ = try call(.setTaskCompleted, ["task_id": uuid(planID), "completed": false])
+    _ = try call(.updateTask, ["task_id": uuid(planID), "duration_minutes": 45])
+    _ = try call(.scheduleTask, ["task_id": uuid(planID), "start": .string(MCPDates.timestamp(slotStart))])
+
+    // A list's hours.
+    _ = try call(.updateList, ["list_id": uuid(workID), "hours": "personal"])
+    check(work.availabilityCategoryRaw == "personal", "a list's hours change")
+    check(try call(.getList, ["list_id": uuid(workID), "limit": 1])["list"]?.objectValue?["hours"] == "personal", "a list reads its hours")
+    try rejects(.updateList, ["list_id": uuid(workID), "hours": "evenings"])
+    _ = try call(.updateList, ["list_id": uuid(workID), "hours": "work"])
+
+    // Document lines: edited, turned into tasks, and moved to Trash.
+    let lineID = id(try call(.appendBlock, ["list_id": uuid(workID), "text": "Draft line"]), "block")
+    _ = try call(.updateBlock, ["block_id": uuid(lineID), "text": "Edited line", "kind": "heading2"])
+    check(store.block(id: lineID)!.text == "Edited line" && store.block(id: lineID)!.kind == .heading2, "a document line's text and kind change")
+    try rejects(.updateBlock, ["block_id": uuid(lineID)])
+    try rejects(.updateBlock, ["block_id": uuid(lineID), "text": " "])
+    try rejects(.updateBlock, ["block_id": uuid(planID), "text": "Wrong"])
+    try rejects(.updateBlock, ["block_id": uuid(noteID), "kind": "heading1"])
+    _ = try call(.updateBlock, ["block_id": uuid(lineID), "kind": "task"])
+    check(store.block(id: lineID)!.isTask && !store.block(id: lineID)!.isCompleted, "a line turns into an open task")
+    _ = try call(.trashBlock, ["block_id": uuid(lineID)])
+    check(store.block(id: lineID) == nil && store.blockIncludingTrash(id: lineID)?.trashID != nil, "trashing keeps the line in Trash, restorable")
+    try rejects(.trashBlock, ["block_id": uuid(lineID)], code: "not_found")
+
     // An oversized result must roll back only the agent's edit, not pending UI typing.
     root.note = String(repeating: "x", count: 1_600_000)
     root.text = "User's pending title"
@@ -336,7 +457,7 @@ if phase == "prepare" {
     await integration.waitForTransition()
     check(integration.isRunning && credential.reads == 1, "enabling access starts the actual listener")
     let catalog = try await request(["jsonrpc": "2.0", "id": 3, "method": "tools/list"])
-    check(catalog.objectValue!["result"]!.objectValue!["tools"]!.arrayValue!.count == 5, "read-only permission controls the real wire catalog")
+    check(catalog.objectValue!["result"]!.objectValue!["tools"]!.arrayValue!.count == 6, "read-only permission controls the real wire catalog")
     let config = try integration.configuration(for: .stdio, bundleURL: URL(fileURLWithPath: "/Applications/Openlist with spaces.app"))
     let configServers = try JSONDecoder().decode(MCPValue.self, from: Data(config.utf8)).objectValue!["mcpServers"]!.objectValue!
     check(Set(configServers.keys) == Set([expectedServerName]), "stdio configuration has a distinct production or development entry")
@@ -351,7 +472,7 @@ if phase == "prepare" {
     integration.setAllowsWrites(true)
     await integration.waitForTransition()
     let writeCatalog = try await request(["jsonrpc": "2.0", "id": 4, "method": "tools/list"])
-    check(writeCatalog.objectValue!["result"]!.objectValue!["tools"]!.arrayValue!.count == 13, "write permission restarts with the expanded catalog")
+    check(writeCatalog.objectValue!["result"]!.objectValue!["tools"]!.arrayValue!.count == 18, "write permission restarts with the expanded catalog")
     integration.restart(rotatingToken: true)
     await integration.waitForTransition()
     check(integration.isRunning && credential.rotations == 1 && credential.token != token, "reset rotates the token and restarts the listener")
@@ -457,6 +578,9 @@ if phase == "prepare" {
     check(all.contains { $0.text == "Nested context" && $0.listID == task.listID }, "subtree move remains durable")
     check(all.contains { $0.text == "Aliased Inbox capture" && $0.listID == store.inboxList()?.id }, "MCP captures through iCloud aliases remain canonical after reopening")
     check(store.allLabels().count == 1, "label creation remains durable")
+    let plan = all.first { $0.text == "Plan over MCP" }!
+    check(plan.schedulingEstimateMinutes == 45 && store.placements(taskID: plan.id).count == 1, "a duration and a calendar slot remain durable")
+    check(!all.contains { $0.text == "Edited line" && $0.trashID == nil }, "trashed content stays in Trash")
 
     let readonly = try ModelContainer(for: schema, configurations: [
         ModelConfiguration(schema: schema, url: storeURL, allowsSave: false),

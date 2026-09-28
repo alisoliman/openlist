@@ -70,7 +70,6 @@ struct CalendarMonthPicker: View {
         }
         .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
         .accessibilityLabel(title)
-        .help(title)
     }
 
     private func dayButton(_ day: Date) -> some View {
@@ -104,7 +103,6 @@ struct CalendarMonthPicker: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint("Use arrow keys to move between dates, then Space to choose.")
         .onHover { hoveredDay = $0 ? day : nil }
-        .help(day.formatted(date: .complete, time: .omitted))
         .onKeyPress(.leftArrow) { moveFocus(from: day, by: -1) }
         .onKeyPress(.rightArrow) { moveFocus(from: day, by: 1) }
         .onKeyPress(.upArrow) { moveFocus(from: day, by: -7) }

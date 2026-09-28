@@ -486,7 +486,7 @@ struct NextSidebar: View {
                     }
                 }
             } action: { workbench.go(.trash) }
-            footerButton(on: route == .settings, title: "Settings", help: "Settings (⌘,)") {
+            footerButton(on: route == .settings, title: "Settings") {
                 Image(systemName: "gearshape").font(.system(size: 13, weight: .medium))
             } action: { workbench.go(.settings) }
         }
@@ -495,14 +495,13 @@ struct NextSidebar: View {
         .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.09)).frame(height: 0.5) }
     }
 
-    /// An icon button; `title` is what VoiceOver reads, `help` the tooltip.
-    private func footerButton<Label: View>(on: Bool, title: String, value: String = "", help: String? = nil,
+    /// An icon button; `title` is what VoiceOver reads.
+    private func footerButton<Label: View>(on: Bool, title: String, value: String = "",
                                            @ViewBuilder label: () -> Label, action: @escaping () -> Void) -> some View {
         Button(action: action, label: label)
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(on ? 0.07 : 0.05), rest: on ? NX.ink(0.07) : .clear, radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6),
                                             foreground: on ? NX.ink : NX.ink(0.5)))
-            .help(help ?? title)
             .accessibilityLabel(title)
             .accessibilityValue(value)
             .accessibilityAddTraits(on ? .isSelected : [])

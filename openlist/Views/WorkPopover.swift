@@ -21,7 +21,6 @@ struct WorkPopover: View {
                 .buttonStyle(NXHoverButtonStyle(radius: 6, padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
                 .keyboardShortcut(.cancelAction)
-                .help("Close")
                 .accessibilityLabel("Close work details")
             }
             if let notice = env.calendar.notice {
@@ -60,7 +59,7 @@ struct WorkPopover: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(NX.ink)
                         .padding(.top, 12)
-                    Text("No task is planned for now. Start a session whenever it helps.")
+                    Text("No task is planned for now.")
                         .font(.system(size: 12.5))
                         .foregroundStyle(NX.ink(0.55))
                         .fixedSize(horizontal: false, vertical: true)

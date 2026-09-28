@@ -110,6 +110,7 @@ final class AppEnvironment {
         }
         calendar = CalendarCoordinator(store: store)
         mcp = MCPIntegration(store: store, settings: settings)
+        mcp.calendar = MCPCalendarBridge(calendar: calendar, settings: settings)
         navigator = Navigator(defaults: ReviewSession.defaults)
         reminderNavigation = ReminderNavigation(navigator: navigator)
         localLinks = LocalLinkNavigation(libraryID: libraryID, navigator: navigator)

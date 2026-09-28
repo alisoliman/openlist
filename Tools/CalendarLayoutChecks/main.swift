@@ -242,4 +242,22 @@ expect(clockHours(CalendarOverlapLayout.time(minute: 2 * 60 + 30, on: springForw
        "A break from a time the clocks skip starts at the next one there is")
 let halfPastOne = calendar.date(byAdding: .minute, value: 90, to: calendar.date(byAdding: .day, value: 1, to: fallBack)!)!
 expect(clockHours(halfPastOne, on: fallBack) == 25.5, "Past midnight the hours go on counting")
+// A drop snaps to the quarter hour under the pointer, less where the item was held.
+let hours = 8...21
+expect(CalendarOverlapLayout.dropMinute(y: 0, hourHeight: 40, hours: hours, grab: 0, duration: 30) == 8 * 60,
+       "A drop at the top of the column starts at its first hour")
+expect(CalendarOverlapLayout.dropMinute(y: 84, hourHeight: 40, hours: hours, grab: 0, duration: 30) == 10 * 60,
+       "A drop at 10:06 snaps back to 10:00, the nearer quarter")
+expect(CalendarOverlapLayout.dropMinute(y: 90, hourHeight: 40, hours: hours, grab: 0, duration: 30) == 10 * 60 + 15,
+       "A drop at 10:15 stays there")
+expect(CalendarOverlapLayout.dropMinute(y: 100, hourHeight: 40, hours: hours, grab: 20, duration: 60) == 10 * 60 + 15,
+       "A block held 20 minutes below its start lands with its start 20 minutes above the pointer")
+expect(CalendarOverlapLayout.dropMinute(y: -50, hourHeight: 40, hours: hours, grab: 0, duration: 30) == 8 * 60,
+       "Nothing starts above the column's first hour")
+expect(CalendarOverlapLayout.dropMinute(y: 10_000, hourHeight: 40, hours: hours, grab: 0, duration: 30) == 21 * 60 - 15,
+       "A drop past the last hour starts in its last quarter")
+expect(CalendarOverlapLayout.dropMinute(y: 10_000, hourHeight: 40, hours: 8...24, grab: 0, duration: 90) == 1440 - 90,
+       "A long item ends by midnight")
+expect(CalendarOverlapLayout.dropMinute(y: .nan, hourHeight: 40, hours: hours, grab: 0, duration: 30) == 8 * 60,
+       "A drop with no position starts at the first hour")
 print("Calendar layout: \(checks) checks passed")

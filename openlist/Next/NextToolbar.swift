@@ -33,7 +33,6 @@ struct NextToolbar: View {
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: env.navigator.canGoBack ? NX.ink(0.6) : NX.ink(0.2)))
                 .disabled(!env.navigator.canGoBack)
-                .help("Back (⌘[)")
                 .accessibilityLabel("Back")
 
                 // While you work the crumb gives the notch its room past 200 pt.
@@ -64,7 +63,7 @@ struct NextToolbar: View {
                     // once, and its label changes in place.
                     .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(200)), removal: .identity))
                 }
-                toolButton(icon: "bolt", help: "Actions (⌘K)") {
+                toolButton(icon: "bolt", help: working ? "Actions (⌘K)" : nil) {
                     if !working {
                         Text("Actions").font(.system(size: 11.5, weight: .medium))
                         NXKey("⌘K", opacity: 0.6)
@@ -90,7 +89,6 @@ struct NextToolbar: View {
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
-                .help("New task (N)")
                 .accessibilityLabel("New task")
             }
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { trailingWidth = $0 }
@@ -154,7 +152,7 @@ struct NextToolbar: View {
     /// Undo, named after the latest change when `labelled`: the name hugs its
     /// text up to 180 pt and truncates past that, or where the bar is short.
     private func undoButton(_ undo: String, labelled: Bool) -> some View {
-        toolButton(icon: "arrow.uturn.backward", help: "Undo \(undo) (⌘Z)") {
+        toolButton(icon: "arrow.uturn.backward", help: labelled ? nil : "Undo \(undo) (⌘Z)") {
             if labelled {
                 NXWidthCap(180) { Text(undo).font(.system(size: 11.5, weight: .medium)).lineLimit(1) }
             }
@@ -162,7 +160,7 @@ struct NextToolbar: View {
         .accessibilityLabel("Undo \(undo)")
     }
 
-    private func toolButton<Label: View>(icon: String, help: String, @ViewBuilder label: () -> Label,
+    private func toolButton<Label: View>(icon: String, help: String?, @ViewBuilder label: () -> Label,
                                          action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -172,7 +170,7 @@ struct NextToolbar: View {
         }
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 8,
                                         padding: EdgeInsets(top: 5, leading: 9, bottom: 5, trailing: 9)))
-        .help(help)
+        .nxHelp(help)
     }
 }
 
@@ -252,7 +250,6 @@ struct NXWorkNotch: View {
         }
         .buttonStyle(.plain)
         .focused($triggerFocused)
-        .help("Show work — pause, review or change the plan")
         .accessibilityLabel("\(paused ? "Paused" : "Working") on \(task.displayTitle). Show work details.")
         .accessibilityValue("\(NXFormat.mmss(elapsed)) of \(Int(estimate / 60)) minutes")
     }
@@ -279,11 +276,9 @@ struct NXWorkNotch: View {
         if let conflict = env.calendar.displayedWorkConflict, conflict.occurrenceID == task.occurrenceID {
             let sentence = workbench.conflictLabel(conflict, inSentence: true)
             extensionChip(workbench.conflictLabel(conflict), color: NX.redText, fill: NX.red.opacity(0.12))
-                .help(paused ? "Ran into \(sentence)" : "Still recording. Running into \(sentence)")
                 .accessibilityLabel((paused ? "Ran into " : "Running into ") + sentence)
         } else if let extended = env.calendar.displayedWorkExtension, extended.occurrenceID == task.occurrenceID {
             extensionChip("+\(extended.minutes)m", color: NX.amberText, fill: NX.amber.opacity(0.16))
-                .help("Extended by \(extended.minutes) min")
                 .accessibilityLabel("Extended by \(extended.minutes) minutes")
         }
     }
@@ -333,7 +328,6 @@ struct NXWorkNotch: View {
         }
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8, padding: EdgeInsets(), foreground: color,
                                         hoverForeground: color == NX.green ? NX.green : NX.ink))
-        .help(help)
         // Named as the design's titles name them, not by the symbol.
         .accessibilityLabel(help)
     }

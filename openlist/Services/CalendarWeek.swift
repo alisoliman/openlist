@@ -127,7 +127,7 @@ enum CalendarWeek {
         return Set(blocks.filter { !$0.isCompleted && ($0.isActive || $0.end > start) }.map(\.taskID))
     }
 
-    /// The block the inspector's "In the calendar …" names, of those the
+    /// The block the inspector's slot line names, of those the
     /// calendar draws for the task's occurrence, as the design reads its
     /// placement, past or done: the running or next one, else the latest
     /// that still counts as placed (a missed slot, carried forward), else

@@ -15,6 +15,6 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/inspector-te
   openlist/Services/FragmentClipboard.swift openlist/Services/FragmentContent.swift \
   openlist/Services/FragmentMarkdown.swift openlist/Services/InlineMarkdown.swift openlist/Services/Store+Fragments.swift \
   openlist/Services/Navigator.swift \
-  openlist/Next/NextInspectorText.swift \
+  openlist/Services/NoteMarkdown.swift openlist/Next/NextInspectorText.swift \
   Tools/EditorChecks/Support.swift Tools/InspectorLifetimeChecks/LifetimeSupport.swift Tools/InspectorTextChecks/main.swift
 "$OUT/inspector-text-checks"

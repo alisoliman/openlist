@@ -38,6 +38,12 @@ final class MCPIntegration {
         self.tokenStore = tokenStore
     }
 
+    /// The running calendar the calendar tools read.
+    var calendar: (any MCPCalendarAccess)? {
+        get { adapter.calendar }
+        set { adapter.calendar = newValue }
+    }
+
     var url: String { "http://127.0.0.1:\(settings.mcpPort)/mcp" }
     var isRunning: Bool { status == .running }
 
