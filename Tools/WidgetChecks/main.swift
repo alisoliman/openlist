@@ -376,6 +376,8 @@ do {
           "the next morning, tomorrow's task is due today and the rest of the evening's work is late")
     check(morning.snapshot.dueToday == [WidgetSnapshot.Due(date: at(0, day: 1), includesTime: false)], "and turns late at the next midnight")
     check(morning.snapshot.tomorrowItems.isEmpty && morning.snapshot.dueTomorrow.isEmpty, "tomorrow's work is merged once")
+    check(!written.todayPlan.isEmpty && morning.snapshot.todayPlan.isEmpty && morning.snapshot.plannedTodayCount == 0,
+          "the iPhone's plan was the evening's: the next morning its rows fall back to what's due")
     let tickedMorning = WidgetState(snapshot: written, pending: [tap(.complete, "q2", in: written, at: at(8, 5, day: 1))], now: at(8, 10, day: 1), calendar: calendar)
     check(tickedMorning.snapshot.dueTodayCount == 0 && tickedMorning.snapshot.dueToday.isEmpty && tickedMorning.snapshot.completedTodayCount == 1,
           "ticking it off counts it once")

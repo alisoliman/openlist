@@ -187,6 +187,7 @@ screenshots (`xcrun simctl launch` passes them as `SIMCTL_CHILD_<name>`):
 | `OpenlistFixtureNow` | Pins the app's clock (`AppClock`) to an ISO 8601 moment; `2026-09-23T10:40:00` is the mockups' |
 | `OpenlistOpenRoute` | Opens a screen at launch: `timeline`, `inbox`, `lists`, `settings`, `trash`, `capture`, `working`, `triage`, `activity`, `find:#travel`, `list:<title>`, `task:<title>` |
 | `OpenlistShowTray` | Shows its text in the tray, with Undo |
+| `OpenlistCaptureText` | Types its text into the Capture sheet |
 | `OpenlistComponentGallery=1` | Opens the design components' gallery (`OpenlistGalleryPage` 0–4 shows one part); Settings links to it too |
 
 The app's code is in `OpenlistiOS/`: `App/` (entry, `PhoneEnvironment`,
@@ -195,6 +196,19 @@ the colour tokens are in `SharediOS/OLTokens.swift` for the widget too),
 `Features/<Feature>/`, `Platform/` and `Fixtures/`. Screens act on tasks through
 `PhoneActions`, which keeps the Mac's completion dwell and Undo, and read the
 time from `env.clock`, never `.now`.
+
+Screens read the library from `\.phoneLibrary`, the Mac's `NextLibrary` built
+once a render from the root's queries (`App/PhoneLibrary.swift`), and word rows
+through `PhoneTaskRow`. What's worked on now (Today's Now card, Working, the
+timeline's working block and the Live Activity) is `PhoneWork`, read from the
+calendar coordinator. The widget extension draws Today, Inbox and Up next from
+the published snapshot with the Mac widgets' model, and the work Live Activity
+from `SharediOS/WorkActivity.swift`, which the app starts, updates and ends
+(`App/PhoneLiveActivity.swift`); its buttons are the widgets' intents, run in
+the app. A review session's calendar is a fixture holding the mockups' Design
+sync meeting, and its Live Activity counts on the system clock. Review sessions
+keep the widget snapshot out of the App Group, so placed widgets there show
+their placeholder and the gallery its sample.
 
 iOS App Groups carry the `group.` prefix, so the iPhone uses
 `group.solimanali.openlist` where the Mac keeps its team-prefixed group; the two

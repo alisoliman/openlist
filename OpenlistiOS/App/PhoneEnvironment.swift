@@ -40,6 +40,8 @@ final class PhoneEnvironment {
     let actions: PhoneActions
     let links: PhoneLinkRouter
     let clock: AppClock
+    /// The Inbox's triage pass: what it set aside and how far it's got.
+    let triage = TriageSession()
     /// This device's library identity, which item links carry.
     let libraryID: UUID?
 
@@ -65,6 +67,8 @@ final class PhoneEnvironment {
     @ObservationIgnored private let seedsReviewFixture: Bool
     @ObservationIgnored private var handlers: [Lifecycle: [() -> Void]] = [:]
     @ObservationIgnored private var pendingSave: Task<Void, Never>?
+    /// The work Live Activity, for the app's own environment only.
+    @ObservationIgnored private var liveActivity: PhoneLiveActivity?
 
     /// - Parameters:
     ///   - seedsReviewFixture: whether an empty review-session library gets the
@@ -88,8 +92,14 @@ final class PhoneEnvironment {
         // day's planned slots and the default estimate, which completions and
         // work sessions record. An iPhone app is suspended while its user
         // works, so a gap in the clock is no reason to pause.
-        calendar = CalendarCoordinator(store: store, defaults: calendarDefaults, presence: WorkPresencePolicy(
-            pausesAfterClockGap: false, adoptsOpenSession: { [presence] session in presence.adopts(session) }))
+        // A review session's calendar is the fixture's: the mockups' meeting,
+        // never the Mac's or the simulator's own calendars.
+        let meetings = seedsReviewFixture && ReviewSession.identifier != nil
+            ? ExternalCalendarSource(defaults: calendarDefaults, fixtureBusyTimes: PhoneFixture.meetings(now: clock.now))
+            : nil
+        calendar = CalendarCoordinator(store: store, defaults: calendarDefaults, externalCalendars: meetings,
+                                       presence: WorkPresencePolicy(pausesAfterClockGap: false,
+                                                                    adoptsOpenSession: { [presence] session in presence.adopts(session) }))
         navigator = PhoneNavigator()
         actions = PhoneActions(store: store, settings: settings, calendar: calendar, clock: clock)
         links = PhoneLinkRouter(store: store, navigator: navigator, libraryID: libraryID)
@@ -100,9 +110,9 @@ final class PhoneEnvironment {
     }
 
     /// Whether bootstrap carries on this device's open work session instead of
-    /// pausing it at its last heartbeat, as the Mac does. The Working feature
-    /// answers from its Live Activity; until then only the review fixture's
-    /// session is carried on.
+    /// pausing it at its last heartbeat, as the Mac does: while its Live
+    /// Activity still shows, the work went on, and so does the review
+    /// fixture's session.
     var adoptsOpenWorkSession: (WorkSession) -> Bool {
         get { presence.adopts }
         set { presence.adopts = newValue }
@@ -124,6 +134,13 @@ final class PhoneEnvironment {
             guard let self else { return }
             widgetPublisher.scheduleRefresh()
             calendar.storeDidChange(now: clock.now)
+            liveActivity?.sync()
+        }
+        // An Undo can take away the list or task a screen is on.
+        actions.afterUndo = { [weak self] in
+            guard let self else { return }
+            navigator.repair(list: { [store] in store.list(id: $0)?.id },
+                             taskExists: { [store] in store.block(id: $0).map { $0.isTask && $0.trashID == nil } ?? false })
         }
         store.onEditorBlocksRemoved = { [weak self] ids in
             guard let self else { return }
@@ -132,7 +149,10 @@ final class PhoneEnvironment {
         }
         // The plan and the running session change without a save. Debounced,
         // because one Start or Pause reports several times on its way through.
-        calendar.onWidgetStateChange = { [weak widgetPublisher] in widgetPublisher?.scheduleRefresh() }
+        calendar.onWidgetStateChange = { [weak self] in
+            self?.widgetPublisher.scheduleRefresh()
+            self?.liveActivity?.sync()
+        }
         sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
         links.acceptsOtherLibraries = { [weak sync] in sync?.state.isEnabled == true }
         links.unavailable = { [weak self] message in
@@ -141,6 +161,8 @@ final class PhoneEnvironment {
         if platform.installsProcessHooks {
             installNotificationDelegate()
             installWidgetActions()
+            liveActivity = PhoneLiveActivity { [weak self] in self }
+            presence.adopts = { PhoneLiveActivity.isShowing($0) }
         }
         watchWidgetInputs()
     }
@@ -207,12 +229,13 @@ final class PhoneEnvironment {
         } else if seedsReviewFixture, Self.mayReceiveFixture(store, syncEnabled: sync.state.isEnabled,
                                                               reviewSession: ReviewSession.identifier,
                                                               hasSeeded: settings.hasSeededSampleData) {
-            PhoneFixture.seed(into: store, settings: settings, now: clock.now)
+            let seeded = PhoneFixture.seed(into: store, settings: settings, now: clock.now)
             if store.persistenceError == nil {
                 settings.hasSeededSampleData = true
                 let fixtureSessions = Set(store.workSessions().filter { $0.endedAt == nil }.map(\.id))
                 let adopts = presence.adopts
                 presence.adopts = { fixtureSessions.contains($0.id) || adopts($0) }
+                if let seeded, let session = seeded.workSession { actions.adoptStart(of: session, task: seeded.draftOKRs) }
             }
         }
         store.refreshAllReminders()
@@ -230,6 +253,7 @@ final class PhoneEnvironment {
             widgetCommands.listenForSignals()
         }
         widgetCommands.drainQueue(now: clock.now)
+        liveActivity?.sync()
         #if DEBUG
         openLaunchRoute()
         #endif
@@ -326,6 +350,7 @@ final class PhoneEnvironment {
         NotificationService.shared.reminders.refresh()
         widgetCommands.drainQueue(now: clock.now)
         widgetPublisher.refreshNow(now: clock.now)
+        liveActivity?.sync()
         notify(.becameActive)
     }
 

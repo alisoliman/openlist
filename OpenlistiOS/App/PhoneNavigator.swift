@@ -21,7 +21,13 @@ final class PhoneNavigator {
     var inboxPath: [PhoneRoute] = []
     var listsPath: [PhoneRoute] = []
     /// Today's list, or the same day as a timeline in its place.
-    var todayMode: TodayMode = .list
+    var todayMode: TodayMode = .list {
+        didSet { if todayMode != oldValue { switchedFrom = oldValue } }
+    }
+    /// The view Today just switched from, until the new one's toggle reads it.
+    @ObservationIgnored private var switchedFrom: TodayMode?
+    /// The day the timeline shows; nil for today.
+    var timelineDay: Date?
     var sheet: PhoneSheet?
     /// The Settings sheet's own stack: Activity and Trash push inside it.
     var settingsPath: [PhoneRoute] = []
@@ -152,7 +158,7 @@ final class PhoneNavigator {
             dismissModals()
             self.tab = tab
             setPath([], for: tab)
-            if tab == .today { todayMode = .list }
+            if tab == .today { todayMode = .list; timelineDay = nil }
         case let .mode(tab):
             dismissModals()
             self.tab = tab
@@ -186,6 +192,22 @@ final class PhoneNavigator {
         }
     }
 
+    /// The view Today just switched from, until the page switched to has
+    /// appeared: its toggle slides from there.
+    var todaySwitchedFrom: TodayMode? { switchedFrom }
+
+    /// Reads the switch once, as the page switched to appears.
+    func takeTodaySwitch() -> TodayMode? {
+        defer { switchedFrom = nil }
+        return switchedFrom
+    }
+
+    /// The timeline in Today's place, on `day` (nil for today).
+    func openTimeline(on day: Date?) {
+        timelineDay = day
+        open(.timeline)
+    }
+
     /// Lands on `route` from wherever the app was, as a link or notification
     /// asks: modals close and the screen opens in its home tab, a task on the
     /// page of its list (the Inbox's tab for the Inbox's tasks).
@@ -216,6 +238,9 @@ final class PhoneNavigator {
         case .working:
             if sheet != nil { sheet = nil }
             present(cover: .working)
+        case .timeline:
+            // A link to the timeline lands on today, whichever day was browsed.
+            openTimeline(on: nil)
         default:
             open(route)
         }

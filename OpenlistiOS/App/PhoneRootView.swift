@@ -8,9 +8,16 @@ import SwiftUI
 import UIKit
 
 /// The shell every screen sits in: a navigation stack per tab, the floating
-/// dock, the tray, and the sheets and covers on top.
+/// dock, the tray, and the sheets and covers on top, over the live library.
 struct PhoneRootView: View {
+    var body: some View {
+        PhoneLibraryHost { PhoneShell() }
+    }
+}
+
+private struct PhoneShell: View {
     @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.undoManager) private var undoManager
     @State private var bottomSafeArea: CGFloat = 34
@@ -26,6 +33,9 @@ struct PhoneRootView: View {
                 Tab(tab.title, systemImage: tab.symbol, value: tab) {
                     PhoneTabStack(tab: tab)
                         .toolbarVisibility(.hidden, for: .tabBar)
+                        // The dock's room, which the inset on the TabView below
+                        // doesn't pass to its tabs: a page's end scrolls clear of it.
+                        .environment(\.olDockRoom, showsDock ? OLMetrics.dockHeight - max(0, bottomSafeArea - OLMetrics.dockBottom) : 0)
                 }
             }
         }
@@ -58,15 +68,29 @@ struct PhoneRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardUp = false
         }
-        .sheet(item: $navigator.sheet) { sheet in
+        // Capture is a sheet; Settings covers the screen, a page of its own
+        // with no dock, as the design draws it, though the navigator keeps it
+        // with the sheets (its own stack, closed by Done).
+        .sheet(item: Binding(get: { navigator.sheet == .settings ? nil : navigator.sheet },
+                             set: { if navigator.sheet != .settings { navigator.sheet = $0 } })) { sheet in
             PhoneSheetContent(sheet: sheet)
                 .environment(env)
+                .environment(\.phoneLibrary, library)
+                .environment(\.olStyle, style)
+                .environment(\.appClock, env.clock)
+        }
+        .fullScreenCover(isPresented: Binding(get: { navigator.sheet == .settings },
+                                              set: { if !$0, navigator.sheet == .settings { navigator.sheet = nil } })) {
+            PhoneSheetContent(sheet: .settings)
+                .environment(env)
+                .environment(\.phoneLibrary, library)
                 .environment(\.olStyle, style)
                 .environment(\.appClock, env.clock)
         }
         .fullScreenCover(item: $navigator.cover) { cover in
             PhoneCoverContent(cover: cover)
                 .environment(env)
+                .environment(\.phoneLibrary, library)
                 .environment(\.olStyle, style)
                 .environment(\.appClock, env.clock)
         }
@@ -76,6 +100,7 @@ struct PhoneRootView: View {
         .environment(\.olStyle, style)
         .environment(\.appClock, env.clock)
         .environment(\.calendar, env.settings.calendar)
+        .environment(\.olDockDrop, max(0, bottomSafeArea - OLMetrics.dockBottom))
         .tint(OL.accent)
         .preferredColorScheme(env.settings.appearance.colorScheme)
         .onAppear {
@@ -104,6 +129,7 @@ struct PhoneRootView: View {
 struct PhoneTabStack: View {
     let tab: PhoneTab
     @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.olStyle) private var style
 
     var body: some View {
         let navigator = env.navigator
@@ -116,7 +142,12 @@ struct PhoneTabStack: View {
     @ViewBuilder private var root: some View {
         switch tab {
         case .today:
-            if env.navigator.todayMode == .timeline { TimelineScreen() } else { TodayScreen() }
+            // The list and the timeline cross-fade as the toggle slides.
+            Group {
+                if env.navigator.todayMode == .timeline { TimelineScreen() } else { TodayScreen() }
+            }
+            .transition(.opacity)
+            .animation(style.fading(.easeInOut(duration: 0.22)), value: env.navigator.todayMode)
         case .inbox: InboxScreen()
         case .lists: ListsScreen()
         }
@@ -180,42 +211,26 @@ private struct PhoneCoverContent: View {
     }
 }
 
-/// The dock, with the Inbox's count and the list the + captures into.
+/// The dock, with what the Inbox has to triage, as its screen counts it, and
+/// the list the + captures into.
 private struct DockHost: View {
     @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
 
     var body: some View {
         let navigator = env.navigator
-        InboxCount(inboxID: navigator.inboxListID) { count in
-            OLDock(tab: Binding(get: { navigator.tab }, set: { navigator.select($0) }),
-                   inboxCount: count,
-                   captureLabel: captureLabel,
-                   reselect: { navigator.select($0) },
-                   capture: { navigator.open(.capture(navigator.captureRequest)) })
-        }
+        OLDock(tab: Binding(get: { navigator.tab }, set: { navigator.select($0) }),
+               inboxCount: library.inboxQueue(triage: env.triage, closing: env.actions.closing).count,
+               captureLabel: captureLabel,
+               reselect: { navigator.select($0) },
+               capture: { navigator.open(.capture(navigator.captureRequest)) })
     }
 
     private var captureLabel: String {
-        guard let listID = env.navigator.captureRequest.listID, let list = env.store.list(id: listID) else { return "New task" }
+        guard let listID = env.navigator.captureRequest.listID, let list = env.store.list(id: listID),
+              !list.isEffectivelyArchived else { return "New task" }
         return "New task in \(list.displayTitle)"
     }
-}
-
-/// Open tasks in the Inbox, live as CloudKit imports and edits land.
-private struct InboxCount<Content: View>: View {
-    @Query private var tasks: [Block]
-    private let content: (Int) -> Content
-
-    init(inboxID: UUID?, @ViewBuilder content: @escaping (Int) -> Content) {
-        let id = inboxID ?? UUID()
-        let task = BlockKind.task.rawValue
-        _tasks = Query(filter: #Predicate<Block> {
-            $0.listID == id && $0.kindRaw == task && !$0.isCompleted && $0.trashID == nil
-        })
-        self.content = content
-    }
-
-    var body: some View { content(tasks.count) }
 }
 
 /// The app's tray, where the view it's in draws it.

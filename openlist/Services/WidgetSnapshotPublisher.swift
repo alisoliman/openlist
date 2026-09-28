@@ -362,6 +362,24 @@ final class WidgetSnapshotPublisher {
             .sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
         snapshot.work = sources.work(now)
 
+        // The iPhone's Today, which also holds what's planned for today and
+        // starred, in the order it draws them: by the time each is placed
+        // today, from the agenda, else due.
+        var slots: [UUID: Date] = [:]
+        for event in snapshot.agenda where event.kind == .task && !event.isCompleted && calendar.isDate(event.start, inSameDayAs: now) {
+            guard let id = event.taskID else { continue }
+            slots[id] = min(slots[id] ?? event.start, event.start)
+        }
+        let today = TodayAgenda(tasks: tasks, now: now, calendar: calendar, order: .schedule, time: { slots[$0.id] })
+        snapshot.plannedTodayCount = today.planned.count + today.starred.count
+        // Capped group by group, as the rows above, so a long backlog never
+        // pushes the day's own work out.
+        let late = today.overdue.count
+        let plan = today.scheduled.prefix(min(late, Limit.todayItems)) + today.scheduled.dropFirst(late).prefix(Limit.todayItems)
+        snapshot.todayPlan = plan.map { task in
+            item(task, list: task.listID.flatMap { listsByID[$0] })
+        }
+
         snapshot.activity = activity(now: now, weekStart: weekStart, calendar: calendar)
         // Done today as the app's Today counts it (`Block.isCompletedToday`):
         // tasks completed today, from current state, so a reopen or Undo takes

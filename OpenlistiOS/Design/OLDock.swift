@@ -133,14 +133,22 @@ struct OLDock: View {
 /// Trash and Start working, Triage's buttons, Working's controls. 20 pt
 /// gutters, just above the home indicator.
 struct OLActionDock<Content: View>: View {
+    /// In the dock's place, 28 pt above the screen's edge (Task detail's);
+    /// otherwise just above the home indicator (Triage's, Working's).
+    var dropsLikeTheDock = false
     @ViewBuilder var content: Content
+    @Environment(\.olDockDrop) private var dockDrop
 
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    init(dropsLikeTheDock: Bool = false, @ViewBuilder content: () -> Content) {
+        self.dropsLikeTheDock = dropsLikeTheDock
+        self.content = content()
+    }
 
     var body: some View {
         HStack(spacing: 12) { content }
             .padding(.horizontal, OLMetrics.gutter)
-            .padding(.bottom, 8)
+            .padding(.bottom, dropsLikeTheDock ? 0 : 8)
+            .offset(y: dropsLikeTheDock ? dockDrop : 0)
             .frame(maxWidth: .infinity)
     }
 }
@@ -203,6 +211,8 @@ struct OLSheetHeader: View {
             Button(confirmTitle, action: confirm)
                 .buttonStyle(.ol(.primary, size: .small))
                 .disabled(!canConfirm)
+                // Back in to the gutter the Cancel link reaches out of.
+                .padding(.trailing, 10)
         }
         .padding(.horizontal, -10)
         .padding(.top, 6)
@@ -233,13 +243,9 @@ struct OLTrayView: View {
     @State private var drained = false
 
     var body: some View {
+        // The message and its button, as the design's tray: no glyph; the
+        // drain's colour says what kind of thing happened.
         HStack(spacing: 12) {
-            if let icon = message.icon {
-                Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(OL.canvas.opacity(0.8))
-                    .accessibilityHidden(true)
-            }
             Text(message.text)
                 .font(OLFont.note)
                 .foregroundStyle(OL.canvas)

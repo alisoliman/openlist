@@ -7,6 +7,12 @@
     <false/>
     <key>UIAppFonts</key>
     <array><string>InstrumentSerif-Regular.ttf</string></array>
+    <key>UTExportedTypeDeclarations</key>
+    <array><dict>
+        <key>UTTypeIdentifier</key><string>app.openlist.plan-drag</string>
+        <key>UTTypeDescription</key><string>Openlist Task to Plan</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+    </dict></array>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleTypeRole</key><string>Viewer</string>

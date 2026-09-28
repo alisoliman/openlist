@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "41362FD4304B659900C93862"
-               BuildableName = "Openlist Dev.app"
+               BuildableName = "openlist.app"
                BlueprintName = "openlist"
                ReferencedContainer = "container:openlist.xcodeproj">
             </BuildableReference>
@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "41362FD4304B659900C93862"
-            BuildableName = "Openlist Dev.app"
+            BuildableName = "openlist.app"
             BlueprintName = "openlist"
             ReferencedContainer = "container:openlist.xcodeproj">
          </BuildableReference>

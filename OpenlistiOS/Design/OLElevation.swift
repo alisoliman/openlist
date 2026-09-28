@@ -38,6 +38,12 @@ extension View {
         }
     }
 
+    /// The dark theme's 1 pt `line` ring round a raised shape (`--card-ring`):
+    /// a disc, a tile, a raised button.
+    func olDarkRing<S: InsettableShape>(_ shape: S) -> some View {
+        modifier(OLDarkRing(shape: shape))
+    }
+
     /// A card (`.card`): the surface, radius 20, the card shadow, and in dark
     /// a 1 pt ring in `line`, with the content clipped to the shape.
     func olCard(radius: CGFloat = 20, fill: Color = OL.surface) -> some View {
@@ -95,5 +101,16 @@ private struct OLCardModifier: ViewModifier {
             .overlay {
                 if scheme == .dark { shape.strokeBorder(OL.line, lineWidth: 1) }
             }
+    }
+}
+
+private struct OLDarkRing<S: InsettableShape>: ViewModifier {
+    let shape: S
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if scheme == .dark { shape.strokeBorder(OL.line, lineWidth: 1) }
+        }
     }
 }

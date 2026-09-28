@@ -73,7 +73,8 @@ enum PhoneRoute: Hashable, Identifiable {
         case mode(PhoneTab)
         /// Pushed on the current navigation stack, a tab's or the Settings sheet's.
         case push
-        /// A sheet over everything: Settings, with its own stack, and Capture.
+        /// Over everything: Settings, with its own stack, covering the screen,
+        /// and Capture, a sheet.
         case sheet
         /// Covers the dock and tabs: Working, Triage.
         case fullScreenCover

@@ -44,7 +44,7 @@ struct OLTile: View {
         OLListGlyph(icon: icon, accent: accent, size: size >= 60 ? 32 : 20)
             .frame(width: size, height: size)
             .background {
-                if raised { shape.fill(fill).olShadow(.card) } else { shape.fill(fill) }
+                if raised { shape.fill(fill).olShadow(.card).olDarkRing(shape) } else { shape.fill(fill) }
             }
     }
 }
@@ -55,10 +55,14 @@ struct OLSettingsTile: View {
     let symbol: String
     var fill: Color = OL.accent
     var ink: Color = .white
+    /// One of the mockups' own glyphs, in place of `symbol`.
+    var icon: OLIcon?
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 15, weight: .semibold))
+        Group {
+            if let icon { OLIconView(icon: icon, size: 18) }
+            else { Image(systemName: symbol).font(.system(size: 15, weight: .semibold)) }
+        }
             .foregroundStyle(ink)
             .frame(width: 30, height: 30)
             .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -68,6 +72,9 @@ struct OLSettingsTile: View {
     /// The design's tile colours by section (mockup 15).
     static func accent(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol) }
     static func today(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.today, ink: OL.onToday) }
+    static func today(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.today, ink: OL.onToday, icon: icon) }
+    static func info(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.info, ink: OL.onInfo, icon: icon) }
+    static func teal(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.teal, icon: icon) }
     static func teal(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.teal) }
     static func info(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.info, ink: OL.onInfo) }
     static func danger(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.danger, ink: OL.onDanger) }
@@ -177,13 +184,16 @@ struct OLFieldRow<Value: View>: View {
 struct OLSearchField<Tokens: View>: View {
     @Binding var text: String
     var prompt = "Find a task, note or #label"
+    /// What VoiceOver calls the field: "Find tasks".
+    var label = "Find tasks"
     @ViewBuilder var tokens: Tokens
     var focus: FocusState<Bool>.Binding?
 
-    init(text: Binding<String>, prompt: String = "Find a task, note or #label", focus: FocusState<Bool>.Binding? = nil,
-         @ViewBuilder tokens: () -> Tokens) {
+    init(text: Binding<String>, prompt: String = "Find a task, note or #label", label: String = "Find tasks",
+         focus: FocusState<Bool>.Binding? = nil, @ViewBuilder tokens: () -> Tokens) {
         _text = text
         self.prompt = prompt
+        self.label = label
         self.focus = focus
         self.tokens = tokens()
     }
@@ -203,7 +213,7 @@ struct OLSearchField<Tokens: View>: View {
     }
 
     @ViewBuilder private var field: some View {
-        let field = TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(OL.muted))
+        let field = TextField(label, text: $text, prompt: Text(prompt).foregroundStyle(OL.muted))
             .font(OLFont.rowTitle)
             .foregroundStyle(OL.ink)
             .submitLabel(.search)
@@ -213,8 +223,9 @@ struct OLSearchField<Tokens: View>: View {
 }
 
 extension OLSearchField where Tokens == EmptyView {
-    init(text: Binding<String>, prompt: String = "Find a task, note or #label", focus: FocusState<Bool>.Binding? = nil) {
-        self.init(text: text, prompt: prompt, focus: focus, tokens: { EmptyView() })
+    init(text: Binding<String>, prompt: String = "Find a task, note or #label", label: String = "Find tasks",
+         focus: FocusState<Bool>.Binding? = nil) {
+        self.init(text: text, prompt: prompt, label: label, focus: focus, tokens: { EmptyView() })
     }
 }
 

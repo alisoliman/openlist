@@ -59,7 +59,6 @@ final class ShellUITests: XCTestCase {
                                                               "OpenlistShowTray": "Restored to Home"])
         app.launch()
         app.waitForScreen("screen.find", timeout: 20)
-        XCTAssertTrue(app.dock("capture").isHittable)
         let tray = app.screen("tray")
         XCTAssertTrue(tray.waitForExistence(timeout: 5))
         app.textFields.firstMatch.tap()
@@ -97,7 +96,7 @@ final class ShellUITests: XCTestCase {
         app.waitForScreen("screen.lists")
 
         app.dock("today").tap()
-        app.buttons["Draft Q3 OKRs"].tap()
+        app.buttons["Close out Q2 retro actions"].tap()
         app.waitForScreen("screen.taskDetail")
         XCTAssertFalse(app.dock("today").exists)
         app.buttons["Back to Today"].tap()

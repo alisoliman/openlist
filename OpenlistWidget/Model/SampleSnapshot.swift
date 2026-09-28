@@ -136,6 +136,27 @@ extension WidgetSnapshot {
         }
         snapshot.agenda = agenda.sorted { $0.start < $1.start }
 
+        // The iPhone's Today: work planned in today's blocks joins the dated
+        // rows by its time, and starred undated work counts toward the day.
+        var slots: [UUID: Date] = [:]
+        for event in snapshot.agenda where event.kind == .task && calendar.isDate(event.start, inSameDayAs: now) {
+            if let id = event.taskID { slots[id] = min(slots[id] ?? event.start, event.start) }
+        }
+        let late = snapshot.todayItems.filter { $0.isOverdue(at: now, calendar: calendar) }
+        let onToday = Set(snapshot.todayItems.map(\.id))
+        let planned = open.filter { !onToday.contains($0.id) && slots[$0.id] != nil }
+        func clock(_ item: Item) -> Date? { slots[item.id] ?? (item.includesTime ? item.dueDate : nil) }
+        let rest = (snapshot.todayItems.filter { !$0.isOverdue(at: now, calendar: calendar) } + planned).sorted { lhs, rhs in
+            switch (clock(lhs), clock(rhs)) {
+            case let (left?, right?): left < right
+            case (_?, nil): true
+            default: false
+            }
+        }
+        snapshot.todayPlan = late + rest
+        snapshot.plannedTodayCount = planned.count
+            + open.count { $0.isStarred && $0.dueDate == nil && !onToday.contains($0.id) && slots[$0.id] == nil }
+
         snapshot.activity = SampleData.activity(weekStart: weekStart, today: today, doneToday: snapshot.completedTodayCount,
                                                 calendar: snapshot.calendar(base: calendar))
         return snapshot

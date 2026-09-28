@@ -97,16 +97,19 @@ struct PhoneActionsTests {
         #expect(task.listID == reading.id)
     }
 
-    /// Trash's Restore: "Restored to Home", and Undo sends it back.
+    /// Trash's Restore: "Restored to Home", and Undo sends it back as it was,
+    /// deleted three days ago rather than just now.
     @Test func restoreHasUndo() throws {
         let phone = try TestPhone(seeded: true)
-        let kettle = try #require(try phone.store.trashEntries().first { $0.title == "Descale the kettle" })
-        #expect(phone.env.actions.restore([kettle.id]))
-        #expect(phone.store.block(id: kettle.id) != nil)
+        let ramen = try #require(try phone.store.trashEntries().first { $0.title == "Try the new ramen place" })
+        let deletedAt = try #require(ramen.metadata?.deletedAt)
+        #expect(phone.env.actions.restore([ramen.id]))
+        #expect(phone.store.block(id: ramen.id) != nil)
         #expect(phone.env.tray.message?.text == "Restored to Home")
         phone.env.tray.performAction()
-        #expect(phone.store.block(id: kettle.id) == nil)
-        #expect(try phone.store.trashEntries().contains { $0.id == kettle.id })
+        #expect(phone.store.block(id: ramen.id) == nil)
+        let back = try #require(try phone.store.trashEntries().first { $0.id == ramen.id })
+        #expect(back.metadata?.deletedAt == deletedAt)
     }
 
     @Test func fieldEditsUndoOnlyTheirFields() throws {

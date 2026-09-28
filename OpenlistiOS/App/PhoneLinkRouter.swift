@@ -98,6 +98,8 @@ final class PhoneLinkRouter {
             navigator.show(.timeline)
         case .activity:
             navigator.show(.activity)
+        case .working:
+            navigator.show(.working)
         case let .list(id):
             // Follows a list merged into another since the widget last refreshed.
             guard let list = store.list(id: id) else { return missing(LocalLinkError.targetUnavailable) }

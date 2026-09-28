@@ -54,7 +54,8 @@ struct OLListCard: View {
         }
         .buttonStyle(OLPressStyle(scale: 0.97))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([title, detail].compactMap(\.self).joined(separator: ", "))
+        .accessibilityLabel(title)
+        .accessibilityValue(detail ?? "")
     }
 }
 
@@ -133,12 +134,13 @@ struct OLListHeaderBand<TopBar: View>: View {
 // MARK: - C27 Now card
 
 /// Today's Now card: "Now · 10:00", the task, "50 min left", and a play
-/// button. The whole card opens Working.
+/// button. The whole card opens Working; the button starts the work, resumes
+/// it, or goes back to it while it runs.
 struct OLNowCard: View {
     enum State: Equatable {
         /// Planned for now and not started: play.
         case planned
-        /// Recording: the button pauses.
+        /// Recording: the button opens Working.
         case working
         /// Paused: "Paused" in the Today colour, the button resumes.
         case paused
@@ -174,8 +176,8 @@ struct OLNowCard: View {
             .buttonStyle(OLRowPressStyle())
             .accessibilityElement(children: .combine)
             .accessibilityHint("Opens Working")
-            OLIconButton(state == .working ? "pause.fill" : "play.fill",
-                         label: state == .working ? "Pause" : state == .paused ? "Resume" : "Start working",
+            OLIconButton("play.fill",
+                         label: state == .working ? "Open Working" : state == .paused ? "Resume" : "Start working",
                          kind: .accent, iconSize: 16, action: play)
         }
         .padding(.vertical, 14)
@@ -188,10 +190,14 @@ struct OLNowCard: View {
 // MARK: - C28 Empty state
 
 /// A screen with nothing to show (`Today is clear`): a 56 pt disc with the
-/// screen's glyph, a serif title, a line of text and an action.
+/// screen's glyph, a serif title, a line of text and an action. A
+/// `checkmark` is the design's own tick, 24 pt at a 2.4 stroke.
 struct OLEmptyState: View {
     let symbol: String
     var tint: Color = OL.today
+    /// A flat disc in this colour, as Triage's finished tick, instead of the
+    /// raised surface one.
+    var fill: Color?
     let title: String
     var message: String?
     var actionTitle: String?
@@ -199,11 +205,11 @@ struct OLEmptyState: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(tint)
+            glyph
                 .frame(width: 56, height: 56)
-                .background { Circle().fill(OL.surface).olShadow(.card) }
+                .background {
+                    if let fill { Circle().fill(fill) } else { Circle().fill(OL.surface).olShadow(.card).olDarkRing(Circle()) }
+                }
                 .accessibilityHidden(true)
             OLTitle(title, size: 28, lineHeight: 32, style: .title)
                 .multilineTextAlignment(.center)
@@ -222,5 +228,17 @@ struct OLEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(.bottom, 40)
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder private var glyph: some View {
+        if symbol == "checkmark" {
+            OLTick()
+                .stroke(tint, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                .frame(width: 24, height: 24)
+        } else {
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(tint)
+        }
     }
 }

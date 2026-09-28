@@ -160,6 +160,9 @@ let expectedToday = (10..<16).map { "Overdue \($0)" } + [deposit, plumber, keys]
 check(snapshot.todayItems.map(\.title) == expectedToday,
       "today holds overdue then due work, each soonest first and capped at 6, so a backlog leaves today's own rows")
 check(snapshot.overdueCount == 11 && snapshot.dueTodayCount == 3, "counts include the rows past the cap")
+check(snapshot.todayPlan.count(where: { $0.isOverdue(at: now, calendar: calendar) }) == 6
+      && Set([deposit, plumber, keys].map(\.id)).isSubset(of: Set(snapshot.todayPlan.map(\.id))),
+      "the iPhone's plan is capped group by group too, so a backlog leaves the day's own work")
 check(!snapshot.todayItems.contains { $0.id == retro.id }, "the cap drops the latest overdue rows")
 check(snapshot.todayItems.first { $0.id == plumber.id }.map { !$0.isOverdue(at: now, calendar: calendar) } == true,
       "late goes by day, as the app's Today: a task due at 09:00 is still due today at 10:40")

@@ -85,6 +85,22 @@ struct OLTimelineItem: Identifiable, Equatable {
     /// "20m" on a planned block, "Now · 50 min left" on the working one,
     /// "Calendar event" on an event.
     var detail: String?
+    /// The task it is, for opening it; nil for a meeting.
+    var taskID: UUID?
+    /// The slot it draws, when it is one.
+    var placementID: UUID?
+    /// It can be dragged, or moved by a quarter hour, to another time.
+    var movable = false
+}
+
+/// Where a block sits: its top and height, and its column `index` of
+/// `count` among the blocks it overlaps.
+struct OLTimelineFrame: Equatable {
+    let id: String
+    var top: CGFloat
+    var height: CGFloat
+    var index = 0
+    var count = 1
 }
 
 /// The hour grid: a rule every hour from 52 pt, the hour in mono beside it.
@@ -125,7 +141,8 @@ struct OLTimelineBlock: View {
                 .foregroundStyle(OL.muted)
                 .lineLimit(1)
                 .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                .frame(maxHeight: .infinity, alignment: .top)
                 .background(OL.sunken, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         case .working:
             VStack(alignment: .leading) {
@@ -148,7 +165,9 @@ struct OLTimelineBlock: View {
             }
             .font(OLFont.timelineBlock)
             .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // A slot longer than its line keeps the line at its top.
+            .frame(maxWidth: .infinity, minHeight: 22)
+            .frame(maxHeight: .infinity, alignment: .top)
             .background(item.kind == .due ? OL.dangerSoft : OL.accentSoft,
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         case .event:
@@ -163,6 +182,31 @@ struct OLTimelineBlock: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(OL.line, lineWidth: 1)
             }
         }
+    }
+}
+
+/// Where a dragged task would land: its time and title in a dashed accent
+/// outline, as long as the slot it would get.
+struct OLTimelineGhost: View {
+    let item: OLTimelineItem
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        HStack(alignment: .top, spacing: 6) {
+            if let detail = item.detail {
+                Text(detail).fontWeight(.semibold).monospacedDigit().foregroundStyle(OL.accentText)
+            }
+            Text(item.title).foregroundStyle(OL.ink).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .font(OLFont.timelineBlock)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(OL.accentSoft.opacity(0.7), in: shape)
+        .overlay { shape.strokeBorder(OL.accent, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])) }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -184,47 +228,154 @@ struct OLNowLine: View {
 }
 
 /// The timeline card's canvas: the grid for `hours`, blocks where their times
-/// fall (at least 22 pt tall), and the now-line. 44 pt an hour, blocks from
-/// 58 pt to 10 pt short of the edge, 10 pt inside the card top and bottom.
+/// fall and as tall as they run (at least 22 pt; a due time is a 22 pt
+/// chip), side by side where they overlap, and the now-line. 44 pt an hour,
+/// blocks from 58 pt to 10 pt short of the edge, 10 pt inside the card top
+/// and bottom. With `drag`, a planned or due block lifts to be dropped at
+/// another time; `ghost` draws where a drop would land.
 struct OLTimeline: View {
     let items: [OLTimelineItem]
     var hours: ClosedRange<Int> = 8...19
     var now: Date?
     var hourHeight: CGFloat = 44
     var calendar: Calendar = .current
+    /// The day drawn, so a block running to midnight ends at 24:00.
+    var day: Date?
+    /// Where a dragged task would land, drawn dashed.
+    var ghost: OLTimelineItem?
+    /// The task being dragged, faded where it was.
+    var dragging: UUID?
+    var drag: ((OLTimelineItem) -> NSItemProvider)?
+    /// Moves a movable block by that many minutes, VoiceOver's way to drag.
+    var nudge: ((OLTimelineItem, Int) -> Void)?
     var open: (OLTimelineItem) -> Void = { _ in }
+
+    static let inset: CGFloat = 10
+    static let leading: CGFloat = 58
+    static let trailing: CGFloat = 10
 
     var body: some View {
         let height = CGFloat(hours.count - 1) * hourHeight
-        ZStack(alignment: .topLeading) {
+        GeometryReader { proxy in
+            canvas(width: max(0, proxy.size.width - Self.leading - Self.trailing))
+        }
+        .frame(height: height, alignment: .topLeading)
+        .padding(.vertical, Self.inset)
+    }
+
+    private func canvas(width: CGFloat) -> some View {
+        let frames = Self.frames(items, top: offset(of:), minimum: 22)
+        return ZStack(alignment: .topLeading) {
             OLTimelineGrid(hours: hours, hourHeight: hourHeight)
             ForEach(items) { item in
-                let top = offset(of: item.start)
-                let blockHeight = item.kind == .working || item.kind == .event
-                    ? max(22, offset(of: item.end) - top) : 22
-                Button { open(item) } label: {
-                    OLTimelineBlock(item: item)
+                if let frame = frames[item.id] {
+                    placed(item, frame: frame, width: width)
                 }
-                .buttonStyle(OLRowPressStyle())
-                .disabled(item.kind == .done || item.kind == .event)
-                .frame(height: blockHeight)
-                .padding(.leading, 58)
-                .padding(.trailing, 10)
-                .offset(y: top)
-                .accessibilityLabel([item.title, item.detail].compactMap(\.self).joined(separator: ", "))
+            }
+            if let ghost {
+                OLTimelineGhost(item: ghost)
+                    .frame(width: width, height: max(22, offset(of: ghost.end) - offset(of: ghost.start)))
+                    .offset(x: Self.leading, y: offset(of: ghost.start))
             }
             if let now, let y = nowOffset(now) {
                 OLNowLine(now: now).offset(y: y - 1)
             }
         }
-        .frame(height: height, alignment: .topLeading)
-        .padding(.vertical, 10)
     }
 
+    private func placed(_ item: OLTimelineItem, frame: OLTimelineFrame, width: CGFloat) -> some View {
+        let column = (width + 2) / CGFloat(frame.count)
+        let faded = item.taskID != nil && item.taskID == dragging
+        return block(item)
+            .frame(width: max(0, column - 2), height: frame.height)
+            .opacity(faded ? 0.35 : 1)
+            .offset(x: Self.leading + CGFloat(frame.index) * column, y: frame.top)
+    }
+
+    @ViewBuilder private func block(_ item: OLTimelineItem) -> some View {
+        let button = Button { open(item) } label: {
+            OLTimelineBlock(item: item)
+        }
+        .buttonStyle(OLRowPressStyle())
+        .disabled(item.kind == .done || item.kind == .event)
+        .accessibilityLabel(Self.spoken(item, calendar: calendar))
+        if let drag, item.movable {
+            button
+                .onDrag { drag(item) } preview: {
+                    OLTimelineBlock(item: item).frame(width: 220, height: 22)
+                }
+                .accessibilityHint("Drag to another time")
+                .accessibilityActions {
+                    if let nudge, item.placementID != nil {
+                        Button("Move 15 minutes earlier") { nudge(item, -15) }
+                        Button("Move 15 minutes later") { nudge(item, 15) }
+                    }
+                }
+        } else {
+            button
+        }
+    }
+
+    /// Each block's top, height and column among those it overlaps: a run of
+    /// blocks that touch shares the width, each in the first column free.
+    static func frames(_ items: [OLTimelineItem], top: (Date) -> CGFloat, minimum: CGFloat) -> [String: OLTimelineFrame] {
+        var spans: [OLTimelineFrame] = []
+        for item in items {
+            let y = top(item.start)
+            let length: CGFloat = item.kind == .due ? 0 : top(item.end) - y
+            spans.append(OLTimelineFrame(id: item.id, top: y, height: max(minimum, length)))
+        }
+        spans.sort { $0.top == $1.top ? $0.height > $1.height : $0.top < $1.top }
+        var result: [String: OLTimelineFrame] = [:]
+        var run: [OLTimelineFrame] = []
+        var bottoms: [CGFloat] = []
+        func close() {
+            for var member in run {
+                member.count = bottoms.count
+                result[member.id] = member
+            }
+            run = []
+            bottoms = []
+        }
+        for var span in spans {
+            if let end = bottoms.max(), span.top >= end - 0.5 { close() }
+            let index = bottoms.firstIndex { $0 <= span.top + 0.5 } ?? bottoms.count
+            if index == bottoms.count { bottoms.append(0) }
+            bottoms[index] = span.top + span.height
+            span.index = index
+            run.append(span)
+        }
+        close()
+        return result
+    }
+
+    /// "Pay the ryokan deposit, Due, 18:00", "Design sync, Calendar event,
+    /// 14:00 to 15:00".
+    static func spoken(_ item: OLTimelineItem, calendar: Calendar = .current) -> String {
+        let detail: String? = switch item.kind {
+        case .due: "Due"
+        case .done: "Done"
+        default: item.detail
+        }
+        let start = CompactText.clock(item.start, calendar: calendar)
+        let time = item.kind == .working || item.kind == .event
+            ? "\(start) to \(CompactText.clock(item.end, calendar: calendar))" : start
+        return [item.title, detail, time].compactMap(\.self).joined(separator: ", ")
+    }
+
+    /// Wall-clock hours down the grid; with `day`, anything before it at
+    /// 00:00 and anything after it at 24:00.
     private func offset(of date: Date) -> CGFloat {
-        let parts = calendar.dateComponents([.hour, .minute], from: date)
-        let hours = Double(parts.hour ?? 0) + Double(parts.minute ?? 0) / 60 - Double(self.hours.lowerBound)
-        return CGFloat(hours) * hourHeight
+        let hour: Double
+        if let day, date <= day {
+            hour = 0
+        } else if let day, !calendar.isDate(date, inSameDayAs: day) {
+            hour = 24
+        } else {
+            let parts = calendar.dateComponents([.hour, .minute], from: date)
+            hour = Double(parts.hour ?? 0) + Double(parts.minute ?? 0) / 60
+        }
+        return CGFloat(hour - Double(hours.lowerBound)) * hourHeight
     }
 
     private func nowOffset(_ now: Date) -> CGFloat? {

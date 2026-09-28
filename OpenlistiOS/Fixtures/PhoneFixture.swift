@@ -32,6 +32,13 @@ enum PhoneFixture {
         0, 2, 1, 3, 0, 1, 0, 1, 0, 2, 1, 0, 0, 2, 0, 1, 3, 0, 1, 2, 1, 1, 2, 2,
     ]
 
+    /// The timeline mockup's meeting: Design sync, 14:00–15:00 today.
+    static func meetings(now: Date, calendar: Calendar = .current) -> [FixedBusyTime] {
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: today) else { return [] }
+        return [FixedBusyTime(id: "fixture-design-sync", title: "Design sync", start: start, end: start.addingTimeInterval(3600))]
+    }
+
     struct Seeded {
         var kyoto: TaskList
         var home: TaskList
@@ -121,7 +128,7 @@ enum PhoneFixture {
             task("Fix the dripping bathroom tap", in: home, due: day(-1))
             task("Order new water filters", in: home, due: at(16, 30), timed: true, estimate: 10)
             task("Book the boiler service", in: home, due: day(9))
-            task("Descale the kettle", in: home)
+            task("Try the new ramen place", in: home)
 
             // Reading: 2 open.
             task("Finish The Overstory", in: reading, starred: true)
@@ -167,7 +174,7 @@ enum PhoneFixture {
                  planned: CompletionCalendarInterval(start: at(9, 15), end: at(9, 45)))
 
         // Trash: three, one of them from Home ("Restored to Home").
-        trash(tasks["Descale the kettle"], at: now.addingTimeInterval(-2 * 86400), in: store)
+        trash(tasks["Try the new ramen place"], at: now.addingTimeInterval(-3 * 86400), in: store)
         trash(tasks["Old packing list draft"], at: now.addingTimeInterval(-86400), in: store)
         trash(tasks["Prep board update slides (duplicate)"], at: now.addingTimeInterval(-3 * 3600), in: store)
 

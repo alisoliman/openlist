@@ -8,8 +8,8 @@ import SwiftUI
 // MARK: - C1 Screen scaffold
 
 /// A screen's scroll (`.scroll`): the canvas, 20 pt gutters, the top bar just
-/// under the status bar, and room below the last card for the dock, which
-/// sits in the root's bottom safe-area inset, or 40 pt without it.
+/// under the status bar, and 40 pt below the last card, above the dock on a
+/// tab's page (`olDockRoom`) or else the screen's edge.
 ///
 /// The system navigation bar is hidden: the design draws its top bar in the
 /// content, where it scrolls with the page. Swiping back still works
@@ -19,6 +19,7 @@ struct OLScreen<TopBar: View, Content: View>: View {
     var scrolls = true
     @ViewBuilder var topBar: TopBar
     @ViewBuilder var content: Content
+    @Environment(\.olDockRoom) private var dockRoom
 
     init(identifier: String? = nil, scrolls: Bool = true,
          @ViewBuilder topBar: () -> TopBar, @ViewBuilder content: () -> Content) {
@@ -39,6 +40,7 @@ struct OLScreen<TopBar: View, Content: View>: View {
                 column.frame(maxHeight: .infinity, alignment: .top)
             }
         }
+        .safeAreaPadding(.bottom, dockRoom)
         .background(OL.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .modifier(ScreenIdentifier(identifier: identifier))
@@ -83,6 +85,17 @@ enum OLMetrics {
     /// A tray over a screen's own 56–64 pt bottom bar (Task detail's actions,
     /// Select's bulk bar, Triage's buttons): 12 pt above it.
     static let trayAboveScreenBar: CGFloat = 76
+}
+
+extension EnvironmentValues {
+    /// How far the dock sits below the bottom safe area's edge: 28 pt above
+    /// the screen's, into the home indicator's room. Bars that take the
+    /// dock's place (Select's, Task detail's) drop the same way.
+    @Entry var olDockDrop: CGFloat = 0
+    /// The dock's room over a tab's pages, above the bottom safe area. Set
+    /// here rather than as the root's inset, which a tab's navigation stack
+    /// doesn't pass on to its scroll views.
+    @Entry var olDockRoom: CGFloat = 0
 }
 
 private struct ScreenIdentifier: ViewModifier {
@@ -305,12 +318,14 @@ struct OLGroupAction: View {
     }
 
     var body: some View {
+        // A 44 pt target that leaves the header its 20 pt line.
         Button(title, action: action)
             .font(OLFont.groupHeader.weight(.medium))
             .foregroundStyle(OL.accentText)
             .buttonStyle(OLPressStyle())
-            .frame(minHeight: 44)
+            .padding(.vertical, 12)
             .contentShape(.rect)
+            .padding(.vertical, -12)
     }
 }
 
@@ -371,13 +386,13 @@ struct OLFold<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // The card sits right under the 44 pt header, as the design's.
+        VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(style.animation(OLStyle.fold)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 8) {
-                    if let count { Text("\(count)") }
-                    Text(title)
+                    Text(count.map { "\($0) \(title)" } ?? title)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
@@ -390,6 +405,7 @@ struct OLFold<Content: View>: View {
                 .contentShape(.rect)
             }
             .buttonStyle(OLPressStyle())
+            .accessibilityLabel(count.map { "\($0) \(title)" } ?? title)
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
             if isExpanded { content }
         }

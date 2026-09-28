@@ -59,7 +59,7 @@ struct FixtureTests {
     @Test func trashHoldsThreeEntries() throws {
         let phone = try TestPhone(seeded: true)
         let entries = try phone.store.trashEntries()
-        #expect(Set(entries.map(\.title)) == ["Prep board update slides (duplicate)", "Old packing list draft", "Descale the kettle"])
+        #expect(Set(entries.map(\.title)) == ["Prep board update slides (duplicate)", "Old packing list draft", "Try the new ramen place"])
         let slides = try #require(entries.first { $0.title == "Prep board update slides (duplicate)" })
         #expect(slides.metadata?.listTitle == "Q3 planning")
         #expect(slides.metadata?.deletedAt == TestClock.mockupNow.addingTimeInterval(-3 * 3600))

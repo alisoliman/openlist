@@ -129,6 +129,8 @@ struct OLTrailing: Equatable {
         case late
         /// A star: `today`.
         case star
+        /// When a task was done, on an earlier day: `successText`.
+        case done
     }
 
     var text: String?
@@ -164,8 +166,17 @@ struct OLTrailingView: View {
     var body: some View {
         HStack(spacing: 4) {
             if let symbol = trailing.symbol {
-                Image(systemName: symbol)
-                    .font(.system(size: trailing.text == nil ? 15 : 13, weight: .medium))
+                // A star alone fills the design's 16 pt box (a glyph of about
+                // 11 pt, which SF draws from a 10 pt star); a repeat alone 15;
+                // beside a date, 13.
+                if trailing.tone == .star && trailing.text == nil {
+                    Image(systemName: symbol)
+                        .font(.system(size: 10, weight: .medium))
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: trailing.text == nil ? 15 : 13, weight: .medium))
+                }
             }
             if let text = trailing.text { Text(text) }
         }
@@ -182,6 +193,7 @@ struct OLTrailingView: View {
         case .due: OL.accentText
         case .late: OL.danger
         case .star: OL.today
+        case .done: OL.successText
         }
     }
 }
@@ -245,6 +257,9 @@ struct OLTaskRow: View {
         if let onOpen {
             Button(action: onOpen) { label }
                 .buttonStyle(OLRowPressStyle())
+                .accessibilityLabel(title)
+                .accessibilityValue([subtitle, trailing.map { $0.accessibilityLabel ?? $0.text ?? "" }]
+                    .compactMap(\.self).filter { !$0.isEmpty }.joined(separator: ", "))
                 .accessibilityHint("Opens the task")
         } else {
             label.accessibilityElement(children: .combine)

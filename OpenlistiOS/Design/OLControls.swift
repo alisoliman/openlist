@@ -20,6 +20,8 @@ struct OLChip: View {
 
     let label: String
     var symbol: String?
+    /// One of the mockups' own glyphs, in place of `symbol`.
+    var icon: OLIcon?
     /// A leading emoji or list glyph: a destination's "📥 Inbox".
     var glyph: String?
     var style: Style = .plain
@@ -28,10 +30,11 @@ struct OLChip: View {
     /// label in `teal`.
     var tint: Color?
 
-    init(_ label: String, symbol: String? = nil, glyph: String? = nil, style: Style = .plain,
+    init(_ label: String, symbol: String? = nil, icon: OLIcon? = nil, glyph: String? = nil, style: Style = .plain,
          small: Bool = false, tint: Color? = nil) {
         self.label = label
         self.symbol = symbol
+        self.icon = icon
         self.glyph = glyph
         self.style = style
         self.small = small
@@ -41,14 +44,16 @@ struct OLChip: View {
     var body: some View {
         HStack(spacing: 6) {
             if let glyph { Text(glyph).font(.system(size: small ? 14 : 17)) }
-            if let symbol { Image(systemName: symbol).font(.system(size: small ? 14 : 17, weight: .medium)) }
+            if let icon { OLIconView(icon: icon, size: small ? 16 : 18) }
+            else if let symbol { Image(systemName: symbol).font(.system(size: small ? 14 : 17, weight: .medium)) }
             if !label.isEmpty { Text(label) }
         }
         .font(small || style == .token ? OLFont.chipSmall : OLFont.chip)
         .foregroundStyle(foreground)
         .lineLimit(1)
-        .padding(.horizontal, label.isEmpty ? 0 : small || style == .token ? 12 : 14)
-        .frame(minWidth: label.isEmpty ? height : nil, minHeight: height)
+        // A glyph alone keeps the chip's own sides, as the design's calendar chip.
+        .padding(.horizontal, small || style == .token ? 12 : 14)
+        .frame(minHeight: height)
         .background(background, in: .capsule)
         .accessibilityAddTraits(style == .on ? .isSelected : [])
     }
@@ -213,56 +218,173 @@ extension View {
     func olToggle() -> some View { tint(OL.success) }
 }
 
-// MARK: - C15 Stepper
+// MARK: - View toggle
 
-/// The estimate stepper: − and + in 36 pt `sunken` circles around a 68 pt
-/// value ("90 min"). VoiceOver adjusts it by swiping.
-struct OLStepper: View {
-    @Binding var value: Int
-    var range: ClosedRange<Int> = 5...480
-    var step = 5
-    var label = "Estimate"
-    var format: (Int) -> String = { "\($0) min" }
+/// A page's two views, List and Calendar: their glyphs in a `sunken`
+/// capsule, the one on show on a raised pill. A page that has just taken
+/// over from the other view (`from`) draws the pill there and slides it
+/// across as it appears.
+struct OLViewToggle: View {
+    enum Mode: Hashable { case list, calendar }
+
+    let selection: Mode
+    var listIdentifier: String?
+    var calendarIdentifier: String?
+    /// Called as it appears, to mark the switch read.
+    var arrived: () -> Void
+    let select: (Mode) -> Void
+    @State private var pill: Mode
+    @State private var taps = 0
+    @Environment(\.olStyle) private var style
+    @Namespace private var namespace
+
+    init(selection: Mode, from: Mode? = nil, listIdentifier: String? = nil, calendarIdentifier: String? = nil,
+         arrived: @escaping () -> Void = {}, select: @escaping (Mode) -> Void) {
+        self.selection = selection
+        self.listIdentifier = listIdentifier
+        self.calendarIdentifier = calendarIdentifier
+        self.arrived = arrived
+        self.select = select
+        _pill = State(initialValue: from ?? selection)
+    }
 
     var body: some View {
         HStack(spacing: 2) {
-            button("minus", enabled: value > range.lowerBound) { change(-step) }
-            Text(format(value))
-                .font(OLFont.rowTitle.weight(.semibold).monospacedDigit())
-                .frame(minWidth: 68)
-                .contentTransition(.numericText(value: Double(value)))
-            button("plus", enabled: value < range.upperBound) { change(step) }
-        }
-        .olFeedback(.selection, trigger: value)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(format(value))
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: change(step)
-            case .decrement: change(-step)
-            @unknown default: break
+            segment(.list, label: "List", identifier: listIdentifier) {
+                Image(systemName: "list.bullet").font(.system(size: 16, weight: .semibold))
+            }
+            segment(.calendar, label: "Calendar", identifier: calendarIdentifier) {
+                OLIconView(icon: .calendar, size: 18)
             }
         }
-    }
-
-    private func change(_ delta: Int) {
-        value = min(range.upperBound, max(range.lowerBound, value + delta))
-    }
-
-    private func button(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(OL.ink)
-                .frame(width: 36, height: 36)
-                .background(OL.sunken, in: .circle)
-                .frame(width: 44, height: 44)
-                .contentShape(.circle)
+        .padding(3)
+        .background(OL.sunken, in: .capsule)
+        .olFeedback(.selection, trigger: taps)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("View")
+        .onAppear {
+            arrived()
+            guard pill != selection else { return }
+            // A turn after the first frame, so the slide is drawn.
+            Task { @MainActor in
+                withAnimation(style.animation(.snappy(duration: 0.32))) { pill = selection }
+            }
         }
-        .buttonStyle(OLPressStyle())
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.4)
+        .onChange(of: selection) { _, new in
+            withAnimation(style.animation(.snappy(duration: 0.32))) { pill = new }
+        }
+    }
+
+    private func segment(_ mode: Mode, label: String, identifier: String?,
+                         @ViewBuilder glyph: () -> some View) -> some View {
+        let on = pill == mode
+        return Button {
+            guard mode != selection else { return }
+            taps += 1
+            withAnimation(style.animation(.snappy(duration: 0.32))) { pill = mode }
+            select(mode)
+        } label: {
+            glyph()
+                .foregroundStyle(on ? OL.accentText : OL.muted)
+                .frame(width: 44, height: 32)
+                .background {
+                    if on {
+                        Capsule(style: .continuous)
+                            .fill(OL.surface)
+                            .olShadow(.card)
+                            .olDarkRing(Capsule(style: .continuous))
+                            .matchedGeometryEffect(id: "pill", in: namespace)
+                    }
+                }
+                .contentShape(.capsule)
+        }
+        .buttonStyle(OLPressStyle(scale: 0.94))
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(mode == selection ? .isSelected : [])
+        .accessibilityIdentifier(identifier ?? "view.\(label.lowercased())")
+    }
+}
+
+// MARK: - C15 Estimate
+
+/// The estimate as a slider over friendly stops, 5 min to 8 h, closer
+/// together where estimates usually fall. The value beside its label follows
+/// the thumb with a tick at each stop, and the change is made once, on
+/// letting go. VoiceOver, or a keyboard, moves it a stop at a time, each
+/// made at once.
+struct OLEstimateSlider: View {
+    let value: Int
+    var identifier: String?
+    let commit: (Int) -> Void
+    @State private var sliding: Double?
+    @State private var isDragging = false
+
+    static let stops = [5, 10, 15, 20, 25, 30, 40, 45, 50, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480]
+
+    /// The stops, with an estimate between them (one made on the Mac) in
+    /// its place, so the thumb starts where it is.
+    private var stops: [Int] {
+        Self.stops.contains(value) || value <= 0 ? Self.stops : (Self.stops + [value]).sorted()
+    }
+
+    var body: some View {
+        let stops = stops
+        let current = Double(stops.firstIndex(of: value) ?? 0)
+        let shown = stops[min(stops.count - 1, max(0, Int((sliding ?? current).rounded())))]
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Estimate").font(OLFont.rowTitle).foregroundStyle(OL.ink)
+                Spacer(minLength: 8)
+                Text(Self.label(shown))
+                    .font(OLFont.rowTitle.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(sliding == nil ? OL.ink : OL.accentText)
+                    .contentTransition(.numericText(value: Double(shown)))
+            }
+            .accessibilityHidden(true)
+            Slider(value: Binding(get: { sliding ?? current }, set: { position in
+                // Moved without a drag, by VoiceOver or a keyboard: made at once.
+                guard isDragging else { return settle(position, stops: stops) }
+                sliding = position
+            }), in: 0...Double(stops.count - 1), step: 1) { editing in
+                isDragging = editing
+                guard !editing, let sliding else { return }
+                settle(sliding, stops: stops)
+            }
+            .tint(OL.accent)
+            .accessibilityLabel("Estimate")
+            .accessibilityValue(Self.spoken(shown))
+            .accessibilityIdentifier(identifier ?? "estimate")
+            HStack {
+                Text(Self.label(stops[0]))
+                Spacer()
+                Text(Self.label(stops[stops.count - 1]))
+            }
+            .font(OLFont.meta)
+            .foregroundStyle(OL.muted)
+            .accessibilityHidden(true)
+        }
+        .olFeedback(.selection, trigger: shown)
+    }
+
+    private func settle(_ position: Double, stops: [Int]) {
+        sliding = nil
+        let picked = stops[min(stops.count - 1, max(0, Int(position.rounded())))]
+        if picked != value { commit(picked) }
+    }
+
+    /// "45 minutes", "1 hour 30 minutes", for VoiceOver.
+    static func spoken(_ minutes: Int) -> String {
+        let hours = minutes / 60, rest = minutes % 60
+        let parts = [hours > 0 ? "\(hours) \(hours == 1 ? "hour" : "hours")" : nil,
+                     rest > 0 ? "\(rest) \(rest == 1 ? "minute" : "minutes")" : nil]
+        return parts.compactMap(\.self).joined(separator: " ")
+    }
+
+    /// "45 min", "1 h", "1 h 30 min".
+    static func label(_ minutes: Int) -> String {
+        guard minutes >= 60 else { return "\(minutes) min" }
+        let hours = minutes / 60, rest = minutes % 60
+        return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
     }
 }
 

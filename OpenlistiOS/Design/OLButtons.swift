@@ -124,7 +124,7 @@ struct OLIconButton: View {
         case .ok: Circle().fill(OL.successSoft)
         case .bad: Circle().fill(OL.dangerSoft)
         case .success: Circle().fill(OL.success)
-        case .raised: Circle().fill(OL.surface).olShadow(.card)
+        case .raised: Circle().fill(OL.surface).olShadow(.card).olDarkRing(Circle())
         }
     }
 }

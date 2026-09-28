@@ -129,7 +129,10 @@ struct ComponentGallery: View {
                     OLRowValue("On", color: OL.successText, showsChevron: false)
                 }
                 OLSettingsRow("Trash", tile: .danger("trash"), separator: .settings) { OLRowValue("3") }
-                OLSettingsRow("Estimate", separator: .inset(16)) { OLStepper(value: $estimate) }
+                OLEstimateSlider(value: estimate) { estimate = $0 }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .top) { OLSeparatorLine(separator: .inset(16)) }
             }
             .olCard()
             VStack(spacing: 0) {

@@ -35,6 +35,9 @@ final class PhoneActions {
     /// The scene's undo manager, which shake-to-undo reads. Completions made
     /// outside an action (a notification's Complete, say) register there.
     @ObservationIgnored weak var sceneUndoManager: UndoManager?
+    /// Runs after any Undo, so screens on what it took away (a list just
+    /// made, say) move on. The environment repairs the navigator here.
+    @ObservationIgnored var afterUndo: (() -> Void)?
 
     /// Tasks ticked and dwelling: drawn done where they are until written.
     private(set) var closing: Set<UUID> = []
@@ -69,6 +72,29 @@ final class PhoneActions {
 
     func isClosing(_ id: UUID) -> Bool { closing.contains(id) }
 
+    // MARK: The latest step
+
+    /// This session's newest step that can still be taken back, which
+    /// Activity offers Undo on, as the Mac's Recent changes does.
+    struct LatestChange {
+        let text: String
+        /// When it was taken, on the clock the Store stamps history with (the
+        /// system's), so Activity can find its row.
+        let at: Date
+        /// The work session a start made, whose "Started" row it is.
+        var sessionID: UUID?
+        fileprivate let undo: () -> Void
+    }
+
+    private(set) var latest: LatestChange?
+
+    /// Takes back the newest step, as its tray's Undo would.
+    func undoLatest() {
+        guard let latest else { return }
+        self.latest = nil
+        latest.undo()
+    }
+
     // MARK: Completion
 
     /// A checkbox: completes an open task, reopens a done one, and takes a
@@ -97,6 +123,15 @@ final class PhoneActions {
         let rolled = Set(rolls.map(\.id))
         let closes = uncovered(open.filter { !rolled.contains($0.id) }, by: rolled)
         let batch = CompletionBatch(pending: closes.map(\.id), date: date)
+        // Finished work stops now, not once the dwell settles, as on the Mac;
+        // the batch keeps it, so Undo offers it again.
+        if let session = calendar.activeSession, open.contains(where: { $0.id == session.taskID }) {
+            calendar.pause(reason: "Completed", now: date ?? clock.now)
+        }
+        batch.resume = calendar.resumableTask.flatMap { paused in
+            open.contains { $0.id == paused.id } ? WorkTaskReference(paused) : nil
+        }
+        if batch.resume != nil { calendar.dismissResume() }
         write(rolls, in: batch)
         let text = label ?? completionLabel(rolls: rolls, closes: closes)
         let icon = !rolls.isEmpty && closes.isEmpty ? "repeat" : "checkmark.circle"
@@ -149,6 +184,7 @@ final class PhoneActions {
             guard batch.pending.isEmpty else { continue }
             batch.settleTask?.cancel()
             batches.removeAll { $0 === batch }
+            if let resume = batch.resume { calendar.restoreResume(resume) }
             if !batch.changes.canUndo { tray.dismiss(batch.trayID) }
         }
     }
@@ -203,6 +239,7 @@ final class PhoneActions {
         closing.subtract(batch.pending)
         batch.pending = []
         undo(batch.changes)
+        if let resume = batch.resume { calendar.restoreResume(resume) }
     }
 
     private func completionLabel(rolls: [Block], closes: [Block]) -> String {
@@ -214,6 +251,57 @@ final class PhoneActions {
             return "Completed “\(task.displayTitle)”"
         }
         return "Completed \(all.count) tasks"
+    }
+
+    // MARK: Work
+
+    /// Starts recording `task`, or resumes it, pausing any other work, as the
+    /// Mac's Start does. It's this session's latest step until another: its
+    /// Undo, from Activity or a shake, stops the work, takes the session it
+    /// made back out and offers the work that was paused before again.
+    @discardableResult
+    func startWork(_ task: Block) -> Bool {
+        let now = clock.now
+        let before = calendar.activeSession.flatMap { store.block(id: $0.taskID) } ?? calendar.resumableTask
+        let previous = before.map(WorkTaskReference.init)
+        let resumes = calendar.resumableTask?.id == task.id
+        guard calendar.start(task: task, now: now), let session = calendar.activeSession else {
+            fail(calendar.notice ?? "Work could not be started.")
+            return false
+        }
+        haptics.play(.impact)
+        let sessionID = session.id
+        let text = "\(resumes ? "Resumed" : "Started") “\(task.displayTitle)”"
+        offerToScene(text, sessionID: sessionID) { [weak self] in
+            self?.undoStart(sessionID, of: task, previous: previous)
+        }
+        return true
+    }
+
+    /// Work already running when the app opened on a review session's
+    /// fixture, taken as this session's latest step, so Activity offers its
+    /// Undo as the design draws it.
+    func adoptStart(of session: WorkSession, task: Block) {
+        let sessionID = session.id
+        offerToScene("Started “\(task.displayTitle)”", sessionID: sessionID) { [weak self] in
+            self?.undoStart(sessionID, of: task, previous: nil)
+        }
+    }
+
+    /// Takes a start back: stops the work, deletes the session it made, and
+    /// hands resuming back to the work before it.
+    private func undoStart(_ sessionID: UUID, of task: Block, previous: WorkTaskReference?) {
+        if calendar.activeSession?.id == sessionID { calendar.pause(reason: "Undone", now: clock.now) }
+        if let made = store.workSessions(taskID: task.id).first(where: { $0.id == sessionID }) {
+            store.context.delete(made)
+            store.save()
+        }
+        calendar.dismissResume()
+        if let previous { calendar.restoreResume(previous) }
+        calendar.replan(now: clock.now)
+        latest = nil
+        haptics.play(.soft)
+        afterUndo?()
     }
 
     // MARK: Trash
@@ -260,6 +348,15 @@ final class PhoneActions {
     func restore(_ ids: [UUID]) -> Bool {
         guard !ids.isEmpty else { return false }
         store.trashError = nil
+        // What each entry said about where it came from and when, which Undo
+        // gives back, so it returns to Trash as it was rather than as new.
+        var metadata: [UUID: Data] = [:]
+        for id in ids {
+            if let data = store.blockIncludingTrash(id: id)?.trashMetadataData { metadata[id] = data }
+        }
+        for list in Self.trashedLists(in: store) where ids.contains(list.id) {
+            if let data = list.trashMetadataData { metadata[list.id] = data }
+        }
         guard let recoveries = store.restoreTrashRecoveries(ids: ids) else {
             fail(store.trashError ?? "That could not be restored; it remains in Trash.")
             return false
@@ -271,11 +368,21 @@ final class PhoneActions {
                 let blocks = ids.compactMap { store.block(id: $0) }
                 if !blocks.isEmpty { _ = store.trashBlocks(blocks, puttingBack: recoveries) }
                 for list in ids.compactMap({ store.list(id: $0) }) { _ = store.trashList(list) }
+                for (id, data) in metadata {
+                    if let block = store.blockIncludingTrash(id: id), block.trashID != nil { block.trashMetadataData = data }
+                    if let list = PhoneActions.trashedLists(in: store).first(where: { $0.id == id }) { list.trashMetadataData = data }
+                }
+                store.save()
             }
         }
         changes.endUndoGrouping()
         report(restoredLabel(ids), icon: "arrow.uturn.backward", tone: .success, changes: changes)
         return true
+    }
+
+    /// Lists in Trash, which `store.list(id:)` doesn't find.
+    private static func trashedLists(in store: Store) -> [TaskList] {
+        (try? store.context.fetch(FetchDescriptor<TaskList>(predicate: #Predicate { $0.trashID != nil }))) ?? []
     }
 
     private func restoredLabel(_ ids: [UUID]) -> String {
@@ -286,6 +393,247 @@ final class PhoneActions {
             }
         }
         return ids.count == 1 ? "Restored" : "Restored \(ids.count) items"
+    }
+
+    // MARK: Lists
+
+    /// A new list: "Created “Garden”" with Undo, which takes it back out
+    /// while nothing has been put in it. Each new list gets the next colour.
+    @discardableResult
+    func createList(named title: String, under parent: TaskList? = nil) -> TaskList? {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let accents: [ListAccent] = [.violet, .green, .amber, .blue, .pink, .teal, .orange, .indigo]
+        let count = store.allLists(includeArchived: true).count { !$0.isSystemInbox }
+        let list: TaskList
+        if let parent {
+            guard let child = store.createChildList(in: parent) else {
+                fail(store.persistenceError ?? "That list could not be made here.")
+                return nil
+            }
+            store.rename(child, to: name)
+            list = child
+        } else {
+            list = store.createList(title: name, icon: "📋", accent: accents[count % accents.count])
+        }
+        let id = list.id
+        let changes = Self.makeUndoManager()
+        changes.beginUndoGrouping()
+        changes.registerUndo(withTarget: store) { store in
+            MainActor.assumeIsolated { _ = store.discardCreatedList(id: id) }
+        }
+        changes.endUndoGrouping()
+        report("Created “\(name)”", icon: "plus.square", tone: .accent, changes: changes)
+        return list
+    }
+
+    func rename(_ list: TaskList, to title: String) {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let old = list.title
+        guard !name.isEmpty, name != old else { return }
+        perform("Renamed to “\(name)”", icon: "pencil", tone: .accent) { [store] changes in
+            store.rename(list, to: name)
+            changes.registerUndo(withTarget: store) { store in MainActor.assumeIsolated { store.rename(list, to: old) } }
+            return true
+        }
+    }
+
+    func setArchived(_ archived: Bool, for list: TaskList) {
+        let title = list.displayTitle
+        perform(archived ? "Archived “\(title)”" : "Unarchived “\(title)”", icon: "archivebox", tone: .accent) { [store] changes in
+            store.setArchived(archived, for: list)
+            changes.registerUndo(withTarget: store) { store in
+                MainActor.assumeIsolated { store.setArchived(!archived, for: list) }
+            }
+            return true
+        }
+    }
+
+    /// Moves a list to Trash with everything in it: "Moved “X” to Trash",
+    /// with Undo, which puts it back.
+    @discardableResult
+    func trashList(_ list: TaskList) -> Bool {
+        let id = list.id
+        store.trashError = nil
+        return perform("Moved “\(list.displayTitle)” to Trash", icon: "trash", tone: .danger) { [store] changes in
+            guard store.trashList(list) else { return false }
+            changes.registerUndo(withTarget: store) { store in
+                MainActor.assumeIsolated { _ = store.restoreTrashRecoveries(ids: [id]) }
+            }
+            return true
+        } failure: { [store] in
+            store.trashError ?? "That list could not be moved to Trash."
+        }
+    }
+
+    // MARK: Capture
+
+    /// A capture saved: "Added to Inbox" with Undo, which takes the task back
+    /// out as though it was never typed.
+    func reportCapture(_ block: Block) {
+        let id = block.id
+        let list = store.list(id: block.listID)?.displayTitle ?? "Inbox"
+        let changes = Self.makeUndoManager()
+        changes.beginUndoGrouping()
+        changes.registerUndo(withTarget: store) { store in
+            MainActor.assumeIsolated { _ = store.discardCapturedTask(id: id) }
+        }
+        changes.endUndoGrouping()
+        report("Added to \(list)", icon: "plus.circle", tone: .accent, changes: changes)
+        haptics.play(.success)
+    }
+
+    // MARK: Planning
+
+    /// Puts each task in the first free quarter hour of its list's hours, clear
+    /// of meetings and everything else the calendar shows, as the Mac's Plan
+    /// does: in place of any slot the task had, with "Planned “X” · Today
+    /// 11:45" and Undo, which puts the old slots back. Returns how many found
+    /// a slot.
+    @discardableResult
+    func fit(_ tasks: [Block]) -> Int {
+        let now = clock.now
+        let dates = settings.calendar
+        let open = tasks.filter { $0.isTask && !$0.isCompleted && $0.trashID == nil && !closing.contains($0.id) }
+        guard !open.isEmpty else { return 0 }
+        let meetings = calendar.externalCalendars.busyTimes.map { DateInterval(start: $0.start, end: $0.end) }
+        var claimed: [DateInterval] = []
+        /// A slot's times, to put back.
+        typealias Slot = (start: Date, end: Date, isPinned: Bool)
+        var replaced: [UUID: [Slot]] = [:]
+        var placed: [(task: Block, placement: SchedulePlacement)] = []
+        for task in open {
+            let minutes = planMinutes(for: task)
+            let list = store.list(id: task.listID)
+            let category = list.flatMap { AvailabilityCategory(rawValue: $0.availabilityCategoryRaw) } ?? .work
+            // Around everything but the task's own blocks, which it's leaving.
+            let others = calendar.visibleBlocks.filter { $0.taskID != task.id && $0.end > $0.start }
+                .map { DateInterval(start: $0.start, end: $0.end) }
+            let slot = CalendarWeek.slot(duration: TimeInterval(minutes * 60), deferredUntil: task.deferredUntil,
+                                         category: category, preferences: calendar.preferences,
+                                         busy: meetings + others + claimed, now: now, calendar: dates)
+            guard case let .found(interval) = slot else { continue }
+            let old = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+            replaced[task.id] = old.map { ($0.start, $0.end, $0.isPinned) }
+            for placement in old { store.removePlacement(placement) }
+            guard let placement = store.setPlacement(for: task, start: interval.start, end: interval.end, isPinned: true)
+            else { continue }
+            claimed.append(interval)
+            placed.append((task, placement))
+        }
+        calendar.replan(now: now)
+        guard let first = placed.first else {
+            fail(open.count == 1 ? "No free slot this week — try a shorter estimate" : "No free slots this week")
+            return 0
+        }
+        let changes = Self.makeUndoManager()
+        let ids = placed.map(\.placement.id)
+        let tasks = placed.map(\.task)
+        changes.beginUndoGrouping()
+        changes.registerUndo(withTarget: store) { [calendar, clock] store in
+            MainActor.assumeIsolated {
+                for placement in store.placements() where ids.contains(placement.id) { store.removePlacement(placement) }
+                for task in tasks {
+                    for slot in replaced[task.id] ?? [] {
+                        store.setPlacement(for: task, start: slot.start, end: slot.end, isPinned: slot.isPinned)
+                    }
+                }
+                calendar.replan(now: clock.now)
+            }
+        }
+        changes.endUndoGrouping()
+        let start = first.placement.start
+        let day = CompactText.dayOffset(from: now, to: start, calendar: dates) == 0 ? "Today" : CompactText.day(start, now: now, calendar: dates)
+        let text = placed.count == 1
+            ? "Planned “\(first.task.displayTitle)” · \(day) \(CompactText.clock(start, calendar: dates))"
+            : "Planned \(placed.count) tasks"
+        report(text, icon: "calendar", tone: .accent, changes: changes)
+        return placed.count
+    }
+
+    /// A new estimate, which the task's current or next slot follows: it keeps
+    /// its start and ends that long after, "10:00–11:35" for 95 min. Direct,
+    /// as the Mac's stepper is, with no tray.
+    func setEstimate(_ minutes: Int, for task: Block) {
+        store.setTaskEstimate(minutes, for: task)
+        let now = clock.now
+        guard let slot = store.placements(taskID: task.id)
+            .filter({ $0.occurrenceID == task.occurrenceID && $0.end > now })
+            .min(by: { $0.start < $1.start }) else { return }
+        store.setPlacement(for: task, start: slot.start, end: slot.start.addingTimeInterval(TimeInterval(minutes * 60)),
+                           isPinned: slot.isPinned, placementID: slot.id)
+        calendar.replan(now: now)
+    }
+
+    /// Takes the task's occurrence off the calendar, every slot it has there,
+    /// with Undo. False when it had none.
+    @discardableResult
+    func unplace(_ task: Block) -> Bool {
+        let placements = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+        guard !placements.isEmpty else { return false }
+        let saved = placements.map { (start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+        return perform("Took “\(task.displayTitle)” off the calendar", icon: "calendar", tone: .accent) { [store, calendar, clock] changes in
+            for placement in placements { store.removePlacement(placement) }
+            calendar.replan(now: clock.now)
+            changes.registerUndo(withTarget: store) { store in
+                MainActor.assumeIsolated {
+                    for slot in saved { store.setPlacement(for: task, start: slot.start, end: slot.end, isPinned: slot.isPinned) }
+                    calendar.replan(now: clock.now)
+                }
+            }
+            return true
+        }
+    }
+
+    /// How long a slot for `task` runs: its estimate, else the calendar's
+    /// default.
+    func planMinutes(for task: Block) -> Int {
+        task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : max(5, Int(calendar.preferences.defaultEstimateMinutes))
+    }
+
+    /// Puts a task on the calendar at `start`, pinned, as a drop on the
+    /// timeline does. A dragged slot (`placementID`) moves alone, keeping its
+    /// length; a task dropped from the row gets its estimate, in place of the
+    /// occurrence's slots, or moves its one slot. Undo puts them back.
+    @discardableResult
+    func place(_ task: Block, at start: Date, placementID: UUID? = nil) -> Bool {
+        guard task.isTask, !task.isCompleted, task.trashID == nil, !closing.contains(task.id) else { return false }
+        let all = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+        let dragged = all.filter { $0.id == placementID }
+        let old = dragged.isEmpty ? all : dragged
+        let length = dragged.first.map { $0.end.timeIntervalSince($0.start) } ?? TimeInterval(planMinutes(for: task) * 60)
+        let end = start.addingTimeInterval(length)
+        if old.count == 1, old[0].start == start, old[0].end == end, old[0].isPinned { return false }
+        let saved = old.map { (id: $0.id, start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+        let dates = settings.calendar
+        let now = clock.now
+        let day = CompactText.dayOffset(from: now, to: start, calendar: dates) == 0 ? "Today" : CompactText.day(start, now: now, calendar: dates)
+        let text = "Planned “\(task.displayTitle)” · \(day) \(CompactText.clock(start, calendar: dates))"
+        return perform(text, icon: "calendar", tone: .accent) { [store, calendar, clock] changes in
+            // One slot moves, keeping its identity; several give way to one.
+            let moved = old.count == 1 ? old[0].id : nil
+            for placement in old where placement.id != moved { store.removePlacement(placement) }
+            guard let placement = store.setPlacement(for: task, start: start, end: end, isPinned: true, placementID: moved) else {
+                return false
+            }
+            let placed = placement.id
+            calendar.replan(now: clock.now)
+            changes.registerUndo(withTarget: store) { store in
+                MainActor.assumeIsolated {
+                    for placement in store.placements(taskID: task.id) where placement.id == placed && placed != moved {
+                        store.removePlacement(placement)
+                    }
+                    for slot in saved {
+                        store.setPlacement(for: task, start: slot.start, end: slot.end, isPinned: slot.isPinned,
+                                           placementID: slot.id == moved ? moved : nil)
+                    }
+                    calendar.replan(now: clock.now)
+                }
+            }
+            return true
+        } failure: {
+            "“\(task.displayTitle)” could not be planned there."
+        }
     }
 
     // MARK: Any undoable step
@@ -334,9 +682,70 @@ final class PhoneActions {
         offerToScene(text ?? "Change") { [weak self] in self?.undo(changes) }
     }
 
+    /// Moves tasks to a day, or clears their date: "“X” due tomorrow" with Undo.
+    /// A timed task keeps its clock when only the day is given.
+    func schedule(_ tasks: [Block], on date: Date?, includesTime: Bool? = nil, label: String? = nil) {
+        let open = tasks.filter { $0.isTask && !$0.isCompleted }
+        guard !open.isEmpty else { return }
+        let now = clock.now
+        let calendar = settings.calendar
+        let what = open.count == 1 ? "“\(open[0].displayTitle)”" : "\(open.count) tasks"
+        let text = label ?? date.map { "\(what) due \(CompactText.day($0, now: now, calendar: calendar).lowercasedDay)" }
+            ?? "Cleared the date of \(what)"
+        edit(open, text, icon: "calendar") { task in setDue(date, includesTime: includesTime, for: task) }
+    }
+
+    /// Gives a task a day, or clears it. A timed task keeps its clock when
+    /// only the day is given.
+    private func setDue(_ date: Date?, includesTime: Bool?, for task: Block) {
+        guard var day = date else { return store.setDueDate(nil, for: task) }
+        let timed = includesTime ?? task.includesTime
+        if includesTime == nil, timed, let due = task.dueDate {
+            let clock = settings.calendar.dateComponents([.hour, .minute], from: due)
+            day = settings.calendar.date(bySettingHour: clock.hour ?? 9, minute: clock.minute ?? 0, second: 0, of: day) ?? day
+        }
+        store.setDueDate(day, includesTime: timed, for: task)
+    }
+
+    /// Files a task from triage in one step: into `list` and due `date`,
+    /// either or both, "Moved “X” to Home, due tomorrow" with one Undo.
+    @discardableResult
+    func file(_ task: Block, to list: TaskList?, due date: Date?, includesTime: Bool? = nil) -> Bool {
+        guard task.isTask, !task.isCompleted, task.trashID == nil else { return false }
+        let moves = list.map { $0.id != task.listID } ?? false
+        guard moves || date != nil else { return false }
+        NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
+        cancelClosing([task.id])
+        let now = clock.now
+        let day = date.map { "due \(CompactText.day($0, now: now, calendar: settings.calendar).lowercasedDay)" }
+        let text = if moves, let list {
+            ["Moved “\(task.displayTitle)” to \(list.displayTitle)", day].compactMap(\.self).joined(separator: ", ")
+        } else {
+            "“\(task.displayTitle)” \(day ?? "")"
+        }
+        var failure = "“\(task.displayTitle)” could not be filed."
+        return perform(text, icon: moves ? "arrow.right.circle" : "calendar", tone: .accent) { [store] changes in
+            if moves, let list {
+                do {
+                    guard try !store.moveSelection([task.id], to: list.id, undoManager: changes).isEmpty else { return false }
+                } catch {
+                    failure = store.actionError ?? "That could not be moved. \(error.localizedDescription)"
+                    return false
+                }
+            }
+            if let date, let moved = store.block(id: task.id) {
+                let before = TaskFields(moved)
+                store.batch { setDue(date, includesTime: includesTime, for: moved) }
+                registerRestore([before], over: [TaskFields(moved)], on: changes)
+            }
+            return true
+        } failure: { failure }
+    }
+
     /// Offers an action's undo to shake-to-undo as well, under its tray text.
     /// Taking it back from the tray first leaves this entry with nothing to do.
-    private func offerToScene(_ name: String, _ undo: @escaping () -> Void) {
+    private func offerToScene(_ name: String, sessionID: UUID? = nil, _ undo: @escaping () -> Void) {
+        latest = LatestChange(text: name, at: .now, sessionID: sessionID, undo: undo)
         guard let manager = sceneUndoManager else { return }
         manager.registerUndo(withTarget: self) { _ in MainActor.assumeIsolated { undo() } }
         manager.setActionName(name)
@@ -361,11 +770,13 @@ final class PhoneActions {
     }
 
     private func undo(_ changes: UndoManager) {
+        latest = nil
         // Its saved history is one change, as the step's was.
         store.withActivityBatch(UUID()) {
             while changes.canUndo { changes.undo() }
         }
         haptics.play(.soft)
+        afterUndo?()
     }
 
     private func fail(_ message: String) {
@@ -404,6 +815,8 @@ final class PhoneActions {
         let date: Date?
         var settleTask: Task<Void, Never>?
         var trayID: UUID?
+        /// The work the completion stopped, which Undo offers again.
+        var resume: WorkTaskReference?
 
         init(pending: [UUID], date: Date?) {
             self.pending = pending
@@ -440,4 +853,9 @@ extension PhoneActions: WidgetTaskActions {
     func settleCompletion(_ id: UUID) {
         settle(id)
     }
+}
+
+private extension String {
+    /// "Today" and "Tomorrow" in a sentence; weekdays and dates keep their capitals.
+    var lowercasedDay: String { self == "Today" || self == "Tomorrow" || self == "Yesterday" ? lowercased() : self }
 }

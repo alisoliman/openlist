@@ -17,8 +17,13 @@ nonisolated enum WidgetKind {
     static let summary = "OpenlistSummary"
     static let activity = "OpenlistActivity"
 
-    /// Kinds that draw the day's plan and the work session.
+    /// Kinds that draw the day's plan and the work session. The iPhone's
+    /// Today names what's on next, so it follows the plan there too.
+    #if os(iOS)
+    static let plan = [upNext, agenda, today]
+    #else
     static let plan = [upNext, agenda]
+    #endif
     /// Kinds that draw tasks, counts, lists and completions.
     static let data = [today, quickAdd, lists, summary, activity]
 }
