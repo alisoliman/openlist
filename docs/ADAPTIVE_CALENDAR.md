@@ -79,7 +79,12 @@ details, choose **Task → Start Working**, or use **Start** on Calendar’s
 available hours or during a meeting: hours and busy time shape the plan and its
 warnings, not whether work may start. Starting another task switches straight away, and the
 tray offers Undo. While work records, the toolbar’s work notch keeps **Done** and
-**Stop** available on every page; see [the work companion](WORK_COMPANION.md).
+**Stop** available on every page.
+
+Click the work notch’s title or choose **Work → Show Work** to open the Work
+panel. **Pause** saves the current segment for later resumption; **Stop** saves
+it and ends work without completing the task. Suggestions never start a timer
+or open the panel automatically.
 
 While a placed slot runs, the **Planned now** banner offers one-click **Start**.
 A slot that goes by without it stays where it was drawn, marked **carried
