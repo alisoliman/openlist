@@ -159,17 +159,25 @@ extension NextLibrary {
     /// each in its document's order under the list's Sort, as its page draws
     /// it. `blocks` are the documents' non-trashed blocks, for that order.
     func tasksInOutlineOrder(blocks: [Block]) -> [Block] {
+        taskRowsInOutlineOrder(blocks: blocks).map(\.block)
+    }
+
+    /// The same order with task nesting preserved, including tasks reached
+    /// through headings or prose. Folded branches remain available to Today.
+    func taskRowsInOutlineOrder(blocks: [Block]) -> [BlockRow] {
         let blocksByList = Dictionary(grouping: blocks) { $0.listID }
-        return lists.flatMap { list -> [Block] in
+        return lists.flatMap { list -> [BlockRow] in
             let tasks = tasks(in: list.id)
             guard !tasks.isEmpty else { return [] }
             let taskIDs = Set(tasks.lazy.map(\.id))
             let rows = BlockTree.flatten(blocksByList[list.id] ?? [], respectCollapse: false)
-            let ordered = BlockTree.sortingTaskRuns(in: rows, by: list.sorting)
-                .compactMap { taskIDs.contains($0.id) ? $0.block : nil }
+            let ordered = BlockTree.taskOutline(BlockTree.sortingTaskRuns(in: rows, by: list.sorting))
+                .filter { taskIDs.contains($0.id) }
             // Tasks the outline could not reach still belong on the screen.
             let seen = Set(ordered.lazy.map(\.id))
-            return ordered + tasks.filter { !seen.contains($0.id) }
+            return ordered + tasks.filter { !seen.contains($0.id) }.map {
+                BlockRow(block: $0, depth: 0, ordinal: 0, hasChildren: false, isCollapsed: false)
+            }
         }
     }
 }

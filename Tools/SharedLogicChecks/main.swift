@@ -145,6 +145,93 @@ do {
           "A task is planned from the day it was picked for")
 }
 
+// Today's display keeps each eligible parent's whole task outline together,
+// without changing the tasks the agenda itself counts or acts on.
+do {
+    let store = try makeStore()
+    let list = store.createList(title: "Today's nested tasks")
+    func line(_ kind: BlockKind = .task, _ text: String, under parent: Block? = nil,
+              _ configure: (Block) -> Void = { _ in }) -> Block {
+        let block = store.appendBlock(kind: kind, text: text, to: DocumentContext(listID: list.id, rootBlockID: parent?.id))
+        configure(block)
+        return block
+    }
+    let heading = line(.heading1, "A folded heading") { $0.isCollapsed = true }
+    let container = line(.bullet, "Non-task container", under: heading)
+    let starred = line(.task, "Starred parent", under: container) { $0.isStarred = true; $0.isCollapsed = true }
+    let notes = line(.paragraph, "Notes between parent and child", under: starred)
+    let dueChild = line(.task, "Child due today", under: notes) { $0.dueDate = at(0) }
+    let undated = line(.task, "Undated child", under: starred)
+    let deepNotes = line(.bullet, "Deeper non-task container", under: undated)
+    let deepChild = line(.task, "Undated grandchild", under: deepNotes)
+    let futureChild = line(.task, "Child due next week", under: starred) { $0.dueDate = at(5) }
+    let overdueGrandchild = line(.task, "Overdue grandchild", under: futureChild) { $0.dueDate = at(-2) }
+    let plannedChild = line(.task, "Planned child", under: starred) { $0.selectedForDay = at(0) }
+    let doneInline = line(.task, "Done today under starred", under: starred) { $0.isCompleted = true; $0.completedAt = at(0, 10) }
+    let olderInline = line(.task, "Done yesterday under starred", under: starred) { $0.isCompleted = true; $0.completedAt = at(-1) }
+    let otherStar = line(.task, "Another starred parent") { $0.isStarred = true }
+    let otherStarChild = line(.task, "Another parent's child", under: otherStar)
+
+    let ineligible = line(.task, "Parent due next week") { $0.dueDate = at(5) }
+    let independent = line(.task, "Independently due child", under: ineligible) { $0.dueDate = at(0, 15); $0.includesTime = true }
+    let independentChild = line(.task, "Independent child's subtask", under: independent)
+    let early = line(.task, "Earlier due root") { $0.dueDate = at(0, 8); $0.includesTime = true }
+    let earlyChild = line(.task, "Earlier root's child", under: early)
+    let planned = line(.task, "Planned root") { $0.selectedForDay = at(0) }
+    let plannedSubtask = line(.task, "Planned root's child", under: planned)
+    let overdue = line(.task, "Overdue root") { $0.dueDate = at(-1) }
+    let overdueChild = line(.task, "Overdue root's child", under: overdue)
+
+    let doneParent = line(.task, "Done parent") { $0.isCompleted = true; $0.completedAt = at(0, 9) }
+    let doneNotes = line(.paragraph, "Done parent's notes", under: doneParent)
+    let doneChild = line(.task, "Done child", under: doneNotes) { $0.isCompleted = true; $0.completedAt = at(0, 10, 30) }
+    let openBetween = line(.task, "Unrelated open task under done", under: doneParent)
+    let doneDeep = line(.task, "Done through an open intermediary", under: openBetween) { $0.isCompleted = true; $0.completedAt = at(0, 9, 30) }
+    let independentDone = line(.task, "Independent done root") { $0.isCompleted = true; $0.completedAt = at(0, 10, 45) }
+    let yesterday = line(.task, "Parent done yesterday") { $0.isCompleted = true; $0.completedAt = at(-1) }
+    let underYesterday = line(.task, "Child done today", under: yesterday) { $0.isCompleted = true; $0.completedAt = at(0, 8) }
+    let closing = line(.task, "Still in completion dwell") { $0.selectedForDay = at(0); $0.isCompleted = true; $0.completedAt = at(0, 10, 50) }
+    let closingChild = line(.task, "Completion dwell's child", under: closing)
+    store.save()
+
+    let outline = BlockTree.taskOutline(BlockTree.flatten(store.blocks(inList: list.id), respectCollapse: false))
+    let agenda = TodayAgenda(tasks: outline.map(\.block), closing: [closing.id], now: now)
+    let rows = agenda.nestedRows(in: outline)
+    check(rows.starred.map(\.id) == [starred, dueChild, undated, deepChild, futureChild, overdueGrandchild,
+                                    plannedChild, doneInline, olderInline, otherStar, otherStarChild].map(\.id),
+          "A starred parent carries undated, future, overdue, due, planned and completed descendants once, in outline order")
+    check(rows.starred.map(\.depth) == [0, 1, 1, 2, 1, 2, 1, 1, 1, 0, 1],
+          "Non-task containers don't add task depth, deeper subtasks retain nesting, and separate roots rebase to zero")
+    check(rows.starred.allSatisfy { !$0.isCollapsed } && starred.isCollapsed && heading.isCollapsed,
+          "Today expands the display while leaving the list's stored folds alone")
+    check(rows.overdue.map(\.id) == [overdue, overdueChild].map(\.id),
+          "A descendant overdue in another group stays under its visible ancestor rather than appearing twice")
+    check(rows.due.map(\.id) == [independent, independentChild, early, earlyChild].map(\.id)
+          && rows.due.map(\.depth) == [0, 1, 0, 1],
+          "An eligible child without an eligible ancestor becomes a root, keeping its descendants and the bucket's root order")
+    check(rows.planned.map(\.id) == [planned, plannedSubtask, closing, closingChild].map(\.id),
+          "Planned roots carry their children, including a root still in completion dwell")
+    check(rows.doneToday.map(\.id) == [independentDone, doneParent, doneChild, doneDeep, underYesterday].map(\.id)
+          && rows.doneToday.map(\.depth) == [0, 0, 1, 1, 0],
+          "Done roots keep completion order and done descendants keep outline order, nesting only beneath displayed done ancestors")
+    check(!rows.doneToday.contains { [doneInline.id, closing.id, openBetween.id, yesterday.id].contains($0.id) },
+          "Completed today doesn't repeat inline or closing tasks or expand unrelated open and older completed descendants")
+    let allRows = rows.overdue + rows.due + rows.planned + rows.starred + rows.doneToday
+    check(Set(allRows.map(\.id)).count == allRows.count, "Each task appears at most once across all Today display groups")
+    check(agenda.openCount == 10 && agenda.progress == (7, 17)
+          && agenda.due.map(\.id) == [dueChild, independent, early].map(\.id)
+          && agenda.overdue.map(\.id) == [overdueGrandchild, overdue].map(\.id),
+          "Display expansion doesn't change Today eligibility, counts, progress or action targets")
+
+    let scheduled = TodayAgenda(tasks: outline.map(\.block), closing: [closing.id], now: now, order: .schedule)
+        .nestedRows(in: outline)
+    check(scheduled.due.map(\.id) == [early, earlyChild, independent, independentChild].map(\.id),
+          "Schedule order sorts roots by their time while each root keeps its subtree together")
+    let empty = TodayAgenda(tasks: [], now: now).nestedRows(in: [])
+    check(empty.overdue.isEmpty && empty.due.isEmpty && empty.planned.isEmpty && empty.starred.isEmpty && empty.doneToday.isEmpty,
+          "An empty outline produces empty nested groups")
+}
+
 // MARK: - Library and Inbox queue
 
 do {
@@ -188,6 +275,10 @@ do {
     let ordered = sorted.tasksInOutlineOrder(blocks: try store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil })))
     check(titles(ordered.filter { $0.listID == errands.id }) == titles([soon, under, later, undated]),
           "A list's tasks follow its Sort, each carrying its subtasks")
+    let taskRows = sorted.taskRowsInOutlineOrder(blocks: try store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil })))
+    check(taskRows.map(\.id) == ordered.map(\.id)
+          && taskRows.filter { $0.block.listID == errands.id }.map(\.depth) == [0, 1, 0, 0],
+          "The shared task outline preserves the task query's order and each task's depth under the list's Sort")
     check(sorted.lists.map(\.id).prefix(1) == [inbox.id]
           && ordered.map(\.listID).firstIndex(of: errands.id)! > ordered.map(\.listID).lastIndex(of: inbox.id)!,
           "Lists come in sidebar order, Inbox first")

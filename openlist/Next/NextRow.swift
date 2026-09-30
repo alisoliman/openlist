@@ -24,10 +24,11 @@ struct NextTaskRow: View {
     @Environment(AppEnvironment.self) private var env
     let task: Block
     var options = NXRowOptions()
+    var depth = 0
 
     var body: some View {
         let closing = env.workbench.closing[task.id]
-        NXTaskRowChrome(task: task, options: options) {
+        NXTaskRowChrome(task: task, options: options, indent: CGFloat(depth) * 26) {
             VStack(alignment: .leading, spacing: 2) {
                 NXStrikeText(text: task.displayTitle,
                              struck: closing ?? task.isCompleted,
@@ -227,8 +228,9 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
 }
 
 extension NXTaskRowChrome where Buttons == EmptyView {
-    init(task: Block, options: NXRowOptions = NXRowOptions(), @ViewBuilder title: @escaping () -> Title) {
-        self.init(task: task, options: options, title: title) { EmptyView() }
+    init(task: Block, options: NXRowOptions = NXRowOptions(), indent: CGFloat = 0,
+         @ViewBuilder title: @escaping () -> Title) {
+        self.init(task: task, options: options, indent: indent, title: title) { EmptyView() }
     }
 }
 
@@ -569,6 +571,10 @@ struct NXGroup: Identifiable {
     var color: Color = NX.ink(0.45)
     var glyph: TaskList?
     var rows: [Block]
+    /// Today's task outline; other grouped screens keep their flat rows.
+    var rowDepths: [UUID: Int] = [:]
+    /// An agenda count when some rows only provide subtask context.
+    var taskCount: Int?
     var showHead = true
     var collapsible = false
     /// Whether the group starts open, until the user folds it this session.
@@ -625,7 +631,7 @@ struct NXGroupView: View {
                     ForEach(group.rows, id: \.id) { task in
                         // Rows come and go at once, as the design's, however the
                         // change was animated: only a fresh row plays its own rowIn.
-                        NextTaskRow(task: task, options: options)
+                        NextTaskRow(task: task, options: options, depth: group.rowDepths[task.id] ?? 0)
                             .transition(.identity)
                     }
                     if group.rows.isEmpty, !group.emptyText.isEmpty {
@@ -675,7 +681,7 @@ struct NXGroupView: View {
                     .lineLimit(1)
                     .fixedSize()
                 if !group.rows.isEmpty {
-                    Text("\(group.rows.count)")
+                    Text("\(group.taskCount ?? group.rows.count)")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(NX.ink(0.38))
                         .monospacedDigit()

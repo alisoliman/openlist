@@ -101,3 +101,93 @@ struct TodayAgenda {
         scheduled = overdue + (due + planned).sorted(by: byTime)
     }
 }
+
+/// Today's display rows. Each eligible root carries its task outline;
+/// additional subtasks here don't change the agenda's counts or actions.
+struct TodayAgendaRows {
+    var overdue: [BlockRow]
+    var due: [BlockRow]
+    var planned: [BlockRow]
+    var starred: [BlockRow]
+    var doneToday: [BlockRow]
+}
+
+extension TodayAgenda {
+    /// Nests tasks beneath their eligible ancestors, even when their own
+    /// dates would put them in another group. An eligible task with no
+    /// eligible ancestor remains a root in its own group. Roots keep the
+    /// agenda's order; their subtasks keep the list's outline order.
+    ///
+    /// `outline` is every task row, open and done, from `taskOutline` of the
+    /// whole documents flattened without respecting collapse. Missing or
+    /// disconnected tasks should be appended by the caller at depth zero.
+    /// Today draws these outlines expanded without changing stored folds.
+    func nestedRows(in outline: [BlockRow]) -> TodayAgendaRows {
+        let positions = Dictionary(outline.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var ends = Array(repeating: outline.count, count: outline.count)
+        var path: [Int] = []
+        for (index, row) in outline.enumerated() {
+            while let ancestor = path.last, outline[ancestor].depth >= row.depth {
+                ends[path.removeLast()] = index
+            }
+            path.append(index)
+        }
+
+        func roots(in selected: Set<UUID>) -> Set<UUID> {
+            var result: Set<UUID> = []
+            var path: [(depth: Int, selectedAbove: Bool)] = []
+            for row in outline {
+                while let ancestor = path.last, ancestor.depth >= row.depth { path.removeLast() }
+                let selectedAbove = path.last?.selectedAbove ?? false
+                let isSelected = selected.contains(row.id)
+                if isSelected && !selectedAbove { result.insert(row.id) }
+                path.append((row.depth, selectedAbove || isSelected))
+            }
+            return result
+        }
+
+        let openIDs = Set((overdue + due + planned + starred).map(\.id))
+        let openRoots = roots(in: openIDs)
+        var drawn: Set<UUID> = []
+        func expanding(_ tasks: [Block]) -> [BlockRow] {
+            var rows: [BlockRow] = []
+            for task in tasks where openRoots.contains(task.id) {
+                guard let start = positions[task.id] else { continue }
+                for var row in outline[start..<ends[start]] where drawn.insert(row.id).inserted {
+                    row.depth -= outline[start].depth
+                    row.isCollapsed = false
+                    rows.append(row)
+                }
+            }
+            return rows
+        }
+
+        let overdueRows = expanding(overdue)
+        let dueRows = expanding(due)
+        let plannedRows = expanding(planned)
+        let starredRows = expanding(starred)
+
+        // Done subtasks already drawn under an open root stay there. The
+        // remaining done tasks nest only among other tasks done today;
+        // their unrelated open or older completed descendants stay out.
+        let doneIDs = Set(doneToday.map(\.id)).subtracting(drawn)
+        let doneRoots = roots(in: doneIDs)
+        var doneRows: [BlockRow] = []
+        for task in doneToday where doneRoots.contains(task.id) {
+            guard let start = positions[task.id] else { continue }
+            var path: [(depth: Int, doneDepth: Int)] = []
+            for var row in outline[start..<ends[start]] {
+                while let ancestor = path.last, ancestor.depth >= row.depth { path.removeLast() }
+                guard doneIDs.contains(row.id) else { continue }
+                let doneDepth = path.last.map { $0.doneDepth + 1 } ?? 0
+                path.append((row.depth, doneDepth))
+                guard drawn.insert(row.id).inserted else { continue }
+                row.depth = doneDepth
+                row.isCollapsed = false
+                doneRows.append(row)
+            }
+        }
+        return TodayAgendaRows(overdue: overdueRows, due: dueRows, planned: plannedRows,
+                               starred: starredRows, doneToday: doneRows)
+    }
+}
