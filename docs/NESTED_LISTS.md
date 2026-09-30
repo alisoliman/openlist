@@ -13,6 +13,11 @@ changes ownership while keeping the document's UUID, contents, appearance, and
 sidebar pin. A list cannot move under itself or any descendant. Gallery cards and
 search show document paths.
 
+A list’s **…** menu also offers **Show Tasks Only**, which hides prose without
+changing the document. This choice is local to each device. **Sort** and
+**Completed Tasks** apply to both presentations; returning to the document
+restores its notes and headings.
+
 ## Archive, Trash, and synchronization
 
 Archiving an ancestor excludes its whole owned subtree from active work,

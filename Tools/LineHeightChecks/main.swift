@@ -270,7 +270,7 @@ MainActor.assumeIsolated {
     check(caps == 10.5, "caps title 600 10.5/1", "\(caps)")
     // A leading under SwiftUI's own line can't go in lineSpacing, which
     // can't be negative, so one line takes it as padding: a card name's one
-    // line is 17.4, and two are 35.4 (IMPLEMENTATION.md's deviation).
+    // line is 17.4, and two are 35.4 with SwiftUI’s native line height.
     let closed = exactHeight(Text(lines(2)).font(.system(size: 14.5, weight: .semibold))
         .lineSpacing(14.5 * 1.2 - NX.lineHeight(14.5)))
     check(closed == 2 * NX.lineHeight(14.5), "a negative lineSpacing leaves 14.5pt lines 18 apart", "\(closed)")

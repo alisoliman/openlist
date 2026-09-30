@@ -1,15 +1,8 @@
 # Widgets
 
-Implemented 24 September 2026 from the "Openlist — macOS widgets" design
-([mockup](design/openlist-widgets/mockup.png), [design logic](design/openlist-widgets/mockup-logic.js);
-the same design's full export, with its markup and sample props, is in
-[openlist-next-v2/widgets](design/openlist-next-v2/widgets/)). The deployment
-target was raised to macOS 27.0 in the same change, which lets widget intents run
-in the app process.
-
-Seven desktop widgets replace the earlier Today, Summary and Lists widgets. The
-Today, Summary and List widgets keep their kind identifiers, so widgets already on
-the desktop upgrade in place.
+Openlist provides seven desktop widgets on macOS 27 or later. Launch the app
+before adding a widget. Today, Summary, and List retain their original kind
+identifiers so existing desktop widgets upgrade in place.
 
 | Widget | Kind | Sizes | Shows |
 |---|---|---|---|
@@ -181,7 +174,6 @@ Where WidgetKit, or the app, sets other terms than the design:
 ## Remaining validation limits
 
 Ad-hoc Dev builds cannot share the App Group, so their widgets show the Open
-Openlist prompt; use `Tools/build-dev.sh --signed` to exercise real data. The
-intent path into the app process, the live stopwatch text and the desktop host's
-use of the bundled serif were built to Apple's documented behavior, but no widget
-was placed on the desktop by hand in this pass.
+Openlist prompt; use `Tools/build-dev.sh --signed` to exercise real data.
+Verify interactive controls, live timers, and font rendering in the desktop
+widget host; rendered previews alone do not exercise these paths.
