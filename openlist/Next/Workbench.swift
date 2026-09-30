@@ -48,6 +48,16 @@ enum TriageExit: Equatable {
     case left, up, right, done, down
 }
 
+/// A capture draft put aside by a click away, to come back on the same page.
+struct StashedCapture {
+    var text: String
+    var listID: UUID?
+    var forToday: Bool
+    var labelID: UUID?
+    var route: AppRoute
+    var at: Date
+}
+
 /// Interaction state for the Next interface.
 ///
 /// Models live in SwiftData; this holds only what the design animates or
@@ -137,6 +147,9 @@ final class Workbench {
     var tasksMenu: NXTasksMenu?
     var captureOpen = false
     var captureText = ""
+    /// What a capture closed by a click away held, all it was aimed at, the
+    /// page it was on, and when.
+    @ObservationIgnored var stashedCapture: StashedCapture?
     var captureListID: UUID?
     var captureForToday = false
     /// The label screen capture opened on; the new task gets that label.
@@ -268,6 +281,14 @@ final class Workbench {
     @ObservationIgnored var awaitsLaunchNotice = true
 
     @ObservationIgnored var gPressedAt: Date?
+    /// G held its chord long enough to be a question: the bottom of the
+    /// window lists where each key goes, and the chord waits for an answer
+    /// long enough to read or hear it, until a key, a click, Esc, a menu or
+    /// the window going to the background ends it.
+    private(set) var showsGoHint = false
+    /// How long the hint waits for an answer: past its VoiceOver
+    /// announcement when VoiceOver is on.
+    private static var goHintLifetime: TimeInterval { NSWorkspace.shared.isVoiceOverEnabled ? 12 : 6 }
     /// Names the Store's completion Undo after the design action that caused it.
     @ObservationIgnored var completionLabel: String?
     /// Where the Store's completion Undo goes while a completion batch writes;
@@ -386,7 +407,7 @@ final class Workbench {
         // The new screen may already have published its rows.
         if visibleRoute != navigator.route { visibleIDs = [] }
         tasksQueryFocused = false
-        gPressedAt = nil
+        endGoChord()
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
         if let openID = navigator.openTaskID,
@@ -395,7 +416,42 @@ final class Workbench {
         }
     }
 
+    // MARK: Go chord
+
+    /// G starts a chord. Typed straight on, the next key goes somewhere
+    /// quietly; a pause brings up the hint, which then waits for the answer.
+    func beginGoChord() {
+        let pressed = Date.now
+        gPressedAt = pressed
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self, self.gPressedAt == pressed else { return }
+            self.showsGoHint = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.goHintLifetime) { [weak self] in
+                guard let self, self.gPressedAt == pressed else { return }
+                self.endGoChord()
+                // Said, as the hint was, so the next key isn't a surprise.
+                if NSApp.isActive {
+                    NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                        userInfo: [.announcement: "Go to closed", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+                }
+            }
+        }
+    }
+
+    /// Whether a key typed now answers the chord: while its hint is up, or
+    /// within the moment before the hint would show. A G typed now keeps it waiting.
+    var awaitsGoKey: Bool {
+        guard let gPressedAt else { return false }
+        return showsGoHint || Date.now.timeIntervalSince(gPressedAt) < 0.9
+    }
+
+    func endGoChord() {
+        gPressedAt = nil
+        if showsGoHint { showsGoHint = false }
+    }
+
     func inspect(_ id: UUID?) {
+        if gPressedAt != nil { endGoChord() }
         guard let id else { navigator.closeTask(); return }
         navigator.releaseRevealSelection()
         focusID = id
@@ -586,6 +642,8 @@ final class Workbench {
     }
 
     private func record(_ label: String, icon: String, tone: TrayTone, ids: [UUID]) -> LogMark {
+        // A change made any way, a VoiceOver press included, answers a waiting G.
+        if gPressedAt != nil { endGoChord() }
         batchCounter += 1
         let now = Date.now
         let entries = (ids.isEmpty ? [nil] : ids.map(Optional.some)).map {

@@ -23,12 +23,15 @@ struct NextListsGallery: View {
     }
 
     /// Each section's lists, then the rest, then archived lists, with nested
-    /// lists after their parent.
+    /// lists after their parent. When lists exist but no section holds one,
+    /// the default section shows empty, so its New list card has a place.
     private var shelves: [Shelf] {
         var shelves = library.sections.map { Shelf(id: $0.id.uuidString, title: $0.displayTitle, lists: nested(library.lists(in: $0))) }
+        let keptEmpty = shelves.allSatisfy(\.lists.isEmpty) && !library.destinations.isEmpty
+            ? library.sections.first(where: \.isDefault).map(\.id.uuidString) : nil
         shelves.append(Shelf(id: Shelf.otherID, title: "Other lists", lists: nested(library.unsectioned)))
         shelves.append(Shelf(id: Shelf.archivedID, title: "Archived", lists: library.archived))
-        return shelves.filter { !$0.lists.isEmpty }
+        return shelves.filter { !$0.lists.isEmpty || $0.id == keptEmpty }
     }
 
     private func nested(_ lists: [TaskList]) -> [TaskList] { library.outline(lists).map { $0.list } }
@@ -37,7 +40,7 @@ struct NextListsGallery: View {
     /// lists. Other lists, which have none, and archived ones say so after.
     private func subtitle(_ shelves: [Shelf]) -> String {
         func lists(_ count: Int) -> String { "\(count) \(count == 1 ? "list" : "lists")" }
-        let sections = shelves.filter { $0.id != Shelf.otherID && $0.id != Shelf.archivedID }
+        let sections = shelves.filter { $0.id != Shelf.otherID && $0.id != Shelf.archivedID && !$0.lists.isEmpty }
         let other = shelves.first { $0.id == Shelf.otherID }?.lists.count ?? 0
         var text: String
         if sections.isEmpty {
@@ -52,29 +55,41 @@ struct NextListsGallery: View {
 
     var body: some View {
         let shelves = shelves
-        NXPage {
+        NXPage(measure: nil) {
             NXScreenHeader(tile: .icon("square.2.layers.3d.fill"), color: NX.lists, title: "Lists", subtitle: subtitle(shelves))
             VStack(alignment: .leading, spacing: 0) {
+                // With no list to use, archived ones aside, the first card makes one.
+                if library.destinations.isEmpty {
+                    LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 14) {
+                        NXNewListCard(title: "Make your first list") { env.workbench.createList() }
+                            .help("New list (⇧⌘N)")
+                    }
+                    .padding(.top, 20)
+                }
                 ForEach(shelves) { shelf in
                     VStack(alignment: .leading, spacing: 0) {
                         NXCapsTitle(text: shelf.title).padding(.bottom, 10)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 14)], alignment: .leading, spacing: 14) {
+                        LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 14) {
                             ForEach(shelf.lists) { list in
                                 let tasks = library.tasks(in: list.id)
                                 NXListCard(list: list, tasks: tasks, peek: peek(list, tasks: tasks),
                                            path: library.hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "))
                             }
+                            // Each section ends with a place to start another list in it.
+                            if let section = library.sections.first(where: { $0.id.uuidString == shelf.id }) {
+                                NXNewListCard(title: "New list") { env.workbench.createList(in: section) }
+                                    .help("New list in \(section.displayTitle)")
+                            }
                         }
                     }
                     .padding(.top, 20)
-                }
-                if shelves.isEmpty {
-                    NXDashedEmpty(text: "No lists yet. Press ⇧⌘N to make one.").padding(.top, 20)
                 }
             }
             .padding(.top, 8)
         }
     }
+
+    private static let columns = [GridItem(.adaptive(minimum: 230), spacing: 14)]
 
     /// The first three open tasks, subtasks included as the design's card
     /// takes them, in the list's document order. Worked out here, once per
@@ -182,6 +197,37 @@ private struct NXListCard: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { env.workbench.go(env.workbench.route(for: list)) }
         .contextMenu { NXListMenu(list: list, surface: .gallery) }
+    }
+}
+
+/// The dashed card after a section's lists that makes another there. It
+/// takes the row's height beside real cards, and a card's own on a row by itself.
+private struct NXNewListCard: View {
+    @Environment(\.nextStyle) private var style
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 30, height: 30)
+                    .background(hovering ? style.accent.opacity(0.14) : NX.ink(0.05), in: Circle())
+                    .foregroundStyle(hovering ? style.accent : NX.ink(0.45))
+                Text(title).font(.system(size: 12.5, weight: .medium))
+            }
+            .foregroundStyle(hovering ? NX.ink(0.75) : NX.ink(0.45))
+            .frame(maxWidth: .infinity, minHeight: 150, maxHeight: .infinity)
+            .background(hovering ? NX.ink(0.02) : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(NX.ink(hovering ? 0.22 : 0.13), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .animation(NX.cssEase(120), value: hovering)
+        }
+        .buttonStyle(NXPressStyle())
+        .onHover { hovering = $0 }
     }
 }
 

@@ -18,7 +18,7 @@ struct NextActivityScreen: View {
     @State private var loadError: String?
 
     var body: some View {
-        NXPage {
+        NXPage(measure: nil) {
             NXScreenHeader(tile: .icon("square.grid.2x2.fill"), color: style.accent, title: "Activity",
                            subtitle: "What you finished and what changed")
             Group {

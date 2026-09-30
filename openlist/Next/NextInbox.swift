@@ -196,12 +196,17 @@ private struct NXTriageCard: View {
     private var chips: [NXChipModel] {
         var chips: [NXChipModel] = []
         if let due = task.dueDate {
-            chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due, now: now), icon: "calendar",
-                                     tone: NXFormat.dayOffset(due, now: now) <= 0 ? .accent : .neutral))
+            // As a row's due chip reads it: an earlier day is overdue, in red.
+            let offset = NXFormat.dayOffset(due, now: now)
+            chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due, now: now),
+                                     icon: offset < 0 ? "exclamationmark.circle.fill" : "calendar",
+                                     tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0))
         }
         if task.priority != .none {
-            chips.append(NXChipModel(id: "prio", label: task.priority == .high ? "High priority" : task.priority.title,
-                                     icon: "flag", tone: .over))
+            // Only High reads as urgent, in red; the others name their level
+            // in the chip's quiet ink, which stays legible on the card.
+            chips.append(NXChipModel(id: "prio", label: "\(task.priority.title) priority", icon: "flag.fill",
+                                     tone: task.priority == .high ? .over : .neutral))
         }
         return chips
     }

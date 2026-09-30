@@ -88,7 +88,7 @@ struct NextOverlays: View {
         let navigator = env.navigator
         ZStack(alignment: .top) {
             if workbench.captureOpen {
-                NXOverlayBackdrop(top: 96, close: { workbench.closeCapture() }) {
+                NXOverlayBackdrop(top: 96, close: { workbench.closeCapture(keepsDraft: true) }) {
                     NXCaptureCard(draft: workbench, notice: workbench.captureNotice,
                                   add: { _ = workbench.createFromCapture(keepOpen: $0) })
                         .animation(style.ease(140), value: workbench.captureNotice)
@@ -119,18 +119,20 @@ struct NextOverlays: View {
         }
         .onChange(of: navigator.isCommandPaletteOpen) { _, isOpen in
             guard isOpen else { return }
+            if workbench.gPressedAt != nil { workbench.endGoChord() }
             workbench.paletteQuery = ""
             workbench.paletteIndex = 0
             navigator.isSearchOpen = false
-            if workbench.captureOpen { workbench.closeCapture() }
+            if workbench.captureOpen { workbench.closeCapture(keepsDraft: true) }
         }
         .onChange(of: navigator.isSearchOpen) { _, isOpen in
             guard isOpen else { return }
+            if workbench.gPressedAt != nil { workbench.endGoChord() }
             workbench.searchQuery = ""
             workbench.searchIndex = 0
             workbench.searchIncludesCompleted = false
             navigator.isCommandPaletteOpen = false
-            if workbench.captureOpen { workbench.closeCapture() }
+            if workbench.captureOpen { workbench.closeCapture(keepsDraft: true) }
         }
     }
 }
@@ -290,16 +292,6 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                     .frame(width: 17, height: 17)
                     .padding(.top, 3)
                 ZStack(alignment: .leading) {
-                    // The tinted copy of the field's text, which scrolls with it
-                    // once the text is wider than the card. VoiceOver reads the field.
-                    styled(parse)
-                        .font(.system(size: 16))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .offset(x: -scroll)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
                     TextField("", text: $draft.captureText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
@@ -314,6 +306,18 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                                 Button("Add task and keep capture open") { add(true) }
                             }
                         }
+                    // The tinted copy of the field's text, which scrolls with it
+                    // once the text is wider than the card. Over the field, so a
+                    // selection's highlight shows under the text, not over it.
+                    // VoiceOver reads the field.
+                    styled(parse)
+                        .font(.system(size: 16))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .offset(x: -scroll)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
                 .frame(height: 24)
                 .background { NXFieldScroll { scroll = $0 } }
@@ -806,10 +810,13 @@ struct NXCommand: Identifiable {
 }
 
 enum NXPalette {
+    /// The commands the query matches, those that act on tasks only while
+    /// one is focused or selected, unless `anyTarget` asks what would match
+    /// with one.
     @MainActor
-    static func commands(env: AppEnvironment, library: NextLibrary) -> [NXCommand] {
+    static func commands(env: AppEnvironment, library: NextLibrary, anyTarget: Bool = false) -> [NXCommand] {
         let workbench = env.workbench
-        let hasTarget = !workbench.targetTasks.isEmpty
+        let hasTarget = anyTarget || !workbench.targetTasks.isEmpty
         let query = workbench.paletteQuery.trimmingCharacters(in: .whitespaces).lowercased()
         func act(_ body: @escaping @MainActor ([UUID]) -> Void) -> @MainActor () -> Void {
             {
@@ -855,6 +862,11 @@ enum NXPalette {
             NXCommand(id: "new", icon: "plus.circle", label: "New task", key: "N") { workbench.openCapture() },
             NXCommand(id: "search", icon: "magnifyingglass", label: "Search", key: "/") { env.navigator.isSearchOpen = true },
             NXCommand(id: "undo", icon: "arrow.uturn.backward", label: "Undo last change", key: "⌘Z") { workbench.undoLast() },
+            // The sheet leaves the page as it was, so focus goes back where it
+            // was, as Help ▸ Keyboard Shortcuts leaves it.
+            NXCommand(id: "shortcuts", icon: "keyboard", label: "Keyboard shortcuts", key: "⌘/") {
+                env.navigator.isShortcutSheetOpen = true
+            },
         ]
         all += nav.map { route, icon, label, key in
             NXCommand(id: "go-\(label)", icon: icon, label: label, key: key, navigates: true) { workbench.go(route) }
@@ -933,6 +945,18 @@ private struct NXPaletteCard: View {
                         }
                         .onTapGesture { NXPalette.run(command, env: env, overlays: overlays) }
                         .accessibilityAction { NXPalette.run(command, env: env, overlays: overlays) }
+                }
+                if commands.isEmpty {
+                    // Task actions only list with a task to act on: when one
+                    // of them is what the query names, say so rather than
+                    // show an empty card.
+                    let needsTask = targets.isEmpty && !NXPalette.commands(env: env, library: library, anyTarget: true).isEmpty
+                    Text(needsTask ? "“\(NXFormat.short(workbench.paletteQuery))” acts on a task. Focus or select one first."
+                                   : "No actions match “\(NXFormat.short(workbench.paletteQuery))”.")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(NX.ink(0.45))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
                 }
             }
             .modifier(NXScrollToIndex(ids: commands.map(\.id), index: index))

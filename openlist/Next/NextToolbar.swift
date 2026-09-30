@@ -33,6 +33,7 @@ struct NextToolbar: View {
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: env.navigator.canGoBack ? NX.ink(0.6) : NX.ink(0.2)))
                 .disabled(!env.navigator.canGoBack)
+                .help("Back (⌘[)")
                 .accessibilityLabel("Back")
 
                 // While you work the crumb gives the notch its room past 200 pt.
@@ -80,15 +81,14 @@ struct NextToolbar: View {
                             NXKey("N", opacity: 0.65)
                         }
                     }
-                    .foregroundStyle(.white)
-                    .padding(.vertical, 5)
-                    .padding(.horizontal, 10)
-                    .background(style.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .shadow(color: style.accent.opacity(0.4), radius: 1, y: 1)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                // Darkens under the pointer, as the page's other filled accent buttons do.
+                .buttonStyle(NXHoverButtonStyle(hover: style.accentHover, rest: style.accent, radius: 8,
+                                                padding: EdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10),
+                                                foreground: .white))
+                .shadow(color: style.accent.opacity(0.4), radius: 1, y: 1)
                 .fixedSize()
+                .nxHelp(working ? "New task (N)" : nil)
                 .accessibilityLabel("New task")
             }
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { trailingWidth = $0 }
@@ -328,7 +328,9 @@ struct NXWorkNotch: View {
         }
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8, padding: EdgeInsets(), foreground: color,
                                         hoverForeground: color == NX.green ? NX.green : NX.ink))
-        // Named as the design's titles name them, not by the symbol.
+        // Named as the design's titles name them, not by the symbol. A check
+        // and a cross side by side need their names under the pointer too.
+        .help(help)
         .accessibilityLabel(help)
     }
 }

@@ -77,7 +77,8 @@ struct NextTasksScreen: View {
     }
 
     @MainActor
-    static func groups(pool: [Block], library: NextLibrary, workbench: Workbench, accent: Color, now: Date) -> [NXGroup] {
+    static func groups(pool: [Block], library: NextLibrary, workbench: Workbench, queryMode: Bool, accent: Color,
+                       now: Date) -> [NXGroup] {
         var groups: [NXGroup] = []
         switch workbench.tasksGrouping {
         case .list:
@@ -109,10 +110,37 @@ struct NextTasksScreen: View {
                 groups.append(NXGroup(id: "all", title: "All tasks", icon: "checklist", color: NX.green, rows: pool))
             }
         }
-        if groups.isEmpty {
-            groups.append(NXGroup(id: "none", rows: [], showHead: false, emptyText: "Nothing matches these filters."))
-        }
+        if groups.isEmpty { groups.append(emptyGroup(library: library, workbench: workbench, queryMode: queryMode)) }
         return groups
+    }
+}
+
+extension NextTasksScreen {
+    /// Why the page is empty, from what the filters of the mode in use hide:
+    /// nothing yet, nothing open, or a filter, with the way back to every
+    /// open task when there are some for it to show.
+    @MainActor
+    static func emptyGroup(library: NextLibrary, workbench: Workbench, queryMode: Bool) -> NXGroup {
+        let trimmed = { (text: String) in text.trimmingCharacters(in: .whitespaces) }
+        let filtered = workbench.tasksStatus != .open || (queryMode
+            ? !trimmed(workbench.tasksQuery).isEmpty
+            : !workbench.tasksListFilter.isEmpty || !trimmed(workbench.tasksTitleFilter).isEmpty)
+        if library.tasks.isEmpty {
+            return NXGroup(id: "none", rows: [], showHead: false, emptyText: "No tasks in your lists. Press N to capture one.")
+        }
+        if library.open.isEmpty && (workbench.tasksStatus == .open || !filtered) {
+            return NXGroup(id: "none", rows: [], showHead: false, emptyText: "Everything is done. Nothing is open.")
+        }
+        guard !library.open.isEmpty else {
+            return NXGroup(id: "none", rows: [], showHead: false, emptyText: "Nothing matches these filters.")
+        }
+        return NXGroup(id: "none", rows: [], showHead: false, emptyText: "Nothing matches these filters.",
+                       actionLabel: "Show all open tasks") {
+            workbench.tasksStatus = .open
+            workbench.tasksListFilter = []
+            workbench.tasksTitleFilter = ""
+            workbench.tasksQuery = ""
+        }
     }
 }
 
@@ -135,7 +163,8 @@ private struct NXTasksPage: View {
         let workbench = env.workbench
         let queryMode = env.settings.tasksFilterStyle == .query
         let pool = NextTasksScreen.pool(tasks: tasks, library: library, workbench: workbench, queryMode: queryMode, now: now)
-        let groups = NextTasksScreen.groups(pool: pool, library: library, workbench: workbench, accent: style.accent, now: now)
+        let groups = NextTasksScreen.groups(pool: pool, library: library, workbench: workbench, queryMode: queryMode,
+                                            accent: style.accent, now: now)
         let listCount = library.lists.count
         return NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXScreenHeader(tile: .icon("checklist"), color: NX.green, title: "Tasks",

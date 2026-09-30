@@ -147,16 +147,36 @@ func chipLabels(_ text: String, forToday: Bool = false) -> [String] {
     if forToday, preview.date == nil { preview.date = NXFormat.day(offset: 0, now: captureReference) }
     return parse.chips(for: preview, forToday: forToday, now: captureReference).map(\.label)
 }
+func captureDate(_ offset: Int) -> String {
+    NXFormat.day(offset: offset, now: captureReference).formatted(.dateTime.weekday(.abbreviated).day())
+}
+/// A day's chip: its label, then its distance, or its date where the label
+/// already names the distance.
 func captureDay(_ offset: Int) -> String {
     let date = NXFormat.day(offset: offset, now: captureReference)
-    return "\(NXFormat.dueLabel(date, now: captureReference)) · \(NXFormat.relativeDay(date, now: captureReference))"
+    let context = (-1...1).contains(offset) ? captureDate(offset) : NXFormat.relativeDay(date, now: captureReference)
+    return "\(NXFormat.dueLabel(date, now: captureReference)) · \(context)"
 }
 check(chipLabels("Pay deposit friday 6pm #travel ~15m") == [captureDay(2), "18:00", "travel", "15m estimate"],
       "The design's example chips its tokens with the day's distance")
 check(chipLabels("#travel !high pay deposit friday 6pm") == ["travel", "High", captureDay(2), "18:00"],
       "Chips come in the order the tokens were typed")
-check(chipLabels("Call mum today") == ["Today · today"] && chipLabels("Call mum tomorrow") == ["Tomorrow · tomorrow"],
-      "A typed today or tomorrow keeps its distance, as the design's")
+check(chipLabels("Call mum today") == ["Today · \(captureDate(0))"]
+      && chipLabels("Call mum tomorrow") == ["Tomorrow · \(captureDate(1))"],
+      "A typed today or tomorrow gives its date, rather than naming its distance twice")
+check(NXFormat.typedDay(NXFormat.day(offset: -1, now: captureReference), now: captureReference)
+      == "Yesterday · \(captureDate(-1))", "A typed yesterday gives its date too")
+check(NXFormat.relativeDay(NXFormat.day(offset: -1, now: captureReference), now: captureReference) == "yesterday"
+      && NXFormat.relativeDay(NXFormat.day(offset: -3, now: captureReference), now: captureReference) == "3 days ago",
+      "A past day reads as people say it, never \"1 days ago\"")
+let yesterdayMorning = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0,
+                                             of: NXFormat.day(offset: -1, now: captureReference))!
+let thisEvening = Calendar.current.date(bySettingHour: 20, minute: 0, second: 0, of: captureReference)!
+check(NXFormat.relative(yesterdayMorning, now: thisEvening) == "yesterday",
+      "Done yesterday morning is yesterday this evening, not 2 days ago")
+check(NXFormat.relative(thisEvening.addingTimeInterval(-3590), now: thisEvening) == "1 h ago"
+      && NXFormat.relative(thisEvening.addingTimeInterval(-600), now: thisEvening) == "10 min ago",
+      "Never \"60 min ago\"")
 check(chipLabels("Call mum 6pm") == ["18:00"], "A time alone shows only its time")
 check(chipLabels("Call mum 6pm", forToday: true) == ["Today", "18:00"], "Capture for Today leads with Today")
 check(chipLabels("Call mum", forToday: true) == ["Today"] && chipLabels("Call mum").isEmpty,

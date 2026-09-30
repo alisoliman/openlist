@@ -198,24 +198,53 @@ struct NXHoverButtonStyle: ButtonStyle {
     var padding: EdgeInsets = EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
     var foreground: Color = NX.ink(0.6)
     var hoverForeground: Color?
+    /// A hairline drawn with the fill, so it gives with it on a press.
+    var border: Color?
 
     func makeBody(configuration: Configuration) -> some View {
         HoverBody(configuration: configuration, style: self)
     }
 
     private struct HoverBody: View {
+        @Environment(\.nextStyle) private var nextStyle
         let configuration: Configuration
         let style: NXHoverButtonStyle
         @State private var hovering = false
 
         var body: some View {
+            let pressed = configuration.isPressed
+            let shape = RoundedRectangle(cornerRadius: style.radius, style: .continuous)
             configuration.label
                 .padding(style.padding)
                 .foregroundStyle(hovering ? (style.hoverForeground ?? style.foreground) : style.foreground)
-                .background(hovering || configuration.isPressed ? style.hover : style.rest,
-                            in: RoundedRectangle(cornerRadius: style.radius, style: .continuous))
+                .background(hovering || pressed ? style.hover : style.rest, in: shape)
+                .overlay { if let border = style.border { shape.strokeBorder(border, lineWidth: 0.5) } }
                 .contentShape(Rectangle())
+                // A press gives a little under the pointer and springs back
+                // as it lets go, so a click always feels heard. Only the
+                // scale animates: a label the action changes changes at once.
+                // Reduce Motion keeps the fill alone.
+                .animation(NX.ease(pressed ? 90 : 180)) { $0.scaleEffect(pressed && nextStyle.slides ? 0.97 : 1) }
                 .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// A button that draws its own hover, with only the press's give, as
+/// `NXHoverButtonStyle` presses.
+struct NXPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressBody(configuration: configuration)
+    }
+
+    private struct PressBody: View {
+        @Environment(\.nextStyle) private var nextStyle
+        let configuration: Configuration
+
+        var body: some View {
+            let pressed = configuration.isPressed
+            configuration.label
+                .animation(NX.ease(pressed ? 90 : 180)) { $0.scaleEffect(pressed && nextStyle.slides ? 0.97 : 1) }
         }
     }
 }

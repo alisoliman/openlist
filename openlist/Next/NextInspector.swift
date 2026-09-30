@@ -211,6 +211,9 @@ struct NextInspector: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    /// How many lists or labels the rows offer as one-click pills, about two
+    /// lines' worth; a bigger library chooses by name instead.
+    static let quickPickLimit = 8
     let task: Block
     /// Drafts belong to `draftID`, which lags `task` until they are committed.
     @State private var title = SyncedTextDraft()
@@ -219,6 +222,8 @@ struct NextInspector: View {
     /// The open popover, and the task it was opened on. The shell reuses this
     /// view for every task, so a popover never carries over to the next one.
     @State private var picker: (section: DetailPicker, taskID: UUID)?
+    /// The labels the Labels row showed as its picker opened.
+    @State private var heldLabelIDs: Set<UUID>?
     @State private var lineage = NXLineage()
     /// "Add a note" opened the note, which shows while it has focus or text.
     @State private var addingNote = false
@@ -261,6 +266,7 @@ struct NextInspector: View {
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
                                                 padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
                                                 foreground: NX.ink(0.45)))
+                .help("Close details (Esc)")
                 .accessibilityLabel("Close details")
             }
             .padding(.vertical, 12)
@@ -502,24 +508,54 @@ struct NextInspector: View {
             GridRow {
                 propertyLabel("List")
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(list?.displayTitle ?? "No list")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(NX.ink)
-                        .lineLimit(1)
-                        .padding(.bottom, 2)
-                    NXFlow(spacing: 4) {
+                    // The list's name opens every list by name, however many
+                    // there are; the design's glyphs are the quick picks
+                    // beside it while they still fit a line or two.
+                    Menu {
                         ForEach(library.lists, id: \.id) { option in
-                            let current = option.id == task.listID
-                            // The design's 13/1 glyph in 4/7 padding.
-                            NXInspectorPill(isOn: current, padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7), line: 13) {
-                                if !current { workbench.move([task.id], to: option.id, quiet: true) }
-                            } label: {
-                                NXListGlyph(list: option, size: 13)
+                            NXListMenuButton(list: option) { workbench.move([task.id], to: option.id, quiet: true) }
+                                .disabled(option.id == task.listID)
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            // A long name ends in "…" inside the value column,
+                            // with the chevron still beside it.
+                            Text(list?.displayTitle ?? "No list")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(NX.ink)
+                                .lineLimit(1)
+                                .frame(maxWidth: 196, alignment: .leading)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(NX.ink(0.4))
+                        }
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
+                                                    padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
+                                                    foreground: NX.ink))
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    // The name stays in line with the values under it.
+                    .padding(.leading, -5)
+                    .help("Move to another list")
+                    .accessibilityLabel("List: \(list?.displayTitle ?? "No list")")
+                    .accessibilityHint("Moves the task to another list")
+                    if library.lists.count <= Self.quickPickLimit {
+                        NXFlow(spacing: 4) {
+                            ForEach(library.lists, id: \.id) { option in
+                                let current = option.id == task.listID
+                                // The design's 13/1 glyph in 4/7 padding.
+                                NXInspectorPill(isOn: current, padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7), line: 13) {
+                                    if !current { workbench.move([task.id], to: option.id, quiet: true) }
+                                } label: {
+                                    NXListGlyph(list: option, size: 13)
+                                }
+                                .help(option.displayTitle)
+                                // Named, not read as its emoji.
+                                .accessibilityLabel(current ? option.displayTitle : "Move to \(option.displayTitle)")
+                                .accessibilityAddTraits(current ? .isSelected : [])
                             }
-                            .help(option.displayTitle)
-                            // Named, not read as its emoji.
-                            .accessibilityLabel(current ? option.displayTitle : "Move to \(option.displayTitle)")
-                            .accessibilityAddTraits(current ? .isSelected : [])
                         }
                     }
                 }
@@ -593,8 +629,16 @@ struct NextInspector: View {
             }
             GridRow {
                 propertyLabel("Labels")
+                // Every label is a quick toggle while they fit a line or two;
+                // past that, only the task's own show, and + finds the rest.
+                // While + is open the row holds the labels it showed, so the
+                // picker hanging from + stays put as labels go on and off.
+                let held = picker?.section == .labels && picker?.taskID == task.id ? heldLabelIDs : nil
+                let shown = if let held { library.labels.filter { held.contains($0.id) } }
+                    else if library.labels.count <= Self.quickPickLimit { library.labels }
+                    else { library.labels.filter { task.labelIDs.contains($0.id) } }
                 NXFlow(spacing: 4) {
-                    ForEach(library.labels, id: \.id) { label in
+                    ForEach(shown, id: \.id) { label in
                         let on = task.labelIDs.contains(label.id)
                         let color = label.nxColor
                         Button { workbench.toggleLabel(task.id, labelID: label.id) } label: {
@@ -616,9 +660,10 @@ struct NextInspector: View {
                     NXInspectorPill(isOn: false) { openPicker(.labels) } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "plus").font(.system(size: 10, weight: .medium))
-                            if library.labels.isEmpty { Text("Add label") }
+                            if shown.isEmpty { Text("Add label") }
                         }
                     }
+                    .nxHelp(shown.isEmpty ? nil : "Add or remove labels (⇧⌘L)")
                     .accessibilityLabel("Edit labels")
                     .popover(isPresented: pickerBinding(.labels), arrowEdge: .bottom) {
                         LabelPicker(block: task).id(task.id).environment(env)
@@ -648,12 +693,24 @@ struct NextInspector: View {
         }
     }
 
-    private func openPicker(_ section: DetailPicker) { picker = (section, task.id) }
+    private func openPicker(_ section: DetailPicker) {
+        // The Labels row holds what it shows while its picker is open, from
+        // + or Task ▸ Add Label… alike, taken as it opens rather than again
+        // over an open picker.
+        if section == .labels, !(picker?.section == .labels && picker?.taskID == task.id) {
+            heldLabelIDs = Set(library.labels.count <= Self.quickPickLimit ? library.labels.map(\.id) : task.labelIDs)
+        }
+        picker = (section, task.id)
+    }
 
     /// One popover per row; the schedule rows each open the shared picker on their section.
     private func pickerBinding(_ section: DetailPicker) -> Binding<Bool> {
         Binding(get: { picker?.section == section && picker?.taskID == task.id },
-                set: { if !$0, picker?.section == section { picker = nil } })
+                set: {
+                    guard !$0, picker?.section == section else { return }
+                    picker = nil
+                    if section == .labels { heldLabelIDs = nil }
+                })
     }
 
     private func schedulePopover(_ section: DetailPicker) -> some View {

@@ -17,6 +17,9 @@ struct NextShell: View {
     @State private var overlays = NXOverlayState()
     @State private var chrome = NXWindowChrome()
     @State private var width: CGFloat = 0
+    /// The width again, for the page's column, read apart from this body so
+    /// a live resize doesn't draw the library again.
+    @State private var room = NXPageRoomSource()
 
     var body: some View {
         let library = drawnLibrary()
@@ -33,7 +36,7 @@ struct NextShell: View {
                 .allowsHitTesting(showsSidebar)
                 .accessibilityHidden(!showsSidebar)
             // The overlays dim and centre on the main pane; the sidebar stays clear.
-            NextMain()
+            NXPageRoomReader(source: room, showsSidebar: showsSidebar, content: NextMain())
                 .overlay { NextOverlays(overlays: overlays) }
                 // With no sidebar to hold them, the traffic lights sit on the toolbar.
                 .environment(\.nxTrafficLightsInset, showsSidebar || chrome.isFullScreen ? 0 : chrome.trailingEdge)
@@ -46,6 +49,7 @@ struct NextShell: View {
         .background { NXWindowChromeHost(chrome: chrome) }
         .onGeometryChange(for: CGFloat.self, of: \.size.width) {
             width = $0
+            room.windowWidth = $0
             adaptSidebar()
         }
         .onChange(of: env.navigator.openTaskID) { adaptSidebar() }
@@ -263,12 +267,17 @@ private struct NXNoRows: ViewModifier {
 // MARK: - Page scaffold
 
 /// The scrolling page every screen sits in: 26/40/120 padding, the full
-/// width beside the sidebar and inspector, a click-to-clear background, scroll-to-focus,
+/// width beside the sidebar and inspector up to a reading measure, past which
+/// the column is centred so a row's chips stay in reach of its title on a
+/// wide display (Calendar, Lists and Activity use every point; see
+/// `NXReadingColumn`), a click-to-clear background, scroll-to-focus,
 /// scrolling to what a search hit or link reveals in a list document, and,
 /// as a native extra, the place Back and Forward return it to.
 struct NXPage<Content: View>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
+    /// The widest the column gets; nil fills the page.
+    var measure: CGFloat? = NXPageMeasure.reading
     /// Row IDs in on-screen order, published for j/k and ⌘A.
     var rowIDs: [UUID] = []
     @ViewBuilder var content: () -> Content
@@ -288,15 +297,16 @@ struct NXPage<Content: View>: View {
         let workbench = env.workbench
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: 0).id(ContentReveal.Anchor.pageHeader)
-                    content()
+                NXReadingColumnView(measure: measure.map { $0 + 80 }) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Color.clear.frame(height: 0).id(ContentReveal.Anchor.pageHeader)
+                        content()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.top, 26)
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 120)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.top, 26)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 120)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .offset(y: appeared ? 0 : 6)
                 .opacity(appeared ? 1 : 0)
                 .background {
@@ -352,6 +362,94 @@ struct NXPage<Content: View>: View {
         workbench.tasksQueryFocused = false
         if env.navigator.openTaskID != nil { env.navigator.closeTask() }
         NSApp.keyWindow?.makeFirstResponder(nil)
+    }
+}
+
+enum NXPageMeasure {
+    /// Wide enough that a window of the design's size never reaches it.
+    static let reading: CGFloat = 1120
+}
+
+/// The window's width, for the page's reading column.
+@Observable @MainActor
+final class NXPageRoomSource {
+    var windowWidth: CGFloat = 0
+}
+
+/// Hands the main pane its page's room, the window's width less the
+/// sidebar's. Only this reads the width, so a resize updates it and the
+/// column, and the sidebar's slide moves a centred column with it.
+private struct NXPageRoomReader<Content: View>: View {
+    let source: NXPageRoomSource
+    let showsSidebar: Bool
+    let content: Content
+
+    var body: some View {
+        content.environment(\.nxPageRoom, max(0, source.windowWidth - (showsSidebar ? 236 : 0)))
+    }
+}
+
+/// `NXReadingColumn` with the room read here, so a change of room lays the
+/// column out again without drawing the page's content again.
+private struct NXReadingColumnView<Content: View>: View {
+    @Environment(\.nxPageRoom) private var room
+    let measure: CGFloat?
+    let content: Content
+
+    init(measure: CGFloat?, @ViewBuilder content: () -> Content) {
+        self.measure = measure
+        self.content = content()
+    }
+
+    var body: some View {
+        NXReadingColumn(measure: measure, room: room) { content }
+    }
+}
+
+private struct NXPageRoomKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    /// The page's width with no inspector docked, which its column centres in.
+    var nxPageRoom: CGFloat {
+        get { self[NXPageRoomKey.self] }
+        set { self[NXPageRoomKey.self] = newValue }
+    }
+}
+
+/// Lays the page's padded column out at most `measure` wide, centred in the
+/// `room` the page has with no inspector. Docking the inspector takes its
+/// width from the right: the column narrows where it stands, and moves left
+/// only to keep a readable width, so the row just clicked stays under the
+/// pointer. A page within the measure fills its width, as before.
+private struct NXReadingColumn: Layout {
+    let measure: CGFloat?
+    let room: CGFloat
+    /// The narrowest the column gets before it gives up its centring: 640pt
+    /// of rows inside the page's 40pt margins.
+    private static let readable: CGFloat = 720
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        guard let width = proposal.width else { return child.sizeThatFits(proposal) }
+        let column = column(in: width)
+        let size = child.sizeThatFits(ProposedViewSize(width: column.width, height: proposal.height))
+        return CGSize(width: width, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        let column = column(in: bounds.width)
+        child.place(at: CGPoint(x: bounds.minX + column.x, y: bounds.minY),
+                    proposal: ProposedViewSize(width: column.width, height: bounds.height))
+    }
+
+    private func column(in width: CGFloat) -> (x: CGFloat, width: CGFloat) {
+        guard let measure else { return (0, width) }
+        let centred = max(0, (max(room, width) - measure) / 2)
+        let x = min(centred, max(0, width - min(measure, Self.readable)))
+        return (x, max(0, min(measure, width - x)))
     }
 }
 

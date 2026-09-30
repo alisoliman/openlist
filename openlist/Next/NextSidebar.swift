@@ -147,14 +147,17 @@ struct NextSidebar: View {
         var filledIcon: String
         var label: String
         var color: Color?
+        /// Its View menu key and G chord, which the row names under the pointer.
+        var keys: String
 
         static let all: [NavItem] = [
-            NavItem(route: .inbox, icon: "tray", filledIcon: "tray.fill", label: "Inbox", color: NX.inbox),
-            NavItem(route: .today, icon: "sun.max", filledIcon: "sun.max.fill", label: "Today", color: NX.today),
-            NavItem(route: .calendar, icon: "calendar", filledIcon: "calendar", label: "Calendar"),
-            NavItem(route: .tasks, icon: "checklist", filledIcon: "checklist", label: "Tasks", color: NX.green),
-            NavItem(route: .lists, icon: "square.2.layers.3d", filledIcon: "square.2.layers.3d.fill", label: "Lists", color: NX.lists),
-            NavItem(route: .activity, icon: "square.grid.2x2", filledIcon: "square.grid.2x2.fill", label: "Activity"),
+            NavItem(route: .inbox, icon: "tray", filledIcon: "tray.fill", label: "Inbox", color: NX.inbox, keys: "⌘1 or G then I"),
+            NavItem(route: .today, icon: "sun.max", filledIcon: "sun.max.fill", label: "Today", color: NX.today, keys: "⌘2 or G then T"),
+            NavItem(route: .calendar, icon: "calendar", filledIcon: "calendar", label: "Calendar", keys: "⌘3 or G then C"),
+            NavItem(route: .tasks, icon: "checklist", filledIcon: "checklist", label: "Tasks", color: NX.green, keys: "⌘4 or G then A"),
+            NavItem(route: .lists, icon: "square.2.layers.3d", filledIcon: "square.2.layers.3d.fill", label: "Lists", color: NX.lists,
+                    keys: "⌘5 or G then L"),
+            NavItem(route: .activity, icon: "square.grid.2x2", filledIcon: "square.grid.2x2.fill", label: "Activity", keys: "⌘6 or G then H"),
         ]
     }
 
@@ -174,7 +177,7 @@ struct NextSidebar: View {
         let pulsing = inbox != nil && workbench.pulseListID == inbox?.id
         let count = count(for: item.route)
         let row = NXSidebarRow(on: on, pulsing: pulsing, ring: inbox != nil && dropTargetID == inbox?.id ? style.accent.opacity(0.6) : nil,
-                               height: 29, title: item.label,
+                               height: 29, title: item.label, help: "\(item.label) · \(item.keys)",
                                value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
             // Sized to the design's 16px Material glyphs, which draw about 12pt wide.
             Image(systemName: on ? item.filledIcon : item.icon)
@@ -315,6 +318,8 @@ struct NextSidebar: View {
                     .font(.system(size: 13, weight: on ? .semibold : .medium))
                     .foregroundStyle(on ? NX.ink : NX.ink(0.66))
                     .lineLimit(1)
+                    // The whole name under the pointer, only when it's cut short.
+                    .modifier(NXHelpWhenTruncated(text: list.displayTitle))
             }
             Spacer(minLength: 4)
             if count > 0 { countText(count, pulsing: pulsing, opacity: 0.36) }
@@ -442,6 +447,7 @@ struct NextSidebar: View {
                                 .font(.system(size: 12.5, weight: on ? .semibold : .medium))
                                 .foregroundStyle(on ? NX.ink : NX.ink(0.62))
                                 .lineLimit(1)
+                                .modifier(NXHelpWhenTruncated(text: label.name))
                             Spacer(minLength: 4)
                             if count > 0 {
                                 Text("\(count)").font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.36)).monospacedDigit()
@@ -476,6 +482,7 @@ struct NextSidebar: View {
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.05), radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)))
+            .help("New list (⇧⌘N)")
             Spacer()
             footerButton(on: route == .trash, title: "Trash",
                          value: trashCount > 0 ? "\(trashCount) \(trashCount == 1 ? "item" : "items")" : "") {
@@ -486,7 +493,7 @@ struct NextSidebar: View {
                     }
                 }
             } action: { workbench.go(.trash) }
-            footerButton(on: route == .settings, title: "Settings") {
+            footerButton(on: route == .settings, title: "Settings", help: "Settings (⌘,)") {
                 Image(systemName: "gearshape").font(.system(size: 13, weight: .medium))
             } action: { workbench.go(.settings) }
         }
@@ -496,9 +503,10 @@ struct NextSidebar: View {
     }
 
     /// An icon button; `title` is what VoiceOver reads.
-    private func footerButton<Label: View>(on: Bool, title: String, value: String = "",
+    private func footerButton<Label: View>(on: Bool, title: String, help: String? = nil, value: String = "",
                                            @ViewBuilder label: () -> Label, action: @escaping () -> Void) -> some View {
         Button(action: action, label: label)
+            .help(help ?? title)
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(on ? 0.07 : 0.05), rest: on ? NX.ink(0.07) : .clear, radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6),
                                             foreground: on ? NX.ink : NX.ink(0.5)))
@@ -519,6 +527,8 @@ private struct NXSidebarRow<Content: View>: View {
     var ring: Color?
     let height: CGFloat
     let title: String
+    /// Said under the pointer, where the row has more to tell than its title.
+    var help: String?
     var value = ""
     var isEditing = false
     @ViewBuilder var content: () -> Content
@@ -538,12 +548,15 @@ private struct NXSidebarRow<Content: View>: View {
                             .strokeBorder(on ? NX.ink(0.06) : ring ?? .clear, lineWidth: on ? 0.5 : 1)
                     }
                     .animation(NX.cssEase(300), value: pulsing)
-                    .animation(fades ? fade : nil, value: on)
-                    .animation(fades ? fade : nil, value: hovering)
+                    .animation(fades ? NX.cssEase(300) : nil, value: on)
+                    // The wash arrives with the pointer and trails it only
+                    // briefly, where the design fades it over its 300ms too.
+                    .animation(fades ? NX.cssEase(hovering ? 60 : 140) : nil, value: hovering)
             }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
+            .nxHelp(isEditing ? nil : help)
             .accessibilityElement(children: isEditing ? .contain : .ignore)
             .accessibilityLabel(title)
             .accessibilityValue(value)
@@ -551,9 +564,24 @@ private struct NXSidebarRow<Content: View>: View {
             .accessibilityAction { action() }
     }
 
-    /// The design's `300ms ease` (CSS `ease`) on the background and shadow,
-    /// whatever the Motion setting.
-    private var fade: Animation { NX.cssEase(300) }
+}
+
+/// Names a one-line text in full under the pointer when it doesn't fit, as
+/// a tooltip that repeated a whole name would only say it twice.
+struct NXHelpWhenTruncated: ViewModifier {
+    let text: String
+    @State private var shown: CGFloat = 0
+    @State private var whole: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self, of: \.size.width) { shown = $0 }
+            .background(alignment: .leading) {
+                content.fixedSize().hidden()
+                    .onGeometryChange(for: CGFloat.self, of: \.size.width) { whole = $0 }
+            }
+            .nxHelp(whole > shown + 0.5 ? text : nil)
+    }
 }
 
 /// The count bump when something lands in a list. It plays when `trigger`
