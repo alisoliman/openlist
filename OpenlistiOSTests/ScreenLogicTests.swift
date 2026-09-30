@@ -247,6 +247,114 @@ struct ScreenLogicTests {
         #expect(phone.store.block(id: id) == nil)
     }
 
+    @Test func aPickedCaptureDayWorksWithoutDateParsing() throws {
+        let phone = try TestPhone()
+        let calendar = phone.env.settings.calendar
+        let tomorrow = PhoneDay.tomorrow.date(now: phone.env.now, calendar: calendar)
+        let picked = try #require(calendar.date(bySettingHour: 18, minute: 45, second: 30, of: tomorrow))
+        let parse = CaptureParse("Buy yen tomorrow #travel !high ~15m", parsesDates: false, reference: phone.env.now)
+        let snapshot = CaptureDueDate.chosen(picked, includesTime: false)
+            .snapshot(parse, dueToday: false, now: phone.env.now, calendar: calendar)
+        let task = try phone.store.saveCapture(snapshot, destinationID: nil)
+        let reader = ModelContext(phone.container)
+        let id = task.id
+        let saved = try #require(reader.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })).first)
+        #expect(saved.displayTitle == "Buy yen tomorrow")
+        #expect(saved.dueDate == calendar.startOfDay(for: tomorrow))
+        #expect(!saved.includesTime)
+        #expect(saved.priority == .high && saved.schedulingEstimateMinutes == 15)
+        #expect(phone.store.labels(for: task).map(\.name) == ["travel"])
+    }
+
+    @Test func aPickedCaptureTimeSavesWithUndo() throws {
+        let phone = try TestPhone()
+        let calendar = phone.env.settings.calendar
+        let tomorrow = PhoneDay.tomorrow.date(now: phone.env.now, calendar: calendar)
+        let picked = try #require(calendar.date(bySettingHour: 18, minute: 45, second: 0, of: tomorrow))
+        let snapshot = CaptureDueDate.chosen(picked, includesTime: true)
+            .snapshot(CaptureParse("Pay the deposit", reference: phone.env.now), dueToday: true,
+                      now: phone.env.now, calendar: calendar)
+        let task = try phone.store.saveCapture(snapshot, destinationID: nil)
+        #expect(task.dueDate == picked && task.includesTime)
+        let id = task.id
+        phone.env.actions.reportCapture(task)
+        phone.env.tray.performAction()
+        #expect(phone.store.block(id: id) == nil)
+    }
+
+    @Test func clearingCaptureDueDateSuppressesTypedAndTodayDefaults() throws {
+        let phone = try TestPhone()
+        let calendar = phone.env.settings.calendar
+        for text in ["Call mum", "Call mum tomorrow 6pm #home"] {
+            let parse = CaptureParse(text, reference: phone.env.now)
+            #expect(CaptureDueDate.automatic.snapshot(parse, dueToday: true, now: phone.env.now, calendar: calendar).date != nil)
+            let snapshot = CaptureDueDate.cleared.snapshot(parse, dueToday: true, now: phone.env.now, calendar: calendar)
+            let task = try phone.store.saveCapture(snapshot, destinationID: nil)
+            #expect(task.dueDate == nil && !task.includesTime)
+            #expect(task.displayTitle == "Call mum")
+        }
+    }
+
+    @Test func editingCaptureTitleKeepsPickedDateWhileANewDateTakesOver() {
+        let now = TestClock.mockupNow, calendar = TestClock.calendar
+        let picked = CaptureDueDate.chosen(PhoneDay.tomorrow.date(now: now, calendar: calendar), includesTime: false)
+        let old = CaptureParse("Pay deposit #travel", reference: now)
+        let renamed = CaptureParse("Pay the ryokan deposit #home ~15m", reference: now)
+        #expect(picked.afterEditing(from: old, to: renamed) == picked)
+        #expect(CaptureDueDate.cleared.afterEditing(from: old, to: renamed) == .cleared)
+        let superseded = CaptureParse("Pay deposit tomorrow 6pm #travel", reference: now)
+        let withoutTime = CaptureParse("Pay deposit tomorrow #travel", reference: now)
+        #expect(picked.afterEditing(from: superseded, to: withoutTime) == picked)
+        #expect(picked.afterEditing(from: withoutTime, to: old) == picked)
+        let cleared = CaptureDueDate.cleared.afterEditing(from: superseded, to: old)
+        #expect(cleared == .cleared)
+        #expect(cleared.snapshot(old, dueToday: true, now: now, calendar: calendar).date == nil)
+        let dated = CaptureParse("Pay the ryokan deposit friday 6pm #home ~15m", reference: now)
+        let choice = picked.afterEditing(from: renamed, to: dated)
+        #expect(choice == .automatic)
+        let snapshot = choice.snapshot(dated, dueToday: true, now: now, calendar: calendar)
+        #expect(snapshot.date == dated.schedule?.date && snapshot.includesTime)
+        let repeating = CaptureParse("Pay deposit every monday #travel", reference: now)
+        #expect(CaptureDueDate.cleared.afterEditing(from: old, to: repeating) == .automatic)
+    }
+
+    @Test func overridingTypedCaptureDatePreservesDateWordsInTheTitleAndMetadata() throws {
+        let phone = try TestPhone()
+        let now = phone.env.now, calendar = phone.env.settings.calendar
+        let parse = CaptureParse("Review Friday document tomorrow 6pm #work !high ~15m", reference: now)
+        #expect(parse.title == "Review Friday document")
+        let picked = PhoneDay.weekend.date(now: now, calendar: calendar)
+        let snapshot = CaptureDueDate.chosen(picked, includesTime: false)
+            .snapshot(parse, dueToday: false, now: now, calendar: calendar)
+        let task = try phone.store.saveCapture(snapshot, destinationID: nil)
+        #expect(task.displayTitle == "Review Friday document")
+        #expect(task.dueDate == picked && !task.includesTime)
+        #expect(task.priority == .high && task.schedulingEstimateMinutes == 15)
+        #expect(phone.store.labels(for: task).map(\.name) == ["work"])
+        let cleared = CaptureDueDate.cleared.snapshot(parse, dueToday: true, now: now, calendar: calendar)
+        #expect(cleared.title == "Review Friday document" && cleared.date == nil && !cleared.includesTime)
+        #expect(cleared.labels == ["work"] && cleared.priority == .high && cleared.estimateMinutes == 15)
+    }
+
+    @Test func aPickedCaptureDayAnchorsCadenceAndPreservesNamedWeekdays() throws {
+        let phone = try TestPhone()
+        let calendar = phone.env.settings.calendar
+        let friday = try #require(calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: phone.env.now)))
+        let choice = CaptureDueDate.chosen(friday, includesTime: false)
+        let weekly = choice.snapshot(CaptureParse("Review every week", reference: phone.env.now), dueToday: false,
+                                     now: phone.env.now, calendar: calendar)
+        let task = try phone.store.saveCapture(weekly, destinationID: nil)
+        #expect(task.dueDate == friday)
+        #expect(task.recurrence?.weekdays == [calendar.component(.weekday, from: friday)])
+        let named = choice.snapshot(CaptureParse("Review every monday", reference: phone.env.now), dueToday: false,
+                                    now: phone.env.now, calendar: calendar)
+        #expect(named.date == friday && named.recurrence?.weekdays == [2])
+        let monthly = choice.snapshot(CaptureParse("Review monthly", reference: phone.env.now), dueToday: false,
+                                      now: phone.env.now, calendar: calendar)
+        let monthlyTask = try phone.store.saveCapture(monthly, destinationID: nil)
+        #expect(monthlyTask.recurrence?.dayOfMonth == calendar.component(.day, from: friday))
+    }
+
     // MARK: Lists
 
     @Test func listsAreMadeRenamedArchivedAndTrashedWithUndo() throws {

@@ -78,13 +78,16 @@ struct DuePickerSheet: View {
                 .datePickerStyle(.graphical)
                 .tint(OL.accent)
                 .padding(.top, 6)
+                .accessibilityIdentifier("duePicker.day")
             VStack(spacing: 0) {
                 OLSettingsRow("At a time") {
                     Toggle("At a time", isOn: $includesTime).labelsHidden().olToggle()
+                        .accessibilityIdentifier("duePicker.includesTime")
                 }
                 if includesTime {
                     OLSettingsRow("Time", separator: .inset(16)) {
                         DatePicker("Time", selection: $date, displayedComponents: .hourAndMinute).labelsHidden()
+                            .accessibilityIdentifier("duePicker.time")
                     }
                 }
             }
