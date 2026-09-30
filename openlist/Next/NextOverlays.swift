@@ -89,7 +89,7 @@ struct NextOverlays: View {
         ZStack(alignment: .top) {
             if workbench.captureOpen {
                 NXOverlayBackdrop(top: 96, close: { workbench.closeCapture(keepsDraft: true) }) {
-                    NXCaptureCard(draft: workbench, notice: workbench.captureNotice,
+                    NXCaptureCard(draft: workbench, notice: workbench.captureNotice, voice: workbench.voice,
                                   add: { _ = workbench.createFromCapture(keepOpen: $0) })
                         .animation(style.ease(140), value: workbench.captureNotice)
                         .onChange(of: workbench.captureText) {
@@ -182,11 +182,26 @@ extension View {
 private struct NXAutofocus: ViewModifier {
     @FocusState private var focused: Bool
     var refocus: AnyHashable = 0
+    /// Puts the caret after the text a task heard by voice filled the field
+    /// with, where focusing a field selects all of it.
+    var caretAtEnd = false
 
     func body(content: Content) -> some View {
         content
             .focused($focused)
-            .onAppear { DispatchQueue.main.async { focused = true } }
+            .onAppear {
+                DispatchQueue.main.async {
+                    focused = true
+                    guard caretAtEnd else { return }
+                    // Once the field has made its own selection.
+                    DispatchQueue.main.async {
+                        // Quick Add's panel is key without making Openlist active.
+                        let window = NSApp.windows.first(where: \.isKeyWindow)
+                        guard let editor = window?.firstResponder as? NSTextView, editor.isFieldEditor else { return }
+                        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+                    }
+                }
+            }
             .onChange(of: refocus) { _, _ in focused = true }
     }
 }
@@ -271,67 +286,36 @@ extension Workbench: NXCaptureDraft {}
 
 /// The design's capture card, over the main window or in the Quick Add panel.
 /// Its host handles Return, Tab and Escape; `add` is what Return and ⇧↩ do,
-/// offered to assistive technologies as the field's actions.
+/// offered to assistive technologies as the field's actions. With `voice`,
+/// a mic at the field's end listens for tasks said instead of typed: the
+/// card shows what it hears, then one task in the field or several as rows.
 struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     @Bindable var draft: Draft
     var notice: NXCaptureNotice?
+    var voice: VoiceCapture?
     var add: ((_ keepOpen: Bool) -> Void)?
     @State private var refocus = 0
     /// How far the field has scrolled its text to keep the caret in view.
     @State private var scroll: CGFloat = 0
 
     var body: some View {
-        let parse = draft.captureParse()
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 11) {
-                Circle()
-                    .strokeBorder(style.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [2.6, 2.2]))
-                    .frame(width: 17, height: 17)
-                    .padding(.top, 3)
-                ZStack(alignment: .leading) {
-                    TextField("", text: $draft.captureText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 16))
-                        .foregroundStyle(.clear)
-                        .modifier(NXAutofocus(refocus: refocus))
-                        .accessibilityLabel("New task")
-                        .accessibilityHint("Type the task. \(readsDates ? "A date, #label" : "A #label"), !priority or ~estimate in the text is read as you type, as in \(example).")
-                        .accessibilityIdentifier("capture.title")
-                        .accessibilityActions {
-                            if let add {
-                                Button("Add task") { add(false) }
-                                Button("Add task and keep capture open") { add(true) }
-                            }
-                        }
-                    // The tinted copy of the field's text, which scrolls with it
-                    // once the text is wider than the card. Over the field, so a
-                    // selection's highlight shows under the text, not over it.
-                    // VoiceOver reads the field.
-                    styled(parse)
-                        .font(.system(size: 16))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .offset(x: -scroll)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-                .frame(height: 24)
-                .background { NXFieldScroll { scroll = $0 } }
-                .clipped()
+            if let voice, voice.isActive {
+                NXVoicePanel(voice: voice, stop: toggleVoice)
+            } else if !draft.spokenTasks.isEmpty {
+                heard
+            } else {
+                typing(draft.captureParse())
             }
-            .padding(EdgeInsets(top: 16, leading: 18, bottom: 6, trailing: 18))
 
-            NXFlow(spacing: 6) {
-                ForEach(chips(parse)) { NXChip(chip: $0, fresh: $0.pops != .never) }
-            }
-            .frame(minHeight: 22, alignment: .leading)
-            .padding(EdgeInsets(top: 6, leading: 46, bottom: 12, trailing: 18))
-
-            if let notice, notice.failed {
+            if let failure = voiceFailure {
+                NXVoiceFailureLine(failure: failure)
+                    .padding(EdgeInsets(top: 0, leading: 46, bottom: 12, trailing: 18))
+                    .transition(.opacity)
+            } else if let notice, notice.failed {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10.5, weight: .semibold))
                     Text(notice.text).fixedSize(horizontal: false, vertical: true)
@@ -348,6 +332,136 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                 .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
         }
         .frame(maxWidth: 600)
+        .onChange(of: draft.captureText) { voice?.dismissFailure() }
+    }
+
+    /// The field and the chips for what it saves.
+    @ViewBuilder private func typing(_ parse: CaptureParse) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Circle()
+                .strokeBorder(style.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [2.6, 2.2]))
+                .frame(width: 17, height: 17)
+                .padding(.top, 3)
+            ZStack(alignment: .leading) {
+                TextField("", text: $draft.captureText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.clear)
+                    .modifier(NXAutofocus(refocus: refocus, caretAtEnd: voice?.filledField == true))
+                    .accessibilityLabel("New task")
+                    .accessibilityHint("Type the task. \(readsDates ? "A date, #label" : "A #label"), !priority or ~estimate in the text is read as you type, as in \(example).")
+                    .accessibilityIdentifier("capture.title")
+                    .accessibilityActions {
+                        if let add {
+                            Button("Add task") { add(false) }
+                            Button("Add task and keep capture open") { add(true) }
+                        }
+                    }
+                // The tinted copy of the field's text, which scrolls with it
+                // once the text is wider than the card. Over the field, so a
+                // selection's highlight shows under the text, not over it.
+                // VoiceOver reads the field.
+                styled(parse)
+                    .font(.system(size: 16))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .offset(x: -scroll)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .frame(height: 24)
+            .background { NXFieldScroll { scroll = $0 } }
+            .clipped()
+            if voice != nil {
+                Button(action: toggleVoice) {
+                    Image(systemName: "mic")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(NX.ink(0.45))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Say tasks (⌥⌘V)")
+                .accessibilityLabel("Say tasks")
+                .accessibilityHint("Listens for one or more tasks, with their dates, lists and labels.")
+            }
+        }
+        .padding(EdgeInsets(top: 16, leading: 18, bottom: 6, trailing: 18))
+
+        NXFlow(spacing: 6) {
+            ForEach(chips(parse)) { NXChip(chip: $0, fresh: $0.pops != .never) }
+        }
+        .frame(minHeight: 22, alignment: .leading)
+        .padding(EdgeInsets(top: 6, leading: 46, bottom: 12, trailing: 18))
+    }
+
+    // MARK: Voice
+
+    private func toggleVoice() {
+        voice?.toggle(for: draft, lists: library.lists, labels: library.labels)
+    }
+
+    private var voiceFailure: VoiceCaptureFailure? {
+        if case let .failed(failure) = voice?.phase { failure } else { nil }
+    }
+
+    /// The tasks heard, each with what it saves and where it goes when that
+    /// isn't the lit destination, and a way to leave one out.
+    private var heard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(draft.spokenTasks) { task in
+                HStack(alignment: .top, spacing: 11) {
+                    Circle()
+                        .strokeBorder(style.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [2.6, 2.2]))
+                        .frame(width: 17, height: 17)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(task.snapshot.title)
+                            .font(.system(size: 15))
+                            .foregroundStyle(NX.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        let chips = spokenChips(task)
+                        if !chips.isEmpty {
+                            NXFlow(spacing: 6) {
+                                ForEach(chips) { NXChip(chip: $0, fresh: true) }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        draft.spokenTasks.removeAll { $0.id == task.id }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(NX.ink(0.4))
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Leave out")
+                    .accessibilityLabel("Leave out “\(task.snapshot.title)”")
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if voice?.usedIntelligence == true {
+                Label("Read by Apple Intelligence", systemImage: "apple.intelligence")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(NX.ink(0.4))
+                    .padding(.leading, 28)
+            }
+        }
+        .padding(EdgeInsets(top: 16, leading: 18, bottom: 14, trailing: 18))
+    }
+
+    /// A heard task's chips, as a typed task's, and its list's when it named
+    /// one other than the lit destination.
+    private func spokenChips(_ task: SpokenTask) -> [NXChipModel] {
+        var chips = task.chips().map(model)
+        if let list = task.listID.flatMap({ library.list($0) }), list.id != draft.captureListID {
+            chips.insert(NXChipModel(id: "list", label: list.displayTitle, glyph: list), at: 0)
+        }
+        return chips
     }
 
     /// "Add to" and the lists wrap like the design's flex row, with the key
@@ -383,11 +497,18 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             .lineLimit(1)
             .fixedSize()
         } else {
-            Text("⇥ destination · ↩ add · ⇧↩ add another")
+            Text(hint)
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(NX.ink(0.4))
                 .fixedSize()
         }
+    }
+
+    private var hint: String {
+        if voice?.isActive == true { return "↩ done · esc cancel" }
+        let heard = draft.spokenTasks.count
+        if heard > 0 { return "↩ add \(heard == 1 ? "task" : "\(heard) tasks") · esc leave out" }
+        return voice == nil ? "⇥ destination · ↩ add · ⇧↩ add another" : "⇥ destination · ↩ add · ⌥⌘V speak"
     }
 
     /// Whether Settings reads dates from typed text, which the ghost and the
@@ -426,26 +547,28 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     /// pops in; the Today and the label screen's label, which nothing typed
     /// brought, never pop.
     private func chips(_ parse: CaptureParse) -> [NXChipModel] {
-        var chips = parse.chips(for: draft.capturePreview(parse), forToday: draft.captureForToday).map { chip in
-            switch chip.kind {
-            case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent, pops: chip.typed ? .withRow : .never)
-            case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
-            case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
-            case .label:
-                NXChipModel(id: chip.id, label: chip.label, tone: .label(
-                    library.labels.first { $0.name.lowercased() == chip.label.lowercased() }?.nxColor ?? Color(hex: 0x12807F)))
-            case let .priority(priority):
-                NXChipModel(id: chip.id, label: chip.label, icon: "exclamationmark", tone: Self.priorityTone(priority),
-                            fill: priority == .high)
-            case .estimate: NXChipModel(id: chip.id, label: chip.label, icon: "timer", tone: .accent)
-            }
-        }
+        var chips = parse.chips(for: draft.capturePreview(parse), forToday: draft.captureForToday).map(model)
         // A label screen adds its own label, unless the text names it already.
         if let label = draft.captureLabelID.flatMap({ env.store.label(id: $0) }),
            !parse.labels.contains(label.name.lowercased()) {
             chips.append(NXChipModel(id: "screen-label", label: label.name, tone: .label(label.nxColor), pops: .never))
         }
         return chips
+    }
+
+    private func model(_ chip: CaptureChip) -> NXChipModel {
+        switch chip.kind {
+        case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent, pops: chip.typed ? .withRow : .never)
+        case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
+        case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
+        case .label:
+            NXChipModel(id: chip.id, label: chip.label, tone: .label(
+                library.labels.first { $0.name.lowercased() == chip.label.lowercased() }?.nxColor ?? Color(hex: 0x12807F)))
+        case let .priority(priority):
+            NXChipModel(id: chip.id, label: chip.label, icon: "exclamationmark", tone: Self.priorityTone(priority),
+                        fill: priority == .high)
+        case .estimate: NXChipModel(id: chip.id, label: chip.label, icon: "timer", tone: .accent)
+        }
     }
 
     private static func priorityTone(_ priority: TaskPriority) -> NXTone {
@@ -477,6 +600,109 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         .accessibilityAddTraits(isOn ? .isSelected : [])
         // The design's `background 140ms ease`.
         .animation(NX.cssEase(140), value: isOn)
+    }
+}
+
+/// Voice capture at work on the capture card: a mic that swells with the
+/// voice, the words heard so far (those still being made out paler), and
+/// what it's doing, with its stop button.
+private struct NXVoicePanel: View {
+    @Environment(\.nextStyle) private var style
+    let voice: VoiceCapture
+    let stop: () -> Void
+
+    var body: some View {
+        let listener = voice.listener
+        HStack(alignment: .top, spacing: 11) {
+            ZStack {
+                Circle()
+                    .fill(style.accent.opacity(0.16))
+                    .frame(width: 17 + 12 * listener.level, height: 17 + 12 * listener.level)
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(style.accent)
+            }
+            .frame(width: 17, height: 17)
+            .padding(.top, 3)
+            .animation(.linear(duration: 0.08), value: listener.level)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                words(listener)
+                    .font(.system(size: 16))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                status
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NX.ink(0.45))
+                if let note = voice.intelligence.note {
+                    Text(note)
+                        .font(.system(size: 11))
+                        .foregroundStyle(NX.ink(0.4))
+                }
+            }
+
+            Button(action: stop) {
+                Image(systemName: voice.phase == .listening ? "stop.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(voice.phase == .listening ? style.accent : NX.ink(0.3))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(voice.phase == .understanding)
+            .help(voice.phase == .listening ? "Done (↩)" : "Stop")
+            .accessibilityLabel(voice.phase == .listening ? "Done speaking" : "Stop")
+        }
+        .padding(EdgeInsets(top: 16, leading: 18, bottom: 14, trailing: 18))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Voice capture")
+    }
+
+    private func words(_ listener: VoiceListener) -> Text {
+        guard !listener.transcript.isEmpty else {
+            return Text(voice.phase == .listening ? "Say a task, or several…" : "")
+                .foregroundStyle(NX.ink(0.3))
+        }
+        let settled = Text(verbatim: listener.confirmed).foregroundStyle(NX.ink(voice.phase == .understanding ? 0.55 : 1))
+        let guess = Text(verbatim: listener.tentative).foregroundStyle(NX.ink(0.4))
+        return Text("\(settled)\(guess)")
+    }
+
+    @ViewBuilder private var status: some View {
+        switch voice.phase {
+        case .preparing(nil):
+            Text("Getting ready…")
+        case let .preparing(progress?):
+            Text("Downloading speech recognition · \(Int(progress * 100))%")
+        case .understanding:
+            if voice.intelligence == .available {
+                Label("Reading with Apple Intelligence…", systemImage: "apple.intelligence")
+            } else {
+                Text("Reading…")
+            }
+        default:
+            Text("Listening · pause when you’re done")
+        }
+    }
+}
+
+/// Why voice capture didn't listen, with the way to let it where there is one.
+private struct NXVoiceFailureLine: View {
+    let failure: VoiceCaptureFailure
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "mic.slash.fill").font(.system(size: 10.5, weight: .semibold))
+            Text(failure.message).fixedSize(horizontal: false, vertical: true)
+            if failure == .microphoneDenied,
+               let settings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                Button("Open Settings") { NSWorkspace.shared.open(settings) }
+                    .buttonStyle(.link)
+            }
+        }
+        .font(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(failure == .nothingHeard ? NX.ink(0.55) : NX.redText)
     }
 }
 

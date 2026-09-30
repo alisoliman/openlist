@@ -153,6 +153,9 @@ do {
 do {
     let parsed = DateParser.parse("invoices monthly", reference: reference)
     check(parsed.recurrence?.frequency == .monthly, "monthly adverb")
+    let named = DateParser.parse("finish the quarterly report", reference: reference)
+    check(named.recurrence == nil && named.date == nil, "a frequency word after an article names the thing")
+    check(DateParser.parse("prep my weekly review", reference: reference).isEmpty, "…or after a possessive")
 }
 
 do {
@@ -377,6 +380,11 @@ do {
     let d = day(parsed.date)
     check(d?.day == 8, "weekday rule starts on its first matching day", describe(parsed.date))
     check(parsed.recurrence?.weekdays == [2], "monday captured")
+
+    // With a time, still the first matching day, not tomorrow.
+    let timed = DateParser.parse("water the plants every monday 9am", reference: reference)
+    check(day(timed.date)?.day == 8 && day(timed.date)?.hour == 9 && timed.includesTime,
+          "a weekday rule with a time starts on its first matching day", describe(timed.date))
 
     // A rule that matches today starts today.
     let wed = DateParser.parse("standup every wednesday", reference: reference)

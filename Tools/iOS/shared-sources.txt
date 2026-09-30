@@ -114,11 +114,16 @@ OpenlistiOS openlist Services/SampleData.swift
 OpenlistiOS openlist Services/SearchProjection.swift
 OpenlistiOS openlist Services/SearchSession.swift
 OpenlistiOS openlist Services/SelectionCommandPolicy.swift
+OpenlistiOS openlist Services/SpokenCapture.swift
 OpenlistiOS openlist Services/StoreLocation.swift
 OpenlistiOS openlist Services/SyncedTextDraft.swift
+OpenlistiOS openlist Services/TaskIntents.swift
 OpenlistiOS openlist Services/TaskQuery.swift
 OpenlistiOS openlist Services/TerminationDrain.swift
 OpenlistiOS openlist Services/TodayAgenda.swift
+OpenlistiOS openlist Services/VoiceCapture.swift
+OpenlistiOS openlist Services/VoiceListener.swift
+OpenlistiOS openlist Services/VoiceTaskInterpreter.swift
 OpenlistiOS openlist Services/WidgetCalendarBridge.swift
 OpenlistiOS openlist Services/WidgetCommandProcessor.swift
 OpenlistiOS openlist Services/WidgetLinkRouter.swift
@@ -138,3 +143,4 @@ OpenlistiOSWidget OpenlistWidget Model/WidgetFormat.swift
 OpenlistiOSWidget OpenlistWidget Model/WidgetState.swift
 OpenlistiOSWidget OpenlistWidget Timeline/Providers.swift
 OpenlistiOSWidget OpenlistWidget Timeline/TimelineSchedule.swift
+OpenlistiOSWidget OpenlistWidget Widgets/SayTasksControl.swift

@@ -97,7 +97,9 @@ profile described in [release maintenance](#releases). Compiling or
 notarizing an app does not establish that its container or schema is usable.
 
 Run `./Tools/check.sh` before submitting. Add regression checks when changing
-logic, persistence, exports or editing behaviour. For UI changes, exercise the
+logic, persistence, exports or editing behaviour. For voice capture, also run
+`./Tools/run-voice-audio-checks.sh`, which plays recordings through the real
+speech model and Apple Intelligence (see [voice capture](docs/VOICE_CAPTURE.md)). For UI changes, exercise the
 actual native app and explain what you verified. See `Tools/screenshot.sh` for
 window-scoped capture. Keep fixtures separate from your personal lists.
 
@@ -185,9 +187,10 @@ screenshots (`xcrun simctl launch` passes them as `SIMCTL_CHILD_<name>`):
 | Variable | Effect |
 |---|---|
 | `OpenlistFixtureNow` | Pins the app's clock (`AppClock`) to an ISO 8601 moment; `2026-09-23T10:40:00` is the mockups' |
-| `OpenlistOpenRoute` | Opens a screen at launch: `timeline`, `inbox`, `lists`, `settings`, `trash`, `capture`, `working`, `triage`, `activity`, `find:#travel`, `list:<title>`, `task:<title>` |
+| `OpenlistOpenRoute` | Opens a screen at launch: `timeline`, `inbox`, `lists`, `settings`, `trash`, `capture`, `voice` (Capture, listening), `working`, `triage`, `activity`, `find:#travel`, `list:<title>`, `task:<title>` |
 | `OpenlistShowTray` | Shows its text in the tray, with Undo |
 | `OpenlistCaptureText` | Types its text into the Capture sheet |
+| `OpenlistVoiceRecording` | A recording's path, which voice capture listens to in place of the microphone (the Mac's Dev and Debug builds too) |
 | `OpenlistComponentGallery=1` | Opens the design components' gallery (`OpenlistGalleryPage` 0–4 shows one part); Settings links to it too |
 
 The app's code is in `OpenlistiOS/`: `App/` (entry, `PhoneEnvironment`,

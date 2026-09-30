@@ -377,6 +377,14 @@ Clicking or switching away also closes it, and the next Quick Add within five
 minutes picks up what you'd typed. ⇧⌥Space works from launch, with or without
 a window open; with VoiceOver on, Quick Add brings Openlist forward so
 VoiceOver can read it.
+
+Or say it: the capture field's mic, ⌥⌘V (File ▸ **New Tasks by Voice…**), the
+**Say Tasks** control or Siri ("Add tasks in Openlist") listen on device, and
+Apple Intelligence splits what you say into separate tasks. Each lands in the
+list it names with its day, time, repeat, labels, priority and estimate:
+"call the bank tomorrow at 9, and buy oat milk on my personal list" is two
+tasks. One task heard goes in the field to edit; several wait as rows for
+Return. See [voice capture](docs/VOICE_CAPTURE.md).
 Settings → Appearance sets the motion style. Settings → Motion & feedback sets
 **Reduce motion**, which keeps state changes but drops bounces, rings and slides,
 and the undo window a finished task stays in place for. Work notices live in the

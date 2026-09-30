@@ -20,6 +20,8 @@ protocol NXCaptureDraft: AnyObject, Observable {
     var captureForToday: Bool { get }
     /// The label screen capture opened on; the new task gets that label.
     var captureLabelID: UUID? { get }
+    /// Tasks heard by voice capture, which Return adds in place of the text.
+    var spokenTasks: [SpokenTask] { get set }
 }
 
 extension NXCaptureDraft {
@@ -51,7 +53,9 @@ extension NXCaptureDraft {
     /// What Return and ⇧↩ do with the draft, the window's card and Quick
     /// Add's alike: save it, or say on the card why it wasn't saved. Tokens
     /// with no title save nothing and say nothing, as the design's Return.
+    /// Tasks heard by voice are added instead of the text, when there are any.
     func addCapture() -> NXCaptureOutcome {
+        if !spokenTasks.isEmpty { return addSpokenTasks() }
         let parse = captureParse()
         guard !parse.title.isEmpty else { return .untitled }
         do {
@@ -61,6 +65,41 @@ extension NXCaptureDraft {
             return .failed(NXCaptureNotice(text: "Task wasn’t added. \(error.localizedDescription) Your draft is still here; try again.",
                                            failed: true))
         }
+    }
+
+    /// Takes what voice capture heard. A single task goes in the field as
+    /// its capture line, aimed at the list it named, to edit as though typed;
+    /// several, or one the field wouldn't read back the same, wait as rows
+    /// for Return to add together. Returns whether it filled the field.
+    @discardableResult
+    func take(_ heard: [SpokenTask], now: Date = .now) -> Bool {
+        captureText = ""
+        if heard.count == 1, let task = heard.first,
+           task.fitsField(parsesDates: settings.parsesNaturalLanguageDates, reference: now) {
+            spokenTasks = []
+            captureText = task.line
+            if let listID = task.listID { captureListID = listID }
+            return true
+        }
+        spokenTasks = heard
+        return false
+    }
+
+    /// Adds the tasks heard, each to the list it named or the draft's, due
+    /// today when an undated task would be, with the label screen's label.
+    /// Any it couldn't add stay, with the reason on the card.
+    func addSpokenTasks() -> NXCaptureOutcome {
+        let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
+        let result = store.saveSpokenTasks(spokenTasks, destinationID: captureListID ?? store.inboxList()?.id,
+                                           undatedDay: captureForToday ? NXFormat.day(offset: 0) : nil,
+                                           labels: screenLabel)
+        spokenTasks = result.unsaved
+        let failure = result.error.map {
+            NXCaptureNotice(text: "“\(result.unsaved[0].snapshot.title)” wasn’t added. \($0.localizedDescription) Try again.",
+                            failed: true)
+        }
+        if result.saved.isEmpty, let failure { return .failed(failure) }
+        return .savedSeveral(result.saved, opened: result.opened, failure: failure)
     }
 
     /// Tab and Shift-Tab step the destination through Inbox and every list.
@@ -91,4 +130,7 @@ enum NXCaptureOutcome {
     case saved(Block, opened: [UUID])
     /// Why the task wasn't added, for the card; the draft stays.
     case failed(NXCaptureNotice)
+    /// Tasks heard by voice, and the folded headings they opened; with why
+    /// the rest weren't, when some weren't.
+    case savedSeveral([Block], opened: [UUID], failure: NXCaptureNotice?)
 }

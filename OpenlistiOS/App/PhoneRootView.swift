@@ -223,6 +223,11 @@ private struct DockHost: View {
                inboxCount: library.inboxQueue(triage: env.triage, closing: env.actions.closing).count,
                captureLabel: captureLabel,
                reselect: { navigator.select($0) },
+               captureByVoice: {
+                   var request = navigator.captureRequest
+                   request.listens = true
+                   navigator.open(.capture(request))
+               },
                capture: { navigator.open(.capture(navigator.captureRequest)) })
     }
 

@@ -35,6 +35,7 @@ def source_fixture():
     return {
         "com.apple.security.app-sandbox": True,
         "com.apple.security.personal-information.calendars": True,
+        "com.apple.security.device.audio-input": True,
         "com.apple.security.files.user-selected.read-write": True,
         "com.apple.security.network.client": True,
         "com.apple.security.network.server": True,
@@ -555,6 +556,7 @@ class PipelineChecks(unittest.TestCase):
         self.assertEqual(resolved[signing.PUSH_ENVIRONMENT], "production")
         self.assertIs(resolved["com.apple.security.network.server"], True)
         self.assertIs(resolved[signing.CALENDAR_ACCESS], True)
+        self.assertIs(resolved[signing.AUDIO_INPUT], True)
 
     def test_widget_keeps_only_sandbox_and_snapshot_group_access(self):
         source = plistlib.loads((TOOLS.parent / "Config/OpenlistWidget.entitlements").read_bytes())
@@ -563,6 +565,7 @@ class PipelineChecks(unittest.TestCase):
             "com.apple.security.application-groups": [GROUP],
         })
         self.assertNotIn(signing.CALENDAR_ACCESS, source)
+        self.assertNotIn(signing.AUDIO_INPUT, source)
 
     def test_packaging_prepares_before_signing_and_verifies_before_notarization(self):
         script = (TOOLS / "package-release.sh").read_text()

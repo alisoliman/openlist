@@ -93,6 +93,9 @@ final class WidgetLinkRouter {
             // As New task on the app's Today: still the Inbox, but a task typed
             // without a date is due today, so it lands on the widget it came from.
             capture?(QuickCaptureRequest(dueToday: true))
+        case .captureVoice:
+            // Quick Add, listening for tasks to be said.
+            capture?(QuickCaptureRequest(listens: true))
         case .inbox:
             // This Mac's choice for the Inbox, even straight after a triage visit.
             show(.inbox)
@@ -169,7 +172,7 @@ extension WidgetLink {
     /// Quick Add, which opens without the main window.
     var isCapture: Bool {
         switch self {
-        case .capture, .captureToday: true
+        case .capture, .captureToday, .captureVoice: true
         default: false
         }
     }

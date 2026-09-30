@@ -88,6 +88,8 @@ final class PhoneLinkRouter {
             navigator.open(.capture(CaptureRequest(listID: listID.flatMap { store.list(id: $0)?.id })))
         case .captureToday:
             navigator.open(.capture(CaptureRequest(dueToday: true)))
+        case .captureVoice:
+            navigator.open(.capture(CaptureRequest(listens: true)))
         case .inbox:
             navigator.show(.inbox)
         case .triage:

@@ -29,7 +29,7 @@ struct QuickCaptureView: View {
         // The design's popIn, as the window's capture card plays it, at its
         // own speed whatever the Motion setting; with Reduce Motion it only fades.
         let settled = shown || !style.slides
-        NXCaptureCard(draft: draft, notice: notice, add: { add(keepOpen: $0) })
+        NXCaptureCard(draft: draft, notice: notice, voice: draft.voice, add: { add(keepOpen: $0) })
             .frame(width: 600)
             .nxOverlayCard()
             .scaleEffect(settled ? 1 : 0.97, anchor: .top)
@@ -42,7 +42,7 @@ struct QuickCaptureView: View {
             // app below, as they do around Spotlight, and close it by taking
             // the keyboard. Either way the draft waits for the next Quick Add.
             .background { Color.clear.contentShape(Rectangle()).onTapGesture { close(.dismissed) } }
-            .background { QuickCaptureKeys(perform: { handle($0, lists: library.lists) }) }
+            .background { QuickCaptureKeys(perform: { handle($0, lists: library.lists, labels: library.labels) }) }
             .environment(\.nextLibrary, library)
             .environment(\.nextStyle, style)
             .tint(style.accent)
@@ -53,12 +53,28 @@ struct QuickCaptureView: View {
             }
     }
 
-    private func handle(_ key: QuickCaptureKey, lists: [TaskList]) {
+    private func handle(_ key: QuickCaptureKey, lists: [TaskList], labels: [TaskLabel]) {
+        let voice = draft.voice
         switch key {
-        case let .add(keepOpen): add(keepOpen: keepOpen)
+        // While listening, Return is done speaking.
+        case let .add(keepOpen):
+            if voice.isActive {
+                if voice.phase == .listening { voice.stop() }
+            } else {
+                add(keepOpen: keepOpen)
+            }
         // The lit destination fades over the chip's 140ms, as in the main window.
         case let .step(delta): draft.cycleCaptureDestination(by: delta, among: lists.map(\.id))
-        case .close: close(.finished)
+        case .voice: voice.toggle(for: draft, lists: lists, labels: labels)
+        // Escape stops listening, then puts away the tasks heard, then closes.
+        case .close:
+            if voice.isActive {
+                voice.cancel()
+            } else if !draft.spokenTasks.isEmpty {
+                draft.spokenTasks = []
+            } else {
+                close(.finished)
+            }
         }
     }
 
@@ -75,6 +91,20 @@ struct QuickCaptureView: View {
         case let .saved(saved, headings):
             block = saved
             opened = headings
+        case let .savedSeveral(blocks, headings, failure):
+            env.workbench.didAddSpoken(blocks, opened: headings, showsTray: false)
+            let lists = Set(blocks.map(\.listID))
+            let added = "Added \(blocks.count == 1 ? "1 task" : "\(blocks.count) tasks") to "
+                + (lists.count == 1 ? env.store.list(id: blocks[0].listID)?.displayTitle ?? "Inbox" : "\(lists.count) lists")
+            if let failure {
+                show(failure)
+            } else if keepOpen {
+                show(NXCaptureNotice(text: added))
+            } else {
+                AccessibilityNotification.Announcement(added).post()
+                close(.finished)
+            }
+            return
         }
         // The main window takes the task in as it does its own captures,
         // Undo and Changes included, folding again what the capture opened.
@@ -112,6 +142,9 @@ final class QuickCaptureDraft: NXCaptureDraft {
     var captureText = ""
     var captureListID: UUID?
     let captureLabelID: UUID? = nil
+    var spokenTasks: [SpokenTask] = []
+    /// Quick Add's own voice capture.
+    let voice = VoiceCapture()
     /// The Today widget asked for a task due today.
     private var dueToday = false
 
@@ -139,10 +172,12 @@ final class QuickCaptureDraft: NXCaptureDraft {
 enum QuickCaptureKey {
     case add(keepOpen: Bool)
     case step(Int)
+    /// ⌥⌘V: speak tasks, or stop listening.
+    case voice
     case close
 }
 
-/// Return, Shift-Return, Tab, Escape and ⌘W for the panel's card, taken
+/// Return, Shift-Return, Tab, Escape, ⌥⌘V and ⌘W for the panel's card, taken
 /// before its text field sees them, as the main window's key monitor does
 /// for its capture.
 private struct QuickCaptureKeys: NSViewRepresentable {
@@ -203,8 +238,13 @@ private struct QuickCaptureKeys: NSViewRepresentable {
             case 53:
                 key = .close
             default:
-                guard flags == .command, event.charactersIgnoringModifiers?.lowercased() == "w" else { return false }
-                key = .close
+                let chars = event.charactersIgnoringModifiers?.lowercased()
+                if flags == [.command, .option], chars == "v" {
+                    key = .voice
+                } else {
+                    guard flags == .command, chars == "w" else { return false }
+                    key = .close
+                }
             }
             perform(key)
             return true

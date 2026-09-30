@@ -24,5 +24,6 @@ struct OpenlistWidgetBundle: WidgetBundle {
         AgendaWidget()
         SummaryWidget()
         ActivityWidget()
+        SayTasksControl()
     }
 }

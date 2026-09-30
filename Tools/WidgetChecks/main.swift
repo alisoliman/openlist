@@ -97,7 +97,7 @@ do {
 
 do {
     let id = UUID()
-    let links: [WidgetLink] = [.capture(listID: nil), .capture(listID: id), .inbox, .triage, .today, .calendar, .activity, .task(id), .list(id)]
+    let links: [WidgetLink] = [.capture(listID: nil), .capture(listID: id), .captureToday, .captureVoice, .inbox, .triage, .today, .calendar, .activity, .task(id), .list(id)]
     for link in links {
         check(WidgetLink(url: link.url) == link, "\(link) survives a URL round trip")
         check(WidgetLink.isWidgetLink(link.url), "\(link) is recognised as a widget link")

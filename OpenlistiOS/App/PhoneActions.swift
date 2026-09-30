@@ -487,15 +487,25 @@ final class PhoneActions {
     /// A capture saved: "Added to Inbox" with Undo, which takes the task back
     /// out as though it was never typed.
     func reportCapture(_ block: Block) {
-        let id = block.id
-        let list = store.list(id: block.listID)?.displayTitle ?? "Inbox"
+        reportCapture([block])
+    }
+
+    /// Tasks captured together, by voice or Siri: one tray and one Undo for all.
+    func reportCapture(_ blocks: [Block]) {
+        guard !blocks.isEmpty else { return }
+        let ids = blocks.map(\.id)
+        let lists = Set(blocks.map(\.listID))
+        let place = lists.count == 1 ? store.list(id: blocks[0].listID)?.displayTitle ?? "Inbox" : "\(lists.count) lists"
         let changes = Self.makeUndoManager()
         changes.beginUndoGrouping()
         changes.registerUndo(withTarget: store) { store in
-            MainActor.assumeIsolated { _ = store.discardCapturedTask(id: id) }
+            MainActor.assumeIsolated {
+                for id in ids.reversed() { _ = store.discardCapturedTask(id: id) }
+            }
         }
         changes.endUndoGrouping()
-        report("Added to \(list)", icon: "plus.circle", tone: .accent, changes: changes)
+        report(blocks.count == 1 ? "Added to \(place)" : "Added \(blocks.count) tasks to \(place)",
+               icon: "plus.circle", tone: .accent, changes: changes)
         haptics.play(.success)
     }
 

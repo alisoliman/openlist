@@ -16,6 +16,8 @@ nonisolated enum WidgetKind {
     static let agenda = "OpenlistAgenda"
     static let summary = "OpenlistSummary"
     static let activity = "OpenlistActivity"
+    /// The Say Tasks control, which draws nothing from the snapshot.
+    static let sayTasks = "OpenlistSayTasks"
 
     /// Kinds that draw the day's plan and the work session. The iPhone's
     /// Today names what's on next, so it follows the plan there too.

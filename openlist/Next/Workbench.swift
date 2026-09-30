@@ -156,6 +156,10 @@ final class Workbench {
     var captureLabelID: UUID?
     /// Why Return couldn't add the capture, on its card until the text changes.
     var captureNotice: NXCaptureNotice?
+    /// Tasks heard by voice on the capture card, which Return adds.
+    var spokenTasks: [SpokenTask] = []
+    /// The capture card's voice capture.
+    let voice = VoiceCapture()
     var paletteQuery = ""
     var paletteIndex = 0
     var searchQuery = ""
