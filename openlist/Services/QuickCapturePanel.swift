@@ -31,8 +31,9 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         case resigned
     }
 
-    /// How long a draft put aside by a click away waits for the next Quick Add.
-    private static let keptDraftLifetime: TimeInterval = 5 * 60
+    /// How long a draft put aside by a click away waits for the next Quick Add,
+    /// and for the next capture in the main window.
+    static let keptDraftLifetime: TimeInterval = 5 * 60
 
     private var env: AppEnvironment?
     private var container: ModelContainer?

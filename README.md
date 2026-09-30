@@ -238,7 +238,9 @@ facts originally recorded. See [task activity](docs/TASK_ACTIVITY.md) for save,
 retention, and export behaviour.
 
 Task details open beside the page, which narrows to make room rather than
-going under the panel; every page uses the window's full width. The inspector
+going under the panel; every page uses the window's full width, up to a
+comfortable reading measure on very wide displays, where the column stays
+centred (Calendar, Lists and Activity always use every point). The inspector
 keeps the title and active metadata above notes and subtasks. Empty notes and
 files use add actions rather than empty forms; removing a file can be undone.
 Notes are written in Markdown: headings, bold, italic, strikethrough, code,
@@ -366,9 +368,12 @@ the due date, "every monday" the repeat rule, `#label` a label, `!high` the
 priority and `~15m` the estimate. A line written in a list's document keeps these
 words as typed. Date detection follows Settings → Capture. Return adds the task,
 Shift-Return adds it and keeps capture open for the next, Tab steps the
-destination, and Escape cancels. Quick Add is the same card floating over the app
-you're in, and focus goes back to that app when it closes.
-Clicking or switching away also closes it, but the next Quick Add within five
+destination, and Escape cancels. Clicking the dimmed page around the card, or
+opening search or the palette over it, closes it too, but the next capture on the
+same page within five minutes offers what you'd typed again, all selected and
+aimed where it was, so typing replaces it. Quick Add is the same card floating over the app you're in, and
+focus goes back to that app when it closes.
+Clicking or switching away also closes it, and the next Quick Add within five
 minutes picks up what you'd typed. ⇧⌥Space works from launch, with or without
 a window open; with VoiceOver on, Quick Add brings Openlist forward so
 VoiceOver can read it.

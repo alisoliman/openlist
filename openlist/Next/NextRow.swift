@@ -70,9 +70,6 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
     /// The pointer tints the row, as the screens' grouped rows do. The list
     /// document's lines have no hover of their own.
     var hoverFill = true
-    /// The open icon comes to full strength under the pointer, as the list
-    /// document's does.
-    var opensOnHover = false
     /// A click on the row around its title. `nil` is the workbench's click.
     var onClick: (() -> Void)?
     @ViewBuilder var title: () -> Title
@@ -150,10 +147,15 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
                 .onHover { openHovering = $0 }
-                // Only the fade is animated, so the icon never trails a reflow.
+                // Out of sight at rest, so a screen of rows reads as their titles
+                // and chips; it comes up with the pointer or the caret, and to
+                // full strength under the pointer or on the focused row. Only the
+                // fade is animated, so the icon never trails a reflow.
                 .animation(NX.cssEase(140)) {
-                    $0.opacity(focused || opensOnHover && openHovering ? 1 : options.quiet ? 0 : 0.22)
+                    $0.opacity(focused || openHovering ? 1 : hovering || editing ? 0.55 : 0)
                 }
+                // Return opens details from a focused row, not from a line being written.
+                .help(editing ? "Open details" : "Open details (↩)")
                 .accessibilityLabel("Open details")
             }
             .padding(.top, 1)
@@ -175,10 +177,14 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
             // over 180ms, all on CSS ease. Each animation covers only its colour
             // or opacity, so a row that resizes in the same update never drags
             // its background.
+            // The pointer's wash is its own layer: it follows the pointer at
+            // once, where the 700ms fill is for rows that just arrived.
+            let washes = hovering && hoverFill && !editing && !focused && !selected && !fresh && !restored
             ZStack {
                 NXRowShadow()
                     .animation(NX.cssEase(180)) { $0.opacity(card ? 1 : 0) }
                 shape.animation(NX.cssEase(editing ? 180 : 700)) { $0.foregroundStyle(fill) }
+                shape.animation(NX.cssEase(washes ? 80 : 160)) { $0.foregroundStyle(washes ? NX.ink(0.03) : .clear) }
                 shape.strokeBorder(lineWidth: 1)
                     .animation(NX.cssEase(180)) { $0.foregroundStyle(ring) }
             }
@@ -216,7 +222,7 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
         if selected { return style.accent.opacity(0.08) }
         if fresh { return style.accent.opacity(0.11) }
         if restored { return style.accent.opacity(0.07) }
-        return hovering && hoverFill ? NX.ink(0.03) : .clear
+        return .clear
     }
 }
 
@@ -626,12 +632,22 @@ struct NXGroupView: View {
                         // The design's 12.5/1.4: the extra leading between lines
                         // and, halved, above the first and below the last.
                         let leading = 12.5 * 1.4 - NX.lineHeight(12.5)
-                        Text(group.emptyText)
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(NX.ink(0.4))
-                            .lineSpacing(leading)
-                            .padding(.vertical, 10 + leading / 2)
-                            .padding(.horizontal, 12)
+                        HStack(spacing: 8) {
+                            Text(group.emptyText)
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(NX.ink(0.4))
+                                .lineSpacing(leading)
+                            // A headless group's action has nowhere else to go.
+                            if !group.showHead, let label = group.actionLabel, let action = group.action {
+                                Button(label, action: action)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), rest: style.accent.opacity(0.08),
+                                                                    radius: 6, padding: EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8),
+                                                                    foreground: style.accent))
+                            }
+                        }
+                        .padding(.vertical, 10 + leading / 2)
+                        .padding(.horizontal, 12)
                     }
                 }
                 .padding(.top, 2)

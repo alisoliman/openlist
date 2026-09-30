@@ -975,19 +975,40 @@ extension Workbench {
     /// one left in Trash, it aims at Inbox, so a chip is always lit.
     func openCapture(listID: UUID? = nil, forToday: Bool? = nil) {
         guard !captureOpen else { return }
+        if gPressedAt != nil { endGoChord() }
         let routeListID: UUID? = if case let .list(id) = navigator.route { id } else { nil }
-        let chosen = store.list(id: listID ?? routeListID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
+        // A draft a click away put aside comes back on the page it was
+        // written on, all selected, so typing replaces it, and aimed where it
+        // was, as Quick Add resumes its own. Anywhere else capture starts
+        // afresh, aimed at the page it opens on.
+        let stash = stashedCapture.flatMap { stash in
+            Date.now.timeIntervalSince(stash.at) < QuickCapturePanel.keptDraftLifetime && stash.route == navigator.route
+                && (listID == nil || listID == stash.listID) ? stash : nil
+        }
+        stashedCapture = nil
+        let chosen = store.list(id: listID ?? stash?.listID ?? routeListID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
         captureListID = chosen?.id ?? store.inboxList()?.id
         captureNotice = nil
-        captureForToday = forToday == true || navigator.route == .today || settings.defaultDestination == .today
-        if case let .label(id) = navigator.route { captureLabelID = id } else { captureLabelID = nil }
-        captureText = ""
+        captureForToday = forToday == true || (stash?.forToday
+            ?? (navigator.route == .today || settings.defaultDestination == .today))
+        if let stash { captureLabelID = stash.labelID }
+        else if case let .label(id) = navigator.route { captureLabelID = id } else { captureLabelID = nil }
+        captureText = stash?.text ?? ""
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
         withAnimation(style.spring(260)) { captureOpen = true }
     }
 
-    func closeCapture() {
+    /// Closes capture. Escape and a saved task are done with the draft; a
+    /// click away, or search or the palette taking its place, `keepsDraft`
+    /// for the next capture on this page for a few minutes, as Quick Add
+    /// keeps its own.
+    func closeCapture(keepsDraft: Bool = false) {
+        let draft = captureText.trimmingCharacters(in: .whitespacesAndNewlines)
+        stashedCapture = keepsDraft && !draft.isEmpty
+            ? StashedCapture(text: captureText, listID: captureListID, forToday: captureForToday, labelID: captureLabelID,
+                             route: navigator.route, at: .now)
+            : nil
         captureOpen = false
         captureText = ""
         captureNotice = nil

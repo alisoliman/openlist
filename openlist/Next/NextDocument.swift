@@ -527,6 +527,8 @@ private struct NXDocumentTask: View {
     let row: BlockRow
     let context: NXLineContext
     @State private var noteHovering = false
+    /// The pointer is over the line, which brings its note button up.
+    @State private var rowHovering = false
     /// The title's width, to tell whether a folded note's hint fits after it.
     @State private var titleWidth: CGFloat = 0
 
@@ -552,7 +554,7 @@ private struct NXDocumentTask: View {
             NXTaskRowChrome(task: task, options: NXRowOptions(showList: false, listID: context.listID, now: clock.date),
                             indent: CGFloat(row.depth) * 26, leadingChips: progressChip,
                             editing: editing || noteEditing, entrance: nil, draggable: false,
-                            hoverFill: false, opensOnHover: true,
+                            hoverFill: false,
                             onClick: {
                                 // Clicking beside the text leaves any line being written, as a click away does.
                                 NXDocumentEditing.end()
@@ -601,11 +603,19 @@ private struct NXDocumentTask: View {
                 // Only the fade is animated, its `opacity 140ms ease`, as the
                 // open icon's: the colour and hover fill change at once.
                 .animation(NX.cssEase(140)) {
-                    $0.opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : 0.2)
+                    $0.opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : rowHovering || editing ? 0.5 : 0)
                 }
-                .accessibilityLabel(noteOpen ? "Hide note" : "Show note")
+                .help(noteName(open: noteOpen))
+                .accessibilityLabel(noteName(open: noteOpen))
             }
+            .onHover { rowHovering = $0 }
         }
+    }
+
+    /// What the note button does: hides the open note, shows a folded one,
+    /// or starts one on a task with none.
+    private func noteName(open: Bool) -> String {
+        open ? "Hide note" : task.note.isEmpty ? "Add a note" : "Show note"
     }
 
     private var progressChip: [NXChipModel] {

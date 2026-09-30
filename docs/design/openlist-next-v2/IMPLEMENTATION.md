@@ -98,6 +98,44 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
   before), or, when finishing registers none, as for a new line left empty, the step under
   its typing; the tray's and Changes' Undo step aside until then. In other fields it reads "Typing", as Edit ▸
   Undo does, since that is what it takes back.
+- Native extras for comfort, past the design:
+  - Rows: a row's open-details icon, and a document task's note button when it has no
+    note, are hidden at rest and come up with the pointer or the caret, where the design
+    draws them faint on every row. The pointer's row wash and a sidebar row's hover wash
+    follow the pointer at once (the current row's raise keeps the design's 300ms, and label
+    rows still snap). A pressed button gives slightly; only its scale animates, and not
+    with Reduce Motion.
+  - G: held a moment, G shows where each key goes above the bottom bars (never in place of
+    the tray), and then waits for an answer for 6 seconds, 12 with VoiceOver, which hears
+    the list and then "Go to closed" if it lapses. Any other key typed while it waits
+    finishes the chord, so G then E or D is a slip rather than Done or Trash; G again keeps
+    it waiting, and Esc, a click, a menu or the window going to the background lets it go.
+  - Capture: Escape is done with the draft, as Quick Add's is; a click on the dimmed page,
+    or search or the palette taking its place, keeps it, and the next capture on the same
+    page within Quick Add's five minutes offers it again, all selected and aimed where it
+    was (its list, Today and label). On another page capture starts afresh.
+  - Pages other than the Calendar, Lists and Activity, past a 1120pt measure, keep a column
+    centred in the room the page has without the inspector, so docking the inspector
+    narrows the column rather than moving it (it moves left only to stay 720pt wide).
+  - The inspector's List names the list as a menu of every list, with the design's glyph
+    pills beside it for up to eight lists; past eight labels, Labels shows only the
+    task's own, holding still while its picker is open.
+  - Empty states: the Lists gallery ends each section with a New list card, showing the
+    default section empty for it when no section holds a list, and offers "Make your
+    first list" with no list to use. An empty
+    Tasks page says whether there are no tasks, nothing open, or a filter hiding them,
+    with "Show all open tasks" where that would show some, where the design always says
+    "Nothing matches these filters." The palette says when a task action needs a task
+    focused, and lists Keyboard shortcuts (⌘/). Today is clear drops "0 finished today"
+    when nothing was done, keeping the design's sentence otherwise.
+  - Wording and colour: a done-ago time counts calendar days past a day (a task done
+    yesterday morning reads "yesterday" this evening, where the design's 24-hour periods
+    say "2 days ago") and never reads "60 min ago". The Inbox triage card's due chip reads
+    overdue as rows do (red, with its alert), where the design's is accent; its priority
+    chip names the level ("Medium priority"), red only for High, where the design's is
+    red for all. The Calendar's cards write an hour or more as "1h 30m".
+  - The Calendar stretches its hours to the one it is while today shows, so the now line
+    is never missing, and opens a day on its own from its header.
 - Reduce Motion (the setting or the system's) fades the inspector, the notch, the bottom
   bars, the overlay cards and the Turn into card in rather than sliding them, and Trash's
   restored row out, the list document's new and converted lines (its rowIn and morphIn)
@@ -125,7 +163,8 @@ Source of truth: `body.html` (markup) and `design.jsx` (logic) in this folder.
 - With Settings' "Read dates from what you type" off, a native switch, capture's ghost,
   its VoiceOver hint and the shortcuts sheet drop the date and repeat examples they give.
 - Capture's chips follow the typed tokens in order, a typed day as "Fri 25 · in 2 days",
-  as the design's. A bare time already past, or a repeat whose first day isn't today, shows
+  as the design's. Deviation: a day its label already names by distance gives its date
+  instead, "Tomorrow · Thu 1", where the design's reads "Tomorrow · tomorrow". A bare time already past, or a repeat whose first day isn't today, shows
   the day it saves (tomorrow, the repeat's first day), where the design saves both today
   and shows no day.
 - Capture opened on a label screen (N or its "Add a task" row), a native extra, also gives

@@ -83,13 +83,18 @@ enum NXFormat {
         let offset = dayOffset(date, now: now)
         if offset == 0 { return "today" }
         if offset == 1 { return "tomorrow" }
+        if offset == -1 { return "yesterday" }
         if offset < 0 { return "\(-offset) days ago" }
         return "in \(offset) days"
     }
 
-    /// A typed day as capture's chip names it: "Fri 25 · in 2 days".
+    /// A typed day as capture's chip names it: "Fri 25 · in 2 days". A day
+    /// already named for its distance gives its date instead, "Tomorrow ·
+    /// Thu 1", so the chip never says the same thing twice.
     static func typedDay(_ date: Date, now: Date = .now) -> String {
-        "\(dueLabel(date, now: now)) · \(relativeDay(date, now: now))"
+        let named = (-1...1).contains(dayOffset(date, now: now))
+        return "\(dueLabel(date, now: now)) · " + (named ? date.formatted(.dateTime.weekday(.abbreviated).day())
+                                                         : relativeDay(date, now: now))
     }
 
     /// A schedule typed in words, as capture's chips read it, in one line:
@@ -99,12 +104,16 @@ enum NXFormat {
             .joined(separator: " · ")
     }
 
+    /// How long ago, in the unit a person would use: "just now", "5 min
+    /// ago", "3 h ago", then calendar days, so a task done yesterday
+    /// morning reads "yesterday" this evening rather than "2 days ago".
     static func relative(_ date: Date, now: Date = .now) -> String {
         let seconds = now.timeIntervalSince(date)
         if seconds < 45 { return "just now" }
-        if seconds < 3600 { return "\(Int((seconds / 60).rounded())) min ago" }
-        if seconds < 86_400 { return "\(Int((seconds / 3600).rounded())) h ago" }
-        let days = Int((seconds / 86_400).rounded())
+        let minutes = Int((seconds / 60).rounded())
+        if minutes < 60 { return "\(minutes) min ago" }
+        if seconds < 86_400 { return "\(min(23, Int((seconds / 3600).rounded()))) h ago" }
+        let days = max(1, -dayOffset(date, now: now))
         return days == 1 ? "yesterday" : "\(days) days ago"
     }
 

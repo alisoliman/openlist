@@ -73,6 +73,7 @@ struct NXSelectionBar: View {
             .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.1), radius: 8,
                                             padding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7),
                                             foreground: .white.opacity(0.7), hoverForeground: .white))
+            .help("Clear selection (Esc)")
             .accessibilityLabel("Clear selection")
         }
     }
@@ -216,6 +217,60 @@ struct NXWidthCap: Layout {
     }
 }
 
+/// What G waits for, once it has waited a moment: each screen's key, in
+/// sidebar order, on the tray's dark surface. Typed straight on, a chord
+/// never shows it. Beside the inspector or in a narrow window it drops its
+/// "Go to", then takes two lines, as the selection bar gives up its words.
+struct NXGoHint: View {
+    static let stops: [(key: String, title: String)] = [
+        ("I", "Inbox"), ("T", "Today"), ("C", "Calendar"), ("A", "Tasks"), ("L", "Lists"), ("H", "Activity"),
+    ]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Text("Go to")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .fixedSize()
+                stops(Self.stops)
+            }
+            HStack(spacing: 12) { stops(Self.stops) }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) { stops(Array(Self.stops.prefix(3))) }
+                HStack(spacing: 12) { stops(Array(Self.stops.suffix(3))) }
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .environment(\.colorScheme, .dark)
+        .background(NX.inverse, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .shadow(color: Color(hex: 0x17161A).opacity(0.34), radius: 17, y: 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Go to: " + Self.stops.map { "\($0.key) \($0.title)" }.joined(separator: ", "))
+        .onAppear {
+            guard NSApp.isActive else { return }
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                userInfo: [.announcement: "Go to: " + Self.stops.map { "\($0.key) \($0.title)" }.joined(separator: ", "),
+                           .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
+    }
+
+    private func stops(_ stops: [(key: String, title: String)]) -> some View {
+        ForEach(stops, id: \.key) { stop in
+            HStack(spacing: 5) {
+                Text(stop.key)
+                    .font(NX.mono(10.5, weight: .semibold))
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                Text(stop.title).font(.system(size: 12, weight: .medium))
+            }
+            .fixedSize()
+        }
+    }
+}
+
 /// Where the bottom bars rise from.
 struct NXBottomBars: View {
     @Environment(AppEnvironment.self) private var env
@@ -227,17 +282,29 @@ struct NXBottomBars: View {
         let hasSelection = !NXSelectionBar.selected(workbench).isEmpty
         // Each bar sits on the 26pt baseline, as the design's `bottom:26px`,
         // so a shorter tray doesn't move while a taller bar leaves.
-        ZStack(alignment: .bottom) {
-            if hasSelection && !env.navigator.isCommandPaletteOpen {
-                NXSelectionBar().transition(barTransition)
-            } else if let tray = workbench.tray, !hasSelection {
-                NXTray(message: tray).transition(barTransition)
+        // The G hint rises above whichever bar is up rather than taking its
+        // place, so the tray's Undo and drain carry on under it.
+        let showsSelection = hasSelection && !env.navigator.isCommandPaletteOpen
+        let showsBar = showsSelection || workbench.tray != nil && !hasSelection
+        VStack(spacing: 0) {
+            if workbench.showsGoHint {
+                NXGoHint()
+                    .padding(.bottom, showsBar ? 10 : 0)
+                    .transition(barTransition)
+            }
+            ZStack(alignment: .bottom) {
+                if showsSelection {
+                    NXSelectionBar().transition(barTransition)
+                } else if let tray = workbench.tray, !hasSelection {
+                    NXTray(message: tray).transition(barTransition)
+                }
             }
         }
         // The design's barIn, at its own speed whatever the Motion setting.
         // Each bar goes at once, as the design's leave with their state.
         .animation(NX.ease(220), value: hasSelection)
         .animation(NX.ease(200), value: workbench.tray == nil)
+        .animation(NX.ease(160), value: workbench.showsGoHint)
         .padding(.bottom, 26)
         // The tray rises and drains away without a sound, so VoiceOver hears
         // each message, even one a selection bar keeps off screen.

@@ -13,7 +13,7 @@ struct NextCalendarScreen: View {
     var body: some View {
         let workbench = env.workbench
         let days = workbench.calendarDays
-        NXPage {
+        NXPage(measure: nil) {
             // The range comes from the timeline's date, so a screen left open
             // overnight moves to the new day with its header, from whatever
             // range it was stepped or planned to the day before.
@@ -102,6 +102,9 @@ private struct NXCalendarStepper: View {
 }
 
 private enum NXCal {
+    /// An estimate as the calendar's cards say it: "30 min", "1h 30m".
+    static func estimate(_ minutes: Int) -> String { minutes < 60 ? "\(minutes) min" : NXFormat.minutes(minutes) }
+
     static let hourHeight: CGFloat = 40
     static let gutter: CGFloat = 52
     static let minColumn: CGFloat = 92
@@ -135,11 +138,17 @@ private struct NXCalendarBody: View {
         .environment(drag)
     }
 
-    /// 8–21 by default, stretched to fit anything scheduled outside it.
+    /// 8–21 by default, stretched to fit anything scheduled outside it, and
+    /// to the hour it is while today shows, so the now line is never missing.
     private var hourRange: ClosedRange<Int> {
         let cal = Calendar.current
         var low = 8
         var high = 21
+        if dates.contains(where: { cal.isDate($0, inSameDayAs: now) }) {
+            let hour = cal.component(.hour, from: now)
+            low = min(low, hour)
+            high = max(high, hour + 1)
+        }
         let visible = blocks.map { ($0.start, $0.end) } + events.map { ($0.start, $0.end) }
         for (start, end) in visible {
             low = min(low, cal.component(.hour, from: start))
@@ -147,6 +156,13 @@ private struct NXCalendarBody: View {
             high = max(high, cal.isDate(end, inSameDayAs: start) ? endHour : 24)
         }
         return max(0, low)...min(24, max(high, low + 1))
+    }
+
+    /// A day's header opens that day on its own.
+    private func showDay(_ date: Date) {
+        let workbench = env.workbench
+        workbench.calendarDays = 1
+        workbench.revealOnCalendar(date)
     }
 
     private var span: DateInterval? {
@@ -269,7 +285,8 @@ private struct NXCalendarBody: View {
                     let day = cal.startOfDay(for: date)
                     let next = cal.date(byAdding: .day, value: 1, to: day) ?? day
                     NXDayHead(date: date, now: now, load: Self.hours(blocksByDay[day] ?? [], eventsByDay[day] ?? []),
-                              holds: holds.filter { $0.end > day && $0.start < next }, reservesHold: !holds.isEmpty)
+                              holds: holds.filter { $0.end > day && $0.start < next }, reservesHold: !holds.isEmpty,
+                              open: dates.count > 1 ? { showDay(date) } : nil)
                 }
             }
             .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.09)).frame(height: 0.5) }
@@ -354,6 +371,9 @@ private struct NXDayHead: View {
     /// header keeps the same height.
     let holds: [FixedBusyTime]
     let reservesHold: Bool
+    /// Opens the day in Day view; nil in Day view itself.
+    var open: (() -> Void)?
+    @State private var hovering = false
 
     var body: some View {
         let cal = Calendar.current
@@ -395,8 +415,15 @@ private struct NXDayHead: View {
         .padding(EdgeInsets(top: 9, leading: 9, bottom: 8, trailing: 9))
         .frame(minWidth: NXCal.minColumn, maxWidth: .infinity, alignment: .leading)
         .background(isToday ? style.accent.opacity(0.04) : .clear)
+        .background(open != nil && hovering ? NX.ink(0.035) : .clear)
+        .animation(NX.cssEase(hovering ? 60 : 140), value: hovering)
         .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.07)).frame(width: 0.5) }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { open?() }
+        .nxHelp(open == nil ? nil : "Show \(date.formatted(.dateTime.weekday(.wide).day().month(.wide))) on its own")
         .accessibilityElement(children: .combine)
+        .modifier(NXPressable(action: open))
     }
 
     @ViewBuilder private var hold: some View {
@@ -851,6 +878,35 @@ private struct NXCalendarBlock: View {
     }
 }
 
+/// A header that opens its day, to VoiceOver a button; in Day view, where
+/// there's nothing to open, plain text.
+private struct NXPressable: ViewModifier {
+    let action: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content.accessibilityAddTraits(.isButton).accessibilityAction { action() }
+        } else {
+            content
+        }
+    }
+}
+
+/// A card that opens on a click and drags: under the pointer its edge
+/// firms up and it lifts a little off the page.
+private struct NXCardHover: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(NX.ink(hovering ? 0.1 : 0), lineWidth: 0.5))
+            .shadow(color: NX.shadowWarm.opacity(hovering ? 0.09 : 0), radius: 6, y: 3)
+            .animation(NX.cssEase(hovering ? 80 : 160), value: hovering)
+            .onHover { hovering = $0 }
+    }
+}
+
 /// Open tasks due soon or picked for today that have no block yet.
 private struct NXUnplannedColumn: View {
     @Environment(AppEnvironment.self) private var env
@@ -941,7 +997,7 @@ private struct NXUnplannedColumn: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 6) {
-                Text(task.dueDate.map { NXFormat.dueLabel($0) } ?? "Picked for today")
+                Text(task.dueDate.map { NXFormat.dueLabel($0, now: now) } ?? "Picked for today")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(overdue ? NX.redText : style.accent)
                     .padding(.vertical, chipLine)
@@ -949,7 +1005,8 @@ private struct NXUnplannedColumn: View {
                     .padding(.horizontal, 6)
                     .background(overdue ? NX.red.opacity(0.12) : style.accent.opacity(0.08),
                                 in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                Text("\(minutes) min").font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.45))
+                Text(NXCal.estimate(minutes))
+                    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.45))
                     .padding(.vertical, chipLine)
                 Spacer(minLength: 4)
                 Button { env.workbench.fit(task.id) } label: {
@@ -965,12 +1022,14 @@ private struct NXUnplannedColumn: View {
                 .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), rest: style.accent.opacity(0.1), radius: 6,
                                                 padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
                                                 foreground: style.accent))
+                .help("Plan it into the next free slot on the calendar")
             }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 11)
         .background(NX.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+        .modifier(NXCardHover())
         .contentShape(Rectangle())
         .onTapGesture { env.workbench.inspect(task.id) }
         // Held by its middle, as its preview is, to land on the calendar.
@@ -1185,7 +1244,7 @@ private struct NXDragPreview: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(NX.ink)
                 .lineLimit(2)
-            Text("\(minutes) min")
+            Text(NXCal.estimate(minutes))
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(NX.ink(0.5))
         }

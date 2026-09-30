@@ -126,7 +126,8 @@ private struct NXTodayPage: View {
                 // The design's 13/1.45: the extra leading between lines and,
                 // halved, above the first and below the last.
                 let leading = 13 * 1.45 - NX.lineHeight(13)
-                Text("\(done) finished today. Nothing is overdue, due, planned or starred.")
+                Text(done > 0 ? "\(done) finished today. Nothing is overdue, due, planned or starred."
+                              : "Nothing is overdue, due, planned or starred.")
                     .font(.system(size: 13))
                     .lineSpacing(leading)
                     .foregroundStyle(NX.ink(0.56))
@@ -142,8 +143,7 @@ private struct NXTodayPage: View {
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, rest: NX.card, radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
-                                            foreground: NX.ink(0.7)))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(NX.ink(0.14), lineWidth: 0.5))
+                                            foreground: NX.ink(0.7), border: NX.ink(0.14)))
         }
         .padding(.vertical, 30)
         .padding(.horizontal, 28)
@@ -346,6 +346,7 @@ private struct NXListOptions: View {
                                         foreground: NX.ink(0.45), hoverForeground: NX.ink))
         .menuIndicator(.hidden)
         .fixedSize()
+        .help("List options")
         .accessibilityLabel("List options")
         .popover(isPresented: $appearanceOpen, arrowEdge: .bottom) {
             ListAppearancePicker(list: list).environment(env)

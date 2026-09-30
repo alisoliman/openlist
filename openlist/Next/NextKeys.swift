@@ -43,6 +43,7 @@ final class NextKeyHandler {
     weak var view: NSView?
     private var monitor: Any?
     private var clickMonitor: Any?
+    private var backgroundObservers: [NSObjectProtocol] = []
     /// Keys pressed while the list document moves its caret, in order.
     private var heldKeys: [NSEvent] = []
 
@@ -58,18 +59,45 @@ final class NextKeyHandler {
             let handled = MainActor.assumeIsolated { self.handle(event) }
             return handled ? nil : event
         }
-        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self else { return event }
-            MainActor.assumeIsolated { self.releaseForeignFocus(for: event) }
+            MainActor.assumeIsolated {
+                // Any click answers a G chord by letting it go.
+                if self.env.workbench.gPressedAt != nil { self.env.workbench.endGoChord() }
+                if event.type == .leftMouseDown { self.releaseForeignFocus(for: event) }
+            }
             return event
         }
+        // So does the window or Openlist going to the background, whose keys
+        // this monitor no longer sees, and a menu.
+        let ends: @Sendable (Notification) -> Void = { [weak self] note in
+            let window = (note.object as? NSWindow).map(ObjectIdentifier.init)
+            MainActor.assumeIsolated {
+                guard let self, self.env.workbench.gPressedAt != nil else { return }
+                if let window, window != self.view?.window.map(ObjectIdentifier.init) { return }
+                self.env.workbench.endGoChord()
+            }
+        }
+        backgroundObservers = [
+            NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main, using: ends),
+            NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main, using: ends),
+            // A menu opened from the menu bar or a context menu answers it too.
+            NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.env.workbench.gPressedAt != nil else { return }
+                    self.env.workbench.endGoChord()
+                }
+            },
+        ]
     }
 
     func uninstall() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        backgroundObservers.forEach(NotificationCenter.default.removeObserver)
         monitor = nil
         clickMonitor = nil
+        backgroundObservers = []
     }
 
     private enum Key {
@@ -108,6 +136,19 @@ final class NextKeyHandler {
         if flags == .command && chars == "k" && navigator.isCommandPaletteOpen {
             navigator.isCommandPaletteOpen = false
             return true
+        }
+
+        // A G chord only waits for a plain key; anything else lets it go,
+        // and Esc lets it go before it closes anything else.
+        if workbench.gPressedAt != nil {
+            if !(flags.isEmpty || flags == .shift) || isEditingText
+                || workbench.captureOpen || navigator.isCommandPaletteOpen || navigator.isSearchOpen {
+                workbench.endGoChord()
+            } else if key == Key.escape {
+                let pending = workbench.awaitsGoKey
+                workbench.endGoChord()
+                if pending { return true }
+            }
         }
 
         // The in-window Settings page, wherever focus is and over search or
@@ -322,10 +363,15 @@ final class NextKeyHandler {
         let workbench = env.workbench
         let navigator = env.navigator
 
-        if let pressed = workbench.gPressedAt {
-            workbench.gPressedAt = nil
-            if Date.now.timeIntervalSince(pressed) < 0.9, let route = Self.goRoutes[chars] {
-                workbench.go(route)
+        // A key typed while G waits finishes the chord, and never reaches the
+        // action keys: G then E or D is a slip, not Done or Trash. G again
+        // keeps waiting, the hint up if it was.
+        if workbench.gPressedAt != nil {
+            let pending = workbench.awaitsGoKey
+            if pending && chars == "g" { return true }
+            workbench.endGoChord()
+            if pending {
+                if let route = Self.goRoutes[chars] { workbench.go(route) }
                 return true
             }
         }
@@ -436,7 +482,7 @@ final class NextKeyHandler {
         let workbench = env.workbench
         switch chars {
         case "g":
-            workbench.gPressedAt = .now
+            workbench.beginGoChord()
         case "n":
             workbench.openCapture()
         case "/":
