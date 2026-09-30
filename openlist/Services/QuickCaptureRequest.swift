@@ -13,4 +13,6 @@ struct QuickCaptureRequest: Equatable {
     /// Makes a task with no date of its own due today, as Today's add row
     /// does, so it shows in the Today widget that asked.
     var dueToday = false
+    /// Starts listening for tasks to be said, as the Say Tasks control does.
+    var listens = false
 }

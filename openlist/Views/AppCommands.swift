@@ -66,6 +66,10 @@ struct AppCommands: Commands {
             Button("New Task…") { inMainWindow { env.presentTaskCapture() } }
                 .keyboardShortcut("n", modifiers: .command)
 
+            // Open capture takes ⌥⌘V itself, to stop listening.
+            Button("New Tasks by Voice…") { inMainWindow { env.presentVoiceCapture() } }
+                .keyboardShortcut("v", modifiers: [.command, .option])
+
             Button("New List") { besideCapture(newList) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(keepsCapture)

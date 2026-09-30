@@ -284,6 +284,7 @@ final class PhoneDraft: NXCaptureDraft {
     var captureListID: UUID?
     var captureForToday = false
     var captureLabelID: UUID?
+    var spokenTasks: [SpokenTask] = []
 
     init(store: Store, settings: AppSettings) {
         self.store = store

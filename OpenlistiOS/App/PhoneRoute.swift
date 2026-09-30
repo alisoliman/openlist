@@ -28,21 +28,24 @@ enum PhoneTab: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// What the Capture sheet starts with: a list (the Inbox when nil), and
-/// whether a task typed without a date is due today.
+/// What the Capture sheet starts with: a list (the Inbox when nil), whether
+/// a task typed without a date is due today, and whether it starts listening
+/// for tasks to be said.
 struct CaptureRequest: Hashable, Identifiable {
     var listID: UUID?
     var dueToday = false
+    var listens = false
     /// Two requests for the same list are still two presentations.
     var id = UUID()
 
-    init(listID: UUID? = nil, dueToday: Bool = false) {
+    init(listID: UUID? = nil, dueToday: Bool = false, listens: Bool = false) {
         self.listID = listID
         self.dueToday = dueToday
+        self.listens = listens
     }
 
     init(_ request: QuickCaptureRequest) {
-        self.init(listID: request.listID, dueToday: request.dueToday)
+        self.init(listID: request.listID, dueToday: request.dueToday, listens: request.listens)
     }
 }
 

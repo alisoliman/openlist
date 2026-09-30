@@ -45,21 +45,26 @@ enum DateParser {
         let consumedByDay = consumed.count
         let time = matchTime(in: ns, consumed: &consumed)
 
-        // "at 6pm" on its own means today, or tomorrow if that time has passed.
-        if day == nil, time != nil {
-            day = Calendar.current.startOfDay(for: reference)
-        }
-        // A repeat rule with no explicit day starts today — except a rule that
-        // names weekdays, which should start on the first day it actually
-        // matches. "every monday" typed on a Saturday means next Monday.
-        if day == nil, let recurrence {
-            let calendar = Calendar.current
-            let today = calendar.startOfDay(for: reference)
-            if recurrence.frequency == .weekly, !recurrence.weekdays.isEmpty {
-                day = firstMatchingDay(from: today, weekdays: recurrence.weekdays, calendar: calendar)
-            } else {
-                day = today
+        // A repeat rule that names weekdays, with no explicit day, starts on
+        // the first day it matches, time included: "every monday" typed on a
+        // Saturday means next Monday, and "every monday 9am" typed on a Monday
+        // after nine means the Monday after.
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: reference)
+        var startsOnRuleDay = false
+        if day == nil, let recurrence, recurrence.frequency == .weekly, !recurrence.weekdays.isEmpty {
+            var first = firstMatchingDay(from: today, weekdays: recurrence.weekdays, calendar: calendar)
+            if let time, let start = combine(day: first, time: time, reference: reference, hadExplicitDay: true),
+               start < reference, let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) {
+                first = firstMatchingDay(from: tomorrow, weekdays: recurrence.weekdays, calendar: calendar)
             }
+            day = first
+            startsOnRuleDay = true
+        }
+        // "at 6pm" on its own means today, or tomorrow if that time has
+        // passed, and any other repeat rule with no explicit day starts today.
+        if day == nil, time != nil || recurrence != nil {
+            day = today
         }
 
         var resolved: Date?
@@ -68,7 +73,7 @@ enum DateParser {
             if let time {
                 // A day phrase was matched only if something beyond the repeat
                 // rule and the time itself was consumed.
-                let hadExplicitDay = consumed.count > consumedByRecurrence + 1
+                let hadExplicitDay = startsOnRuleDay || consumed.count > consumedByRecurrence + 1
                 resolved = combine(day: day, time: time, reference: reference, hadExplicitDay: hadExplicitDay)
                 includesTime = true
             } else {
@@ -394,8 +399,11 @@ enum DateParser {
             ("yearly", .yearly),
             ("annually", .yearly),
         ]
+        // After an article or possessive the word names a kind of thing,
+        // not how often: "the quarterly report", "my weekly review".
+        let determiner = "(?<!\\b(?:the|a|an|my|our|your|his|her|their|this|that|next|last|each)\\s)"
         for (word, rule) in adverbs {
-            if let range = firstMatch(pattern: "\\b\(word)\\b", in: ns, avoiding: consumed) {
+            if let range = firstMatch(pattern: "\(determiner)\\b\(word)\\b", in: ns, avoiding: consumed) {
                 consumed.append(range)
                 return rule
             }

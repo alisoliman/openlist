@@ -111,6 +111,7 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         if panel.isVisible, let draft {
             if let request { draft.apply(request) }
             panel.makeKeyAndOrderFront(nil)
+            listen(draft, if: request)
             return
         }
         let draft: QuickCaptureDraft
@@ -147,6 +148,13 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         } else {
             panel.makeKeyAndOrderFront(nil)
         }
+        listen(draft, if: request)
+    }
+
+    /// Starts the card listening when what opened it asked to say tasks.
+    private func listen(_ draft: QuickCaptureDraft, if request: QuickCaptureRequest?) {
+        guard let env, request?.listens == true, !draft.voice.isActive else { return }
+        draft.voice.toggle(for: draft, lists: env.store.allLists(), labels: env.store.allLabels())
     }
 
     /// A field selects all its text as it takes focus. A resumed draft puts
@@ -244,6 +252,8 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         guard let panel, panel.isVisible, !isClosing else { return }
         isClosing = true
         defer { isClosing = false }
+        // A card out of sight stops listening.
+        draft?.voice.cancel()
         topLeft = nil
         responderObservation = nil
         if dismissal == .finished {

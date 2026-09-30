@@ -17,6 +17,8 @@ struct OLDock: View {
     var captureLabel = "New task"
     /// Tapping the tab on show: back to its root.
     var reselect: (PhoneTab) -> Void = { _ in }
+    /// The +'s long-press menu: capture, listening for tasks to be said.
+    var captureByVoice: (() -> Void)?
     let capture: () -> Void
     @Namespace private var namespace
     @Environment(\.olStyle) private var style
@@ -124,6 +126,15 @@ struct OLDock: View {
         .accessibilityLabel(captureLabel)
         .accessibilityIdentifier("dock.capture")
         .accessibilityShowsLargeContentViewer { Label(captureLabel, systemImage: "plus") }
+        .contextMenu {
+            if let captureByVoice {
+                Button("New Task", systemImage: "plus", action: capture)
+                Button("Say Tasks", systemImage: "mic", action: captureByVoice)
+            }
+        }
+        .accessibilityActions {
+            if let captureByVoice { Button("Say tasks", action: captureByVoice) }
+        }
     }
 }
 

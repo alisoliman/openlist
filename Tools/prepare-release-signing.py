@@ -22,11 +22,15 @@ SERVICES = "com.apple.developer.icloud-services"
 CLOUD_ENVIRONMENT = "com.apple.developer.icloud-container-environment"
 PUSH_ENVIRONMENT = "com.apple.developer.aps-environment"
 CALENDAR_ACCESS = "com.apple.security.personal-information.calendars"
+AUDIO_INPUT = "com.apple.security.device.audio-input"
 SOURCE_ENTITLEMENTS = {
     "com.apple.security.app-sandbox": True,
     # The main app reads EventKit events as fixed busy time for its local plan.
     # This sandbox entitlement is app-only; the widget reads the shared snapshot.
     CALENDAR_ACCESS: True,
+    # Voice capture listens to the microphone only while tasks are being said,
+    # and transcribes on device. App-only, as calendar access is.
+    AUDIO_INPUT: True,
     "com.apple.security.files.user-selected.read-write": True,
     "com.apple.security.network.client": True,
     "com.apple.security.network.server": True,

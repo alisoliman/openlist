@@ -16,6 +16,7 @@ struct OpenlistiOSWidgetBundle: WidgetBundle {
         InboxWidget()
         UpNextWidget()
         WorkLiveActivity()
+        SayTasksControl()
     }
 }
 

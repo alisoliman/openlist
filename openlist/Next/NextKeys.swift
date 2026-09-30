@@ -167,11 +167,22 @@ final class NextKeyHandler {
             // Edit ▸ Search would close capture and drop the draft. Only ⌘K,
             // whose palette replaces capture in the design too, gets past it.
             if flags == .command && chars == "f" { return true }
+            // ⌥⌘V speaks tasks, or stops listening and reads them.
+            if flags == [.command, .option] && chars == "v" {
+                workbench.toggleVoice()
+                return true
+            }
             // The card's Return, Tab and Escape are its field's, as the
             // design binds them to its input: a name being written in the
             // sidebar beside it keeps its own.
             if isEditingText && overlays.editsSidebarField() { return false }
+            let voice = workbench.voice
             if isEnter && !flags.contains(.command) {
+                // While listening, Return is done speaking.
+                if voice.isActive {
+                    if voice.phase == .listening { voice.stop() }
+                    return true
+                }
                 _ = workbench.createFromCapture(keepOpen: flags.contains(.shift))
                 return true
             }
@@ -179,8 +190,15 @@ final class NextKeyHandler {
                 workbench.cycleCaptureDestination(by: flags.contains(.shift) ? -1 : 1, among: library.lists.map(\.id))
                 return true
             }
+            // Escape stops listening, then puts away the tasks heard, then closes.
             if key == Key.escape {
-                workbench.closeCapture()
+                if voice.isActive {
+                    voice.cancel()
+                } else if !workbench.spokenTasks.isEmpty {
+                    workbench.spokenTasks = []
+                } else {
+                    workbench.closeCapture()
+                }
                 return true
             }
             return false

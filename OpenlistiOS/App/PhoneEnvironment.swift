@@ -176,6 +176,14 @@ final class PhoneEnvironment {
             guard let self else { return }
             widgetCommands.handle(command, now: clock.now)
         }
+        // Siri and Shortcuts: Add Tasks saves into the library and says so in
+        // the tray, with Undo; Say Tasks opens Capture listening.
+        TaskIntentHost.library = { [weak self] in
+            self?.bootstrap()
+            return self?.store
+        }
+        TaskIntentHost.didAdd = { [weak self] blocks, _ in self?.actions.reportCapture(blocks) }
+        TaskIntentHost.open = { [weak self] link in _ = self?.links.receive(link.url) }
     }
 
     private func installNotificationDelegate() {
@@ -250,6 +258,7 @@ final class PhoneEnvironment {
         // After the calendar, so the first snapshot has the day's plan.
         widgetPublisher.refreshNow(now: clock.now)
         links.storeReady()
+        if platform.installsProcessHooks { TaskIntentHost.listsChanged() }
         if platform.installsProcessHooks {
             // Taps the extension queued while the app wasn't running.
             WidgetCommandProcessor.adoptEarlierQueue()
@@ -276,7 +285,7 @@ final class PhoneEnvironment {
     #if DEBUG
     /// A review session's `OpenlistOpenRoute`: the screen to open at launch,
     /// for screenshots and UI tests. A tab ("inbox", "lists", "timeline"),
-    /// a modal ("settings", "trash", "capture", "working", "triage"),
+    /// a modal ("settings", "trash", "capture", "voice", "working", "triage"),
     /// "activity", "find:#travel", or a list or task by its title
     /// ("list:Weekend in Kyoto", "task:Draft Q3 OKRs"). `OpenlistShowTray`
     /// puts its text in the tray, with Undo, for a screenshot of it.
@@ -300,6 +309,7 @@ final class PhoneEnvironment {
         case "trash": navigator.open(.trash)
         case "working": navigator.show(.working)
         case "capture": navigator.open(.capture(CaptureRequest()))
+        case "voice": navigator.open(.capture(CaptureRequest(listens: true)))
         case "list":
             if let list = store.allLists(includeArchived: true).first(where: { $0.displayTitle == name }) {
                 navigator.show(list.isSystemInbox ? .inbox : .list(list.id))

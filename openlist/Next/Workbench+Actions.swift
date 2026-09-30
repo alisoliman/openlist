@@ -18,7 +18,7 @@ private struct PlacementSpan {
 
 /// What Undo erased of a new task or list, shared with the Redo that brings it back.
 private final class CreationUndo {
-    var task: BackupBlock?
+    var tasks: [UUID: BackupBlock] = [:]
     var list: BackupTaskList?
 }
 
@@ -893,6 +893,15 @@ extension Workbench {
         case let .saved(saved, headings):
             block = saved
             opened = headings
+        case let .savedSeveral(blocks, headings, failure):
+            didAddSpoken(blocks, opened: headings)
+            if let failure {
+                captureNotice = failure
+                AccessibilityNotification.Announcement(failure.text).post()
+            } else if !keepOpen {
+                closeCapture()
+            }
+            return blocks.last
         }
         captureNotice = nil
         let list = store.list(id: block.listID)
@@ -939,7 +948,12 @@ extension Workbench {
     /// has since gained subtasks, files, a plan or work goes to Trash instead,
     /// so nothing added to it is lost. The headings the capture `opened`
     /// fold again, and open again on Redo. The closures keep the id, never the model.
+    /// Several tasks captured together, by voice, come and go together.
     private func registerCreationUndo(_ label: String, taskID id: UUID, opened headings: [UUID] = []) {
+        registerCreationUndo(label, taskIDs: [id], opened: headings)
+    }
+
+    private func registerCreationUndo(_ label: String, taskIDs ids: [UUID], opened headings: [UUID]) {
         let taken = CreationUndo()
         let fold: @MainActor (Store, Bool) -> Void = { store, folded in
             for heading in headings.compactMap({ store.block(id: $0) }) where BlockTree.sectionLevel(of: heading.kind) != nil {
@@ -948,21 +962,40 @@ extension Workbench {
         }
         registerUndo(label, undo: { workbench in
             let store = workbench.store
-            if let task = store.discardCapturedTask(id: id) {
-                taken.task = task
-            } else if let block = store.block(id: id) {
-                _ = store.trashBlocks([block])
+            for id in ids.reversed() {
+                if let task = store.discardCapturedTask(id: id) {
+                    taken.tasks[id] = task
+                } else if let block = store.block(id: id) {
+                    _ = store.trashBlocks([block])
+                }
             }
             fold(store, true)
         }, redo: { workbench in
-            if let task = taken.task {
-                taken.task = nil
-                _ = workbench.store.restoreDiscardedTask(task)
-            } else {
-                _ = workbench.store.restoreTrash(ids: [id])
+            for id in ids {
+                if let task = taken.tasks.removeValue(forKey: id) {
+                    _ = workbench.store.restoreDiscardedTask(task)
+                } else {
+                    _ = workbench.store.restoreTrash(ids: [id])
+                }
             }
             fold(workbench.store, false)
         })
+    }
+
+    /// Tasks voice capture added, from the window's card or Quick Add's:
+    /// one Undo that takes them all back, one line in Changes, the fresh rows
+    /// and each list's pulse. Quick Add's card says what it added, so its
+    /// tray stays down.
+    func didAddSpoken(_ blocks: [Block], opened: [UUID], showsTray: Bool = true) {
+        guard !blocks.isEmpty else { return }
+        let lists = Set(blocks.map(\.listID))
+        let name = lists.count == 1 ? store.list(id: blocks[0].listID)?.displayTitle ?? "Inbox" : "\(lists.count) lists"
+        let label = blocks.count == 1 ? "Added to \(name)" : "Added \(blocks.count) tasks to \(name)"
+        let undoable = undoManager != nil
+        if undoable { registerCreationUndo(label, taskIDs: blocks.map(\.id), opened: opened) }
+        snap(label, icon: "plus.circle", tone: .accent, ids: blocks.map(\.id), undoable: undoable, showsTray: showsTray)
+        flash(\.fresh, blocks.map(\.id), for: 1200)
+        for listID in lists { pulse(list: listID) }
     }
 
     /// Opens capture for the current screen. `forToday: true` makes an undated
@@ -973,8 +1006,12 @@ extension Workbench {
     /// It aims at the list on show, or the one asked for, only while that
     /// list takes tasks, as Quick Add's does: on an archived list's page, or
     /// one left in Trash, it aims at Inbox, so a chip is always lit.
-    func openCapture(listID: UUID? = nil, forToday: Bool? = nil) {
-        guard !captureOpen else { return }
+    /// With `listens`, it starts listening for tasks to be said.
+    func openCapture(listID: UUID? = nil, forToday: Bool? = nil, listens: Bool = false) {
+        guard !captureOpen else {
+            if listens, !voice.isActive { toggleVoice() }
+            return
+        }
         if gPressedAt != nil { endGoChord() }
         let routeListID: UUID? = if case let .list(id) = navigator.route { id } else { nil }
         // A draft a click away put aside comes back on the page it was
@@ -997,6 +1034,7 @@ extension Workbench {
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
         withAnimation(style.spring(260)) { captureOpen = true }
+        if listens { toggleVoice() }
     }
 
     /// Closes capture. Escape and a saved task are done with the draft; a
@@ -1012,6 +1050,14 @@ extension Workbench {
         captureOpen = false
         captureText = ""
         captureNotice = nil
+        voice.cancel()
+        spokenTasks = []
+    }
+
+    /// Voice capture on the window's card, its mic and ⌥⌘V: starts
+    /// listening, or stops and reads what was said.
+    func toggleVoice() {
+        voice.toggle(for: self, lists: store.allLists(), labels: store.allLabels())
     }
 
     // MARK: Inbox triage

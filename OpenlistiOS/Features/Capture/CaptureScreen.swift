@@ -4,17 +4,25 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// The Capture sheet (mockup 06): a field that tints the date, time, repeat,
 /// estimate, priority and labels as they're typed, chips for what Add saves,
 /// and the list it goes to. Add saves it at once, with Undo in the tray.
+/// The mic listens for tasks said instead: one lands in the field to edit,
+/// several wait as rows, each with the list, day and labels said with it.
 struct CaptureScreen: View {
     let request: CaptureRequest
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.olStyle) private var style
     @State private var text = ""
     @State private var listID: UUID?
     @State private var height: CGFloat = 236
+    @State private var voice = VoiceCapture()
+    /// Tasks heard, when there were several, which Add saves together.
+    @State private var spoken: [SpokenTask] = []
     @FocusState private var isFocused: Bool
 
     init(request: CaptureRequest) {
@@ -32,18 +40,37 @@ struct CaptureScreen: View {
         let parse = CaptureParse(text, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)
         let snapshot = snapshot(parse)
         VStack(alignment: .leading, spacing: 0) {
-            OLSheetHeader(confirmTitle: "Add", canConfirm: !parse.title.isEmpty, cancel: { env.navigator.dismissSheet() },
-                          confirm: { add(snapshot) })
-            field(parse)
-                .padding(.top, 10)
-            let chips = chips(parse, snapshot: snapshot)
-            if !chips.isEmpty {
-                OLFlowLayout {
-                    ForEach(chips, id: \.label) { chip in chip }
+            OLSheetHeader(confirmTitle: spoken.count > 1 ? "Add \(spoken.count)" : "Add",
+                          canConfirm: !voice.isActive && (!spoken.isEmpty || !parse.title.isEmpty),
+                          cancel: { env.navigator.dismissSheet() },
+                          confirm: { spoken.isEmpty ? add(snapshot) : addSpoken() })
+            if voice.isActive {
+                CaptureVoicePanel(voice: voice, stop: toggleVoice)
+                    .padding(.top, 10)
+            } else if !spoken.isEmpty {
+                heard
+                    .padding(.top, 10)
+            } else {
+                HStack(alignment: .top, spacing: 8) {
+                    field(parse)
+                    OLIconButton("mic", label: "Say tasks", action: toggleVoice)
+                        .accessibilityHint("Listens for one or more tasks, with their dates, lists and labels.")
+                        .accessibilityIdentifier("capture.voice")
                 }
-                .padding(.top, 14)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Saves as \(chips.map(\.label).joined(separator: ", "))")
+                .padding(.top, 10)
+                let chips = chips(parse, snapshot: snapshot)
+                if !chips.isEmpty {
+                    OLFlowLayout {
+                        ForEach(chips, id: \.label) { chip in chip }
+                    }
+                    .padding(.top, 14)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Saves as \(chips.map(\.label).joined(separator: ", "))")
+                }
+            }
+            if case let .failed(failure) = voice.phase {
+                CaptureVoiceFailure(failure: failure)
+                    .padding(.top, 12)
             }
             destinations
                 .padding(.top, 16)
@@ -57,7 +84,120 @@ struct CaptureScreen: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("New task")
         .accessibilityIdentifier(PhoneRoute.capture(request).screenIdentifier)
-        .onAppear { isFocused = true }
+        .onAppear {
+            if request.listens { toggleVoice() } else { isFocused = true }
+        }
+        .onDisappear { voice.cancel() }
+        // Leaving the app ends listening with what was said so far.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active, voice.phase == .listening { voice.stop() }
+        }
+        .onChange(of: text) { voice.dismissFailure() }
+        .animation(style.animation(.snappy(duration: 0.25)), value: voice.isActive)
+    }
+
+    // MARK: Voice
+
+    /// The mic: starts listening, or stops and reads what was said.
+    private func toggleVoice() {
+        switch voice.phase {
+        case .listening:
+            voice.stop()
+        case .preparing:
+            voice.cancel()
+        case .understanding:
+            break
+        case .idle, .failed:
+            isFocused = false
+            spoken = []
+            voice.onHeard = { heard in take(heard) }
+            voice.start(vocabulary: SpokenCapture.Vocabulary(lists: library.lists, labels: library.labels), now: { env.now })
+            env.haptics.play(.impact)
+        }
+    }
+
+    /// One task heard goes in the field as its capture line, aimed at the list
+    /// it named, to edit as though typed; several, or one the field wouldn't
+    /// read back the same, wait as rows.
+    private func take(_ heard: [SpokenTask]) {
+        env.haptics.play(.selection)
+        if heard.count == 1, let task = heard.first,
+           task.fitsField(parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now) {
+            text = task.line
+            if let id = task.listID { listID = id }
+            isFocused = true
+        } else {
+            text = ""
+            spoken = heard
+        }
+    }
+
+    /// The tasks heard, each with what it saves and its list when that isn't
+    /// the one picked below, and a way to leave one out.
+    private var heard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(spoken) { task in
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(task.snapshot.title)
+                            .font(OLFont.captureInput)
+                            .foregroundStyle(OL.ink)
+                        let chips = spokenChips(task)
+                        if !chips.isEmpty {
+                            OLFlowLayout {
+                                ForEach(chips, id: \.label) { chip in chip }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                    OLIconButton("xmark", label: "Leave out “\(task.snapshot.title)”", kind: .bare, iconSize: 15) {
+                        spoken.removeAll { $0.id == task.id }
+                    }
+                }
+            }
+            if voice.usedIntelligence {
+                Label("Read by Apple Intelligence", systemImage: "apple.intelligence")
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.muted)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Tasks heard")
+        .accessibilityIdentifier("capture.heard")
+    }
+
+    private func spokenChips(_ task: SpokenTask) -> [OLChip] {
+        var chips: [OLChip] = []
+        if let list = task.listID.flatMap({ id in library.lists.first { $0.id == id } }), list.id != destination?.id {
+            chips.append(OLChip(list.displayTitle, glyph: list.isSystemInbox ? "📥" : list.icon, small: true))
+        }
+        let snapshot = task.snapshot
+        if let date = snapshot.date {
+            chips.append(OLChip(CompactText.captureWhen(date, includesTime: snapshot.includesTime, now: env.now,
+                                                        calendar: env.settings.calendar),
+                                small: true, tint: OL.accentText))
+        }
+        if let rule = snapshot.recurrence { chips.append(OLChip(rule.displayText, symbol: "repeat", small: true, tint: OL.accentText)) }
+        if snapshot.estimateMinutes > 0 { chips.append(OLChip(CompactText.estimate(snapshot.estimateMinutes), small: true)) }
+        if snapshot.priority != .none {
+            chips.append(OLChip(snapshot.priority.title, symbol: "exclamationmark", small: true, tint: OL.danger))
+        }
+        chips += snapshot.labels.map { OLChip("#" + $0, small: true, tint: OL.teal) }
+        return chips
+    }
+
+    /// Adds the tasks heard, each to the list it named or the one picked, due
+    /// today when an undated one would be; any it couldn't add stay.
+    private func addSpoken() {
+        let result = env.store.saveSpokenTasks(spoken, destinationID: destination?.id,
+                                               undatedDay: request.dueToday ? env.now : nil)
+        if !result.saved.isEmpty { env.actions.reportCapture(result.saved) }
+        guard let error = result.error else { return env.navigator.dismissSheet() }
+        spoken = result.unsaved
+        env.tray.show("“\(result.unsaved[0].snapshot.title)” wasn’t added. \(error.localizedDescription)",
+                      icon: "exclamationmark.circle", tone: .danger, seconds: 5)
+        env.haptics.play(.error)
     }
 
     // MARK: Field
@@ -191,5 +331,98 @@ struct CaptureScreen: View {
                           tone: .danger, seconds: 5)
             env.haptics.play(.error)
         }
+    }
+}
+
+/// Voice capture at work in the Capture sheet: the words heard so far, those
+/// still being made out paler, a mic that swells with the voice, what it's
+/// doing, and Done.
+private struct CaptureVoicePanel: View {
+    let voice: VoiceCapture
+    let stop: () -> Void
+
+    var body: some View {
+        let listener = voice.listener
+        VStack(alignment: .leading, spacing: 16) {
+            words(listener)
+                .font(OLFont.captureInput)
+                .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
+                .accessibilityIdentifier("capture.transcript")
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(OL.accentSoft)
+                        .frame(width: 30 + 16 * listener.level, height: 30 + 16 * listener.level)
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(OL.accent)
+                }
+                .frame(width: 46, height: 46)
+                .animation(.linear(duration: 0.08), value: listener.level)
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    status
+                        .font(OLFont.meta)
+                        .foregroundStyle(OL.muted)
+                    if let note = voice.intelligence.note {
+                        Text(note).font(OLFont.meta).foregroundStyle(OL.muted)
+                    }
+                }
+                Spacer(minLength: 0)
+                Button(voice.phase == .listening ? "Done" : "Stop", action: stop)
+                    .buttonStyle(.ol(.primary, size: .small))
+                    .disabled(voice.phase == .understanding)
+                    .accessibilityIdentifier("capture.voiceDone")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Voice capture")
+    }
+
+    private func words(_ listener: VoiceListener) -> Text {
+        guard !listener.transcript.isEmpty else {
+            return Text(voice.phase == .listening ? "Say a task, or several…" : "").foregroundStyle(OL.muted)
+        }
+        let settled = Text(verbatim: listener.confirmed).foregroundStyle(voice.phase == .understanding ? OL.muted : OL.ink)
+        let guess = Text(verbatim: listener.tentative).foregroundStyle(OL.muted)
+        return Text("\(settled)\(guess)")
+    }
+
+    @ViewBuilder private var status: some View {
+        switch voice.phase {
+        case .preparing(nil):
+            Text("Getting ready…")
+        case let .preparing(progress?):
+            Text("Downloading speech recognition · \(Int(progress * 100))%")
+        case .understanding:
+            if voice.intelligence == .available {
+                Label("Reading with Apple Intelligence…", systemImage: "apple.intelligence")
+            } else {
+                Text("Reading…")
+            }
+        default:
+            Text("Listening · pause when you’re done")
+        }
+    }
+}
+
+/// Why voice capture didn't listen, with Settings when it's the microphone.
+private struct CaptureVoiceFailure: View {
+    let failure: VoiceCaptureFailure
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "mic.slash")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(failure == .microphoneDenied ? "Openlist can’t use the microphone." : failure.message)
+                if failure == .microphoneDenied, let settings = URL(string: UIApplication.openSettingsURLString) {
+                    Button("Allow in Settings") { UIApplication.shared.open(settings) }
+                        .buttonStyle(.olLink(small: true))
+                }
+            }
+        }
+        .font(OLFont.meta)
+        .foregroundStyle(failure == .nothingHeard ? OL.muted : OL.danger)
+        .accessibilityElement(children: .combine)
     }
 }

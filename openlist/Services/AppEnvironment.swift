@@ -149,6 +149,14 @@ final class AppEnvironment {
         widgetLinks.capture = { request in QuickCapturePanel.shared.showFromWidget(request) }
         widgetLinks.activate = { NSApp.activate(ignoringOtherApps: true) }
         widgetLinks.unavailable = { [weak localLinks] in localLinks?.error = .targetUnavailable }
+        // Siri and Shortcuts: Add Tasks saves into the library and takes the
+        // tasks in as the window's capture does; Say Tasks opens Quick Add listening.
+        TaskIntentHost.library = { [weak self] in
+            self?.bootstrap()
+            return self?.store
+        }
+        TaskIntentHost.didAdd = { [weak self] blocks, opened in self?.workbench.didAddSpoken(blocks, opened: opened) }
+        TaskIntentHost.open = { [weak self] link in _ = self?.openLink(link.url) }
     }
 
     /// Refreshes the widgets when something they mirror changes without a
@@ -191,6 +199,12 @@ final class AppEnvironment {
     /// the task it makes is due today, as `openCapture` decides.
     func presentTaskCapture() {
         workbench.openCapture()
+    }
+
+    /// File ▸ New Tasks by Voice… (⌥⌘V): capture, listening for tasks to be
+    /// said, which Apple Intelligence reads into separate tasks where it can.
+    func presentVoiceCapture() {
+        workbench.openCapture(listens: true)
     }
 
     /// Opens an Openlist link, whether a widget sent it or someone put it in
@@ -267,6 +281,7 @@ final class AppEnvironment {
                 lists: store.context.fetch(FetchDescriptor<TaskList>()))
         }
         widgetLinks.storeReady()
+        TaskIntentHost.listsChanged()
         // Taps the extension queued while the app was not running, an
         // earlier build's queue included.
         WidgetCommandProcessor.adoptEarlierQueue()

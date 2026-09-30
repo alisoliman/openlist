@@ -13,6 +13,7 @@ import Foundation
 ///
 ///     openlist://widget/capture
 ///     openlist://widget/capture/today
+///     openlist://widget/capture/voice
 ///     openlist://widget/capture/list/<uuid>
 ///     openlist://widget/inbox
 ///     openlist://widget/triage
@@ -28,6 +29,8 @@ nonisolated enum WidgetLink: Equatable, Sendable {
     /// Quick Add from the Today widget: an undated task is due today, as New
     /// task on the app's Today screen makes it.
     case captureToday
+    /// Capture, listening for tasks to be said: the Say Tasks control's.
+    case captureVoice
     case inbox
     /// The Inbox's one-card-at-a-time triage view.
     case triage
@@ -64,6 +67,7 @@ nonisolated enum WidgetLink: Equatable, Sendable {
         case .capture(let listID?): ["capture", "list", listID.uuidString.lowercased()]
         case .capture(nil): ["capture"]
         case .captureToday: ["capture", "today"]
+        case .captureVoice: ["capture", "voice"]
         case .inbox: ["inbox"]
         case .triage: ["triage"]
         case .today: ["today"]
@@ -102,6 +106,8 @@ nonisolated enum WidgetLink: Equatable, Sendable {
             }
         case 2 where parts == ["capture", "today"]:
             self = .captureToday
+        case 2 where parts == ["capture", "voice"]:
+            self = .captureVoice
         case 2:
             guard let id = UUID(uuidString: parts[1]) else { return nil }
             switch parts[0] {

@@ -71,6 +71,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⇥ ⇧⇥", action: "Change destination"),
             Shortcut(keys: "Esc", action: "Cancel capture"),
             Shortcut(keys: "⇧⌥Space", action: "Quick add from anywhere"),
+            Shortcut(keys: "⌥⌘V", action: "Say tasks, or stop listening"),
             Shortcut(keys: "friday 6pm", action: "Due date and time", readsDates: true),
             Shortcut(keys: "every monday", action: "Repeat", readsDates: true),
             Shortcut(keys: "#label", action: "Attach a label"),
