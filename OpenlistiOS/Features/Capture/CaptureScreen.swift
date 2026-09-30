@@ -19,6 +19,9 @@ struct CaptureScreen: View {
     @Environment(\.olStyle) private var style
     @State private var text = ""
     @State private var listID: UUID?
+    @State private var dueDate = CaptureDueDate.automatic
+    @State private var showsDuePicker = false
+    @State private var resumesTyping = false
     @State private var height: CGFloat = 236
     @State private var voice = VoiceCapture()
     /// Tasks heard, when there were several, which Add saves together.
@@ -59,14 +62,14 @@ struct CaptureScreen: View {
                 }
                 .padding(.top, 10)
                 let chips = chips(parse, snapshot: snapshot)
-                if !chips.isEmpty {
-                    OLFlowLayout {
-                        ForEach(chips, id: \.label) { chip in chip }
-                    }
-                    .padding(.top, 14)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Saves as \(chips.map(\.label).joined(separator: ", "))")
+                let details = [dateLabel(snapshot)].compactMap { $0 } + chips.map(\.label)
+                OLFlowLayout {
+                    dueDateControl(snapshot)
+                    ForEach(chips, id: \.label) { chip in chip }
                 }
+                .padding(.top, 10)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(details.isEmpty ? "Task details" : "Saves as \(details.joined(separator: ", "))")
             }
             if case let .failed(failure) = voice.phase {
                 CaptureVoiceFailure(failure: failure)
@@ -93,6 +96,13 @@ struct CaptureScreen: View {
             if phase != .active, voice.phase == .listening { voice.stop() }
         }
         .onChange(of: text) { voice.dismissFailure() }
+        .sheet(isPresented: $showsDuePicker, onDismiss: { isFocused = resumesTyping }) {
+            DuePickerSheet(date: snapshot.date, includesTime: snapshot.includesTime, now: env.now) { date, timed in
+                setDueDate(date, includesTime: timed)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("capture.duePicker")
+        }
         .animation(style.animation(.snappy(duration: 0.25)), value: voice.isActive)
     }
 
@@ -121,6 +131,7 @@ struct CaptureScreen: View {
     /// read back the same, wait as rows.
     private func take(_ heard: [SpokenTask]) {
         env.haptics.play(.selection)
+        dueDate = .automatic
         if heard.count == 1, let task = heard.first,
            task.fitsField(parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now) {
             text = task.line
@@ -208,7 +219,11 @@ struct CaptureScreen: View {
         ZStack(alignment: .topLeading) {
             tinted(parse)
                 .accessibilityHidden(true)
-            TextField("New task", text: $text, prompt: Text("New task").foregroundStyle(OL.muted), axis: .vertical)
+            TextField("New task", text: Binding(get: { text }, set: { typed in
+                let next = CaptureParse(typed, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)
+                dueDate = dueDate.afterEditing(from: parse, to: next)
+                text = typed
+            }), prompt: Text("New task").foregroundStyle(OL.muted), axis: .vertical)
                 .font(OLFont.captureInput)
                 .foregroundStyle(text.isEmpty ? OL.ink : .clear)
                 .tint(OL.accent)
@@ -230,9 +245,16 @@ struct CaptureScreen: View {
         for segment in parse.segments {
             var run = AttributedString(segment.text)
             if let kind = segment.kind {
-                let tone = Self.tone(kind)
-                run.foregroundColor = tone
-                run.underlineStyle = Text.LineStyle(pattern: .solid, color: tone)
+                if dueDate != .automatic, kind == .date || kind == .time {
+                    // Keep the editable words and cursor in place; the chip
+                    // now sets the date instead of these superseded tokens.
+                    run.foregroundColor = OL.muted
+                    run.strikethroughStyle = Text.LineStyle(pattern: .solid, color: OL.muted)
+                } else {
+                    let tone = Self.tone(kind)
+                    run.foregroundColor = tone
+                    run.underlineStyle = Text.LineStyle(pattern: .solid, color: tone)
+                }
             } else {
                 run.foregroundColor = OL.ink
             }
@@ -252,31 +274,67 @@ struct CaptureScreen: View {
 
     // MARK: What Add saves
 
-    /// The parse as Add saves it, due today when the request is for today and
-    /// nothing else is typed.
+    /// Add and Return save the same date the calendar chip previews.
     private func snapshot(_ parse: CaptureParse) -> CaptureSnapshot {
-        var snapshot = parse.snapshot()
-        if snapshot.date == nil, request.dueToday { snapshot.date = env.settings.calendar.startOfDay(for: env.now) }
-        return snapshot
+        dueDate.snapshot(parse, dueToday: request.dueToday, now: env.now, calendar: env.settings.calendar)
     }
 
-    /// One chip per thing saved, in the order typed: the day and time as one,
-    /// "15 min", "#travel". A day nobody typed, today's, comes first.
+    private func dateLabel(_ snapshot: CaptureSnapshot) -> String? {
+        snapshot.date.map {
+            CompactText.captureWhen($0, includesTime: snapshot.includesTime, now: env.now, calendar: env.settings.calendar)
+        }
+    }
+
+    /// The date stays a single editable chip, with quick days and the same
+    /// calendar/time picker as Task detail. Its touch target is 44 points.
+    private func dueDateControl(_ snapshot: CaptureSnapshot) -> some View {
+        Menu {
+            Section {
+                ForEach(PhoneDay.allCases) { day in
+                    Button(day.title) {
+                        let calendar = env.settings.calendar
+                        var date = day.date(now: env.now, calendar: calendar)
+                        if snapshot.includesTime, let previous = snapshot.date {
+                            let time = calendar.dateComponents([.hour, .minute], from: previous)
+                            date = calendar.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: 0, of: date) ?? date
+                        }
+                        setDueDate(date, includesTime: snapshot.includesTime)
+                    }
+                }
+            }
+            Button("Choose date & time…", systemImage: "calendar") {
+                resumesTyping = isFocused
+                isFocused = false
+                showsDuePicker = true
+            }
+            if snapshot.date != nil {
+                Button("Clear date", systemImage: "xmark") { setDueDate(nil, includesTime: false) }
+            }
+        } label: {
+            OLChip(dateLabel(snapshot) ?? "Due date", icon: .calendar, small: true,
+                   tint: snapshot.date == nil ? OL.muted : OL.accentText)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(OLPressStyle(scale: 0.96))
+        .accessibilityLabel("Due date")
+        .accessibilityValue(dateLabel(snapshot) ?? "None")
+        .accessibilityHint("Choose a quick day, a date and time, or clear the date.")
+        .accessibilityIdentifier("capture.dueDate")
+    }
+
+    private func setDueDate(_ date: Date?, includesTime: Bool) {
+        dueDate = date.map { .chosen($0, includesTime: includesTime) } ?? .cleared
+        env.haptics.play(.selection)
+    }
+
+    /// The other saved metadata, in typed order, alongside the calendar chip.
     private func chips(_ parse: CaptureParse, snapshot: CaptureSnapshot) -> [OLChip] {
         var chips: [OLChip] = []
-        var showsWhen = false
-        func when() {
-            guard !showsWhen, let date = snapshot.date else { return }
-            chips.append(OLChip(CompactText.captureWhen(date, includesTime: snapshot.includesTime, now: env.now,
-                                                        calendar: env.settings.calendar),
-                                small: true, tint: OL.accentText))
-            showsWhen = true
-        }
         for mark in parse.marks {
             switch mark.kind {
-            case .date, .time: when()
+            case .date, .time: break
             case .repeatRule:
-                when()
                 if let rule = snapshot.recurrence { chips.append(OLChip(rule.displayText, symbol: "repeat", small: true, tint: OL.accentText)) }
             case .estimate:
                 if snapshot.estimateMinutes > 0, !chips.contains(where: { $0.label.hasSuffix(" min") }) {
@@ -290,11 +348,6 @@ struct CaptureScreen: View {
                 let name = "#" + String(mark.raw.dropFirst()).lowercased()
                 if !chips.contains(where: { $0.label == name }) { chips.append(OLChip(name, small: true, tint: OL.teal)) }
             }
-        }
-        if !showsWhen, let date = snapshot.date {
-            chips.insert(OLChip(CompactText.captureWhen(date, includesTime: snapshot.includesTime, now: env.now,
-                                                        calendar: env.settings.calendar),
-                                small: true, tint: OL.accentText), at: 0)
         }
         return chips
     }

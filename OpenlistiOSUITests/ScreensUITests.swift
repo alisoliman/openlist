@@ -147,6 +147,104 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Buy yen for the trip"].exists)
     }
 
+    /// A date is optional; quick days and the calendar's time option feed
+    /// the date preview and the task Add saves.
+    @MainActor
+    func testCapturePicksDueDateAndAdds() {
+        let app = launch(environment: ["OpenlistOpenRoute": "inbox"])
+        app.waitForScreen("screen.inbox", timeout: 20)
+        app.dock("capture").tap()
+        app.waitForScreen("screen.capture")
+        let due = app.buttons["capture.dueDate"]
+        XCTAssertTrue(due.waitForExistence(timeout: 5))
+        XCTAssertEqual(due.value as? String, "None")
+        app.textFields["capture.field"].typeText("Book a haircut")
+        due.tap()
+        for day in ["Today", "Tomorrow", "This weekend", "Next week"] {
+            XCTAssertTrue(app.buttons[day].waitForExistence(timeout: 5))
+        }
+        app.buttons["Tomorrow"].tap()
+        XCTAssertEqual(due.value as? String, "Tomorrow")
+        snap(app, "capture-due-tomorrow")
+        due.tap()
+        app.buttons["Choose date & time…"].tap()
+        let picker = app.waitForScreen("capture.duePicker")
+        picker.buttons["Next week"].tap()
+        let includesTime = picker.switches["duePicker.includesTime"]
+        XCTAssertEqual(includesTime.value as? String, "0")
+        includesTime.tap()
+        XCTAssertEqual(includesTime.value as? String, "1")
+        picker.buttons["Set"].tap()
+        app.waitForScreenToClose("capture.duePicker")
+        XCTAssertEqual(due.value as? String, "Mon 28, 00:00")
+        app.screen("screen.capture").buttons["Add"].tap()
+        app.waitForScreenToClose("screen.capture")
+        XCTAssertTrue(app.buttons["Book a haircut"].waitForExistence(timeout: 5))
+        app.buttons["Book a haircut"].tap()
+        app.waitForScreen("screen.taskDetail")
+        XCTAssertTrue(app.buttons["detail.when"].label.contains("Mon 28, 00:00"))
+    }
+
+    /// Picking a day overrides date words but keeps the original draft;
+    /// cancelling the calendar keeps the draft, which Return then saves.
+    @MainActor
+    func testCaptureDuePickerCancelAndReturnPreserveDraft() {
+        let app = launch(environment: ["OpenlistOpenRoute": "inbox"])
+        app.waitForScreen("screen.inbox", timeout: 20)
+        app.dock("capture").tap()
+        app.waitForScreen("screen.capture")
+        let field = app.textFields["capture.field"]
+        field.typeText("Book studio fri 6pm ~30m #travel")
+        let due = app.buttons["capture.dueDate"]
+        XCTAssertEqual(due.value as? String, "Fri 25, 18:00")
+        due.tap()
+        app.buttons["Tomorrow"].tap()
+        XCTAssertEqual(due.value as? String, "Tomorrow, 18:00")
+        XCTAssertEqual(field.value as? String, "Book studio fri 6pm ~30m #travel")
+        due.tap()
+        app.buttons["Choose date & time…"].tap()
+        let picker = app.waitForScreen("capture.duePicker")
+        picker.buttons["Next week"].tap()
+        picker.buttons["Cancel"].tap()
+        app.waitForScreenToClose("capture.duePicker")
+        XCTAssertEqual(due.value as? String, "Tomorrow, 18:00")
+        XCTAssertEqual(field.value as? String, "Book studio fri 6pm ~30m #travel")
+        field.tap()
+        field.typeText("\n")
+        app.waitForScreenToClose("screen.capture")
+        XCTAssertTrue(app.buttons["Book studio"].waitForExistence(timeout: 5))
+        app.buttons["Book studio"].tap()
+        app.waitForScreen("screen.taskDetail")
+        XCTAssertTrue(app.buttons["detail.when"].label.contains("Tomorrow, 18:00"))
+        XCTAssertTrue(app.buttons["detail.labels"].label.contains("#travel"))
+        XCTAssertEqual(app.sliders["detail.estimate"].value as? String, "30 minutes")
+    }
+
+    /// Clearing a typed date keeps the draft and its labels while saving
+    /// an undated task.
+    @MainActor
+    func testCaptureClearTypedDate() {
+        let app = launch(environment: ["OpenlistOpenRoute": "inbox"])
+        app.waitForScreen("screen.inbox", timeout: 20)
+        app.dock("capture").tap()
+        app.waitForScreen("screen.capture")
+        let due = app.buttons["capture.dueDate"]
+        let field = app.textFields["capture.field"]
+        field.typeText("Order paint tomorrow #home")
+        XCTAssertEqual(due.value as? String, "Tomorrow")
+        due.tap()
+        app.buttons["Clear date"].tap()
+        XCTAssertEqual(due.value as? String, "None")
+        XCTAssertEqual(field.value as? String, "Order paint tomorrow #home")
+        app.screen("screen.capture").buttons["Add"].tap()
+        app.waitForScreenToClose("screen.capture")
+        XCTAssertTrue(app.buttons["Order paint"].waitForExistence(timeout: 5))
+        app.buttons["Order paint"].tap()
+        app.waitForScreen("screen.taskDetail")
+        XCTAssertTrue(app.buttons["detail.when"].label.contains("None"))
+        XCTAssertTrue(app.buttons["detail.labels"].label.contains("#home"))
+    }
+
     /// Triage deals the Inbox oldest first; each choice moves on.
     @MainActor
     func testTriageOneByOne() {
