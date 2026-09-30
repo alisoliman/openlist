@@ -43,16 +43,15 @@ struct NextTodayScreen: View {
     var body: some View {
         // Ordered here, where neither the clock nor the workbench is read, so
         // they don't walk every outline again.
-        NXTodayPage(tasks: NextTasksScreen.outlineOrder(library: library, blocks: blocks))
+        NXTodayPage(outline: library.taskRowsInOutlineOrder(blocks: blocks))
     }
 }
 
-/// Today for tasks already in outline order, which its groups keep, as the
-/// design's keep its tasks' own order.
+/// Today in outline order, with each task's subtasks underneath it.
 private struct NXTodayPage: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
-    let tasks: [Block]
+    let outline: [BlockRow]
 
     var body: some View {
         // The design's 20s clock: done-ago chips, the date and the buckets
@@ -60,7 +59,7 @@ private struct NXTodayPage: View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
             let now = context.date
             let workbench = env.workbench
-            let model = Self.model(tasks: tasks, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
+            let model = Self.model(outline: outline, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
                                    accent: style.accent, now: now) { !workbench.placedTaskIDs().contains($0) }
             NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
                 NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
@@ -81,39 +80,51 @@ private struct NXTodayPage: View {
         var clear: Bool
     }
 
-    /// Today's groups from the library's tasks in outline order. Each open
-    /// group keeps that order, as the design's are plain filters of its tasks
-    /// (`TodayAgenda`, whose rules the phone's Today shares).
+    /// Today's groups keep their task order and carry subtasks beneath each
+    /// parent. Eligibility, progress and group actions follow TodayAgenda.
     @MainActor
-    static func model(tasks: [Block], workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
+    static func model(outline: [BlockRow], workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
                       isUnplaced: @escaping (UUID) -> Bool) -> Model {
-        let agenda = TodayAgenda(tasks: tasks, closing: Set(workbench.closing.keys), now: now,
+        let agenda = TodayAgenda(tasks: outline.map(\.block), closing: Set(workbench.closing.keys), now: now,
                                  isPlanned: workbench.isPlanned)
-        let (overdue, due, planned, starred, doneToday) = (agenda.overdue, agenda.due, agenda.planned, agenda.starred,
-                                                           agenda.doneToday)
+        let nested = agenda.nestedRows(in: outline)
+        let (overdue, due, planned, starred, doneToday) = (nested.overdue, nested.due, nested.planned, nested.starred,
+                                                         nested.doneToday)
+        func depths(_ rows: [BlockRow]) -> [UUID: Int] {
+            Dictionary(rows.map { ($0.id, $0.depth) }, uniquingKeysWith: { first, _ in first })
+        }
+        let agendaIDs = Set((agenda.overdue + agenda.due + agenda.planned + agenda.starred + agenda.doneToday).map(\.id))
+        func count(_ rows: [BlockRow]) -> Int { rows.count { agendaIDs.contains($0.id) } }
 
         var groups: [NXGroup] = []
         if !overdue.isEmpty {
-            let ids = overdue.map(\.id)
+            let eligible = Set(agenda.overdue.map(\.id))
+            let ids = overdue.map(\.id).filter(eligible.contains)
             groups.append(NXGroup(id: "overdue", title: "Overdue", icon: "exclamationmark.circle.fill", color: NX.red,
-                                  rows: overdue, actionLabel: "Move all to today") { workbench.schedule(ids, offset: 0) })
+                                  rows: overdue.map(\.block), rowDepths: depths(overdue), taskCount: count(overdue),
+                                  actionLabel: "Move all to today") { workbench.schedule(ids, offset: 0) })
         }
         if !due.isEmpty {
-            groups.append(NXGroup(id: "due", title: "Due today", icon: "calendar", color: accent, rows: due))
+            groups.append(NXGroup(id: "due", title: "Due today", icon: "calendar", color: accent,
+                                  rows: due.map(\.block), rowDepths: depths(due), taskCount: count(due)))
         }
         if !planned.isEmpty {
-            let ids = planned.map(\.id)
+            let eligible = Set(agenda.planned.map(\.id))
+            let ids = planned.map(\.id).filter(eligible.contains)
             groups.append(NXGroup(id: "planned", title: "Planned for today", icon: "calendar.badge.clock", color: accent,
-                                  rows: planned, actionLabel: "Fit into calendar") {
+                                  rows: planned.map(\.block), rowDepths: depths(planned), taskCount: count(planned),
+                                  actionLabel: "Fit into calendar") {
                 for id in ids where isUnplaced(id) { workbench.fit(id) }
             })
         }
         if !starred.isEmpty {
-            groups.append(NXGroup(id: "starred", title: "Starred", icon: "star.fill", color: NX.amber, rows: starred))
+            groups.append(NXGroup(id: "starred", title: "Starred", icon: "star.fill", color: NX.amber,
+                                  rows: starred.map(\.block), rowDepths: depths(starred), taskCount: count(starred)))
         }
         if !doneToday.isEmpty {
             groups.append(NXGroup(id: "done", title: "Completed today", icon: "checkmark.circle.fill", color: NX.green,
-                                  rows: doneToday, collapsible: true, defaultOpen: showsCompleted, completed: true))
+                                  rows: doneToday.map(\.block), rowDepths: depths(doneToday), taskCount: count(doneToday), collapsible: true,
+                                  defaultOpen: showsCompleted, completed: true))
         }
         return Model(groups: groups, progress: agenda.progress, clear: agenda.isClear)
     }
