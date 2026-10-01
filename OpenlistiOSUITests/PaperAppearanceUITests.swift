@@ -106,6 +106,7 @@ final class PaperAppearanceUITests: XCTestCase {
         add.tap()
         app.waitForScreen("screen.capture")
         XCTAssertTrue(app.textFields["capture.field"].waitForExistence(timeout: 5))
+        snapshot(app, "paper-xxxl-capture-open")
         app.buttons["Cancel"].tap()
         app.waitForScreenToClose("screen.capture")
 
@@ -205,8 +206,21 @@ final class PaperAppearanceUITests: XCTestCase {
 
     @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<18 where !element.isHittable { app.swipeUp() }
-        XCTAssertTrue(element.isHittable, "The control remains reachable when the page scrolls")
+        // Accessibility can report a partially visible row as hittable even
+        // when its tap point is under the floating dock. Reveal the whole
+        // control before touching it, as a person scrolling the page would.
+        func isFullyVisible() -> Bool {
+            guard element.exists, element.isHittable else { return false }
+            let frame = element.frame
+            var viewport = app.frame
+            let dock = app.dock("capture")
+            if dock.exists {
+                viewport.size.height = min(viewport.maxY, dock.frame.minY) - viewport.minY
+            }
+            return !frame.isEmpty && viewport.contains(frame)
+        }
+        for _ in 0..<18 where !isFullyVisible() { app.swipeUp() }
+        XCTAssertTrue(isFullyVisible(), "The whole control must be visible above the dock before tapping: \(element.frame)")
     }
 
     @MainActor

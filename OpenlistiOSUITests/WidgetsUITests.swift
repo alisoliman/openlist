@@ -129,6 +129,7 @@ final class WidgetsUITests: XCTestCase {
     /// the Lock Screen's own gallery, reached from the cover sheet.
     @MainActor
     func testLockScreenWidgetGallery() throws {
+        let previewStartedAt = Date()
         let app = XCUIApplication.reviewSession()
         app.launch()
         app.waitForScreen("screen.today", timeout: 45)
@@ -191,7 +192,15 @@ final class WidgetsUITests: XCTestCase {
         springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.73))
             .press(forDuration: 0.05, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.73)))
         sleep(1)
-        try assertRenderedText(["Up next", "Order new water filters"])
+        // The widget extension uses its own real clock; the app's pinned
+        // review clock does not reach the gallery. Require the exact sample
+        // title for that time, allowing a transition while the preview loads.
+        let expectedTitles = Set([
+            lockScreenPreviewTitle(at: previewStartedAt),
+            lockScreenPreviewTitle(at: Date()),
+            lockScreenPreviewTitle(at: Date().addingTimeInterval(20)),
+        ])
+        try assertRenderedText(["Up next"], anyOf: Array(expectedTitles))
         snap("lock-gallery-openlist-2")
     }
 
@@ -223,7 +232,7 @@ final class WidgetsUITests: XCTestCase {
     }
 
     @MainActor
-    private func assertRenderedText(_ expected: [String], timeout: TimeInterval = 20,
+    private func assertRenderedText(_ expected: [String], anyOf alternatives: [String] = [], timeout: TimeInterval = 20,
                                     file: StaticString = #filePath, line: UInt = #line) throws {
         let deadline = Date().addingTimeInterval(timeout)
         var recognized = ""
@@ -237,12 +246,32 @@ final class WidgetsUITests: XCTestCase {
             recognized = normalizeText((request.results ?? []).compactMap {
                 $0.topCandidates(1).first?.string
             }.joined(separator: " "))
-            if expected.allSatisfy({ (" " + recognized + " ").contains(" " + normalizeText($0) + " ") }) {
+            func contains(_ text: String) -> Bool {
+                (" " + recognized + " ").contains(" " + normalizeText(text) + " ")
+            }
+            if expected.allSatisfy(contains) && (alternatives.isEmpty || alternatives.contains(where: contains)) {
                 return
             }
             usleep(500_000)
         } while Date() < deadline
-        XCTFail("Expected rendered widget text \(expected). Recognized: \(recognized)", file: file, line: line)
+        XCTFail("Expected rendered widget text \(expected), one of \(alternatives). Recognized: \(recognized)", file: file, line: line)
+    }
+
+    /// Expected Lock Screen sample across the day. While a task is under
+    /// way this widget names what follows it, including the 14:00 meeting;
+    /// after the last task ends it must show the empty state.
+    private func lockScreenPreviewTitle(at date: Date) -> String {
+        let clock = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let minute = (clock.hour ?? 0) * 60 + (clock.minute ?? 0)
+        switch minute {
+        case ..<600: return "Draft Q3 OKRs"
+        case ..<690: return "Write interview feedback for Priya"
+        case ..<780: return "Update the design role scorecard"
+        case ..<810: return "Board prep"
+        case ..<990: return "Order new water filters"
+        case ..<1095: return "Pay the ryokan deposit"
+        default: return "Nothing else planned"
+        }
     }
 
     private func normalizeText(_ text: String) -> String {
