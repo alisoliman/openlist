@@ -410,8 +410,10 @@ final class ScreensUITests: XCTestCase {
         app.buttons["detail.star"].tap()
         XCTAssertTrue(app.screen("tray").staticTexts["Starred “Write interview feedback for Priya”"].waitForExistence(timeout: 5))
         let plan = app.switches["detail.plan"]
+        XCTAssertEqual(plan.value as? String, "0")
         plan.tap()
-        XCTAssertTrue(app.screen("tray").staticTexts["Planned for today: “Write interview feedback for Priya”"]
+        XCTAssertEqual(plan.value as? String, "1")
+        XCTAssertTrue(app.screen("tray").staticTexts["Added “Write interview feedback for Priya” to Today"]
             .waitForExistence(timeout: 5))
         snap(app, "detail")
         app.buttons["detail.labels"].tap()

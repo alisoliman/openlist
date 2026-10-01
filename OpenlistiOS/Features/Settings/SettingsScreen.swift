@@ -136,6 +136,7 @@ struct SettingsScreen: View {
                 }
                 .olCard()
             }
+            AppInformationSection()
             Text("More on your Mac: MCP, Calendar and advanced options.\n\(Self.version)")
                 .font(OLFont.meta)
                 .foregroundStyle(OL.muted)
