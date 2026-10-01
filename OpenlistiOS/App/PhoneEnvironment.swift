@@ -34,6 +34,9 @@ final class PhoneEnvironment {
 
     let store: Store
     let settings: AppSettings
+    let taskSwipes: TaskSwipePreferences
+    /// Only one task's swipe shortcuts stay revealed at a time.
+    var openSwipeTaskID: UUID?
     let sync: ICloudSyncMonitor
     let calendar: CalendarCoordinator
     let navigator: PhoneNavigator
@@ -82,6 +85,7 @@ final class PhoneEnvironment {
         let presence = WorkPresenceHook()
         self.store = store
         self.settings = settings
+        taskSwipes = TaskSwipePreferences(defaults: calendarDefaults)
         self.sync = sync
         self.clock = clock
         self.libraryID = libraryID
@@ -238,6 +242,9 @@ final class PhoneEnvironment {
                                                               reviewSession: ReviewSession.identifier,
                                                               hasSeeded: settings.hasSeededSampleData) {
             let seeded = PhoneFixture.seed(into: store, settings: settings, now: clock.now)
+            #if DEBUG
+            ListDocumentFixture.seedIfRequested(into: store, reviewSession: ReviewSession.identifier)
+            #endif
             if store.persistenceError == nil {
                 settings.hasSeededSampleData = true
                 let fixtureSessions = Set(store.workSessions().filter { $0.endedAt == nil }.map(\.id))
@@ -300,6 +307,7 @@ final class PhoneEnvironment {
         switch parts[0] {
         case "today": navigator.show(.today)
         case "timeline": navigator.show(.timeline)
+        case "work": navigator.show(.work)
         case "activity": navigator.show(.activity)
         case "inbox": navigator.show(.inbox)
         case "triage": navigator.show(.triage)
@@ -416,6 +424,7 @@ final class PhoneEnvironment {
     func title(of route: PhoneRoute) -> String {
         switch route {
         case .today, .timeline: "Today"
+        case .work: "Work"
         case .activity: "Activity"
         case .taskDetail: "Task"
         case .inbox: "Inbox"

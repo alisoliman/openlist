@@ -4,6 +4,7 @@
 //
 
 import XCTest
+import Vision
 
 /// The widgets and the work Live Activity (mockup 05), outside the app: the
 /// Dynamic Island while work runs, the Lock Screen presentation in
@@ -12,6 +13,7 @@ import XCTest
 /// (`OPENLIST_SHOTS_DIR`, as `ScreensUITests`).
 final class WidgetsUITests: XCTestCase {
     @MainActor private var springboard: XCUIApplication { XCUIApplication(bundleIdentifier: "com.apple.springboard") }
+    @MainActor private var posterboard: XCUIApplication { XCUIApplication(bundleIdentifier: "com.apple.PosterBoard") }
 
     override func setUp() {
         continueAfterFailure = true
@@ -72,8 +74,7 @@ final class WidgetsUITests: XCTestCase {
         sleep(1)
     }
 
-    /// The widget gallery's Openlist widgets, with the sample the gallery
-    /// previews, and each added to the Home Screen.
+    /// The widget gallery's Openlist widgets, with the sample the gallery previews.
     @MainActor
     func testWidgetGallery() throws {
         let app = XCUIApplication.reviewSession()
@@ -98,22 +99,28 @@ final class WidgetsUITests: XCTestCase {
         sleep(2)
         snap("gallery")
         let search = springboard.searchFields.firstMatch
-        if search.waitForExistence(timeout: 5) {
-            search.tap()
-            search.typeText("Openlist")
-            sleep(2)
-            snap("gallery-search")
+        guard search.waitForExistence(timeout: 5) else {
+            XCTFail("The Home Screen widget gallery did not open. \(springboard.debugDescription)")
+            return
         }
-        let openlist = springboard.cells.containing(NSPredicate(format: "label CONTAINS 'Openlist'")).firstMatch
-        let openlistButton = springboard.buttons.matching(NSPredicate(format: "label CONTAINS 'Openlist'")).firstMatch
-        if openlist.waitForExistence(timeout: 5) { openlist.tap() } else if openlistButton.exists { openlistButton.tap() }
+        search.tap()
+        search.typeText("Openlist")
+        sleep(2)
+        snap("gallery-search")
+        try requireNamedElement("Openlist", in: [springboard]).tap()
         // Previews draw a moment after each page settles.
         sleep(4)
+        XCTAssertTrue(springboard.staticTexts["Today"].firstMatch.waitForExistence(timeout: 5))
+        try requireNamedElement("Add Widget", in: [springboard])
+        try assertRenderedText(["Today", "2 of 12 done"])
         snap("gallery-openlist-1")
         // Each page of the gallery is one widget and size.
         for page in 2...3 {
             springboard.swipeLeft()
             sleep(4)
+            XCTAssertTrue(springboard.staticTexts[page == 3 ? "Inbox" : "Today"].firstMatch.exists)
+            try requireNamedElement("Add Widget", in: [springboard])
+            try assertRenderedText(page == 3 ? ["Inbox", "6", "to triage", "Capture"] : ["Today", "open", "overdue"])
             snap("gallery-openlist-\(page)")
         }
     }
@@ -142,37 +149,108 @@ final class WidgetsUITests: XCTestCase {
                 snap("lock-customize-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))")
             }
         }
-        // The widget row under the clock ("Add widgets") opens the Lock Screen's gallery.
-        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.785)).tap()
+        // PosterBoard exposes the visible ADD WIDGETS row by this identifier,
+        // but its duplicate remote accessibility elements can report that
+        // they are not hittable. Only use the observed row's center after
+        // checking that its whole frame is on screen.
+        let lockApps = [posterboard, springboard]
+        let addWidgets = posterboard.buttons.matching(identifier: "grouped-widgets-reticle-view").firstMatch
+        guard addWidgets.waitForExistence(timeout: 20) else {
+            snap("lock-missing-add-widgets")
+            XCTFail("The Lock Screen editor must expose its widget row. \(posterboard.debugDescription)")
+            return
+        }
+        let widgetFrame = addWidgets.frame
+        guard widgetFrame.width > 0, widgetFrame.height > 0,
+              springboard.frame.contains(widgetFrame) else {
+            snap("lock-add-widgets-offscreen")
+            XCTFail("The widget row must be fully on screen before tapping: \(widgetFrame)")
+            return
+        }
+        snap("lock-add-widgets-before-tap")
+        if addWidgets.isHittable {
+            addWidgets.tap()
+        } else {
+            addWidgets.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         sleep(2)
         snap("lock-gallery")
-        let openlist = springboard.buttons.matching(NSPredicate(format: "label CONTAINS 'Openlist'")).firstMatch
-        let openlistCell = springboard.cells.containing(NSPredicate(format: "label CONTAINS 'Openlist'")).firstMatch
-        if openlist.waitForExistence(timeout: 3) { openlist.tap() } else if openlistCell.exists { openlistCell.tap() } else {
-            springboard.swipeUp()
+        var openlist = namedElement("Openlist", in: lockApps)
+        for _ in 0..<4 where openlist == nil {
+            posterboard.swipeUp()
             sleep(1)
-            snap("lock-gallery-scrolled")
-            let named = springboard.descendants(matching: .any).matching(NSPredicate(format: "label == 'Openlist'"))
-            let rows = named.allElementsBoundByIndex.filter { $0.frame.height > 0 && $0.frame.minY > 0 }
-            print("Openlist rows:", rows.map { "\($0.elementType.rawValue) \($0.frame)" })
-            if let row = rows.first {
-                springboard.coordinate(withNormalizedOffset: .zero)
-                    .withOffset(CGVector(dx: row.frame.midX, dy: row.frame.midY)).tap()
-            }
+            openlist = namedElement("Openlist", in: lockApps)
         }
+        snap("lock-gallery-scrolled")
+        try XCTUnwrap(openlist, "Openlist must be present in the Lock Screen widget gallery. \(posterboard.debugDescription)").tap()
         sleep(2)
+        try requireNamedElement("Openlist", in: lockApps)
+        try assertRenderedText(["Today", "2/12"])
         snap("lock-gallery-openlist")
-        // Each of Openlist's Lock Screen widgets, a page at a time: a drag
-        // across the widget carousel in the sheet.
-        for page in 2...3 {
-            springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.73))
-                .press(forDuration: 0.05, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.73)))
-            sleep(1)
-            snap("lock-gallery-openlist-\(page)")
-        }
+        // There are two Lock Screen pages: Today, then Up next.
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.73))
+            .press(forDuration: 0.05, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.73)))
+        sleep(1)
+        try assertRenderedText(["Up next", "Order new water filters"])
+        snap("lock-gallery-openlist-2")
     }
 
     // MARK: Helpers
+
+    @MainActor
+    private func namedElement(_ label: String, in apps: [XCUIApplication]) -> XCUIElement? {
+        // The Home Screen gallery prefixes Add Widget with a space.
+        let labelPattern = "\\s*" + NSRegularExpression.escapedPattern(for: label) + "\\s*"
+        for app in apps {
+            let matches = app.descendants(matching: .any).matching(NSPredicate(format: "label MATCHES[c] %@", labelPattern))
+            if let element = matches.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable }) {
+                return element
+            }
+        }
+        return nil
+    }
+
+    @MainActor
+    @discardableResult
+    private func requireNamedElement(_ label: String, in apps: [XCUIApplication], timeout: TimeInterval = 10) throws -> XCUIElement {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if let element = namedElement(label, in: apps) { return element }
+            usleep(250_000)
+        } while Date() < deadline
+        snap("widget-missing-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))")
+        return try XCTUnwrap(nil as XCUIElement?, "Missing visible \(label). \(apps.map(\.debugDescription).joined(separator: "\n"))")
+    }
+
+    @MainActor
+    private func assertRenderedText(_ expected: [String], timeout: TimeInterval = 20,
+                                    file: StaticString = #filePath, line: UInt = #line) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        var recognized = ""
+        repeat {
+            let pixels = try XCTUnwrap(XCUIScreen.main.screenshot().image.cgImage,
+                                      "The widget screenshot must contain pixels", file: file, line: line)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try VNImageRequestHandler(cgImage: pixels).perform([request])
+            recognized = normalizeText((request.results ?? []).compactMap {
+                $0.topCandidates(1).first?.string
+            }.joined(separator: " "))
+            if expected.allSatisfy({ (" " + recognized + " ").contains(" " + normalizeText($0) + " ") }) {
+                return
+            }
+            usleep(500_000)
+        } while Date() < deadline
+        XCTFail("Expected rendered widget text \(expected). Recognized: \(recognized)", file: file, line: line)
+    }
+
+    private func normalizeText(_ text: String) -> String {
+        text.lowercased()
+            .replacingOccurrences(of: "\\s*/\\s*", with: "/", options: .regularExpression)
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
 
     @MainActor
     private func snap(_ name: String) {

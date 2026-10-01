@@ -24,12 +24,13 @@ private struct WorkingPage: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.olStyle) private var style
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize: CGFloat = 52
 
     var body: some View {
         let navigator = env.navigator
         let work = PhoneWork(env: env, now: now)
-        OLScreen(identifier: PhoneRoute.working.screenIdentifier, scrolls: false) {
+        OLScreen(identifier: PhoneRoute.working.screenIdentifier, scrolls: dynamicTypeSize.isAccessibilitySize) {
             OLTopBar {
                 OLIconButton("chevron.down", label: "Close", kind: .bare, iconSize: 22) { navigator.dismissCover() }
                     .accessibilityIdentifier("working.close")
@@ -44,7 +45,7 @@ private struct WorkingPage: View {
         } content: {
             if let task = work.task {
                 session(task, work: work)
-                    .frame(maxHeight: .infinity)
+                    .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? nil : .infinity)
                 if let next = next(after: work) { nextCard(next) }
             } else {
                 OLEmptyState(symbol: "timer", tint: OL.accentText, title: "Nothing on now",
@@ -123,17 +124,38 @@ private struct WorkingPage: View {
         Button {
             if let id = next.taskID { env.navigator.open(.taskDetail(id)) }
         } label: {
-            HStack(spacing: 12) {
-                Text("Next").font(OLFont.meta.weight(.semibold)).foregroundStyle(OL.muted)
-                Text(next.title)
-                    .font(OLFont.note)
-                    .foregroundStyle(OL.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(CompactText.clock(next.start, calendar: env.settings.calendar))
-                    .font(OLFont.trailing)
-                    .foregroundStyle(OL.accentText)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text("Next").font(OLFont.meta.weight(.semibold)).foregroundStyle(OL.muted)
+                            Spacer(minLength: 0)
+                            Text(CompactText.clock(next.start, calendar: env.settings.calendar))
+                                .font(OLFont.trailing)
+                                .foregroundStyle(OL.accentText)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        Text(next.title)
+                            .font(OLFont.note)
+                            .foregroundStyle(OL.ink)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        Text("Next").font(OLFont.meta.weight(.semibold)).foregroundStyle(OL.muted)
+                        Text(next.title)
+                            .font(OLFont.note)
+                            .foregroundStyle(OL.ink)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(CompactText.clock(next.start, calendar: env.settings.calendar))
+                            .font(OLFont.trailing)
+                            .foregroundStyle(OL.accentText)
+                    }
+                }
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
@@ -143,6 +165,7 @@ private struct WorkingPage: View {
         .buttonStyle(OLRowPressStyle())
         .disabled(next.taskID == nil)
         .accessibilityLabel("Next, \(next.title), \(CompactText.clock(next.start, calendar: env.settings.calendar))")
+        .accessibilityIdentifier("working.next")
     }
 
     /// What today holds after this work: the first slot, meeting or timed due

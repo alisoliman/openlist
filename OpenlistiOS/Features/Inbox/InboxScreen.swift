@@ -25,7 +25,12 @@ struct InboxScreen: View {
         let kept = library.keptInbox(kept: env.triage.kept { id in library.tasks.first { $0.id == id }?.dueDate })
             .count { !env.actions.isClosing($0.id) }
         return OLScreen(identifier: PhoneRoute.inbox.screenIdentifier, scrolls: !captures.isEmpty) {
-            OLTopBar { OLEyebrow(toTriage == 0 ? "All triaged" : "\(toTriage) to triage", color: OL.infoText) }
+            OLTopBar {
+                OLEyebrow(toTriage == 0 ? "All triaged" : "\(toTriage) to triage", color: OL.infoText)
+            } trailing: {
+                OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
+                    .accessibilityIdentifier("inbox.settings")
+            }
         } content: {
             OLHeader("Inbox")
             if captures.isEmpty {
@@ -80,6 +85,7 @@ private struct InboxRow: View {
                   onToggle: { env.actions.toggle(task) },
                   onOpen: { env.navigator.open(.taskDetail(task.id)) })
             .contextMenu { PhoneTaskMenu(task: task) }
+            .phoneTaskSwipe(task)
     }
 
     /// Its age, or its date once it has one.

@@ -186,14 +186,18 @@ struct OLButtonStyle: ButtonStyle {
     var glows = false
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.olStyle) private var style
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(size.font)
-            .lineLimit(1)
-            .fixedSize(horizontal: !block, vertical: false)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: !block && !dynamicTypeSize.isAccessibilitySize,
+                       vertical: dynamicTypeSize.isAccessibilitySize)
             .foregroundStyle(foreground)
             .padding(.horizontal, size.padding)
+            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 10 : 0)
             .frame(maxWidth: block ? .infinity : nil)
             .frame(minHeight: size.height)
             .background {

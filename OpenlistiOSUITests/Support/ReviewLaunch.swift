@@ -6,6 +6,11 @@
 import Foundation
 import XCTest
 
+@MainActor
+private enum ReviewLaunchState {
+    static var hasResolvedInitialProcess = false
+}
+
 extension XCUIApplication {
     /// The mockups' moment, which the app's fixture is written for
     /// (OpenlistiOS/Fixtures/PhoneFixture.swift).
@@ -17,9 +22,26 @@ extension XCUIApplication {
     /// `now`, an ISO 8601 date, pins the fixture's clock.
     static func reviewSession(now: String? = mockupNow, environment: [String: String] = [:]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["OpenlistReviewSession"] = "UITest-\(UUID().uuidString)"
-        if let now { app.launchEnvironment["OpenlistFixtureNow"] = now }
-        for (key, value) in environment { app.launchEnvironment[key] = value }
+        // A new runner can initially report a stale .notRunning state for
+        // the target Xcode prepared. Explicitly end it before configuring
+        // this launch, so fixture variables and Dynamic Type arguments apply.
+        app.terminate()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 10), "The previous app instance must end before configuring a review session")
+        var variables = ["OpenlistReviewSession": "UITest-\(UUID().uuidString)"]
+        if let now { variables["OpenlistFixtureNow"] = now }
+        variables.merge(environment) { _, supplied in supplied }
+        app.launchEnvironment = variables
+        if !ReviewLaunchState.hasResolvedInitialProcess {
+            // Xcode can leave its prepared app running while a fresh UI
+            // runner reports PID 0. The first launch resolves that process
+            // but may only activate it, ignoring this session's environment.
+            // Once its PID is known, terminate it so the caller's launch
+            // applies the fixture, route and any accessibility arguments.
+            app.launch()
+            app.terminate()
+            XCTAssertTrue(app.wait(for: .notRunning, timeout: 10))
+            ReviewLaunchState.hasResolvedInitialProcess = true
+        }
         return app
     }
 

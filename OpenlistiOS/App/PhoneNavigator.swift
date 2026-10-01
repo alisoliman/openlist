@@ -20,6 +20,7 @@ final class PhoneNavigator {
     var todayPath: [PhoneRoute] = []
     var inboxPath: [PhoneRoute] = []
     var listsPath: [PhoneRoute] = []
+    var workPath: [PhoneRoute] = []
     /// Today's list, or the same day as a timeline in its place.
     var todayMode: TodayMode = .list {
         didSet { if todayMode != oldValue { switchedFrom = oldValue } }
@@ -64,6 +65,7 @@ final class PhoneNavigator {
         case .today: todayPath
         case .inbox: inboxPath
         case .lists: listsPath
+        case .work: workPath
         }
     }
 
@@ -72,6 +74,7 @@ final class PhoneNavigator {
         case .today: todayPath = path
         case .inbox: inboxPath = path
         case .lists: listsPath = path
+        case .work: workPath = path
         }
     }
 
@@ -81,6 +84,7 @@ final class PhoneNavigator {
         case .today: todayMode == .timeline ? .timeline : .today
         case .inbox: .inbox
         case .lists: .lists
+        case .work: .work
         }
     }
 
@@ -94,7 +98,7 @@ final class PhoneNavigator {
         for other in PhoneTab.allCases where other != tab {
             let path = self.path(for: other)
             if let index = path.lastIndex(of: route) {
-                return index > 0 ? path[index - 1] : other == .today ? .today : other == .inbox ? .inbox : .lists
+                return index > 0 ? path[index - 1] : other == .today ? .today : other == .inbox ? .inbox : other == .work ? .work : .lists
             }
         }
         return tabRoot
@@ -116,6 +120,7 @@ final class PhoneNavigator {
         case .today: return todayMode == .timeline ? .timeline : .today
         case .inbox: return .inbox
         case .lists: return .lists
+        case .work: return .work
         }
     }
 

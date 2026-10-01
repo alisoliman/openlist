@@ -7,7 +7,7 @@ import SwiftUI
 
 // MARK: - C20 Dock
 
-/// The floating dock: Today, Inbox and Lists in a 64 pt capsule, and the
+/// The floating dock: Today, Inbox, Lists and Work in a 64 pt capsule, and the
 /// accent + beside it (`.dock`, `.tabbar`, `.fab`), in Liquid Glass. Icons
 /// only; VoiceOver reads each as a tab ("Inbox, 6 to triage") and the + as
 /// "New task", or "New task in Weekend in Kyoto" on that list's page.
@@ -35,7 +35,7 @@ struct OLDock: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(PhoneTab.allCases) { item in
                 tabButton(item)
             }

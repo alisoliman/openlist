@@ -6,18 +6,14 @@
 import SwiftData
 import SwiftUI
 
-/// Today (mockups 01, 02): the work on now, then the day's overdue, due and
-/// planned tasks in one card by the time they're placed or due, Starred, and
-/// how many are done, which opens Activity. When nothing is left: Today is
-/// clear, and a look at tomorrow.
+/// The paper companion's day: progress, the current work, and quiet cards
+/// separating overdue, due, planned and starred tasks.
 struct TodayScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
-    /// Every document block, for the order the lists show their tasks in.
     @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
 
     var body: some View {
-        // The design's 20 s clock: late days, times left and the date move on.
         TimelineView(.periodic(from: .now, by: 20)) { _ in
             TodayPage(tasks: library.tasksInOutlineOrder(blocks: blocks), now: env.now)
         }
@@ -29,6 +25,7 @@ private struct TodayPage: View {
     let now: Date
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let navigator = env.navigator
@@ -37,20 +34,23 @@ private struct TodayPage: View {
         let slots = PhoneWork.slots(env.calendar, on: now, calendar: calendar)
         let agenda = TodayAgenda(tasks: tasks, closing: env.actions.closing, now: now, calendar: calendar,
                                  order: .schedule, time: { slots[$0.id] })
-        let nowID = work.task?.id
-        let scheduled = agenda.scheduled.filter { $0.id != nowID }
-        let starred = agenda.starred.filter { $0.id != nowID }
         OLScreen(identifier: PhoneRoute.today.screenIdentifier, scrolls: !(agenda.isClear && work.task == nil)) {
             OLTopBar {
-                OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
-            } trailing: {
-                OLViewToggle(selection: .list, from: navigator.todaySwitchedFrom == .timeline ? .calendar : nil,
-                             calendarIdentifier: "today.timeline", arrived: { _ = navigator.takeTodaySwitch() }) { _ in
-                    navigator.openTimeline(on: nil)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
                 }
+            } trailing: {
+                OLIconButton("calendar", label: "Timeline", kind: .bare) { navigator.openTimeline(on: nil) }
+                    .accessibilityIdentifier("today.timeline")
+                OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
+                    .accessibilityIdentifier("today.settings")
             }
         } content: {
-            OLHeader("Today")
+            if dynamicTypeSize.isAccessibilitySize {
+                OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            TodayProgressHeader(done: agenda.progress.done, total: agenda.progress.total)
             if agenda.isClear && work.task == nil {
                 OLEmptyState(symbol: "sun.max", title: "Today is clear", message: clearMessage(done: agenda.doneToday.count),
                              actionTitle: "Look at tomorrow") {
@@ -63,29 +63,57 @@ private struct TodayPage: View {
                               open: { navigator.open(.working) }, play: { work.play(env) })
                         .padding(.top, OLMetrics.headerGap)
                 }
-                if !scheduled.isEmpty {
-                    rows(scheduled, slots: slots)
-                        .padding(.top, work.card == nil ? OLMetrics.headerGap : OLMetrics.cardGap)
-                }
-                if !starred.isEmpty {
-                    OLGroup("Starred") { rows(starred, slots: slots) }
-                }
+                taskGroup("Overdue", symbol: "exclamationmark.circle.fill", color: OL.danger,
+                          tasks: agenda.overdue, slots: slots, nowID: work.task?.id)
+                taskGroup("Due today", symbol: "sun.max.fill", color: OL.today,
+                          tasks: agenda.due, slots: slots, nowID: work.task?.id)
+                taskGroup("Planned", symbol: "calendar", color: OL.ink,
+                          tasks: agenda.planned, slots: slots, nowID: work.task?.id)
+                taskGroup("Starred", symbol: "star.fill", color: OL.today,
+                          tasks: agenda.starred, slots: slots, nowID: work.task?.id)
                 if !agenda.doneToday.isEmpty {
-                    OLLinkRow("done today", count: agenda.doneToday.count) { navigator.open(.activity) }
+                    OLLinkRow("Completed today", count: agenda.doneToday.count) { navigator.open(.activity) }
                         .accessibilityIdentifier("today.done")
                 }
+                Button { navigator.open(.capture(CaptureRequest(dueToday: true))) } label: {
+                    Label("Add task", systemImage: "plus")
+                        .font(OLFont.rowTitle)
+                        .foregroundStyle(OL.muted)
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(OLRowPressStyle())
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .accessibilityIdentifier("today.add")
             }
         }
     }
 
-    private func rows(_ tasks: [Block], slots: [UUID: Date]) -> some View {
-        OLCardRows(tasks) { task, separator in
-            PhoneTaskRow(task: task, context: .today, separator: separator, slot: slots[task.id],
-                         subtasks: task.isStarred ? progress(of: task) : nil)
+    @ViewBuilder private func taskGroup(_ title: String, symbol: String, color: Color,
+                                        tasks: [Block], slots: [UUID: Date], nowID: UUID?) -> some View {
+        let visible = tasks.filter { $0.id != nowID }
+        if !visible.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    Image(systemName: symbol).foregroundStyle(color).accessibilityHidden(true)
+                    Text(title).font(OLFont.groupHeader).accessibilityAddTraits(.isHeader)
+                    Text("\(visible.count)").font(OLFont.meta).foregroundStyle(OL.muted)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(OL.muted)
+                .padding(.horizontal, 4)
+                OLCardRows(visible) { task, separator in
+                    PhoneTaskRow(task: task, context: .today,
+                                 subtitle: library.list(task.listID)?.displayTitle,
+                                 separator: separator, slot: slots[task.id],
+                                 subtasks: task.isStarred ? progress(of: task) : nil)
+                }
+            }
+            .padding(.top, OLMetrics.groupGap)
         }
     }
 
-    /// A starred task's subtasks: "1 of 3".
     private func progress(of task: Block) -> (done: Int, total: Int)? {
         let subtasks = library.subtasks(of: task)
         guard !subtasks.isEmpty else { return nil }

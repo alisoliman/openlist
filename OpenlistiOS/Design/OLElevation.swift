@@ -83,7 +83,7 @@ private struct OLShadowModifier: ViewModifier {
                 .shadow(color: warm.opacity(0.08), radius: 6, y: 4)
                 .shadow(color: warm.opacity(0.12), radius: 20, y: 16)
         case (.fab, _):
-            content.shadow(color: OL.accent.opacity(0.35), radius: 12, y: 8)
+            content.shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.20), radius: 12, y: 8)
         }
     }
 }

@@ -144,9 +144,9 @@ extension OLTopBar where Trailing == EmptyView {
 /// The top bar's date or count (`.eyebrow`), in the colour of what it's about.
 struct OLEyebrow: View {
     let text: String
-    var color: Color = OL.todayText
+    var color: Color = OL.muted
 
-    init(_ text: String, color: Color = OL.todayText) {
+    init(_ text: String, color: Color = OL.muted) {
         self.text = text
         self.color = color
     }

@@ -8,7 +8,7 @@ import SwiftUI
 // MARK: - C25 List cards
 
 /// A list on Lists (`.lcard`): its tint band with the glyph, then its name
-/// in two lines at most and "7 open".
+/// and "7 open". Names use two lines normally and wrap at accessibility sizes.
 struct OLListCard: View {
     let title: String
     let icon: String
@@ -17,6 +17,7 @@ struct OLListCard: View {
     var detail: String?
     var isInbox = false
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: action) {
@@ -34,7 +35,7 @@ struct OLListCard: View {
                     Text(title)
                         .font(OLFont.rowTitleStrong)
                         .foregroundStyle(OL.ink)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                         .multilineTextAlignment(.leading)
                     if let detail {
                         Text(detail)
@@ -83,14 +84,16 @@ struct OLNewListCard: View {
     }
 }
 
-/// Two columns of list cards 14 pt apart (`.lgrid`), more on wider screens.
+/// Cards 14 pt apart (`.lgrid`): adaptive columns normally, one at accessibility sizes.
 struct OLListGrid<Content: View>: View {
     @ViewBuilder var content: Content
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(@ViewBuilder content: () -> Content) { self.content = content() }
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14, alignment: .top)], spacing: 14) {
+        let column: GridItem.Size = dynamicTypeSize.isAccessibilitySize ? .flexible() : .adaptive(minimum: 150)
+        LazyVGrid(columns: [GridItem(column, spacing: 14, alignment: .top)], spacing: 14) {
             content
         }
     }
@@ -152,9 +155,18 @@ struct OLNowCard: View {
     var state: State = .planned
     let open: () -> Void
     let play: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                Image(systemName: state == .paused ? "pause.fill" : "play.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(OL.ink)
+                .frame(width: 42, height: 48)
+                .background(OL.sunken, in: .rect(cornerRadius: 12))
+                .accessibilityHidden(true)
+            }
             Button(action: open) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(state == .paused ? "Paused" : eyebrow)
@@ -163,7 +175,7 @@ struct OLNowCard: View {
                     Text(title)
                         .font(OLFont.rowTitleStrong)
                         .foregroundStyle(OL.ink)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                         .multilineTextAlignment(.leading)
                     Text(detail)
                         .font(OLFont.meta)

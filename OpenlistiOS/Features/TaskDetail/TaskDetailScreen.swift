@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import UIKit
 
 /// Task detail (mockup 12), pushed: the task's title and note to edit, When,
@@ -33,6 +34,7 @@ private struct TaskDetailPage: View {
     let task: Block
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var title = SyncedTextDraft()
     @State private var note = SyncedTextDraft()
     @State private var newSubtask = ""
@@ -87,6 +89,26 @@ private struct TaskDetailPage: View {
                     .accessibilityIdentifier("detail.title")
             }
             .padding(.top, 12)
+            if let parent = TaskDetailContext.parent(of: task, in: env.store) {
+                let siblings = library.subtasks(of: parent)
+                let completed = siblings.count { $0.isCompleted || actions.isClosing($0.id) }
+                Button { TaskDetailContext.openParent(of: task, in: env) } label: {
+                    Label("Subtask of \(parent.displayTitle) · \(completed)/\(siblings.count)", systemImage: "arrow.turn.up.left")
+                        .font(OLFont.meta)
+                        .foregroundStyle(OL.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .frame(minHeight: 44)
+                        .background(OL.sunken, in: .capsule)
+                }
+                .buttonStyle(OLPressStyle(scale: 0.98))
+                .accessibilityLabel("Subtask of \(parent.displayTitle), \(completed) of \(siblings.count) subtasks complete")
+                .accessibilityHint("Opens the parent task.")
+                .accessibilityIdentifier("detail.parent")
+                .padding(.top, 10)
+            }
             TextField("Add a note", text: $note.value, axis: .vertical)
                 .font(OLFont.note)
                 .foregroundStyle(OL.muted)
@@ -249,14 +271,11 @@ private struct TaskDetailPage: View {
         return VStack(spacing: 0) {
             OLSettingsRow("Plan for today") {
                 Toggle("Plan for today", isOn: Binding(get: { planned }, set: { plan in
-                    env.actions.edit([task], plan ? "Planned for today: “\(task.displayTitle)”" : "Unplanned: “\(task.displayTitle)”",
-                                     icon: "sun.max") {
-                        if plan { env.store.selectForToday($0, now: now) } else { env.store.deselectForToday($0) }
-                    }
+                    TaskDetailContext.setPlanned(plan, for: task, in: env)
                 }))
                 .labelsHidden()
                 .olToggle()
-                .disabled(task.isCompleted)
+                .disabled(!planned && !env.actions.canAddToToday(task, hierarchy: library.hierarchy))
                 .accessibilityIdentifier("detail.plan")
             }
             // Five minutes to eight hours, or where a longer one made on the Mac is.
@@ -401,14 +420,22 @@ private struct TaskDetailPage: View {
             .accessibilityIdentifier("detail.trash")
             if done {
                 Button { env.actions.toggle(task) } label: {
-                    Label(env.actions.isClosing(task.id) ? "Undo" : "Reopen", systemImage: "arrow.uturn.backward")
+                    if dynamicTypeSize.isAccessibilitySize {
+                        Text(env.actions.isClosing(task.id) ? "Undo" : "Reopen")
+                    } else {
+                        Label(env.actions.isClosing(task.id) ? "Undo" : "Reopen", systemImage: "arrow.uturn.backward")
+                    }
                 }
                 .buttonStyle(.ol(.neutral, size: .large, block: true))
             } else {
                 Button {
                     if working || env.actions.startWork(task) { env.navigator.open(.working) }
                 } label: {
-                    Label(working ? "Working…" : "Start working", systemImage: working ? "timer" : "play.fill")
+                    if dynamicTypeSize.isAccessibilitySize {
+                        Text(working ? "Working…" : "Start working")
+                    } else {
+                        Label(working ? "Working…" : "Start working", systemImage: working ? "timer" : "play.fill")
+                    }
                 }
                 .buttonStyle(.ol(.primary, size: .large, block: true, glows: true))
                 .accessibilityIdentifier("detail.start")
@@ -471,5 +498,51 @@ private struct TaskDetailPage: View {
         else { return }
         env.store.setNote(text, for: task)
         note.reset(to: text)
+    }
+}
+
+/// Contextual task actions revalidate live data before changing navigation or
+/// Today membership, including after a parent or list changes through sync.
+@MainActor
+enum TaskDetailContext {
+    static func parent(of task: Block, in store: Store) -> Block? {
+        guard let parentID = task.parentID, let parent = store.block(id: parentID),
+              parent.isTask, !parent.isDeleted, parent.trashID == nil else { return nil }
+        var visited: Set<UUID> = [task.id]
+        var ancestor: Block? = parent
+        while let current = ancestor {
+            guard visited.insert(current.id).inserted else { return nil }
+            ancestor = current.parentID.flatMap { store.block(id: $0) }
+        }
+        return parent
+    }
+
+    static func openParent(of task: Block, in env: PhoneEnvironment) {
+        guard let parent = parent(of: task, in: env.store) else { return }
+        let route = PhoneRoute.taskDetail(parent.id)
+        func parentPath(from original: [PhoneRoute]) -> [PhoneRoute] {
+            if let index = original.firstIndex(of: route) { return Array(original.prefix(index + 1)) }
+            var path = original
+            // Going up from a directly opened child replaces that child. If
+            // the parent was already below it, return to the existing page.
+            if path.last == .taskDetail(task.id) { path.removeLast() }
+            return path + [route]
+        }
+        let navigator = env.navigator
+        if case .settings = navigator.sheet {
+            navigator.settingsPath = parentPath(from: navigator.settingsPath)
+        } else {
+            navigator.setPath(parentPath(from: navigator.path(for: navigator.tab)), for: navigator.tab)
+        }
+    }
+
+    static func setPlanned(_ planned: Bool, for task: Block, in env: PhoneEnvironment) {
+        if planned {
+            env.actions.addToToday(task)
+        } else {
+            env.actions.edit([task], "Unplanned: “\(task.displayTitle)”", icon: "sun.max") {
+                env.store.deselectForToday($0)
+            }
+        }
     }
 }
