@@ -5,9 +5,9 @@
 
 import Foundation
 
-/// The dock's three tabs, each with its own navigation stack.
+/// The dock's four tabs, each with its own navigation stack.
 enum PhoneTab: String, CaseIterable, Identifiable, Hashable {
-    case today, inbox, lists
+    case today, inbox, lists, work
 
     var id: String { rawValue }
 
@@ -16,6 +16,7 @@ enum PhoneTab: String, CaseIterable, Identifiable, Hashable {
         case .today: "Today"
         case .inbox: "Inbox"
         case .lists: "Lists"
+        case .work: "Work"
         }
     }
 
@@ -23,7 +24,8 @@ enum PhoneTab: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .today: "sun.max"
         case .inbox: "tray"
-        case .lists: "square.grid.2x2"
+        case .lists: "list.bullet"
+        case .work: "timer"
         }
     }
 }
@@ -52,6 +54,7 @@ struct CaptureRequest: Hashable, Identifiable {
 /// Every screen of the iPhone app, and how each is presented.
 enum PhoneRoute: Hashable, Identifiable {
     case today
+    case work
     /// Today's day as a timeline, in Today's place (the calendar toggle).
     case timeline
     case activity
@@ -90,6 +93,7 @@ enum PhoneRoute: Hashable, Identifiable {
         case .today: .tab(.today)
         case .inbox: .tab(.inbox)
         case .lists: .tab(.lists)
+        case .work: .tab(.work)
         case .timeline: .mode(.today)
         case .activity, .taskDetail, .list, .find: .push
         case .settings, .capture: .sheet
@@ -102,6 +106,7 @@ enum PhoneRoute: Hashable, Identifiable {
     var home: PhoneTab {
         switch self {
         case .today, .timeline, .activity, .working, .taskDetail: .today
+        case .work: .work
         case .inbox, .triage: .inbox
         case .lists, .list, .find, .settings, .trash: .lists
         case .capture: .today
@@ -112,6 +117,7 @@ enum PhoneRoute: Hashable, Identifiable {
     var screenIdentifier: String {
         switch self {
         case .today: "screen.today"
+        case .work: "screen.work"
         case .timeline: "screen.timeline"
         case .activity: "screen.activity"
         case .taskDetail: "screen.taskDetail"

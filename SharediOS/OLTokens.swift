@@ -72,12 +72,11 @@ nonisolated enum OL {
         static let ink = OLColorPair(light: 0x151417, dark: 0xF2F1F4)
         static let muted = OLColorPair(light: 0x6C6965, dark: 0xA09EA8)
 
-        // Accent
-        static let accent = OLColorPair(light: 0x7A4FF0, dark: 0x7C4FEF)
-        /// Not redefined in the dark theme.
-        static let onAccent = OLColorPair(0xFFFFFF)
-        static let accentText = OLColorPair(light: 0x6639DF, dark: 0xB49BFF)
-        static let accentSoft = OLColorPair(light: 0xECE6FD, dark: 0x352D45)
+        // Paper reference: neutral ink controls; semantic colors stay distinct.
+        static let accent = OLColorPair(light: 0x151417, dark: 0xF2F1F4)
+        static let onAccent = OLColorPair(light: 0xFFFFFF, dark: 0x151417)
+        static let accentText = OLColorPair(light: 0x151417, dark: 0xF2F1F4)
+        static let accentSoft = OLColorPair(light: 0xECEBE7, dark: 0x35333A)
 
         // Today
         static let today = OLColorPair(light: 0xCF7409, dark: 0xE8891A)

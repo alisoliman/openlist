@@ -211,6 +211,8 @@ struct OLTaskRow: View {
     var state: OLCheck = .open
     var depth = 0
     var subtitle: String?
+    var subtitleIcon: String?
+    var subtitleAccent: Color = OL.muted
     var trailing: OLTrailing?
     /// Draws the hairline above, from the checkbox's right edge.
     var separator: OLSeparator = .none
@@ -221,37 +223,52 @@ struct OLTaskRow: View {
 
     @ScaledMetric(relativeTo: .callout) private var minHeight: CGFloat = 52
     @ScaledMetric(relativeTo: .callout) private var twoLineHeight: CGFloat = 62
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 14) {
             OLCheckbox(state, title: title, action: onToggle)
             content
         }
-        .padding(.vertical, subtitle == nil ? 13 : 11)
+        .padding(.vertical, subtitle == nil && trailing == nil ? 13 : 11)
         .padding(.leading, 16 + (depth > 0 ? 36 : 0))
         .padding(.trailing, 16)
-        .frame(maxWidth: .infinity, minHeight: subtitle == nil ? minHeight : twoLineHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: subtitle == nil && trailing == nil ? minHeight : twoLineHeight, alignment: .leading)
         .background(isHighlighted ? OL.accentSoft : .clear)
         .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
     }
 
     @ViewBuilder private var content: some View {
-        let label = HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(OLFont.rowTitle)
-                    .lineLimit(2)
-                    .strikethrough(state == .done, color: OL.muted)
-                    .foregroundStyle(state == .done ? OL.muted : OL.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(OLFont.meta)
-                        .foregroundStyle(OL.muted)
-                        .lineLimit(1)
+        let label = VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(OLFont.rowTitle)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                .strikethrough(state == .done, color: OL.muted)
+                .foregroundStyle(state == .done ? OL.muted : OL.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if subtitle != nil || trailing != nil {
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 3) {
+                            sourceLabel.fixedSize(horizontal: false, vertical: true)
+                            if let trailing { OLTrailingView(trailing) }
+                        }
+                    } else {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 6) {
+                                sourceLabel.lineLimit(1)
+                                if let trailing { OLTrailingView(trailing) }
+                            }
+                            VStack(alignment: .leading, spacing: 3) {
+                                sourceLabel.lineLimit(2)
+                                if let trailing { OLTrailingView(trailing) }
+                            }
+                        }
+                    }
                 }
+                .font(OLFont.meta)
+                .foregroundStyle(OL.muted)
             }
-            if let trailing { OLTrailingView(trailing) }
         }
         .contentShape(.rect)
         if let onOpen {
@@ -263,6 +280,17 @@ struct OLTaskRow: View {
                 .accessibilityHint("Opens the task")
         } else {
             label.accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder private var sourceLabel: some View {
+        if let subtitle {
+            HStack(spacing: 4) {
+                if let subtitleIcon {
+                    OLListGlyph(icon: subtitleIcon, accent: subtitleAccent, size: 13)
+                }
+                Text(subtitle)
+            }
         }
     }
 }

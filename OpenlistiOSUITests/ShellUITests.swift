@@ -91,8 +91,9 @@ final class ShellUITests: XCTestCase {
         // The design's top bar hides the navigation bar; the edge swipe still goes back.
         app.buttons["Weekend in Kyoto"].firstMatch.tap()
         app.waitForScreen("screen.list")
-        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
+        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: 2, dy: 0))
+        edge.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)),
+                   withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
         app.waitForScreen("screen.lists")
 
         app.dock("today").tap()

@@ -35,7 +35,7 @@ private struct PhoneShell: View {
                         .toolbarVisibility(.hidden, for: .tabBar)
                         // The dock's room, which the inset on the TabView below
                         // doesn't pass to its tabs: a page's end scrolls clear of it.
-                        .environment(\.olDockRoom, showsDock ? OLMetrics.dockHeight - max(0, bottomSafeArea - OLMetrics.dockBottom) : 0)
+                        .environment(\.olDockRoom, showsDock ? OLMetrics.dockHeight - dockDrop : 0)
                 }
             }
         }
@@ -44,7 +44,7 @@ private struct PhoneShell: View {
                 DockHost()
                     // The design's dock sits 28 pt above the screen's edge,
                     // a little into the home indicator's safe area.
-                    .offset(y: max(0, bottomSafeArea - OLMetrics.dockBottom))
+                    .offset(y: dockDrop)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -100,7 +100,7 @@ private struct PhoneShell: View {
         .environment(\.olStyle, style)
         .environment(\.appClock, env.clock)
         .environment(\.calendar, env.settings.calendar)
-        .environment(\.olDockDrop, max(0, bottomSafeArea - OLMetrics.dockBottom))
+        .environment(\.olDockDrop, dockDrop)
         .tint(OL.accent)
         .preferredColorScheme(env.settings.appearance.colorScheme)
         .onAppear {
@@ -116,11 +116,15 @@ private struct PhoneShell: View {
                 dwell: Double(min(8, max(2, env.settings.undoDwellSeconds))))
     }
 
+    /// Negative on phones without a home indicator: lift the dock to keep
+    /// the same 28-point gap above the physical screen edge on every phone.
+    private var dockDrop: CGFloat { bottomSafeArea - OLMetrics.dockBottom }
+
     /// 12 pt above the dock, or above a screen's own bottom bar, else 32 pt
     /// above the screen's edge.
     private func trayLift(showsDock: Bool, screenBar: Bool) -> CGFloat {
-        if showsDock { return OLMetrics.dockHeight + 12 - max(0, bottomSafeArea - OLMetrics.dockBottom) }
-        if screenBar { return OLMetrics.trayAboveScreenBar }
+        if showsDock { return OLMetrics.dockHeight + 12 - dockDrop }
+        if screenBar { return OLMetrics.trayAboveScreenBar - dockDrop }
         return max(0, 32 - bottomSafeArea)
     }
 }
@@ -150,6 +154,7 @@ struct PhoneTabStack: View {
             .animation(style.fading(.easeInOut(duration: 0.22)), value: env.navigator.todayMode)
         case .inbox: InboxScreen()
         case .lists: ListsScreen()
+        case .work: TimelineScreen(forWork: true)
         }
     }
 }
@@ -167,6 +172,7 @@ struct PhoneScreen: View {
         case .inbox: InboxScreen()
         case .triage: TriageScreen()
         case .lists: ListsScreen()
+        case .work: TimelineScreen(forWork: true)
         case let .list(id): ListPageScreen(listID: id)
         case let .find(query): FindScreen(query: query)
         case .settings: SettingsScreen()

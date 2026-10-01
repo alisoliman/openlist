@@ -33,6 +33,7 @@ struct PhoneTaskRow: View {
     /// was ticked among open ones.
     var showsCompletion = true
     @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
 
     var body: some View {
         let actions = env.actions
@@ -40,6 +41,8 @@ struct PhoneTaskRow: View {
         OLTaskRow(title: task.displayTitle,
                   state: Self.check(for: task, closing: closing, now: env.now, calendar: env.settings.calendar),
                   depth: depth, subtitle: subtitle,
+                  subtitleIcon: subtitle == nil ? nil : library.list(task.listID)?.icon,
+                  subtitleAccent: library.list(task.listID)?.accent.color ?? OL.muted,
                   trailing: task.isCompleted && !closing && !showsCompletion ? nil
                       : Self.trailing(for: task, closing: closing, context: context, slot: slot, subtasks: subtasks,
                                       now: env.now, calendar: env.settings.calendar),
@@ -47,6 +50,7 @@ struct PhoneTaskRow: View {
                   onToggle: { actions.toggle(task) },
                   onOpen: { env.navigator.open(.taskDetail(task.id)) })
             .contextMenu { PhoneTaskMenu(task: task) }
+            .phoneTaskSwipe(task)
     }
 
     /// Done while it dwells or once written; late ahead of priority, as in

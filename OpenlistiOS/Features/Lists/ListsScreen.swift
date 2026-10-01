@@ -5,15 +5,16 @@
 
 import SwiftUI
 
-/// Lists (mockup 09): Find, every top-level list as a card with its open
-/// count, New list, the labels, which open Find on them, and archived lists
-/// folded away at the end.
+/// Lists (mockup 09): browse the list cards or one task queue across lists.
+/// Labels open Find and archived lists remain folded away under the cards.
 struct ListsScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @State private var namesList = false
     @State private var newName = ""
     @State private var showsArchived = false
+    @AppStorage("phone.lists.view", store: ReviewSession.defaults) private var mode: ListsViewMode = .cards
+    @State private var selectedLists: Set<UUID> = []
 
     var body: some View {
         let navigator = env.navigator
@@ -23,7 +24,7 @@ struct ListsScreen: View {
             OLTopBar {
                 EmptyView()
             } trailing: {
-                OLIconButton(icon: .settings, label: "Settings", kind: .bare, iconSize: 22) { navigator.open(.settings) }
+                OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
                     .accessibilityIdentifier("lists.settings")
             }
         } content: {
@@ -31,32 +32,38 @@ struct ListsScreen: View {
             OLSearchLink { navigator.open(.find("")) }
                 .padding(.top, OLMetrics.headerGap)
                 .accessibilityIdentifier("lists.find")
-            OLListGrid {
-                ForEach(lists) { list in
-                    card(list)
+            ListsViewPicker(selection: $mode)
+                .padding(.top, 16)
+            if mode == .tasks {
+                ListsTasksView(selectedLists: $selectedLists)
+            } else {
+                OLListGrid {
+                    ForEach(lists) { list in
+                        card(list)
+                    }
+                    OLNewListCard {
+                        newName = ""
+                        namesList = true
+                    }
+                    .accessibilityIdentifier("lists.new")
                 }
-                OLNewListCard {
-                    newName = ""
-                    namesList = true
-                }
-                .accessibilityIdentifier("lists.new")
-            }
-            .padding(.top, OLMetrics.headerGap)
-            if !library.labels.isEmpty {
-                let query = library.findQuery
-                OLGroup("Labels") {
-                    OLFlowLayout {
-                        ForEach(library.labels) { label in
-                            let key = query.key(for: label)
-                            OLChipButton(OLChip(key)) { navigator.open(.find(key)) }
+                .padding(.top, 16)
+                if !library.labels.isEmpty {
+                    let query = library.findQuery
+                    OLGroup("Labels") {
+                        OLFlowLayout {
+                            ForEach(library.labels) { label in
+                                let key = query.key(for: label)
+                                OLChipButton(OLChip(key)) { navigator.open(.find(key)) }
+                            }
                         }
                     }
                 }
-            }
-            if !archived.isEmpty {
-                OLFold("archived", count: archived.count, isExpanded: $showsArchived) {
-                    OLListGrid {
-                        ForEach(archived) { list in card(list) }
+                if !archived.isEmpty {
+                    OLFold("archived", count: archived.count, isExpanded: $showsArchived) {
+                        OLListGrid {
+                            ForEach(archived) { list in card(list) }
+                        }
                     }
                 }
             }

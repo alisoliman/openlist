@@ -2,7 +2,7 @@
 .ol {
   --canvas: #f2f0ec; --surface: #ffffff; --sunken: #ecebe7; --line: #e7e5e0; --line-strong: #7d7a74;
   --ink: #151417; --muted: #6c6965;
-  --accent: #7a4ff0; --on-accent: #ffffff; --accent-text: #6639df; --accent-soft: #ece6fd;
+  --accent: #151417; --on-accent: #ffffff; --accent-text: #151417; --accent-soft: #ecebe7;
   --today: #cf7409; --on-today: #2a1800; --today-text: #a65700; --today-soft: #fbeedd;
   --danger: #c23a28; --on-danger: #ffffff; --danger-soft: #fbe5e1;
   --info: #2f6fdc; --on-info: #ffffff;
@@ -11,7 +11,7 @@
   --tint-violet: #e9e4f7; --tint-green: #e1eee6; --tint-amber: #f7ead7; --tint-blue: #dfe8f5; --tint-rose: #f7e2e8; --tint-neutral: #ebe9e5;
   --shadow-card: 0 1px 2px rgba(40,30,20,0.05), 0 6px 18px rgba(40,30,20,0.06);
   --shadow-float: 0 4px 12px rgba(40,30,20,0.08), 0 16px 40px rgba(40,30,20,0.12);
-  --shadow-fab: 0 8px 24px rgba(122,79,240,0.35);
+  --shadow-fab: 0 8px 24px rgba(21,20,23,0.20);
   --card-ring: 0 0 0 0 transparent;
   --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -23,7 +23,7 @@
 .ol[data-theme="dark"] {
   --canvas: #1d1c21; --surface: #2b2930; --sunken: #35333a; --line: #3b3940; --line-strong: #827f8a;
   --ink: #f2f1f4; --muted: #a09ea8;
-  --accent: #7c4fef; --accent-text: #b49bff; --accent-soft: #352d45;
+  --accent: #f2f1f4; --on-accent: #151417; --accent-text: #f2f1f4; --accent-soft: #35333a;
   --today: #e8891a; --today-text: #f0a24a; --today-soft: #2b231e;
   --danger: #ff7d6e; --on-danger: #3a0f0a; --danger-soft: #3a2426;
   --info: #76a6ff; --on-info: #10233f;
@@ -32,7 +32,7 @@
   --tint-violet: #352d45; --tint-green: #2c3637; --tint-amber: #3a2f22; --tint-blue: #26303f; --tint-rose: #3a2630; --tint-neutral: #323037;
   --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 2px 8px rgba(0,0,0,0.25);
   --shadow-float: 0 8px 28px rgba(0,0,0,0.5);
-  --shadow-fab: 0 8px 24px rgba(124,79,239,0.35);
+  --shadow-fab: 0 8px 24px rgba(0,0,0,0.35);
   --card-ring: 0 0 0 1px #3b3940;
 }
 .ol *, .ol *::before, .ol *::after { box-sizing: border-box; }

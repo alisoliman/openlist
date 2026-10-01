@@ -294,10 +294,83 @@ final class ScreensUITests: XCTestCase {
         let app = launch(environment: ["OpenlistOpenRoute": "list:Weekend in Kyoto"])
         app.waitForScreen("screen.list", timeout: 20)
         XCTAssertTrue(app.staticTexts["7 open"].exists)
-        app.buttons["1 done"].tap()
-        XCTAssertTrue(app.buttons["Reply to Kasuga about the tatami room"].waitForExistence(timeout: 5))
+
+        func hasVisibleFrameAboveDock(_ element: XCUIElement) -> Bool {
+            let screen = app.screen("screen.list")
+            let dock = app.dock("capture")
+            guard element.exists, screen.exists, dock.exists else { return false }
+            let frame = element.frame
+            let viewport = app.frame.intersection(screen.frame)
+            return !frame.isEmpty && frame.minX >= viewport.minX && frame.maxX <= viewport.maxX
+                && frame.minY >= viewport.minY && frame.maxY <= min(viewport.maxY, dock.frame.minY)
+        }
+
+        func isVisibleAboveDock(_ element: XCUIElement) -> Bool {
+            hasVisibleFrameAboveDock(element) && element.isHittable
+        }
+
+        // A hittable offscreen button can still have its tap point beneath
+        // the floating dock. Reveal the whole target before tapping it.
+        let fold = app.buttons["1 done"]
+        for _ in 0..<4 {
+            if isVisibleAboveDock(fold) { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(isVisibleAboveDock(fold), "The completed fold must be wholly visible above the dock")
+        fold.tap()
+        XCTAssertEqual(fold.value as? String, "Expanded")
+        snap(app, "list-done-expanded-before-reveal")
+        // Metadata below titles makes the list taller. Expanding a fold at
+        // the viewport's edge can leave its completed row below the dock.
+        let completedTitle = "Reply to Kasuga about the tatami room"
+        let completed = app.buttons[completedTitle]
+        for _ in 0..<4 {
+            if hasVisibleFrameAboveDock(completed) { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(completed.waitForExistence(timeout: 5))
+        XCTAssertTrue(hasVisibleFrameAboveDock(completed), "The completed row must be wholly visible above the dock")
         snap(app, "list-done-open")
-        app.buttons["list.select"].tap()
+        let isHittable = completed.isHittable
+        if !isHittable {
+            let matches = app.buttons.matching(NSPredicate(format: "label == %@", completedTitle)).allElementsBoundByIndex
+            let descriptions = matches.enumerated().map { index, element in
+                "Match \(index): label=\(element.label), identifier=\(element.identifier), frame=\(element.frame), enabled=\(element.isEnabled), hittable=\(element.isHittable)"
+            }
+            let diagnostic = descriptions.joined(separator: "\n") + "\n" + app.debugDescription
+            print(diagnostic)
+            let attachment = XCTAttachment(string: diagnostic)
+            attachment.name = "list-done-visible-row-not-hittable"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            snap(app, "list-done-visible-row-not-hittable")
+        }
+        // Verify actual touch reachability even if AX reports no hit point
+        // for this newly expanded row. Its exact title frame is already
+        // wholly visible, and opening the matching detail is required.
+        if isHittable {
+            completed.tap()
+        } else {
+            let frame = completed.frame
+            let origin = app.frame.origin
+            app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: frame.midX - origin.x, dy: frame.midY - origin.y)).tap()
+        }
+        app.waitForScreen("screen.taskDetail")
+        XCTAssertEqual(app.textFields["detail.title"].value as? String, completedTitle)
+        let back = app.buttons["Back to Weekend in Kyoto"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertTrue(back.isHittable)
+        XCTAssertTrue(app.frame.intersection(app.screen("screen.taskDetail").frame).contains(back.frame))
+        back.tap()
+        app.waitForScreen("screen.list")
+        let select = app.buttons["list.select"]
+        for _ in 0..<4 {
+            if isVisibleAboveDock(select) { break }
+            app.swipeDown()
+        }
+        XCTAssertTrue(isVisibleAboveDock(select), "The Select header control must be wholly visible before tapping")
+        select.tap()
         app.waitForScreen("screen.select")
         XCTAssertFalse(app.dock("capture").exists, "The bulk bar takes the dock's place")
         for title in ["Renew passports", "Reserve the Nishiki market tour", "Pick up JR passes at Kyoto Station"] {
@@ -498,15 +571,15 @@ final class ScreensUITests: XCTestCase {
     @MainActor
     func testLongPagesScrollClearOfTheDock() {
         let app = launch()
-        let done = app.buttons["today.done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 10))
+        let lastRow = app.buttons["today.add"]
+        XCTAssertTrue(lastRow.waitForExistence(timeout: 10))
         for _ in 0..<3 { app.swipeUp() }
         sleep(1)
         snap(app, "today-scrolled")
         let dock = app.otherElements["Tabs"]
         XCTAssertTrue(dock.exists)
         // The tab bar's 6 pt padding sits between its buttons and the capsule's edge.
-        let gap = dock.frame.minY - done.frame.maxY
+        let gap = dock.frame.minY - lastRow.frame.maxY
         XCTAssertGreaterThanOrEqual(gap, 20, "The page's end scrolls under the dock")
         XCTAssertLessThanOrEqual(gap, 70, "The page leaves the dock's room twice")
     }

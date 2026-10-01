@@ -320,6 +320,29 @@ final class PhoneActions {
         afterUndo?()
     }
 
+    // MARK: Today
+
+    /// Today only includes tasks in active source lists, including their
+    /// ancestors. Rows use the current library snapshot; commits recheck the
+    /// live store so an archive or deletion arriving during a swipe wins.
+    func canAddToToday(_ task: Block, hierarchy: ListHierarchy? = nil) -> Bool {
+        guard task.isTask, !task.isDeleted, task.trashID == nil, !task.isCompleted, !isClosing(task.id),
+              let listID = task.listID else { return false }
+        return (hierarchy ?? store.listHierarchy()).activeIDs.contains(listID)
+    }
+
+    /// Adds an open task to the Today set without changing its due date.
+    /// Repeating a full swipe never removes it, and Undo restores membership.
+    func addToToday(_ task: Block) {
+        guard canAddToToday(task) else { return }
+        let now = clock.now
+        // A second swipe leaves the original Undo available.
+        guard !task.isPlanned(on: now, calendar: settings.calendar) else { return }
+        edit([task], "Added “\(task.displayTitle)” to Today", icon: "sun.max") { [store] in
+            store.selectForToday($0, now: now)
+        }
+    }
+
     // MARK: Trash
 
     /// Moves tasks to Trash as one action: "Moved “X” to Trash" with Undo.

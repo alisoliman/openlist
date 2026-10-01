@@ -70,7 +70,7 @@ struct OLSettingsTile: View {
     }
 
     /// The design's tile colours by section (mockup 15).
-    static func accent(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol) }
+    static func accent(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, ink: OL.onAccent) }
     static func today(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.today, ink: OL.onToday) }
     static func today(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.today, ink: OL.onToday, icon: icon) }
     static func info(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.info, ink: OL.onInfo, icon: icon) }
@@ -89,6 +89,7 @@ struct OLSettingsRow<Trailing: View>: View {
     let title: String
     var separator: OLSeparator = .none
     @ViewBuilder var trailing: Trailing
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(_ title: String, tile: OLSettingsTile? = nil, separator: OLSeparator = .none,
          @ViewBuilder trailing: () -> Trailing) {
@@ -101,16 +102,28 @@ struct OLSettingsRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             if let tile { tile }
-            Text(title)
-                .font(OLFont.rowTitle)
-                .foregroundStyle(OL.ink)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    titleLabel
+                    trailing
+                }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            trailing
+            } else {
+                titleLabel
+                trailing
+            }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 16)
         .frame(minHeight: 52)
         .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
+    }
+
+    private var titleLabel: some View {
+        Text(title)
+            .font(OLFont.rowTitle)
+            .foregroundStyle(OL.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -119,6 +132,7 @@ struct OLRowValue: View {
     let text: String?
     var color: Color = OL.muted
     var showsChevron = true
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(_ text: String?, color: Color = OL.muted, showsChevron: Bool = true) {
         self.text = text
@@ -136,7 +150,7 @@ struct OLRowValue: View {
             }
         }
         .font(OLFont.rowTitle)
-        .lineLimit(1)
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
     }
 }
 
@@ -146,6 +160,7 @@ struct OLFieldRow<Value: View>: View {
     var separator: OLSeparator = .none
     var showsChevron = true
     @ViewBuilder var value: Value
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(_ label: String, separator: OLSeparator = .none, showsChevron: Bool = true, @ViewBuilder value: () -> Value) {
         self.label = label
@@ -155,11 +170,32 @@ struct OLFieldRow<Value: View>: View {
     }
 
     var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel
+                    fieldValue
+                }
+            } else {
+                HStack(spacing: 12) {
+                    fieldLabel.frame(width: 76, alignment: .leading)
+                    fieldValue
+                }
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+        .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var fieldLabel: some View {
+        Text(label).font(OLFont.note).foregroundStyle(OL.muted)
+    }
+
+    private var fieldValue: some View {
         HStack(spacing: 12) {
-            Text(label)
-                .font(OLFont.note)
-                .foregroundStyle(OL.muted)
-                .frame(width: 76, alignment: .leading)
             value
                 .font(OLFont.rowTitle)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -169,11 +205,6 @@ struct OLFieldRow<Value: View>: View {
                     .foregroundStyle(OL.muted)
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 16)
-        .frame(minHeight: 52)
-        .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
-        .accessibilityElement(children: .combine)
     }
 }
 

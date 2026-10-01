@@ -63,6 +63,7 @@ struct SettingsScreen: View {
                 }
                 .olCard()
             }
+            TaskSwipeSettingsSection()
             OLGroup("Motion") {
                 VStack(spacing: 0) {
                     OLSettingsRow("Reduce motion", tile: .teal(icon: .wave)) {

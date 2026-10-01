@@ -30,7 +30,8 @@ struct ListPageScreen: View {
     var body: some View {
         let navigator = env.navigator
         let list = env.store.list(id: listID)
-        let page = BlockTree.listPage(blocks, sorting: list?.sorting ?? .manual, closing: env.actions.closing)
+        let document = ListDocument(blocks: blocks, sorting: list?.sorting ?? .manual, closing: env.actions.closing)
+        let page = document.page
         let children = list.map(library.children(of:)) ?? []
         let doneOpen = showsDone ?? list?.showsCompleted(default: env.settings.showsCompletedTasks) ?? false
         OLScreen(identifier: PhoneRoute.list(listID).screenIdentifier) {
@@ -39,7 +40,7 @@ struct ListPageScreen: View {
                     OLBackButton(env.backTitle(for: .list(listID))) { navigator.pop() }
                 } trailing: {
                     OLIconButton("checkmark.circle", label: "Select tasks", kind: .bare, iconSize: 22) { isSelecting = true }
-                        .disabled(page.openCount == 0)
+                        .disabled(document.selectableTasks.isEmpty)
                         .accessibilityIdentifier("list.select")
                     if let list { menu(list) }
                 }
@@ -59,9 +60,14 @@ struct ListPageScreen: View {
             if !page.rows.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(page.rows.enumerated()), id: \.element.id) { index, row in
-                        PhoneTaskRow(task: row.block, context: .list, depth: row.depth,
-                                     separator: .task(depth: row.depth, previousDepth: index > 0 ? page.rows[index - 1].depth : nil),
-                                     showsCompletion: false)
+                        if row.block.isTask {
+                            let previous = index > 0 ? page.rows[index - 1] : nil
+                            ListDocumentTaskRow(row: row,
+                                                separator: .task(depth: row.depth, previousDepth: previous?.block.isTask == true ? previous?.depth : nil),
+                                                canDisclose: document.canDisclose(row), progress: document.progress(for: row.block))
+                        } else {
+                            ListDocumentTextRow(row: row, canDisclose: document.canDisclose(row))
+                        }
                     }
                 }
                 .olCard()
@@ -91,7 +97,7 @@ struct ListPageScreen: View {
             }
         }
         .modifier(SelectMode(isSelecting: $isSelecting, listTitle: list?.displayTitle ?? "",
-                             tasks: page.rows.map(\.block).filter { !$0.isCompleted && !env.actions.isClosing($0.id) }))
+                             tasks: document.selectableTasks))
         .alert("Rename list", isPresented: $renaming) {
             TextField("Name", text: $name)
             Button("Cancel", role: .cancel) {}

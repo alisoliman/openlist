@@ -16,13 +16,13 @@ struct NavigationTests {
     static let id = UUID()
     static let allRoutes: [PhoneRoute] = [
         .today, .timeline, .activity, .taskDetail(id), .inbox, .triage, .lists, .list(id), .find(""),
-        .settings, .trash, .working, .capture(CaptureRequest()),
+        .settings, .trash, .working, .capture(CaptureRequest()), .work,
     ]
 
     @Test func everyRouteHasItsPresentation() {
         let expected: [PhoneRoute.Presentation] = [
             .tab(.today), .mode(.today), .push, .push, .tab(.inbox), .fullScreenCover, .tab(.lists), .push, .push,
-            .sheet, .settingsStack, .fullScreenCover, .sheet,
+            .sheet, .settingsStack, .fullScreenCover, .sheet, .tab(.work),
         ]
         #expect(Self.allRoutes.map(\.presentation) == expected)
         #expect(Set(Self.allRoutes.map(\.screenIdentifier)).count == Self.allRoutes.count)
@@ -37,6 +37,13 @@ struct NavigationTests {
         #expect(navigator.visibleRoute == .lists)
         navigator.open(.today)
         #expect(navigator.visibleRoute == .today)
+        navigator.open(.work)
+        #expect(navigator.visibleRoute == .work)
+        navigator.open(.taskDetail(Self.id))
+        #expect(navigator.workPath == [.taskDetail(Self.id)])
+        #expect(navigator.screen(below: .taskDetail(Self.id)) == .work)
+        navigator.select(.work)
+        #expect(navigator.workPath.isEmpty)
     }
 
     @Test func timelineReplacesTodayInPlace() {

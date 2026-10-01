@@ -187,7 +187,7 @@ screenshots (`xcrun simctl launch` passes them as `SIMCTL_CHILD_<name>`):
 | Variable | Effect |
 |---|---|
 | `OpenlistFixtureNow` | Pins the app's clock (`AppClock`) to an ISO 8601 moment; `2026-09-23T10:40:00` is the mockups' |
-| `OpenlistOpenRoute` | Opens a screen at launch: `timeline`, `inbox`, `lists`, `settings`, `trash`, `capture`, `voice` (Capture, listening), `working`, `triage`, `activity`, `find:#travel`, `list:<title>`, `task:<title>` |
+| `OpenlistOpenRoute` | Opens a screen at launch: `today`, `timeline`, `inbox`, `lists`, `work`, `settings`, `trash`, `capture`, `voice` (Capture, listening), `working`, `triage`, `activity`, `find:#travel`, `list:<title>`, `task:<title>` |
 | `OpenlistShowTray` | Shows its text in the tray, with Undo |
 | `OpenlistCaptureText` | Types its text into the Capture sheet |
 | `OpenlistVoiceRecording` | A recording's path, which voice capture listens to in place of the microphone (the Mac's Dev and Debug builds too) |

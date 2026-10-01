@@ -16,18 +16,20 @@ import UniformTypeIdentifiers
 /// card, to hold and drop at a time of its own, and a planned block drops at
 /// another time the same way.
 struct TimelineScreen: View {
+    var forWork = false
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { _ in
-            TimelinePage(now: env.now)
+            TimelinePage(now: env.now, forWork: forWork)
         }
     }
 }
 
 private struct TimelinePage: View {
     let now: Date
+    var forWork = false
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -40,38 +42,57 @@ private struct TimelinePage: View {
         let navigator = env.navigator
         let calendar = env.settings.calendar
         let today = calendar.startOfDay(for: now)
-        let day = navigator.timelineDay.map { calendar.startOfDay(for: $0) } ?? today
+        let day = forWork ? today : navigator.timelineDay.map { calendar.startOfDay(for: $0) } ?? today
         let schedule = TimelineSchedule(env: env, library: library, day: day, now: now)
-        OLScreen(identifier: PhoneRoute.timeline.screenIdentifier, scrolls: !fills) {
+        OLScreen(identifier: forWork ? PhoneRoute.work.screenIdentifier : PhoneRoute.timeline.screenIdentifier, scrolls: forWork || !fills) {
             OLTopBar {
                 OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
             } trailing: {
+                if forWork {
+                    OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
+                } else {
                 OLViewToggle(selection: .calendar, from: navigator.todaySwitchedFrom == .list ? .list : nil,
                              listIdentifier: "timeline.list", arrived: { _ = navigator.takeTodaySwitch() }) { _ in
                     navigator.open(.today)
                 }
+                }
             }
         } content: {
-            OLHeader("Today")
+            OLHeader(forWork ? "Work" : "Today")
+            if forWork {
+                let work = PhoneWork(env: env, now: now)
+                if let card = work.card {
+                    OLNowCard(eyebrow: card.eyebrow, title: card.title, detail: card.detail, state: card.state,
+                              open: { navigator.open(.working) }, play: { work.play(env) })
+                        .padding(.top, OLMetrics.headerGap)
+                }
+            }
+            if !forWork {
             OLWeekStrip(days: OLWeekStrip.week(containing: day, calendar: calendar),
                         selection: Binding(get: { day },
                                            set: { navigator.timelineDay = calendar.isDate($0, inSameDayAs: today) ? nil : $0 }),
                         today: now, calendar: calendar)
                 .padding(.top, 14)
+            }
             OLGroup(schedule.title) {
                 if day == today, !schedule.toPlan.isEmpty {
                     OLGroupAction("\(schedule.toPlan.count) to plan") { env.actions.fit(schedule.toPlan) }
                         .accessibilityIdentifier("timeline.toPlan")
                 }
             } content: {
-                if !schedule.toPlan.isEmpty {
+                if !forWork, !schedule.toPlan.isEmpty {
                     PlanRow(tasks: schedule.toPlan, planning: planning, canFit: day == today)
                 }
                 TimelineCard(schedule: schedule, day: day, now: now, planning: planning) { open($0) }
-                    .frame(height: fills ? nil : 560)
-                    .frame(maxHeight: fills ? .infinity : nil)
+                    .frame(height: forWork || !fills ? 560 : nil)
+                    .frame(maxHeight: fills && !forWork ? .infinity : nil)
             }
-            .frame(maxHeight: fills ? .infinity : nil, alignment: .top)
+            .frame(maxHeight: fills && !forWork ? .infinity : nil, alignment: .top)
+            if forWork, !schedule.toPlan.isEmpty {
+                OLGroup("Not scheduled") {
+                    PlanRow(tasks: schedule.toPlan, planning: planning, canFit: true)
+                }
+            }
         }
     }
 
