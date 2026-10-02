@@ -220,6 +220,26 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(app.sliders["detail.estimate"].value as? String, "30 minutes")
     }
 
+    /// A swipe down, often meant only to lower the keyboard, keeps a draft;
+    /// Cancel still closes the sheet and discards it.
+    @MainActor
+    func testCaptureSwipeDownKeepsDraft() {
+        let app = launch(environment: ["OpenlistOpenRoute": "inbox"])
+        app.waitForScreen("screen.inbox", timeout: 20)
+        app.dock("capture").tap()
+        let sheet = app.waitForScreen("screen.capture")
+        let field = app.textFields["capture.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Water the balcony plants")
+        let top = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02))
+        top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 480)))
+        XCTAssertFalse(sheet.waitForNonExistence(timeout: 2), "A swipe down must not discard a typed draft")
+        XCTAssertEqual(field.value as? String, "Water the balcony plants")
+        sheet.buttons["Cancel"].tap()
+        app.waitForScreenToClose("screen.capture")
+        XCTAssertFalse(app.buttons["Water the balcony plants"].exists)
+    }
+
     /// Clearing a typed date keeps the draft and its labels while saving
     /// an undated task.
     @MainActor
