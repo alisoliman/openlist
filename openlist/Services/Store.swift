@@ -445,7 +445,6 @@ final class Store {
                 context.delete(event)
             }
         }
-        var committed = false
         if context.hasChanges || !pendingActivity.isEmpty || lineHistory.hasEnded {
             context.processPendingChanges()
             let staged = try stagedTaskActivity() + stagedLegacyActivity()
@@ -458,7 +457,6 @@ final class Store {
             for event in events { context.insert(event) }
             do {
                 try commitContext(context)
-                committed = true
             } catch {
                 // Keep the user's edits retryable. A failed attempt is never
                 // a published fact, even if SwiftData returns its stale model.
@@ -484,8 +482,9 @@ final class Store {
         pendingCompletionCycleIDs.removeAll()
         pendingReopenedCycleIDs.removeAll()
         persistenceError = nil
-        // A save with nothing to write leaves every reminder as it was.
-        if committed { refreshAllReminders() }
+        // Even a save with nothing to write: the phone's sync import and its
+        // save on the way to the background count on this pass.
+        refreshAllReminders()
         if announcing { onDidSave?() }
         publishPendingCompletionUndo()
     }

@@ -217,7 +217,10 @@ struct MenuBarTaskRow: View {
         return HStack(spacing: 9) {
             NXCheckbox(filled: block.isCompleted || closing != nil, closing: closing, priority: block.priority,
                        title: block.displayTitle, size: 15) {
-                env.workbench.toggle(block.id)
+                // Made outside the window, as a widget's tick, it leaves the
+                // window's selection as it was.
+                if closing != nil { env.workbench.cancelClosing([block.id]) }
+                else { env.workbench.complete([block.id], clearsSelection: false) }
             }
 
             Text(block.displayTitle)

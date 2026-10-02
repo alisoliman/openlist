@@ -108,10 +108,7 @@ struct CaptureScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active, voice.phase == .listening { voice.stop() }
         }
-        .onChange(of: text) {
-            voice.dismissFailure()
-            saveError = nil
-        }
+        .onChange(of: text) { voice.dismissFailure() }
         .sheet(isPresented: $showsDuePicker, onDismiss: { isFocused = resumesTyping }) {
             DuePickerSheet(date: snapshot.date, includesTime: snapshot.includesTime, now: env.now) { date, timed in
                 setDueDate(date, includesTime: timed)
@@ -136,6 +133,7 @@ struct CaptureScreen: View {
         case .idle, .failed:
             isFocused = false
             spoken = []
+            saveError = nil
             voice.onHeard = { heard in take(heard) }
             voice.start(vocabulary: SpokenCapture.Vocabulary(lists: library.lists, labels: library.labels), now: { env.now })
             env.haptics.play(.impact)
@@ -146,6 +144,7 @@ struct CaptureScreen: View {
     /// it named, to edit as though typed; several, or one the field wouldn't
     /// read back the same, wait as rows.
     private func take(_ heard: [SpokenTask]) {
+        saveError = nil
         env.haptics.play(.selection)
         dueDate = .automatic
         if heard.count == 1, let task = heard.first,
@@ -180,6 +179,7 @@ struct CaptureScreen: View {
                     .accessibilityElement(children: .combine)
                     OLIconButton("xmark", label: "Leave out “\(task.snapshot.title)”", kind: .bare, iconSize: 15) {
                         spoken.removeAll { $0.id == task.id }
+                        saveError = nil
                     }
                 }
             }
@@ -246,6 +246,9 @@ struct CaptureScreen: View {
             TextField("New task", text: Binding(get: { text }, set: { typed in
                 let next = CaptureParse(typed, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)
                 dueDate = dueDate.afterEditing(from: parse, to: next)
+                // Typing clears a failed Add's reason; the field's own tidying
+                // of Return, which runs the Add, doesn't.
+                saveError = nil
                 text = typed
             }), prompt: Text("New task").foregroundStyle(OL.muted), axis: .vertical)
                 .font(OLFont.captureInput)
