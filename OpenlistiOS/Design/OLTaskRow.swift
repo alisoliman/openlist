@@ -350,20 +350,34 @@ struct OLCardRows<Item: Identifiable, Row: View>: View {
     let items: [Item]
     @ViewBuilder var row: (Item, _ separator: OLSeparator) -> Row
     var depth: (Item) -> Int = { _ in 0 }
+    /// Builds only the rows on screen, for cards that can hold every open
+    /// task (Lists' Tasks view, Find, Select). A screen of short cards, as
+    /// Today's, stays eager, so its first layout is exact and the page opens
+    /// at its top.
+    var lazy = false
 
-    init(_ items: [Item], depth: @escaping (Item) -> Int = { _ in 0 },
+    init(_ items: [Item], lazy: Bool = false, depth: @escaping (Item) -> Int = { _ in 0 },
          @ViewBuilder row: @escaping (Item, _ separator: OLSeparator) -> Row) {
         self.items = items
+        self.lazy = lazy
         self.depth = depth
         self.row = row
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                row(item, .task(depth: depth(item), previousDepth: index > 0 ? depth(items[index - 1]) : nil))
+        Group {
+            if lazy {
+                LazyVStack(spacing: 0) { rows }
+            } else {
+                VStack(spacing: 0) { rows }
             }
         }
         .olCard()
+    }
+
+    private var rows: some View {
+        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+            row(item, .task(depth: depth(item), previousDepth: index > 0 ? depth(items[index - 1]) : nil))
+        }
     }
 }

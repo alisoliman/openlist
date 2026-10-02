@@ -494,8 +494,9 @@ final class ScreensUITests: XCTestCase {
         // The work running at launch is this session's latest step, with Undo.
         XCTAssertTrue(app.buttons["activity.undo"].exists)
         snap(app, "activity")
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Tuesday 22 September'")).firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Tuesday 22 September"].waitForExistence(timeout: 5))
+        let tuesday = XCUIApplication.fixtureDay(22)
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tuesday)).firstMatch.tap()
+        XCTAssertTrue(app.staticTexts[tuesday].waitForExistence(timeout: 5))
         XCTAssertTrue(app.element(beginningWith: "Compare Gion vs Arashiyama").exists)
     }
 

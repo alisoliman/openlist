@@ -1,9 +1,10 @@
 # Row selection and bulk actions
 
 On Next screens (Today, Tasks, labels, a list's Completed group and the Inbox's
-groups), and on the task lines of a list document or the Inbox's, ⌘-click or
-⇧-click adds a row to the selection or takes it out, **X** toggles the focused
-row, and ⌘A selects every visible row. In a document the click can be on a task
+groups), and on the task lines of a list document or the Inbox's, ⌘-click
+adds a row to the selection or takes it out, ⇧-click selects every row from the
+focused one to it (or toggles the row when none is focused), **X** toggles the
+focused row, and ⌘A selects every visible row. In a document the click can be on a task
 line's text, beside it or on its grip; the page publishes its task lines as its
 visible rows, so the same selection and bar act on them. Plain click focuses a
 row and clears the selection; Escape clears it too. A task's round checkbox

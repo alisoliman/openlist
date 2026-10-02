@@ -51,7 +51,9 @@ struct TriageScreen: View {
             if let card {
                 TriageCard(task: card, now: env.now, draft: $draft, picksDate: $picksDate)
                     .id(card.id)
-                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                    // With Reduce Motion the next card fades in rather than sliding.
+                    .transition(style.reduceMotion ? .opacity
+                                : .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
                     .padding(.top, 24)
                 Spacer(minLength: 0)
             } else {

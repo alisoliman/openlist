@@ -58,7 +58,7 @@ struct ListPageScreen: View {
                 .padding(.top, 60)
             }
             if !page.rows.isEmpty {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(page.rows.enumerated()), id: \.element.id) { index, row in
                         if row.block.isTask {
                             let previous = index > 0 ? page.rows[index - 1] : nil

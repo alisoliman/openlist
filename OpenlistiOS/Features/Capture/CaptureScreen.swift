@@ -26,6 +26,9 @@ struct CaptureScreen: View {
     @State private var voice = VoiceCapture()
     /// Tasks heard, when there were several, which Add saves together.
     @State private var spoken: [SpokenTask] = []
+    /// Why the last Add failed, shown in the sheet: the window's tray is
+    /// under it, out of sight.
+    @State private var saveError: String?
     @FocusState private var isFocused: Bool
 
     init(request: CaptureRequest) {
@@ -75,6 +78,13 @@ struct CaptureScreen: View {
                 CaptureVoiceFailure(failure: failure)
                     .padding(.top, 12)
             }
+            if let saveError {
+                Label(saveError, systemImage: "exclamationmark.circle")
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.danger)
+                    .padding(.top, 12)
+                    .accessibilityIdentifier("capture.saveError")
+            }
             destinations
                 .padding(.top, 16)
         }
@@ -84,6 +94,9 @@ struct CaptureScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self, of: \.size.height) { height = $0 }
         .presentationDetents([.height(height)])
+        // A swipe down, often meant only to lower the keyboard, would throw
+        // away what's typed or heard; Cancel still does, deliberately.
+        .interactiveDismissDisabled(hasDraft)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("New task")
         .accessibilityIdentifier(PhoneRoute.capture(request).screenIdentifier)
@@ -95,7 +108,10 @@ struct CaptureScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active, voice.phase == .listening { voice.stop() }
         }
-        .onChange(of: text) { voice.dismissFailure() }
+        .onChange(of: text) {
+            voice.dismissFailure()
+            saveError = nil
+        }
         .sheet(isPresented: $showsDuePicker, onDismiss: { isFocused = resumesTyping }) {
             DuePickerSheet(date: snapshot.date, includesTime: snapshot.includesTime, now: env.now) { date, timed in
                 setDueDate(date, includesTime: timed)
@@ -206,8 +222,16 @@ struct CaptureScreen: View {
         if !result.saved.isEmpty { env.actions.reportCapture(result.saved) }
         guard let error = result.error else { return env.navigator.dismissSheet() }
         spoken = result.unsaved
-        env.tray.show("“\(result.unsaved[0].snapshot.title)” wasn’t added. \(error.localizedDescription)",
-                      icon: "exclamationmark.circle", tone: .danger, seconds: 5)
+        failed("“\(result.unsaved[0].snapshot.title)” wasn’t added. \(error.localizedDescription)")
+    }
+
+    private var hasDraft: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !spoken.isEmpty
+    }
+
+    private func failed(_ message: String) {
+        saveError = message
+        AccessibilityNotification.Announcement(message).post()
         env.haptics.play(.error)
     }
 
@@ -380,9 +404,7 @@ struct CaptureScreen: View {
             env.actions.reportCapture(block)
             env.navigator.dismissSheet()
         } catch {
-            env.tray.show("Task wasn’t added. \(error.localizedDescription)", icon: "exclamationmark.circle",
-                          tone: .danger, seconds: 5)
-            env.haptics.play(.error)
+            failed("Task wasn’t added. \(error.localizedDescription)")
         }
     }
 }
@@ -393,9 +415,12 @@ struct CaptureScreen: View {
 private struct CaptureVoicePanel: View {
     let voice: VoiceCapture
     let stop: () -> Void
+    @Environment(\.olStyle) private var style
 
     var body: some View {
         let listener = voice.listener
+        // Under Reduce Motion the mic holds still; the status says it listens.
+        let swell = style.reduceMotion ? 0.5 : listener.level
         VStack(alignment: .leading, spacing: 16) {
             words(listener)
                 .font(OLFont.captureInput)
@@ -405,13 +430,13 @@ private struct CaptureVoicePanel: View {
                 ZStack {
                     Circle()
                         .fill(OL.accentSoft)
-                        .frame(width: 30 + 16 * listener.level, height: 30 + 16 * listener.level)
+                        .frame(width: 30 + 16 * swell, height: 30 + 16 * swell)
                     Image(systemName: "mic.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(OL.accent)
                 }
                 .frame(width: 46, height: 46)
-                .animation(.linear(duration: 0.08), value: listener.level)
+                .animation(style.animation(.linear(duration: 0.08)), value: swell)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     status

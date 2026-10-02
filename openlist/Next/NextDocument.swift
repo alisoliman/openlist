@@ -1058,9 +1058,21 @@ private struct NXDocumentImage: View {
     @State private var draft = ""
     @FocusState private var focused: Bool
 
+    /// Decoded images by file name, which is unique to its contents: hovering
+    /// redraws the line, and decoding reads the whole file again.
+    private static let images = NSCache<NSString, NSImage>()
+
+    private var image: NSImage? {
+        guard let filename = block.mediaFilename else { return nil }
+        if let image = Self.images.object(forKey: filename as NSString) { return image }
+        guard let image = MediaStore.shared.image(named: filename, data: block.mediaData) else { return nil }
+        Self.images.setObject(image, forKey: filename as NSString)
+        return image
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let filename = block.mediaFilename, let image = MediaStore.shared.image(named: filename, data: block.mediaData) {
+            if let image {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)

@@ -58,7 +58,7 @@ struct OLChip: View {
         .accessibilityAddTraits(style == .on ? .isSelected : [])
     }
 
-    private var height: CGFloat {
+    var height: CGFloat {
         style == .token ? 28 : small ? 30 : 36
     }
 
@@ -91,9 +91,17 @@ struct OLChipButton: View {
     }
 
     var body: some View {
-        Button(action: action) { chip }
-            .buttonStyle(OLPressStyle(scale: 0.96))
-            .olFeedback(.selection, trigger: chip.style == .on)
+        // A 44 pt target around the 28–36 pt capsule, which keeps its own
+        // height in the layout, as `OLGroupAction` does.
+        let slack = max(0, (44 - chip.height) / 2)
+        Button(action: action) {
+            chip
+                .padding(.vertical, slack)
+                .contentShape(.rect)
+        }
+        .buttonStyle(OLPressStyle(scale: 0.96))
+        .padding(.vertical, -slack)
+        .olFeedback(.selection, trigger: chip.style == .on)
     }
 }
 

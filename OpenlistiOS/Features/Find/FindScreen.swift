@@ -71,7 +71,7 @@ struct FindScreen: View {
             } else {
                 OLGroup("\(results.count) \(results.count == 1 ? "task" : "tasks")") {
                     if !results.isEmpty {
-                        OLCardRows(results) { task, separator in
+                        OLCardRows(results, lazy: true) { task, separator in
                             PhoneTaskRow(task: task, context: .list, subtitle: library.list(task.listID)?.displayTitle,
                                          separator: separator)
                         }

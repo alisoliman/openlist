@@ -199,15 +199,18 @@ extension Store {
         do {
             let reader = ModelContext(context.container)
             reader.autosaveEnabled = false
-            let lists = try reader.fetch(FetchDescriptor<TaskList>())
-            let tasks = try reader.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == "task" }))
+            let lists = Dictionary(try reader.fetch(FetchDescriptor<TaskList>()).map { ($0.id, $0) }) { first, _ in first }
+            // Only tasks that can carry a reminder: an explicit one, or a timed due date.
+            let tasks = try reader.fetch(FetchDescriptor<Block>(predicate: #Predicate {
+                $0.kindRaw == "task" && ($0.reminderAt != nil || $0.includesTime)
+            }))
             let intents = tasks.compactMap { task -> ReminderIntent? in
                 guard let date = task.reminderAt ?? (task.includesTime ? task.dueDate : nil) else { return nil }
                 var id = task.listID
                 var visited = Set<UUID>()
                 var owningList: TaskList?
                 while let next = id, visited.insert(next).inserted,
-                      let list = lists.first(where: { $0.id == next }) {
+                      let list = lists[next] {
                     if list.mergedIntoID == nil { owningList = list; break }
                     id = list.mergedIntoID
                 }

@@ -58,7 +58,7 @@ struct SelectMode: ViewModifier {
         } content: {
             OLHeader("\(picked.count) selected", sub: listTitle)
             if !tasks.isEmpty {
-                OLCardRows(tasks) { task, separator in
+                OLCardRows(tasks, lazy: true) { task, separator in
                     row(task, separator: separator)
                 }
                 .padding(.top, OLMetrics.headerGap)

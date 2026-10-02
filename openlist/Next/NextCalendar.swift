@@ -735,8 +735,11 @@ private struct NXCalendarBlock: View {
                 }
                 .frame(width: 12, height: 12)
                 .padding(.top, 1)
-                .contentShape(Circle())
+                // Wider than the 12pt circle it draws, as a row's checkbox is,
+                // so a near miss completes rather than opening the task.
+                .contentShape(Circle().inset(by: -5))
                 .onTapGesture(perform: check)
+                .help(done ? "Reopen" : "Mark as done")
                 Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
                     .strikethrough(done)

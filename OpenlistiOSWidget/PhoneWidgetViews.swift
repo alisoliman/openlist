@@ -127,6 +127,8 @@ private struct TodayWidgetRow: View {
                 WidgetCheckbox(done: check != .open, late: late, palette: palette)
             }
             .buttonStyle(.plain)
+            // The circle alone says nothing to VoiceOver; the Mac widget's toggle reads the same.
+            .accessibilityLabel(check == .open ? "Complete \(item.title)" : "Reopen \(item.title)")
             text(done: check != .open)
                 .font(.system(size: 13))
                 .lineLimit(2)

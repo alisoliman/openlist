@@ -24,6 +24,34 @@ nonisolated struct CompletionHistorySignature: Equatable, Sendable {
     var records: Int
 }
 
+/// Keeps an Activity screen's heatmap between saves that leave the
+/// completion history alone, as the widget's snapshot keeps its own: every
+/// rebuild reads and decodes the whole history.
+struct ActivityHeatmapCache {
+    private(set) var heatmap: ActivityHeatmap?
+    private var history: CompletionHistorySignature?
+    private var calendar: Calendar?
+    private var day: Date?
+
+    /// Rebuilds the heatmap when the history, the calendar or the day has
+    /// changed, or a completion it held back has come due. Returns whether
+    /// it did.
+    @MainActor
+    mutating func refresh(store: Store, now: Date = .now, calendar: Calendar = .current, weeks: Int = 12) throws -> Bool {
+        let day = calendar.startOfDay(for: now)
+        let history = try store.completionHistorySignature()
+        if let heatmap, history == self.history, calendar == self.calendar, day == self.day,
+           heatmap.nextCompletionAt.map({ now < $0 }) ?? true {
+            return false
+        }
+        self.heatmap = nil
+        self.history = nil
+        let heatmap = try store.activityHeatmap(now: now, calendar: calendar, weeks: weeks)
+        (self.heatmap, self.history, self.calendar, self.day) = (heatmap, history, calendar, day)
+        return true
+    }
+}
+
 extension Store {
     /// A fresh reader publishes only committed completion actions, and the
     /// Undo and reopen actions that took one back, including after a failed

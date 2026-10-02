@@ -14,8 +14,10 @@ struct TodayScreen: View {
     @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
 
     var body: some View {
+        // Ordered outside the clock, so its ticks don't walk every outline again.
+        let tasks = library.tasksInOutlineOrder(blocks: blocks)
         TimelineView(.periodic(from: .now, by: 20)) { _ in
-            TodayPage(tasks: library.tasksInOutlineOrder(blocks: blocks), now: env.now)
+            TodayPage(tasks: tasks, now: env.now)
         }
     }
 }
@@ -34,7 +36,9 @@ private struct TodayPage: View {
         let slots = PhoneWork.slots(env.calendar, on: now, calendar: calendar)
         let agenda = TodayAgenda(tasks: tasks, closing: env.actions.closing, now: now, calendar: calendar,
                                  order: .schedule, time: { slots[$0.id] })
-        OLScreen(identifier: PhoneRoute.today.screenIdentifier, scrolls: !(agenda.isClear && work.task == nil)) {
+        // The clear day fits the screen, unless large text pushes its action off it.
+        OLScreen(identifier: PhoneRoute.today.screenIdentifier,
+                 scrolls: dynamicTypeSize.isAccessibilitySize || !(agenda.isClear && work.task == nil)) {
             OLTopBar {
                 if !dynamicTypeSize.isAccessibilitySize {
                     OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))

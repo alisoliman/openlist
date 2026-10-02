@@ -210,10 +210,14 @@ struct MenuBarTaskRow: View {
     }
 
     private var row: some View {
-        HStack(spacing: 9) {
-            NXCheckbox(filled: block.isCompleted, closing: nil, priority: block.priority,
+        // Through the window's own completion, as a row's tick: the dwell,
+        // in which a second click takes it back, running work paused, and
+        // Undo after.
+        let closing = env.workbench.closing[block.id]
+        return HStack(spacing: 9) {
+            NXCheckbox(filled: block.isCompleted || closing != nil, closing: closing, priority: block.priority,
                        title: block.displayTitle, size: 15) {
-                env.store.toggleCompletion(block)
+                env.workbench.toggle(block.id)
             }
 
             Text(block.displayTitle)

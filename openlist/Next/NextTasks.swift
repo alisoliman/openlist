@@ -82,25 +82,28 @@ struct NextTasksScreen: View {
         var groups: [NXGroup] = []
         switch workbench.tasksGrouping {
         case .list:
+            // One pass over the pool, not one per list.
+            let byList = Dictionary(grouping: pool, by: \.listID)
             for list in library.lists {
-                let rows = pool.filter { $0.listID == list.id }
+                let rows = byList[list.id] ?? []
                 if !rows.isEmpty {
                     groups.append(NXGroup(id: "l-\(list.id)", title: list.displayTitle, glyph: list, rows: rows, collapsible: true))
                 }
             }
         case .due:
             let muted = NX.ink(0.5)
-            let offset = { (task: Block) in task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
-            let buckets: [(String, Color, (Block) -> Bool)] = [
-                ("Overdue", NX.red, { offset($0).map { $0 < 0 } ?? false }),
-                ("Today", accent, { offset($0) == 0 }),
-                ("Tomorrow", muted, { offset($0) == 1 }),
-                ("This week", muted, { offset($0).map { $0 > 1 && $0 <= 6 } ?? false }),
-                ("Later", muted, { offset($0).map { $0 > 6 } ?? false }),
-                ("No date", NX.ink(0.35), { $0.dueDate == nil }),
+            // Each task's day, worked out once for all six buckets.
+            let offsets = pool.map { task in task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
+            let buckets: [(String, Color, (Int?) -> Bool)] = [
+                ("Overdue", NX.red, { $0.map { $0 < 0 } ?? false }),
+                ("Today", accent, { $0 == 0 }),
+                ("Tomorrow", muted, { $0 == 1 }),
+                ("This week", muted, { $0.map { $0 > 1 && $0 <= 6 } ?? false }),
+                ("Later", muted, { $0.map { $0 > 6 } ?? false }),
+                ("No date", NX.ink(0.35), { $0 == nil }),
             ]
             for (title, color, matches) in buckets {
-                let rows = pool.filter(matches)
+                let rows = zip(pool, offsets).filter { matches($1) }.map(\.0)
                 if !rows.isEmpty {
                     groups.append(NXGroup(id: "d-\(title)", title: title, icon: "calendar", color: color, rows: rows, collapsible: true))
                 }

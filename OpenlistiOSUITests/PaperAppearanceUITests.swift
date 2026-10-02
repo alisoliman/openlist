@@ -95,7 +95,7 @@ final class PaperAppearanceUITests: XCTestCase {
     func testAccessibilityXXXLKeepsEssentialControlsReachable() {
         let app = makeApp(appearance: "light", largeType: true)
         open("today", screen: "today", in: app)
-        let date = app.staticTexts["Wednesday 23 September"]
+        let date = app.staticTexts[XCUIApplication.fixtureDay(23)]
         XCTAssertGreaterThan(date.frame.height, 35, "The accessibility XXXL launch argument must enlarge the date; default-size captures do not verify large text")
         XCTAssertTrue(app.buttons["today.settings"].isHittable)
         snapshot(app, "paper-xxxl-today-top")
@@ -196,7 +196,7 @@ final class PaperAppearanceUITests: XCTestCase {
         app.launch()
         app.waitForScreen("screen.\(screen)", timeout: 45)
         if route == "today" {
-            let seeded = app.staticTexts["Wednesday 23 September"].waitForExistence(timeout: 10)
+            let seeded = app.staticTexts[XCUIApplication.fixtureDay(23)].waitForExistence(timeout: 10)
             if !seeded { snapshot(app, "paper-invalid-fixture-launch") }
             XCTAssertTrue(seeded, "The visual review must use the pinned fixture date. \(app.debugDescription)")
             XCTAssertEqual(app.screen("today.progress").value as? String, "2 of 13 done", "Visual review requires the seeded tasks, not an empty library")

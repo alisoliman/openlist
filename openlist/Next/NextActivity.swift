@@ -14,6 +14,7 @@ struct NextActivityScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @State private var heatmap: ActivityHeatmap?
+    @State private var heatmapCache = ActivityHeatmapCache()
     @State private var history = NXSavedHistory()
     @State private var loadError: String?
 
@@ -62,9 +63,12 @@ struct NextActivityScreen: View {
 
     private func refresh() {
         do {
-            heatmap = try env.store.activityHeatmap(calendar: env.settings.calendar)
+            // Most saves, a typing pause or the work heartbeat, leave the
+            // completion history as it was; the heatmap stays.
+            if try heatmapCache.refresh(store: env.store, calendar: env.settings.calendar) { heatmap = heatmapCache.heatmap }
             loadError = nil
         } catch {
+            heatmapCache = ActivityHeatmapCache()
             heatmap = nil
             loadError = "Saved activity could not be read. \(error.localizedDescription)"
         }

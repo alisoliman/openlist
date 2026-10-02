@@ -35,6 +35,7 @@ private struct TaskDetailPage: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.olStyle) private var style
     @State private var title = SyncedTextDraft()
     @State private var note = SyncedTextDraft()
     @State private var newSubtask = ""
@@ -131,7 +132,7 @@ private struct TaskDetailPage: View {
             // keyboard: the field being edited keeps the room above it.
             if focus == nil { dock(done: done).transition(.opacity) }
         }
-        .animation(.snappy(duration: 0.2), value: focus == nil)
+        .animation(style.fading(.snappy(duration: 0.2)), value: focus == nil)
         .sheet(item: $sheet) { sheet in
             switch sheet {
             case .due:
@@ -311,7 +312,7 @@ private struct TaskDetailPage: View {
                     ForEach(Array(children.enumerated()), id: \.element.id) { index, child in
                         PhoneTaskRow(task: child, context: .list, separator: index == 0 ? .none : .task(nested: false),
                                      showsCompletion: false)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(style.reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
                     if !task.isCompleted {
                         addSubtaskRow(separator: children.isEmpty ? .none : .task(nested: false))
@@ -361,7 +362,7 @@ private struct TaskDetailPage: View {
                 .buttonStyle(OLPressStyle(scale: 0.9))
                 .accessibilityLabel("Add subtask")
                 .accessibilityIdentifier("detail.addSubtaskButton")
-                .transition(.scale.combined(with: .opacity))
+                .transition(style.reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
         .padding(.leading, 16)
@@ -370,7 +371,7 @@ private struct TaskDetailPage: View {
         .contentShape(.rect)
         .onTapGesture { focus = .subtask }
         .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
-        .animation(.snappy(duration: 0.2), value: text.isEmpty)
+        .animation(style.fading(.snappy(duration: 0.2)), value: text.isEmpty)
     }
 
     /// Opens the field and gives it the keyboard once it's there; from the
@@ -399,7 +400,7 @@ private struct TaskDetailPage: View {
     private func addSubtask() -> Bool {
         let text = newSubtask.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return false }
-        withAnimation(.snappy(duration: 0.25)) {
+        withAnimation(style.fading(.snappy(duration: 0.25))) {
             let child = env.store.insertChild(kind: .task, text: "", of: task, at: .last)
             env.store.setPlainText(child, text)
             env.store.save()
@@ -443,18 +444,29 @@ private struct TaskDetailPage: View {
         }
     }
 
+    /// Opens the copy, with Undo in the tray to take it back to Trash.
+    private func duplicate() {
+        let copy = env.store.duplicateBlock(task)
+        // A copy that failed comes back as the task itself; the notice says why.
+        guard copy.id != task.id else { return env.haptics.play(.error) }
+        env.store.save()
+        env.haptics.play(.success)
+        let navigator = env.navigator
+        let actions = env.actions
+        env.tray.show("Duplicated “\(task.displayTitle)”", icon: "plus.square.on.square", tone: .accent) {
+            guard actions.trash([copy], label: "Took back the copy of “\(copy.displayTitle)”") else { return }
+            if navigator.topRoute == .taskDetail(copy.id) { navigator.pop() }
+        }
+        navigator.open(.taskDetail(copy.id))
+    }
+
     private var moreMenu: some View {
         Menu {
             if !task.isCompleted {
                 Button("Add subtask", systemImage: "text.badge.plus", action: startSubtask)
             }
             Button("Task history", systemImage: "clock.arrow.circlepath") { sheet = .history }
-            Button("Duplicate", systemImage: "plus.square.on.square") {
-                let copy = env.store.duplicateBlock(task)
-                env.store.save()
-                env.tray.show("Duplicated “\(task.displayTitle)”", icon: "plus.square.on.square", tone: .accent, seconds: 4)
-                env.navigator.open(.taskDetail(copy.id))
-            }
+            Button("Duplicate", systemImage: "plus.square.on.square", action: duplicate)
             if let libraryID = env.libraryID {
                 Button("Copy link", systemImage: "link") {
                     UIPasteboard.general.url = LocalLink(libraryID: libraryID, target: .task(task.id)).url()
