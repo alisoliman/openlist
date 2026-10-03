@@ -26,6 +26,9 @@ struct CaptureScreen: View {
     @State private var voice = VoiceCapture()
     /// Tasks heard, when there were several, which Add saves together.
     @State private var spoken: [SpokenTask] = []
+    /// Why the last Add failed, shown in the sheet: the window's tray is
+    /// under it, out of sight.
+    @State private var saveError: String?
     @FocusState private var isFocused: Bool
 
     init(request: CaptureRequest) {
@@ -75,6 +78,13 @@ struct CaptureScreen: View {
                 CaptureVoiceFailure(failure: failure)
                     .padding(.top, 12)
             }
+            if let saveError {
+                Label(saveError, systemImage: "exclamationmark.circle")
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.danger)
+                    .padding(.top, 12)
+                    .accessibilityIdentifier("capture.saveError")
+            }
             destinations
                 .padding(.top, 16)
         }
@@ -84,6 +94,9 @@ struct CaptureScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self, of: \.size.height) { height = $0 }
         .presentationDetents([.height(height)])
+        // A swipe down, often meant only to lower the keyboard, would throw
+        // away what's typed or heard; Cancel still does, deliberately.
+        .interactiveDismissDisabled(hasDraft)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("New task")
         .accessibilityIdentifier(PhoneRoute.capture(request).screenIdentifier)
@@ -120,6 +133,7 @@ struct CaptureScreen: View {
         case .idle, .failed:
             isFocused = false
             spoken = []
+            saveError = nil
             voice.onHeard = { heard in take(heard) }
             voice.start(vocabulary: SpokenCapture.Vocabulary(lists: library.lists, labels: library.labels), now: { env.now })
             env.haptics.play(.impact)
@@ -130,6 +144,7 @@ struct CaptureScreen: View {
     /// it named, to edit as though typed; several, or one the field wouldn't
     /// read back the same, wait as rows.
     private func take(_ heard: [SpokenTask]) {
+        saveError = nil
         env.haptics.play(.selection)
         dueDate = .automatic
         if heard.count == 1, let task = heard.first,
@@ -164,6 +179,7 @@ struct CaptureScreen: View {
                     .accessibilityElement(children: .combine)
                     OLIconButton("xmark", label: "Leave out “\(task.snapshot.title)”", kind: .bare, iconSize: 15) {
                         spoken.removeAll { $0.id == task.id }
+                        saveError = nil
                     }
                 }
             }
@@ -206,8 +222,16 @@ struct CaptureScreen: View {
         if !result.saved.isEmpty { env.actions.reportCapture(result.saved) }
         guard let error = result.error else { return env.navigator.dismissSheet() }
         spoken = result.unsaved
-        env.tray.show("“\(result.unsaved[0].snapshot.title)” wasn’t added. \(error.localizedDescription)",
-                      icon: "exclamationmark.circle", tone: .danger, seconds: 5)
+        failed("“\(result.unsaved[0].snapshot.title)” wasn’t added. \(error.localizedDescription)")
+    }
+
+    private var hasDraft: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !spoken.isEmpty
+    }
+
+    private func failed(_ message: String) {
+        saveError = message
+        AccessibilityNotification.Announcement(message).post()
         env.haptics.play(.error)
     }
 
@@ -222,6 +246,9 @@ struct CaptureScreen: View {
             TextField("New task", text: Binding(get: { text }, set: { typed in
                 let next = CaptureParse(typed, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)
                 dueDate = dueDate.afterEditing(from: parse, to: next)
+                // Typing clears a failed Add's reason; the field's own tidying
+                // of Return, which runs the Add, doesn't.
+                saveError = nil
                 text = typed
             }), prompt: Text("New task").foregroundStyle(OL.muted), axis: .vertical)
                 .font(OLFont.captureInput)
@@ -380,9 +407,7 @@ struct CaptureScreen: View {
             env.actions.reportCapture(block)
             env.navigator.dismissSheet()
         } catch {
-            env.tray.show("Task wasn’t added. \(error.localizedDescription)", icon: "exclamationmark.circle",
-                          tone: .danger, seconds: 5)
-            env.haptics.play(.error)
+            failed("Task wasn’t added. \(error.localizedDescription)")
         }
     }
 }
@@ -393,9 +418,12 @@ struct CaptureScreen: View {
 private struct CaptureVoicePanel: View {
     let voice: VoiceCapture
     let stop: () -> Void
+    @Environment(\.olStyle) private var style
 
     var body: some View {
         let listener = voice.listener
+        // Under Reduce Motion the mic holds still; the status says it listens.
+        let swell = style.reduceMotion ? 0.5 : listener.level
         VStack(alignment: .leading, spacing: 16) {
             words(listener)
                 .font(OLFont.captureInput)
@@ -405,13 +433,13 @@ private struct CaptureVoicePanel: View {
                 ZStack {
                     Circle()
                         .fill(OL.accentSoft)
-                        .frame(width: 30 + 16 * listener.level, height: 30 + 16 * listener.level)
+                        .frame(width: 30 + 16 * swell, height: 30 + 16 * swell)
                     Image(systemName: "mic.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(OL.accent)
                 }
                 .frame(width: 46, height: 46)
-                .animation(.linear(duration: 0.08), value: listener.level)
+                .animation(style.animation(.linear(duration: 0.08)), value: swell)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     status

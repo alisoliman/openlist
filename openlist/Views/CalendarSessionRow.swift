@@ -5,7 +5,10 @@ struct CalendarSessionRow: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @State private var isEditing = false
-    @State private var minutes = 0.0
+    /// The minutes as typed. A number field on the Mac only takes its text
+    /// when editing ends, so Save would read the value from before it.
+    @State private var typed = ""
+    @FocusState private var fieldFocused: Bool
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
@@ -24,7 +27,10 @@ struct CalendarSessionRow: View {
                     Text("Corrected").font(.system(size: 11, weight: .semibold)).foregroundStyle(style.accent)
                 }
                 if session.endedAt != nil {
-                    Button("Correct time…") { minutes = env.calendar.recordedMinutes(for: session); isEditing = true }
+                    Button("Correct time…") {
+                        typed = env.calendar.recordedMinutes(for: session).formatted(.number.precision(.fractionLength(0)))
+                        isEditing = true
+                    }
                         .buttonStyle(NXPanelButtonStyle(kind: .link, size: .small))
                         .padding(.trailing, -5)
                 }
@@ -36,10 +42,14 @@ struct CalendarSessionRow: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(NX.ink)
                 NXPanelField {
-                    TextField("Minutes", value: $minutes, format: .number)
+                    TextField("Minutes", text: $typed)
+                        .focused($fieldFocused)
+                        .onSubmit(save)
                         .accessibilityLabel("Corrected minutes")
                 }
                 .frame(width: 140)
+                // Once the popover is on screen, or the focus can miss it.
+                .onAppear { DispatchQueue.main.async { fieldFocused = true } }
                 if session.correctedMinutes != nil {
                     Button("Restore original duration") {
                         env.store.correctSession(session, minutes: nil); env.calendar.storeDidChange(); isEditing = false
@@ -50,10 +60,10 @@ struct CalendarSessionRow: View {
                     Button("Cancel") { isEditing = false }
                         .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                     Spacer()
-                    Button("Save") {
-                        env.store.correctSession(session, minutes: max(0, minutes)); env.calendar.storeDidChange(); isEditing = false
-                    }
-                    .keyboardShortcut(.defaultAction)
+                    Button("Save", action: save)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(typedMinutes == nil)
+                        .help(typedMinutes == nil ? "Type the minutes, 0 or more" : "Save the corrected time (↩)")
                     .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
                 }
             }
@@ -61,6 +71,21 @@ struct CalendarSessionRow: View {
             .frame(width: 290)
             .presentationBackground(NX.card)
         }
+    }
+
+    private var typedMinutes: Double? {
+        guard let minutes = try? Double(typed.trimmingCharacters(in: .whitespaces), format: .number),
+              minutes.isFinite, minutes >= 0 else { return nil }
+        return minutes
+    }
+
+    private func save() {
+        // Return can reach both the field and the default button.
+        guard isEditing else { return }
+        guard let minutes = typedMinutes else { NSSound.beep(); return }
+        env.store.correctSession(session, minutes: minutes)
+        env.calendar.storeDidChange()
+        isEditing = false
     }
 
     /// Why the session stopped, in the Work panel's words, or where it is

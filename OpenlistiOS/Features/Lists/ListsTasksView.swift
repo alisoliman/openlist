@@ -54,7 +54,7 @@ struct ListsTasksView: View {
                 }
                 .padding(.top, 40)
             } else {
-                OLCardRows(tasks) { task, separator in
+                OLCardRows(tasks, lazy: true) { task, separator in
                     PhoneTaskRow(task: task, context: .list, subtitle: ListsTaskOverview.source(of: task, in: library),
                                  separator: separator, showsCompletion: false)
                 }

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import UIKit
 import Observation
 
 /// One message in the tray at the bottom of the screen: "Completed “Pay the
@@ -42,6 +43,8 @@ final class TrayCenter {
     @discardableResult
     func show(_ text: String, icon: String? = nil, tone: TrayMessage.Tone = .success, seconds: Double = 5,
               actionTitle: String? = nil, action: (() -> Void)? = nil) -> TrayMessage {
+        // With VoiceOver, reaching the button takes longer than a glance.
+        let seconds = action != nil && UIAccessibility.isVoiceOverRunning ? max(seconds, 20) : seconds
         let message = TrayMessage(text: text, icon: icon, tone: tone, seconds: seconds,
                                   actionTitle: action == nil ? nil : actionTitle ?? "Undo")
         self.message = message

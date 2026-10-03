@@ -144,9 +144,16 @@ struct NXTray: View {
         .padding(.leading, 12)
         .padding(.trailing, 8)
         .overlay(alignment: .bottomLeading) {
-            NXTrayDrain(color: Self.drain(message.tone, accent: style.accent), dwell: style.dwell)
-                .id(message.id)
+            // Held under the pointer, the countdown stops; it starts over,
+            // full, as the pointer leaves.
+            if !workbench.trayHeld {
+                NXTrayDrain(color: Self.drain(message.tone, accent: style.accent), dwell: style.dwell)
+                    .id(message.id)
+            }
         }
+        .onHover { workbench.holdTray($0) }
+        // Replaced by the selection bar under the pointer, it hears no exit.
+        .onDisappear { workbench.holdTray(false) }
         .environment(\.colorScheme, .dark)
         // Outside the dark scheme, so the surface follows the window's appearance.
         .background(NX.inverse)

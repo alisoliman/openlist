@@ -13,6 +13,7 @@ import SwiftUI
 struct ActivityScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @State private var heatmap: ActivityHeatmap?
+    @State private var heatmapCache = ActivityHeatmapCache()
     @State private var changes: [ActivityChange] = []
     /// The picked day; nil for today.
     @State private var day: Date?
@@ -152,7 +153,13 @@ struct ActivityScreen: View {
 
     private func reload() {
         let now = env.now
-        heatmap = try? env.store.activityHeatmap(now: now, calendar: env.settings.calendar, weeks: 12)
+        // Saves that leave the completion history alone keep the heatmap.
+        do {
+            if try heatmapCache.refresh(store: env.store, now: now, calendar: env.settings.calendar) { heatmap = heatmapCache.heatmap }
+        } catch {
+            heatmapCache = ActivityHeatmapCache()
+            heatmap = nil
+        }
         changes = ActivityChange.recent(in: env.store, now: now)
     }
 }

@@ -16,6 +16,19 @@ extension XCUIApplication {
     /// (OpenlistiOS/Fixtures/PhoneFixture.swift).
     static let mockupNow = "2026-09-23T10:40:00"
 
+    /// A day of September 2026 as Today's eyebrow and Activity name it, in
+    /// the device's own order: "Wednesday 23 September", or "Wednesday,
+    /// September 23" (`OLFormat.eyebrowDate`).
+    static func fixtureDay(_ day: Int) -> String {
+        let calendar = Calendar.current
+        let date = calendar.date(from: DateComponents(year: 2026, month: 9, day: day, hour: 12))!
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
+        return formatter.string(from: date)
+    }
+
     /// The app in a fresh review session: its own store, media and defaults,
     /// iCloud off, no system notifications, and the iPhone fixture seeded
     /// (Shared/ReviewSession.swift reads the variable in Debug builds only).

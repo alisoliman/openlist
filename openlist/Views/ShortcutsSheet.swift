@@ -43,7 +43,8 @@ struct ShortcutsSheet: View {
         Group(title: "Rows", shortcuts: [
             Shortcut(keys: "J K  ↑ ↓", action: "Move focus"),
             Shortcut(keys: "⇧J ⇧K  ⇧↑ ⇧↓", action: "Extend the selection"),
-            Shortcut(keys: "⌘ click  ⇧ click", action: "Add or remove a row from the selection"),
+            Shortcut(keys: "⌘ click", action: "Add or remove a row from the selection"),
+            Shortcut(keys: "⇧ click", action: "Select the rows from the focused one to it"),
             Shortcut(keys: "X", action: "Select or deselect the focused row"),
             Shortcut(keys: "⌘A", action: "Select every visible row"),
             Shortcut(keys: "↩", action: "Open details"),

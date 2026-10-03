@@ -1058,9 +1058,27 @@ private struct NXDocumentImage: View {
     @State private var draft = ""
     @FocusState private var focused: Bool
 
+    /// Decoded images by file name, which is unique to its contents: hovering
+    /// redraws the line, and decoding reads the whole file again.
+    private static let images: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        // Roughly a few large photos' decoded pixels; older ones go first.
+        cache.totalCostLimit = 96 << 20
+        return cache
+    }()
+
+    private var image: NSImage? {
+        guard let filename = block.mediaFilename else { return nil }
+        if let image = Self.images.object(forKey: filename as NSString) { return image }
+        guard let image = MediaStore.shared.image(named: filename, data: block.mediaData) else { return nil }
+        let pixels = image.representations.first.map { $0.pixelsWide * $0.pixelsHigh } ?? 0
+        Self.images.setObject(image, forKey: filename as NSString, cost: max(0, pixels) * 4)
+        return image
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let filename = block.mediaFilename, let image = MediaStore.shared.image(named: filename, data: block.mediaData) {
+            if let image {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -1161,7 +1179,9 @@ private struct NXLineText: View {
             }
             let flags = event.modifierFlags.intersection([.command, .shift])
             guard flags.isEmpty else {
-                if block.isTask { workbench.toggleSelection(id) }
+                // As a click beside the text: ⌘ adds or removes the row, ⇧
+                // selects the run from the focused one.
+                if block.isTask { workbench.click(id, command: flags.contains(.command), shift: flags.contains(.shift)) }
                 return true
             }
             return false

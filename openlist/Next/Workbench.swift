@@ -105,7 +105,12 @@ final class Workbench {
 
     // MARK: Tray & log
 
-    var tray: TrayMessage?
+    var tray: TrayMessage? {
+        didSet { if tray == nil { trayHeld = false } }
+    }
+    /// Set while the pointer rests on the tray, which keeps it up, Undo
+    /// and all, until the pointer leaves.
+    private(set) var trayHeld = false
     private(set) var log: [ChangeEntry] = []
     /// When this session began. Changes counts saved history from then on as
     /// this session's.
@@ -512,6 +517,14 @@ final class Workbench {
     /// A plain click: focus, and follow along if the inspector is open.
     func click(_ id: UUID, command: Bool, shift: Bool) {
         if closing[id] != nil { cancelClosing([id]); return }
+        // ⇧ selects the run from the focused row to this one, as a list on
+        // the Mac does, and the focus stays where the run began.
+        if shift, !command, let anchor = focusID.flatMap({ visibleIDs.firstIndex(of: $0) }),
+           let target = visibleIDs.firstIndex(of: id) {
+            navigator.releaseRevealSelection()
+            selection.formUnion(visibleIDs[min(anchor, target)...max(anchor, target)])
+            return
+        }
         if command || shift {
             toggleSelection(id)
             return
@@ -529,10 +542,24 @@ final class Workbench {
         let message = TrayMessage(text: text, icon: icon, tone: tone, undoable: undoable, destination: destination)
         withAnimation(style.spring(320)) { tray = message }
         trayTask?.cancel()
-        let delay = style.dwell + 0.3
+        guard !trayHeld else { return }
+        dismissTray(message.id, after: style.dwell + 0.3)
+    }
+
+    /// The pointer came onto the tray or left it. On it, the tray stays;
+    /// leaving starts its countdown over, so a reach for Undo late in the
+    /// countdown never finds it gone.
+    func holdTray(_ hovering: Bool) {
+        guard let message = tray, hovering != trayHeld else { return }
+        trayHeld = hovering
+        trayTask?.cancel()
+        if !hovering { dismissTray(message.id, after: style.dwell + 0.3) }
+    }
+
+    private func dismissTray(_ id: TrayMessage.ID, after delay: Double) {
         trayTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, let self, self.tray?.id == message.id else { return }
+            guard !Task.isCancelled, let self, self.tray?.id == id else { return }
             withAnimation(self.style.ease(220)) { self.tray = nil }
         }
     }

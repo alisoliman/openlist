@@ -583,6 +583,7 @@ struct NXSegmented<Value: Hashable>: View {
 
 /// Breathing dot used by the notch and the "Planned now" banner.
 struct NXBreathingDot: View {
+    @Environment(\.nextStyle) private var style
     var color: Color
     var active = true
     var size: CGFloat = 7
@@ -595,11 +596,15 @@ struct NXBreathingDot: View {
             .scaleEffect(active && dim ? 0.8 : 1)
             .onAppear { restart() }
             .onChange(of: active) { _, _ in restart() }
+            .onChange(of: style.slides) { _, _ in restart() }
     }
 
     private func restart() {
-        dim = false
-        guard active else { return }
+        // Stops a breath already running, which would otherwise repeat on.
+        withTransaction(Transaction(animation: nil)) { dim = false }
+        // Reduce Motion holds it still: a pulse that never ends is the kind
+        // of motion it asks to stop.
+        guard active, style.slides else { return }
         withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { dim = true }
     }
 }

@@ -66,14 +66,22 @@ struct TodayAgenda {
             calendar.dateComponents([.day], from: today, to: calendar.startOfDay(for: date)).day ?? 0
         }
         func offset(_ task: Block) -> Int? { task.dueDate.map(dayOffset) }
-        let visible = tasks.filter { !$0.isCompleted || closing.contains($0.id) }
-        overdue = visible.filter { (offset($0) ?? 0) < 0 }
-        due = visible.filter { offset($0) == 0 }
-        planned = visible.filter { isPlanned($0) && (offset($0) ?? 1) > 0 }
-        starred = visible.filter { $0.isStarred && (offset($0) ?? 1) > 0 && !isPlanned($0) }
-        doneToday = tasks
-            .filter { $0.isCompleted && $0.completedAt.map { dayOffset($0) == 0 } == true }
-            .sorted(by: Block.byCompletionDate)
+        // One pass, each task's day worked out once: this runs over every
+        // task on each of Today's redraws and clock ticks.
+        for task in tasks {
+            if task.isCompleted {
+                if task.completedAt.map({ dayOffset($0) == 0 }) == true { doneToday.append(task) }
+                // Only a task in its completion dwell keeps its place.
+                guard closing.contains(task.id) else { continue }
+            }
+            let day = offset(task)
+            if let day, day < 0 { overdue.append(task) }
+            if day == 0 { due.append(task) }
+            if (day ?? 1) > 0 {
+                if isPlanned(task) { planned.append(task) } else if task.isStarred { starred.append(task) }
+            }
+        }
+        doneToday.sort(by: Block.byCompletionDate)
         guard order == .schedule else {
             scheduled = overdue + due + planned
             return

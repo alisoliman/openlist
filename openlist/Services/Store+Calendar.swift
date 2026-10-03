@@ -101,6 +101,13 @@ extension Store {
         return ((try? context.fetch(descriptor)) ?? []).filter { !$0.isDeleted }
     }
 
+    func workSession(id: UUID) -> WorkSession? {
+        var descriptor = FetchDescriptor<WorkSession>(predicate: #Predicate { $0.id == id },
+                                                      sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        descriptor.fetchLimit = 1
+        return ((try? context.fetch(descriptor)) ?? []).first { !$0.isDeleted }
+    }
+
     func completionRecords(taskID: UUID? = nil) -> [CompletionRecord] {
         var descriptor = FetchDescriptor<CompletionRecord>(sortBy: [SortDescriptor(\.completedAt, order: .reverse)])
         if let taskID { descriptor.predicate = #Predicate { $0.taskID == taskID } }
@@ -308,9 +315,11 @@ extension Store {
 
     /// Completion history is display-only. It must never be passed back to the
     /// scheduler as availability, estimates, or fixed placements.
-    func completedCalendarBlocks() -> [PlannedBlock] {
+    func completedCalendarBlocks(records: [CompletionRecord]? = nil) -> [PlannedBlock] {
         let sessions = Dictionary(grouping: workSessions().filter { $0.endedAt != nil }, by: \.occurrenceID)
-        return completionRecords().flatMap { record -> [PlannedBlock] in
+        return (records ?? completionRecords()).flatMap { record -> [PlannedBlock] in
+            // Decoded once: each read of `plannedIntervals` decodes its JSON again.
+            let planned = record.plannedIntervals
             let actual = (sessions[record.occurrenceID] ?? []).filter { $0.taskID == record.taskID }.sorted { $0.startedAt < $1.startedAt }
             let tracked = !actual.isEmpty
             let intervals: [(span: CompletionCalendarInterval, keepsSlot: Bool)]
@@ -324,7 +333,7 @@ extension Store {
                 // Work done in a planned slot keeps the slot, as its running block
                 // did, stretched to any work past either end. Work elsewhere shows
                 // where it happened, and a slot nobody worked in shows nothing.
-                for slot in record.plannedIntervals {
+                for slot in planned {
                     let inside = spans.filter { $0.start < slot.end && $0.end > slot.start }
                     guard let start = inside.map(\.start).min(), let end = inside.map(\.end).max() else { continue }
                     spans.removeAll { $0.start < slot.end && $0.end > slot.start }
@@ -332,10 +341,10 @@ extension Store {
                 }
                 // Only what was merged into a slot still meets one.
                 intervals = spans.sorted { $0.start < $1.start }.map { span in
-                    (span, record.plannedIntervals.contains { $0.start < span.end && $0.end > span.start })
+                    (span, planned.contains { $0.start < span.end && $0.end > span.start })
                 }
-            } else if !record.plannedIntervals.isEmpty {
-                intervals = record.plannedIntervals.map { ($0, true) }
+            } else if !planned.isEmpty {
+                intervals = planned.map { ($0, true) }
             } else {
                 intervals = [(CompletionCalendarInterval(start: record.completedAt, end: record.completedAt), false)]
             }

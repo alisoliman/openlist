@@ -15,6 +15,8 @@ struct ReminderPicker: View {
     @State private var picksDay = false
     /// A time still being typed as Custom…, which Set reminder sets first.
     @State private var typedTime: NXPendingCustomValue?
+    /// Set reminder was asked for a time that has passed, which would never ring.
+    @State private var refusedPast = false
 
     private var calendar: Calendar { env.settings.calendar }
 
@@ -87,12 +89,25 @@ struct ReminderPicker: View {
                             guard typedTime.commit() else { NSSound.beep(); return }
                             self.typedTime = nil
                         }
+                        guard customDate > .now else {
+                            NSSound.beep()
+                            refusedPast = true
+                            return
+                        }
                         env.workbench.setReminder(block.id, at: customDate)
                     }
                     .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
+                    .disabled(typedTime == nil && customDate <= .now)
+                    .help(customDate <= .now ? "Choose a time that hasn’t passed" : "Remind me at this time")
+                }
+                if refusedPast || (typedTime == nil && customDate <= .now) {
+                    Text("That time has passed. Choose a later one.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(NX.redText)
+                        .accessibilityAddTraits(.isStaticText)
                 }
                 if picksDay {
-                    CalendarMonthPicker(selection: customDate, calendar: calendar) { day in
+                    CalendarMonthPicker(selection: customDate, calendar: calendar, earliest: .now) { day in
                         customDate = CalendarMonthGrid.date(day, atMinute: CalendarMonthGrid.minute(of: customDate, calendar: calendar),
                                                             calendar: calendar)
                         withAnimation(style.ease(180)) { picksDay = false }
@@ -104,15 +119,26 @@ struct ReminderPicker: View {
             TaskReminderStatus(block: block)
         }
         .onChange(of: block.reminderAt) { _, date in
-            customDate = date ?? offsetDate(ReminderOffset()) ?? .now
+            customDate = Self.upcoming(date ?? offsetDate(ReminderOffset()), calendar: calendar)
         }
+        .onChange(of: customDate) { refusedPast = false }
         .onAppear {
-            customDate = block.reminderAt ?? offsetDate(ReminderOffset()) ?? .now
+            customDate = Self.upcoming(block.reminderAt ?? offsetDate(ReminderOffset()), calendar: calendar)
         }
         .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
         // "Remind me at" is a draft only Set reminder sets, so the Schedule
         // popover's Done closes over a time typed here as over a day picked.
         .transformPreference(NXPendingCustomValueKey.self) { $0 = nil }
+    }
+
+    /// `date` while it's still ahead; otherwise, as for an overdue task or
+    /// one with no date, the next quarter hour, so Set reminder starts from a
+    /// time that can ring.
+    static func upcoming(_ date: Date?, now: Date = .now, calendar: Calendar) -> Date {
+        if let date, date > now { return date }
+        let start = calendar.dateInterval(of: .hour, for: now)?.start ?? now
+        let quarters = Int(now.timeIntervalSince(start) / 900) + 1
+        return start.addingTimeInterval(Double(quarters) * 900)
     }
 
     /// The reminder an offset from the due date would set, at 9:00 on a date
@@ -136,14 +162,19 @@ struct ReminderPicker: View {
 
     private func offsetPill(_ title: String, _ offset: ReminderOffset) -> some View {
         let isOn = isCurrent(offset)
+        // An offset that has already passed, as on an overdue task, would never ring.
+        let passed = !isOn && (offsetDate(offset).map { $0 <= .now } ?? false)
         return NXInspectorPill(isOn: isOn) {
             // Choosing the current time again saves nothing, as in Repeat;
             // at the due time it would pin a reminder of its own there.
-            guard !isCurrent(offset), let date = offsetDate(offset) else { return }
+            guard !isCurrent(offset), let date = offsetDate(offset), date > .now else { return }
             env.workbench.setReminder(block.id, at: date)
         } label: {
             Text(title)
         }
+        .disabled(passed)
+        .opacity(passed ? 0.45 : 1)
+        .help(passed ? "This time has passed" : "Remind me \(title.lowercased())")
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }

@@ -361,8 +361,21 @@ struct NXStrikeText: View {
 
     /// The width `text` needs to sit on one line at `size`.
     static func lineWidth(_ text: String, size: CGFloat = 13.8) -> CGFloat {
-        ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width)
+        // Each row asks on every redraw, and measuring lays the text out.
+        let key = LineWidthKey(text: text, size: size)
+        if let width = lineWidths[key] { return width }
+        if lineWidths.count >= 4096 { lineWidths.removeAll(keepingCapacity: true) }
+        let width = ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width)
+        lineWidths[key] = width
+        return width
     }
+
+    private struct LineWidthKey: Hashable {
+        var text: String
+        var size: CGFloat
+    }
+
+    private static var lineWidths: [LineWidthKey: CGFloat] = [:]
 }
 
 /// The round checkbox with its pop, tick and completion ring.
@@ -627,7 +640,9 @@ struct NXGroupView: View {
         VStack(alignment: .leading, spacing: 0) {
             if group.showHead { head(open: open) }
             if open {
-                VStack(alignment: .leading, spacing: 1) {
+                // Lazy, as the list document is: Tasks can hold thousands of
+                // rows, and only the ones on screen need building.
+                LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(group.rows, id: \.id) { task in
                         // Rows come and go at once, as the design's, however the
                         // change was animated: only a fresh row plays its own rowIn.

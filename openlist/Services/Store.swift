@@ -482,6 +482,8 @@ final class Store {
         pendingCompletionCycleIDs.removeAll()
         pendingReopenedCycleIDs.removeAll()
         persistenceError = nil
+        // Even a save with nothing to write: the phone's sync import and its
+        // save on the way to the background count on this pass.
         refreshAllReminders()
         if announcing { onDidSave?() }
         publishPendingCompletionUndo()

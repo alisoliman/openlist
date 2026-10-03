@@ -67,7 +67,7 @@ final class CalendarCoordinator {
     }
     var activeSession: WorkSession? {
         guard let activeSessionID else { return nil }
-        return store.workSessions().first { $0.id == activeSessionID }
+        return store.workSession(id: activeSessionID)
     }
     private(set) var resumeTaskID: UUID?
     private(set) var resumeOccurrenceID: UUID?
@@ -125,7 +125,7 @@ final class CalendarCoordinator {
     private var busySignature: [String] = []
     private var isRefreshingCalendars = false
     private var pendingCalendarChange = false
-    private var storeSchedulingSignature: [String] = []
+    private var storeSchedulingSignature: Int?
     private var missedPlacementIDs: Set<UUID> = []
     private var calendar: Calendar { .current }
 
@@ -231,7 +231,12 @@ final class CalendarCoordinator {
     }
 
     func trackedMinutes(for task: Block, now: Date = .now) -> Double {
-        store.workSessions(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+        trackedMinutes(for: task, in: store.workSessions(taskID: task.id), now: now)
+    }
+
+    /// `sessions` may hold other tasks' work too; only this occurrence's counts.
+    private func trackedMinutes(for task: Block, in sessions: [WorkSession], now: Date) -> Double {
+        sessions.filter { $0.taskID == task.id && $0.occurrenceID == task.occurrenceID }
             .reduce(0) { $0 + recordedMinutes(for: $1, now: now) }
     }
 
@@ -241,12 +246,16 @@ final class CalendarCoordinator {
     }
 
     func remainingMinutes(for task: Block, now: Date = .now) -> Double {
+        remainingMinutes(for: task, now: now, tracked: nil)
+    }
+
+    private func remainingMinutes(for task: Block, now: Date, tracked: Double?) -> Double {
         if let activeSession, activeSession.taskID == task.id, activeSession.occurrenceID == task.occurrenceID {
             return max(0, targetEnd(for: activeSession, task: task, now: now).timeIntervalSince(now) / 60)
         }
         // Finishing the estimate does not finish the task. Keep a small runway
         // until the user explicitly completes it or corrects the estimate.
-        let remaining = estimatedMinutes(for: task) - trackedMinutes(for: task, now: now)
+        let remaining = estimatedMinutes(for: task) - (tracked ?? trackedMinutes(for: task, now: now))
         return remaining > 0 ? remaining : 15
     }
 
@@ -289,13 +298,24 @@ final class CalendarCoordinator {
         missedPlacementIDs.subtract(store.placements().filter { $0.start > now }.map(\.id))
         let lists = store.allLists()
         let categories = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, AvailabilityCategory(rawValue: $0.availabilityCategoryRaw) ?? .work) })
+        // Resolved once per list rather than once per task: each lookup walks
+        // the list's merges and ancestors with fetches of its own.
+        var owners: [UUID: TaskList?] = [:]
+        func owner(_ id: UUID) -> TaskList? {
+            if let known = owners[id] { return known }
+            let list = store.list(id: id)
+            owners[id] = list
+            return list
+        }
         let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted }))) ?? [])
-            .filter { task in task.listID.flatMap { categories[store.resolvedListID($0) ?? $0] } != nil }
+            .filter { task in task.listID.flatMap { categories[owner($0)?.id ?? $0] } != nil }
         let saved = store.placements()
         // A missed pin isn't passed on, but it still keeps its task in the plan.
         let pinned = Dictionary(grouping: saved.filter(\.isPinned), by: \.taskID)
+        let sessions = Dictionary(grouping: store.workSessions(), by: \.taskID)
         let inputs = tasks.map { task in
-            scheduleInput(for: task, now: now, isPlaced: pinned[task.id]?.contains { $0.occurrenceID == task.occurrenceID } == true)
+            scheduleInput(for: task, now: now, isPlaced: pinned[task.id]?.contains { $0.occurrenceID == task.occurrenceID } == true,
+                          owner: task.listID.map(owner), tracked: trackedMinutes(for: task, in: sessions[task.id] ?? [], now: now))
         }
         let placements = saved.filter { !missedPlacementIDs.contains($0.id) }.map { PlacementInput(id: $0.id, taskID: $0.taskID, occurrenceID: $0.occurrenceID,
                                                                  start: $0.start, end: $0.end, isPinned: $0.isPinned) }
@@ -876,12 +896,16 @@ final class CalendarCoordinator {
         overrunNudge = nil
     }
 
-    private func scheduleInput(for task: Block, now: Date, isPlaced: Bool) -> ScheduleTask {
+    /// `owner` and `tracked` let a whole replan pass in what it has already
+    /// looked up; left out, they are read for this task alone.
+    private func scheduleInput(for task: Block, now: Date, isPlaced: Bool,
+                               owner: TaskList?? = nil, tracked: Double? = nil) -> ScheduleTask {
         let due = task.dueDate.map { due in task.includesTime ? due : calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: due))! }
         let selected = task.selectedForDay.map { calendar.startOfDay(for: $0) <= calendar.startOfDay(for: now) } ?? false
-        let category = AvailabilityCategory(rawValue: store.list(id: task.listID)?.availabilityCategoryRaw ?? "work") ?? .work
+        let list = owner ?? store.list(id: task.listID)
+        let category = AvailabilityCategory(rawValue: list?.availabilityCategoryRaw ?? "work") ?? .work
         return ScheduleTask(taskID: task.id, occurrenceID: task.occurrenceID, title: task.displayTitle,
-            category: category, remainingMinutes: remainingMinutes(for: task, now: now), dueDate: due,
+            category: category, remainingMinutes: remainingMinutes(for: task, now: now, tracked: tracked), dueDate: due,
             selectedForToday: selected, isPlaced: isPlaced, earliestStart: task.deferredUntil,
             priority: task.priorityRaw, keepTogether: task.keepsSessionsTogether)
     }
@@ -904,9 +928,19 @@ final class CalendarCoordinator {
     }
 
     private func refreshVisibleBlocks(now: Date) {
-        completedBlocks = store.completedCalendarBlocks()
+        let records = store.completionRecords()
+        completedBlocks = store.completedCalendarBlocks(records: records)
+        // A repeating task's history holds many blocks for one task; look each
+        // task up once.
+        var tasks: [UUID: Block?] = [:]
+        func task(_ id: UUID) -> Block? {
+            if let known = tasks[id] { return known }
+            let block = store.block(id: id)
+            tasks[id] = block
+            return block
+        }
         var blocks = store.placements().compactMap { placement -> PlannedBlock? in
-            guard placement.end > placement.start, let task = store.block(id: placement.taskID),
+            guard placement.end > placement.start, let task = task(placement.taskID),
                   task.occurrenceID == placement.occurrenceID, validWorkTask(WorkTaskReference(task)) != nil else { return nil }
             return PlannedBlock(id: "\(placement.occurrenceID.uuidString)-\(placement.id.uuidString)", taskID: task.id,
                                 occurrenceID: task.occurrenceID, start: placement.start, end: placement.end,
@@ -933,11 +967,11 @@ final class CalendarCoordinator {
             }
         }
         pausedBlockID = paused
-        let recurring = Set(store.completionRecords().filter(\.wasRecurring).map(\.id))
+        let recurring = Set(records.filter(\.wasRecurring).map(\.id))
         blocks += completedBlocks.filter { block in
             // A tick with neither a slot nor recorded work leaves nothing to draw.
             guard block.isTimeTracked || block.end > block.start,
-                  let task = store.block(id: block.taskID), task.trashID == nil else { return false }
+                  let task = task(block.taskID), task.trashID == nil else { return false }
             // Reopening a task takes its done block away; a repeat rolling on doesn't.
             return block.completionID.map(recurring.contains) == true
                 || (task.isCompleted && task.occurrenceID == block.occurrenceID)
@@ -1075,23 +1109,47 @@ final class CalendarCoordinator {
 
     /// Store saves also happen for notes, titles and editor selections. Those
     /// changes must not move an otherwise unchanged schedule toward the clock.
-    private func schedulingSignature() -> [String] {
-        func timestamp(_ date: Date?) -> String { date.map { String($0.timeIntervalSinceReferenceDate) } ?? "-" }
+    ///
+    /// Each record hashes on its own and the hashes add up, so the result
+    /// doesn't depend on fetch order and needs no sorting; this runs on
+    /// every save.
+    private func schedulingSignature() -> Int {
+        var signature = 0
+        func add(_ fields: (inout Hasher) -> Void) {
+            var hasher = Hasher()
+            fields(&hasher)
+            signature &+= hasher.finalize()
+        }
         let tasks = (try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" }))) ?? []
-        var parts = tasks.map {
-            [$0.id.uuidString, $0.occurrenceID.uuidString, $0.listID?.uuidString ?? "-", String($0.isCompleted),
-             String($0.schedulingEstimateMinutes), timestamp($0.dueDate), String($0.includesTime), timestamp($0.selectedForDay),
-             timestamp($0.deferredUntil), String($0.priorityRaw), String($0.keepsSessionsTogether), String($0.tracksAwayFromMac)].joined(separator: "|")
+        for task in tasks {
+            add {
+                $0.combine("task"); $0.combine(task.id); $0.combine(task.occurrenceID); $0.combine(task.listID)
+                $0.combine(task.isCompleted); $0.combine(task.schedulingEstimateMinutes); $0.combine(task.dueDate)
+                $0.combine(task.includesTime); $0.combine(task.selectedForDay); $0.combine(task.deferredUntil)
+                $0.combine(task.priorityRaw); $0.combine(task.keepsSessionsTogether); $0.combine(task.tracksAwayFromMac)
+            }
         }
-        parts += store.allLists(includeArchived: true).map {
-            "list|\($0.id)|\($0.availabilityCategoryRaw)|\($0.isEffectivelyArchived)|\($0.parentListID?.uuidString ?? "-")|\($0.mergedIntoID?.uuidString ?? "-")"
+        for list in store.allLists(includeArchived: true) {
+            add {
+                $0.combine("list"); $0.combine(list.id); $0.combine(list.availabilityCategoryRaw)
+                $0.combine(list.isEffectivelyArchived); $0.combine(list.parentListID); $0.combine(list.mergedIntoID)
+            }
         }
-        parts += store.placements().map { "placement|\($0.id)|\($0.taskID)|\($0.occurrenceID)|\(timestamp($0.start))|\(timestamp($0.end))|\($0.isPinned)" }
+        for placement in store.placements() {
+            add {
+                $0.combine("placement"); $0.combine(placement.id); $0.combine(placement.taskID); $0.combine(placement.occurrenceID)
+                $0.combine(placement.start); $0.combine(placement.end); $0.combine(placement.isPinned)
+            }
+        }
         let liveOccurrences = Set(tasks.filter { !$0.isCompleted }.map(\.occurrenceID))
-        parts += store.workSessions().filter { liveOccurrences.contains($0.occurrenceID) }.map {
-            "session|\($0.id)|\($0.taskID)|\($0.occurrenceID)|\(timestamp($0.startedAt))|\(timestamp($0.endedAt))|\($0.correctedMinutes.map(String.init(describing:)) ?? "-")|\($0.id == activeSessionID ? "active" : timestamp($0.lastHeartbeatAt))"
+        for session in store.workSessions() where liveOccurrences.contains(session.occurrenceID) {
+            add {
+                $0.combine("session"); $0.combine(session.id); $0.combine(session.taskID); $0.combine(session.occurrenceID)
+                $0.combine(session.startedAt); $0.combine(session.endedAt); $0.combine(session.correctedMinutes)
+                if session.id == activeSessionID { $0.combine("active") } else { $0.combine(session.lastHeartbeatAt) }
+            }
         }
-        return parts.sorted()
+        return signature
     }
 
     private func busyTimesChanged() -> Bool {

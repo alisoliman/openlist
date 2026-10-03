@@ -263,14 +263,20 @@ struct OLTrayView: View {
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let title = message.actionTitle {
-                Button(title, action: action)
-                    .font(OLFont.buttonSmall)
-                    .foregroundStyle(OL.canvas)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 36)
-                    .background(scheme == .dark ? Color.black.opacity(0.08) : Color.white.opacity(0.14), in: .capsule)
-                    .buttonStyle(OLPressStyle())
-                    .accessibilityIdentifier("tray.action")
+                Button(action: action) {
+                    Text(title)
+                        .font(OLFont.buttonSmall)
+                        .foregroundStyle(OL.canvas)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(scheme == .dark ? Color.black.opacity(0.08) : Color.white.opacity(0.14), in: .capsule)
+                        // A 44 pt target around the 36 pt capsule.
+                        .padding(.vertical, 4)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(OLPressStyle())
+                .padding(.vertical, -4)
+                .accessibilityIdentifier("tray.action")
             }
         }
         .padding(.leading, 16)

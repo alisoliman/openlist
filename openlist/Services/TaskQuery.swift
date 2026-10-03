@@ -178,6 +178,7 @@ struct TaskQuery {
             }
         }
         func textMatches(_ task: Block) -> Bool {
+            guard !filter.text.isEmpty else { return true }
             guard searchesNotes else {
                 let title = task.displayTitle.lowercased()
                 return filter.text.allSatisfy { title.contains($0) }
@@ -188,11 +189,15 @@ struct TaskQuery {
             }
         }
         let includesDone = !readsStatus || filter.status.contains("done")
+        // Runs over every task on each keystroke: the day is worked out only
+        // when a due word asks for it, and the title read only for words.
         return pool.filter { task in
-            let offset = task.dueDate.map { calendar.dateComponents([.day], from: today, to: calendar.startOfDay(for: $0)).day ?? 0 }
+            func offset() -> Int? {
+                task.dueDate.map { calendar.dateComponents([.day], from: today, to: calendar.startOfDay(for: $0)).day ?? 0 }
+            }
             return (includesDone || !task.isCompleted)
                 && (filter.lists.isEmpty || task.listID.map(filter.lists.contains) == true)
-                && (filter.due.isEmpty || filter.due.contains { dueMatches($0, offset) })
+                && (filter.due.isEmpty || { let offset = offset(); return filter.due.contains { dueMatches($0, offset) } }())
                 && (filter.labels.isEmpty || filter.labels.contains { task.labelIDs.contains($0) })
                 && filter.flags.allSatisfy { flag in
                     switch flag {
