@@ -261,6 +261,9 @@ struct TrayHost: View {
                     .transition(style.reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
+        // The outgoing toast crosses the dock while animating away. Once
+        // dismissed it must not swallow a tap intended for the tab below.
+        .allowsHitTesting(tray.message != nil)
         .animation(style.fading(.snappy(duration: 0.3)), value: tray.message?.id)
     }
 }

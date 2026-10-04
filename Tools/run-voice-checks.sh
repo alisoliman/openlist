@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -default-isolation MainActor \
+xcrun swiftc -swift-version 6 -default-isolation MainActor -DDEBUG \
   -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault \
   -enable-upcoming-feature MemberImportVisibility -o "$OUT/voice-checks" \
   openlist/Model/*.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/CompactText.swift openlist/Next/NextEditorTypography.swift \
@@ -17,6 +17,10 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor \
   openlist/Services/MediaStore.swift openlist/Services/EditorUndo.swift \
   openlist/Services/DateParser.swift openlist/Services/RegexCache.swift openlist/Services/RecurrenceEngine.swift \
   openlist/Services/AppSettings.swift openlist/Services/CaptureDraft.swift openlist/Services/NextLibraryCore.swift \
-  openlist/Services/SpokenCapture.swift openlist/Services/VoiceTaskInterpreter.swift openlist/Next/NextFormat.swift \
-  Tools/EditorChecks/Support.swift Tools/VoiceChecks/main.swift
+  openlist/Services/SpokenCapture.swift openlist/Services/VoiceTaskInterpreter.swift openlist/Services/VoiceListener.swift \
+  openlist/Services/VoiceCapture.swift openlist/Next/NextFormat.swift \
+  openlist/Services/QuickCaptureRequest.swift openlist/Services/QuickCaptureHotKey.swift Tools/VoiceChecks/ShortcutChecks.swift \
+  OpenlistiOS/Design/CapturePress.swift Tools/VoiceChecks/GestureChecks.swift \
+  OpenlistiOS/App/PhoneRoute.swift OpenlistiOS/App/PhoneNavigator.swift Tools/VoiceChecks/PhoneEntryChecks.swift \
+  Tools/EditorChecks/Support.swift Tools/VoiceChecks/CompletionChecks.swift Tools/VoiceChecks/SessionChecks.swift Tools/VoiceChecks/AdjudicationChecks.swift Tools/VoiceChecks/main.swift
 "$OUT/voice-checks"

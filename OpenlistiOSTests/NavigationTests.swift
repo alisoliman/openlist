@@ -13,6 +13,33 @@ import UIKit
 /// presents it.
 @MainActor
 struct NavigationTests {
+    @Test func explicitVoiceReachesAnExistingTypedCapture() {
+        let navigator = PhoneNavigator()
+        let original = CaptureRequest(listID: UUID(), dueToday: true)
+        navigator.open(.capture(original))
+        navigator.open(.capture(CaptureRequest()))
+        #expect(navigator.sheet == .capture(original))
+        #expect(navigator.captureListenRequestID == nil)
+        navigator.open(.capture(CaptureRequest(listens: true)))
+        #expect(navigator.sheet == .capture(original))
+        #expect(navigator.captureListenRequestID == original.id)
+        navigator.captureListenRequestID = nil
+        navigator.open(.capture(CaptureRequest(listens: true)))
+        #expect(navigator.captureListenRequestID == original.id)
+        navigator.dismissSheet()
+        #expect(navigator.captureListenRequestID == nil)
+    }
+
+    @Test func voiceLinkKeepsThePresentedDraftAndRequestsListening() throws {
+        let phone = try TestPhone()
+        phone.env.links.windowReady(true)
+        let original = CaptureRequest(listID: UUID(), dueToday: true)
+        phone.navigator.open(.capture(original))
+        #expect(phone.env.links.receive(WidgetLink.captureVoice.url))
+        #expect(phone.navigator.sheet == .capture(original))
+        #expect(phone.navigator.captureListenRequestID == original.id)
+    }
+
     static let id = UUID()
     static let allRoutes: [PhoneRoute] = [
         .today, .timeline, .activity, .taskDetail(id), .inbox, .triage, .lists, .list(id), .find(""),
@@ -44,6 +71,19 @@ struct NavigationTests {
         #expect(navigator.screen(below: .taskDetail(Self.id)) == .work)
         navigator.select(.work)
         #expect(navigator.workPath.isEmpty)
+    }
+
+    @Test func anotherCaptureRequestKeepsTheCurrentDraft() {
+        let navigator = PhoneNavigator()
+        let request = CaptureRequest(listID: Self.id, dueToday: true)
+        navigator.open(.capture(request))
+        navigator.open(.capture(CaptureRequest(listens: true)))
+        #expect(navigator.sheet == .capture(request))
+        navigator.dismissSheet()
+        let voice = CaptureRequest(listens: true)
+        navigator.open(.capture(voice))
+        navigator.open(.capture(CaptureRequest()))
+        #expect(navigator.sheet == .capture(voice))
     }
 
     @Test func timelineReplacesTodayInPlace() {

@@ -13,7 +13,7 @@ while IFS= read -r file; do SOURCES+=("$file"); done < <(find openlist Shared -n
     ! -path Shared/ReviewSession.swift ! -path Shared/AppGroup.swift | sort)
 # The app target's own concurrency settings. The app's build reports its
 # warnings; this one would only repeat them.
-xcrun swiftc -swift-version 6 -default-isolation MainActor -suppress-warnings \
+xcrun swiftc -swift-version 6 -default-isolation MainActor -suppress-warnings -DDEBUG \
     -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault \
     -enable-upcoming-feature MemberImportVisibility -target arm64-apple-macos27.0 \
     -o "$OUT/widget-workbench-checks" "${SOURCES[@]}" Tools/WidgetWorkbenchChecks/*.swift

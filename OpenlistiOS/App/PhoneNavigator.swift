@@ -29,7 +29,13 @@ final class PhoneNavigator {
     @ObservationIgnored private var switchedFrom: TodayMode?
     /// The day the timeline shows; nil for today.
     var timelineDay: Date?
-    var sheet: PhoneSheet?
+    var sheet: PhoneSheet? {
+        didSet {
+            if case let .capture(request) = sheet, request.id == captureListenRequestID { return }
+            captureListenRequestID = nil
+        }
+    }
+    var captureListenRequestID: UUID?
     /// The Settings sheet's own stack: Activity and Trash push inside it.
     var settingsPath: [PhoneRoute] = []
     var cover: PhoneCover?
@@ -284,6 +290,10 @@ final class PhoneNavigator {
     }
 
     private func present(sheet newSheet: PhoneSheet) {
+        if case let .capture(current) = sheet, case let .capture(incoming) = newSheet {
+            if incoming.listens { captureListenRequestID = current.id }
+            return
+        }
         guard sheet != newSheet || pendingModal != nil else { return }
         presentOnceClosed { $0.sheet = newSheet }
     }

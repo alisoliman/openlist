@@ -214,13 +214,24 @@ do {
     defer { defaults.removePersistentDomain(forName: suite) }
     let draft = Draft(store: store, settings: AppSettings(defaults: defaults))
 
-    // One task goes in the field, aimed at its list, to edit as typed.
     draft.captureText = "half typed"
-    draft.take([heard("Add pay the ryokan deposit to my Kyoto trip list by Friday, tag it travel.")], now: now)
+    let deposit = heard("Add pay the ryokan deposit to my Kyoto trip list by Friday, tag it travel.")
+    draft.take([deposit], now: now)
+    check(draft.captureText == "half typed" && draft.captureListID == inbox.id && draft.spokenTasks.map(\.id) == [deposit.id],
+          "Starting voice over a typed draft preserves its text and destination for review")
+    let more = heard("Buy stamps.")
+    draft.take([more], now: now)
+    check(draft.captureText == "half typed" && draft.spokenTasks.map(\.id) == [deposit.id, more.id],
+          "Another voice capture never discards tasks already awaiting review")
+
+    draft.captureText = ""
+    draft.spokenTasks = []
+    draft.take([deposit], now: now)
     check(draft.spokenTasks.isEmpty && draft.captureText == "Pay the ryokan deposit Friday #travel" && draft.captureListID == kyoto.id,
           "A single task heard is the capture's text, aimed at the list it named")
 
     // Several wait as rows and file together.
+    draft.captureText = ""
     draft.captureListID = inbox.id
     let said = [heard("Pay the ryokan deposit on my Kyoto trip list, it's urgent."), heard("Buy oat milk tomorrow."),
                 heard("Send the invoice on the work list, takes 20 minutes.")]
@@ -259,5 +270,12 @@ do {
     check(notice.failed && notice.text.hasPrefix("“Water the ferns” wasn’t added.") && draft.spokenTasks.count == 2,
           "Tasks that can't be added stay, and the card says why")
 }
+
+await runVoiceAdjudicationChecks()
+try runVoiceCompletionChecks()
+try await runVoiceSessionChecks()
+runCaptureGestureChecks()
+runPhoneCaptureEntryChecks()
+runVoiceShortcutChecks()
 
 print("Voice checks passed (\(checks) checks)")

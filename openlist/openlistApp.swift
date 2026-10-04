@@ -55,7 +55,7 @@ struct openlistApp: App {
                 guard let environment else { return }
                 environment.bootstrap()
                 environment.libraryMaintenance?.startDailySnapshots(settings: environment.settings)
-                QuickCapturePanel.shared.installHotKey(enabled: environment.settings.quickCaptureHotKeyEnabled)
+                QuickCapturePanel.shared.installHotKeys(settings: environment.settings)
             }
             applicationDelegate.hasPendingNotifications = { NotificationService.shared.reminders.isRefreshing }
             applicationDelegate.finishPendingNotifications = { await NotificationService.shared.reminders.drainForTermination() }

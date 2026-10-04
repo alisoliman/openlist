@@ -1,0 +1,23 @@
+func runCaptureGestureChecks() {
+    var press = CapturePress()
+    check(press.end(inside: true) == nil, "A release without a touch cannot open a draft")
+    press.begin()
+    check(press.isPressed, "Touch down shows pressing feedback")
+    check(press.end(inside: true) == .typed && !press.isPressed, "A tap opens the normal typed draft exactly once")
+    check(press.end(inside: true) == nil, "A repeated release cannot open another draft")
+    press.begin()
+    check(press.recognizeHold() == .voice, "A deliberate hold opens voice on recognition, before release")
+    check(press.end(inside: true) == nil, "Releasing a long press cannot fire the typed action or stop recording")
+    press.begin()
+    check(press.recognizeHold() == .voice && press.recognizeHold() == nil, "Repeated hold callbacks only open voice once")
+    press.begin()
+    check(press.end(inside: true) == nil, "A duplicate touch-down during a hold cannot rearm a tap")
+    press.begin()
+    press.cancel()
+    check(!press.isPressed && press.end(inside: true) == nil && press.recognizeHold() == nil,
+          "Cancellation clears pressing feedback and suppresses every late action")
+    press.begin()
+    check(press.end(inside: false) == nil, "Dragging off the button opens nothing")
+    press.begin()
+    check(press.end(inside: true) == .typed, "A fresh tap works after a long press or cancellation")
+}

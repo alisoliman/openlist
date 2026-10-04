@@ -60,6 +60,19 @@ struct SettingsScreen: View {
                     }
                     .buttonStyle(OLRowPressStyle())
                     .accessibilityIdentifier("settings.undoWindow")
+                    Menu {
+                        Picker("After voice capture", selection: $settings.afterVoiceCapture) {
+                            ForEach(AppSettings.AfterVoiceCapture.allCases) { Text($0.title).tag($0) }
+                        }
+                    } label: {
+                        OLSettingsRow("After voice capture", tile: .accent("mic"), separator: .settings) {
+                            OLRowValue(settings.afterVoiceCapture.title)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(OLRowPressStyle())
+                    .accessibilityHint("On this iPhone only. Existing drafts always stay for review.")
+                    .accessibilityIdentifier("settings.afterVoiceCapture")
                 }
                 .olCard()
             }

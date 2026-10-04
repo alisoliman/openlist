@@ -877,11 +877,16 @@ extension Workbench {
 
     @discardableResult
     func createFromCapture(keepOpen: Bool) -> Block? {
+        completeCapture(addCapture(), keepOpen: keepOpen)
+    }
+
+    @discardableResult
+    func completeCapture(_ outcome: NXCaptureOutcome, keepOpen: Bool) -> Block? {
         // The task goes at the end of its list's document, where the add row
         // sits, wherever it was captured from, as the design's does. A folded
         // heading it goes under opens, and folds again on Undo.
         let block: Block, opened: [UUID]
-        switch addCapture() {
+        switch outcome {
         case .untitled:
             return nil
         case let .failed(notice):
@@ -898,7 +903,7 @@ extension Workbench {
             if let failure {
                 captureNotice = failure
                 AccessibilityNotification.Announcement(failure.text).post()
-            } else if !keepOpen {
+            } else if !keepOpen, !hasCaptureDraft {
                 closeCapture()
             }
             return blocks.last
@@ -953,14 +958,14 @@ extension Workbench {
         registerCreationUndo(label, taskIDs: [id], opened: headings)
     }
 
-    private func registerCreationUndo(_ label: String, taskIDs ids: [UUID], opened headings: [UUID]) {
+    private func registerCreationUndo(_ label: String, taskIDs ids: [UUID], opened headings: [UUID], using manager: UndoManager? = nil) {
         let taken = CreationUndo()
         let fold: @MainActor (Store, Bool) -> Void = { store, folded in
             for heading in headings.compactMap({ store.block(id: $0) }) where BlockTree.sectionLevel(of: heading.kind) != nil {
                 store.setCollapsed(folded, for: heading)
             }
         }
-        registerUndo(label, undo: { workbench in
+        registerUndo(label, using: manager, undo: { workbench in
             let store = workbench.store
             for id in ids.reversed() {
                 if let task = store.discardCapturedTask(id: id) {
@@ -986,14 +991,15 @@ extension Workbench {
     /// one Undo that takes them all back, one line in Changes, the fresh rows
     /// and each list's pulse. Quick Add's card says what it added, so its
     /// tray stays down.
-    func didAddSpoken(_ blocks: [Block], opened: [UUID], showsTray: Bool = true) {
+    func didAddSpoken(_ blocks: [Block], opened: [UUID], showsTray: Bool = true, using manager: UndoManager? = nil) {
         guard !blocks.isEmpty else { return }
         let lists = Set(blocks.map(\.listID))
         let name = lists.count == 1 ? store.list(id: blocks[0].listID)?.displayTitle ?? "Inbox" : "\(lists.count) lists"
         let label = blocks.count == 1 ? "Added to \(name)" : "Added \(blocks.count) tasks to \(name)"
-        let undoable = undoManager != nil
-        if undoable { registerCreationUndo(label, taskIDs: blocks.map(\.id), opened: opened) }
-        snap(label, icon: "plus.circle", tone: .accent, ids: blocks.map(\.id), undoable: undoable, showsTray: showsTray)
+        let target = manager ?? undoManager
+        let undoable = target != nil
+        if undoable { registerCreationUndo(label, taskIDs: blocks.map(\.id), opened: opened, using: target) }
+        snap(label, icon: "plus.circle", tone: .accent, ids: blocks.map(\.id), undoable: undoable, showsTray: showsTray, using: target)
         flash(\.fresh, blocks.map(\.id), for: 1200)
         for listID in lists { pulse(list: listID) }
     }
@@ -1031,6 +1037,7 @@ extension Workbench {
         if let stash { captureLabelID = stash.labelID }
         else if case let .label(id) = navigator.route { captureLabelID = id } else { captureLabelID = nil }
         captureText = stash?.text ?? ""
+        spokenTasks = stash?.spokenTasks ?? []
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
         withAnimation(style.spring(260)) { captureOpen = true }
@@ -1042,10 +1049,14 @@ extension Workbench {
     /// for the next capture on this page for a few minutes, as Quick Add
     /// keeps its own.
     func closeCapture(keepsDraft: Bool = false) {
-        let draft = captureText.trimmingCharacters(in: .whitespacesAndNewlines)
-        stashedCapture = keepsDraft && !draft.isEmpty
+        if keepsDraft, voice.isActive {
+            voice.preserveForReview()
+            voice.stop()
+            return
+        }
+        stashedCapture = keepsDraft && hasCaptureDraft
             ? StashedCapture(text: captureText, listID: captureListID, forToday: captureForToday, labelID: captureLabelID,
-                             route: navigator.route, at: .now)
+                             route: navigator.route, at: .now, spokenTasks: spokenTasks)
             : nil
         captureOpen = false
         captureText = ""
@@ -1057,7 +1068,9 @@ extension Workbench {
     /// Voice capture on the window's card, its mic and ⌥⌘V: starts
     /// listening, or stops and reads what was said.
     func toggleVoice() {
-        voice.toggle(for: self, lists: store.allLists(), labels: store.allLabels())
+        voice.toggle(for: self, lists: store.allLists(), labels: store.allLabels()) { [weak self] outcome in
+            self?.completeCapture(outcome, keepOpen: false)
+        }
     }
 
     // MARK: Inbox triage

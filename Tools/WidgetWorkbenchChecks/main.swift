@@ -109,4 +109,7 @@ check(workbench.log.first?.taskID == report.id && workbench.canUndo, "logged and
 workbench.undoLast()
 check(!report.isCompleted && workbench.workTask?.id == report.id, "Undo reopens it and offers the work to resume again")
 
+try await runWorkbenchAdjudicationChecks()
+try await runVoiceWorkbenchChecks()
+
 print("✅ \(checks) widget workbench checks passed")

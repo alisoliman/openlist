@@ -27,7 +27,7 @@ struct ShortcutsSheet: View {
 
     /// The keys the app handles today: the Next key map (NextKeys), the list
     /// document's line keys (OutlineEditor), and the menus.
-    private let groups: [Group] = [
+    private var groups: [Group] { [
         Group(title: "Everywhere", shortcuts: [
             Shortcut(keys: "N", action: "New task"),
             Shortcut(keys: "/  ⌘F", action: "Search"),
@@ -73,6 +73,8 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "Esc", action: "Cancel capture"),
             Shortcut(keys: "⇧⌥Space", action: "Quick add from anywhere"),
             Shortcut(keys: "⌥⌘V", action: "Say tasks, or stop listening"),
+            Shortcut(keys: env.settings.voiceCaptureShortcut.display,
+                     action: "Voice Quick Add from anywhere (opt-in in Settings)"),
             Shortcut(keys: "friday 6pm", action: "Due date and time", readsDates: true),
             Shortcut(keys: "every monday", action: "Repeat", readsDates: true),
             Shortcut(keys: "#label", action: "Attach a label"),
@@ -126,7 +128,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⌥⌘N", action: "New section"),
             Shortcut(keys: "⇧⌘E", action: "Export list as Markdown"),
         ]),
-    ]
+    ] }
 
     var body: some View {
         let style = env.workbench.style

@@ -31,13 +31,16 @@ final class VoiceCapture {
     /// Whether the last task heard went in the capture field, whose caret
     /// then goes after it rather than selecting it.
     private(set) var filledField = false
+    private(set) var completionMode = AppSettings.AfterVoiceCapture.reviewBeforeSaving
     /// Gets the tasks heard, in the order said, once they're read.
     @ObservationIgnored var onHeard: (([SpokenTask]) -> Void)?
 
     private var isUnderstanding = false
     private var failure: VoiceCaptureFailure?
     @ObservationIgnored private var interpreter: VoiceTaskInterpreter?
-    @ObservationIgnored private var run = 0
+    @ObservationIgnored private var session = VoiceCaptureSession()
+
+    var generation: Int { session.generation }
 
     var phase: Phase {
         if let failure { return .failed(failure) }
@@ -61,19 +64,27 @@ final class VoiceCapture {
     /// Listens, then reads what was said against `vocabulary` with dates
     /// relative to `now` at the time the speaker stops.
     func start(_ source: VoiceListener.Source = .capture, vocabulary: SpokenCapture.Vocabulary,
+               afterCapture: AppSettings.AfterVoiceCapture = .reviewBeforeSaving, hasDraft: Bool = false,
                now: @escaping () -> Date = { .now }) {
         guard !isActive else { return }
-        run += 1
-        let run = run
+        let run = session.begin(afterCapture: afterCapture, hasDraft: hasDraft)
         failure = nil
         usedIntelligence = false
         filledField = false
-        intelligence = VoiceIntelligence.current()
-        let interpreter = VoiceTaskInterpreter()
-        interpreter.prepare()
-        self.interpreter = interpreter
+        intelligence = source.isFixture ? .unsupported : VoiceIntelligence.current()
+        if !source.isFixture {
+            let interpreter = VoiceTaskInterpreter()
+            interpreter.prepare()
+            self.interpreter = interpreter
+        }
         listener.onStop = { [weak self] transcript in
-            Task { await self?.understand(transcript, vocabulary: vocabulary, now: now(), run: run) }
+            guard let self else { return }
+            if case .failed = self.listener.state { return }
+            guard self.session.beginUnderstanding(run: run) else { return }
+            self.isUnderstanding = true
+            Task { [weak self] in
+                await self?.understand(transcript, vocabulary: vocabulary, now: now(), run: run, usesFixture: source.isFixture)
+            }
         }
         listener.start(source, contextualStrings: vocabulary.contextualStrings)
     }
@@ -83,10 +94,38 @@ final class VoiceCapture {
         listener.stop()
     }
 
+    func applicationResignedActive() {
+        switch listener.state {
+        case .preparing:
+            cancel()
+        case .listening:
+            preserveForReview()
+            stop()
+        case .idle, .stopping, .stopped, .failed:
+            break
+        }
+    }
+
+    func preserveForReview() {
+        session.requireReview()
+    }
+
+    func sceneDepartedActive(isBackground: Bool) {
+        if isActive, case .preparing = phase {
+            if isBackground { cancel() }
+            return
+        }
+        if isActive { preserveForReview() }
+        if phase == .listening { stop() }
+    }
+
     /// Stops and forgets what was heard.
     func cancel() {
-        run += 1
+        session.cancel()
         listener.cancel()
+        listener.onStop = nil
+        onHeard = nil
+        interpreter = nil
         isUnderstanding = false
         failure = nil
         filledField = false
@@ -95,25 +134,37 @@ final class VoiceCapture {
     /// Puts a failure away, as the capture does once its text changes.
     func dismissFailure() {
         failure = nil
-        if case .failed = listener.state { listener.cancel() }
+        if case .failed = listener.state { cancel() }
     }
 
-    private func understand(_ transcript: String, vocabulary: SpokenCapture.Vocabulary, now: Date, run: Int) async {
-        guard self.run == run else { return }
-        guard !transcript.isEmpty else {
+    private func understand(_ transcript: String, vocabulary: SpokenCapture.Vocabulary, now: Date, run: Int, usesFixture: Bool) async {
+        guard session.isCurrent(run: run) else { return }
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            _ = session.complete(run: run, hasTasks: false)
+            isUnderstanding = false
             failure = .nothingHeard
             return
         }
-        isUnderstanding = true
-        let interpreter = interpreter ?? VoiceTaskInterpreter()
-        let result = await interpreter.interpret(transcript, vocabulary: vocabulary, reference: now)
-        guard self.run == run else { return }
+        let result: VoiceTaskInterpreter.Result
+        #if DEBUG
+        if usesFixture {
+            result = VoiceTaskInterpreter.Result(tasks: transcript.components(separatedBy: .newlines).flatMap {
+                SpokenCapture.fallback($0, vocabulary: vocabulary, reference: now)
+            }, usedIntelligence: false)
+        } else {
+            result = await (interpreter ?? VoiceTaskInterpreter()).interpret(transcript, vocabulary: vocabulary, reference: now)
+        }
+        #else
+        result = await (interpreter ?? VoiceTaskInterpreter()).interpret(transcript, vocabulary: vocabulary, reference: now)
+        #endif
+        guard session.isCurrent(run: run) else { return }
         isUnderstanding = false
         usedIntelligence = result.usedIntelligence
-        guard !result.tasks.isEmpty else {
+        guard let mode = session.complete(run: run, hasTasks: !result.tasks.isEmpty) else {
             failure = .nothingHeard
             return
         }
+        completionMode = mode
         onHeard?(result.tasks)
     }
 }
@@ -123,18 +174,24 @@ extension VoiceCapture {
     /// starts listening for `draft`, whose capture takes what's heard, read
     /// against `lists` and `labels`; while listening, stops and reads what
     /// was said; while getting ready, stops.
-    func toggle<Draft: NXCaptureDraft>(for draft: Draft, lists: [TaskList], labels: [TaskLabel]) {
+    func toggle<Draft: NXCaptureDraft>(for draft: Draft, lists: [TaskList], labels: [TaskLabel],
+                                     onSave: ((NXCaptureOutcome) -> Void)? = nil) {
         switch phase {
         case .listening: stop()
         case .preparing: cancel()
         case .understanding: break
         case .idle, .failed:
-            draft.spokenTasks = []
             onHeard = { [weak self, weak draft] heard in
-                guard let draft else { return }
-                self?.filledField = draft.take(heard)
+                guard let self, let draft else { return }
+                if let outcome = draft.receiveVoice(heard, afterCapture: self.completionMode) {
+                    onSave?(outcome)
+                } else {
+                    self.filledField = draft.spokenTasks.isEmpty && !draft.captureText.isEmpty
+                }
             }
-            start(vocabulary: SpokenCapture.Vocabulary(lists: lists, labels: labels))
+            start(vocabulary: SpokenCapture.Vocabulary(lists: lists, labels: labels),
+                  afterCapture: onSave == nil ? .reviewBeforeSaving : draft.settings.afterVoiceCapture,
+                  hasDraft: draft.hasCaptureDraft)
         }
     }
 }

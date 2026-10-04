@@ -56,6 +56,7 @@ struct StashedCapture {
     var labelID: UUID?
     var route: AppRoute
     var at: Date
+    var spokenTasks: [SpokenTask] = []
 }
 
 /// Interaction state for the Next interface.
@@ -589,10 +590,11 @@ final class Workbench {
     /// entry the caller just registered. An `owner` shares the Undo entry's
     /// target, so the whole entry leaves the stack with `removeAllActions(withTarget:)`.
     func snap(_ label: String, icon: String, tone: TrayTone, ids: [UUID], undoable: Bool = true,
-              destination: TrayDestination? = nil, owner: AnyObject? = nil, showsTray: Bool = true) {
+              destination: TrayDestination? = nil, owner: AnyObject? = nil, showsTray: Bool = true,
+              using manager: UndoManager? = nil) {
         let mark = record(label, icon: icon, tone: tone, ids: ids)
         mark.owner = owner
-        if undoable { attach(mark, restores: false) }
+        if undoable { attach(mark, restores: false, using: manager) }
         if showsTray {
             showTray(label, icon: icon, tone: tone, undoable: undoable, destination: destination)
         } else if undoable, tray?.undoable == true {
@@ -738,14 +740,14 @@ final class Workbench {
     /// Registers the log half of an Undo entry, in the same group as the change
     /// itself. However that entry is undone — ⌘Z, the tray, Edit › Undo — this
     /// takes exactly its batch out of the log, and Redo puts it back.
-    private func attach(_ mark: LogMark, restores: Bool) {
-        guard let undoManager else { return }
+    private func attach(_ mark: LogMark, restores: Bool, using manager: UndoManager? = nil) {
+        guard let undoManager = manager ?? self.undoManager else { return }
         // The manager holds its target weakly; the handler keeps the mark alive.
-        undoManager.registerUndo(withTarget: mark.owner ?? mark) { [weak self, mark] _ in
+        undoManager.registerUndo(withTarget: mark.owner ?? mark) { [weak self, weak undoManager, mark] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self, let undoManager else { return }
                 if restores { self.relog(mark) } else { self.unlog(mark) }
-                self.attach(mark, restores: !restores)
+                self.attach(mark, restores: !restores, using: undoManager)
             }
         }
         undoManager.setActionName(mark.label)
@@ -852,15 +854,15 @@ final class Workbench {
     }
 
     /// An `owner` becomes the entry's target in place of the workbench, as in `snap`.
-    func registerUndo(_ label: String, owner: AnyObject? = nil, undo: @escaping @MainActor (Workbench) -> Void,
+    func registerUndo(_ label: String, owner: AnyObject? = nil, using manager: UndoManager? = nil, undo: @escaping @MainActor (Workbench) -> Void,
                       redo: @escaping @MainActor (Workbench) -> Void) {
-        guard let undoManager else { return }
+        guard let undoManager = manager ?? self.undoManager else { return }
         // The manager holds its target weakly; the handler keeps the owner alive.
-        undoManager.registerUndo(withTarget: owner ?? self) { [weak self, owner] _ in
+        undoManager.registerUndo(withTarget: owner ?? self) { [weak self, weak undoManager, owner] _ in
             MainActor.assumeIsolated {
-                guard let workbench = self else { return }
+                guard let workbench = self, let undoManager else { return }
                 undo(workbench)
-                workbench.registerUndo(label, owner: owner, undo: redo, redo: undo)
+                workbench.registerUndo(label, owner: owner, using: undoManager, undo: redo, redo: undo)
             }
         }
         undoManager.setActionName(label)
@@ -871,8 +873,8 @@ final class Workbench {
     /// this event, so the change about to be made is a step of its own rather
     /// than undone with, say, a draft just saved for it. Only right before a
     /// change that is sure to register: a group left empty stays on the stack.
-    func separateUndoStep() {
-        guard let undoManager, undoManager.groupingLevel > 0,
+    func separateUndoStep(using manager: UndoManager? = nil) {
+        guard let undoManager = manager ?? self.undoManager, undoManager.groupingLevel > 0,
               !undoManager.isUndoing, !undoManager.isRedoing else { return }
         undoManager.endUndoGrouping()
         undoManager.beginUndoGrouping()

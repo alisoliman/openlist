@@ -15,4 +15,12 @@ struct QuickCaptureRequest: Equatable {
     var dueToday = false
     /// Starts listening for tasks to be said, as the Say Tasks control does.
     var listens = false
+
+    func shouldStartListening(hasDraft: Bool, isActive: Bool) -> Bool {
+        listens && !hasDraft && !isActive
+    }
+
+    func keepsDraft(hasDraft: Bool, keptUntil: Date?, now: Date) -> Bool {
+        (listens && hasDraft) || keptUntil.map { $0 > now } == true
+    }
 }
