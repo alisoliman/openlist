@@ -49,12 +49,29 @@ final class VoiceListener {
     enum Source {
         case microphone
         case file(URL)
+        #if DEBUG
+        case fixture(String, preparing: Bool = false)
+        case fixtureFailure(VoiceCaptureFailure)
+        #endif
+
+        var isFixture: Bool {
+            #if DEBUG
+            switch self {
+            case .fixture, .fixtureFailure: return true
+            default: break
+            }
+            #endif
+            return false
+        }
 
         /// What the capture listens to: the microphone, or in a Debug review
         /// session the recording `OpenlistVoiceRecording` names, so the
         /// simulator, UI tests and screenshots can say tasks.
         static var capture: Source {
             #if DEBUG
+            if ReviewSession.identifier != nil, let text = ProcessInfo.processInfo.environment["OpenlistVoiceFixture"] {
+                return .fixture(text)
+            }
             if ReviewSession.identifier != nil, let path = ProcessInfo.processInfo.environment["OpenlistVoiceRecording"] {
                 return .file(URL(fileURLWithPath: path))
             }
@@ -102,6 +119,7 @@ final class VoiceListener {
     @ObservationIgnored private var startedAt = Date.distantPast
     /// Bumped by each start and cancel, so a run that's been left behind stops.
     @ObservationIgnored private var run = 0
+    @ObservationIgnored private var usesFixture = false
 
     /// Starts listening. `contextualStrings` are names worth recognising,
     /// such as the library's lists and labels.
@@ -112,6 +130,19 @@ final class VoiceListener {
         confirmed = ""
         tentative = ""
         level = 0
+        usesFixture = source.isFixture
+        #if DEBUG
+        switch source {
+        case let .fixture(text, preparing):
+            confirmed = text
+            state = preparing ? .preparing(progress: nil) : .listening
+            return
+        case let .fixtureFailure(failure):
+            state = .failed(failure)
+            return
+        default: break
+        }
+        #endif
         state = .preparing(progress: nil)
         Task { await begin(source, contextualStrings: contextualStrings, locale: locale, run: run) }
     }
@@ -121,6 +152,11 @@ final class VoiceListener {
     func stop() {
         switch state {
         case .listening:
+            if usesFixture {
+                state = .stopped
+                onStop?(transcript)
+                return
+            }
             state = .stopping
             let run = run
             Task { await finish(run: run) }
@@ -141,6 +177,7 @@ final class VoiceListener {
         confirmed = ""
         tentative = ""
         state = .idle
+        usesFixture = false
         if let analyzer { Task { await analyzer.cancelAndFinishNow() } }
     }
 
@@ -170,6 +207,9 @@ final class VoiceListener {
             reader = Task { await read(module.updates, run: run) }
 
             switch source {
+            #if DEBUG
+            case .fixture, .fixtureFailure: return
+            #endif
             case .microphone:
                 guard let device = AVCaptureDevice.default(for: .audio) else { return fail(.noMicrophone, run: run) }
                 let capture = try await CaptureInputSequenceProvider.providerWithSession(from: device, compatibleWith: [module.module])

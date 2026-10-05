@@ -90,6 +90,7 @@ struct NextOverlays: View {
             if workbench.captureOpen {
                 NXOverlayBackdrop(top: 96, close: { workbench.closeCapture(keepsDraft: true) }) {
                     NXCaptureCard(draft: workbench, notice: workbench.captureNotice, voice: workbench.voice,
+                                  onVoiceSave: { [weak workbench] in workbench?.completeCapture($0, keepOpen: false) },
                                   add: { _ = workbench.createFromCapture(keepOpen: $0) })
                         .animation(style.ease(140), value: workbench.captureNotice)
                         .onChange(of: workbench.captureText) {
@@ -296,6 +297,9 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @Bindable var draft: Draft
     var notice: NXCaptureNotice?
     var voice: VoiceCapture?
+    var managesVoiceLifecycle = true
+    var onVoiceSave: ((NXCaptureOutcome) -> Void)?
+    var undoCapture: (() -> Void)?
     var add: ((_ keepOpen: Bool) -> Void)?
     @State private var refocus = 0
     /// How far the field has scrolled its text to keep the caret in view.
@@ -333,6 +337,10 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
         .frame(maxWidth: 600)
         .onChange(of: draft.captureText) { voice?.dismissFailure() }
+        .onDisappear { if managesVoiceLifecycle { voice?.cancel() } }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if managesVoiceLifecycle { voice?.applicationResignedActive() }
+        }
     }
 
     /// The field and the chips for what it saves.
@@ -399,7 +407,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     // MARK: Voice
 
     private func toggleVoice() {
-        voice?.toggle(for: draft, lists: library.lists, labels: library.labels)
+        voice?.toggle(for: draft, lists: library.lists, labels: library.labels, onSave: onVoiceSave)
     }
 
     private var voiceFailure: VoiceCaptureFailure? {
@@ -410,6 +418,12 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     /// isn't the lit destination, and a way to leave one out.
     private var heard: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if !draft.captureText.isEmpty {
+                Text("Your typed draft is kept. Add these tasks, then continue typing.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(NX.ink(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(draft.spokenTasks) { task in
                 HStack(alignment: .top, spacing: 11) {
                     Circle()
@@ -491,16 +505,31 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 10.5, weight: .semibold))
                 Text(notice.text)
+                captureUndoButton
             }
             .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(NX.greenText)
             .lineLimit(1)
             .fixedSize()
         } else {
-            Text(hint)
+            HStack(spacing: 6) {
+                Text(hint)
+                captureUndoButton
+            }
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(NX.ink(0.4))
                 .fixedSize()
+        }
+    }
+
+    @ViewBuilder private var captureUndoButton: some View {
+        if let undoCapture {
+            Button("Undo", action: undoCapture)
+                .buttonStyle(.plain)
+                .foregroundStyle(style.accent)
+                .help("Undo added tasks (⌘Z)")
+                .accessibilityLabel("Undo added tasks")
+                .accessibilityIdentifier("capture.undo")
         }
     }
 

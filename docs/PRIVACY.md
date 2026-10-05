@@ -30,7 +30,9 @@ diagnostics according to your device settings and its own policies.
   your device using Apple's speech models. Where available, Apple's on-device
   language model helps turn your words into tasks. Required models may download
   from Apple. Openlist does not save an audio recording or a separate transcript;
-  the task text you choose to add becomes part of your library.
+  the task text you choose to add becomes part of your library. Voice capture
+  defaults to review; choosing **After voice capture ▸ Save automatically** in
+  Settings saves recognized tasks when listening finishes on that device.
 - **Calendars:** with permission, Openlist reads calendar events to show busy
   time and plan around it. It does not change your calendar events. Calendar
   information is used locally, including in the agenda widget.

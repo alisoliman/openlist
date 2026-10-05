@@ -25,6 +25,10 @@ protocol NXCaptureDraft: AnyObject, Observable {
 }
 
 extension NXCaptureDraft {
+    var hasCaptureDraft: Bool {
+        !captureText.isEmpty || !spokenTasks.isEmpty
+    }
+
     /// The capture text read as the card tints it and Return saves it, with
     /// dates only while Settings reads them from typed text.
     func captureParse() -> CaptureParse {
@@ -73,7 +77,11 @@ extension NXCaptureDraft {
     /// for Return to add together. Returns whether it filled the field.
     @discardableResult
     func take(_ heard: [SpokenTask], now: Date = .now) -> Bool {
-        captureText = ""
+        guard !heard.isEmpty else { return false }
+        if hasCaptureDraft {
+            spokenTasks += heard
+            return false
+        }
         if heard.count == 1, let task = heard.first,
            task.fitsField(parsesDates: settings.parsesNaturalLanguageDates, reference: now) {
             spokenTasks = []
@@ -85,10 +93,21 @@ extension NXCaptureDraft {
         return false
     }
 
+    func receiveVoice(_ heard: [SpokenTask], afterCapture: AppSettings.AfterVoiceCapture, now: Date = .now) -> NXCaptureOutcome? {
+        guard !heard.isEmpty else { return nil }
+        if afterCapture == .saveAutomatically, !hasCaptureDraft {
+            spokenTasks = heard
+            return addSpokenTasks()
+        }
+        take(heard, now: now)
+        return nil
+    }
+
     /// Adds the tasks heard, each to the list it named or the draft's, due
     /// today when an undated task would be, with the label screen's label.
     /// Any it couldn't add stay, with the reason on the card.
     func addSpokenTasks() -> NXCaptureOutcome {
+        guard !spokenTasks.isEmpty else { return .untitled }
         let screenLabel = captureLabelID.flatMap { store.label(id: $0) }.map { [$0.name.lowercased()] } ?? []
         let result = store.saveSpokenTasks(spokenTasks, destinationID: captureListID ?? store.inboxList()?.id,
                                            undatedDay: captureForToday ? NXFormat.day(offset: 0) : nil,
@@ -112,6 +131,45 @@ extension NXCaptureDraft {
             return
         }
         captureListID = ids[(index + delta + ids.count) % ids.count]
+    }
+}
+
+struct VoiceCaptureSession {
+    private(set) var generation = 0
+    private var pending = false
+    private var understanding = false
+    private var afterCapture = AppSettings.AfterVoiceCapture.reviewBeforeSaving
+
+    mutating func begin(afterCapture: AppSettings.AfterVoiceCapture, hasDraft: Bool) -> Int {
+        generation += 1
+        pending = true
+        understanding = false
+        self.afterCapture = hasDraft ? .reviewBeforeSaving : afterCapture
+        return generation
+    }
+
+    func isCurrent(run: Int) -> Bool { generation == run && pending }
+
+    mutating func beginUnderstanding(run: Int) -> Bool {
+        guard isCurrent(run: run), !understanding else { return false }
+        understanding = true
+        return true
+    }
+
+    mutating func complete(run: Int, hasTasks: Bool) -> AppSettings.AfterVoiceCapture? {
+        guard isCurrent(run: run), understanding else { return nil }
+        pending = false
+        return hasTasks ? afterCapture : nil
+    }
+
+    mutating func cancel() {
+        generation += 1
+        pending = false
+        understanding = false
+    }
+
+    mutating func requireReview() {
+        afterCapture = .reviewBeforeSaving
     }
 }
 

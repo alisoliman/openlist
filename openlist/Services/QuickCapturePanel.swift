@@ -95,9 +95,10 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
 
     /// Wires ⇧⌥Space to the panel at launch, whether or not a window opens,
     /// and registers it while Settings has it on.
-    func installHotKey(enabled: Bool) {
-        QuickCaptureHotKey.shared.onTrigger = { [weak self] in self?.show() }
-        if enabled { QuickCaptureHotKey.shared.register() }
+    func installHotKeys(settings: AppSettings) {
+        QuickCaptureHotKey.shared.onTrigger = { [weak self] in self?.show(QuickCaptureHotKey.Route.typed.request) }
+        QuickCaptureHotKey.voice.onTrigger = { [weak self] in self?.show(QuickCaptureHotKey.Route.voice.request) }
+        QuickCaptureHotKey.refresh(settings: settings)
     }
 
     /// Opens the card, resuming a draft put aside by a click away. A widget's
@@ -109,23 +110,27 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         let panel = panel ?? makePanel()
         self.panel = panel
         if panel.isVisible, let draft {
-            if let request { draft.apply(request) }
+            draft.beginPresentation()
+            if let request, !request.listens { draft.apply(request) }
             panel.makeKeyAndOrderFront(nil)
             listen(draft, if: request)
             return
         }
         let draft: QuickCaptureDraft
-        if let kept = self.draft, let keptUntil, keptUntil > .now {
-            if let request { kept.apply(request) }
+        if let kept = self.draft,
+           (request ?? QuickCaptureRequest()).keepsDraft(hasDraft: kept.hasCaptureDraft, keptUntil: keptUntil, now: .now) {
+            if let request, !request.listens { kept.apply(request) }
             draft = kept
             if !kept.captureText.isEmpty { caretToEnd(in: panel) }
         } else {
             draft = QuickCaptureDraft(store: env.store, settings: env.settings, request: request ?? QuickCaptureRequest())
         }
         self.draft = draft
+        draft.beginPresentation()
         keptUntil = nil
         // Motion is the card's own, from the Next style, which follows Reduce Motion.
-        let host = NSHostingView(rootView: QuickCaptureView(draft: draft, close: { [weak self] in self?.close($0) })
+        let host = NSHostingView(rootView: QuickCaptureView(draft: draft, animatesPresentation: request?.listens != true,
+                                                          close: { [weak self] in self?.close($0) })
             .environment(env)
             .modelContainer(container)
             .environment(\.calendar, env.settings.calendar))
@@ -153,8 +158,17 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
 
     /// Starts the card listening when what opened it asked to say tasks.
     private func listen(_ draft: QuickCaptureDraft, if request: QuickCaptureRequest?) {
-        guard let env, request?.listens == true, !draft.voice.isActive else { return }
-        draft.voice.toggle(for: draft, lists: env.store.allLists(), labels: env.store.allLabels())
+        guard let env, let request, request.listens else { return }
+        guard request.shouldStartListening(hasDraft: draft.hasCaptureDraft, isActive: draft.voice.isActive) else {
+            if draft.hasCaptureDraft, !draft.voice.isActive, draft.notice?.failed != true {
+                draft.show(NXCaptureNotice(text: "Your draft is still here. Finish or clear it before saying more tasks."))
+            }
+            return
+        }
+        draft.voice.toggle(for: draft, lists: env.store.allLists(), labels: env.store.allLabels()) { [weak self, weak draft] outcome in
+            guard let self, let draft, self.draft === draft, self.panel?.isVisible == true else { return }
+            draft.complete(outcome, workbench: env.workbench, keepOpen: false, automatically: true) { [weak self] in self?.close($0) }
+        }
     }
 
     /// A field selects all its text as it takes focus. A resumed draft puts
@@ -253,7 +267,8 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         isClosing = true
         defer { isClosing = false }
         // A card out of sight stops listening.
-        draft?.voice.cancel()
+        if dismissal == .finished { draft?.voice.cancel() }
+        draft?.endPresentation()
         topLeft = nil
         responderObservation = nil
         if dismissal == .finished {

@@ -13,7 +13,9 @@ and plan your day with a calendar and desktop widgets.
 - **Quick capture:** a global shortcut, menu bar access, and natural-language
   dates such as “tomorrow at 6pm.”
 - **Voice capture:** on-device dictation and Apple Intelligence turn spoken
-  requests into tasks.
+  requests into tasks. Review them first, or choose automatic saving per device.
+  Hold the iPhone dock’s **+**, click the Mac toolbar mic, or enable the Mac’s
+  configurable global voice shortcut (initially **⌃⇧⌥Space**, off by default).
 - **Daily organization:** Inbox, Today, search, and a calendar with time blocking
   and work sessions.
 - **Desktop widgets:** tasks, quick capture, agenda, progress, and activity.

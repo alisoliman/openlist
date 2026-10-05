@@ -90,6 +90,14 @@ struct NextToolbar: View {
                 .fixedSize()
                 .nxHelp(working ? "New task (N)" : nil)
                 .accessibilityLabel("New task")
+
+                toolButton(icon: "mic", help: "Say tasks (⌥⌘V)") {
+                    EmptyView()
+                } action: { workbench.openCapture(listens: true) }
+                .fixedSize()
+                .accessibilityLabel("Say tasks")
+                .accessibilityHint("Opens voice capture and starts listening.")
+                .accessibilityIdentifier("toolbar.voice")
             }
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { trailingWidth = $0 }
             // The buttons keep their room; the crumb truncates first, down to its floor.

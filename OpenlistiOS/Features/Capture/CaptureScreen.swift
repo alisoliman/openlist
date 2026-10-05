@@ -24,6 +24,7 @@ struct CaptureScreen: View {
     @State private var resumesTyping = false
     @State private var height: CGFloat = 236
     @State private var voice = VoiceCapture()
+    @State private var hasAppeared = false
     /// Tasks heard, when there were several, which Add saves together.
     @State private var spoken: [SpokenTask] = []
     /// Why the last Add failed, shown in the sheet: the window's tray is
@@ -48,7 +49,7 @@ struct CaptureScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             OLSheetHeader(confirmTitle: spoken.count > 1 ? "Add \(spoken.count)" : "Add",
                           canConfirm: !voice.isActive && (!spoken.isEmpty || !parse.title.isEmpty),
-                          cancel: { env.navigator.dismissSheet() },
+                          cancel: cancel,
                           confirm: { spoken.isEmpty ? add(snapshot) : addSpoken() })
             if voice.isActive {
                 CaptureVoicePanel(voice: voice, stop: toggleVoice)
@@ -96,17 +97,32 @@ struct CaptureScreen: View {
         .presentationDetents([.height(height)])
         // A swipe down, often meant only to lower the keyboard, would throw
         // away what's typed or heard; Cancel still does, deliberately.
-        .interactiveDismissDisabled(hasDraft)
+        .interactiveDismissDisabled(hasDraft || voice.isActive)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("New task")
         .accessibilityIdentifier(PhoneRoute.capture(request).screenIdentifier)
         .onAppear {
-            if request.listens { toggleVoice() } else { isFocused = true }
+            guard !hasAppeared else { return }
+            hasAppeared = true
+            if request.listens || env.navigator.captureListenRequestID == request.id {
+                env.navigator.captureListenRequestID = nil
+                startVoice()
+            } else {
+                isFocused = true
+            }
+        }
+        .onChange(of: env.navigator.captureListenRequestID) {
+            guard env.navigator.captureListenRequestID == request.id else { return }
+            env.navigator.captureListenRequestID = nil
+            startVoice()
         }
         .onDisappear { voice.cancel() }
         // Leaving the app ends listening with what was said so far.
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active, voice.phase == .listening { voice.stop() }
+            if phase != .active { voice.sceneDepartedActive(isBackground: phase == .background) }
+        }
+        .onChange(of: voice.phase) { _, phase in
+            if phase == .listening { env.haptics.play(.selection) }
         }
         .onChange(of: text) { voice.dismissFailure() }
         .sheet(isPresented: $showsDuePicker, onDismiss: { isFocused = resumesTyping }) {
@@ -131,21 +147,36 @@ struct CaptureScreen: View {
         case .understanding:
             break
         case .idle, .failed:
-            isFocused = false
-            spoken = []
-            saveError = nil
-            voice.onHeard = { heard in take(heard) }
-            voice.start(vocabulary: SpokenCapture.Vocabulary(lists: library.lists, labels: library.labels), now: { env.now })
-            env.haptics.play(.impact)
+            startVoice()
         }
+    }
+
+    private func startVoice() {
+        guard !voice.isActive else { return }
+        isFocused = false
+        saveError = nil
+        voice.onHeard = { heard in take(heard) }
+        voice.start(vocabulary: SpokenCapture.Vocabulary(lists: library.lists, labels: library.labels),
+                    afterCapture: env.settings.afterVoiceCapture, hasDraft: hasDraft, now: { env.now })
+        env.haptics.play(.impact)
     }
 
     /// One task heard goes in the field as its capture line, aimed at the list
     /// it named, to edit as though typed; several, or one the field wouldn't
     /// read back the same, wait as rows.
     private func take(_ heard: [SpokenTask]) {
+        guard !heard.isEmpty else { return }
         saveError = nil
         env.haptics.play(.selection)
+        if hasDraft {
+            spoken += heard
+            return
+        }
+        if voice.completionMode == .saveAutomatically {
+            spoken = heard
+            addSpoken()
+            return
+        }
         dueDate = .automatic
         if heard.count == 1, let task = heard.first,
            task.fitsField(parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now) {
@@ -162,6 +193,11 @@ struct CaptureScreen: View {
     /// the one picked below, and a way to leave one out.
     private var heard: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !text.isEmpty {
+                Text("Your typed draft is kept. Add these tasks, then continue typing.")
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.muted)
+            }
             ForEach(spoken) { task in
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -217,16 +253,25 @@ struct CaptureScreen: View {
     /// Adds the tasks heard, each to the list it named or the one picked, due
     /// today when an undated one would be; any it couldn't add stay.
     private func addSpoken() {
+        guard !spoken.isEmpty else { return }
         let result = env.store.saveSpokenTasks(spoken, destinationID: destination?.id,
                                                undatedDay: request.dueToday ? env.now : nil)
-        if !result.saved.isEmpty { env.actions.reportCapture(result.saved) }
-        guard let error = result.error else { return env.navigator.dismissSheet() }
         spoken = result.unsaved
+        if !result.saved.isEmpty { env.actions.reportCapture(result.saved) }
+        guard let error = result.error else {
+            if text.isEmpty { cancel() } else { isFocused = true }
+            return
+        }
         failed("“\(result.unsaved[0].snapshot.title)” wasn’t added. \(error.localizedDescription)")
     }
 
     private var hasDraft: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !spoken.isEmpty
+        !text.isEmpty || !spoken.isEmpty
+    }
+
+    private func cancel() {
+        voice.cancel()
+        env.navigator.dismissSheet()
     }
 
     private func failed(_ message: String) {

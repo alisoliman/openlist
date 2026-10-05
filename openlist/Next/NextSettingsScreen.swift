@@ -23,6 +23,10 @@ struct NextSettingsScreen: View {
                 NXSettingsGroup(title: "Tasks") {
                     NXSettingToggle(label: "Show completed tasks", hint: "Lists and Today expand their Completed section by default",
                                     isOn: $settings.showsCompletedTasks)
+                    NXSettingMenu(label: "After voice capture", hint: "On this Mac only. Existing drafts always stay for review.",
+                                  value: settings.afterVoiceCapture.title,
+                                  entries: nxChoices(AppSettings.AfterVoiceCapture.allCases, selection: $settings.afterVoiceCapture) { $0.title })
+                        .accessibilityIdentifier("settings.afterVoiceCapture")
                     NXSettingMenu(label: "Week starts on", hint: "Used by Calendar and Activity", value: weekStartTitle,
                                   entries: nxChoices([0, 1, 2, 7], selection: $settings.firstWeekday) { weekday in
                                       switch weekday {
@@ -43,6 +47,7 @@ struct NextSettingsScreen: View {
                                 QuickCaptureHotKey.shared.unregister()
                             }
                         }
+                    NXVoiceShortcutSetting()
                 }
                 NXSettingsGroup(title: "Motion & feedback") {
                     NXSettingToggle(label: "Reduce motion", hint: "Keeps state changes, drops the bounce, ring and slides",
@@ -180,6 +185,7 @@ struct NextSettingsScreen: View {
         case nil: "⇧⌥Space opens capture over any app"
         case .taken: "⇧⌥Space is in use by another app. Free it there, then turn this off and on again."
         case .failed: "⇧⌥Space could not be turned on. Turn this off and on again to retry."
+        case let .invalid(reason): reason.message
         }
     }
 

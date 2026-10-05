@@ -17,11 +17,11 @@ struct OLDock: View {
     var captureLabel = "New task"
     /// Tapping the tab on show: back to its root.
     var reselect: (PhoneTab) -> Void = { _ in }
-    /// The +'s long-press menu: capture, listening for tasks to be said.
     var captureByVoice: (() -> Void)?
     let capture: () -> Void
     @Namespace private var namespace
     @Environment(\.olStyle) private var style
+    @State private var capturePressed = false
 
     var body: some View {
         GlassEffectContainer(spacing: 14) {
@@ -112,29 +112,22 @@ struct OLDock: View {
     }
 
     private var captureButton: some View {
-        Button(action: capture) {
+        ZStack {
             // The design's 26 pt plus at a 2.2 stroke draws 16 pt across.
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(OL.onAccent)
                 .frame(width: OLMetrics.dockHeight, height: OLMetrics.dockHeight)
                 .contentShape(.circle)
+                .accessibilityHidden(true)
+            OLCaptureButton(label: captureLabel, isPressed: $capturePressed, sayTasks: captureByVoice, typeTask: capture)
         }
-        .buttonStyle(OLPressStyle(scale: 0.92))
+        .frame(width: OLMetrics.dockHeight, height: OLMetrics.dockHeight)
         .glassEffect(.regular.tint(OL.accent).interactive(), in: .circle)
         .olGlassShadow(.fab, in: Circle(), fill: OL.accent)
-        .accessibilityLabel(captureLabel)
-        .accessibilityIdentifier("dock.capture")
-        .accessibilityShowsLargeContentViewer { Label(captureLabel, systemImage: "plus") }
-        .contextMenu {
-            if let captureByVoice {
-                Button("New Task", systemImage: "plus", action: capture)
-                Button("Say Tasks", systemImage: "mic", action: captureByVoice)
-            }
-        }
-        .accessibilityActions {
-            if let captureByVoice { Button("Say tasks", action: captureByVoice) }
-        }
+        .scaleEffect(capturePressed && !style.reduceMotion ? 0.96 : 1)
+        .opacity(capturePressed ? 0.9 : 1)
+        .animation(style.animation(.easeOut(duration: 0.12)), value: capturePressed)
     }
 }
 

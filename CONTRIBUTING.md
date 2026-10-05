@@ -46,6 +46,9 @@ off initially; enabling it uses port **45874** and the client configuration key
 `openlist-dev`, leaving production's **45873** / `openlist` entry separate.
 Development's global quick-capture shortcut is off initially so opening Dev
 does not take production's shortcut. You can enable it in Dev settings.
+The separate global voice shortcut is opt-in in every build, initially
+Control-Shift-Option-Space, and can be changed in Settings. Review fixtures never
+register either real global shortcut, even if their saved settings enable it.
 `OPENLIST_DEV_CHECKS=1 ./Tools/run-mcp-checks.sh` verifies the development MCP
 defaults and exported client names through the actual local listener and helper.
 
@@ -191,6 +194,7 @@ screenshots (`xcrun simctl launch` passes them as `SIMCTL_CHILD_<name>`):
 | `OpenlistShowTray` | Shows its text in the tray, with Undo |
 | `OpenlistCaptureText` | Types its text into the Capture sheet |
 | `OpenlistVoiceRecording` | A recording's path, which voice capture listens to in place of the microphone (the Mac's Dev and Debug builds too) |
+| `OpenlistVoiceFixture` | Offline voice UX fixture: shows Listening until Done/Return, then reads each newline-separated task without a microphone, permission prompt or model (Debug/Dev review sessions only) |
 | `OpenlistComponentGallery=1` | Opens the design components' gallery (`OpenlistGalleryPage` 0–4 shows one part); Settings links to it too |
 
 The app's code is in `OpenlistiOS/`: `App/` (entry, `PhoneEnvironment`,
