@@ -138,6 +138,8 @@ struct OLTrailing: Equatable {
     var tone: Tone = .muted
     /// Read instead of the text: "Repeats every Wednesday", "Starred".
     var accessibilityLabel: String?
+    /// It's the task's due date, which a row can offer to change in place.
+    var isDue = false
 
     static func text(_ text: String, tone: Tone = .muted) -> OLTrailing { OLTrailing(text: text, tone: tone) }
     static let star = OLTrailing(symbol: "star.fill", tone: .star, accessibilityLabel: "Starred")
@@ -153,8 +155,9 @@ struct OLTrailing: Equatable {
         case .today: .due
         case .upcoming: .muted
         }
-        if let repeats { return .repeats(repeats, text: due.text, tone: tone) }
-        return OLTrailing(text: due.text, tone: tone)
+        var trailing = repeats.map { OLTrailing.repeats($0, text: due.text, tone: tone) } ?? OLTrailing(text: due.text, tone: tone)
+        trailing.isDue = true
+        return trailing
     }
 }
 
@@ -205,8 +208,9 @@ struct OLTrailingView: View {
 /// sits 36 pt in. With a subtitle (`.two`) it's 62 pt, the subtitle 13/18.
 ///
 /// The checkbox and the title are separate targets: the checkbox acts, the
-/// rest of the row opens the task.
-struct OLTaskRow: View {
+/// rest of the row opens the task. A `trailingControl` makes the trailing
+/// value a third.
+struct OLTaskRow<TrailingControl: View>: View {
     let title: String
     var state: OLCheck = .open
     var depth = 0
@@ -220,7 +224,13 @@ struct OLTaskRow: View {
     var isHighlighted = false
     var onToggle: () -> Void = {}
     var onOpen: (() -> Void)?
+    /// Drawn in the trailing value's place, outside the target that opens
+    /// the task, so the value acts on its own: a due date's menu. It draws
+    /// the value itself, centred in a target of its own, 44 pt tall.
+    var trailingControl: TrailingControl?
 
+    /// Where the trailing value sits in the row's text, for its control.
+    @State private var trailingFrame: CGRect?
     @ScaledMetric(relativeTo: .callout) private var minHeight: CGFloat = 52
     @ScaledMetric(relativeTo: .callout) private var twoLineHeight: CGFloat = 62
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -251,17 +261,17 @@ struct OLTaskRow: View {
                     if dynamicTypeSize.isAccessibilitySize {
                         VStack(alignment: .leading, spacing: 3) {
                             sourceLabel.fixedSize(horizontal: false, vertical: true)
-                            if let trailing { OLTrailingView(trailing) }
+                            trailingValue
                         }
                     } else {
                         ViewThatFits(in: .horizontal) {
                             HStack(spacing: 6) {
                                 sourceLabel.lineLimit(1)
-                                if let trailing { OLTrailingView(trailing) }
+                                trailingValue
                             }
                             VStack(alignment: .leading, spacing: 3) {
                                 sourceLabel.lineLimit(2)
-                                if let trailing { OLTrailingView(trailing) }
+                                trailingValue
                             }
                         }
                     }
@@ -271,15 +281,36 @@ struct OLTaskRow: View {
             }
         }
         .contentShape(.rect)
-        if let onOpen {
-            Button(action: onOpen) { label }
-                .buttonStyle(OLRowPressStyle())
-                .accessibilityLabel(title)
-                .accessibilityValue([subtitle, trailing.map { $0.accessibilityLabel ?? $0.text ?? "" }]
-                    .compactMap(\.self).filter { !$0.isEmpty }.joined(separator: ", "))
-                .accessibilityHint("Opens the task")
-        } else {
-            label.accessibilityElement(children: .combine)
+        // The control sits over the button, not in it, covering only the
+        // value it draws: the rest of the row still opens the task.
+        ZStack(alignment: .topLeading) {
+            if let onOpen {
+                Button(action: onOpen) { label }
+                    .buttonStyle(OLRowPressStyle())
+                    .accessibilityLabel(title)
+                    .accessibilityValue([subtitle, trailing.map { $0.accessibilityLabel ?? $0.text ?? "" }]
+                        .compactMap(\.self).filter { !$0.isEmpty }.joined(separator: ", "))
+                    .accessibilityHint("Opens the task")
+            } else {
+                label.accessibilityElement(children: .combine)
+            }
+            if let trailingControl, let trailingFrame, trailing != nil {
+                // Centred on the value it draws.
+                trailingControl
+                    .frame(width: trailingFrame.width, height: trailingFrame.height)
+                    .offset(x: trailingFrame.minX, y: trailingFrame.minY)
+            }
+        }
+        .coordinateSpace(.named(OLTrailingSpace.name))
+    }
+
+    /// The trailing value; held in place but undrawn under a control that
+    /// draws it instead.
+    @ViewBuilder private var trailingValue: some View {
+        if let trailing {
+            OLTrailingView(trailing)
+                .opacity(trailingControl == nil ? 1 : 0)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(OLTrailingSpace.name)) } action: { trailingFrame = $0 }
         }
     }
 
@@ -293,6 +324,22 @@ struct OLTaskRow: View {
             }
         }
     }
+}
+
+extension OLTaskRow where TrailingControl == EmptyView {
+    init(title: String, state: OLCheck = .open, depth: Int = 0, subtitle: String? = nil, subtitleIcon: String? = nil,
+         subtitleAccent: Color = OL.muted, trailing: OLTrailing? = nil, separator: OLSeparator = .none,
+         isHighlighted: Bool = false, onToggle: @escaping () -> Void = {}, onOpen: (() -> Void)? = nil) {
+        self.init(title: title, state: state, depth: depth, subtitle: subtitle, subtitleIcon: subtitleIcon,
+                  subtitleAccent: subtitleAccent, trailing: trailing, separator: separator, isHighlighted: isHighlighted,
+                  onToggle: onToggle, onOpen: onOpen, trailingControl: nil)
+    }
+}
+
+/// The row's text, where its trailing value is measured for the control
+/// drawn in its place.
+private enum OLTrailingSpace {
+    static let name = "OLTaskRow.text"
 }
 
 /// The hairline between rows in a card: from `inset`, to the card's edge.

@@ -122,7 +122,9 @@ final class TaskSwipeUITests: XCTestCase {
         XCTAssertEqual(task.buttons["task.swipe.second"].label, "Complete")
         task.buttons["task.swipe.first"].tap()
         XCTAssertTrue(app.screen("tray").waitForExistence(timeout: 5))
-        app.buttons[title].tap()
+        // On the title: XCUITest's own tap point for a row whose date arrived
+        // in place falls on the edge of the date's target.
+        app.buttons[title].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
         app.waitForScreen("screen.taskDetail")
         XCTAssertTrue(app.buttons["detail.when"].label.contains("Tomorrow"))
         app.buttons["Back to Reading"].tap()

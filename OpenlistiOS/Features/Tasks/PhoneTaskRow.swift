@@ -17,8 +17,8 @@ enum PhoneRowContext: Equatable {
 }
 
 /// A task as a card row (`OLTaskRow`): its checkbox ticks through
-/// `PhoneActions`, so it dwells with Undo, and the rest opens Task detail.
-/// Long-pressing offers the task's quick actions.
+/// `PhoneActions`, so it dwells with Undo, its date offers other days, and
+/// the rest opens Task detail. Long-pressing offers the task's quick actions.
 struct PhoneTaskRow: View {
     let task: Block
     var context: PhoneRowContext = .list
@@ -38,19 +38,28 @@ struct PhoneTaskRow: View {
     var body: some View {
         let actions = env.actions
         let closing = actions.isClosing(task.id)
+        let trailing = task.isCompleted && !closing && !showsCompletion ? nil
+            : Self.trailing(for: task, closing: closing, context: context, slot: slot, subtasks: subtasks,
+                            now: env.now, calendar: env.settings.calendar)
         OLTaskRow(title: task.displayTitle,
                   state: Self.check(for: task, closing: closing, now: env.now, calendar: env.settings.calendar),
                   depth: depth, subtitle: subtitle,
                   subtitleIcon: subtitle == nil ? nil : library.list(task.listID)?.icon,
                   subtitleAccent: library.list(task.listID)?.accent.color ?? OL.muted,
-                  trailing: task.isCompleted && !closing && !showsCompletion ? nil
-                      : Self.trailing(for: task, closing: closing, context: context, slot: slot, subtasks: subtasks,
-                                      now: env.now, calendar: env.settings.calendar),
+                  trailing: trailing,
                   separator: separator,
                   onToggle: { actions.toggle(task) },
-                  onOpen: { env.navigator.open(.taskDetail(task.id)) })
+                  onOpen: { env.navigator.open(.taskDetail(task.id)) },
+                  trailingControl: Self.dueMenu(for: task, trailing: trailing, closing: closing))
             .contextMenu { PhoneTaskMenu(task: task) }
             .phoneTaskSwipe(task)
+    }
+
+    /// The menu that changes an open task's date from its row, where the row
+    /// shows that date. Not while it dwells: ticked, it's on its way out.
+    static func dueMenu(for task: Block, trailing: OLTrailing?, closing: Bool) -> PhoneDueMenu? {
+        guard let trailing, trailing.isDue, !closing, !task.isCompleted else { return nil }
+        return PhoneDueMenu(task: task, trailing: trailing)
     }
 
     /// Done while it dwells or once written; late ahead of priority, as in

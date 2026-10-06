@@ -53,13 +53,19 @@ struct ScreenLogicTests {
         func trailing(_ title: String, _ context: PhoneRowContext) throws -> OLTrailing? {
             PhoneTaskRow.trailing(for: try #require(phone.task(title)), context: context, now: now, calendar: calendar)
         }
-        #expect(try trailing("Close out Q2 retro actions", .today) == .text("3d late", tone: .late))
-        #expect(try trailing("Pay the ryokan deposit", .today) == .text("18:00", tone: .due))
+        /// A due date, which the row's date menu changes.
+        func due(_ text: String, tone: OLTrailing.Tone) -> OLTrailing {
+            var trailing = OLTrailing.text(text, tone: tone)
+            trailing.isDue = true
+            return trailing
+        }
+        #expect(try trailing("Close out Q2 retro actions", .today) == due("3d late", tone: .late))
+        #expect(try trailing("Pay the ryokan deposit", .today) == due("18:00", tone: .due))
         // Due today with no time: Today says only that it repeats.
         #expect(try trailing("Ask Mika to water the planters", .today)?.symbol == "repeat")
         #expect(try trailing("Ask Mika to water the planters", .today)?.text == nil)
         #expect(try trailing("Ask Mika to water the planters", .list)?.text == "Today")
-        #expect(try trailing("Ask Mika to water the planters", .select) == .text("Today", tone: .due))
+        #expect(try trailing("Ask Mika to water the planters", .select) == due("Today", tone: .due))
         #expect(try trailing("Book the ryokan", .list) == .star)
         #expect(try trailing("Book the ryokan", .select) == nil)
         #expect(try trailing("Renew passports", .list)?.text == "Sat")

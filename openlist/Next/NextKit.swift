@@ -24,6 +24,9 @@ struct NXChipModel: Identifiable {
     /// When it plays chipIn on a task row, as the design's `fresh` key. On
     /// the capture card every chip pops but a `.never` one.
     var pops: NXChipPop = .withRow
+    /// A task's date or due time: on a row or the triage card, a click on it
+    /// opens the Schedule popover (`NXScheduleChip`).
+    var schedules = false
 }
 
 /// When a task row's chip plays chipIn, as each of the design's row chips
