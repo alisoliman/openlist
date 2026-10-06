@@ -146,7 +146,9 @@ private struct NXTriageCard: View {
                 .padding(.horizontal, 18)
                 .padding(.bottom, 4 + titleLeading / 2)
             HStack(spacing: 6) {
-                ForEach(chips) { NXChip(chip: $0) }
+                ForEach(chips) { chip in
+                    if chip.schedules { NXScheduleChip(task: task, chip: chip) } else { NXChip(chip: chip) }
+                }
             }
             .frame(minHeight: 4)
             .padding(.top, 4)
@@ -200,7 +202,8 @@ private struct NXTriageCard: View {
             let offset = NXFormat.dayOffset(due, now: now)
             chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due, now: now),
                                      icon: offset < 0 ? "exclamationmark.circle.fill" : "calendar",
-                                     tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0))
+                                     tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0,
+                                     schedules: true))
         }
         if task.priority != .none {
             // Only High reads as urgent, in red; the others name their level

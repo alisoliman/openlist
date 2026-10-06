@@ -127,7 +127,12 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                 ForEach(leadingChips + NXRowChips.chips(for: task, options: options, library: library, workbench: workbench)) { chip in
                     // A change pops every chip but the subtask count and done time; a new
                     // row pops all but those and its list and star.
-                    NXChip(chip: chip, fresh: chip.pops.plays(fresh: fresh, changed: freshChip), quiet: options.quiet)
+                    let pops = chip.pops.plays(fresh: fresh, changed: freshChip)
+                    if chip.schedules {
+                        NXScheduleChip(task: task, chip: chip, fresh: pops, quiet: options.quiet)
+                    } else {
+                        NXChip(chip: chip, fresh: pops, quiet: options.quiet)
+                    }
                 }
                 // It pops in with its own chipIn and goes at once, as the
                 // design's; the chips beside it jump to make room.
@@ -531,6 +536,46 @@ struct NXChipFlow: Layout {
     }
 }
 
+/// A task's date chip as a button: it opens the inspector's Schedule popover
+/// on Due, from the row, so a date changes where it shows. Each change is
+/// the workbench's, with its Undo and tray.
+struct NXScheduleChip: View {
+    @Environment(AppEnvironment.self) private var env
+    let task: Block
+    let chip: NXChipModel
+    var fresh = false
+    var quiet = false
+    @State private var presented = false
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            // A line being written is left first, as a click on the checkbox leaves it.
+            NXDocumentEditing.end()
+            presented = true
+        } label: {
+            NXChip(chip: chip, fresh: fresh, quiet: quiet)
+                .background {
+                    // A wash under the chip's own fill; a quiet chip, only
+                    // text, gets room around it.
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .animation(NX.cssEase(140)) { $0.foregroundStyle(NX.ink(hovering || presented ? 0.07 : 0)) }
+                        .padding(quiet ? EdgeInsets(top: -2, leading: -4, bottom: -2, trailing: -4) : EdgeInsets())
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(NXPressStyle())
+        .onHover { hovering = $0 }
+        .help("Change the due date")
+        .accessibilityLabel("Due \(chip.label)")
+        .accessibilityHint("Changes the due date")
+        .popover(isPresented: $presented, arrowEdge: .bottom) {
+            TaskSchedulePicker(block: task, initialSection: .due)
+                .environment(env)
+        }
+    }
+}
+
 enum NXRowChips {
     @MainActor
     static func chips(for task: Block, options: NXRowOptions, library: NextLibrary, workbench: Workbench) -> [NXChipModel] {
@@ -550,7 +595,7 @@ enum NXRowChips {
         }
         if task.includesTime, let due = task.dueDate, !done {
             // Neutral all day, as the design's: only an earlier day reads as late.
-            chips.append(NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill", fill: true))
+            chips.append(NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill", fill: true, schedules: true))
         }
         if !done, workbench.isPlanned(task) {
             let minutes = task.schedulingEstimateMinutes
@@ -562,7 +607,8 @@ enum NXRowChips {
             let offset = NXFormat.dayOffset(due, now: now)
             chips.append(NXChipModel(id: "due", label: NXFormat.dueLabel(due, now: now),
                                      icon: offset < 0 ? "exclamationmark.circle.fill" : "calendar",
-                                     tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0))
+                                     tone: offset < 0 ? .over : offset == 0 ? .accent : .neutral, fill: offset < 0,
+                                     schedules: true))
         }
         if task.isStarred {
             chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true, pops: .onChange))

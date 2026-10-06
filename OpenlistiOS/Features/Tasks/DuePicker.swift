@@ -114,3 +114,48 @@ struct DuePickerSheet: View {
         date = calendar.date(bySettingHour: time.hour ?? 9, minute: time.minute ?? 0, second: 0, of: day) ?? day
     }
 }
+
+/// A row's due date as a menu, Task detail's When choices for the day: a
+/// quick day, the date picker or Clear, so a task moves without opening it.
+struct PhoneDueMenu: View {
+    let task: Block
+    /// The row's date as it reads, which the menu draws in its place.
+    let trailing: OLTrailing
+    @Environment(PhoneEnvironment.self) private var env
+    @State private var picksDate = false
+    /// The picker's choice, saved once its sheet has gone: a cleared or moved
+    /// date can take this menu off the row, which mustn't happen under a
+    /// sheet still closing.
+    @State private var picked: (date: Date?, includesTime: Bool)?
+
+    var body: some View {
+        let actions = env.actions
+        let now = env.now
+        let calendar = env.settings.calendar
+        Menu {
+            Button("Due date…", systemImage: "calendar") { picksDate = true }
+            ForEach([PhoneDay.today, .tomorrow, .nextWeek]) { day in
+                Button(day.title) { actions.schedule([task], on: day.date(now: now, calendar: calendar)) }
+            }
+            Button("Clear due date", systemImage: "xmark", role: .destructive) { actions.schedule([task], on: nil) }
+        } label: {
+            // A 44 pt target around the date, as the row asks of its control.
+            OLTrailingView(trailing)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(OLRowPressStyle())
+        .accessibilityLabel("Due date")
+        .accessibilityValue(trailing.accessibilityLabel ?? trailing.text ?? "")
+        .accessibilityHint("Changes when \(task.displayTitle) is due")
+        .accessibilityIdentifier("task.due.\(task.displayTitle)")
+        .sheet(isPresented: $picksDate) {
+            guard let picked else { return }
+            self.picked = nil
+            actions.schedule([task], on: picked.date, includesTime: picked.includesTime)
+        } content: {
+            DuePickerSheet(date: task.dueDate, includesTime: task.includesTime, now: now) { picked = ($0, $1) }
+        }
+    }
+}

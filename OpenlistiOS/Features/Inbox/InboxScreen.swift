@@ -6,8 +6,8 @@
 import SwiftUI
 
 /// The Inbox (mockup 07): what's still to triage, newest first, each with how
-/// long ago it came in, and Triage one by one. Ticking one dwells with Undo;
-/// the rest of a row opens it.
+/// long ago it came in, and Triage one by one. Ticking one dwells with Undo,
+/// a date offers other days, and the rest of a row opens it.
 struct InboxScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
@@ -79,11 +79,13 @@ private struct InboxRow: View {
 
     var body: some View {
         let closing = env.actions.isClosing(task.id)
+        let trailing = self.trailing
         OLTaskRow(title: task.displayTitle,
                   state: PhoneTaskRow.check(for: task, closing: closing, now: now, calendar: env.settings.calendar),
                   trailing: trailing, separator: separator,
                   onToggle: { env.actions.toggle(task) },
-                  onOpen: { env.navigator.open(.taskDetail(task.id)) })
+                  onOpen: { env.navigator.open(.taskDetail(task.id)) },
+                  trailingControl: PhoneTaskRow.dueMenu(for: task, trailing: trailing, closing: closing))
             .contextMenu { PhoneTaskMenu(task: task) }
             .phoneTaskSwipe(task)
     }
