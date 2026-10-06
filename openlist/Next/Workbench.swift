@@ -204,6 +204,9 @@ final class Workbench {
     /// The inspector's note has the keyboard, where ⌘↩ finishes it as it
     /// finishes the list document's.
     var isWritingInspectorNote = false
+    /// The inspected task fills the main pane in place of the screen, until
+    /// it's put back, the details close or another screen shows.
+    var isTaskPageOpen = false
     /// The task the inspector's Add subtask is for, until its list's document
     /// is on show to write the new line.
     @ObservationIgnored var pendingSubtaskParentID: UUID? {
@@ -226,6 +229,8 @@ final class Workbench {
     func addSubtask(to id: UUID) {
         guard let task = store.block(id: id), task.isTask, let list = store.list(id: task.listID) else { return }
         document?.commitLine()
+        // The new line is written in the list, which the page would cover.
+        isTaskPageOpen = false
         if let document, document.document.listID == list.id {
             document.appendSubtask(to: id)
             return
@@ -417,6 +422,7 @@ final class Workbench {
         // The new screen may already have published its rows.
         if visibleRoute != navigator.route { visibleIDs = [] }
         tasksQueryFocused = false
+        isTaskPageOpen = false
         endGoChord()
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
@@ -466,6 +472,16 @@ final class Workbench {
         navigator.releaseRevealSelection()
         focusID = id
         navigator.openTask(id)
+    }
+
+    /// Opens the inspected task out over the main pane, or puts it back
+    /// beside the screen. A line being written in the list it covers lets
+    /// go first, so the keys don't type into what can't be seen.
+    func toggleTaskPage() {
+        guard navigator.openTaskID != nil || isTaskPageOpen else { return }
+        NXDocumentEditing.end()
+        selection = []
+        isTaskPageOpen.toggle()
     }
 
     // MARK: Focus movement

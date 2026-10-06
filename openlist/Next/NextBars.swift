@@ -8,14 +8,12 @@ import SwiftUI
 /// The dark floating bar that acts on a multi-selection.
 struct NXSelectionBar: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
 
     /// How much of each button fits, e.g. beside the inspector in a narrow window.
-    private enum Fit { case full, titles, icons }
+    private enum Fit { case titles, icons }
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            bar(.full)
             bar(.titles)
             bar(.icons)
         }
@@ -46,7 +44,7 @@ struct NXSelectionBar: View {
                 .contentTransition(.numericText())
                 .frame(minWidth: 22, minHeight: 22)
                 .padding(.horizontal, count > 9 ? 6 : 0)
-                .background(style.accent, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .padding(.trailing, fit == .icons ? 4 : 0)
                 .accessibilityLabel("\(count) selected")
             if fit != .icons {
@@ -57,13 +55,12 @@ struct NXSelectionBar: View {
                     .accessibilityHidden(true)
             }
             divider
-            barButton("Done", icon: "checkmark.circle", key: "E", tint: Color(hex: 0x6FD3A4), fit: fit) { workbench.complete(ids) }
-            barButton("Today", icon: "calendar", key: "T", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 0) }
-            barButton("Tomorrow", icon: "sun.horizon", key: "M", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.schedule(ids, offset: 1) }
-            barButton("Plan", icon: "calendar.badge.clock", key: "P", tint: Color(hex: 0xC9AEFF), fit: fit) { workbench.plan(ids) }
-            barButton("Star", icon: "star", key: "F", tint: Color(hex: 0xF2C14E), fit: fit) { workbench.star(ids) }
-            barButton("Trash", icon: "trash", key: "D", tint: Color(hex: 0xFF8A8A), hover: Color(red: 1, green: 0.47, blue: 0.47).opacity(0.14),
-                      fit: fit) {
+            barButton("Done", icon: "checkmark.circle", key: "E", fit: fit) { workbench.complete(ids) }
+            barButton("Today", icon: "calendar", key: "T", fit: fit) { workbench.schedule(ids, offset: 0) }
+            barButton("Tomorrow", icon: "sun.horizon", key: "M", fit: fit) { workbench.schedule(ids, offset: 1) }
+            barButton("Plan", icon: "calendar.badge.clock", key: "P", fit: fit) { workbench.plan(ids) }
+            barButton("Star", icon: "star", key: "F", fit: fit) { workbench.star(ids) }
+            barButton("Trash", icon: "trash", key: "D", hover: Color(red: 1, green: 0.47, blue: 0.47).opacity(0.14), fit: fit) {
                 workbench.trash(ids)
             }
             divider
@@ -82,20 +79,19 @@ struct NXSelectionBar: View {
         Rectangle().fill(.white.opacity(0.14)).frame(width: 1, height: 18).padding(.horizontal, 4)
     }
 
-    private func barButton(_ title: String, icon: String, key: String, tint: Color, hover: Color = .white.opacity(0.1),
+    private func barButton(_ title: String, icon: String, key: String, hover: Color = .white.opacity(0.1),
                            fit: Fit, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
                 if fit != .icons { Text(title).font(.system(size: 12, weight: .medium)) }
-                if fit == .full { NXKey(key, opacity: 0.5, size: 9.5) }
             }
         }
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8,
                                         padding: EdgeInsets(top: 7, leading: fit == .icons ? 7 : 9,
                                                             bottom: 7, trailing: fit == .icons ? 7 : 9),
                                         foreground: .white))
-        .nxHelp(fit == .icons ? title : nil)
+        .help("\(title) (\(key))")
         .accessibilityLabel(title)
     }
 }
@@ -110,7 +106,7 @@ struct NXTray: View {
 
     var body: some View {
         let workbench = env.workbench
-        let tint = Self.tint(message.tone)
+        let tint = Self.tint(message.tone, accent: style.accent)
         HStack(spacing: 10) {
             // The design's 15pt icon line sets a plain message's height; only
             // Undo or a destination's pill makes the tray taller.
@@ -133,10 +129,11 @@ struct NXTray: View {
                                                 padding: Self.pillPadding, foreground: .white))
             }
             if message.undoable, workbench.canUndo {
-                Button("Undo ⌘Z") { workbench.undoLast() }
+                Button("Undo") { workbench.undoLast() }
                     .font(.system(size: 11.5, weight: .semibold))
-                    .buttonStyle(NXHoverButtonStyle(hover: Color(hex: 0xC9AEFF, opacity: 0.24), rest: Color(hex: 0xC9AEFF, opacity: 0.14), radius: 7,
-                                                    padding: Self.pillPadding, foreground: Color(hex: 0xC9AEFF)))
+                    .buttonStyle(NXHoverButtonStyle(hover: .white.opacity(0.18), rest: .white.opacity(0.1), radius: 7,
+                                                    padding: Self.pillPadding, foreground: .white))
+                    .help("Undo (⌘Z)")
             }
         }
         .foregroundStyle(.white)
@@ -182,12 +179,13 @@ struct NXTray: View {
         }
     }
 
-    static func tint(_ tone: TrayTone) -> Color {
+    static func tint(_ tone: TrayTone, accent: Color) -> Color {
         switch tone {
         case .green: Color(hex: 0x6FD3A4)
         case .red: Color(hex: 0xFF8A8A)
         case .amber: Color(hex: 0xF2C14E)
-        case .accent, .neutral: Color(hex: 0xC9AEFF)
+        case .accent: accent
+        case .neutral: Color.white.opacity(0.7)
         }
     }
 }

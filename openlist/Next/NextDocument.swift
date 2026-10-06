@@ -100,7 +100,7 @@ private struct NXDocumentLines: View {
                              : "Add to \(list.displayTitle)") {
                 editor.appendTask()
             }
-            NXDocumentHints(tasksOnly: tasksOnly)
+            NXDocumentHints(tasksOnly: tasksOnly, shown: rows.isEmpty || editor.focus.blockID != nil)
         }
         .padding(.top, 12)
         .overlayPreferenceValue(EditorTextBoundsKey.self) { anchors in
@@ -376,11 +376,14 @@ private struct NXDocumentRow: View {
         return BlockTree.sectionLevel(of: block.kind) != nil && context.sections[row.id]?.isEmpty == false
     }
 
+    /// The chevron and grip centred on the line's first line of text.
     private var caretTop: CGFloat {
+        guard !block.isTask else { return 6 }
+        let top = NXDocumentBlock.padding(for: block.kind, first: context.drawnIDs.first == row.id).top
         switch block.kind {
-        case .heading1: 23
-        case .heading2: 15
-        default: 6
+        case .heading1: return top + 3
+        case .heading2: return top + 2
+        default: return top + 1
         }
     }
 
@@ -477,7 +480,7 @@ private struct NXLineDragPreview: View {
             if count > 1 {
                 Text("+\(count - 1)")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(NX.ink(0.58))
+                    .foregroundStyle(NX.textTertiary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -600,10 +603,12 @@ private struct NXDocumentTask: View {
                                                 foreground: noteOpen ? style.accent : NX.ink(0.45), hoverForeground: NX.ink))
                 .onHover { noteHovering = $0 }
                 // Full strength under the pointer, as the design's hover has it.
-                // Only the fade is animated, its `opacity 140ms ease`, as the
-                // open icon's: the colour and hover fill change at once.
+                // At rest it shows only while the note is open: a folded note
+                // already has its glyph after the title. Only the fade is
+                // animated, its `opacity 140ms ease`, as the open icon's: the
+                // colour and hover fill change at once.
                 .animation(NX.cssEase(140)) {
-                    $0.opacity(noteHovering ? 1 : !task.note.isEmpty || noteOpen ? 0.9 : rowHovering || editing ? 0.5 : 0)
+                    $0.opacity(noteHovering ? 1 : noteOpen ? 0.9 : rowHovering || editing ? 0.5 : 0)
                 }
                 .help(noteName(open: noteOpen))
                 .accessibilityLabel(noteName(open: noteOpen))
@@ -747,7 +752,8 @@ private struct NXDocumentNote: View {
             Text(empty ? "Add a note…" : task.note)
                 .font(.system(size: 13))
                 .lineSpacing(leading)
-                .foregroundStyle(NX.ink(empty ? 0.32 : 0.62))
+                // The note editor's ink, so a note reads the same written or shown.
+                .foregroundStyle(empty ? NX.textQuaternary : NX.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, leading / 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -777,7 +783,7 @@ private struct NXDocumentNote: View {
     }
 }
 
-/// The note's textarea: 400 13/1.55 ink .66. Return breaks the line; Esc,
+/// The note's textarea: 400 13/1.55 in the secondary ink. Return breaks the line; Esc,
 /// ⌘Return and Tab commit; ⇧Tab commits and goes back to the title. Leaving
 /// it by any other way commits too.
 private struct NXNoteEditor: NSViewRepresentable {
@@ -935,7 +941,6 @@ final class NXNoteTextView: NSTextView {
 /// A heading, list item, text line or one of the editor's other kinds.
 private struct NXDocumentBlock: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let row: BlockRow
     let context: NXLineContext
 
@@ -976,14 +981,27 @@ private struct NXDocumentBlock: View {
         .contextMenu { NXLineMenu(id: row.id, kind: block.kind, editor: context.editor) }
     }
 
-    /// The design's line paddings: 20/4 and 13/3 for its headings, 5 for the rest.
     private var padding: (top: CGFloat, bottom: CGFloat) {
-        switch block.kind {
-        case .heading1: (20, 4)
-        case .heading2: (13, 3)
+        Self.padding(for: block.kind, first: context.drawnIDs.first == row.id)
+    }
+
+    /// A heading sits closer to what it titles than to what came before it,
+    /// and text keeps a paragraph's gap from the lines around it. The first
+    /// line takes no extra room above it, under the page's header.
+    static func padding(for kind: BlockKind, first: Bool) -> (top: CGFloat, bottom: CGFloat) {
+        let spacing: (top: CGFloat, bottom: CGFloat) = switch kind {
+        case .heading1: (28, 8)
+        case .heading2: (20, 6)
+        case .heading3: (14, 4)
+        case .paragraph, .quote: (7, 7)
         default: (5, 5)
         }
+        return first ? (min(spacing.top, 5), spacing.bottom) : spacing
     }
+
+    /// The widest a line of prose runs, so its lines stay comfortable to read
+    /// on a wide page.
+    static let measure: CGFloat = 640
 
     /// A collapsed heading counts the open tasks it folds away.
     private var openChip: NXChipModel? {
@@ -1008,7 +1026,7 @@ private struct NXDocumentBlock: View {
             let baseline = NXEditor.lineBoxInset(for: .numbered) + NXEditor.baselineOffset(for: .numbered)
             Text("\(row.ordinal).")
                 .font(.system(size: 12.5, design: .monospaced))
-                .foregroundStyle(NX.ink(0.45))
+                .foregroundStyle(NX.textTertiary)
                 .padding(.top, max(0, baseline - font.ascender))
                 .frame(width: 26, alignment: .leading)
         default:
@@ -1033,14 +1051,16 @@ private struct NXDocumentBlock: View {
                 .padding(.horizontal, 10)
                 .background(NX.ink(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         case .quote:
-            // A 2.5pt accent rail down the quote's side.
+            // A 2.5pt grey rail down the quote's side.
             NXLineText(row: row, context: context, editing: editing)
                 .padding(.leading, 13.5)
                 .overlay(alignment: .leading) {
-                    Capsule().fill(style.accent.opacity(0.45)).frame(width: 2.5)
+                    Capsule().fill(NX.ink(0.16)).frame(width: 2.5)
                 }
+                .frame(maxWidth: Self.measure, alignment: .leading)
         default:
             NXLineText(row: row, context: context, editing: editing)
+                .frame(maxWidth: Self.measure, alignment: .leading)
         }
     }
 }
@@ -1105,7 +1125,7 @@ private struct NXDocumentImage: View {
             TextField("Caption", text: $draft, prompt: Text("Add a caption…"))
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
-                .foregroundStyle(NX.ink(0.5))
+                .foregroundStyle(NX.textTertiary)
                 .focused($focused)
                 .onSubmit(commit)
                 .onExitCommand { editing = false }
@@ -1125,7 +1145,7 @@ private struct NXDocumentImage: View {
             let shown = !block.mediaCaption.isEmpty || hovering || voiceOver
             Text(block.mediaCaption.isEmpty ? "Add a caption…" : block.mediaCaption)
                 .font(.system(size: 12))
-                .foregroundStyle(NX.ink(block.mediaCaption.isEmpty ? 0.36 : 0.5))
+                .foregroundStyle(block.mediaCaption.isEmpty ? NX.textQuaternary : NX.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .opacity(shown ? 1 : 0)
                 .animation(.easeOut(duration: 0.12), value: shown)
@@ -1189,7 +1209,10 @@ private struct NXLineText: View {
         callbacks.onDoubleClick = {
             guard block.isTask else { return }
             // Only the inspector opens, with the row focused for the keys, not
-            // the text a double-click selected.
+            // the text a double-click selected, whose word doesn't stay marked.
+            if let text = NSApp.keyWindow?.firstResponder as? BlockNSTextView {
+                text.setSelectedRange(NSRange(location: NSMaxRange(text.selectedRange()), length: 0))
+            }
             NXDocumentEditing.end()
             workbench.inspect(id)
         }
@@ -1298,7 +1321,6 @@ enum NXDocumentEditing {
 /// five kinds, and the editor's others as a query brings them up. It opens
 /// above the line when it wouldn't fit below it on the visible page.
 private struct NXSlashCard: View {
-    @Environment(\.nextStyle) private var style
     let editor: OutlineEditor
     let anchors: [UUID: Anchor<CGRect>]
     /// The card's height as last laid out, and for how many rows.
@@ -1349,7 +1371,7 @@ private struct NXSlashCard: View {
             .font(.system(size: 10, weight: .semibold))
             .kerning(0.8)
             .textCase(.uppercase)
-            .foregroundStyle(NX.ink(0.36))
+            .foregroundStyle(NX.textTertiary)
             // The design's line-height 1, inside 7/9/6 padding: 23pt.
             .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
             .padding(.top, 7)
@@ -1362,19 +1384,20 @@ private struct NXSlashCard: View {
             HStack(spacing: 10) {
                 Image(systemName: option.symbol)
                     .font(.system(size: 13))
-                    .foregroundStyle(selected ? Color.white : NX.ink(0.5))
+                    .foregroundStyle(selected ? NX.ink(0.75) : NX.ink(0.5))
                     .frame(width: 16, height: 16)
                 Text(option.label)
                     .font(.system(size: 13, weight: .medium))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if !option.hint.isEmpty {
-                    Text(option.hint).font(NX.mono(10.5)).opacity(0.5)
+                    Text(option.hint).font(NX.mono(10.5)).foregroundStyle(NX.textQuaternary)
                 }
             }
-            .foregroundStyle(selected ? Color.white : NX.ink)
+            .foregroundStyle(NX.ink)
             .padding(.vertical, 8)
             .padding(.horizontal, 9)
-            .background(selected ? style.accent : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            // A grey highlight, as the page's other menus draw theirs.
+            .background(selected ? NX.ink(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1427,7 +1450,7 @@ private struct NXDocumentAddRow: View {
                 .padding(.vertical, (13.5 * 1.3 - NX.lineHeight(13.5)) / 2)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(hovering ? NX.ink(0.55) : NX.ink(0.36))
+        .foregroundStyle(hovering ? NX.textTertiary : NX.textQuaternary)
         .padding(.vertical, 7)
         .padding(.horizontal, 10)
         .background(hovering ? NX.ink(0.035) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -1444,9 +1467,12 @@ private struct NXDocumentAddRow: View {
 }
 
 /// The shortcut strip under the document. Showing only tasks, just the
-/// keys that work there.
+/// keys that work there. It shows while a line is being written, or on an
+/// empty document, and otherwise steps out of sight, keeping its room so
+/// nothing below it moves.
 private struct NXDocumentHints: View {
     var tasksOnly = false
+    var shown = true
 
     private static let hints: [(key: String, label: String)] = [
         ("#", "Heading"), ("##", "Subheading"), ("-", "Bullet"), ("[ ]", "Task"),
@@ -1471,9 +1497,12 @@ private struct NXDocumentHints: View {
             }
         }
         .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(NX.ink(0.38))
+        .foregroundStyle(NX.textQuaternary)
         .padding(.top, 10)
         .padding(.horizontal, 10)
+        .opacity(shown ? 1 : 0)
+        .animation(NX.cssEase(shown ? 200 : 120), value: shown)
         .accessibilityElement(children: .combine)
+        .accessibilityHidden(!shown)
     }
 }

@@ -157,7 +157,7 @@ private struct LibraryFailureView: View {
                 .multilineTextAlignment(.center)
             Text("Your existing database has not been replaced. Check available disk space and file permissions, then restart Openlist.\n\n\(message)")
                 .font(.system(size: 12.5))
-                .foregroundStyle(NX.ink(0.6))
+                .foregroundStyle(NX.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 460)

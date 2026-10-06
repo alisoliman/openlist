@@ -25,7 +25,7 @@ struct MoveListSheet: View {
                 NXPanelTitle("Move “\(list.displayTitle)”")
                 Text("Its nested lists, tasks, notes and files move with it. It stays pinned in the sidebar if it was.")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(NX.ink(0.55))
+                    .foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             let shown = parents(in: hierarchy, matching: search)

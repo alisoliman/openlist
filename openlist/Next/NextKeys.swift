@@ -447,7 +447,9 @@ final class NextKeyHandler {
             }
             return !NSApp.isFullKeyboardAccessEnabled
         case Key.escape:
-            if navigator.openTaskID != nil { navigator.closeTask() }
+            // The page goes back beside the screen first; the next Esc closes it.
+            if navigator.openTaskID != nil, workbench.isTaskPageOpen { workbench.toggleTaskPage() }
+            else if navigator.openTaskID != nil { navigator.closeTask() }
             else if !workbench.selection.isEmpty {
                 workbench.clearSelection()
                 announce("Selection cleared")

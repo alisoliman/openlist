@@ -43,10 +43,10 @@ struct TemplateCopySheet: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(contents) Tasks start open, with no due dates, reminders or planned time.")
-                    .foregroundStyle(NX.ink(0.7))
+                    .foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Labels, priority, stars and formatting are kept. The original stays unchanged.")
-                    .foregroundStyle(NX.ink(0.5))
+                    .foregroundStyle(NX.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .font(.system(size: 12.5))
@@ -63,7 +63,7 @@ struct TemplateCopySheet: View {
                             .foregroundStyle(NX.ink)
                         Text(hint)
                             .font(.system(size: 11.5))
-                            .foregroundStyle(NX.ink(0.48))
+                            .foregroundStyle(NX.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,7 +72,10 @@ struct TemplateCopySheet: View {
                     .contentShape(Rectangle())
                     .onTapGesture { keepsRecurrence.toggle() }
                     .accessibilityHidden(true)
-                    NXToggle(isOn: keepsRecurrence, label: "Keep repeating rules") { keepsRecurrence.toggle() }
+                    Toggle("Keep repeating rules", isOn: $keepsRecurrence)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
                         .accessibilityHint(hint)
                         .accessibilityIdentifier("template-keep-recurrence")
                         .padding(.trailing, 14)

@@ -39,7 +39,7 @@ struct TaskSchedulePicker: View {
                         .accessibilityAddTraits(.isHeader)
                     Text(block.displayTitle)
                         .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(NX.ink(0.5))
+                        .foregroundStyle(NX.textTertiary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)

@@ -55,7 +55,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "D  ⌫", action: "Move to Trash"),
             Shortcut(keys: "Space", action: "Show or hide the note, in a list"),
             Shortcut(keys: "⇥  ⇧⇥", action: "Nest or lift the rows, in a list"),
-            Shortcut(keys: "Esc", action: "Close details, clear selection or focus"),
+            Shortcut(keys: "Esc", action: "Collapse or close details, clear selection or focus"),
         ]),
         Group(title: "Inbox triage", shortcuts: [
             Shortcut(keys: "1–9", action: "File into a list"),
@@ -116,6 +116,7 @@ struct ShortcutsSheet: View {
         Group(title: "Task menu", shortcuts: [
             Shortcut(keys: "⌘D", action: "Mark as done, or reopen"),
             Shortcut(keys: "⌘↩", action: "Open details"),
+            Shortcut(keys: "⇧⌘↩", action: "Expand details to the whole window, or collapse them"),
             Shortcut(keys: "⇧⌘T  ⇧⌘M", action: "Due today, tomorrow"),
             Shortcut(keys: "⇧⌘D", action: "Add due date"),
             Shortcut(keys: "⌥⇧⌘D", action: "Clear due date"),
@@ -139,7 +140,7 @@ struct ShortcutsSheet: View {
                     // As in the design, the single keys stand down while a line or field has the caret.
                     Text("Single keys work when you’re not writing. Esc stops writing.")
                         .font(.system(size: 12))
-                        .foregroundStyle(NX.ink(0.5))
+                        .foregroundStyle(NX.textTertiary)
                 }
                 Spacer()
                 Button {
@@ -173,7 +174,7 @@ struct ShortcutsSheet: View {
                                 HStack(spacing: 8) {
                                     Text(shortcut.action)
                                         .font(.system(size: 12.5))
-                                        .foregroundStyle(NX.ink(0.66))
+                                        .foregroundStyle(NX.textSecondary)
                                     Spacer(minLength: 8)
                                     // The design's key hints: monospaced, on a faint key cap,
                                     // line-height 1 inside 2/5 padding.

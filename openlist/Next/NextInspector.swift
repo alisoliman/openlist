@@ -49,7 +49,6 @@ private final class NXLineage {
 @MainActor
 private final class NXInspectorClicks {
     private var monitor: Any?
-    private var settling: Task<Void, Never>?
     /// The panel's own view, for its window and frame.
     weak var panel: NSView?
     /// The title's and the note box's areas, the padding around the text included.
@@ -69,7 +68,6 @@ private final class NXInspectorClicks {
     func uninstall() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        settling?.cancel()
     }
 
     fileprivate func mark(_ view: NSView, as role: NXInspectorMark.Role) {
@@ -83,22 +81,6 @@ private final class NXInspectorClicks {
     func endEditing() {
         guard let window = panel?.window, editedFrame(in: window) != nil else { return }
         window.makeFirstResponder(nil)
-    }
-
-    /// Runs `action` once the click under way, if any, is over, and a beat
-    /// more, so what it changes doesn't move what was clicked out from under
-    /// the pointer before its button fires on mouse-up, as the Tasks bar waits.
-    func afterClick(_ action: @escaping @MainActor () -> Void) {
-        settling?.cancel()
-        guard NSEvent.pressedMouseButtons != 0 else { return action() }
-        settling = Task { @MainActor in
-            repeat {
-                try? await Task.sleep(for: .milliseconds(60))
-            } while NSEvent.pressedMouseButtons != 0 && !Task.isCancelled
-            try? await Task.sleep(for: .milliseconds(60))
-            guard !Task.isCancelled else { return }
-            action()
-        }
     }
 
     /// A click on text or a scroller goes as AppKit sends it: in the field it
@@ -206,15 +188,23 @@ private struct NXInspectorMark: NSViewRepresentable {
     }
 }
 
-/// The 360pt panel that slides in from the right with one task's details.
+/// One task's details, as Superlist sets them: a slim bar, the title, one
+/// quiet line of details, then the note as the task's body, its subtasks,
+/// plan, files and activity. A 360pt panel that slides in from the right,
+/// or, opened out, a page in the screen's place, in the column and margins
+/// every screen reads in.
 struct NextInspector: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
-    /// How many lists or labels the rows offer as one-click pills, about two
-    /// lines' worth; a bigger library chooses by name instead.
-    static let quickPickLimit = 8
+    static let width: CGFloat = 360
+    /// The widest the page's note runs, so its lines stay comfortable to
+    /// read; everything else on the page runs to the column's edge, as a
+    /// screen's rows and controls do.
+    static let noteMeasure: CGFloat = 720
     let task: Block
+    /// Opened out over the main pane, in the screen's place.
+    var isPage = false
     /// Drafts belong to `draftID`, which lags `task` until they are committed.
     @State private var title = SyncedTextDraft()
     @State private var note = SyncedTextDraft()
@@ -222,13 +212,7 @@ struct NextInspector: View {
     /// The open popover, and the task it was opened on. The shell reuses this
     /// view for every task, so a popover never carries over to the next one.
     @State private var picker: (section: DetailPicker, taskID: UUID)?
-    /// The labels the Labels row showed as its picker opened.
-    @State private var heldLabelIDs: Set<UUID>?
     @State private var lineage = NXLineage()
-    /// "Add a note" opened the note, which shows while it has focus or text.
-    @State private var addingNote = false
-    /// The note just let go keeps its box until the click that ended it is over.
-    @State private var holdsNote = false
     @State private var dropTargeted = false
     @State private var clicks = NXInspectorClicks()
     @State private var fields = NXInspectorFields()
@@ -237,6 +221,8 @@ struct NextInspector: View {
     /// Activity opens on request, and stays open from task to task while
     /// the panel does.
     @State private var showsActivity = false
+    /// The page rises in as a screen does.
+    @State private var appeared = false
 
     typealias Field = NXInspectorText.Role
 
@@ -250,61 +236,24 @@ struct NextInspector: View {
     private var readyRevealID: UUID? { env.navigator.isSearchOpen ? nil : reveal?.id }
 
     var body: some View {
-        let list = library.list(task.listID)
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                if let list { NXListGlyph(list: list, size: 12) }
-                Text(list?.displayTitle ?? "No list")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.55))
-                    .lineLimit(1)
-                Spacer(minLength: 6)
-                Button { env.navigator.closeTask() } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .medium)).frame(width: 16, height: 16)
-                }
-                // As the design's, only its fill shows on hover.
-                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
-                                                padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
-                                                foreground: NX.ink(0.45)))
-                .help("Close details (Esc)")
-                .accessibilityLabel("Close details")
+            if !isPage {
+                topBar
+                    .padding(.vertical, 9)
+                    .padding(.horizontal, 12)
+                    .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
-            .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        let ancestors = lineage.ancestors(of: task, store: env.store)
-                        if let parent = ancestors.first(where: \.isTask) {
-                            NXInspectorParentCrumb(parent: parent)
-                                .id(parent.id)
-                        }
-                        titleRow
-                            .id(ContentReveal.Anchor.taskTitle(task.id))
-                        properties(list: list)
-                        TaskReminderStatus(block: task, attentionOnly: true)
-                        // As the design: not two levels down.
-                        if ancestors.count < OutlinePolicy.maximumDepth {
-                            NXInspectorSubtasks(task: task, showsEmpty: offersSubtasks)
-                                .id(task.id)
-                        }
-                        planCard
-                        // As the design, the note shows only when there is one.
-                        if showsNote {
-                            VStack(alignment: .leading, spacing: 8) {
-                                noteBox
-                                    .id(ContentReveal.Anchor.taskNote(task.id))
-                                TaskNoteLinks(note: task.note)
-                            }
-                        }
-                        NXInspectorFiles(task: task, addsNote: noteAction)
-                        activity
+                    // The page's 26/40/120, as `NXPage` pads every screen.
+                    column {
+                        content
+                            .padding(.top, isPage ? 26 : 18)
+                            .padding(.bottom, isPage ? 120 : 24)
                     }
-                    .padding(.top, 16)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 20)
+                    .offset(y: isPage && !appeared ? 6 : 0)
+                    .opacity(isPage && !appeared ? 0 : 1)
                 }
                 .scrollIndicators(.automatic)
                 .task(id: readyRevealID) {
@@ -322,32 +271,14 @@ struct NextInspector: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Button {
-                    // Save what is being typed first, so it goes to Trash, and
-                    // comes back on Undo, with the task and its subtasks: the
-                    // trash is a step of its own, which leaves the text alone.
-                    NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
-                    workbench.trash([task.id])
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "trash").font(.system(size: 12.5, weight: .medium))
-                        Text("Trash").font(.system(size: 12, weight: .medium))
-                    }
-                }
-                .buttonStyle(NXHoverButtonStyle(hover: NX.red.opacity(0.1), radius: 8,
-                                                padding: EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9),
-                                                foreground: NX.ink(0.6), hoverForeground: NX.redText))
-                Spacer(minLength: 8)
-                startButton
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+            column { footer }
+                .padding(.vertical, 10)
+                .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
         }
-        .frame(width: 360)
-        .frame(maxHeight: .infinity)
-        .background(NX.inspector)
+        .frame(width: isPage ? nil : Self.width)
+        .frame(maxWidth: isPage ? .infinity : nil, maxHeight: .infinity)
+        // The page is the paper the screen was on.
+        .background(isPage ? NX.paper : NX.inspector)
         .background(NXInspectorMark(role: .panel, clicks: clicks))
         // Files dropped anywhere on the panel are kept with the task.
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
@@ -363,7 +294,7 @@ struct NextInspector: View {
             }
         }
         // Docked beside the page, it's divided from it rather than floating over it.
-        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) }
+        .overlay(alignment: .leading) { if !isPage { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) } }
         .contentShape(Rectangle())
         .onTapGesture {}
         .onAppear {
@@ -371,6 +302,7 @@ struct NextInspector: View {
             adoptRequestedPicker()
             let env = env
             clicks.install { env.workbench.captureOpen || env.navigator.isSearchOpen || env.navigator.isCommandPaletteOpen }
+            if isPage { withAnimation(style.ease(260)) { appeared = true } }
         }
         .onChange(of: task.id) { _, _ in
             // The shell reuses this view for every task. A field being edited
@@ -391,15 +323,7 @@ struct NextInspector: View {
             // leaving ⌘↩ to finish it.
             workbench.isWritingInspectorNote = new == .note
             if old == .title { commitTitle() }
-            if old == .note {
-                // A box the click that ended the note leaves empty closes
-                // once that click is over, so a button below doesn't move out
-                // from under the pointer before it fires on mouse-up.
-                holdsNote = showsNote
-                commitNote()
-                addingNote = false
-                clicks.afterClick { holdsNote = false }
-            }
+            if old == .note { commitNote() }
         }
         .onChange(of: env.requestedPicker) { _, _ in adoptRequestedPicker() }
         .onReceive(NotificationCenter.default.publisher(for: .commitPendingEditorDrafts)) { _ in
@@ -411,6 +335,60 @@ struct NextInspector: View {
             commitNote()
             clicks.uninstall()
             workbench.isWritingInspectorNote = false
+        }
+    }
+
+    /// The page sets its parts in the column and margins every screen has
+    /// (`NXPage`), so it opens where the screen's own header was; the panel,
+    /// in its own 16pt margins.
+    @ViewBuilder private func column<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if isPage {
+            NXReadingColumnView(measure: NXPageMeasure.reading + 80) {
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 40)
+            }
+        } else {
+            content().padding(.horizontal, 16)
+        }
+    }
+
+    /// The details, then the note under a hairline as the task's body, then
+    /// the sections.
+    private var content: some View {
+        let ancestors = lineage.ancestors(of: task, store: env.store)
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: isPage ? 12 : 10) {
+                if let parent = ancestors.first(where: \.isTask) {
+                    NXInspectorParentCrumb(parent: parent)
+                        .id(parent.id)
+                }
+                titleRow
+                    .id(ContentReveal.Anchor.taskTitle(task.id))
+                detailsLine
+                TaskReminderStatus(block: task, attentionOnly: true)
+            }
+            Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
+                .padding(.top, isPage ? 20 : 16)
+            VStack(alignment: .leading, spacing: 8) {
+                noteBox
+                    .id(ContentReveal.Anchor.taskNote(task.id))
+                TaskNoteLinks(note: task.note)
+            }
+            .padding(.top, isPage ? 16 : 12)
+            VStack(alignment: .leading, spacing: 28) {
+                // As the design: not two levels down.
+                if ancestors.count < OutlinePolicy.maximumDepth {
+                    NXInspectorSubtasks(task: task, showsEmpty: offersSubtasks)
+                        .id(task.id)
+                }
+                // Its slider, popover, sheet and expansion belong to one task.
+                NXInspectorPlan(task: task, isPage: isPage)
+                    .id(task.id)
+                NXInspectorFiles(task: task)
+                activity
+            }
+            .padding(.top, 24)
         }
     }
 
@@ -426,8 +404,6 @@ struct NextInspector: View {
         draftID = task.id
         title.reset(to: Self.title(of: task))
         note.reset(to: task.note)
-        addingNote = false
-        holdsNote = false
     }
 
     /// The title as written, so an untitled task shows the field's placeholder, as
@@ -479,237 +455,288 @@ struct NextInspector: View {
         openPicker(requested)
     }
 
+    // MARK: Bar
+
+    /// The panel's slim bar, as Superlist's: close and Complete lead, the
+    /// page and the task's menu trail.
+    private var topBar: some View {
+        HStack(spacing: 6) {
+            closeButton
+            completeButton
+            Spacer(minLength: 6)
+            pageButton
+            moreMenu
+        }
+    }
+
+    /// The page's, on its title's first line, as a screen's header keeps its
+    /// controls at the trailing edge.
+    private var pageControls: some View {
+        HStack(spacing: 4) {
+            completeButton
+                .padding(.trailing, 4)
+            pageButton
+            moreMenu
+            closeButton
+        }
+    }
+
+    private var closeButton: some View {
+        headerButton("xmark", label: "Close details", help: isPage ? "Close details" : "Close details (Esc)") {
+            env.navigator.closeTask()
+        }
+    }
+
+    /// Opens the task out over the main pane, or puts it back; Esc puts it back too.
+    private var pageButton: some View {
+        headerButton(isPage ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                     label: isPage ? "Collapse details" : "Expand details",
+                     help: isPage ? "Collapse details (Esc)" : "Expand details (⇧⌘↩)") {
+            workbench.toggleTaskPage()
+        }
+    }
+
+    /// The row's own menu, for everything the bar doesn't show.
+    private var moreMenu: some View {
+        Menu {
+            NXTaskMenu(ids: [task.id])
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).frame(width: 16, height: 16)
+        }
+        .menuStyle(.button)
+        .buttonStyle(Self.headerStyle)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More")
+        .accessibilityLabel("More actions")
+    }
+
+    /// Complete, grey until the task is done, then a green tint: done is a
+    /// status, and the title strikes through with it. Ticking it runs the
+    /// rows' dwell, which a second click takes back.
+    private var completeButton: some View {
+        let done = task.isCompleted || workbench.closing[task.id] != nil
+        return Button { workbench.toggle(task.id) } label: {
+            HStack(spacing: 5) {
+                Image(systemName: done ? "checkmark.circle.fill" : "checkmark.circle")
+                    .font(.system(size: 12, weight: .medium))
+                Text(done ? "Completed" : "Complete")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .frame(height: 16)
+        }
+        .buttonStyle(NXHoverButtonStyle(hover: done ? NX.green.opacity(0.18) : NX.ink(0.08),
+                                        rest: done ? NX.green.opacity(0.12) : NX.ink(0.05), radius: 7,
+                                        padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 9),
+                                        foreground: done ? NX.greenText : NX.textSecondary,
+                                        hoverForeground: done ? NX.greenText : NX.ink))
+        .fixedSize()
+        .help(done ? "Reopen (⌘D)" : "Mark as done (⌘D)")
+        .accessibilityLabel(done ? "Reopen" : "Mark as done")
+        .accessibilityValue(done ? "Completed" : "Open")
+    }
+
+    /// A symbol in the bar; as the design's close, only its fill shows on hover.
+    private func headerButton(_ icon: String, label: String, help: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 12, weight: .medium)).frame(width: 16, height: 16)
+        }
+        .buttonStyle(Self.headerStyle)
+        .help(help)
+        .accessibilityLabel(label)
+    }
+
+    private static let headerStyle = NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
+                                                        padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
+                                                        foreground: NX.ink(0.5), hoverForeground: NX.ink)
+
     // MARK: Title
 
     private var titleRow: some View {
-        let closing = workbench.closing[task.id]
-        return HStack(alignment: .top, spacing: 10) {
-            // As the design's, it only fills: the list row keeps the pop.
-            NXCheckbox(filled: task.isCompleted || closing != nil, closing: closing, priority: task.priority,
-                       title: task.displayTitle, size: 18, pops: false) {
-                workbench.toggle(task.id)
-            }
-            .padding(.top, 3)
-            // The design's 600 18/1.3, grey and struck through once done.
-            NXInspectorText(role: .title, text: $title.value, done: task.isCompleted,
+        HStack(alignment: .top, spacing: 16) {
+            // The panel's 600 20/1.25, or a screen title's on the page;
+            // grey and struck through once done.
+            NXInspectorText(role: .title, text: $title.value, done: task.isCompleted, large: isPage, serif: serifTitle,
                             caretColor: env.settings.accent.editorColor, fields: fields,
                             onFocus: { focused(.title, $0) },
-                            onSwitch: showsNote ? { fields.write(.note) } : nil)
+                            onSwitch: { fields.write(.note) })
                 .background(NXInspectorMark(role: .field, clicks: clicks))
+            if isPage {
+                // Centred on the title's 24pt-high first line.
+                let line = NXInspectorTextView.metrics(.title, large: true, serif: serifTitle).line
+                pageControls.padding(.top, max(0, (line - 24) / 2))
+            }
         }
     }
 
-    // MARK: Properties
+    /// The page's title in the screens' serif, while they're set in it.
+    private var serifTitle: Bool { isPage && style.serifTitles }
 
-    private func properties(list: TaskList?) -> some View {
-        let recurrence = task.recurrence
-        // Labels sit centred against their values, as in the design's grid.
-        return Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 11) {
-            GridRow {
-                propertyLabel("List")
-                VStack(alignment: .leading, spacing: 4) {
-                    // The list's name opens every list by name, however many
-                    // there are; the design's glyphs are the quick picks
-                    // beside it while they still fit a line or two.
-                    Menu {
-                        ForEach(library.lists, id: \.id) { option in
-                            NXListMenuButton(list: option) { workbench.move([task.id], to: option.id, quiet: true) }
-                                .disabled(option.id == task.listID)
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            // A long name ends in "…" inside the value column,
-                            // with the chevron still beside it.
-                            Text(list?.displayTitle ?? "No list")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(NX.ink)
-                                .lineLimit(1)
-                                .frame(maxWidth: 196, alignment: .leading)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 8, weight: .semibold))
-                                .foregroundStyle(NX.ink(0.4))
-                        }
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
-                                                    padding: EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5),
-                                                    foreground: NX.ink))
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    // The name stays in line with the values under it.
-                    .padding(.leading, -5)
-                    .help("Move to another list")
-                    .accessibilityLabel("List: \(list?.displayTitle ?? "No list")")
-                    .accessibilityHint("Moves the task to another list")
-                    if library.lists.count <= Self.quickPickLimit {
-                        NXFlow(spacing: 4) {
-                            ForEach(library.lists, id: \.id) { option in
-                                let current = option.id == task.listID
-                                // The design's 13/1 glyph in 4/7 padding.
-                                NXInspectorPill(isOn: current, padding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7), line: 13) {
-                                    if !current { workbench.move([task.id], to: option.id, quiet: true) }
-                                } label: {
-                                    NXListGlyph(list: option, size: 13)
-                                }
-                                .help(option.displayTitle)
-                                // Named, not read as its emoji.
-                                .accessibilityLabel(current ? option.displayTitle : "Move to \(option.displayTitle)")
-                                .accessibilityAddTraits(current ? .isSelected : [])
-                            }
-                        }
-                    }
-                }
+    // MARK: Details
+
+    /// The task's details as one quiet line under its title, as Superlist
+    /// sets them: each a grey symbol with its value, which opens its picker.
+    /// One not set yet is the symbol alone, fainter, named under the
+    /// pointer. Colour is kept for what it says: a late date, the
+    /// priority's flag, the list's glyph, the labels' dots and the star,
+    /// which shows only once the task has it.
+    private var detailsLine: some View {
+        let due = task.dueDate
+        let late = due.map { !task.isCompleted && NXFormat.dayOffset($0) < 0 } ?? false
+        let dueText = due.map { task.includesTime ? NXFormat.dueAndClock($0) : NXFormat.dueLabel($0) }
+        // A timed task with no reminder of its own reminds you at the time
+        // the date beside it shows: the filled bell says so.
+        let reminderText = task.reminderAt.map { NXFormat.dueAndClock($0) }
+        let atDueTime = reminderText == nil && ReminderPicker.dueTimeReminder(of: task) != nil
+        let labels = library.labels.filter { task.labelIDs.contains($0.id) }
+        return NXFlow(spacing: 2) {
+            detailButton(icon: late ? "exclamationmark.circle" : "calendar", value: dueText,
+                         foreground: late ? NX.redText : nil,
+                         help: "Due date (⇧⌘D)", label: dueText.map { "Due \($0)" } ?? "Add a due date") {
+                openPicker(.due)
             }
-            GridRow {
-                propertyLabel("Due")
-                // A date that isn't one of the fixed choices comes first, as
-                // its own pill; it opens the picker rather than rescheduling.
-                let options = dueOptions
-                let customLabel = options.count > 4 ? options.first?.label : nil
-                NXFlow(spacing: 4) {
-                    ForEach(options, id: \.label) { option in
-                        let custom = option.label == customLabel
-                        NXInspectorPill(isOn: isDue(option.offset)) {
-                            if custom { openPicker(.due) }
-                            else { workbench.schedule([task.id], offset: option.offset) }
-                        } label: {
-                            Text(option.label)
-                        }
-                    }
-                    // Native addition: the design has no picker. It wraps with the
-                    // pills, as the design's row already does at this width.
-                    NXInspectorPill(isOn: false) { openPicker(.due) } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "calendar").font(.system(size: 10.5, weight: .medium))
-                            if task.includesTime, let due = task.dueDate { Text(NXFormat.clock(due)).monospacedDigit() }
-                        }
-                    }
-                    .accessibilityLabel("Due date and time")
-                }
-                .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
-            }
-            GridRow {
-                propertyLabel("Repeat")
-                NXInspectorPill(isOn: recurrence != nil) { openPicker(.repeatRule) } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "repeat").font(.system(size: 10.5, weight: .medium))
-                        Text(recurrence?.displayText ?? "Never")
-                    }
-                }
-                .popover(isPresented: pickerBinding(.repeatRule), arrowEdge: .bottom) { schedulePopover(.repeatRule) }
-            }
-            GridRow {
-                propertyLabel("Reminder")
-                NXInspectorPill(isOn: task.reminderAt != nil) { openPicker(.reminder) } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "bell").font(.system(size: 10.5, weight: .medium))
-                        // A timed task with none of its own reminds you at its due time.
-                        Text(task.reminderAt.map { NXFormat.dueAndClock($0) }
-                            ?? (ReminderPicker.dueTimeReminder(of: task) == nil ? "None" : "At the due time"))
-                    }
-                }
-                .popover(isPresented: pickerBinding(.reminder), arrowEdge: .bottom) { schedulePopover(.reminder) }
-            }
-            GridRow {
-                propertyLabel("Priority")
-                HStack(spacing: 4) {
-                    ForEach([TaskPriority.none, .low, .medium, .high], id: \.self) { priority in
-                        let on = task.priority == priority
-                        NXInspectorPill(isOn: on) { workbench.setPriority(task.id, priority) } label: {
-                            HStack(spacing: 5) {
-                                // As the design's dot, it changes at once while the pill fades.
-                                Circle()
-                                    .animation(nil) { $0.foregroundStyle(on ? .white : Self.priorityColor(priority)) }
-                                    .frame(width: 6, height: 6)
-                                Text(Self.priorityTitle(priority))
-                            }
-                        }
-                    }
-                }
-            }
-            GridRow {
-                propertyLabel("Labels")
-                // Every label is a quick toggle while they fit a line or two;
-                // past that, only the task's own show, and + finds the rest.
-                // While + is open the row holds the labels it showed, so the
-                // picker hanging from + stays put as labels go on and off.
-                let held = picker?.section == .labels && picker?.taskID == task.id ? heldLabelIDs : nil
-                let shown = if let held { library.labels.filter { held.contains($0.id) } }
-                    else if library.labels.count <= Self.quickPickLimit { library.labels }
-                    else { library.labels.filter { task.labelIDs.contains($0.id) } }
-                NXFlow(spacing: 4) {
-                    ForEach(shown, id: \.id) { label in
-                        let on = task.labelIDs.contains(label.id)
-                        let color = label.nxColor
-                        Button { workbench.toggleLabel(task.id, labelID: label.id) } label: {
-                            // 600 11/1, as NXInspectorPill's line.
-                            Text("#\(label.name)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(on ? .white : color)
-                                .frame(height: 11)
-                                .padding(.vertical, 5)
-                                .padding(.horizontal, 8)
-                                // The design's `background 140ms ease`; the text's colour changes at once.
-                                .animation(NX.cssEase(140)) {
-                                    $0.background(on ? color : color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                }
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    NXInspectorPill(isOn: false) { openPicker(.labels) } label: {
+            .popover(isPresented: pickerBinding(.due), arrowEdge: .bottom) { schedulePopover(.due) }
+            listMenu
+            Button { openPicker(.labels) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "tag").font(.system(size: 11, weight: .medium))
+                    ForEach(labels, id: \.id) { label in
                         HStack(spacing: 4) {
-                            Image(systemName: "plus").font(.system(size: 10, weight: .medium))
-                            if shown.isEmpty { Text("Add label") }
+                            Circle().fill(label.nxColor).frame(width: 6, height: 6)
+                            Text(label.name).lineLimit(1)
                         }
                     }
-                    .nxHelp(shown.isEmpty ? nil : "Add or remove labels (⇧⌘L)")
-                    .accessibilityLabel("Edit labels")
-                    .popover(isPresented: pickerBinding(.labels), arrowEdge: .bottom) {
-                        LabelPicker(block: task).id(task.id).environment(env)
-                    }
                 }
+                .font(.system(size: 12, weight: .medium))
+                .frame(height: 16)
             }
-            GridRow {
-                propertyLabel("Starred")
+            .buttonStyle(Self.detailStyle(set: !labels.isEmpty))
+            .help("Labels (⇧⌘L)")
+            .accessibilityLabel(labels.isEmpty ? "Add labels" : "Labels: \(labels.map(\.name).joined(separator: ", "))")
+            .popover(isPresented: pickerBinding(.labels), arrowEdge: .bottom) {
+                LabelPicker(block: task).id(task.id).environment(env)
+            }
+            detailButton(icon: "repeat", value: task.recurrence?.displayText, help: "Repeat",
+                         label: task.recurrence.map { "Repeats \($0.displayText)" } ?? "Make it repeat") {
+                openPicker(.repeatRule)
+            }
+            .popover(isPresented: pickerBinding(.repeatRule), arrowEdge: .bottom) { schedulePopover(.repeatRule) }
+            detailButton(icon: atDueTime ? "bell.fill" : "bell", value: reminderText, set: atDueTime,
+                         help: atDueTime ? "Reminds you at the due time" : "Reminder",
+                         label: reminderText.map { "Reminder \($0)" } ?? (atDueTime ? "Reminds you at the due time" : "Add a reminder")) {
+                openPicker(.reminder)
+            }
+            .popover(isPresented: pickerBinding(.reminder), arrowEdge: .bottom) { schedulePopover(.reminder) }
+            priorityMenu
+            // Only a starred task shows its star; ⋯ stars one.
+            if task.isStarred {
                 Button { workbench.star([task.id]) } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: task.isStarred ? "star.fill" : "star")
-                            .font(.system(size: 11.5, weight: task.isStarred ? .semibold : .medium))
-                        Text(task.isStarred ? "Starred" : "Not starred")
-                    }
-                    .font(.system(size: 11.5, weight: .medium))
-                    // The design's 13px star sets the line, over its 11.5/1 text.
-                    .frame(height: 13)
-                    .padding(.vertical, 5)
-                    .padding(.horizontal, 8)
-                    // Built on the design's pill, it fades as the pill does.
-                    .modifier(NXInspectorPillFade(isOn: task.isStarred, on: (NX.amberText, NX.amber.opacity(0.16)),
-                                                  off: (NX.ink(0.66), NX.ink(0.05))))
-                    .contentShape(Rectangle())
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NX.amber)
+                        .frame(height: 16)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Self.detailStyle(set: true))
+                .help("Unstar (⇧⌘S)")
+                .accessibilityLabel("Starred")
+                .accessibilityHint("Unstars the task")
             }
         }
+        // The symbols line up with the title.
+        .padding(.leading, -6)
+    }
+
+    /// The list, which moves the task to another.
+    private var listMenu: some View {
+        let list = library.list(task.listID)
+        return Menu {
+            ForEach(library.lists, id: \.id) { option in
+                NXListMenuButton(list: option) { workbench.move([task.id], to: option.id, quiet: true) }
+                    .disabled(option.id == task.listID)
+            }
+        } label: {
+            HStack(spacing: 5) {
+                if let list { NXListGlyph(list: list, size: 11) } else { Image(systemName: "tray").font(.system(size: 11, weight: .medium)) }
+                Text(list?.displayTitle ?? "No list").lineLimit(1)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .frame(height: 16)
+        }
+        .menuStyle(.button)
+        .buttonStyle(Self.detailStyle(set: true))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Move to another list")
+        .accessibilityLabel("List: \(list?.displayTitle ?? "No list")")
+        .accessibilityHint("Moves the task to another list")
+    }
+
+    /// The priority's flag, in its colour once it has one; a menu of the four.
+    private var priorityMenu: some View {
+        let priority = task.priority
+        return Menu {
+            ForEach([TaskPriority.high, .medium, .low, .none], id: \.self) { option in
+                Button { workbench.setPriority(task.id, option) } label: {
+                    if option == priority {
+                        Label(Self.priorityTitle(option), systemImage: "checkmark")
+                    } else {
+                        Text(Self.priorityTitle(option))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: priority == .none ? "flag" : "flag.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(priority == .none ? AnyShapeStyle(.foreground) : AnyShapeStyle(Self.priorityColor(priority)))
+                if priority != .none { Text(Self.priorityTitle(priority)) }
+            }
+            .font(.system(size: 12, weight: .medium))
+            .frame(height: 16)
+        }
+        .menuStyle(.button)
+        .buttonStyle(Self.detailStyle(set: priority != .none))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Priority")
+        .accessibilityLabel(priority == .none ? "Set a priority" : "\(Self.priorityTitle(priority)) priority")
+    }
+
+    /// One of the details: its symbol, and its value once it has one.
+    private func detailButton(icon: String, value: String?, set: Bool = false, foreground: Color? = nil,
+                              help: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 11, weight: .medium))
+                if let value { Text(value).lineLimit(1) }
+            }
+            .font(.system(size: 12, weight: .medium))
+            .frame(height: 16)
+        }
+        .buttonStyle(Self.detailStyle(set: set || value != nil, foreground: foreground))
+        .help(help)
+        .accessibilityLabel(label)
+    }
+
+    /// Grey words on nothing, as Superlist's, that darken over a faint fill
+    /// under the pointer; a detail not set yet is fainter still.
+    private static func detailStyle(set: Bool, foreground: Color? = nil) -> NXHoverButtonStyle {
+        NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6, padding: EdgeInsets(top: 3, leading: 6, bottom: 3, trailing: 6),
+                           foreground: foreground ?? (set ? NX.textTertiary : NX.textQuaternary),
+                           hoverForeground: foreground ?? NX.ink)
     }
 
     private func openPicker(_ section: DetailPicker) {
-        // The Labels row holds what it shows while its picker is open, from
-        // + or Task ▸ Add Label… alike, taken as it opens rather than again
-        // over an open picker.
-        if section == .labels, !(picker?.section == .labels && picker?.taskID == task.id) {
-            heldLabelIDs = Set(library.labels.count <= Self.quickPickLimit ? library.labels.map(\.id) : task.labelIDs)
-        }
         picker = (section, task.id)
     }
 
-    /// One popover per row; the schedule rows each open the shared picker on their section.
+    /// One popover per detail; the schedule ones each open the shared picker on their section.
     private func pickerBinding(_ section: DetailPicker) -> Binding<Bool> {
         Binding(get: { picker?.section == section && picker?.taskID == task.id },
                 set: {
                     guard !$0, picker?.section == section else { return }
                     picker = nil
-                    if section == .labels { heldLabelIDs = nil }
                 })
     }
 
@@ -720,141 +747,38 @@ struct NextInspector: View {
             .environment(env)
     }
 
-    private func propertyLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(NX.ink(0.45))
-            .frame(width: 78, alignment: .leading)
-            .gridColumnAlignment(.leading)
-    }
-
-    /// The coming Monday, `Store.nextWeekDay`, so it never equals Tomorrow.
-    private var nextWeekOffset: Int { NXFormat.nextWeekOffset() }
-
-    private var dueOptions: [(label: String, offset: Int?)] {
-        var options: [(String, Int?)] = [("Today", 0), ("Tomorrow", 1), ("Next week", nextWeekOffset), ("None", nil)]
-        if let due = task.dueDate {
-            let offset = NXFormat.dayOffset(due)
-            if ![0, 1, nextWeekOffset].contains(offset) { options.insert((NXFormat.dueLabel(due), offset), at: 0) }
-        }
-        return options
-    }
-
-    private func isDue(_ offset: Int?) -> Bool {
-        guard let due = task.dueDate else { return offset == nil }
-        return offset == NXFormat.dayOffset(due)
-    }
-
     static func priorityColor(_ priority: TaskPriority) -> Color {
         NX.priorityStroke(priority) ?? NX.ink(0.25)
     }
 
     static func priorityTitle(_ priority: TaskPriority) -> String {
         switch priority {
-        case .none: "None"
+        case .none: "No priority"
         case .low: "Low"
-        case .medium: "Med"
+        case .medium: "Medium"
         case .high: "High"
         }
     }
 
-    // MARK: Plan card
-
-    private var planCard: some View {
-        let planned = workbench.isPlanned(task)
-        let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                // The switch speaks for the row.
-                Image(systemName: "calendar.badge.clock").font(.system(size: 13, weight: .medium)).foregroundStyle(style.accent)
-                    .accessibilityHidden(true)
-                Text("Plan for today").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(NX.ink)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 6)
-                NXToggle(isOn: planned, label: "Plan for today") { workbench.plan([task.id]) }
-                    .disabled(task.isCompleted)
-            }
-            // Planning skips completed tasks, so the switch fades.
-            .opacity(task.isCompleted ? 0.45 : 1)
-            HStack(spacing: 8) {
-                Text("Duration").font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.5))
-                Spacer(minLength: 6)
-                NXStepButton(icon: "minus", label: "Shorter") { workbench.setEstimate(task.id, delta: -5) }
-                // Its draft belongs to one task.
-                NXDurationField(minutes: estimate) { workbench.setEstimate(task.id, minutes: $0) }
-                    .id(task.id)
-                NXStepButton(icon: "plus", label: "Longer") { workbench.setEstimate(task.id, delta: 5) }
-            }
-            .padding(.top, 9)
-            slotRow
-                .padding(.top, 9)
-            // Its popover, sheet and expansion belong to one task.
-            NXInspectorPlanOptions(task: task)
-                .id(task.id)
-                .padding(.top, 9)
-        }
-        .padding(12)
-        .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
-    }
-
-    /// The slot the calendar grid draws for the task, as the design reads its
-    /// placement, past or done ones too (see `CalendarWeek.shownSlot`), which
-    /// shows it there; without one, Find a slot plans it.
-    @ViewBuilder private var slotRow: some View {
-        if let placement = CalendarWeek.shownSlot(of: task.id, occurrenceID: task.occurrenceID, in: env.calendar.visibleBlocks,
-                                                  now: .now, calendar: env.settings.calendar) {
-            let offset = NXFormat.dayOffset(placement.start)
-            let day = offset == 0 ? "Today" : placement.start.formatted(.dateTime.weekday(.abbreviated).day())
-            Button { workbench.showOnCalendar(slotOf: task.id, occurrenceID: task.occurrenceID) } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "calendar").font(.system(size: 10.5, weight: .semibold))
-                    Text("\(day) \(NXFormat.clock(placement.start))–\(NXFormat.clock(placement.end))").monospacedDigit()
-                }
-            }
-            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
-            .padding(.leading, -5)
-            .accessibilityLabel("In the calendar \(day), \(NXFormat.clock(placement.start)) to \(NXFormat.clock(placement.end))")
-        } else if !task.isCompleted {
-            Button { workbench.fit(task.id) } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "sparkles").font(.system(size: 10.5, weight: .semibold))
-                    Text("Find a slot")
-                }
-            }
-            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
-            .padding(.leading, -5)
-        }
-    }
-
     // MARK: Note & activity
-
-    /// A note, or one being written or revealed; else "Add a note" stands in.
-    private var showsNote: Bool {
-        !note.value.isEmpty || !task.note.isEmpty || addingNote || holdsNote || focus == .note || reveal?.field == .note
-    }
-
-    /// What "Add a note" does while it stands in for the note.
-    private var noteAction: (() -> Void)? {
-        showsNote ? nil : { addingNote = true }
-    }
 
     /// The title or note took the keyboard, or let it go.
     private func focused(_ field: Field, _ isFocused: Bool) {
         if isFocused { focus = field } else if focus == field { focus = nil }
     }
 
+    /// The task's body, always there to read or start, set as a page's text
+    /// rather than in a field: 400 13.5/1.6 in the reading ink, or the
+    /// page's 14.5/1.65, with "Add notes…" while there's none. The room
+    /// under it is the note's too, as a page's, so a click there writes.
     private var noteBox: some View {
-        // The design's 400 13/1.55 in 10/12 padding. Opened by "Add a note"
-        // on this task, not one the panel is moving on from, it takes the keyboard.
-        NXInspectorText(role: .note, text: $note.value, caretColor: env.settings.accent.editorColor,
-                        fields: fields, takesKeyboard: addingNote && draftID == task.id,
+        NXInspectorText(role: .note, text: $note.value, large: isPage, caretColor: env.settings.accent.editorColor,
+                        fields: fields,
                         onFocus: { focused(.note, $0) },
                         onSwitch: { fields.write(.title) })
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(NX.ink(focus == .note ? 0.05 : 0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            // A click anywhere in the box is in the note, as in a textarea.
+            .frame(maxWidth: isPage ? Self.noteMeasure : .infinity, minHeight: isPage ? 140 : 84, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // A click anywhere in that room is in the note, as in a textarea.
             .background(NXInspectorMark(role: .field, clicks: clicks))
     }
 
@@ -894,15 +818,50 @@ struct NextInspector: View {
         let leading = 12 * 1.4 - NX.lineHeight(12)
         return HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: icon).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).frame(width: 14)
-            Text(text).font(.system(size: 12)).lineSpacing(leading).foregroundStyle(NX.ink(0.66))
+            Text(text).font(.system(size: 12)).lineSpacing(leading).foregroundStyle(NX.textSecondary)
                 .padding(.vertical, leading / 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
             // "just now" moves on while the panel stays open.
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text(NXFormat.relative(date, now: context.date)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.36))
+                Text(NXFormat.relative(date, now: context.date)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.textQuaternary)
             }
         }
         .padding(.vertical, 5)
+    }
+
+    // MARK: Footer
+
+    /// Trash and Attach as symbols, named under the pointer, and the one
+    /// primary action, Start working.
+    private var footer: some View {
+        HStack(spacing: 2) {
+            Button {
+                // Save what is being typed first, so it goes to Trash, and
+                // comes back on Undo, with the task and its subtasks: the
+                // trash is a step of its own, which leaves the text alone.
+                NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
+                workbench.trash([task.id])
+            } label: {
+                Image(systemName: "trash").font(.system(size: 12.5, weight: .medium)).frame(width: 16, height: 16)
+            }
+            .buttonStyle(NXHoverButtonStyle(hover: NX.red.opacity(0.1), radius: 8,
+                                            padding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7),
+                                            foreground: NX.ink(0.5), hoverForeground: NX.redText))
+            .help("Move to Trash")
+            .accessibilityLabel("Move to Trash")
+            Button { NXTaskFiles(workbench: workbench).choose(for: task) } label: {
+                Image(systemName: "paperclip").font(.system(size: 12.5, weight: .medium)).frame(width: 16, height: 16)
+            }
+            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 8,
+                                            padding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7),
+                                            foreground: NX.ink(0.5), hoverForeground: NX.ink))
+            .help("Attach files")
+            .accessibilityLabel("Attach files to task")
+            Spacer(minLength: 8)
+            startButton
+        }
+        // The symbols line up with the text above them.
+        .padding(.leading, -7)
     }
 
     private var startButton: some View {
@@ -916,7 +875,7 @@ struct NextInspector: View {
                 Image(systemName: working ? "timer" : "play.fill").font(.system(size: 12, weight: .medium))
                 Text(working ? "Working…" : "Start working").font(.system(size: 12, weight: .semibold))
             }
-            .foregroundStyle(working ? NX.ink(0.55) : .white)
+            .foregroundStyle(working ? NX.textTertiary : .white)
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(working ? NX.ink(0.06) : style.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -927,8 +886,9 @@ struct NextInspector: View {
     }
 }
 
-/// The inspector's small toggle pills: accent when on, faint grey when off.
-/// As the design's, they have no hover; only choosing one changes its fill.
+/// The inspector's small toggle pills: a faint accent tint when on, faint
+/// grey when off. As the design's, they have no hover; only choosing one
+/// changes its fill.
 struct NXInspectorPill<Label: View>: View {
     @Environment(\.nextStyle) private var style
     let isOn: Bool
@@ -948,7 +908,8 @@ struct NXInspectorPill<Label: View>: View {
                 .lineLimit(1)
                 .frame(height: line)
                 .padding(padding)
-                .modifier(NXInspectorPillFade(isOn: isOn, on: (.white, style.accent), off: (NX.ink(0.66), NX.ink(0.05))))
+                .modifier(NXInspectorPillFade(isOn: isOn, on: (style.accent, style.accent.opacity(0.12)),
+                                              off: (NX.textSecondary, NX.ink(0.05))))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

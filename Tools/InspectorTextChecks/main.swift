@@ -39,24 +39,33 @@ MainActor.assumeIsolated {
         return view
     }
 
-    // One line in the design's box, and each more a box further down:
-    // 13/1.55 for the note, 18/1.3 for the title.
-    for (role, box) in [(NXInspectorText.Role.note, 13 * 1.55), (.title, 18 * 1.3)] as [(NXInspectorText.Role, CGFloat)] {
-        check(close(NXInspectorTextView.lineBox(role), box), "\(role) line box")
+    // One line in its box, and each more a box further down: 13.5/1.6 for
+    // the note, 20/1.25 for the title, and the page's 14.5/1.65 note.
+    let sizes: [(role: NXInspectorText.Role, large: Bool, box: CGFloat)] = [
+        (.note, false, 13.5 * 1.6), (.title, false, 20 * 1.25), (.note, true, 14.5 * 1.65),
+    ]
+    for (role, large, box) in sizes {
+        let name = large ? "page \(role)" : "\(role)"
+        func make() -> NXInspectorTextView {
+            let view = NXInspectorTextView.make(role: role)
+            if large { view.setSize(large: true, serif: false) }
+            return view
+        }
+        check(close(NXInspectorTextView.metrics(role, large: large).lineBox, box), "\(name) line box")
         for count in 1...4 {
             let text = Array(repeating: "Hg", count: count).joined(separator: "\n")
-            let lines = NXInspectorTextView.make(role: role)
+            let lines = make()
             lines.show(text)
             let height = lines.height(fittingWidth: 300)
-            check(close(height, CGFloat(count) * box), "\(count) \(role) lines stand \(count) boxes", "\(height) against \(CGFloat(count) * box)")
+            check(close(height, CGFloat(count) * box), "\(count) \(name) lines stand \(count) boxes", "\(height) against \(CGFloat(count) * box)")
         }
         // A line wrapped at the panel's width falls on the same pitch.
-        let long = NXInspectorTextView.make(role: role)
+        let long = make()
         long.show(String(repeating: "Wrapped words go on ", count: 8))
         let height = long.height(fittingWidth: 180)
         let lines = height / box
-        check(lines >= 2 && close(lines, lines.rounded()), "wrapped \(role) lines fall on its pitch", "\(height)")
-        check(close(NXInspectorTextView.make(role: role).height(fittingWidth: 300), box), "an empty \(role) is one box tall")
+        check(lines >= 2 && close(lines, lines.rounded()), "wrapped \(name) lines fall on its pitch", "\(height)")
+        check(close(make().height(fittingWidth: 300), box), "an empty \(name) is one box tall")
     }
 
     // A completed task's title: grey and struck, what's typed too.
@@ -210,7 +219,8 @@ MainActor.assumeIsolated {
     host.addSubview(hosting)
     hosting.layoutSubtreeIfNeeded()
     let hostedHeight = hosting.fittingSize.height
-    check(hostedHeight == (2 * 13 * 1.55).rounded(.up), "a hosted two-line note stands two boxes tall", "\(hostedHeight)")
+    // Laid out on the display's pixels, which round it up a fraction of a point.
+    check(hostedHeight >= 2 * 13.5 * 1.6 && hostedHeight - 2 * 13.5 * 1.6 < 1, "a hosted two-line note stands two boxes tall", "\(hostedHeight)")
     fields.write(.note)
     let hosted = window.firstResponder as? NXInspectorTextView
     check(hosted?.string == "One\nTwo" && hosted?.selectedRange().location == 7, "the note takes the caret at its end")

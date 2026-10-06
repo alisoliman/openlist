@@ -37,12 +37,12 @@ struct NextToolbar: View {
                 .accessibilityLabel("Back")
 
                 // While you work the crumb gives the notch its room past 200 pt.
-                // Its first 80 pt outlast the Undo label.
+                // It keeps its first 80 pt however narrow the bar.
                 NXWidthFloor(80) {
                     NXWidthCap(working ? 200 : .infinity) {
                         Text(crumb)
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(NX.ink(0.4))
+                            .foregroundStyle(NX.textTertiary)
                             .lineLimit(1)
                     }
                 }
@@ -53,23 +53,15 @@ struct NextToolbar: View {
             Spacer(minLength: 8)
 
             HStack(spacing: 6) {
+                // Undo and Actions are symbols alone, named under the pointer,
+                // so New task is the bar's one labelled button.
                 if let undo = workbench.undoLabel {
-                    // A narrow bar truncates the label, then drops it, before
-                    // Actions and New task give up anything.
-                    ViewThatFits(in: .horizontal) {
-                        NXNotchIdeal(titleRoom: 60) { undoButton(undo, labelled: !working) }
-                        undoButton(undo, labelled: false)
-                    }
-                    // The design's fadeIn, 200ms ease, as it shows; it goes at
-                    // once, and its label changes in place.
-                    .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(200)), removal: .identity))
+                    undoButton(undo)
+                        // The design's fadeIn, 200ms ease, as it shows; it goes at
+                        // once, and its name changes in place.
+                        .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(200)), removal: .identity))
                 }
-                toolButton(icon: "bolt", help: working ? "Actions (⌘K)" : nil) {
-                    if !working {
-                        Text("Actions").font(.system(size: 11.5, weight: .medium))
-                        NXKey("⌘K", opacity: 0.6)
-                    }
-                } action: { env.navigator.isCommandPaletteOpen.toggle() }
+                toolButton(icon: "bolt", help: "Actions (⌘K)") { env.navigator.isCommandPaletteOpen.toggle() }
                 .fixedSize()
                 .accessibilityLabel("Actions")
 
@@ -78,7 +70,6 @@ struct NextToolbar: View {
                         Image(systemName: "plus").font(.system(size: 11, weight: .bold))
                         if !working {
                             Text("New task").font(.system(size: 11.5, weight: .semibold))
-                            NXKey("N", opacity: 0.65)
                         }
                     }
                 }
@@ -86,14 +77,11 @@ struct NextToolbar: View {
                 .buttonStyle(NXHoverButtonStyle(hover: style.accentHover, rest: style.accent, radius: 8,
                                                 padding: EdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10),
                                                 foreground: .white))
-                .shadow(color: style.accent.opacity(0.4), radius: 1, y: 1)
                 .fixedSize()
-                .nxHelp(working ? "New task (N)" : nil)
+                .help("New task (N)")
                 .accessibilityLabel("New task")
 
-                toolButton(icon: "mic", help: "Say tasks (⌥⌘V)") {
-                    EmptyView()
-                } action: { workbench.openCapture(listens: true) }
+                toolButton(icon: "mic", help: "Say tasks (⌥⌘V)") { workbench.openCapture(listens: true) }
                 .fixedSize()
                 .accessibilityLabel("Say tasks")
                 .accessibilityHint("Opens voice capture and starts listening.")
@@ -157,28 +145,20 @@ struct NextToolbar: View {
         return nil
     }
 
-    /// Undo, named after the latest change when `labelled`: the name hugs its
-    /// text up to 180 pt and truncates past that, or where the bar is short.
-    private func undoButton(_ undo: String, labelled: Bool) -> some View {
-        toolButton(icon: "arrow.uturn.backward", help: labelled ? nil : "Undo \(undo) (⌘Z)") {
-            if labelled {
-                NXWidthCap(180) { Text(undo).font(.system(size: 11.5, weight: .medium)).lineLimit(1) }
-            }
-        } action: { workbench.undoLast() }
+    /// Undo, named after the latest change under the pointer.
+    private func undoButton(_ undo: String) -> some View {
+        toolButton(icon: "arrow.uturn.backward", help: "Undo \(undo) (⌘Z)") { workbench.undoLast() }
+        .fixedSize()
         .accessibilityLabel("Undo \(undo)")
     }
 
-    private func toolButton<Label: View>(icon: String, help: String?, @ViewBuilder label: () -> Label,
-                                         action: @escaping () -> Void) -> some View {
+    private func toolButton(icon: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 12.5, weight: .medium))
-                label()
-            }
+            Image(systemName: icon).font(.system(size: 12.5, weight: .medium))
         }
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 8,
                                         padding: EdgeInsets(top: 5, leading: 9, bottom: 5, trailing: 9)))
-        .nxHelp(help)
+        .help(help)
     }
 }
 
@@ -393,8 +373,8 @@ private struct NXNotchChrome: ViewModifier {
 }
 
 /// Keeps at least `floor` of the content's width, or all of it when narrower,
-/// however little the bar offers, so the crumb shows a word or two before the
-/// Undo label, which outranks it, keeps its room.
+/// however little the bar offers, so the crumb shows a word or two however
+/// many buttons the bar holds.
 private struct NXWidthFloor: Layout {
     let floor: CGFloat
     init(_ floor: CGFloat) { self.floor = floor }
@@ -412,7 +392,7 @@ private struct NXWidthFloor: Layout {
 }
 
 /// Reports an ideal width of at most `titleRoom` past the content's narrowest,
-/// so `ViewThatFits` keeps the full notch, or the named Undo, while its title
+/// so `ViewThatFits` keeps the full notch while its title
 /// can show a few words, not only while the whole title fits. Proposed a
 /// width, it passes it on unchanged.
 private struct NXNotchIdeal: Layout {

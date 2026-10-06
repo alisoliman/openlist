@@ -37,7 +37,7 @@ struct NextTaskRow: View {
                 if options.notes, !task.note.isEmpty {
                     Text(task.note.replacingOccurrences(of: "\n", with: " "))
                         .font(.system(size: 12))
-                        .foregroundStyle(NX.ink(0.45))
+                        .foregroundStyle(NX.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         // The design's 1.4 line box, its leading split above and below.
@@ -598,9 +598,10 @@ enum NXRowChips {
             chips.append(NXChipModel(id: "time", label: NXFormat.clock(due), icon: "bell.fill", fill: true, schedules: true))
         }
         if !done, workbench.isPlanned(task) {
+            // Neutral: being on the calendar is information, not a call to act.
             let minutes = task.schedulingEstimateMinutes
             chips.append(NXChipModel(id: "planned", label: minutes > 0 ? "\(minutes)m" : "Planned",
-                                     icon: "calendar.badge.clock", tone: .accent))
+                                     icon: "calendar.badge.clock"))
         }
         if let due = task.dueDate, !done {
             // By day, as the design: earlier days are overdue, a time today never is.
@@ -677,7 +678,6 @@ extension NXGroup {
 
 struct NXGroupView: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let group: NXGroup
     var options = NXRowOptions()
 
@@ -702,15 +702,15 @@ struct NXGroupView: View {
                         HStack(spacing: 8) {
                             Text(group.emptyText)
                                 .font(.system(size: 12.5))
-                                .foregroundStyle(NX.ink(0.4))
+                                .foregroundStyle(NX.textTertiary)
                                 .lineSpacing(leading)
                             // A headless group's action has nowhere else to go.
                             if !group.showHead, let label = group.actionLabel, let action = group.action {
                                 Button(label, action: action)
                                     .font(.system(size: 12, weight: .semibold))
-                                    .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), rest: style.accent.opacity(0.08),
+                                    .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.09), rest: NX.ink(0.05),
                                                                     radius: 6, padding: EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8),
-                                                                    foreground: style.accent))
+                                                                    foreground: NX.textSecondary, hoverForeground: NX.ink))
                             }
                         }
                         .padding(.vertical, 10 + leading / 2)
@@ -744,7 +744,7 @@ struct NXGroupView: View {
                 if !group.rows.isEmpty {
                     Text("\(group.taskCount ?? group.rows.count)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.38))
+                        .foregroundStyle(NX.textTertiary)
                         .monospacedDigit()
                         .contentTransition(.numericText())
                 }
@@ -769,9 +769,10 @@ struct NXGroupView: View {
                     Text(label).padding(.vertical, (11 - NX.lineHeight(11)) / 2)
                 }
                 .font(.system(size: 11, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.16), rest: style.accent.opacity(0.08), radius: 6,
+                // Grey, as the page's secondary buttons: the accent is kept for the one primary action.
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.09), rest: NX.ink(0.05), radius: 6,
                                                 padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
-                                                foreground: style.accent))
+                                                foreground: NX.textSecondary, hoverForeground: NX.ink))
             }
         }
         .padding(.vertical, 6)
@@ -819,15 +820,9 @@ struct NXAddRow: View {
             Text(text)
                 .font(.system(size: 13.5))
                 .padding(.vertical, (13.5 * 1.3 - NX.lineHeight(13.5)) / 2)
-            // The design's 500 10/1 key inside 2/5 padding, so the cap is 14 pt.
-            Text("N")
-                .font(NX.mono(10))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2 + (10 - NX.lineHeight(10)) / 2)
-                .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4))
             Spacer()
         }
-        .foregroundStyle(hovering ? NX.ink(0.55) : NX.ink(0.36))
+        .foregroundStyle(hovering ? NX.textTertiary : NX.textQuaternary)
         .padding(.vertical, 7)
         .padding(.horizontal, 10)
         .background(hovering ? NX.ink(0.035) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -835,6 +830,7 @@ struct NXAddRow: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: open)
         .pointerStyle(.horizontalText)
+        .help("New task (N)")
         .padding(.top, 8)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)

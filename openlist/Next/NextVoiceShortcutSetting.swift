@@ -30,7 +30,7 @@ struct NXVoiceShortcutSetting: View {
         if isRecording {
             HStack(spacing: 12) {
                 Text(recordingError ?? "Hold at least two modifiers and press a key. Escape cancels.")
-                    .foregroundStyle(recordingError == nil ? NX.ink(0.55) : NX.redText)
+                    .foregroundStyle(recordingError == nil ? NX.textSecondary : NX.redText)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button("Cancel recording", action: finishRecording)

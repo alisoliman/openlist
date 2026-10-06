@@ -110,7 +110,7 @@ private struct NXLabelSettingsRow: View {
 
             Text("\(usage)")
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(NX.ink(0.42))
+                .foregroundStyle(NX.textTertiary)
                 .monospacedDigit()
 
             if hasDuplicates {

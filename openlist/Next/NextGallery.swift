@@ -109,6 +109,7 @@ struct NextListsGallery: View {
 
 private struct NXListCard: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
     let list: TaskList
     /// Every task in the list, subtasks included, as the list header counts them.
     let tasks: [Block]
@@ -126,11 +127,10 @@ private struct NXListCard: View {
         let color = list.nxColor
         let stats = "\(open.count) open" + (dueToday > 0 ? " · \(dueToday) due today" : "") + (done > 0 ? " · \(done) done" : "")
         VStack(alignment: .leading, spacing: 0) {
-            LinearGradient(colors: [color.opacity(0.2), color.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            color.opacity(0.08)
                 .frame(height: 58)
                 .overlay(alignment: .bottomLeading) {
                     NXListGlyph(list: list, size: 30)
-                        .shadow(color: .black.opacity(0.12), radius: 2, y: 2)
                         .offset(x: 16, y: 14)
                 }
                 .zIndex(1)
@@ -152,14 +152,14 @@ private struct NXListCard: View {
                 Text(path.isEmpty ? stats : "In \(path) · \(stats)")
                     .font(.system(size: 11.5, weight: .medium))
                     .lineSpacing(metaLeading)
-                    .foregroundStyle(NX.ink(0.5))
+                    .foregroundStyle(NX.textTertiary)
                     .lineLimit(2)
                     .padding(.vertical, metaLeading / 2)
                 Capsule().fill(NX.ink(0.07))
                     .frame(height: 4)
                     .overlay(alignment: .leading) {
                         GeometryReader { proxy in
-                            Capsule().fill(color).frame(width: proxy.size.width * fraction)
+                            Capsule().fill(fraction >= 1 ? NX.green : style.accent).frame(width: proxy.size.width * fraction)
                         }
                     }
                     .clipShape(Capsule())
@@ -172,7 +172,7 @@ private struct NXListCard: View {
                             // 400 12/1.3, over SwiftUI's 15pt line.
                             Text(task.displayTitle)
                                 .font(.system(size: 12))
-                                .foregroundStyle(NX.ink(0.62))
+                                .foregroundStyle(NX.textSecondary)
                                 .lineLimit(1)
                                 .padding(.vertical, max(0, 12 * 1.3 - NX.lineHeight(12)) / 2)
                         }
@@ -218,7 +218,7 @@ private struct NXNewListCard: View {
                     .foregroundStyle(hovering ? style.accent : NX.ink(0.45))
                 Text(title).font(.system(size: 12.5, weight: .medium))
             }
-            .foregroundStyle(hovering ? NX.ink(0.75) : NX.ink(0.45))
+            .foregroundStyle(hovering ? NX.textSecondary : NX.textTertiary)
             .frame(maxWidth: .infinity, minHeight: 150, maxHeight: .infinity)
             .background(hovering ? NX.ink(0.02) : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -261,7 +261,7 @@ struct NextTrashScreen: View {
                         Text("Erasing can’t be undone.")
                             .font(.system(size: 12.5))
                             .lineSpacing(leading)
-                            .foregroundStyle(NX.ink(0.5))
+                            .foregroundStyle(NX.textTertiary)
                             .padding(.vertical, leading / 2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
@@ -330,13 +330,13 @@ private struct NXTrashRow: View {
                 Text(title)
                     .font(.system(size: 13.5))
                     .lineSpacing(leading)
-                    .foregroundStyle(NX.ink(0.72))
+                    .foregroundStyle(NX.textSecondary)
                     .lineLimit(2)
                     .padding(.vertical, leading / 2)
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     meta(now: context.date)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.4))
+                        .foregroundStyle(NX.textTertiary)
                         .lineLimit(1)
                         // The line without its list's glyph, which reads as a symbol's name.
                         .accessibilityLabel(metaText(now: context.date))
@@ -347,19 +347,16 @@ private struct NXTrashRow: View {
             // One element, as it reads; Restore and Hold to erase stay buttons of their own.
             .accessibilityElement(children: .combine)
             Button { workbench.restore(entry) } label: {
-                // The design's 13pt icon box and 600 11/1 label, so the button
-                // is its 25pt, 6 + 13 + 6.
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.bin").font(.system(size: 12)).frame(height: 13).accessibilityHidden(true)
-                    Text("Restore").padding(.vertical, (11 - NX.lineHeight(11)) / 2)
-                }
-                .font(.system(size: 11, weight: .semibold))
+                // The design's 13pt icon box, so the button is its 25pt, 6 + 13 + 6.
+                Image(systemName: "arrow.up.bin").font(.system(size: 12)).frame(height: 13)
             }
-            .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), rest: style.accent.opacity(0.1), radius: 7,
+            .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 7,
                                             padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9),
-                                            foreground: style.accent, hoverForeground: style.accent))
+                                            foreground: NX.ink(0.5), hoverForeground: NX.ink))
+            .help("Restore")
+            .accessibilityLabel("Restore")
             NXHoldButton(title: "Hold to erase", holdingTitle: "Keep holding…", size: 11,
-                         padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9), radius: 7, rest: 0.08,
+                         padding: EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9), radius: 7, rest: 0,
                          confirmation: "Erase “\(title)”?") {
                 workbench.erase([entry.id])
             }
@@ -425,13 +422,14 @@ struct NXHoldButton: View {
     var size: CGFloat = 11
     var padding = EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9)
     var radius: CGFloat = 7
-    /// Red opacity at rest.
+    /// Red opacity at rest; at least 0.08 under the pointer.
     var rest: Double = 0.08
     let confirmation: String
     var confirmLabel = "Erase"
     let action: () -> Void
 
     @State private var holding = false
+    @State private var hovering = false
     @State private var progress: CGFloat = 0
     @State private var bounds: CGSize = .zero
     @State private var timer: Task<Void, Never>?
@@ -450,7 +448,7 @@ struct NXHoldButton: View {
         .padding(padding)
         .background {
             ZStack(alignment: .leading) {
-                NX.red.opacity(rest)
+                NX.red.opacity(hovering ? max(rest, 0.08) : rest)
                 GeometryReader { proxy in
                     NX.red.opacity(0.28).frame(width: proxy.size.width * progress)
                 }
@@ -467,7 +465,10 @@ struct NXHoldButton: View {
                 }
                 .onEnded { _ in cancel() }
         )
-        .onHover { if !$0 { cancel() } }
+        .onHover {
+            hovering = $0
+            if !$0 { cancel() }
+        }
         .onDisappear { cancel() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)

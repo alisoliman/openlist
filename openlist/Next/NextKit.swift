@@ -68,6 +68,8 @@ struct NXChip: View {
 
     var body: some View {
         let (fg, bg) = colors
+        // A chip that is only a symbol, like the star, needs no box to read.
+        let bare = chip.label.isEmpty && chip.glyph == nil
         HStack(spacing: quiet ? 3 : 4) {
             if let icon = chip.icon {
                 Image(systemName: icon).font(.system(size: 9.5, weight: chip.fill ? .bold : .semibold))
@@ -91,10 +93,10 @@ struct NXChip: View {
         .lineLimit(1)
         // The design's 200ms colour transition, as a chip changes tone in place.
         .animation(NX.cssEase(200)) { $0.foregroundStyle(quiet ? quietColor(fg) : fg) }
-        .padding(.horizontal, quiet ? 0 : 7)
+        .padding(.horizontal, quiet ? 0 : bare ? 2 : 7)
         .padding(.vertical, quiet ? 0 : 3)
         .animation(NX.cssEase(200)) {
-            $0.background(quiet ? Color.clear : bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            $0.background(quiet || bare ? Color.clear : bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .fixedSize()
         // With Reduce Motion chipIn only fades, as the overlay cards do.
@@ -109,7 +111,7 @@ struct NXChip: View {
     private func quietColor(_ fg: Color) -> Color {
         switch chip.tone {
         case .over, .accent, .amber, .label: fg
-        default: NX.ink(0.42)
+        default: NX.textTertiary
         }
     }
 
@@ -123,7 +125,7 @@ struct NXChip: View {
 
     private var colors: (Color, Color) {
         switch chip.tone {
-        case .neutral: (NX.ink(0.58), NX.ink(0.06))
+        case .neutral: (NX.textTertiary, NX.ink(0.05))
         case .accent: (style.accent, style.accent.opacity(0.12))
         case .over: (NX.redText, NX.red.opacity(0.13))
         case .green: (NX.greenText, NX.green.opacity(0.14))
@@ -168,7 +170,7 @@ struct NXToggle: View {
     }
 }
 
-/// The switch itself, as the inspector's and Settings' draw it: the design's
+/// The switch itself, as the inspector draws it: the design's
 /// `background 180ms ease` on the track and 200ms spring on the knob, at
 /// those speeds whatever the Motion setting.
 struct NXSwitch: View {
@@ -252,24 +254,6 @@ struct NXPressStyle: ButtonStyle {
     }
 }
 
-/// The grey minus or plus of the inspector's estimate stepper. `label` is
-/// what VoiceOver reads for it, not the symbol's name.
-struct NXStepButton: View {
-    let icon: String
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: icon).font(.system(size: 11, weight: .medium)).frame(width: 15, height: 15)
-        }
-        .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.05), radius: 6,
-                                        padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                        foreground: NX.ink(0.6)))
-        .accessibilityLabel(label)
-    }
-}
-
 extension View {
     /// A tooltip only where there's something the control doesn't already say.
     @ViewBuilder func nxHelp(_ text: String?) -> some View {
@@ -313,7 +297,8 @@ struct NXScreenHeader<Trailing: View>: View {
         NXHeaderFlow(gap: 12) {
             HStack(alignment: .center, spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12))
+                    // A quiet tile: the symbol carries the screen's colour.
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NX.ink(0.05))
                     switch tile {
                     case let .icon(name):
                         Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
@@ -333,7 +318,7 @@ struct NXScreenHeader<Trailing: View>: View {
                     // Its 12px/1.2 line box over SwiftUI's line.
                     Text(subtitle)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(NX.ink(0.48))
+                        .foregroundStyle(NX.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
                         .padding(.vertical, (12 * 1.2 - NX.lineHeight(12)) / 2)
@@ -523,7 +508,7 @@ struct NXProgress: View {
             HStack(spacing: 10) {
                 Text("\(done) of \(total) done")
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.5))
+                    .foregroundStyle(NX.textTertiary)
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .fixedSize()
@@ -563,7 +548,7 @@ struct NXSegmented<Value: Hashable>: View {
                     // The design's 500 12/1, so the control is its 28pt: 2 + 6 + 12 + 6 + 2.
                     Text(label)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(selection == value ? NX.ink : NX.ink(0.55))
+                        .foregroundStyle(selection == value ? NX.ink : NX.textTertiary)
                         .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)

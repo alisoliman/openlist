@@ -46,7 +46,7 @@ struct RecurrencePicker: View {
                 HStack(spacing: 8) {
                     Image(systemName: "repeat")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(style.accent)
+                        .foregroundStyle(NX.ink(0.55))
                     Text("Repeat this task")
                         .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(NX.ink)
@@ -55,7 +55,10 @@ struct RecurrencePicker: View {
                 .contentShape(Rectangle())
                 .onTapGesture { enabledBinding.wrappedValue.toggle() }
                 .accessibilityHidden(true)
-                NXToggle(isOn: isEnabled, label: "Repeat this task") { enabledBinding.wrappedValue.toggle() }
+                Toggle("Repeat this task", isOn: enabledBinding)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
             }
 
             if isEnabled {
@@ -63,8 +66,8 @@ struct RecurrencePicker: View {
 
                 section("Every") {
                     NXFlow(spacing: 4, alignment: .center) {
-                        NXRepeatStepper(label: "Repeat interval", value: editing($interval), range: 1...52,
-                                        spoken: "\(interval) \(interval == 1 ? frequency.singular : frequency.plural)") {
+                        stepper("Repeat interval", value: editing($interval), in: 1...52,
+                                spoken: "\(interval) \(interval == 1 ? frequency.singular : frequency.plural)") {
                             Text("\(interval)")
                         }
                         .padding(.trailing, 4)
@@ -101,7 +104,7 @@ struct RecurrencePicker: View {
                             ForEach(RecurrenceEngine.upcoming(rule: rule, from: block.dueDate), id: \.self) { date in
                                 Text(NXFormat.dayLabel(date))
                                     .font(.system(size: 12))
-                                    .foregroundStyle(NX.ink(0.62))
+                                    .foregroundStyle(NX.textSecondary)
                             }
                         }
                     }
@@ -116,6 +119,24 @@ struct RecurrencePicker: View {
             NXCapsTitle(text: title)
             content()
         }
+    }
+
+    /// The system stepper with its value beside it: one adjustable control
+    /// to VoiceOver, and arrow keys step it once it has focus.
+    private func stepper<Value: View>(_ label: String, value: Binding<Int>, in range: ClosedRange<Int>, spoken: String,
+                                      @ViewBuilder text: () -> Value) -> some View {
+        Stepper(value: value, in: range) {
+            text()
+                .font(.system(size: 12, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(NX.ink)
+                .contentTransition(.numericText())
+                .fixedSize()
+        }
+        .controlSize(.small)
+        .fixedSize()
+        .accessibilityLabel(label)
+        .accessibilityValue(spoken)
     }
 
     /// An inspector pill that says when it is the current choice.
@@ -151,8 +172,8 @@ struct RecurrencePicker: View {
                     .transition(.opacity)
                 }
             case .afterCount:
-                NXRepeatStepper(label: "Occurrences", value: editing($occurrenceLimit), range: 1...365,
-                                spoken: occurrenceLimit == 1 ? "1 time" : "\(occurrenceLimit) times") {
+                stepper("Occurrences", value: editing($occurrenceLimit), in: 1...365,
+                        spoken: occurrenceLimit == 1 ? "1 time" : "\(occurrenceLimit) times") {
                     Text("\(occurrenceLimit) times")
                 }
             }
@@ -257,52 +278,5 @@ struct RecurrencePicker: View {
             rule.occurrenceLimit = occurrenceLimit
         }
         env.workbench.setRecurrence(block.id, rule)
-    }
-}
-
-/// The inspector's estimate stepper: grey minus and plus around the value,
-/// one adjustable control to VoiceOver.
-private struct NXRepeatStepper<Value: View>: View {
-    let label: String
-    @Binding var value: Int
-    let range: ClosedRange<Int>
-    /// The value with its unit, as VoiceOver reads it.
-    let spoken: String
-    @ViewBuilder var text: () -> Value
-
-    var body: some View {
-        HStack(spacing: 8) {
-            step("minus", by: -1)
-            text()
-                .font(.system(size: 12, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(NX.ink)
-                .contentTransition(.numericText())
-                .fixedSize()
-                .frame(minWidth: 18)
-            step("plus", by: 1)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(spoken)
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: change(by: 1)
-            case .decrement: change(by: -1)
-            @unknown default: break
-            }
-        }
-    }
-
-    private func step(_ icon: String, by amount: Int) -> some View {
-        // The stepper speaks as one control; these names are for completeness.
-        NXStepButton(icon: icon, label: amount < 0 ? "Fewer" : "More") { change(by: amount) }
-            .disabled(!range.contains(value + amount))
-            .opacity(range.contains(value + amount) ? 1 : 0.45)
-    }
-
-    private func change(by amount: Int) {
-        let next = min(range.upperBound, max(range.lowerBound, value + amount))
-        if next != value { value = next }
     }
 }

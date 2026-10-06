@@ -27,7 +27,7 @@ struct NXLinkSheet: View {
                 NXPanelTitle(prompt.currentURL.isEmpty ? "Add link" : "Edit link")
                 Text("For “\(prompt.text)”")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(NX.ink(0.55))
+                    .foregroundStyle(NX.textTertiary)
                     .lineLimit(2)
             }
             NXPanelField(icon: "link") {

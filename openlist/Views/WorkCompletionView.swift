@@ -14,7 +14,7 @@ struct WorkCompletionView: View {
                 Text("Done")
             }
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(NX.ink(0.55))
+            .foregroundStyle(NX.textTertiary)
             Text(summary.title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(NX.ink)
@@ -22,14 +22,14 @@ struct WorkCompletionView: View {
                 .padding(.top, 8)
             Text("\(summary.recordedMinutes.formatted(.number.precision(.fractionLength(0)))) min recorded. Recording stopped.")
                 .font(.system(size: 12.5))
-                .foregroundStyle(NX.ink(0.62))
+                .foregroundStyle(NX.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
             if let date = summary.nextDate {
                 // As the tray's "“…” rolls to Wed 30".
                 Text("Rolls to \(NXFormat.dueLabel(date))")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                     .padding(.top, 4)
             }
             HStack(spacing: 8) {

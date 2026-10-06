@@ -77,7 +77,7 @@ struct NextTasksScreen: View {
     }
 
     @MainActor
-    static func groups(pool: [Block], library: NextLibrary, workbench: Workbench, queryMode: Bool, accent: Color,
+    static func groups(pool: [Block], library: NextLibrary, workbench: Workbench, queryMode: Bool,
                        now: Date) -> [NXGroup] {
         var groups: [NXGroup] = []
         switch workbench.tasksGrouping {
@@ -96,7 +96,7 @@ struct NextTasksScreen: View {
             let offsets = pool.map { task in task.dueDate.map { NXFormat.dayOffset($0, now: now) } }
             let buckets: [(String, Color, (Int?) -> Bool)] = [
                 ("Overdue", NX.red, { $0.map { $0 < 0 } ?? false }),
-                ("Today", accent, { $0 == 0 }),
+                ("Today", muted, { $0 == 0 }),
                 ("Tomorrow", muted, { $0 == 1 }),
                 ("This week", muted, { $0.map { $0 > 1 && $0 <= 6 } ?? false }),
                 ("Later", muted, { $0.map { $0 > 6 } ?? false }),
@@ -110,7 +110,7 @@ struct NextTasksScreen: View {
             }
         case .none:
             if !pool.isEmpty {
-                groups.append(NXGroup(id: "all", title: "All tasks", icon: "checklist", color: NX.green, rows: pool))
+                groups.append(NXGroup(id: "all", title: "All tasks", icon: "checklist", color: NX.ink(0.45), rows: pool))
             }
         }
         if groups.isEmpty { groups.append(emptyGroup(library: library, workbench: workbench, queryMode: queryMode)) }
@@ -150,7 +150,6 @@ extension NextTasksScreen {
 /// The Tasks screen for tasks already in outline order.
 private struct NXTasksPage: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let tasks: [Block]
 
@@ -167,7 +166,7 @@ private struct NXTasksPage: View {
         let queryMode = env.settings.tasksFilterStyle == .query
         let pool = NextTasksScreen.pool(tasks: tasks, library: library, workbench: workbench, queryMode: queryMode, now: now)
         let groups = NextTasksScreen.groups(pool: pool, library: library, workbench: workbench, queryMode: queryMode,
-                                            accent: style.accent, now: now)
+                                            now: now)
         let listCount = library.lists.count
         return NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXScreenHeader(tile: .icon("checklist"), color: NX.green, title: "Tasks",
@@ -222,7 +221,7 @@ private struct NXTasksQueryBar: View {
                         .padding(.bottom, 13)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(NXTextHoverStyle(color: NX.ink(0.42), hover: NX.ink))
+                .buttonStyle(NXTextHoverStyle(color: NX.textTertiary, hover: NX.ink))
             }
             .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.space)).maxX }) { clusterEnd = $0 }
             .overlay(alignment: .topTrailing) {
@@ -298,12 +297,12 @@ private struct NXTasksQueryBar: View {
                     // The design's 13.5/1 and 11/1 line boxes.
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(status.title).font(.system(size: 13.5, weight: on ? .semibold : .medium))
-                            .foregroundStyle(on ? NX.ink : NX.ink(0.42))
+                            .foregroundStyle(on ? NX.ink : NX.textTertiary)
                             .padding(.vertical, (13.5 - NX.lineHeight(13.5)) / 2)
                         Text("\(counts[status] ?? 0)")
                             .font(.system(size: 11, weight: .medium))
                             .monospacedDigit()
-                            .foregroundStyle(NX.ink(on ? 0.45 : 0.28))
+                            .foregroundStyle(on ? NX.textTertiary : NX.textQuaternary)
                             .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
                     }
                     .animation(NX.cssEase(160), value: on)
@@ -342,12 +341,12 @@ private struct NXTasksQueryBar: View {
                         }
                         .onGeometryChange(for: CGFloat.self, of: \.size.width) { queryWidth = $0 }
                         if showsGhost, !overflowing {
-                            Text(parsed.ghost).foregroundStyle(NX.ink(0.3))
+                            Text(parsed.ghost).foregroundStyle(NX.textQuaternary)
                         }
                         if query.isEmpty {
                             Text(focused ? "Try “kyoto overdue”" : "Filter")
                                 .fontWeight(focused ? .regular : .medium)
-                                .foregroundStyle(NX.ink(focused ? 0.34 : 0.42))
+                                .foregroundStyle(focused ? NX.textQuaternary : NX.textTertiary)
                         }
                     }
                     .font(.system(size: 13.5))
@@ -373,7 +372,7 @@ private struct NXTasksQueryBar: View {
                 if showsGhost, overflowing {
                     Text(parsed.ghost)
                         .font(.system(size: 13.5))
-                        .foregroundStyle(NX.ink(0.3))
+                        .foregroundStyle(NX.textQuaternary)
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -382,7 +381,7 @@ private struct NXTasksQueryBar: View {
                 Text("\(count)")
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
-                    .foregroundStyle(NX.ink(0.4))
+                    .foregroundStyle(NX.textTertiary)
                     // The design's fadeIn, 160ms ease, whatever the field animates; gone at once.
                     .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(160)), removal: .identity))
                     .accessibilityLabel(count == 1 ? "1 matching task" : "\(count) matching tasks")
@@ -456,7 +455,7 @@ private struct NXTasksQueryBar: View {
                         .font(.system(size: 9.5, weight: .semibold))
                         .kerning(0.76)
                         .textCase(.uppercase)
-                        .foregroundStyle(NX.ink(0.34))
+                        .foregroundStyle(NX.textTertiary)
                         // The design's 9.5/1 line box.
                         .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
                         .frame(width: 44, alignment: .leading)
@@ -484,7 +483,7 @@ private struct NXTasksQueryBar: View {
                 Text("⇥ complete · esc clear").fixedSize()
             }
             .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(NX.ink(0.42))
+            .foregroundStyle(NX.textQuaternary)
             .padding(.top, 9)
             .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
             .padding(.top, 6)
@@ -517,7 +516,7 @@ private struct NXQueryPill: View {
             Text(label).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
         }
-        .foregroundStyle(isOn ? .white : NX.ink(0.7))
+        .foregroundStyle(isOn ? .white : NX.textSecondary)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
         // Filled only when on: the design's pills have no hover.
@@ -795,7 +794,7 @@ private struct NXTasksSentenceBar: View {
                     .font(.system(size: 12, weight: .medium))
                     .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.05), radius: 6,
                                                     padding: EdgeInsets(top: 5, leading: 7, bottom: 5, trailing: 7),
-                                                    foreground: NX.ink(0.45), hoverForeground: NX.ink))
+                                                    foreground: NX.textTertiary, hoverForeground: NX.ink))
                     .padding(.leading, 4)
                     // The design's fadeIn, 160ms ease, whatever the Motion
                     // setting; it goes at once.
@@ -803,7 +802,7 @@ private struct NXTasksSentenceBar: View {
                 }
             }
             .font(.system(size: 13))
-            .foregroundStyle(NX.ink(0.45))
+            .foregroundStyle(NX.textTertiary)
             .padding(.bottom, 10)
             // An open menu stays over the title field once that wraps below the sentence.
             .zIndex(1)
@@ -826,7 +825,7 @@ private struct NXTasksSentenceBar: View {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium))
                         .monospacedDigit()
-                        .foregroundStyle(NX.ink(0.38))
+                        .foregroundStyle(NX.textTertiary)
                         .accessibilityLabel(count == 1 ? "1 matching task" : "\(count) matching tasks")
                 }
             }
@@ -967,7 +966,7 @@ private struct NXTasksSentenceBar: View {
                 Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink).lineLimit(1)
                 Spacer(minLength: 6)
                 if let count {
-                    Text("\(count)").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(NX.ink(0.36))
+                    Text("\(count)").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(NX.textTertiary)
                 }
             }
         }

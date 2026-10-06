@@ -27,6 +27,22 @@ enum NX {
 
     static func ink(_ opacity: Double) -> Color { ink.opacity(opacity) }
 
+    // MARK: Text
+
+    // Text below full ink comes in three strengths, each tuned per
+    // appearance so it keeps its contrast on paper, cards and the sidebar.
+    // Use these for words; `ink(_:)` stays for fills, hairlines and symbols.
+
+    /// Reading text under a title: notes, text lines, descriptions, a
+    /// sidebar's unselected names. About 7:1 on paper.
+    static let textSecondary = Color(nsColor: NXEditor.secondaryInk)
+    /// Metadata: subtitles, crumbs, chip and field labels, times, counts
+    /// beside a title, section labels. At least 4.5:1 on paper.
+    static let textTertiary = Color(nsColor: NXEditor.inkColor(light: 0.62, dark: 0.56))
+    /// Placeholders, hints, key caps' labels and disabled words: legible
+    /// but out of the way. About 3:1 on paper.
+    static let textQuaternary = Color(nsColor: NXEditor.placeholderInk)
+
     // MARK: Semantic
 
     static let green = Color(hex: 0x2F9E6E)
@@ -42,11 +58,13 @@ enum NX {
     static let lists = Color(hex: 0x5B5BD6)
     static let grey = Color(hex: 0x6E6A73)
 
+    /// A checkbox's ring by priority: softened, so a list of prioritised
+    /// tasks reads as titles first and a column of colour second.
     static func priorityStroke(_ priority: TaskPriority) -> Color? {
         switch priority {
-        case .high: red
-        case .medium: amber
-        case .low: inbox
+        case .high: red.opacity(0.85)
+        case .medium: amber.opacity(0.7)
+        case .low: inbox.opacity(0.7)
         case .none: nil
         }
     }

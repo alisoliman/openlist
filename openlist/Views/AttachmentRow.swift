@@ -38,7 +38,7 @@ struct AttachmentRow: View {
                     .lineLimit(1)
                 Text(attachment.formattedSize)
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.4))
+                    .foregroundStyle(NX.textTertiary)
             }
 
             Spacer(minLength: 4)

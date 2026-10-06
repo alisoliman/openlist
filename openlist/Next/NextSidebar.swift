@@ -129,13 +129,13 @@ struct NextSidebar: View {
                 Image(systemName: "magnifyingglass").font(.system(size: 12.5, weight: .medium))
                 Text("Search").font(.system(size: 12.5, weight: .medium))
                 Spacer()
-                NXKey("/", opacity: 0.7)
             }
             .frame(height: 28)
             .padding(.horizontal, 9)
         }
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.08), rest: NX.ink(0.05), radius: 8, padding: EdgeInsets(),
-                                        foreground: NX.ink(0.45)))
+                                        foreground: NX.textTertiary))
+        .help("Search (/)")
         .pointerStyle(.horizontalText)
     }
 
@@ -146,17 +146,15 @@ struct NextSidebar: View {
         var icon: String
         var filledIcon: String
         var label: String
-        var color: Color?
         /// Its View menu key and G chord, which the row names under the pointer.
         var keys: String
 
         static let all: [NavItem] = [
-            NavItem(route: .inbox, icon: "tray", filledIcon: "tray.fill", label: "Inbox", color: NX.inbox, keys: "⌘1 or G then I"),
-            NavItem(route: .today, icon: "sun.max", filledIcon: "sun.max.fill", label: "Today", color: NX.today, keys: "⌘2 or G then T"),
+            NavItem(route: .inbox, icon: "tray", filledIcon: "tray.fill", label: "Inbox", keys: "⌘1 or G then I"),
+            NavItem(route: .today, icon: "sun.max", filledIcon: "sun.max.fill", label: "Today", keys: "⌘2 or G then T"),
             NavItem(route: .calendar, icon: "calendar", filledIcon: "calendar", label: "Calendar", keys: "⌘3 or G then C"),
-            NavItem(route: .tasks, icon: "checklist", filledIcon: "checklist", label: "Tasks", color: NX.green, keys: "⌘4 or G then A"),
-            NavItem(route: .lists, icon: "square.2.layers.3d", filledIcon: "square.2.layers.3d.fill", label: "Lists", color: NX.lists,
-                    keys: "⌘5 or G then L"),
+            NavItem(route: .tasks, icon: "checklist", filledIcon: "checklist", label: "Tasks", keys: "⌘4 or G then A"),
+            NavItem(route: .lists, icon: "square.2.layers.3d", filledIcon: "square.2.layers.3d.fill", label: "Lists", keys: "⌘5 or G then L"),
             NavItem(route: .activity, icon: "square.grid.2x2", filledIcon: "square.grid.2x2.fill", label: "Activity", keys: "⌘6 or G then H"),
         ]
     }
@@ -182,11 +180,11 @@ struct NextSidebar: View {
             // Sized to the design's 16px Material glyphs, which draw about 12pt wide.
             Image(systemName: on ? item.filledIcon : item.icon)
                 .font(.system(size: 12, weight: on ? .medium : .regular))
-                .foregroundStyle(on ? (item.color ?? style.accent) : NX.ink(0.55))
+                .foregroundStyle(on ? NX.ink : NX.ink(0.55))
                 .frame(width: 16)
             Text(item.label)
                 .font(.system(size: 13, weight: on ? .semibold : .medium))
-                .foregroundStyle(on ? NX.ink : NX.ink(0.66))
+                .foregroundStyle(on ? NX.ink : NX.textSecondary)
             Spacer(minLength: 4)
             if count > 0 { countText(count, pulsing: pulsing) }
         } action: {
@@ -203,10 +201,10 @@ struct NextSidebar: View {
         }
     }
 
-    private func countText(_ count: Int, pulsing: Bool, opacity: Double = 0.38) -> some View {
+    private func countText(_ count: Int, pulsing: Bool) -> some View {
         Text("\(count)")
             .font(.system(size: 11, weight: pulsing ? .bold : .medium))
-            .foregroundStyle(pulsing ? style.accent : NX.ink(opacity))
+            .foregroundStyle(pulsing ? style.accent : NX.textTertiary)
             .monospacedDigit()
             .contentTransition(.numericText())
             .modifier(NXBump(trigger: workbench.pulseRevision, active: pulsing))
@@ -242,7 +240,7 @@ struct NextSidebar: View {
         if renaming == .section(section.id) {
             renameField("Section name", .section(section.id))
                 .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(NX.ink(0.6))
+                .foregroundStyle(NX.textSecondary)
                 .padding(.top, 4)
                 .padding(.bottom, 5)
                 .padding(.horizontal, 8)
@@ -275,7 +273,7 @@ struct NextSidebar: View {
                     .font(.system(size: 10.5, weight: .semibold))
                     .kerning(0.735)
                     .textCase(.uppercase)
-                    .foregroundStyle(NX.ink(0.34))
+                    .foregroundStyle(NX.textTertiary)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(NX.ink(0.3))
@@ -316,13 +314,13 @@ struct NextSidebar: View {
             } else {
                 Text(list.displayTitle)
                     .font(.system(size: 13, weight: on ? .semibold : .medium))
-                    .foregroundStyle(on ? NX.ink : NX.ink(0.66))
+                    .foregroundStyle(on ? NX.ink : NX.textSecondary)
                     .lineLimit(1)
                     // The whole name under the pointer, only when it's cut short.
                     .modifier(NXHelpWhenTruncated(text: list.displayTitle))
             }
             Spacer(minLength: 4)
-            if count > 0 { countText(count, pulsing: pulsing, opacity: 0.36) }
+            if count > 0 { countText(count, pulsing: pulsing) }
         } action: {
             workbench.go(workbench.route(for: list))
         }
@@ -445,12 +443,12 @@ struct NextSidebar: View {
                                 .padding(.horizontal, 4)
                             Text(label.name)
                                 .font(.system(size: 12.5, weight: on ? .semibold : .medium))
-                                .foregroundStyle(on ? NX.ink : NX.ink(0.62))
+                                .foregroundStyle(on ? NX.ink : NX.textSecondary)
                                 .lineLimit(1)
                                 .modifier(NXHelpWhenTruncated(text: label.name))
                             Spacer(minLength: 4)
                             if count > 0 {
-                                Text("\(count)").font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.36)).monospacedDigit()
+                                Text("\(count)").font(.system(size: 11, weight: .medium)).foregroundStyle(NX.textTertiary).monospacedDigit()
                             }
                         } action: {
                             workbench.go(.label(label.id))
@@ -475,21 +473,20 @@ struct NextSidebar: View {
     private var footer: some View {
         HStack(spacing: 4) {
             Button { workbench.createList() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus").font(.system(size: 11.5, weight: .semibold))
-                    Text("New list").font(.system(size: 12.5, weight: .medium))
-                }
+                Image(systemName: "plus").font(.system(size: 13, weight: .medium))
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.05), radius: 7,
-                                            padding: EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)))
+                                            padding: EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6),
+                                            foreground: NX.ink(0.5)))
             .help("New list (⇧⌘N)")
+            .accessibilityLabel("New list")
             Spacer()
             footerButton(on: route == .trash, title: "Trash",
                          value: trashCount > 0 ? "\(trashCount) \(trashCount == 1 ? "item" : "items")" : "") {
                 HStack(spacing: 4) {
                     Image(systemName: "trash").font(.system(size: 13, weight: .medium))
                     if trashCount > 0 {
-                        Text("\(trashCount)").font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.4)).monospacedDigit()
+                        Text("\(trashCount)").font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.textTertiary).monospacedDigit()
                     }
                 }
             } action: { workbench.go(.trash) }

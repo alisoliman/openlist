@@ -44,7 +44,7 @@ struct CalendarMonthPicker: View {
                         .font(.system(size: 10, weight: .semibold))
                         .kerning(0.4)
                         .textCase(.uppercase)
-                        .foregroundStyle(NX.ink(0.45))
+                        .foregroundStyle(NX.textTertiary)
                         .frame(maxWidth: .infinity)
                         .accessibilityHidden(true)
                 }
@@ -84,7 +84,7 @@ struct CalendarMonthPicker: View {
                 .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
                 .monospacedDigit()
                 .foregroundStyle(isSelected ? Color.white : isTooEarly ? NX.ink(0.2) : isToday ? style.accent
-                                 : isInMonth ? NX.ink : NX.ink(0.3))
+                                 : isInMonth ? NX.ink : NX.textQuaternary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
                 .background {

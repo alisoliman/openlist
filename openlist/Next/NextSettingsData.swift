@@ -26,7 +26,7 @@ struct NXICloudDetails: View {
                 .foregroundStyle(NX.ink)
                 Text(state.detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(NX.ink(0.6))
+                    .foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if state.lastUpload != nil || state.lastDownload != nil {
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
@@ -50,7 +50,7 @@ struct NXICloudDetails: View {
                         Text("Appearance, shortcuts and other app preferences stay on each Mac. Attachments are imported copies; reattach a file to sync edits made in another app.")
                     }
                     .font(.system(size: 11.5))
-                    .foregroundStyle(NX.ink(0.48))
+                    .foregroundStyle(NX.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 4)
@@ -62,8 +62,8 @@ struct NXICloudDetails: View {
 
     private func transfer(_ title: String, _ date: Date) -> some View {
         GridRow {
-            Text(title).foregroundStyle(NX.ink(0.48))
-            Text(NXFormat.moment(date)).foregroundStyle(NX.ink(0.7)).monospacedDigit()
+            Text(title).foregroundStyle(NX.textTertiary)
+            Text(NXFormat.moment(date)).foregroundStyle(NX.textSecondary).monospacedDigit()
         }
         .font(.system(size: 11.5, weight: .medium))
     }
@@ -71,7 +71,7 @@ struct NXICloudDetails: View {
     private func problem(_ title: String, _ message: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(NX.redText)
-            Text(message).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.6))
+            Text(message).font(.system(size: 11.5)).foregroundStyle(NX.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
@@ -179,7 +179,7 @@ private struct NXLibraryBackupRows: View {
                          hint: library.isBusy ? "Working with library…"
                              : failure ?? library.status
                              ?? "A complete, unencrypted package of your library, history and files. Keep it somewhere private. Markdown export remains available for readable documents.",
-                         hintColor: failure != nil && !library.isBusy ? NX.redText : NX.ink(0.48), selectable: true) {
+                         hintColor: failure != nil && !library.isBusy ? NX.redText : NX.textTertiary, selectable: true) {
                 HStack(spacing: 6) {
                     Button("Back up library…") { Task { await library.exportBackup() } }
                     Button("Restore backup…") { Task { await library.chooseBackup() } }
@@ -248,11 +248,11 @@ struct NXConfirmationSheet: View {
             NXPanelTitle(title)
             VStack(alignment: .leading, spacing: 8) {
                 Text(message)
-                    .foregroundStyle(NX.ink(0.7))
+                    .foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let detail {
                     Text(detail)
-                        .foregroundStyle(NX.ink(0.5))
+                        .foregroundStyle(NX.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -293,7 +293,7 @@ private struct LibraryRestorePreview: View {
                 NXPanelTitle("Restore this backup?")
                 Text("Format \(preview.manifest.version) · \(NXFormat.moment(preview.manifest.createdAt))")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(NX.ink(0.48))
+                    .foregroundStyle(NX.textTertiary)
             }
             Grid(alignment: .leading, horizontalSpacing: 22, verticalSpacing: 6) {
                 row("Lists", "\(preview.snapshot.lists.filter { $0.trashID == nil && $0.mergedIntoID == nil }.count)")
@@ -313,18 +313,18 @@ private struct LibraryRestorePreview: View {
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.08), lineWidth: 0.5))
             Text("This replaces the library shown on this Mac with a local-only restored copy. It does not replace, reset or merge your iCloud library. Your original library and a recovery backup are kept.")
                 .font(.system(size: 13))
-                .foregroundStyle(NX.ink(0.7))
+                .foregroundStyle(NX.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Open Openlist again after it quits to finish. Library preferences will be restored; permissions and connections stay on this Mac. Any open work session will be paused at its last recorded time.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(NX.ink(0.48))
+                .foregroundStyle(NX.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             if let error = library.error {
                 Text(error).font(.system(size: 12)).foregroundStyle(NX.redText).textSelection(.enabled)
             }
             HStack(spacing: 6) {
                 if library.isBusy {
-                    Text("Working with library…").font(.system(size: 11.5)).foregroundStyle(NX.ink(0.48))
+                    Text("Working with library…").font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
                 }
                 Spacer()
                 Button("Cancel", role: .cancel) { library.preview = nil }
@@ -346,7 +346,7 @@ private struct LibraryRestorePreview: View {
 
     private func row(_ title: String, _ value: String) -> some View {
         GridRow {
-            Text(title).foregroundStyle(NX.ink(0.55))
+            Text(title).foregroundStyle(NX.textTertiary)
             Text(value).foregroundStyle(NX.ink).monospacedDigit()
         }
         .font(.system(size: 12.5))

@@ -48,7 +48,7 @@ struct NXAgentSettings: View {
                 NXSettingRow(label: "Endpoint", hint: "Where clients reach Openlist on this Mac") {
                     Text(mcp.url)
                         .font(NX.mono(11, weight: .regular))
-                        .foregroundStyle(NX.ink(0.7))
+                        .foregroundStyle(NX.textSecondary)
                         .lineLimit(1)
                         .textSelection(.enabled)
                         .padding(.vertical, 6)
@@ -69,7 +69,7 @@ struct NXAgentSettings: View {
                     }
                     .disabled(!mcp.isRunning)
                 }
-                NXSettingRow(label: "Port", hint: portError ?? "From 1024 to 65535", hintColor: portError == nil ? NX.ink(0.48) : NX.redText) {
+                NXSettingRow(label: "Port", hint: portError ?? "From 1024 to 65535", hintColor: portError == nil ? NX.textTertiary : NX.redText) {
                     HStack(spacing: 6) {
                         NXSettingField(placeholder: "Port", text: $port, width: 72, monospaced: true, onSubmit: applyPort)
                         Button("Apply", action: applyPort)

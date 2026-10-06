@@ -43,7 +43,7 @@ struct CalendarHistoryView: View {
                 }
             if tab == 0 {
                 Text("Only explicitly started work is recorded. Correct a finished session to improve remaining time and future duration suggestions.")
-                    .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
+                    .font(.system(size: 11.5)).foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
@@ -56,7 +56,7 @@ struct CalendarHistoryView: View {
                 }
             } else {
                 Text("Every completion is listed on its own, so a repeating task shows each time it was done.")
-                    .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
+                    .font(.system(size: 11.5)).foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
@@ -78,7 +78,7 @@ struct CalendarHistoryView: View {
                                             }
                                         }
                                     }
-                                    .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
+                                    .font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
                                     if !record.plannedIntervals.isEmpty {
                                         PlannedIntervalsDisclosure(intervals: record.plannedIntervals)
                                     }
@@ -87,7 +87,7 @@ struct CalendarHistoryView: View {
                                 let recordedSessions = sessions.filter { $0.occurrenceID == record.occurrenceID && $0.endedAt != nil }
                                 let minutes = recordedSessions.reduce(0) { $0 + env.calendar.recordedMinutes(for: $1) }
                                 Text(recordedSessions.isEmpty ? "Time not tracked" : "\(minutes.formatted(.number.precision(.fractionLength(0)))) min worked")
-                                    .font(.system(size: 11.5, weight: .medium)).monospacedDigit().foregroundStyle(NX.ink(0.5))
+                                    .font(.system(size: 11.5, weight: .medium)).monospacedDigit().foregroundStyle(NX.textTertiary)
                             }
                             hairline
                         }
@@ -119,7 +119,7 @@ private struct PlannedIntervalsDisclosure: View {
             if isExpanded {
                 ForEach(Array(intervals.enumerated()), id: \.offset) { _, interval in
                     Text("\(NXFormat.moment(interval.start))–\(NXFormat.clock(interval.end))")
-                        .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
+                        .font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
                 }
                 .transition(.opacity)
             }

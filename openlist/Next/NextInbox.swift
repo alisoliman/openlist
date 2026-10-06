@@ -30,7 +30,7 @@ struct NextInboxScreen: View {
         let kept = library.keptInbox(workbench)
         var groups: [NXGroup] = []
         if queue.count > 1 {
-            groups.append(NXGroup(id: "next", title: "Up next", icon: "text.append", color: NX.inbox,
+            groups.append(NXGroup(id: "next", title: "Up next", icon: "text.append", color: NX.ink(0.45),
                                   rows: Array(queue.dropFirst())))
         }
         if !kept.isEmpty {
@@ -224,12 +224,12 @@ private struct NXTriageCard: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .kerning(0.84)
                 .textCase(.uppercase)
-                .foregroundStyle(NX.inbox)
+                .foregroundStyle(NX.textTertiary)
                 .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
             HStack(spacing: 3) {
                 ForEach(0..<total, id: \.self) { index in
                     Capsule()
-                        .fill(index <= workbench.reviewed ? NX.inbox : NX.ink(0.12))
+                        .fill(index <= workbench.reviewed ? style.accent : NX.ink(0.12))
                         .frame(width: index == workbench.reviewed ? 16 : 5, height: 5)
                 }
             }
@@ -237,12 +237,12 @@ private struct NXTriageCard: View {
             .animation(NX.cssEase(300), value: workbench.reviewed)
             Text("\(remaining) to go")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NX.ink(0.42))
+                .foregroundStyle(NX.textTertiary)
                 .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
             Spacer(minLength: 8)
             Text("Captured \(NXFormat.relative(task.createdAt, now: now))")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NX.ink(0.4))
+                .foregroundStyle(NX.textTertiary)
                 .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
         }
         .padding(.top, 14)
@@ -280,7 +280,7 @@ private struct NXTriageCard: View {
             Text("T today · M tomorrow")
                 .font(.system(size: 10.5, weight: .medium))
                 .lineSpacing(hintLeading)
-                .foregroundStyle(NX.ink(0.4))
+                .foregroundStyle(NX.textQuaternary)
                 .padding(.top, 8 + hintLeading / 2)
                 .padding(.bottom, hintLeading / 2)
         }
@@ -301,20 +301,16 @@ private struct NXTriageCard: View {
                 env.navigator.openTask(task.id)
             }
             Spacer(minLength: 8)
-            // Both labels take the design's line-height 1 box, so the button
+            // The label takes the design's line-height 1 box, so the button
             // is its 28pt: 8 + 12 + 8.
             Button { workbench.triage(task, action: .right) } label: {
-                HStack(spacing: 6) {
-                    Text("Keep for later").font(.system(size: 12, weight: .semibold))
-                        .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
-                    // SF Mono has SF's line.
-                    Text("→").font(NX.mono(10, weight: .medium)).opacity(0.6)
-                        .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
-                }
+                Text("Keep for later").font(.system(size: 12, weight: .semibold))
+                    .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.primaryButtonHover, rest: NX.primaryButton, radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: .white, hoverForeground: .white))
+            .help("Keep for later (→)")
             .accessibilityLabel("Keep for later")
         }
         .padding(.vertical, 12)
@@ -333,21 +329,20 @@ private struct NXTriageCard: View {
     private func footerButton(_ title: String, icon: String, key: String, hover: Color, hoverText: Color? = nil,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            // The design's 15pt icon box and 12/1 and 9.5/1 labels, so each
-            // button is its 29pt, 7 + 15 + 7, whatever the symbol's height,
-            // and the footer its 53pt.
+            // The design's 15pt icon box and 12/1 label, so each button is
+            // its 29pt, 7 + 15 + 7, whatever the symbol's height, and the
+            // footer its 53pt.
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 13, weight: .medium))
                     .frame(height: 15)
                 Text(title).font(.system(size: 12, weight: .medium))
                     .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
-                Text(key).font(NX.mono(9.5, weight: .medium)).opacity(0.5)
-                    .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
             }
         }
         .buttonStyle(NXHoverButtonStyle(hover: hover, radius: 8,
                                         padding: EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10),
-                                        foreground: NX.ink(0.7), hoverForeground: hoverText))
+                                        foreground: NX.textSecondary, hoverForeground: hoverText))
+        .help("\(title) (\(key))")
         .accessibilityLabel(title)
     }
 }
@@ -363,9 +358,8 @@ private struct NXTriageListRow: View {
         HStack(spacing: 9) {
             Text("\(key)")
                 .font(NX.mono(10, weight: .semibold))
-                .foregroundStyle(NX.ink(0.5))
+                .foregroundStyle(NX.textQuaternary)
                 .frame(width: 16, height: 16)
-                .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             NXListGlyph(list: list, size: 13)
             // The design's 13/1, wrapping inside the row when the column is
             // narrow: exact 13pt lines, which trim SwiftUI's 16 from below,
@@ -378,11 +372,11 @@ private struct NXTriageListRow: View {
                 .nxWordFloor(NX.wordFloor(list.displayTitle, size: 13, weight: .medium))
             // The design's `flex: 1`, so the name can come within two gaps of the count.
             Spacer(minLength: 0)
-            Text("\(count)").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(NX.ink(0.34))
+            Text("\(count)").font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(NX.textTertiary)
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 9)
-        .background(hovering ? NX.inbox.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(hovering ? NX.ink(0.05) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
@@ -395,7 +389,6 @@ private struct NXTriageListRow: View {
 }
 
 private struct NXTriageDay: View {
-    @Environment(\.nextStyle) private var style
     let offset: Int
     let load: Int
     let now: Date
@@ -411,7 +404,7 @@ private struct NXTriageDay: View {
                 .font(.system(size: 9.5, weight: .semibold))
                 .kerning(0.38)
                 .textCase(.uppercase)
-                .foregroundStyle(NX.ink(0.42))
+                .foregroundStyle(NX.textTertiary)
                 .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
             Text("\(Calendar.current.component(.day, from: date))")
                 .font(.system(size: 16, weight: .medium))
@@ -428,7 +421,7 @@ private struct NXTriageDay: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .padding(.bottom, 7)
-        .background(hovering ? style.accent.opacity(0.12) : NX.ink(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(hovering ? NX.ink(0.05) : NX.ink(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
@@ -450,15 +443,15 @@ private struct NXTriageEmpty: View {
         // of it above the first and below the last.
         let summaryLeading = 13 * 1.45 - NX.lineHeight(13)
         HStack(spacing: 18) {
-            Circle().fill(NX.green)
+            Circle().fill(NX.green.opacity(0.12))
                 .frame(width: 48, height: 48)
-                .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(.white))
+                .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(NX.greenText))
             VStack(alignment: .leading, spacing: 4) {
                 Text("Inbox triaged").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
                 Text("\(workbench.reviewed) reviewed this session.")
                     .font(.system(size: 13))
                     .lineSpacing(summaryLeading)
-                    .foregroundStyle(NX.ink(0.56))
+                    .foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, summaryLeading / 2)
             }
@@ -475,7 +468,7 @@ private struct NXTriageEmpty: View {
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
-                                            foreground: NX.ink(0.7)))
+                                            foreground: NX.textSecondary))
         }
         .padding(.vertical, 34)
         .padding(.horizontal, 28)

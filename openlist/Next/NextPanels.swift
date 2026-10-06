@@ -43,8 +43,6 @@ struct NXPanelButtonStyle: ButtonStyle {
                 .foregroundStyle(foreground(hot))
                 .padding(padding)
                 .background(fill(hot), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-                // The design's `0 1px 2px` accent glow under its filled capture button.
-                .shadow(color: kind == .primary && isEnabled ? style.accent.opacity(0.4) : .clear, radius: 1, y: 1)
                 .contentShape(Rectangle())
                 .opacity(isEnabled ? 1 : 0.45)
                 .onHover { hovering = $0 }
@@ -74,10 +72,10 @@ struct NXPanelButtonStyle: ButtonStyle {
         private func foreground(_ hot: Bool) -> Color {
             switch kind {
             case .primary: .white
-            case .secondary: NX.ink(0.7)
+            case .secondary: NX.textSecondary
             case .destructive: NX.redText
             case .link: style.accent
-            case .quiet: hot ? NX.ink : NX.ink(0.55)
+            case .quiet: hot ? NX.ink : NX.textTertiary
             }
         }
 
@@ -252,7 +250,7 @@ struct NXNoticeCard<Actions: View>: View {
                 .accessibilityHidden(true)
             let text = Text(message)
                 .font(.system(size: 12.5))
-                .foregroundStyle(NX.ink(0.7))
+                .foregroundStyle(NX.textSecondary)
                 .lineLimit(lineLimit)
                 .fixedSize(horizontal: false, vertical: true)
             Group { if lineLimit != nil { text.help(message) } else { text } }

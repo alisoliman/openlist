@@ -24,7 +24,7 @@ struct TaskDeferralPicker: View {
                     .accessibilityAddTraits(.isHeader)
                 Text(block.displayTitle)
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.5))
+                    .foregroundStyle(NX.textTertiary)
                     .lineLimit(2)
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -33,7 +33,7 @@ struct TaskDeferralPicker: View {
             }
             Text("Its slots come off the calendar until then.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(NX.ink(0.5))
+                .foregroundStyle(NX.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button("Cancel") { dismiss() }

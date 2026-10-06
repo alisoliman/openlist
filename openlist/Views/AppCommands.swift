@@ -166,6 +166,14 @@ struct AppCommands: Commands {
             Button("Open Details") { env.send(.openDetails) }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(single == nil || env.workbench.editingNoteID != nil || env.workbench.isWritingInspectorNote)
+            // The open task over the whole main pane, and back beside the
+            // screen; with none open, the one target opens there.
+            Button(env.workbench.isTaskPageOpen ? "Collapse Details" : "Expand Details") {
+                if env.navigator.openTaskID == nil, let single { env.workbench.inspect(single.id) }
+                env.workbench.toggleTaskPage()
+            }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(!env.isMainWindowKey || keepsCapture || (env.navigator.openTaskID == nil && single == nil))
 
             Divider()
 

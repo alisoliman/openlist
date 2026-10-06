@@ -9,18 +9,21 @@ import SwiftUI
 /// The inspector's title or note, written in place: a native extra, as the
 /// design's are static text. A text view rather than a SwiftUI field, which
 /// on macOS draws neither a strike nor a paragraph's line spacing, so that a
-/// completed task's title is struck through and wrapped lines fall on the
-/// design's line box, 600 18/1.3 and 400 13/1.55, as the design's do.
+/// completed task's title is struck through and wrapped lines fall on their
+/// line box: a 600 20/1.25 title, and a 400 13.5/1.6 note set for reading,
+/// as the task's body; the page's a step larger.
 struct NXInspectorText: NSViewRepresentable {
     enum Role { case title, note }
     let role: Role
     @Binding var text: String
     /// A completed task's title: ink 0.45, struck through.
     var done = false
+    /// Set at the page's larger size.
+    var large = false
+    /// The page's title in the screens' display serif, as their titles are.
+    var serif = false
     let caretColor: NSColor
     let fields: NXInspectorFields
-    /// Takes the keyboard once it's on screen, as "Add a note" opens the note.
-    var takesKeyboard = false
     /// It took the keyboard, or let it go.
     let onFocus: (Bool) -> Void
     /// Tab from the title, ⇧Tab from the note: the other one. Without it, they
@@ -32,7 +35,6 @@ struct NXInspectorText: NSViewRepresentable {
     func makeNSView(context: Context) -> NXInspectorTextView {
         let view = NXInspectorTextView.make(role: role)
         view.delegate = context.coordinator
-        view.wantsKeyboard = takesKeyboard
         fields.register(view)
         context.coordinator.parent = self
         update(view)
@@ -50,6 +52,7 @@ struct NXInspectorText: NSViewRepresentable {
         if view.insertionPointColor != caretColor { view.insertionPointColor = caretColor }
         if view.accent !== caretColor { view.accent = caretColor }
         if view.isDone != done { view.isDone = done }
+        if view.isLarge != large || view.isSerif != serif { view.setSize(large: large, serif: serif) }
         // Set from outside: another task's, a commit's trim, or Undo.
         if view.string != text { view.show(text) }
     }
@@ -121,14 +124,15 @@ final class NXInspectorTextView: NSTextView {
     var isDone = false {
         didSet { if isDone != oldValue { restyle(); needsDisplay = true } }
     }
+    /// At the page's larger size, and in its serif.
+    private(set) var isLarge = false
+    private(set) var isSerif = false
     /// The note's links, in the caret's accent.
     var accent: NSColor = .controlAccentColor {
         didSet { if accent !== oldValue { restyle() } }
     }
     var onFocus: ((Bool) -> Void)?
     var onSwitch: (() -> Void)?
-    /// Takes the keyboard as it lands in a window.
-    var wantsKeyboard = false
     /// Whether it has the keyboard, and what the panel was last told.
     private(set) var isWriting = false
     private var reportedWriting = false
@@ -145,40 +149,106 @@ final class NXInspectorTextView: NSTextView {
     /// read before its syntax shows and moves the text under the pointer.
     private var clickedIndex: Int?
 
-    static let titleFont = NSFont.systemFont(ofSize: 18, weight: .semibold)
-    static let noteFont = NSFont.systemFont(ofSize: 13)
-
-    /// The design's line boxes, `size × line-height`.
-    static func lineBox(_ role: NXInspectorText.Role) -> CGFloat {
-        role == .title ? 18 * 1.3 : 13 * 1.55
-    }
-
-    /// What the line box leaves over TextKit's own line: all of it goes
-    /// between wrapped lines, and half of it above the first and below the
-    /// last, as CSS places a line's leading, so n lines stand n line boxes tall.
-    static func leading(_ role: NXInspectorText.Role) -> CGFloat {
-        role == .title ? titleLeading : noteLeading
-    }
-
-    private static let titleLeading = max(0, lineBox(.title) - NSLayoutManager().defaultLineHeight(for: titleFont))
-    private static let noteLeading = max(0, lineBox(.note) - NSLayoutManager().defaultLineHeight(for: noteFont))
-
     // Shared instances: attributed strings compare dynamic colours by
     // identity, as `NXEditor`'s colours note.
     private static let doneInk = NXEditor.ink.withAlphaComponent(0.45)
-    private static let noteInk = NXEditor.ink.withAlphaComponent(0.7)
-    private static let titleAttributes = attributes(font: titleFont, color: NXEditor.ink, leading: titleLeading)
-    private static let doneTitleAttributes = attributes(font: titleFont, color: doneInk, leading: titleLeading, struck: true)
-    private static let noteAttributes = attributes(font: noteFont, color: noteInk, leading: noteLeading)
 
-    private static func attributes(font: NSFont, color: NSColor, leading: CGFloat,
-                                   struck: Bool = false) -> [NSAttributedString.Key: Any] {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = leading
-        var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
-        if struck { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-        return attributes
+    /// One role's type at one size, made once: its face, line box and the
+    /// attributes built from them.
+    struct Metrics {
+        let font: NSFont
+        /// `size × line-height`.
+        let lineBox: CGFloat
+        /// The first line's height as laid out: the line box, or the face's
+        /// own line where that's taller, as the serif's is.
+        let line: CGFloat
+        /// What the line box leaves over TextKit's own line: all of it goes
+        /// between wrapped lines, and half of it above the first and below
+        /// the last, as CSS places a line's leading, so n lines stand n line
+        /// boxes tall.
+        let leading: CGFloat
+        let attributes: [NSAttributedString.Key: Any]
+        /// A done title's: grey and struck.
+        let doneAttributes: [NSAttributedString.Key: Any]
+        /// A note's Markdown headings, levels 1 to 3, and its code.
+        let headingFonts: [NSFont]
+        let codeFont: NSFont
+
+        init(size: CGFloat, weight: NSFont.Weight, lineHeight: CGFloat, color: NSColor, kern: CGFloat = 0,
+             headings: [CGFloat] = [], code: CGFloat = 12) {
+            self.init(font: .systemFont(ofSize: size, weight: weight), lineHeight: lineHeight, color: color, kern: kern,
+                      headings: headings, code: code)
+        }
+
+        init(font: NSFont, lineHeight: CGFloat, color: NSColor, kern: CGFloat = 0,
+             headings: [CGFloat] = [], code: CGFloat = 12) {
+            self.font = font
+            lineBox = font.pointSize * lineHeight
+            let natural = NSLayoutManager().defaultLineHeight(for: font)
+            line = max(lineBox, natural)
+            leading = max(0, lineBox - natural)
+            attributes = Self.attributes(font: font, color: color, leading: leading, kern: kern)
+            doneAttributes = Self.attributes(font: font, color: NXInspectorTextView.doneInk, leading: leading, kern: kern, struck: true)
+            headingFonts = headings.map { NSFont.systemFont(ofSize: $0, weight: .semibold) }
+            codeFont = .monospacedSystemFont(ofSize: code, weight: .regular)
+        }
+
+        private static func attributes(font: NSFont, color: NSColor, leading: CGFloat, kern: CGFloat,
+                                       struck: Bool = false) -> [NSAttributedString.Key: Any] {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineSpacing = leading
+            var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
+            if kern != 0 { attributes[.kern] = kern }
+            if struck { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            return attributes
+        }
     }
+
+    /// A large title, as Superlist heads a task.
+    private static let titleMetrics = Metrics(size: 20, weight: .semibold, lineHeight: 1.25, color: NXEditor.ink)
+    /// A reading size, with the open line box long notes need, in the list
+    /// document's reading ink, `NX.textSecondary`.
+    private static let noteMetrics = Metrics(size: 13.5, weight: .regular, lineHeight: 1.6, color: NXEditor.secondaryInk,
+                                             headings: [17, 15, 13.5], code: 12.5)
+    /// The page's title in a screen title's 700 27, and its note a step
+    /// larger to read at length.
+    private static let pageTitleMetrics = Metrics(size: 27, weight: .bold, lineHeight: 1.15, color: NXEditor.ink, kern: -0.27)
+    private static let pageNoteMetrics = Metrics(size: 14.5, weight: .regular, lineHeight: 1.65, color: NXEditor.secondaryInk,
+                                                 headings: [18.5, 16.5, 14.5], code: 13)
+    /// A screen's serif title, 34/1.05.
+    private static let pageSerifTitleMetrics = Metrics(
+        font: NSFont(name: "InstrumentSerif-Regular", size: 34)
+            ?? NSFont(descriptor: NSFont.systemFont(ofSize: 34).fontDescriptor.withDesign(.serif) ?? NSFont.systemFont(ofSize: 34).fontDescriptor,
+                      size: 34) ?? .systemFont(ofSize: 34),
+        lineHeight: 1.05, color: NXEditor.ink)
+
+    static func metrics(_ role: NXInspectorText.Role, large: Bool = false, serif: Bool = false) -> Metrics {
+        switch (role, large) {
+        case (.title, false): titleMetrics
+        case (.title, true): serif ? pageSerifTitleMetrics : pageTitleMetrics
+        case (.note, false): noteMetrics
+        case (.note, true): pageNoteMetrics
+        }
+    }
+
+    private var metrics: Metrics { Self.metrics(role, large: isLarge, serif: isSerif) }
+
+    /// Sets the text at the page's size and face, or back at the panel's.
+    func setSize(large: Bool, serif: Bool) {
+        isLarge = large
+        isSerif = serif
+        textContainerInset = NSSize(width: 0, height: metrics.leading / 2)
+        styledKey = nil
+        textStorage.map { $0.setAttributes(attributes, range: NSRange(location: 0, length: $0.length)) }
+        restyle()
+        invalidateIntrinsicContentSize()
+        needsDisplay = true
+    }
+
+    /// The panel's line boxes, `size × line-height`.
+    static func lineBox(_ role: NXInspectorText.Role) -> CGFloat { metrics(role).lineBox }
+
+    static func leading(_ role: NXInspectorText.Role) -> CGFloat { metrics(role).leading }
 
     /// `text` with each line break a space, as the list document's paste
     /// joins them (`BlockNSTextView.joiningLines`).
@@ -218,13 +288,10 @@ final class NXInspectorTextView: NSTextView {
     }
 
     var attributes: [NSAttributedString.Key: Any] {
-        switch role {
-        case .title: isDone ? Self.doneTitleAttributes : Self.titleAttributes
-        case .note: Self.noteAttributes
-        }
+        role == .title && isDone ? metrics.doneAttributes : metrics.attributes
     }
 
-    private var placeholder: String { role == .title ? "Task" : "Add a note…" }
+    private var placeholder: String { role == .title ? "Task" : "Add notes…" }
 
     /// Shows `text`, set from outside, keeping the caret where it can.
     func show(_ text: String) {
@@ -267,10 +334,9 @@ final class NXInspectorTextView: NSTextView {
 
     // Shared instances, as above.
     private static let syntaxInk = NXEditor.ink.withAlphaComponent(0.3)
-    private static let quoteInk = NXEditor.ink.withAlphaComponent(0.5)
+    /// `NX.textTertiary`: a quote steps back from the note around it.
+    private static let quoteInk = NXEditor.inkColor(light: 0.62, dark: 0.56)
     private static let codeFill = NXEditor.ink.withAlphaComponent(0.06)
-    private static let codeFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    private static let headingFonts = [16, 14.5, 13].map { NSFont.systemFont(ofSize: $0, weight: .semibold) }
 
     /// The note's Markdown as it reads: headings, bold, italic, struck and
     /// code text, links, hanging list items, quotes and ticked items, with
@@ -286,7 +352,7 @@ final class NXInspectorTextView: NSTextView {
         let whole = NSRange(location: 0, length: storage.length)
         guard whole.length > 0 else { return }
         storage.beginEditing()
-        storage.setAttributes(Self.noteAttributes, range: whole)
+        storage.setAttributes(metrics.attributes, range: whole)
         for span in NoteMarkdown.spans(in: storage.string) where span.range.length > 0 && NSMaxRange(span.range) <= whole.length {
             style(span, in: storage, hides: hides)
         }
@@ -301,7 +367,7 @@ final class NXInspectorTextView: NSTextView {
         let range = span.range
         switch span.kind {
         case let .heading(level):
-            storage.addAttributes([.font: Self.headingFonts[min(max(level, 1), 3) - 1], .foregroundColor: NXEditor.ink], range: range)
+            storage.addAttributes([.font: metrics.headingFonts[min(max(level, 1), 3) - 1], .foregroundColor: NXEditor.ink], range: range)
         case .bold:
             convertFonts(in: storage, range: range, to: .boldFontMask)
         case .italic:
@@ -309,18 +375,25 @@ final class NXInspectorTextView: NSTextView {
         case .strike, .done:
             storage.addAttributes([.strikethroughStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: Self.doneInk], range: range)
         case .code, .codeBlock:
-            storage.addAttributes([.font: Self.codeFont, .backgroundColor: Self.codeFill], range: range)
+            storage.addAttributes([.font: metrics.codeFont, .backgroundColor: Self.codeFill], range: range)
         case .link, .url:
             storage.addAttributes([.foregroundColor: accent, .underlineStyle: NSUnderlineStyle.single.rawValue], range: range)
         case let .listItem(indent):
             // Wrapped lines hang past the bullet.
             let bullet = (storage.string as NSString).substring(with: NSRange(location: range.location, length: min(indent, range.length)))
             let paragraph = NSMutableParagraphStyle()
-            paragraph.lineSpacing = Self.noteLeading
-            paragraph.headIndent = ceil((bullet as NSString).size(withAttributes: [.font: Self.noteFont]).width)
+            paragraph.lineSpacing = metrics.leading
+            paragraph.headIndent = ceil((bullet as NSString).size(withAttributes: [.font: metrics.font]).width)
             storage.addAttribute(.paragraphStyle, value: paragraph, range: range)
         case .quote:
+            // Set in from the edge, so it reads as quoted at rest too, where its marker is hidden.
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineSpacing = metrics.leading
+            paragraph.firstLineHeadIndent = 12
+            paragraph.headIndent = 12
             storage.addAttribute(.foregroundColor, value: Self.quoteInk, range: range)
+            // The whole line, its marker too, which TextKit reads the indent from.
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: (storage.string as NSString).paragraphRange(for: range))
         case .bullet:
             storage.addAttribute(.foregroundColor, value: Self.syntaxInk, range: range)
         case .marker:
@@ -337,12 +410,17 @@ final class NXInspectorTextView: NSTextView {
     }
 
     func height(fittingWidth width: CGFloat) -> CGFloat {
-        let font = role == .title ? Self.titleFont : Self.noteFont
-        guard let container = textContainer, let layout = layoutManager else { return Self.lineBox(role) }
+        let font = metrics.font
+        guard let container = textContainer, let layout = layoutManager else { return metrics.lineBox }
         container.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
         let used = layout.usedRect(for: container)
         let lines = max(used.maxY, layout.extraLineFragmentRect.maxY, layout.defaultLineHeight(for: font))
+        // A width only asked about isn't the one drawn at: the text goes
+        // back to its own width, which a frame left as it was won't reset.
+        if bounds.width > 0, bounds.width != width {
+            container.containerSize = CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
+        }
         return lines + textContainerInset.height * 2
     }
 
@@ -416,17 +494,6 @@ final class NXInspectorTextView: NSTextView {
         }
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard wantsKeyboard, window != nil else { return }
-        wantsKeyboard = false
-        // Once it's on screen, or the keyboard can miss it.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let window = self.window, window.makeFirstResponder(self) else { return }
-            self.setSelectedRange(NSRange(location: (self.string as NSString).length, length: 0))
-        }
-    }
-
     /// A click that gave the note the keyboard puts the caret on the
     /// character it was on as the note read at rest.
     override func mouseDown(with event: NSEvent) {
@@ -475,7 +542,8 @@ final class NXInspectorTextView: NSTextView {
     }
 
     /// ⌘Return finishes the note before the menus see it, so Task ▸ Open
-    /// Details can't take it, as the list document's note does.
+    /// Details can't take it, as the list document's note does. ⇧⌘Return
+    /// goes on to Task ▸ Expand Details.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard role == .note, Self.finishesNote(event), window?.firstResponder === self else {
             return super.performKeyEquivalent(with: event)
@@ -485,8 +553,8 @@ final class NXInspectorTextView: NSTextView {
     }
 
     private static func finishesNote(_ event: NSEvent) -> Bool {
-        (event.keyCode == 36 || event.keyCode == 76)
-            && event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return (event.keyCode == 36 || event.keyCode == 76) && flags.contains(.command) && !flags.contains(.shift)
     }
 
     private func finish() { window?.makeFirstResponder(nil) }

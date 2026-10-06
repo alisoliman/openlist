@@ -29,7 +29,7 @@ struct WorkPopover: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(notice)
                             .font(.system(size: 12))
-                            .foregroundStyle(NX.ink(0.7))
+                            .foregroundStyle(NX.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                         NXWorkLink("Dismiss notice") { env.calendar.notice = nil }
                     }
@@ -52,16 +52,16 @@ struct WorkPopover: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Image(systemName: "timer")
                         .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(style.accent)
+                        .foregroundStyle(NX.ink(0.55))
                         .frame(width: 36, height: 36)
-                        .background(style.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     Text("What would you like to work on?")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(NX.ink)
                         .padding(.top, 12)
                     Text("No task is planned for now.")
                         .font(.system(size: 12.5))
-                        .foregroundStyle(NX.ink(0.55))
+                        .foregroundStyle(NX.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                     HStack(spacing: 8) {
@@ -81,9 +81,9 @@ struct WorkPopover: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "calendar.badge.clock").font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45))
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(summary.message).font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.72))
+                        Text(summary.message).font(.system(size: 12, weight: .medium)).foregroundStyle(NX.textSecondary)
                         if let reason = summary.reason {
-                            Text(reason).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45))
+                            Text(reason).font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
                         }
                         HStack(spacing: 14) {
                             NXWorkLink("Review plan", action: openCalendar)
