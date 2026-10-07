@@ -10,7 +10,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
-        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.102.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.103.0"),
     ],
     targets: [
         .target(
