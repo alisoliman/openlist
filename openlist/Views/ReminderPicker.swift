@@ -68,7 +68,7 @@ struct ReminderPicker: View {
                 } else {
                     Text("Add a due date to use relative reminders.")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(NX.ink(0.45))
+                        .foregroundStyle(NX.textTertiary)
                 }
             }
 

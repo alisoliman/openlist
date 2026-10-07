@@ -54,14 +54,14 @@ struct ContentRevealNote: View {
         }
     }
 
-    /// The design's note type: 13/1.55 at ink 0.7.
+    /// The design's note type: 13/1.55 in the secondary ink.
     private func note(_ value: AttributedString) -> some View {
         let font = NSFont.systemFont(ofSize: 13)
         let leading = max(0, 13 * 1.55 - (font.ascender - font.descender + font.leading))
         return Text(value)
             .font(.system(size: 13))
             .lineSpacing(leading)
-            .foregroundStyle(NX.ink(0.7))
+            .foregroundStyle(NX.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }

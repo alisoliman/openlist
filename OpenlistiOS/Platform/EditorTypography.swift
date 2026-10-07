@@ -78,8 +78,8 @@ enum NXEditor {
     // attributed strings compare dynamic colours by identity.
 
     nonisolated static let ink = inkColor(1)
-    /// Text lines and quotes.
-    nonisolated static let secondaryInk = inkColor(0.66)
+    /// Text lines and quotes, as strong as the Mac's.
+    nonisolated static let secondaryInk = inkColor(0.8)
     nonisolated static let placeholderInk = inkColor(0.36)
     /// Completed task text.
     nonisolated static let completedInk = inkColor(0.42)

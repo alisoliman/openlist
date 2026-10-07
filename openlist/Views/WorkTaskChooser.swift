@@ -19,7 +19,7 @@ struct WorkTaskChooser: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(task.displayTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink)
                                 Text("\(env.store.list(id: task.listID)?.displayTitle ?? "Task") · \(env.calendar.remainingMinutes(for: task).formatted(.number.precision(.fractionLength(0)))) min remaining")
-                                    .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45))
+                                    .font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -27,7 +27,7 @@ struct WorkTaskChooser: View {
                                                         padding: EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10)))
                     }
                     if candidates.isEmpty {
-                        Text("No matching tasks").font(.system(size: 12)).foregroundStyle(NX.ink(0.45))
+                        Text("No matching tasks").font(.system(size: 12)).foregroundStyle(NX.textQuaternary)
                             .padding(.horizontal, 9).padding(.vertical, 6)
                     }
                 }

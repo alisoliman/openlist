@@ -347,7 +347,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @ViewBuilder private func typing(_ parse: CaptureParse) -> some View {
         HStack(alignment: .top, spacing: 11) {
             Circle()
-                .strokeBorder(style.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [2.6, 2.2]))
+                .strokeBorder(NX.ink(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [2.6, 2.2]))
                 .frame(width: 17, height: 17)
                 .padding(.top, 3)
             ZStack(alignment: .leading) {
@@ -421,13 +421,13 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             if !draft.captureText.isEmpty {
                 Text("Your typed draft is kept. Add these tasks, then continue typing.")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(NX.ink(0.6))
+                    .foregroundStyle(NX.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(draft.spokenTasks) { task in
                 HStack(alignment: .top, spacing: 11) {
                     Circle()
-                        .strokeBorder(style.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [2.6, 2.2]))
+                        .strokeBorder(NX.ink(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [2.6, 2.2]))
                         .frame(width: 17, height: 17)
                         .padding(.top, 2)
                     VStack(alignment: .leading, spacing: 6) {
@@ -461,7 +461,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             if voice?.usedIntelligence == true {
                 Label("Read by Apple Intelligence", systemImage: "apple.intelligence")
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.4))
+                    .foregroundStyle(NX.textQuaternary)
                     .padding(.leading, 28)
             }
         }
@@ -491,7 +491,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @ViewBuilder private var destinationChips: some View {
         Text("Add to")
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(NX.ink(0.45))
+            .foregroundStyle(NX.textTertiary)
             .padding(.trailing, 2)
             .frame(height: 23)
         ForEach(library.lists) { list in
@@ -517,7 +517,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                 captureUndoButton
             }
                 .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(NX.ink(0.4))
+                .foregroundStyle(NX.textQuaternary)
                 .fixedSize()
         }
     }
@@ -550,11 +550,11 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     /// The typed text with its tokens tinted, plus the placeholder ghost.
     private func styled(_ parse: CaptureParse) -> some View {
         guard !parse.text.isEmpty else {
-            return Text(example).foregroundStyle(NX.ink(0.3)).textRenderer(NXTokenRenderer())
+            return Text(example).foregroundStyle(NX.textQuaternary).textRenderer(NXTokenRenderer())
         }
         let text = parse.segments.reduce(Text(verbatim: "")) { text, segment in
             guard let kind = segment.kind else { return Text("\(text)\(Text(verbatim: segment.text).foregroundStyle(NX.ink))") }
-            let tone = Self.tone(kind, accent: style.accent)
+            let tone = Self.tone(kind, accent: style.accent, label: kind == .label ? labelColor(segment.text) : nil)
             let token = Text(verbatim: segment.text).foregroundStyle(tone)
                 .customAttribute(NXCaptureToken(segment: segment.id, tone: tone))
             return Text("\(text)\(token)")
@@ -562,9 +562,9 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         return text.textRenderer(NXTokenRenderer())
     }
 
-    static func tone(_ kind: CaptureParse.Kind, accent: Color) -> Color {
+    static func tone(_ kind: CaptureParse.Kind, accent: Color, label: Color? = nil) -> Color {
         switch kind {
-        case .label: Color(hex: 0x12807F)
+        case .label: label ?? NX.textTertiary
         case .priority: NX.redText
         default: accent
         }
@@ -591,13 +591,18 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
         case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
         case .label:
-            NXChipModel(id: chip.id, label: chip.label, tone: .label(
-                library.labels.first { $0.name.lowercased() == chip.label.lowercased() }?.nxColor ?? Color(hex: 0x12807F)))
+            NXChipModel(id: chip.id, label: chip.label, tone: labelColor(chip.label).map(NXTone.label) ?? .neutral)
         case let .priority(priority):
             NXChipModel(id: chip.id, label: chip.label, icon: "exclamationmark", tone: Self.priorityTone(priority),
                         fill: priority == .high)
         case .estimate: NXChipModel(id: chip.id, label: chip.label, icon: "timer", tone: .accent)
         }
+    }
+
+    /// A typed label's own colour, when a label by that name exists.
+    private func labelColor(_ name: String) -> Color? {
+        let name = name.drop { $0 == "#" }.lowercased()
+        return library.labels.first { $0.name.lowercased() == name }?.nxColor
     }
 
     private static func priorityTone(_ priority: TaskPriority) -> NXTone {
@@ -619,7 +624,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             }
             .padding(.vertical, 5)
             .padding(.horizontal, 8)
-            .foregroundStyle(isOn ? Color.white : NX.ink(0.66))
+            .foregroundStyle(isOn ? Color.white : NX.textSecondary)
             .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .fixedSize()
             .contentShape(Rectangle())
@@ -663,11 +668,11 @@ private struct NXVoicePanel: View {
                     .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
                 status
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                 if let note = voice.intelligence.note {
                     Text(note)
                         .font(.system(size: 11))
-                        .foregroundStyle(NX.ink(0.4))
+                        .foregroundStyle(NX.textQuaternary)
                 }
             }
 
@@ -691,10 +696,10 @@ private struct NXVoicePanel: View {
     private func words(_ listener: VoiceListener) -> Text {
         guard !listener.transcript.isEmpty else {
             return Text(voice.phase == .listening ? "Say a task, or several…" : "")
-                .foregroundStyle(NX.ink(0.3))
+                .foregroundStyle(NX.textQuaternary)
         }
-        let settled = Text(verbatim: listener.confirmed).foregroundStyle(NX.ink(voice.phase == .understanding ? 0.55 : 1))
-        let guess = Text(verbatim: listener.tentative).foregroundStyle(NX.ink(0.4))
+        let settled = Text(verbatim: listener.confirmed).foregroundStyle(voice.phase == .understanding ? NX.textTertiary : NX.ink)
+        let guess = Text(verbatim: listener.tentative).foregroundStyle(NX.textQuaternary)
         return Text("\(settled)\(guess)")
     }
 
@@ -731,7 +736,7 @@ private struct NXVoiceFailureLine: View {
             }
         }
         .font(.system(size: 11.5, weight: .medium))
-        .foregroundStyle(failure == .nothingHeard ? NX.ink(0.55) : NX.redText)
+        .foregroundStyle(failure == .nothingHeard ? NX.textTertiary : NX.redText)
     }
 }
 
@@ -890,7 +895,7 @@ private struct NXSearchCard: View {
                 Button("Include completed") { workbench.searchIncludesCompleted.toggle() }
                     .buttonStyle(.plain)
                     .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(workbench.searchIncludesCompleted ? Color.white : NX.ink(0.55))
+                    .foregroundStyle(workbench.searchIncludesCompleted ? Color.white : NX.textTertiary)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
                     .background(workbench.searchIncludesCompleted ? style.accent : NX.ink(0.06),
@@ -919,7 +924,7 @@ private struct NXSearchCard: View {
                 }
                 Text(footer(hits, session: session, typed: options))
                     .font(.system(size: 12.5))
-                    .foregroundStyle(NX.ink(0.42))
+                    .foregroundStyle(NX.textQuaternary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(14)
@@ -972,7 +977,7 @@ private struct NXSearchRow: View {
         HStack(spacing: 11) {
             Image(systemName: hit.symbol)
                 .font(.system(size: 14))
-                .foregroundStyle(isOn ? style.accent : NX.ink(0.4))
+                .foregroundStyle(isOn ? NX.ink(0.6) : NX.ink(0.4))
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 3) {
                 Text(highlighted(hit.title))
@@ -983,12 +988,12 @@ private struct NXSearchRow: View {
                 if !hit.snippet.isEmpty {
                     Text(highlighted(hit.snippet))
                         .font(.system(size: 12))
-                        .foregroundStyle(NX.ink(0.7))
+                        .foregroundStyle(NX.textSecondary)
                         .lineLimit(2)
                 }
                 context
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -996,8 +1001,7 @@ private struct NXSearchRow: View {
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 10)
-        .background(isOn ? style.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(isOn ? style.accent.opacity(0.2) : .clear, lineWidth: 1))
+        .background(isOn ? NX.ink(0.05) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         // One result, which Return opens while it's highlighted.
         .accessibilityElement(children: .ignore)
@@ -1090,7 +1094,7 @@ enum NXPalette {
             (.settings, "gearshape", "Open Settings", "⌘,"),
         ]
         var all: [NXCommand] = [
-            NXCommand(id: "done", icon: "checkmark.circle", label: "Mark as done", key: "E", tone: NX.green, needsTarget: true,
+            NXCommand(id: "done", icon: "checkmark.circle", label: "Mark as done", key: "E", needsTarget: true,
                       run: act { workbench.complete($0) }),
             NXCommand(id: "today", icon: "calendar", label: "Due today", key: "T", needsTarget: true,
                       run: act { workbench.schedule($0, offset: 0) }),
@@ -1102,7 +1106,7 @@ enum NXPalette {
                       run: act { $0.forEach { workbench.fit($0) } }),
             NXCommand(id: "work", icon: "play.fill", label: "Start working", needsTarget: true,
                       run: act { workbench.startWork($0[0]) }),
-            NXCommand(id: "star", icon: "star", label: "Star", key: "F", tone: NX.amberText, needsTarget: true,
+            NXCommand(id: "star", icon: "star", label: "Star", key: "F", needsTarget: true,
                       run: act { workbench.star($0) }),
         ]
         all += library.lists.map { list in
@@ -1112,6 +1116,13 @@ enum NXPalette {
         all += [
             NXCommand(id: "details", icon: "sidebar.right", label: "Open details", key: "↩", needsTarget: true, navigates: true,
                       run: act { workbench.inspect($0[0]) }),
+            NXCommand(id: "page", icon: workbench.isTaskPageOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                      label: workbench.isTaskPageOpen ? "Collapse details" : "Expand details", key: "⇧⌘↩",
+                      needsTarget: true, navigates: true,
+                      run: act { ids in
+                          if !workbench.isTaskPageOpen, env.navigator.openTaskID != ids[0] { workbench.inspect(ids[0]) }
+                          workbench.toggleTaskPage()
+                      }),
             NXCommand(id: "trash", icon: "trash", label: "Move to Trash", key: "D", tone: NX.redText, needsTarget: true,
                       navigates: true, run: act { workbench.trash($0) }),
             NXCommand(id: "new", icon: "plus.circle", label: "New task", key: "N") { workbench.openCapture() },
@@ -1153,7 +1164,6 @@ enum NXPalette {
 
 private struct NXPaletteCard: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     let overlays: NXOverlayState
     /// The command the pointer just moved the highlight to.
@@ -1178,11 +1188,10 @@ private struct NXPaletteCard: View {
                     .font(.system(size: 10.5, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .foregroundStyle(targets.isEmpty ? NX.ink(0.45) : style.accent)
+                    .foregroundStyle(NX.textTertiary)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
-                    .background(targets.isEmpty ? NX.ink(0.06) : style.accent.opacity(0.1),
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .frame(maxWidth: 200, alignment: .trailing)
                     .fixedSize()
             }
@@ -1209,7 +1218,7 @@ private struct NXPaletteCard: View {
                     Text(needsTask ? "“\(NXFormat.short(workbench.paletteQuery))” acts on a task. Focus or select one first."
                                    : "No actions match “\(NXFormat.short(workbench.paletteQuery))”.")
                         .font(.system(size: 12.5))
-                        .foregroundStyle(NX.ink(0.45))
+                        .foregroundStyle(NX.textTertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                 }
@@ -1258,7 +1267,6 @@ private struct NXScrollToIndex<ID: Hashable>: ViewModifier {
 }
 
 private struct NXPaletteRow: View {
-    @Environment(\.nextStyle) private var style
     let command: NXCommand
     let isOn: Bool
 
@@ -1266,16 +1274,16 @@ private struct NXPaletteRow: View {
         HStack(spacing: 10) {
             Image(systemName: command.icon)
                 .font(.system(size: 14))
-                .foregroundStyle(isOn ? Color.white : command.tone ?? NX.ink(0.5))
+                .foregroundStyle(command.tone ?? NX.ink(0.5))
                 .frame(width: 16)
             Text(command.label).font(.system(size: 13, weight: .medium)).lineLimit(1)
             Spacer(minLength: 8)
-            Text(command.key).font(NX.mono(10.5)).opacity(0.5)
+            Text(command.key).font(NX.mono(10.5)).foregroundStyle(NX.textQuaternary)
         }
-        .foregroundStyle(isOn ? Color.white : NX.ink)
+        .foregroundStyle(NX.ink)
         .padding(.vertical, 9)
         .padding(.horizontal, 10)
-        .background(isOn ? style.accent : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(isOn ? NX.ink(0.07) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         // One command, which Return runs while it's highlighted.
         .accessibilityElement(children: .ignore)

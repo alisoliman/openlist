@@ -50,7 +50,6 @@ struct NextTodayScreen: View {
 /// Today in outline order, with each task's subtasks underneath it.
 private struct NXTodayPage: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let outline: [BlockRow]
 
     var body: some View {
@@ -60,7 +59,7 @@ private struct NXTodayPage: View {
             let now = context.date
             let workbench = env.workbench
             let model = Self.model(outline: outline, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
-                                   accent: style.accent, now: now) { !workbench.placedTaskIDs().contains($0) }
+                                   now: now) { !workbench.placedTaskIDs().contains($0) }
             NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
                 NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
                                subtitle: now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
@@ -83,7 +82,7 @@ private struct NXTodayPage: View {
     /// Today's groups keep their task order and carry subtasks beneath each
     /// parent. Eligibility, progress and group actions follow TodayAgenda.
     @MainActor
-    static func model(outline: [BlockRow], workbench: Workbench, showsCompleted: Bool, accent: Color, now: Date,
+    static func model(outline: [BlockRow], workbench: Workbench, showsCompleted: Bool, now: Date,
                       isUnplaced: @escaping (UUID) -> Bool) -> Model {
         let agenda = TodayAgenda(tasks: outline.map(\.block), closing: Set(workbench.closing.keys), now: now,
                                  isPlanned: workbench.isPlanned)
@@ -105,20 +104,20 @@ private struct NXTodayPage: View {
                                   actionLabel: "Move all to today") { workbench.schedule(ids, offset: 0) })
         }
         if !due.isEmpty {
-            groups.append(NXGroup(id: "due", title: "Due today", icon: "calendar", color: accent,
+            groups.append(NXGroup(id: "due", title: "Due today", icon: "calendar", color: NX.ink(0.45),
                                   rows: due.map(\.block), rowDepths: depths(due), taskCount: count(due)))
         }
         if !planned.isEmpty {
             let eligible = Set(agenda.planned.map(\.id))
             let ids = planned.map(\.id).filter(eligible.contains)
-            groups.append(NXGroup(id: "planned", title: "Planned for today", icon: "calendar.badge.clock", color: accent,
+            groups.append(NXGroup(id: "planned", title: "Planned for today", icon: "calendar.badge.clock", color: NX.ink(0.45),
                                   rows: planned.map(\.block), rowDepths: depths(planned), taskCount: count(planned),
                                   actionLabel: "Fit into calendar") {
                 for id in ids where isUnplaced(id) { workbench.fit(id) }
             })
         }
         if !starred.isEmpty {
-            groups.append(NXGroup(id: "starred", title: "Starred", icon: "star.fill", color: NX.amber,
+            groups.append(NXGroup(id: "starred", title: "Starred", icon: "star.fill", color: NX.ink(0.45),
                                   rows: starred.map(\.block), rowDepths: depths(starred), taskCount: count(starred)))
         }
         if !doneToday.isEmpty {
@@ -141,7 +140,7 @@ private struct NXTodayPage: View {
                               : "Nothing is overdue, due, planned or starred.")
                     .font(.system(size: 13))
                     .lineSpacing(leading)
-                    .foregroundStyle(NX.ink(0.56))
+                    .foregroundStyle(NX.textSecondary)
                     .padding(.vertical, leading / 2)
             }
             Spacer(minLength: 8)
@@ -154,12 +153,11 @@ private struct NXTodayPage: View {
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.inspector, rest: NX.card, radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
-                                            foreground: NX.ink(0.7), border: NX.ink(0.14)))
+                                            foreground: NX.textSecondary, border: NX.ink(0.14)))
         }
         .padding(.vertical, 30)
         .padding(.horizontal, 28)
-        .background(LinearGradient(colors: [NX.today.opacity(0.08), NX.today.opacity(0.02)], startPoint: .top, endPoint: .bottom),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(NX.ink(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.top, 24)
         .modifier(NXLiftIn())
     }
@@ -228,7 +226,7 @@ struct NextListScreen: View {
                     Button("Unarchive") { workbench.setArchived(false, for: list) }
                         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 7,
                                                         padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
-                                                        foreground: NX.ink(0.55), hoverForeground: NX.ink))
+                                                        foreground: NX.textTertiary, hoverForeground: NX.ink))
                         .font(.system(size: 12, weight: .medium))
                         .fixedSize()
                 }
@@ -403,7 +401,7 @@ private struct NXListOptions: View {
     }
 }
 
-/// The list's description under its header, 13.8 at ink .62, written in
+/// The list's description under its header, 13.8, written in
 /// place: a click starts, Return or clicking away commits, Esc cancels.
 private struct NXListDescription: View {
     @Environment(AppEnvironment.self) private var env
@@ -457,7 +455,7 @@ private struct NXListDescription: View {
                 }
                 .font(.system(size: 13.8))
                 .lineSpacing(leading)
-                .foregroundStyle(NX.ink(list.summary.isEmpty && !editing ? 0.32 : 0.62))
+                .foregroundStyle(list.summary.isEmpty && !editing ? NX.textQuaternary : NX.textSecondary)
                 .padding(.vertical, leading / 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
@@ -516,7 +514,7 @@ private struct NXChildLists: View {
                         .foregroundStyle(NX.ink)
                     Text("\(children.count)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.38))
+                        .foregroundStyle(NX.textTertiary)
                         .monospacedDigit()
                 }
                 // One heading to VoiceOver, as a group's head.
@@ -559,7 +557,7 @@ private struct NXChildListRow: View {
             if count > 0 {
                 Text("\(count)")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.38))
+                    .foregroundStyle(NX.textTertiary)
                     .monospacedDigit()
             }
         }

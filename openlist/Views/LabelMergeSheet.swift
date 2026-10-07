@@ -35,7 +35,7 @@ struct LabelMergeSheet: View {
                                         .lineLimit(1)
                                     Text("\(label.accent.title) · created \(NXFormat.moment(label.createdAt))")
                                         .font(.system(size: 11.5))
-                                        .foregroundStyle(NX.ink(0.45))
+                                        .foregroundStyle(NX.textTertiary)
                                         .lineLimit(1)
                                 }
                             }
@@ -52,7 +52,7 @@ struct LabelMergeSheet: View {
             if let plan {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Replace “\(plan.source.name)” with the existing label below.")
-                        .foregroundStyle(NX.ink(0.7))
+                        .foregroundStyle(NX.textSecondary)
                     // The inspector's chosen label pill.
                     HStack(spacing: 8) {
                         Text("#\(plan.destination.name)")
@@ -63,14 +63,14 @@ struct LabelMergeSheet: View {
                             .background(plan.destination.accent.color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                         Text(plan.destination.accent.title)
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(NX.ink(0.5))
+                            .foregroundStyle(NX.textTertiary)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Surviving label: \(plan.destination.name), colour: \(plan.destination.accent.title)")
                     Text("This updates \(plan.affectedTaskCount) \(plan.affectedTaskCount == 1 ? "task" : "tasks"), including completed, nested, and archived tasks. The surviving label will be used by \(plan.resultingTaskCount) \(plan.resultingTaskCount == 1 ? "task" : "tasks") in total.")
-                        .foregroundStyle(NX.ink(0.7))
+                        .foregroundStyle(NX.textSecondary)
                     Text("The existing label keeps its colour. Tasks using both labels keep one copy. Undo (⌘Z) takes the merge back.")
-                        .foregroundStyle(NX.ink(0.5))
+                        .foregroundStyle(NX.textTertiary)
                 }
                 .font(.system(size: 12.5))
                 .fixedSize(horizontal: false, vertical: true)

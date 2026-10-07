@@ -121,7 +121,7 @@ MainActor.assumeIsolated {
         })
         check(abs(stack - 10 * size * lineHeight) < 0.01, "serif title ×10 at \(size)/\(lineHeight)", "\(stack) against \(10 * size * lineHeight)")
     }
-    // The add row's N: SF Mono 10/1 inside 2 pt padding, 14 pt.
+    // The shortcuts sheet's key caps: SF Mono 10/1 inside 2 pt padding, 14 pt.
     let keys = height(VStack(spacing: 0) {
         ForEach(0..<10, id: \.self) { _ in
             Text("N").font(.system(size: 10, weight: .medium, design: .monospaced)).padding(.vertical, 2 + (10 - NX.lineHeight(10)) / 2)
@@ -206,18 +206,15 @@ MainActor.assumeIsolated {
     check(name(kyoto) == 26 && name(kyoto - 1) == 13 && name(400) == 13, "a floored name wraps at words, and truncates under its floor",
           "\(name(kyoto)), \(name(kyoto - 1)) and \(name(400))")
 
-    // A symbol in the design's icon box beside a line-height 1 label, as the
-    // Calendar's Start (a 14pt box, 12/1, 7pt padding) and Plan (13pt, 11/1,
-    // 5pt) are: the box, not the symbol's own height, sets the button's.
+    // A symbol in the design's icon box, beside a line-height 1 label as the
+    // Calendar's Start is (a 14pt box, 12/1, 7pt padding) or alone as its
+    // Plan is (13pt, 5pt): the box, not the symbol's own height, sets the button's.
     let start = height(HStack(spacing: 5) {
         Image(systemName: "play.fill").font(.system(size: 11)).frame(height: 14)
         Text("Start").font(.system(size: 12, weight: .semibold)).padding(.vertical, (12 - NX.lineHeight(12)) / 2)
     }.padding(.vertical, 7))
     check(start == 28, "Start's 7 + 14 + 7 box", "\(start)")
-    let plan = height(HStack(spacing: 3) {
-        Image(systemName: "sparkles").font(.system(size: 11)).frame(height: 13)
-        Text("Plan").font(.system(size: 11, weight: .semibold)).padding(.vertical, (11 - NX.lineHeight(11)) / 2)
-    }.padding(.vertical, 5))
+    let plan = height(Image(systemName: "sparkles").font(.system(size: 11)).frame(height: 13).padding(.vertical, 5))
     check(plan == 23, "Plan's 5 + 13 + 5 box", "\(plan)")
 
     // The Planned now banner's row, as NextCalendar lays it out: squeezed,
@@ -286,17 +283,19 @@ MainActor.assumeIsolated {
     }.padding(.vertical, 7).padding(.top, 0.5))
     check(abs(dayRow - 30.75) < 0.001, "day panel row", "\(dayRow)")
     // Buttons with an icon box as their views give it, whatever the symbol's own height.
-    @MainActor func button(_ icon: String?, symbol: CGFloat, box: CGFloat, label size: CGFloat, padding: CGFloat,
-                           spacing: CGFloat = 5) -> CGFloat {
-        exactHeight(HStack(spacing: spacing) {
+    @MainActor func button(_ icon: String?, symbol: CGFloat, box: CGFloat, label size: CGFloat, padding: CGFloat) -> CGFloat {
+        exactHeight(HStack(spacing: 5) {
             if let icon { Image(systemName: icon).font(.system(size: symbol)).frame(height: box) }
             Text("Hg").padding(.vertical, (size - NX.lineHeight(size)) / 2)
         }.font(.system(size: size, weight: .semibold)).padding(.vertical, padding))
     }
     check(button("trash.slash", symbol: 13.5, box: 14, label: 11.5, padding: 7) == 28, "Hold to empty Trash is 28")
-    check(button("arrow.up.bin", symbol: 12, box: 13, label: 11, padding: 6, spacing: 4) == 25, "Restore is 25")
+    check(exactHeight(Image(systemName: "arrow.up.bin").font(.system(size: 12)).frame(height: 13).padding(.vertical, 6)) == 25,
+          "Restore is 25")
     check(button(nil, symbol: 0, box: 0, label: 11, padding: 6) == 23, "Hold to erase is 23")
-    check(button(nil, symbol: 0, box: 0, label: 10.5, padding: 5) == 20.5, "Changes' Undo is 20.5")
+    // Changes' Undo, a bare symbol, stays inside its row's 26pt icon tile.
+    let undo = exactHeight(Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .semibold)).padding(.vertical, 5))
+    check(undo <= 26, "Changes' Undo fits its row", "\(undo)")
 }
 
 print(failures == 0 ? "✅ \(checks) line-height checks passed" : "❌ \(failures)/\(checks) failed")

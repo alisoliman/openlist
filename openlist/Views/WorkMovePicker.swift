@@ -24,7 +24,7 @@ struct WorkMovePicker: View {
                 NXPanelTitle("Move planned work")
                 Text(env.store.block(id: block.taskID)?.displayTitle ?? "Task")
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.55))
+                    .foregroundStyle(NX.textTertiary)
                     .lineLimit(2)
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -37,18 +37,18 @@ struct WorkMovePicker: View {
                 HStack(spacing: 8) {
                     Text("At")
                         .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(NX.ink(0.6))
+                        .foregroundStyle(NX.textTertiary)
                     NXTimePill(label: "Start time", minute: CalendarMonthGrid.minute(of: date, calendar: calendar)) { minute in
                         date = CalendarMonthGrid.date(date, atMinute: minute, notBefore: .now, calendar: calendar)
                     }
                 }
             }
             if !overlaps.isEmpty {
-                Text("It would overlap:").font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.72))
+                Text("It would overlap:").font(.system(size: 12, weight: .medium)).foregroundStyle(NX.textSecondary)
                 ScrollView { WorkMoveOverlapsView(overlaps: overlaps) }
                     .frame(maxHeight: 200)
             }
-            if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(NX.ink(0.72)) }
+            if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(NX.textSecondary) }
             if let saveError { NXSheetError(saveError) }
             HStack(spacing: 8) {
                 Spacer()

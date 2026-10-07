@@ -88,12 +88,13 @@ private struct NXCalendarStepper: View {
                 .frame(width: 12, height: 12)
         }
         .buttonStyle(buttonStyle(horizontal: 6))
+        .help(label)
         .accessibilityLabel(label)
     }
 
     private func buttonStyle(horizontal: CGFloat) -> NXHoverButtonStyle {
         NXHoverButtonStyle(hover: NX.ink(0.08), radius: 7, padding: EdgeInsets(top: 6, leading: horizontal, bottom: 6, trailing: horizontal),
-                           foreground: NX.ink(0.55), hoverForeground: NX.ink)
+                           foreground: NX.textTertiary, hoverForeground: NX.ink)
     }
 
     /// Moves the range at once, its Today button with it, as the design's
@@ -219,7 +220,7 @@ private struct NXCalendarBody: View {
                 .font(.system(size: 11, weight: .semibold))
                 .kerning(0.66)
                 .textCase(.uppercase)
-                .foregroundStyle(style.accent)
+                .foregroundStyle(NX.textTertiary)
                 .lineHeight(.exact(points: 11))
                 .offset(y: (11 - NX.lineHeight(11)) / 2)
                 .nxWordFloor(NX.wordFloor("PLANNED NOW", size: 11, weight: .semibold, kerning: 0.66))
@@ -232,7 +233,7 @@ private struct NXCalendarBody: View {
                 .nxWordFloor(NX.wordFloor(task.displayTitle, size: 13, weight: .semibold))
             Text(time)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(NX.ink(0.5))
+                .foregroundStyle(NX.textTertiary)
                 .lineHeight(.exact(points: 12))
                 .offset(y: (12 - NX.lineHeight(12)) / 2)
                 .nxWordFloor(NX.wordFloor(time, size: 12, weight: .medium))
@@ -252,8 +253,8 @@ private struct NXCalendarBody: View {
                                             foreground: .white, hoverForeground: .white))
         }
         .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 12))
-        .background(style.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(style.accent.opacity(0.2), lineWidth: 1))
+        .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 1))
         .modifier(NXLiftIn(animation: NX.cssEase(260)))
     }
 
@@ -386,7 +387,7 @@ private struct NXDayHead: View {
                 .font(.system(size: 10, weight: .semibold))
                 .kerning(0.4)
                 .textCase(.uppercase)
-                .foregroundStyle(isToday ? style.accent : NX.ink(0.45))
+                .foregroundStyle(isToday ? style.accent : NX.textTertiary)
                 .lineLimit(1)
                 .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
             // The design's grid aligns the date and the load at the foot of their boxes.
@@ -394,7 +395,7 @@ private struct NXDayHead: View {
                 Text("\(cal.component(.day, from: date))")
                     .font(.system(size: 17, weight: .medium))
                     .monospacedDigit()
-                    .foregroundStyle(isToday ? style.accent : weekend ? NX.ink(0.5) : NX.ink)
+                    .foregroundStyle(isToday ? style.accent : weekend ? NX.textTertiary : NX.ink)
                     .padding(.vertical, (17 - NX.lineHeight(17)) / 2)
                 Spacer(minLength: 0)
                 if load > 0 {
@@ -403,7 +404,7 @@ private struct NXDayHead: View {
                     let fractional = abs(load - load.rounded()) > 0.001
                     Text(fractional ? String(format: "%.1fh", max(0.1, (load * 10).rounded() / 10)) : "\(Int(load.rounded()))h")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(NX.ink(0.36))
+                        .foregroundStyle(NX.textTertiary)
                         .lineLimit(1)
                         .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                 }
@@ -414,7 +415,6 @@ private struct NXDayHead: View {
         }
         .padding(EdgeInsets(top: 9, leading: 9, bottom: 8, trailing: 9))
         .frame(minWidth: NXCal.minColumn, maxWidth: .infinity, alignment: .leading)
-        .background(isToday ? style.accent.opacity(0.04) : .clear)
         .background(open != nil && hovering ? NX.ink(0.035) : .clear)
         .animation(NX.cssEase(hovering ? 60 : 140), value: hovering)
         .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.07)).frame(width: 0.5) }
@@ -431,7 +431,7 @@ private struct NXDayHead: View {
         if let first = names.first {
             Text(names.count > 1 ? "\(first) +\(names.count - 1)" : first)
                 .font(.system(size: 9.5, weight: .semibold))
-                .foregroundStyle(NX.ink(0.55))
+                .foregroundStyle(NX.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .padding(.horizontal, 5)
@@ -457,7 +457,7 @@ private struct NXHourGutter: View {
                 // label sits where the design's top puts it on its hour line.
                 Text(String(format: "%02d:00", hour))
                     .font(NX.mono(10))
-                    .foregroundStyle(NX.ink(0.36))
+                    .foregroundStyle(NX.textTertiary)
                     .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                     .padding(.trailing, 8)
                     .offset(y: CGFloat(hour - range.lowerBound) * NXCal.hourHeight - 6)
@@ -482,7 +482,6 @@ private struct NXHourGutter: View {
 
 private struct NXDayColumn: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @Environment(NXCalendarDrag.self) private var drag
     let date: Date
     let now: Date
@@ -512,7 +511,7 @@ private struct NXDayColumn: View {
         let layout = arrange()
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                (isToday ? style.accent.opacity(0.024) : weekend ? NX.ink(0.015) : Color.clear)
+                (weekend ? NX.ink(0.015) : Color.clear)
                 ForEach(1..<(range.upperBound - range.lowerBound), id: \.self) { index in
                     Rectangle().fill(NX.ink(0.06))
                         .frame(height: 0.5)
@@ -622,11 +621,11 @@ private struct NXDayColumn: View {
                 .fixedSize(horizontal: false, vertical: true)
             Text("\(NXFormat.clock(event.start))–\(NXFormat.clock(event.end))")
                 .font(.system(size: 9.5, weight: .medium))
-                .opacity(0.7)
+                .foregroundStyle(NX.textTertiary)
                 .lineSpacing(NXCal.timeLeading)
                 .padding(.vertical, NXCal.timeLeading / 2)
         }
-        .foregroundStyle(NX.ink(0.62))
+        .foregroundStyle(NX.textSecondary)
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
         // No taller than its slot, so what overflows is cut at the bottom.
@@ -756,7 +755,7 @@ private struct NXCalendarBlock: View {
             if height >= 34 {
                 Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.ink(0.5))
+                    .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.textTertiary)
                     .lineSpacing(NXCal.timeLeading)
                     .padding(.vertical, NXCal.timeLeading / 2)
                     .padding(.leading, 17)
@@ -789,7 +788,6 @@ private struct NXCalendarBlock: View {
                 .fill(style.accent.opacity(focused ? 1 : 0), style: FillStyle(eoFill: true))
                 .animation(NX.cssEase(240), value: focused)
         }
-        .shadow(color: working ? color.opacity(0.33) : .clear, radius: 8, y: 6)
         .brightness(hovering ? -0.03 : 0)
         // The design's rowIn entrance.
         .offset(y: entered ? 0 : -8)
@@ -928,7 +926,7 @@ private struct NXUnplannedColumn: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Not planned yet").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(NX.ink)
                     .padding(.vertical, (12.5 - NX.lineHeight(12.5)) / 2)
-                Text("\(tasks.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(NX.ink(0.4))
+                Text("\(tasks.count)").font(.system(size: 11, weight: .medium)).foregroundStyle(NX.textTertiary)
                     .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
             }
             .padding(EdgeInsets(top: 4, leading: 2, bottom: 6, trailing: 2))
@@ -943,7 +941,7 @@ private struct NXUnplannedColumn: View {
             if tasks.isEmpty {
                 Text("Everything due this week has a slot.")
                     .font(.system(size: 12))
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textQuaternary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(emptyLeading)
                     .padding(.vertical, emptyLeading / 2)
@@ -985,7 +983,7 @@ private struct NXUnplannedColumn: View {
     private func card(_ task: Block) -> some View {
         let overdue = task.dueDate.map { NXFormat.dayOffset($0, now: now) < 0 } ?? false
         let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : env.workbench.defaultEstimate
-        // The title's 12.5/1.35, as the hint's; the chip and estimate are 10.5/1.
+        // The title's 12.5/1.35, as the hint's; the due date and estimate are 10.5/1.
         let titleLeading = 12.5 * 1.35 - NX.lineHeight(12.5)
         let chipLine = (10.5 - NX.lineHeight(10.5)) / 2
         return VStack(alignment: .leading, spacing: 7) {
@@ -1001,31 +999,24 @@ private struct NXUnplannedColumn: View {
             }
             HStack(spacing: 6) {
                 Text(task.dueDate.map { NXFormat.dueLabel($0, now: now) } ?? "Picked for today")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(overdue ? NX.redText : style.accent)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(overdue ? NX.redText : NX.textTertiary)
                     .padding(.vertical, chipLine)
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 6)
-                    .background(overdue ? NX.red.opacity(0.12) : style.accent.opacity(0.08),
-                                in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 Text(NXCal.estimate(minutes))
-                    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.ink(0.45))
+                    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(NX.textTertiary)
                     .padding(.vertical, chipLine)
                 Spacer(minLength: 4)
                 Button { env.workbench.fit(task.id) } label: {
-                    // The design's 13pt icon box and 11/1 label, so the
-                    // button, the row's tallest, is its 23pt: 5 + 13 + 5.
-                    HStack(spacing: 3) {
-                        Image(systemName: "sparkles").font(.system(size: 11))
-                            .frame(height: 13)
-                        Text("Plan").font(.system(size: 11, weight: .semibold))
-                            .padding(.vertical, (11 - NX.lineHeight(11)) / 2)
-                    }
+                    // The design's 13pt icon box, so the button, the row's
+                    // tallest, is its 23pt: 5 + 13 + 5.
+                    Image(systemName: "sparkles").font(.system(size: 11))
+                        .frame(height: 13)
                 }
-                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.18), rest: style.accent.opacity(0.1), radius: 6,
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
                                                 padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
-                                                foreground: style.accent))
+                                                foreground: NX.ink(0.5), hoverForeground: NX.ink))
                 .help("Plan it into the next free slot on the calendar")
+                .accessibilityLabel("Plan")
             }
         }
         .padding(.vertical, 10)
@@ -1249,7 +1240,7 @@ private struct NXDragPreview: View {
                 .lineLimit(2)
             Text(NXCal.estimate(minutes))
                 .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(NX.ink(0.5))
+                .foregroundStyle(NX.textTertiary)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 7)

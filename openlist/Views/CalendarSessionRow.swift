@@ -3,7 +3,6 @@ import SwiftUI
 struct CalendarSessionRow: View {
     let session: WorkSession
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @State private var isEditing = false
     /// The minutes as typed. A number field on the Mac only takes its text
     /// when editing ends, so Save would read the value from before it.
@@ -17,14 +16,14 @@ struct CalendarSessionRow: View {
                     Text(NXFormat.moment(session.startedAt))
                     Text(status)
                 }
-                .font(.system(size: 11.5)).foregroundStyle(NX.ink(0.5))
+                .font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
             }
             Spacer(minLength: 12)
             VStack(alignment: .trailing, spacing: 5) {
                 Text("\(env.calendar.recordedMinutes(for: session).formatted(.number.precision(.fractionLength(0)))) min")
                     .font(.system(size: 12, weight: .semibold)).monospacedDigit().foregroundStyle(NX.ink)
                 if session.correctedMinutes != nil {
-                    Text("Corrected").font(.system(size: 11, weight: .semibold)).foregroundStyle(style.accent)
+                    Text("Corrected").font(.system(size: 11, weight: .semibold)).foregroundStyle(NX.textTertiary)
                 }
                 if session.endedAt != nil {
                     Button("Correct time…") {

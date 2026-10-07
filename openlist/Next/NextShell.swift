@@ -52,7 +52,11 @@ struct NextShell: View {
             room.windowWidth = $0
             adaptSidebar()
         }
-        .onChange(of: env.navigator.openTaskID) { adaptSidebar() }
+        .onChange(of: env.navigator.openTaskID) { _, id in
+            if id == nil { env.workbench.isTaskPageOpen = false }
+            adaptSidebar()
+        }
+        .onChange(of: env.workbench.isTaskPageOpen) { adaptSidebar() }
         .onChange(of: env.navigator.searchActivation) { landReveal() }
         // Back/Forward, reveals and deletions change the route without `go`.
         .onChange(of: env.navigator.route) { env.workbench.routeDidChange() }
@@ -89,10 +93,11 @@ struct NextShell: View {
     /// page would be narrower than the inspector, under 956pt, where past its
     /// 40pt margins rows show less than 280pt, and comes back 120pt wider,
     /// so a resize doesn't flip it. View ▸ Hide Sidebar is separate, so this
-    /// never shows a sidebar the user hid.
+    /// never shows a sidebar the user hid. The task opened out as a page
+    /// takes the pane's room rather than squeezing it.
     private func adaptSidebar() {
         let workbench = env.workbench
-        let inspecting = env.navigator.openTaskID.flatMap { env.store.block(id: $0) }
+        let inspecting = !workbench.isTaskPageOpen && env.navigator.openTaskID.flatMap { env.store.block(id: $0) }
             .map { $0.isTask && $0.trashID == nil } ?? false
         let page = width - 236 - 360
         var folded = workbench.isSidebarFoldedForRoom
@@ -120,24 +125,36 @@ private struct NextMain: View {
 
     var body: some View {
         let inspected = env.navigator.openTaskID.flatMap { env.store.block(id: $0) }.flatMap { $0.isTask && $0.trashID == nil ? $0 : nil }
+        let paged = inspected != nil && workbench.isTaskPageOpen
         VStack(spacing: 0) {
-            NextToolbar(crumb: crumb)
+            // The page ends the crumb with the task it shows.
+            NextToolbar(crumb: paged ? crumb + " › " + (inspected?.displayTitle ?? "") : crumb)
             // The inspector takes the right of the window under the toolbar,
             // and the page gives it the room instead of going under it.
             HStack(spacing: 0) {
                 ZStack {
                     VStack(spacing: 0) {
                         NextNotices()
-                        NextRoutedScreen()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .clipped()
+                        ZStack {
+                            // Opened out, the task takes the screen's place, which
+                            // stays laid out and scrolled underneath for its return.
+                            NextRoutedScreen()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .clipped()
+                                .opacity(paged ? 0 : 1)
+                                .allowsHitTesting(!paged)
+                                .accessibilityHidden(paged)
+                            if paged, let inspected {
+                                NextInspector(task: inspected, isPage: true)
+                            }
+                        }
                     }
                     NXBottomBars()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .allowsHitTesting(workbench.tray != nil || !workbench.selection.isEmpty)
                         .zIndex(35)
                 }
-                if let inspected {
+                if !paged, let inspected {
                     NextInspector(task: inspected)
                         .transition(style.slide(.move(edge: .trailing)))
                         .zIndex(30)
@@ -391,7 +408,7 @@ private struct NXPageRoomReader<Content: View>: View {
 
 /// `NXReadingColumn` with the room read here, so a change of room lays the
 /// column out again without drawing the page's content again.
-private struct NXReadingColumnView<Content: View>: View {
+struct NXReadingColumnView<Content: View>: View {
     @Environment(\.nxPageRoom) private var room
     let measure: CGFloat?
     let content: Content
@@ -496,14 +513,14 @@ struct NXCapsTitle: View {
             .font(.system(size: 10.5, weight: .semibold))
             .kerning(0.735)
             .textCase(.uppercase)
-            .foregroundStyle(NX.ink(0.36))
+            .foregroundStyle(NX.textTertiary)
             .lineHeight(.exact(points: 10.5))
             .offset(y: (10.5 - NX.lineHeight(10.5)) / 2 - 0.5)
     }
 }
 
 /// The design's Trash box ("Trash is empty."), for the empty and failed
-/// states of a page: 400 13/1.5 at ink 0.45, 34 pt in from a 1 pt dashed
+/// states of a page: 400 13/1.5, 34 pt in from a 1 pt dashed
 /// border, radius 14, fading in over 240ms whenever it appears.
 struct NXDashedEmpty: View {
     let text: String
@@ -514,7 +531,7 @@ struct NXDashedEmpty: View {
         let leading = 13 * 1.5 - NX.lineHeight(13)
         Text(text)
             .font(.system(size: 13))
-            .foregroundStyle(NX.ink(0.45))
+            .foregroundStyle(NX.textQuaternary)
             .multilineTextAlignment(.center)
             .lineSpacing(leading)
             .padding(.vertical, leading / 2)

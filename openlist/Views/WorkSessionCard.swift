@@ -25,7 +25,7 @@ struct WorkSessionCard: View {
                     .font(.system(size: 10.5, weight: .semibold))
                     .kerning(0.74)
                     .textCase(.uppercase)
-                    .foregroundStyle(NX.ink(0.36))
+                    .foregroundStyle(NX.textTertiary)
                 Text(task.displayTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(NX.ink)
@@ -33,7 +33,7 @@ struct WorkSessionCard: View {
                     .padding(.top, 6)
                 Text(env.store.list(id: task.listID)?.displayTitle ?? "Task")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(NX.ink(0.5))
+                    .foregroundStyle(NX.textTertiary)
                     .padding(.top, 2)
 
                 if session != nil {
@@ -48,7 +48,7 @@ struct WorkSessionCard: View {
                                 .padding(.top, 14)
                             Text("Recorded · \(minutes(estimate)) estimated")
                                 .font(.system(size: 11.5, weight: .medium))
-                                .foregroundStyle(NX.ink(0.45))
+                                .foregroundStyle(NX.textTertiary)
                                 .padding(.top, 3)
                             Group {
                                 if let conflict = env.calendar.workConflict, conflict.occurrenceID == reference.occurrenceID {
@@ -56,9 +56,9 @@ struct WorkSessionCard: View {
                                         .foregroundStyle(NX.redText)
                                 } else if env.calendar.overrunNudge?.occurrenceID == reference.occurrenceID {
                                     Text("Estimate almost reached. Recording continues and the plan makes room.")
-                                        .foregroundStyle(NX.ink(0.62))
+                                        .foregroundStyle(NX.textSecondary)
                                 } else if elapsed >= estimate * 60 {
-                                    Text("Past the estimate. Still recording.").foregroundStyle(NX.ink(0.62))
+                                    Text("Past the estimate. Still recording.").foregroundStyle(NX.textSecondary)
                                 }
                             }
                             .font(.system(size: 12))
@@ -154,12 +154,12 @@ struct WorkSessionCard: View {
     private func detail(_ text: String, icon: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: icon).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45)).accessibilityHidden(true)
-            Text(text).font(.system(size: 12.5)).foregroundStyle(NX.ink(0.72)).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(.system(size: 12.5)).foregroundStyle(NX.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45)).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(.system(size: 11.5)).foregroundStyle(NX.textTertiary).fixedSize(horizontal: false, vertical: true)
     }
 
     private func minutes(_ value: Double) -> String { "\(value.formatted(.number.precision(.fractionLength(0)))) min" }

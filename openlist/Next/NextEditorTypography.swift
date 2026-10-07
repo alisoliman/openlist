@@ -98,9 +98,13 @@ enum NXEditor {
     // caret and IME.
 
     nonisolated static let ink = inkColor(1)
-    /// Text lines and quotes.
-    nonisolated static let secondaryInk = inkColor(0.66)
-    nonisolated static let placeholderInk = inkColor(0.36)
+    /// Text lines, quotes and notes: quieter than a task's title, but
+    /// strong enough to read comfortably in long runs, about 7:1 on paper.
+    /// `NX.textSecondary` is this colour.
+    nonisolated static let secondaryInk = inkColor(light: 0.8, dark: 0.78)
+    /// What a line shows before it's written, about 3:1 on paper, as
+    /// `NX.textQuaternary`.
+    nonisolated static let placeholderInk = inkColor(light: 0.5, dark: 0.42)
     /// Completed task text.
     nonisolated static let completedInk = inkColor(0.42)
     /// The strike through completed task text.
@@ -115,10 +119,16 @@ enum NXEditor {
 
     /// `NX.ink` (#17161A, #F1EFEC in dark mode) at `alpha`.
     private nonisolated static func inkColor(_ alpha: CGFloat) -> NSColor {
+        inkColor(light: alpha, dark: alpha)
+    }
+
+    /// `NX.ink` at an alpha for each appearance: light paper needs more ink
+    /// than dark paper for the same contrast.
+    nonisolated static func inkColor(light: CGFloat, dark: CGFloat) -> NSColor {
         NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(srgbRed: 0xF1 / 255, green: 0xEF / 255, blue: 0xEC / 255, alpha: alpha)
-                : NSColor(srgbRed: 0x17 / 255, green: 0x16 / 255, blue: 0x1A / 255, alpha: alpha)
+                ? NSColor(srgbRed: 0xF1 / 255, green: 0xEF / 255, blue: 0xEC / 255, alpha: dark)
+                : NSColor(srgbRed: 0x17 / 255, green: 0x16 / 255, blue: 0x1A / 255, alpha: light)
         }
     }
 }

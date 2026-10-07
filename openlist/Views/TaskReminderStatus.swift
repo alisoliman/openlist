@@ -60,7 +60,7 @@ struct TaskReminderStatus: View {
                     }
                 }
                 .font(.system(size: 11.5))
-                .foregroundStyle(NX.ink(0.55))
+                .foregroundStyle(NX.textTertiary)
                 .buttonStyle(NXPanelButtonStyle(kind: .secondary, size: .small))
                 .fixedSize(horizontal: false, vertical: true)
                 .task { recovery.refresh() }
@@ -110,7 +110,7 @@ struct TaskReminderStatus: View {
                 if recovery.isSimulated { Text("Review simulation only. No macOS notification is scheduled or displayed.") }
             }
             .font(.system(size: 11))
-            .foregroundStyle(NX.ink(0.5))
+            .foregroundStyle(NX.textSecondary)
             HStack(spacing: 6) {
                 // Retrying the status also retries this task's reminder.
                 if recovery.libraryReadError != nil {

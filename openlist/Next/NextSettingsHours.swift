@@ -58,7 +58,7 @@ struct NXHoursEditor: View {
                     Text(NXWindows.summary(windows))
                         .font(.system(size: 12))
                         .monospacedDigit()
-                        .foregroundStyle(NX.ink(0.55))
+                        .foregroundStyle(NX.textTertiary)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(NX.ink(0.35))
@@ -88,7 +88,7 @@ struct NXHoursEditor: View {
         return HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(NXFormat.dayLabel(item.date)).font(.system(size: 12.5, weight: .medium)).foregroundStyle(NX.ink)
-                Text(NXWindows.summary(item.windows)).font(.system(size: 11.5)).monospacedDigit().foregroundStyle(NX.ink(0.48))
+                Text(NXWindows.summary(item.windows)).font(.system(size: 11.5)).monospacedDigit().foregroundStyle(NX.textTertiary)
             }
             Spacer(minLength: 8)
             Button("Edit") {
@@ -174,7 +174,7 @@ private struct NXOverrideEditor: View {
             NXWindowsEditor(title: "Breaks", windows: $draft.breaks)
             Text(draft.windows.isEmpty ? "This day will be unavailable." : "These hours replace the weekly schedule for this date.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(NX.ink(0.48))
+                .foregroundStyle(NX.textTertiary)
             HStack(spacing: 6) {
                 Spacer()
                 Button("Cancel", action: cancel)
@@ -253,21 +253,19 @@ private struct NXWindowsEditor: View {
                 Button {
                     windows.append(AvailabilityWindow(startMinute: title == "Breaks" ? 720 : 540, endMinute: title == "Breaks" ? 780 : 1020))
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.system(size: 9.5, weight: .semibold))
-                        Text("Add").font(.system(size: 11.5, weight: .medium))
-                    }
+                    Image(systemName: "plus").font(.system(size: 9.5, weight: .semibold))
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
-                                                padding: EdgeInsets(top: 3, leading: 6, bottom: 3, trailing: 6),
+                                                padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5),
                                                 foreground: NX.ink(0.5), hoverForeground: NX.ink))
+                .help("Add \(title.lowercased()) time")
                 .accessibilityLabel("Add \(title.lowercased()) time")
             }
             ForEach(windows.indices, id: \.self) { index in
                 HStack(spacing: 6) {
                     NXPopUpPill(value: NXHours.clock(windows[index].startMinute), label: "From", monospacedDigits: true,
                                 custom: customTime("From", index, end: false), entries: startEntries(index))
-                    Text("–").font(.system(size: 12)).foregroundStyle(NX.ink(0.4))
+                    Text("–").font(.system(size: 12)).foregroundStyle(NX.textQuaternary)
                     NXPopUpPill(value: NXHours.clock(windows[index].endMinute), label: "To", monospacedDigits: true,
                                 custom: customTime("To", index, end: true), entries: endEntries(index))
                     NXRemoveButton(label: "Remove \(title.lowercased()) time") { windows.remove(at: index) }
@@ -276,7 +274,7 @@ private struct NXWindowsEditor: View {
             if windows.isEmpty {
                 Text(title == "Breaks" ? "No breaks" : "Unavailable")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(NX.ink(0.42))
+                    .foregroundStyle(NX.textQuaternary)
             }
         }
     }
@@ -344,7 +342,7 @@ private struct NXHoursCaption: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             NXCapsTitle(text: title)
-            Text(hint).font(.system(size: 11.5)).foregroundStyle(NX.ink(0.48)).fixedSize(horizontal: false, vertical: true)
+            Text(hint).font(.system(size: 11.5)).foregroundStyle(NX.textTertiary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 10)
         .padding(.bottom, 6)
@@ -385,7 +383,7 @@ struct NXPlanningSettings: View {
                           entries: nxChoices(nxPresets(Array(stride(from: 5, through: 120, by: 5)), including: minimum),
                                              selection: minimumSession) { "\($0) minutes" })
             NXSettingRow(label: "Connected calendars", hint: external.error ?? external.authorizationDescription,
-                         hintColor: external.error == nil ? NX.ink(0.48) : NX.amberText) {
+                         hintColor: external.error == nil ? NX.textTertiary : NX.amberText) {
                 if external.isConnected {
                     HStack(spacing: 6) {
                         Button("Refresh") { env.calendar.refreshCalendars() }

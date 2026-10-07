@@ -138,7 +138,7 @@ private struct NXHeatmapCard: View {
                     // The design's 500 10/1, fitted over SwiftUI's 13pt line.
                     Text(monthLabel(week: week))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(NX.ink(0.42))
+                        .foregroundStyle(NX.textTertiary)
                         .fixedSize()
                         .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                         .frame(width: NXHeat.cell, alignment: .leading)
@@ -151,7 +151,7 @@ private struct NXHeatmapCard: View {
                     ForEach(0..<7, id: \.self) { row in
                         Text(row.isMultiple(of: 2) ? weekdaySymbol(row) : "")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(NX.ink(0.4))
+                            .foregroundStyle(NX.textTertiary)
                             .frame(width: NXHeat.cell, height: NXHeat.cell, alignment: .leading)
                     }
                 }
@@ -172,7 +172,7 @@ private struct NXHeatmapCard: View {
                 ForEach([(0, "0"), (1, "1"), (2, "2–3"), (5, "4–6"), (8, "7+")], id: \.0) { count, label in
                     Text(label)
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(count >= 4 ? .white : NX.ink(0.55))
+                        .foregroundStyle(count >= 4 ? .white : NX.textTertiary)
                         .padding(.horizontal, 4)
                         .frame(minWidth: 22, minHeight: 16)
                         .background(NXHeat.band(count, accent: style.accent), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -182,7 +182,7 @@ private struct NXHeatmapCard: View {
                 Text(summary)
             }
             .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(NX.ink(0.45))
+            .foregroundStyle(NX.textTertiary)
             .padding(.top, 14)
             .padding(.leading, NXHeat.cell + NXHeat.gap)
         }
@@ -233,7 +233,7 @@ private struct NXHeatCell: View {
         Text(count.map { $0 > 0 ? "\($0)" : "" } ?? "")
             .font(.system(size: 10.5, weight: .semibold))
             .monospacedDigit()
-            .foregroundStyle((count ?? 0) >= 4 ? .white : NX.ink(0.62))
+            .foregroundStyle((count ?? 0) >= 4 ? .white : NX.textSecondary)
             .frame(width: NXHeat.cell, height: NXHeat.cell)
             .background(NXHeat.band(count, accent: style.accent), in: shape)
             .overlay {
@@ -279,7 +279,7 @@ private struct NXActivityDayPanel: View {
             // The design's 500 11.5/1, fitted over SwiftUI's 14pt line.
             Text(items.isEmpty ? "No completions recorded" : "\(items.count) \(items.count == 1 ? "task" : "tasks") completed")
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(NX.ink(0.48))
+                .foregroundStyle(NX.textTertiary)
                 .padding(.vertical, (11.5 - NX.lineHeight(11.5)) / 2)
                 .padding(.top, 6)
                 .padding(.bottom, 12)
@@ -308,7 +308,7 @@ private struct NXActivityDayPanel: View {
                             NXListGlyph.text(item.listIcon.isEmpty ? "📋" : item.listIcon, size: 10.5)
                                 .foregroundStyle(NX.ink(0.42)).help(item.listTitle)
                         }
-                        Text(NXFormat.clock(item.date)).font(NX.mono(10.5)).foregroundStyle(NX.ink(0.4))
+                        Text(NXFormat.clock(item.date)).font(NX.mono(10.5)).foregroundStyle(NX.textTertiary)
                     }
                     .padding(.vertical, 7)
                     .padding(.horizontal, 4)
@@ -682,7 +682,7 @@ private struct NXChangesSection: View {
         return Text("Every edit, newest first.")
             .font(.system(size: 11.5, weight: .medium))
             .lineSpacing(leading)
-            .foregroundStyle(NX.ink(0.45))
+            .foregroundStyle(NX.textTertiary)
             .padding(.vertical, leading / 2)
     }
 
@@ -788,7 +788,6 @@ private struct NXChangesSection: View {
 
 private struct NXChangeRow: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let item: NXChangeItem
     @State private var hovering = false
 
@@ -814,7 +813,7 @@ private struct NXChangeRow: View {
                         Text(list.displayTitle)
                     }
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.4))
+                    .foregroundStyle(NX.textTertiary)
                     .lineLimit(1)
                 } else if !item.listTitle.isEmpty {
                     // A list since gone, with the icon it had, as the day panel
@@ -828,13 +827,13 @@ private struct NXChangeRow: View {
                         Text(item.listTitle)
                     }
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.4))
+                    .foregroundStyle(NX.textTertiary)
                     .lineLimit(1)
                 }
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     Text(NXFormat.relative(item.at, now: context.date))
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NX.ink(0.34))
+                        .foregroundStyle(NX.textTertiary)
                         .lineLimit(1)
                         .frame(width: 64, alignment: .trailing)
                 }
@@ -842,13 +841,12 @@ private struct NXChangeRow: View {
             .accessibilityElement(children: .combine)
             if item.canUndo {
                 Button { env.workbench.undoLast() } label: {
-                    // The design's 600 10.5/1, so the pill is its 20.5pt.
-                    Text("Undo").padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
+                    Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .semibold))
                 }
-                .font(.system(size: 10.5, weight: .semibold))
-                .buttonStyle(NXHoverButtonStyle(hover: style.accent.opacity(0.14), rest: NX.ink(0.06), radius: 6,
-                                                padding: EdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8),
-                                                foreground: NX.ink(0.6), hoverForeground: style.accent))
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
+                                                padding: EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 6),
+                                                foreground: NX.ink(0.5), hoverForeground: NX.ink))
+                .help("Undo (⌘Z)")
                 // What it takes back, as the tray says it.
                 .accessibilityLabel("Undo \(item.label)")
             }
@@ -860,13 +858,8 @@ private struct NXChangeRow: View {
         .help(item.detail ?? "")
     }
 
+    /// Only a completion keeps its green; every other change is neutral.
     private var colors: (Color, Color) {
-        switch item.tone {
-        case .green: (NX.green, NX.green.opacity(0.14))
-        case .red: (NX.redText, NX.red.opacity(0.12))
-        case .accent: (style.accent, style.accent.opacity(0.1))
-        case .amber: (NX.amberText, NX.amber.opacity(0.16))
-        case .neutral: (NX.ink(0.6), NX.ink(0.07))
-        }
+        item.tone == .green ? (NX.green, NX.green.opacity(0.14)) : (NX.ink(0.5), NX.ink(0.05))
     }
 }

@@ -49,7 +49,7 @@ struct DueDatePicker: View {
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(style.accent)
+                        .foregroundStyle(NX.ink(0.55))
                     Text("Include a time")
                         .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(NX.ink)
@@ -63,7 +63,10 @@ struct DueDatePicker: View {
                         timeBinding.wrappedValue = CalendarMonthGrid.date(timeValue, atMinute: minute, calendar: calendar)
                     }
                 }
-                NXToggle(isOn: includesTime, label: "Include a time") { includesTimeBinding.wrappedValue.toggle() }
+                Toggle("Include a time", isOn: includesTimeBinding)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
             }
         }
         .onAppear(perform: load)
@@ -100,7 +103,7 @@ struct DueDatePicker: View {
                 } else {
                     Text("Not recognised yet")
                         .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(NX.ink(0.4))
+                        .foregroundStyle(NX.textQuaternary)
                 }
             }
         }

@@ -298,7 +298,7 @@ struct NXSettingsGroup<Content: View>: View {
                 Text(footer)
                     .font(.system(size: 11.5))
                     .lineSpacing(leading)
-                    .foregroundStyle(NX.ink(0.48))
+                    .foregroundStyle(NX.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, leading / 2)
                     .padding(.horizontal, 4)
@@ -351,7 +351,7 @@ private enum NXSettingType {
 struct NXSettingRow<Accessory: View>: View {
     let label: String
     let hint: String
-    var hintColor = NX.ink(0.48)
+    var hintColor = NX.textTertiary
     /// Lets the hint be selected and copied, for errors and addresses.
     var selectable = false
     @ViewBuilder var accessory: Accessory
@@ -425,7 +425,7 @@ private struct NXSettingRowLayout: Layout {
 }
 
 extension NXSettingRow where Accessory == EmptyView {
-    init(label: String, hint: String, hintColor: Color = NX.ink(0.48), selectable: Bool = false) {
+    init(label: String, hint: String, hintColor: Color = NX.textTertiary, selectable: Bool = false) {
         self.init(label: label, hint: hint, hintColor: hintColor, selectable: selectable) { EmptyView() }
     }
 }
@@ -439,10 +439,11 @@ struct NXSettingToggle: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        NXSettingRow(label: label, hint: hint, hintColor: isError ? NX.redText : NX.ink(0.48)) {
-            // A button, so Tab reaches the switch and Space flips it.
-            Button { isOn.toggle() } label: { NXSwitch(isOn: isOn) }
-                .buttonStyle(NXBareButtonStyle(radius: 10))
+        NXSettingRow(label: label, hint: hint, hintColor: isError ? NX.redText : NX.textTertiary) {
+            Toggle(label, isOn: $isOn)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
         }
         .opacity(isEnabled ? 1 : 0.45)
         .onTapGesture { if isEnabled { isOn.toggle() } }
@@ -480,7 +481,7 @@ struct NXValuePill: View {
         // The design's `12px/1` line box, so the pill is 24pt tall.
         .frame(height: 12)
         .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(NX.ink(0.55))
+        .foregroundStyle(NX.textSecondary)
         .lineLimit(1)
         .padding(.vertical, 6)
         .padding(.horizontal, 9)
@@ -553,7 +554,7 @@ struct NXSettingButtonStyle: ButtonStyle {
                 .frame(height: 12)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
-                .foregroundStyle(destructive ? NX.redText : NX.ink(active ? 0.75 : 0.6))
+                .foregroundStyle(destructive ? NX.redText : active ? NX.ink : NX.textSecondary)
                 .padding(.vertical, 6)
                 .padding(.horizontal, 9)
                 .background(destructive ? NX.red.opacity(active ? 0.16 : 0.1) : NX.ink(active ? 0.09 : 0.05),
@@ -566,7 +567,7 @@ struct NXSettingButtonStyle: ButtonStyle {
     }
 }
 
-/// A control drawn only as its label, like a switch or a value pill, which
+/// A control drawn only as its label, like a value pill or a swatch, which
 /// shows its own hover and disabled look. As a button, Tab reaches it with
 /// keyboard navigation on and Space presses it; its focus ring follows `radius`.
 struct NXBareButtonStyle: ButtonStyle {
@@ -667,7 +668,7 @@ private struct NXCustomValueField: View {
                            width: custom.width, monospaced: custom.monospaced, onSubmit: submit, label: custom.label,
                            focusesOnAppear: true, onBlur: finish, onCancel: { text = nil })
             if let unit = custom.unit {
-                Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(NX.ink(0.48))
+                Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(NX.textTertiary)
             }
         }
         .preference(key: NXPendingCustomValueKey.self, value: NXPendingCustomValue(id: id, commit: commit))
@@ -728,7 +729,7 @@ struct NXSettingMenu: View {
     @State private var customText: String?
 
     var body: some View {
-        let hintColor = isError ? NX.redText : NX.ink(0.48)
+        let hintColor = isError ? NX.redText : NX.textTertiary
         if let custom, customText != nil {
             NXSettingRow(label: label, hint: hint, hintColor: hintColor) {
                 NXCustomValueField(custom: custom, text: $customText)

@@ -92,7 +92,7 @@ struct LabelPicker: View {
             if count == 0 {
                 Text("No labels yet. Type a name to create one.")
                     .font(.system(size: 12))
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
             }

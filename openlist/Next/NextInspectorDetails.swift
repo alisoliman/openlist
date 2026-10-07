@@ -8,20 +8,6 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A small caps heading for the inspector's lower sections, like Activity.
-struct NXInspectorHeading<Accessory: View>: View {
-    let title: String
-    @ViewBuilder var accessory: () -> Accessory
-
-    var body: some View {
-        HStack(spacing: 8) {
-            NXCapsTitle(text: title)
-            Spacer(minLength: 6)
-            accessory()
-        }
-    }
-}
-
 /// A lower section's heading that opens and closes it, like Activity's.
 struct NXInspectorFold: View {
     @Environment(\.nextStyle) private var style
@@ -47,7 +33,7 @@ struct NXInspectorFold: View {
     }
 }
 
-/// A quiet action row, like the design's "Add subtask": ink 0.42, ink on hover.
+/// A quiet action row, like the design's "Add subtask": tertiary text, ink on hover.
 struct NXInspectorQuietAction: View {
     let icon: String
     let title: String
@@ -71,22 +57,138 @@ struct NXInspectorQuietAction: View {
         }
         .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.04), radius: 8,
                                         padding: EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8),
-                                        foreground: NX.ink(0.42), hoverForeground: NX.ink))
+                                        foreground: NX.textTertiary, hoverForeground: NX.ink))
     }
 }
 
 // MARK: - Planning
 
-/// A task's duration, typed as it's said: "45", "1h30", "1.5 hours". A click
-/// opens it for typing, all of it selected; Return or leaving the field sets
-/// it, and Esc, or text that isn't a duration, puts back what it was. The
-/// field is there only while typed in, so focus never wanders into it.
+/// Plan the day, under its heading rather than in a card: the switch that
+/// puts the task on today's plan, how long it takes on a slider, and where
+/// the calendar has it, or Find a slot; the rest under More options.
+struct NXInspectorPlan: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    let task: Block
+    /// On the page, where the row is wider than a slider reads well: the
+    /// slider keeps a panel's length and its value sits right beside it.
+    var isPage = false
+    /// Where the slider is being dragged to, shown as it moves and set as
+    /// the drag ends, so a drag is one change.
+    @State private var dragged: Int?
+    @State private var dragging = false
+
+    /// The slider's stops: five minutes at a time to an hour, fifteen to
+    /// three hours, then thirty to eight. A longer duration is typed.
+    static let stops = Array(stride(from: 5, through: 60, by: 5)) + Array(stride(from: 75, through: 180, by: 15))
+        + Array(stride(from: 210, through: 480, by: 30))
+
+    private var workbench: Workbench { env.workbench }
+
+    var body: some View {
+        let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : workbench.defaultEstimate
+        let shown = dragged ?? estimate
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                NXCapsTitle(text: "Plan for today")
+                Spacer(minLength: 6)
+                // Planning skips completed tasks, so the switch fades.
+                NXToggle(isOn: workbench.isPlanned(task), label: "Plan for today") { workbench.plan([task.id]) }
+                    .disabled(task.isCompleted)
+                    .opacity(task.isCompleted ? 0.45 : 1)
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "clock")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(NX.textTertiary)
+                    .accessibilityHidden(true)
+                Slider(value: position(estimate: estimate), in: 0...Double(Self.stops.count - 1)) {
+                    Text("Duration")
+                } onEditingChanged: { editing in
+                    dragging = editing
+                    if !editing { commit(estimate: estimate) }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .tint(style.accent)
+                .frame(maxWidth: 340)
+                .accessibilityValue(DurationText.text(for: shown))
+                NXDurationField(minutes: shown, alignment: isPage ? .leading : .trailing) {
+                    workbench.setEstimate(task.id, minutes: $0)
+                }
+                if isPage { Spacer(minLength: 0) }
+            }
+            slotRow
+            NXInspectorPlanOptions(task: task)
+        }
+    }
+
+    /// The slider's place, the stop nearest the duration; a move sets the
+    /// stop it lands on, at once from the keys, at the end of a drag.
+    private func position(estimate: Int) -> Binding<Double> {
+        Binding(get: { Double(Self.stop(nearest: dragged ?? estimate)) },
+                set: { value in
+                    dragged = Self.stops[min(max(Int(value.rounded()), 0), Self.stops.count - 1)]
+                    if !dragging { commit(estimate: estimate) }
+                })
+    }
+
+    private func commit(estimate: Int) {
+        guard let minutes = dragged else { return }
+        dragged = nil
+        if minutes != estimate { workbench.setEstimate(task.id, minutes: minutes) }
+    }
+
+    static func stop(nearest minutes: Int) -> Int {
+        stops.indices.min { abs(stops[$0] - minutes) < abs(stops[$1] - minutes) } ?? 0
+    }
+
+    /// The slot the calendar grid draws for the task, as the design reads its
+    /// placement, past or done ones too (see `CalendarWeek.shownSlot`), which
+    /// shows it there; without one, Find a slot plans it.
+    @ViewBuilder private var slotRow: some View {
+        if let placement = CalendarWeek.shownSlot(of: task.id, occurrenceID: task.occurrenceID, in: env.calendar.visibleBlocks,
+                                                  now: .now, calendar: env.settings.calendar) {
+            let offset = NXFormat.dayOffset(placement.start)
+            let day = offset == 0 ? "Today" : placement.start.formatted(.dateTime.weekday(.abbreviated).day())
+            Button { workbench.showOnCalendar(slotOf: task.id, occurrenceID: task.occurrenceID) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar").font(.system(size: 11, weight: .medium))
+                    Text("\(day) \(NXFormat.clock(placement.start))–\(NXFormat.clock(placement.end))").monospacedDigit()
+                }
+            }
+            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+            .padding(.leading, -5)
+            .help("Show in the calendar")
+            .accessibilityLabel("In the calendar \(day), \(NXFormat.clock(placement.start)) to \(NXFormat.clock(placement.end))")
+        } else if !task.isCompleted {
+            Button { workbench.fit(task.id) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").font(.system(size: 11, weight: .medium))
+                    Text("Find a slot")
+                }
+            }
+            .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+            .padding(.leading, -5)
+            .help("Find a free slot in the calendar")
+        }
+    }
+}
+
+/// A task's duration, typed as it's said: "45", "1h30", "1.5 hours". At rest
+/// it's the duration's text, beside the slider; a click opens it for typing,
+/// all of it selected. Return or leaving the field sets it, and Esc, or text
+/// that isn't a duration, puts back what it was. The field is there only
+/// while typed in, so focus never wanders into it.
 struct NXDurationField: View {
     @Environment(\.nextStyle) private var style
     let minutes: Int
+    /// Beside the slider, its text starts there; at the row's end, it ends there.
+    var alignment: HorizontalAlignment = .trailing
     let onCommit: (Int) -> Void
     /// What's being typed; nil shows the duration.
     @State private var draft: String?
+    @State private var hovering = false
     @FocusState private var focused: Bool
 
     private var shown: String { DurationText.text(for: minutes) }
@@ -108,21 +210,26 @@ struct NXDurationField: View {
                     .onAppear { DispatchQueue.main.async { focused = true } }
             } else {
                 Button { draft = shown } label: {
-                    Text(shown).frame(maxWidth: .infinity).contentShape(Rectangle())
+                    Text(shown).frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("Type a duration")
             }
         }
         .font(.system(size: 12, weight: .semibold))
         .monospacedDigit()
-        .multilineTextAlignment(.center)
+        .multilineTextAlignment(alignment == .leading ? .leading : .trailing)
         .foregroundStyle(NX.ink)
-        .frame(width: 76)
-        .padding(.vertical, 4)
-        .padding(.horizontal, 7)
-        .background(NX.ink(draft != nil ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .frame(width: 70)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .background(NX.ink(draft != nil ? 0.06 : hovering ? 0.05 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
             .strokeBorder(draft != nil ? style.accent.opacity(0.6) : .clear, lineWidth: 1))
+        .onHover { hovering = $0 }
+        // The text, not its hover fill, lines up with what's beside it.
+        .padding(alignment == .leading ? .leading : .trailing, -6)
         .accessibilityLabel("Duration")
         .accessibilityValue(shown)
     }
@@ -162,7 +269,7 @@ struct NXInspectorPlanOptions: View {
                         .accessibilityLabel("Clear task deferral")
                 }
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NX.ink(0.55))
+                .foregroundStyle(NX.textTertiary)
             }
             NXDisclosureButton("More options", isExpanded: $expanded)
             if expanded {
@@ -208,7 +315,7 @@ struct NXInspectorPlanOptions: View {
                 Text(personal ? "Personal hours" : "Work hours")
             }
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(NX.ink(0.45))
+            .foregroundStyle(NX.textTertiary)
             HStack(spacing: 6) {
                 if !task.isCompleted {
                     Button("Defer…") { deferring = true }
@@ -219,7 +326,7 @@ struct NXInspectorPlanOptions: View {
                 Text("\(DurationText.text(for: Int(calendar.trackedMinutes(for: task).rounded()))) recorded")
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                 Button("History") { showsHistory = true }
                     .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                     .padding(.trailing, -5)
@@ -231,7 +338,7 @@ struct NXInspectorPlanOptions: View {
 
     private func toggle(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Text(title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.ink(0.66))
+            Text(title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(NX.textSecondary)
             Spacer(minLength: 6)
             NXToggle(isOn: isOn, label: title, action: action)
         }
@@ -276,7 +383,7 @@ struct NXInspectorSubtasks: View {
                 // count is; in the same 10.5/1 line box as the title.
                 Text(rows.isEmpty ? "" : "\(done)/\(rows.count)")
                     .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                     .monospacedDigit()
                     .padding(.vertical, (10.5 - NX.lineHeight(10.5)) / 2)
                 GeometryReader { proxy in
@@ -329,8 +436,8 @@ private struct NXInspectorSubtaskRow: View {
             // 400 13/1.3.
             Text(task.text.trimmingCharacters(in: .whitespacesAndNewlines))
                 .font(.system(size: 13))
-                .foregroundStyle(filled ? NX.ink(0.42) : NX.ink)
-                .strikethrough(filled, color: NX.ink(0.42))
+                .foregroundStyle(filled ? NX.textTertiary : NX.ink)
+                .strikethrough(filled, color: NX.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .padding(.vertical, (13 * 1.3 - NX.lineHeight(13)) / 2)
@@ -364,7 +471,6 @@ private struct NXInspectorSubtaskRow: View {
 /// task's progress. A click inspects it.
 struct NXInspectorParentCrumb: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let parent: Block
     @Query private var blocks: [Block]
     @State private var hovering = false
@@ -398,13 +504,12 @@ struct NXInspectorParentCrumb: View {
                     .opacity(0.8)
                     .fixedSize()
             }
-            .foregroundStyle(hovering ? style.accent : NX.ink(0.55))
+            .foregroundStyle(hovering ? NX.ink : NX.textTertiary)
             .padding(.top, 5)
             .padding(.bottom, 5)
             .padding(.leading, 6)
             .padding(.trailing, 8)
-            .background(hovering ? style.accent.opacity(0.1) : NX.ink(0.04),
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(NX.ink(hovering ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -420,44 +525,18 @@ struct NXInspectorParentCrumb: View {
 // MARK: - Files
 
 /// Files kept with the task. The design has none, so the section shows only
-/// once there are some; until then "Attach a file" sits by "Add a note",
-/// while that stands in for the note. Files dropped anywhere on the panel
-/// are attached too.
+/// once there are some; the footer's paperclip attaches them, and files
+/// dropped anywhere on the panel are attached too.
 struct NXInspectorFiles: View {
     @Environment(AppEnvironment.self) private var env
     let task: Block
-    /// Opens the note, while "Add a note" stands in for it.
-    var addsNote: (() -> Void)?
 
     var body: some View {
         let attachments = env.store.attachments(for: task.id)
-        let files = NXTaskFiles(workbench: env.workbench)
-        if addsNote != nil || attachments.isEmpty {
-            HStack(spacing: 2) {
-                if let addsNote {
-                    NXInspectorQuietAction(icon: "text.alignleft", title: "Add a note", action: addsNote)
-                }
-                if attachments.isEmpty {
-                    NXInspectorQuietAction(icon: "paperclip", title: "Attach a file") { files.choose(for: task) }
-                }
-            }
-            // The icons line up with the panel's edge.
-            .padding(.leading, -8)
-            .padding(.vertical, -6)
-        }
         if !attachments.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                NXInspectorHeading(title: "Files") {
-                    Button { files.choose(for: task) } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "paperclip").font(.system(size: 10.5, weight: .semibold))
-                            Text("Attach")
-                        }
-                    }
-                    .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
-                    .padding(.trailing, -5)
-                    .accessibilityLabel("Attach files to task")
-                }
+                NXCapsTitle(text: "Files")
+                    .padding(.bottom, 4)
                 ForEach(attachments) { attachment in
                     AttachmentRow(attachment: attachment) { env.workbench.removeAttachment(attachment) }
                 }
@@ -538,7 +617,7 @@ struct NXInspectorHistory: View {
                         }
                     }
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                     NXInspectorHistoryPage(taskID: task.id, limit: limit,
                                            excluded: Array(env.store.uncommittedActivityIDs)) { limit += 50 }
                 }
@@ -571,7 +650,7 @@ private struct NXInspectorHistoryPage: View {
                 Text("No recorded activity for this task.")
                     .font(.system(size: 12))
                     .lineSpacing(leading)
-                    .foregroundStyle(NX.ink(0.45))
+                    .foregroundStyle(NX.textTertiary)
                     .padding(.vertical, 5 + leading / 2)
             } else {
                 ForEach(events.prefix(limit)) { event in
@@ -598,16 +677,16 @@ private struct NXInspectorHistoryPage: View {
                 Text("\(event.kind.verb) “\(event.title)”")
                     .font(.system(size: 12))
                     .lineSpacing(leading)
-                    .foregroundStyle(NX.ink(0.66))
+                    .foregroundStyle(NX.textSecondary)
                     .padding(.vertical, leading / 2)
                 if !detail.isEmpty {
                     Text(detail)
                         .font(.system(size: 11))
-                        .foregroundStyle(NX.ink(0.5))
+                        .foregroundStyle(NX.textTertiary)
                 }
                 place(event, when: when)
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(NX.ink(0.36))
+                    .foregroundStyle(NX.textQuaternary)
                     // The line without its list's glyph, which reads as a symbol's name.
                     .accessibilityLabel(spoken)
             }
