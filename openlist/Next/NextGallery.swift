@@ -120,13 +120,22 @@ private struct NXListCard: View {
     @State private var hovering = false
 
     var body: some View {
+        // A button, which Tab reaches with Keyboard navigation on.
+        Button { env.workbench.go(env.workbench.route(for: list)) } label: { card }
+            .buttonStyle(NXBareButtonStyle(radius: 14))
+            .onHover { hovering = $0 }
+            .accessibilityElement(children: .combine)
+            .contextMenu { NXListMenu(list: list, surface: .gallery) }
+    }
+
+    private var card: some View {
         let open = tasks.filter { !$0.isCompleted }
         let done = tasks.count - open.count
         let dueToday = open.filter(\.isDueOnOrBeforeToday).count
         let fraction = tasks.isEmpty ? 0 : Double(done) / Double(tasks.count)
         let color = list.nxColor
         let stats = "\(open.count) open" + (dueToday > 0 ? " · \(dueToday) due today" : "") + (done > 0 ? " · \(done) done" : "")
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             color.opacity(0.08)
                 .frame(height: 58)
                 .overlay(alignment: .bottomLeading) {
@@ -191,12 +200,6 @@ private struct NXListCard: View {
         // The design's 200ms lift, whatever the Motion setting.
         .animation(NX.ease(200), value: hovering)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onHover { hovering = $0 }
-        .onTapGesture { env.workbench.go(env.workbench.route(for: list)) }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { env.workbench.go(env.workbench.route(for: list)) }
-        .contextMenu { NXListMenu(list: list, surface: .gallery) }
     }
 }
 
@@ -412,8 +415,10 @@ private struct NXTrashRow: View {
 }
 
 /// Press and hold for 900 ms; releasing or leaving early cancels. The fill
-/// grows left to right while held. VoiceOver can't hold, so its action asks
-/// `confirmation` first, in a Next sheet like Settings' confirmations.
+/// grows left to right while held. VoiceOver can't hold, and neither can a
+/// key, so its action, and Space once Tab has reached it with Keyboard
+/// navigation on, ask `confirmation` first, in a Next sheet like Settings'
+/// confirmations.
 struct NXHoldButton: View {
     let title: String
     /// Replaces the title while held; nil keeps it.
@@ -456,6 +461,7 @@ struct NXHoldButton: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: radius, style: .continuous))
         .onGeometryChange(for: CGSize.self, of: \.size) { bounds = $0 }
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -470,6 +476,11 @@ struct NXHoldButton: View {
             if !$0 { cancel() }
         }
         .onDisappear { cancel() }
+        .focusable(interactions: .activate)
+        .onKeyPress(keys: [.space, .return]) { _ in
+            confirming = true
+            return .handled
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityAddTraits(.isButton)

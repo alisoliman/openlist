@@ -111,6 +111,8 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                 NXDocumentEditing.end()
                 workbench.toggle(id)
             }
+            // E only completes, as in the design; Task ▸ Reopen takes one back.
+            .help(task.isCompleted || closing != nil ? "Reopen (⌘D)" : "Mark as done (E)")
             .frame(width: 26, alignment: .leading)
             // Centres the 16pt circle on the title's 20pt first line, as the design's 2px does.
             .padding(.top, 2)
@@ -162,6 +164,8 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
                 }
                 // Return opens details from a focused row, not from a line being written.
                 .help(editing ? "Open details" : "Open details (↩)")
+                // Out of sight at rest, it's no Tab stop either: Return and ⌘↩ do what it does.
+                .focusable(false)
                 .accessibilityLabel("Open details")
             }
             .padding(.top, 1)
@@ -562,7 +566,8 @@ struct NXScheduleChip: View {
                         .animation(NX.cssEase(140)) { $0.foregroundStyle(NX.ink(hovering || presented ? 0.07 : 0)) }
                         .padding(quiet ? EdgeInsets(top: -2, leading: -4, bottom: -2, trailing: -4) : EdgeInsets())
                 }
-                .contentShape(Rectangle())
+                // A quiet chip, only text, takes clicks across its wash too.
+                .contentShape(Rectangle().inset(by: quiet ? -4 : 0))
         }
         .buttonStyle(NXPressStyle())
         .onHover { hovering = $0 }
@@ -726,8 +731,9 @@ struct NXGroupView: View {
     private func head(open: Bool) -> some View {
         HStack(spacing: 7) {
             // VoiceOver reads the title and count as one heading, a button
-            // that folds the group when it folds.
-            HStack(spacing: 7) {
+            // that folds the group when it folds; Tab reaches it with
+            // Keyboard navigation on, and Space folds it.
+            let title = HStack(spacing: 7) {
                 Group {
                     if let glyph = group.glyph {
                         NXListGlyph(list: glyph, size: 13)
@@ -759,9 +765,17 @@ struct NXGroupView: View {
                         .accessibilityHidden(true)
                 }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-            .modifier(NXFoldAccessibility(isEnabled: group.collapsible, open: open, toggle: toggle))
+            if group.collapsible {
+                Button(action: toggle) { title }
+                    .buttonStyle(NXBareButtonStyle(radius: 6))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityValue(open ? "Expanded" : "Collapsed")
+            } else {
+                title
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
+            }
             Spacer(minLength: 8)
             if let label = group.actionLabel, let action = group.action {
                 Button(action: action) {
@@ -782,25 +796,6 @@ struct NXGroupView: View {
     }
 
     private func toggle() { group.toggle(in: env.workbench) }
-}
-
-/// A collapsible group head's role for VoiceOver: a button that says
-/// whether the group is open.
-private struct NXFoldAccessibility: ViewModifier {
-    let isEnabled: Bool
-    let open: Bool
-    let toggle: () -> Void
-
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content
-                .accessibilityValue(open ? "Expanded" : "Collapsed")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { toggle() }
-        } else {
-            content
-        }
-    }
 }
 
 /// "Add to …" row that opens capture.

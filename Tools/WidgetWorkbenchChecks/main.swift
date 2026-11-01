@@ -111,5 +111,6 @@ check(!report.isCompleted && workbench.workTask?.id == report.id, "Undo reopens 
 
 try await runWorkbenchAdjudicationChecks()
 try await runVoiceWorkbenchChecks()
+runWindowWorkbenchChecks()
 
 print("✅ \(checks) widget workbench checks passed")

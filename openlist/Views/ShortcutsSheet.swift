@@ -31,6 +31,7 @@ struct ShortcutsSheet: View {
         Group(title: "Everywhere", shortcuts: [
             Shortcut(keys: "N", action: "New task"),
             Shortcut(keys: "/  ⌘F", action: "Search"),
+            Shortcut(keys: "⇥", action: "In search, go to Include completed and back"),
             Shortcut(keys: "G then I T C A L H", action: "Go to Inbox, Today, Calendar, Tasks, Lists, Activity"),
             Shortcut(keys: "⌘K", action: "Actions: every action and place"),
             Shortcut(keys: "⌘Z", action: "Undo the latest change"),
@@ -47,7 +48,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⇧ click", action: "Select the rows from the focused one to it"),
             Shortcut(keys: "X", action: "Select or deselect the focused row"),
             Shortcut(keys: "⌘A", action: "Select every visible row"),
-            Shortcut(keys: "↩", action: "Open details"),
+            Shortcut(keys: "↩", action: "Open details; again, write in the task"),
             Shortcut(keys: "E", action: "Mark as done"),
             Shortcut(keys: "T  M", action: "Due today, tomorrow"),
             Shortcut(keys: "P", action: "Plan for today, or unplan"),
@@ -55,7 +56,8 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "D  ⌫", action: "Move to Trash"),
             Shortcut(keys: "Space", action: "Show or hide the note, in a list"),
             Shortcut(keys: "⇥  ⇧⇥", action: "Nest or lift the rows, in a list"),
-            Shortcut(keys: "Esc", action: "Collapse or close details, clear selection or focus"),
+            Shortcut(keys: "←  →", action: "Fold or unfold a task's subtasks, in a list"),
+            Shortcut(keys: "Esc", action: "Collapse or close details, clear selection or focus, leave Settings"),
         ]),
         Group(title: "Inbox triage", shortcuts: [
             Shortcut(keys: "1–9", action: "File into a list"),

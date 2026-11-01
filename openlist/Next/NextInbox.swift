@@ -397,34 +397,37 @@ private struct NXTriageDay: View {
 
     var body: some View {
         let date = NXFormat.day(offset: offset, now: now)
-        // Both labels take the design's line-height 1 box, so the tile is its
+        // A button, which Tab reaches with Keyboard navigation on. Both
+        // labels take the design's line-height 1 box, so the tile is its
         // 52.5pt: 8 + 9.5 + 4 + 16 + 4 + 4 + 7.
-        VStack(spacing: 4) {
-            Text(offset == 0 ? "Today" : offset == 1 ? "Tmrw" : date.formatted(.dateTime.weekday(.abbreviated)))
-                .font(.system(size: 9.5, weight: .semibold))
-                .kerning(0.38)
-                .textCase(.uppercase)
-                .foregroundStyle(NX.textTertiary)
-                .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
-            Text("\(Calendar.current.component(.day, from: date))")
-                .font(.system(size: 16, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(NX.ink)
-                .padding(.vertical, (16 - NX.lineHeight(16)) / 2)
-            HStack(spacing: 2) {
-                ForEach(0..<min(load, 4), id: \.self) { _ in
-                    Circle().fill(load >= 3 ? NX.red : NX.ink(0.3)).frame(width: 4, height: 4)
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text(offset == 0 ? "Today" : offset == 1 ? "Tmrw" : date.formatted(.dateTime.weekday(.abbreviated)))
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .kerning(0.38)
+                    .textCase(.uppercase)
+                    .foregroundStyle(NX.textTertiary)
+                    .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
+                Text("\(Calendar.current.component(.day, from: date))")
+                    .font(.system(size: 16, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(NX.ink)
+                    .padding(.vertical, (16 - NX.lineHeight(16)) / 2)
+                HStack(spacing: 2) {
+                    ForEach(0..<min(load, 4), id: \.self) { _ in
+                        Circle().fill(load >= 3 ? NX.red : NX.ink(0.3)).frame(width: 4, height: 4)
+                    }
                 }
+                .frame(height: 4)
             }
-            .frame(height: 4)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+            .padding(.bottom, 7)
+            .background(hovering ? NX.ink(0.05) : NX.ink(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
-        .padding(.bottom, 7)
-        .background(hovering ? NX.ink(0.05) : NX.ink(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .contentShape(Rectangle())
+        .buttonStyle(NXBareButtonStyle(radius: 9))
         .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Schedule for " + (offset == 0 ? "today" : offset == 1 ? "tomorrow"
             : date.formatted(.dateTime.weekday(.wide).day().month(.wide))))

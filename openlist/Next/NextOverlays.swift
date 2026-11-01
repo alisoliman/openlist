@@ -14,6 +14,8 @@ final class NXOverlayState {
     @ObservationIgnored let search = SearchSession()
     /// Why the chosen result can't open, shown until the search changes.
     var searchUnavailable: String?
+    /// Which of the search card's two stops has the keyboard, which Tab moves.
+    var searchFocus: NXSearchFocus = .field
     /// The search Return was pressed on before its results arrived, with no
     /// listed row chosen: its first result opens once it's in.
     @ObservationIgnored var pendingSearchOpen: SearchOptions?
@@ -132,10 +134,16 @@ struct NextOverlays: View {
             workbench.searchQuery = ""
             workbench.searchIndex = 0
             workbench.searchIncludesCompleted = false
+            overlays.searchFocus = .field
             navigator.isCommandPaletteOpen = false
             if workbench.captureOpen { workbench.closeCapture(keepsDraft: true) }
         }
     }
+}
+
+/// The search card's two stops, between which Tab moves.
+enum NXSearchFocus: Hashable {
+    case field, completed
 }
 
 /// The dim backdrop (click closes) and the popping card.
@@ -897,6 +905,8 @@ private struct NXSearchCard: View {
     let overlays: NXOverlayState
     /// The result the pointer just moved the highlight to.
     @State private var pointedID: SearchDestination?
+    /// The field, or Include completed once Tab has gone to it.
+    @FocusState private var focus: NXSearchFocus?
 
     var body: some View {
         @Bindable var workbench = env.workbench
@@ -904,6 +914,7 @@ private struct NXSearchCard: View {
         let options = NXSearch.options(workbench)
         let hits = NXSearch.hits(session, workbench: workbench)
         let index = min(workbench.searchIndex, max(0, hits.count - 1))
+        let includes = workbench.searchIncludesCompleted
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").font(.system(size: 16)).foregroundStyle(NX.ink(0.4))
@@ -911,20 +922,33 @@ private struct NXSearchCard: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 15.5))
                     .foregroundStyle(NX.ink)
-                    .modifier(NXAutofocus())
+                    .focused($focus, equals: .field)
                     .onChange(of: workbench.searchQuery) { _, _ in workbench.searchIndex = 0 }
-                Button("Include completed") { workbench.searchIncludesCompleted.toggle() }
-                    .buttonStyle(.plain)
+                // The design's on/off pill. A stop Tab reaches whatever the
+                // Keyboard navigation setting, where Space turns it; a click
+                // turns it and leaves the keys with the field.
+                Text("Include completed")
                     .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(workbench.searchIncludesCompleted ? Color.white : NX.textTertiary)
+                    .foregroundStyle(includes ? Color.white : NX.textTertiary)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
-                    .background(workbench.searchIncludesCompleted ? style.accent : NX.ink(0.06),
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(includes ? style.accent : NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .fixedSize()
-                    // The design's on/off pill.
-                    .accessibilityAddTraits(.isToggle)
-                    .accessibilityValue(workbench.searchIncludesCompleted ? "On" : "Off")
+                    .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(Rectangle())
+                    .focusable()
+                    .focused($focus, equals: .completed)
+                    .onTapGesture {
+                        workbench.searchIncludesCompleted.toggle()
+                        focus = .field
+                    }
+                    .onKeyPress(.space) {
+                        workbench.searchIncludesCompleted.toggle()
+                        return .handled
+                    }
+                    .accessibilityAddTraits([.isButton, .isToggle])
+                    .accessibilityValue(includes ? "On" : "Off")
+                    .accessibilityAction { workbench.searchIncludesCompleted.toggle() }
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
@@ -974,6 +998,12 @@ private struct NXSearchCard: View {
             session.cancel()
             overlays.pendingSearchOpen = nil
         }
+        // The caret in the field once the card is on screen, or the focus can
+        // miss it; then wherever Tab, or a click, puts the keys.
+        .onAppear { DispatchQueue.main.async { focus = .field } }
+        .onChange(of: overlays.searchFocus) { _, stop in focus = stop }
+        // Focus that went nowhere is the field's, for the keys typed next.
+        .onChange(of: focus) { _, stop in overlays.searchFocus = stop ?? .field }
     }
 
     /// Describes the listed results; "Searching…" only once a search is slow.

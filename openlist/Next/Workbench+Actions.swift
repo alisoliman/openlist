@@ -606,7 +606,11 @@ extension Workbench {
         separateUndoStep()
         beginTrash(taskIDs, label: "Moved \(describe(tasks)) to Trash")
         selection = []
-        focusID = nil
+        // The focus goes on to the row beside, so the next J or K goes on
+        // from there rather than from the top.
+        if let focusID, taskIDs.contains(focusID) {
+            self.focusID = Self.neighbour(of: focusID, leaving: Set(taskIDs), in: visibleIDs)
+        }
         if let open = navigator.openTaskID, taskIDs.contains(open) { navigator.closeTask() }
     }
 

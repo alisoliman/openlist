@@ -158,12 +158,14 @@ private struct NextMain: View {
                         NextNotices()
                         ZStack {
                             // Opened out, the task takes the screen's place, which
-                            // stays laid out and scrolled underneath for its return.
+                            // stays laid out and scrolled underneath for its return,
+                            // and out of Tab's way, so no key lands in what can't be seen.
                             NextRoutedScreen()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                 .clipped()
                                 .opacity(paged ? 0 : 1)
                                 .allowsHitTesting(!paged)
+                                .disabled(paged)
                                 .accessibilityHidden(paged)
                             if paged, let inspected {
                                 NextInspector(task: inspected, isPage: true)
@@ -386,6 +388,12 @@ struct NXPage<Content: View>: View {
             }
             .onChange(of: rowIDs) { old, ids in
                 workbench.visibleIDs = ids
+                // The focused row leaving, done once its dwell ends, moved to
+                // another list or folded away, hands the focus to the row
+                // beside it, so J and K go on from there, not from the top.
+                if let id = workbench.focusID, old.contains(id), !ids.contains(id) {
+                    workbench.focusID = Workbench.neighbour(of: id, leaving: Set(old).subtracting(ids), in: old)
+                }
                 // A row focused before it was drawn, like a line just added,
                 // comes into view once it is.
                 guard let id = workbench.focusID, ids.contains(id), !old.contains(id) else { return }

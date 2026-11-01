@@ -9,11 +9,14 @@ import UniformTypeIdentifiers
 struct NextCalendarScreen: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
+    @Environment(\.nextLibrary) private var library
 
     var body: some View {
         let workbench = env.workbench
         let days = workbench.calendarDays
-        NXPage(measure: nil) {
+        // The tasks on show, the blocks in time order and then Not planned
+        // yet, for J/K, Return and the row keys, as any screen's rows.
+        NXPage(measure: nil, rowIDs: rowIDs(days: days)) {
             // The range comes from the timeline's date, so a screen left open
             // overnight moves to the new day with its header, from whatever
             // range it was stepped or planned to the day before.
@@ -40,6 +43,24 @@ struct NextCalendarScreen: View {
 
     private func header<Trailing: View>(_ dates: [Date], @ViewBuilder trailing: @escaping () -> Trailing) -> some View {
         NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates), trailing: trailing)
+    }
+
+    /// Each task once, at its first block in the days on show, then the
+    /// tasks waiting for one.
+    private func rowIDs(days: Int) -> [UUID] {
+        let now = Date.now
+        let calendar = env.settings.calendar
+        let dates = CalendarWeek.days(count: days, from: env.workbench.calendarStart(now: now), calendar: calendar)
+        guard let first = dates.first, let last = dates.last,
+              let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: last)) else { return [] }
+        let start = calendar.startOfDay(for: first)
+        var seen = Set<UUID>()
+        let blocks = env.calendar.visibleBlocks.filter { $0.end > start && $0.start < end }
+            .sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+            .map(\.taskID).filter { seen.insert($0).inserted }
+        let waiting = NXUnplannedColumn.tasks(library: library, workbench: env.workbench, now: now, calendar: calendar)
+            .map(\.id).filter { seen.insert($0).inserted }
+        return blocks + waiting
     }
 
     static func rangeText(_ dates: [Date]) -> String {
@@ -279,6 +300,10 @@ private struct NXCalendarBody: View {
         let blocksByDay = Dictionary(grouping: blocks) { cal.startOfDay(for: $0.start) }
         let eventsByDay = Dictionary(grouping: events) { cal.startOfDay(for: $0.start) }
         let holds = self.holds
+        // Each task's first block, which the page scrolls to as its row takes the focus.
+        var seen = Set<UUID>()
+        let anchors = Set(blocks.sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+            .filter { seen.insert($0.taskID).inserted }.map(\.id))
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Color.clear.frame(width: NXCal.gutter, height: 1)
@@ -297,7 +322,7 @@ private struct NXCalendarBody: View {
                 ForEach(dates, id: \.self) { date in
                     let day = cal.startOfDay(for: date)
                     NXDayColumn(date: date, now: now, range: range,
-                                blocks: blocksByDay[day] ?? [], events: eventsByDay[day] ?? [])
+                                blocks: blocksByDay[day] ?? [], events: eventsByDay[day] ?? [], anchors: anchors)
                         .frame(minWidth: NXCal.minColumn, maxWidth: .infinity)
                         .frame(height: height)
                 }
@@ -488,6 +513,8 @@ private struct NXDayColumn: View {
     let range: ClosedRange<Int>
     let blocks: [PlannedBlock]
     let events: [FixedBusyTime]
+    /// The blocks named for their task, which the page scrolls to.
+    let anchors: Set<String>
 
     static func offset(of time: Date, range: ClosedRange<Int>) -> CGFloat? {
         let cal = Calendar.current
@@ -545,6 +572,7 @@ private struct NXDayColumn: View {
                             .frame(width: width(slot, geo.size.width), height: slot.height)
                             .offset(x: x(slot, geo.size.width), y: slot.top)
                             .zIndex(2)
+                            .id(anchors.contains(block.id) ? AnyHashable(block.taskID) : AnyHashable(block.id))
                     }
                 }
 
@@ -662,9 +690,10 @@ private nonisolated struct NXHatch: Shape {
 
 /// A focused block's accent ring, outside its edge as the design's
 /// `0 0 0 2px` box-shadow is. Its spread animates, so it grows out from the
-/// edge and shrinks back as the shadow's does.
+/// edge and shrinks back as the shadow's does. A card's follows its corners.
 private nonisolated struct NXFocusRing: Shape {
     var spread: CGFloat
+    var radius: CGFloat = 7
 
     var animatableData: CGFloat {
         get { spread }
@@ -673,8 +702,8 @@ private nonisolated struct NXFocusRing: Shape {
 
     func path(in rect: CGRect) -> Path {
         guard spread > 0 else { return Path() }
-        var path = Path(roundedRect: rect.insetBy(dx: -spread, dy: -spread), cornerRadius: 7 + spread, style: .continuous)
-        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 7, height: 7), style: .continuous)
+        var path = Path(roundedRect: rect.insetBy(dx: -spread, dy: -spread), cornerRadius: radius + spread, style: .continuous)
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: radius, height: radius), style: .continuous)
         return path
     }
 }
@@ -695,6 +724,8 @@ private struct NXCalendarBlock: View {
     /// Briefly true after running work pushed this block to a new time.
     @State private var shifted = false
     @State private var shifts = 0
+    /// Move Planned Time…'s picker, from the block's menu.
+    @State private var moving = false
 
     var body: some View {
         let workbench = env.workbench
@@ -710,7 +741,8 @@ private struct NXCalendarBlock: View {
         let missed = !running && (isPastDay || (isToday && block.end <= now)) && !done
         let isNow = isToday && block.start <= now && now < block.end
         let meta = note(missed: missed, running: running, working: working, isNow: isNow)
-        let focused = env.navigator.openTaskID == block.taskID
+        // Inspected, or its row focused for the keys.
+        let focused = env.navigator.openTaskID == block.taskID || workbench.focusID == block.taskID
         let fg: Color = working ? .white : done ? NX.ink(0.5) : NX.ink
         let background: Color = working ? color : done ? NX.green.opacity(0.1) : missed ? NX.card.opacity(0.7) : color.opacity(0.12)
         let ring: Color = working ? .clear : done ? NX.green.opacity(0.28) : missed ? NX.red.opacity(0.35) : color.opacity(0.25)
@@ -823,6 +855,24 @@ private struct NXCalendarBlock: View {
             if !Task.isCancelled { shifted = false }
         }
         .help(task?.displayTitle ?? "")
+        // What a drag does, from the keyboard too: the slot moved or taken
+        // off, then everything a task's row offers.
+        .contextMenu {
+            if movable {
+                Button("Move Planned Time…") { moving = true }
+                Button("Remove from Calendar") { workbench.unplace(block) }
+                Divider()
+            }
+            if task != nil { NXTaskMenu(ids: [block.taskID]) }
+        }
+        .sheet(isPresented: $moving) {
+            WorkMovePicker(block: block) { moving = false }
+                .padding(24)
+                .frame(width: 400)
+                .presentationBackground(NX.card)
+                .environment(env)
+                .environment(\.nextStyle, style)
+        }
         // One element: the title, its time and state, opened by default, with its check as an action.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
@@ -830,13 +880,20 @@ private struct NXCalendarBlock: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, open)
         .accessibilityAction(named: done ? "Reopen" : "Complete", check)
+        .accessibilityActions {
+            if movable {
+                Button("Move Planned Time…") { moving = true }
+                Button("Remove from Calendar") { workbench.unplace(block) }
+            }
+        }
     }
 
     private var time: String { "\(NXFormat.clock(block.start))–\(NXFormat.clock(block.end))" }
 
+    /// As a row's click: the task takes the focus, for the keys, and opens in
+    /// the details.
     private func open() {
-        env.workbench.focusID = nil
-        env.navigator.openTask(block.taskID)
+        env.workbench.inspect(block.taskID)
     }
 
     /// A done block reopens its task where it was, unless a repeat has moved on since.
@@ -915,6 +972,8 @@ private struct NXUnplannedColumn: View {
     @Environment(\.nextLibrary) private var library
     @Environment(NXCalendarDrag.self) private var drag
     let now: Date
+    /// Plan at…'s picker: the task, as the block it would become.
+    @State private var planning: PlannedBlock?
 
     var body: some View {
         let tasks = unplanned
@@ -965,16 +1024,30 @@ private struct NXUnplannedColumn: View {
         .contentShape(Rectangle())
         .onDrop(of: [NXCalendarDrag.type], delegate: NXUnplanDrop(drag: drag, workbench: env.workbench,
                                                                   session: env.navigator.blockDragSessionID))
+        .sheet(item: $planning) { block in
+            WorkMovePicker(block: block, plans: true) { planning = nil }
+                .padding(24)
+                .frame(width: 400)
+                .presentationBackground(NX.card)
+                .environment(env)
+                .environment(\.nextStyle, style)
+        }
     }
 
     private var unplanned: [Block] {
-        let workbench = env.workbench
+        Self.tasks(library: library, workbench: env.workbench, now: now, calendar: env.settings.calendar)
+    }
+
+    /// The open tasks due soon or picked for today with no block yet, the
+    /// soonest due first.
+    @MainActor
+    static func tasks(library: NextLibrary, workbench: Workbench, now: Date, calendar: Calendar) -> [Block] {
         // A block on the calendar keeps a task out, as Today's Fit into calendar counts it:
         // running or paused work, or a slot this week or later.
         let placed = workbench.placedTaskIDs(now: now)
         return library.open.filter { task in
             guard !placed.contains(task.id), workbench.closing[task.id] == nil else { return false }
-            if let due = task.dueDate, CalendarWeek.isDueSoon(due, now: now, calendar: env.settings.calendar) { return true }
+            if let due = task.dueDate, CalendarWeek.isDueSoon(due, now: now, calendar: calendar) { return true }
             return workbench.isPlanned(task)
         }
         .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
@@ -1024,15 +1097,42 @@ private struct NXUnplannedColumn: View {
         .background(NX.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
         .modifier(NXCardHover())
+        // Its row focused for the keys, or inspected, as a block's is.
+        .overlay {
+            let focused = env.workbench.focusID == task.id || env.navigator.openTaskID == task.id
+            NXFocusRing(spread: focused ? 2 : 0, radius: 10)
+                .fill(style.accent.opacity(focused ? 1 : 0), style: FillStyle(eoFill: true))
+                .animation(NX.cssEase(240), value: focused)
+                .allowsHitTesting(false)
+        }
         .contentShape(Rectangle())
         .onTapGesture { env.workbench.inspect(task.id) }
         // Held by its middle, as its preview is, to land on the calendar.
         .modifier(NXCalendarDragSource(isEnabled: true, preview: { NXDragPreview(task: task, minutes: minutes) }) {
             NXCalendarDrag.Source(taskID: task.id, block: nil, minutes: minutes, grab: Double(minutes) / 2)
         })
+        // A time of its choosing, as a drop on the calendar gives it, from
+        // the keyboard too; then everything a task's row offers.
+        .contextMenu {
+            Button("Plan at…") { planning = Self.slot(for: task, minutes: minutes, calendar: env.settings.calendar) }
+            Divider()
+            NXTaskMenu(ids: [task.id])
+        }
+        .id(task.id)
         // Keeps the Plan button its own element under the card's tap target.
         .accessibilityElement(children: .contain)
         .accessibilityAction(named: "Open details") { env.workbench.inspect(task.id) }
+        .accessibilityAction(named: "Plan at…") {
+            planning = Self.slot(for: task, minutes: minutes, calendar: env.settings.calendar)
+        }
+    }
+
+    /// The block a task would be at the next quarter hour, as long as its
+    /// estimate, which Plan at… starts from.
+    private static func slot(for task: Block, minutes: Int, calendar: Calendar) -> PlannedBlock {
+        let start = ReminderPicker.upcoming(nil, calendar: calendar)
+        return PlannedBlock(id: "plan-\(task.id)", taskID: task.id, occurrenceID: task.occurrenceID, start: start,
+                            end: start.addingTimeInterval(TimeInterval(minutes * 60)), isPinned: true, conflicts: [])
     }
 }
 

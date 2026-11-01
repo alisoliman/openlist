@@ -215,8 +215,12 @@ struct AppCommands: Commands {
             Button("Start Working") { act { env.workbench.startWork($0[0]) } }
                 .disabled(workTask(single) == nil)
             // As the row menu's, for the inspected task too, whose row may be
-            // on no screen: the keyboard's way to it with no pointer.
+            // on no screen: the keyboard's way to them with no pointer.
             Button("Copy Link") { act { env.copyLink(to: .task($0[0])) } }
+                .disabled(single == nil)
+            Button("Copy Text") { act { env.workbench.copyText($0[0]) } }
+                .disabled(single == nil)
+            Button("Copy Content and Subtasks") { act { env.workbench.copyContent($0[0]) } }
                 .disabled(single == nil)
 
             Divider()
@@ -239,6 +243,13 @@ struct AppCommands: Commands {
                 }
             }
             .disabled(targets.isEmpty)
+
+            Divider()
+
+            Button("Duplicate") { act { env.workbench.duplicate($0[0]) } }
+                .disabled(single == nil)
+            Button("Use as Template…") { act { env.templateCopyRequest = TemplateCopyRequest(source: .task($0[0])) } }
+                .disabled(single == nil)
 
             Divider()
 

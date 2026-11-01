@@ -234,7 +234,7 @@ struct NextListScreen: View {
                         .font(.system(size: 12, weight: .medium))
                         .fixedSize()
                 }
-                NXListOptions(list: list) { describing = true }
+                NXListOptions(list: list, rename: { renaming = true }) { describing = true }
             }
             NXListDescription(list: list, editing: $describing)
             NXChildLists(list: list)
@@ -328,13 +328,15 @@ private struct NXListCover: View {
 private struct NXListOptions: View {
     @Environment(AppEnvironment.self) private var env
     let list: TaskList
+    /// Renames the list in its header, as a click on its title does.
+    let rename: () -> Void
     /// Starts the description under the header, or writes the one there.
     let describe: () -> Void
     @State private var appearanceOpen = false
 
     var body: some View {
         Menu {
-            NXListMenu(list: list, surface: .page) {
+            NXListMenu(list: list, surface: .page, rename: rename) {
                 Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.workbench.setSorting($0, for: list) })) {
                     ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -576,7 +578,7 @@ private struct NXChildLists: View {
 }
 
 /// A nested list: its glyph where a row's checkbox sits, its title and its
-/// open count. A click opens it.
+/// open count. A click opens it; Tab reaches it with Keyboard navigation on.
 private struct NXChildListRow: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
@@ -587,29 +589,31 @@ private struct NXChildListRow: View {
     var body: some View {
         let workbench = env.workbench
         let count = library.openCount(in: list.id)
-        HStack(spacing: 0) {
-            NXListGlyph(list: list, size: 13)
-                .frame(width: 26, alignment: .leading)
-            // 13.8 on the rows' 1.45 line box.
-            Text(list.displayTitle)
-                .font(.system(size: 13.8))
-                .foregroundStyle(NX.ink)
-                .lineLimit(1)
-                .padding(.vertical, max(0, 13.8 * 1.45 - NX.lineHeight(13.8)) / 2)
-            Spacer(minLength: 8)
-            if count > 0 {
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.textTertiary)
-                    .monospacedDigit()
+        Button { workbench.go(workbench.route(for: list)) } label: {
+            HStack(spacing: 0) {
+                NXListGlyph(list: list, size: 13)
+                    .frame(width: 26, alignment: .leading)
+                // 13.8 on the rows' 1.45 line box.
+                Text(list.displayTitle)
+                    .font(.system(size: 13.8))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .padding(.vertical, max(0, 13.8 * 1.45 - NX.lineHeight(13.8)) / 2)
+                Spacer(minLength: 8)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NX.textTertiary)
+                        .monospacedDigit()
+                }
             }
+            .padding(.vertical, style.rowVerticalPadding)
+            .padding(.horizontal, 10)
+            .background(hovering ? NX.ink(0.03) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, style.rowVerticalPadding)
-        .padding(.horizontal, 10)
-        .background(hovering ? NX.ink(0.03) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .contentShape(Rectangle())
+        .buttonStyle(NXBareButtonStyle(radius: 9))
         .onHover { hovering = $0 }
-        .onTapGesture { workbench.go(workbench.route(for: list)) }
         .contextMenu { NXListMenu(list: list, surface: .childRow) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(list.displayTitle)

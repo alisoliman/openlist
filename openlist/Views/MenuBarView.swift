@@ -150,6 +150,7 @@ struct MenuBarView: View {
             }
             .buttonStyle(NXHoverButtonStyle(radius: 6, padding: EdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5),
                                             foreground: NX.ink(0.45), hoverForeground: NX.ink))
+            .help("Quit Openlist (⌘Q)")
             .accessibilityLabel("Quit Openlist")
         }
         .padding(6)
@@ -217,24 +218,31 @@ struct MenuBarTaskRow: View {
                 else { env.workbench.complete([block.id], clearsSelection: false) }
             }
 
-            Text(block.displayTitle)
-                .font(.system(size: 13))
-                .foregroundStyle(NX.ink)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // The rest of the row opens the task, a button Tab reaches with
+            // Keyboard navigation on.
+            Button(action: open) {
+                HStack(spacing: 9) {
+                    Text(block.displayTitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(NX.ink)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 6) {
-                ForEach(dueChips) { NXChip(chip: $0) }
+                    HStack(spacing: 6) {
+                        ForEach(dueChips) { NXChip(chip: $0) }
+                    }
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(block.displayTitle)")
         }
         .padding(.vertical, style.rowVerticalPadding)
         .padding(.horizontal, 8)
         .background(hovering ? NX.ink(0.04) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture(perform: open)
-        .accessibilityAction(named: "Open task", open)
     }
 
     /// The rows' own time and due chips (`NXRowChips`): a time stays grey

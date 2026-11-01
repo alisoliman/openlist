@@ -333,7 +333,7 @@ private struct NXDocumentRow: View {
         }
         .overlay(alignment: .topLeading) {
             if hasCaret {
-                NXDocumentCaret(open: !block.isCollapsed, title: block.displayTitle) {
+                NXDocumentCaret(open: !block.isCollapsed, title: block.displayTitle, keyed: block.isTask) {
                     // The line being written is left first, as the design's input blurs.
                     // The lines show or hide at once; only the chevron turns.
                     NXDocumentEditing.end()
@@ -499,6 +499,8 @@ private struct NXDocumentCaret: View {
     let open: Bool
     /// The line's title, for VoiceOver.
     let title: String
+    /// A task's, which ← and → fold from its focused row too.
+    var keyed = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -516,6 +518,7 @@ private struct NXDocumentCaret: View {
         .buttonStyle(.plain)
         .focusable(false)
         .onHover { hovering = $0 }
+        .help((open ? "Collapse" : "Expand") + (keyed ? (open ? " (←)" : " (→)") : ""))
         .accessibilityLabel("\(open ? "Collapse" : "Expand") \(NXFormat.quoted(title))")
     }
 }
@@ -610,7 +613,10 @@ private struct NXDocumentTask: View {
                 .animation(NX.cssEase(140)) {
                     $0.opacity(noteHovering ? 1 : noteOpen ? 0.9 : rowHovering || editing ? 0.5 : 0)
                 }
-                .help(noteName(open: noteOpen))
+                // Space does the same from the focused row; out of sight at
+                // rest, the button is no Tab stop.
+                .help(noteName(open: noteOpen) + (editing ? "" : " (Space)"))
+                .focusable(false)
                 .accessibilityLabel(noteName(open: noteOpen))
             }
             .onHover { rowHovering = $0 }
