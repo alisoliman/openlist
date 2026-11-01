@@ -12,26 +12,32 @@ import UniformTypeIdentifiers
 /// notice, or Settings' row for Export every list, and the Cancel there.
 @Observable @MainActor
 final class NXExport {
+    /// The list being exported, as the tray names it; nil for every list.
+    let list: String?
     /// What it counts: a list's files, or every list's lists.
     let unit: String
     let total: Int
     private(set) var done = 0
-    /// Settings' Export every list, which its own row shows.
-    let isEveryList: Bool
     /// Set once it has run long enough to be worth showing, so a quick
     /// export never flashes a notice.
     fileprivate(set) var isShown = false
     @ObservationIgnored fileprivate var stop: () -> Void = {}
 
-    fileprivate init(unit: String, total: Int, isEveryList: Bool) {
+    fileprivate init(list: String?, unit: String, total: Int) {
+        self.list = list
         self.unit = unit
         self.total = total
-        self.isEveryList = isEveryList
     }
 
-    /// "Exporting 3 of 12 files…": the one being written, of them all.
+    /// Settings' Export every list, which its own row shows.
+    var isEveryList: Bool { list == nil }
+
+    /// "Exporting “Trip” · 3 of 12 files…", or "Exporting 3 of 12 lists…":
+    /// the one being written, of them all.
     var progress: String {
-        "Exporting \(min(done + 1, max(total, 1))) of \(total) \(total == 1 ? unit : unit + "s")…"
+        let count = "\(min(done + 1, total)) of \(total) \(total == 1 ? unit : unit + "s")"
+        guard let list else { return "Exporting \(count)…" }
+        return total > 0 ? "Exporting \(list) · \(count)…" : "Exporting \(list)…"
     }
 
     func cancel() { stop() }
@@ -47,19 +53,16 @@ extension Workbench {
     /// beside it does there; a failure says why in the window's notice. A
     /// native extra: the design has no export.
     func exportMarkdown(_ list: TaskList) {
-        guard export == nil else {
-            store.refuse("Another export is under way. Wait for it, or cancel it, then export again.")
-            return
-        }
+        guard !refusesWhileExporting() else { return }
         Task {
-            guard let destination = await chooseExportDestination(for: list) else { return }
+            guard let destination = await chooseExportDestination(for: list), !refusesWhileExporting() else { return }
             let failure = "“\(list.displayTitle)” could not be exported."
             let prepared: MarkdownExporter.Prepared
             do { prepared = try MarkdownExporter.prepare(list: list, store: store, to: destination) } catch {
                 store.actionError = "\(failure) \(error.localizedDescription)"
                 return
             }
-            let progress = NXExport(unit: "file", total: prepared.fileCount, isEveryList: false)
+            let progress = NXExport(list: NXFormat.quoted(list.displayTitle), unit: "file", total: prepared.fileCount)
             switch await run(progress, { try await Self.publish(prepared, counting: progress) }) {
             case .success:
                 showTray("Exported \(NXFormat.quoted(list.displayTitle)) as Markdown", icon: "square.and.arrow.up")
@@ -77,16 +80,16 @@ extension Workbench {
     /// it takes a moment. Said in the tray once done, as a list's own export
     /// is; what stopped it part way stays in the window's notice.
     func exportEveryList() {
-        guard export == nil else { return }
+        guard !refusesWhileExporting() else { return }
         Task {
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true
             panel.canChooseFiles = false
             panel.canCreateDirectories = true
             panel.prompt = "Export"
-            guard await panel.nxRun() == .OK, let folder = panel.url else { return }
+            guard await panel.nxRun() == .OK, let folder = panel.url, !refusesWhileExporting() else { return }
             let lists = MarkdownExporter.everyList(store: store)
-            let progress = NXExport(unit: "list", total: lists.reduce(0) { $0 + $1.documents }, isEveryList: true)
+            let progress = NXExport(list: nil, unit: "list", total: lists.reduce(0) { $0 + $1.documents })
             let result = await run(progress) {
                 for (list, documents) in lists {
                     try Task.checkCancellation()
@@ -109,6 +112,13 @@ extension Workbench {
                 store.actionError = "Export stopped. \(done) \(error.localizedDescription)"
             }
         }
+    }
+
+    /// One export at a time: another asked for meanwhile is refused, saying why.
+    private func refusesWhileExporting() -> Bool {
+        guard export != nil else { return false }
+        store.refuse("Another export is under way. Wait for it, or cancel it, then export again.")
+        return true
     }
 
     /// Runs `operation` as the export under way: in the window's notice, or
