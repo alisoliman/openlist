@@ -232,7 +232,8 @@ struct OLNowLine: View {
 /// chip), side by side where they overlap, and the now-line. 44 pt an hour,
 /// blocks from 58 pt to 10 pt short of the edge, 10 pt inside the card top
 /// and bottom. With `drag`, a planned or due block lifts to be dropped at
-/// another time; `ghost` draws where a drop would land.
+/// another time; `ghost` draws where a drop would land. A planned block's
+/// long-press menu moves it a quarter hour or takes it off the calendar.
 struct OLTimeline: View {
     let items: [OLTimelineItem]
     var hours: ClosedRange<Int> = 8...19
@@ -246,8 +247,11 @@ struct OLTimeline: View {
     /// The task being dragged, faded where it was.
     var dragging: UUID?
     var drag: ((OLTimelineItem) -> NSItemProvider)?
-    /// Moves a movable block by that many minutes, VoiceOver's way to drag.
+    /// Moves a movable block by that many minutes, VoiceOver's way to drag,
+    /// and the block's long-press menu's.
     var nudge: ((OLTimelineItem, Int) -> Void)?
+    /// Takes a placed block's task off the calendar, from the same menu.
+    var unplace: ((OLTimelineItem) -> Void)?
     var open: (OLTimelineItem) -> Void = { _ in }
 
     static let inset: CGFloat = 10
@@ -308,6 +312,19 @@ struct OLTimeline: View {
                 button
                     .onDrag { drag(item) } preview: {
                         OLTimelineBlock(item: item).frame(width: 220, height: 22)
+                    }
+                    // Another time without a drag: a quarter hour either way,
+                    // or off the calendar.
+                    .contextMenu {
+                        if item.placementID != nil {
+                            if let nudge {
+                                Button("Move 15 minutes earlier", systemImage: "arrow.up") { nudge(item, -15) }
+                                Button("Move 15 minutes later", systemImage: "arrow.down") { nudge(item, 15) }
+                            }
+                            if let unplace {
+                                Button("Take off the calendar", systemImage: "calendar.badge.minus") { unplace(item) }
+                            }
+                        }
                     }
                     .accessibilityHint("Drag to another time")
                     .accessibilityActions {

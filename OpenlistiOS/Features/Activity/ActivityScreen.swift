@@ -175,19 +175,27 @@ struct ActivityScreen: View {
 
 /// The heatmap: twelve weeks as columns, a week's days down each. A day with
 /// completions shades by how many; today has an accent ring, the picked day
-/// an ink one.
+/// an ink one. A tap anywhere on the card picks the day nearest it, so the
+/// gaps between the small cells aren't dead; VoiceOver picks each day as
+/// its own element.
 private struct ActivityGrid: View {
     let heatmap: ActivityHeatmap
     let today: Date
     let selection: Date
     let calendar: Calendar
     let pick: (Date) -> Void
+    @State private var width: CGFloat = 0
+
+    /// 23 pt cells 4 pt apart, inside 12 pt sides and 14 pt top and bottom.
+    private static let cellHeight: CGFloat = 23
+    private static let gap: CGFloat = 4
+    private static let inset = CGSize(width: 12, height: 14)
 
     var body: some View {
         let days = heatmap.days
-        HStack(spacing: 4) {
+        HStack(spacing: Self.gap) {
             ForEach(0..<12, id: \.self) { week in
-                VStack(spacing: 4) {
+                VStack(spacing: Self.gap) {
                     ForEach(0..<7, id: \.self) { row in
                         let index = week * 7 + row
                         if index < days.count { cell(days[index]) } else { upcoming(row) }
@@ -195,8 +203,11 @@ private struct ActivityGrid: View {
                 }
             }
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 12)
+        .padding(.vertical, Self.inset.height)
+        .padding(.horizontal, Self.inset.width)
+        .contentShape(.rect)
+        .onTapGesture { pickDay(nearest: $0) }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .olCard()
         .olFeedback(.selection, trigger: selection)
         .accessibilityElement(children: .contain)
@@ -208,7 +219,7 @@ private struct ActivityGrid: View {
         let first = heatmap.days.last.map { calendar.dateInterval(of: .weekOfYear, for: $0.id)?.start ?? $0.id }
         let day = first.flatMap { calendar.date(byAdding: .day, value: row, to: $0) }
         return Color.clear
-            .frame(height: 23)
+            .frame(height: Self.cellHeight)
             .accessibilityElement()
             .accessibilityLabel(day.map { "\($0.formatted(.dateTime.weekday(.wide))), upcoming" } ?? "Upcoming")
     }
@@ -217,19 +228,31 @@ private struct ActivityGrid: View {
         let isToday = calendar.isDate(day.id, inSameDayAs: today)
         let isPicked = calendar.isDate(day.id, inSameDayAs: selection)
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        return Button { pick(day.id) } label: {
-            shape.fill(OL.heat(ActivityBand.level(day.count)))
-                .frame(maxWidth: .infinity)
-                .frame(height: 23)
-                .overlay {
-                    if isPicked { shape.strokeBorder(OL.ink, lineWidth: 2) }
-                    else if isToday { shape.strokeBorder(OL.accentText, lineWidth: 2) }
-                }
-                .contentShape(shape)
+        return shape.fill(OL.heat(ActivityBand.level(day.count)))
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.cellHeight)
+            .overlay {
+                if isPicked { shape.strokeBorder(OL.ink, lineWidth: 2) }
+                else if isToday { shape.strokeBorder(OL.accentText, lineWidth: 2) }
+            }
+            .accessibilityElement()
+            .accessibilityLabel("\(OLFormat.eyebrowDate(day.id, calendar: calendar)), \(day.count) done")
+            .accessibilityAddTraits(isPicked ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { pick(day.id) }
+    }
+
+    /// Picks the day whose cell's centre is nearest `point`, in the card's
+    /// padded grid.
+    private func pickDay(nearest point: CGPoint) {
+        let cellWidth = (width - 2 * Self.inset.width - 11 * Self.gap) / 12
+        guard cellWidth > 0 else { return }
+        func distance(_ index: Int) -> CGFloat {
+            let x = Self.inset.width + CGFloat(index / 7) * (cellWidth + Self.gap) + cellWidth / 2
+            let y = Self.inset.height + CGFloat(index % 7) * (Self.cellHeight + Self.gap) + Self.cellHeight / 2
+            return hypot(point.x - x, point.y - y)
         }
-        .buttonStyle(OLPressStyle(scale: 0.9))
-        .accessibilityLabel("\(OLFormat.eyebrowDate(day.id, calendar: calendar)), \(day.count) done")
-        .accessibilityAddTraits(isPicked ? .isSelected : [])
+        guard let nearest = heatmap.days.indices.min(by: { distance($0) < distance($1) }) else { return }
+        pick(heatmap.days[nearest].id)
     }
 }
 
