@@ -59,7 +59,7 @@ struct NextInboxScreen: View {
                 if let task = queue.first {
                     NXTriageCard(task: task, remaining: queue.count, now: now)
                 } else {
-                    NXTriageEmpty()
+                    NXTriageEmpty(hasKept: !kept.isEmpty)
                 }
             }
             .padding(.top, 22)
@@ -439,19 +439,27 @@ private struct NXTriageDay: View {
 
 private struct NXTriageEmpty: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextLibrary) private var library
+    /// Tasks kept for later this session are still in the Inbox.
+    let hasKept: Bool
 
     var body: some View {
         let workbench = env.workbench
+        // Nothing triaged and nothing kept, as on a first run, is just empty.
+        let untouched = workbench.reviewed == 0 && !hasKept
         // The summary's 13/1.45 over a 16pt line: 2.85pt between lines, half
         // of it above the first and below the last.
         let summaryLeading = 13 * 1.45 - NX.lineHeight(13)
         HStack(spacing: 18) {
-            Circle().fill(NX.green.opacity(0.12))
+            Circle().fill(untouched ? NX.ink(0.05) : NX.green.opacity(0.12))
                 .frame(width: 48, height: 48)
-                .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(NX.greenText))
+                .overlay(Image(systemName: untouched ? "tray" : "checkmark")
+                    .font(.system(size: 22, weight: untouched ? .medium : .bold))
+                    .foregroundStyle(untouched ? NX.ink(0.4) : NX.greenText))
             VStack(alignment: .leading, spacing: 4) {
-                Text("Inbox triaged").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
-                Text("\(workbench.reviewed) reviewed this session.")
+                Text(untouched ? "Inbox is empty" : "Inbox triaged")
+                    .font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
+                Text(untouched ? "Tasks you capture land here, ready to sort into lists." : "\(workbench.reviewed) reviewed this session.")
                     .font(.system(size: 13))
                     .lineSpacing(summaryLeading)
                     .foregroundStyle(NX.textSecondary)
@@ -459,19 +467,24 @@ private struct NXTriageEmpty: View {
                     .padding(.vertical, summaryLeading / 2)
             }
             Spacer(minLength: 8)
-            // Always offered, as in the design; with nothing kept it just starts the count again.
+            // Kept tasks come back for review; with none kept, a new task goes in.
             // The design's 600 12/1, so the button is its 28pt: 8 + 12 + 8.
             Button {
-                workbench.kept = []
-                workbench.reviewed = 0
+                if hasKept {
+                    workbench.kept = []
+                    workbench.reviewed = 0
+                } else {
+                    workbench.openCapture(listID: library.inbox?.id, forToday: false)
+                }
             } label: {
-                Text("Review kept tasks")
+                Text(hasKept ? "Review kept tasks" : "New task")
                     .font(.system(size: 12, weight: .semibold))
                     .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: NX.textSecondary))
+            .help(hasKept ? "" : "New task (N)")
         }
         .padding(.vertical, 34)
         .padding(.horizontal, 28)

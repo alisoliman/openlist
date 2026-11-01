@@ -22,8 +22,18 @@ final class LibraryMaintenance {
     var pendingQuitError: String? { hasPendingRestore ? store.persistenceError : nil }
     let snapshots = LibrarySnapshots(directory: LibrarySnapshots.defaultDirectory)
     /// Why the last daily snapshot failed, until one is written.
-    var snapshotError: String?
+    var snapshotError: String? {
+        didSet { if snapshotError != oldValue { isSnapshotErrorDismissed = false } }
+    }
+    /// The window's notice of `snapshotError` was dismissed. A different
+    /// reason shows it again.
+    var isSnapshotErrorDismissed = false
+    /// Asked for by that notice's Show in Settings: Settings brings the
+    /// snapshot row into view as it opens.
+    var revealsSnapshotSetting = false
     @ObservationIgnored private var quitsAfterPreviewDismissal = false
+    /// The preview was cancelled while its restore was being prepared.
+    @ObservationIgnored private var isRestoreCancelled = false
     @ObservationIgnored private var quitTask: Task<Void, Never>?
     @ObservationIgnored private weak var settings: AppSettings?
     @ObservationIgnored private var isSnapshotting = false
@@ -39,7 +49,10 @@ final class LibraryMaintenance {
         status = startup.selection?.recoveryWarning
     }
 
-    func exportBackup() async {
+    /// Writes a backup where the panel says. The new backup's name once it's
+    /// written, for the tray to say too.
+    @discardableResult
+    func exportBackup() async -> String? {
         let panel = NSSavePanel()
         panel.title = "Back up library"
         panel.nameFieldStringValue = "Openlist \(Date.now.formatted(.iso8601.year().month().day().dateSeparator(.dash))) \(UUID().uuidString.prefix(6)).openlistbackup"
@@ -47,9 +60,10 @@ final class LibraryMaintenance {
         panel.allowedContentTypes = [Self.backupType]
         panel.allowsOtherFileTypes = false
         panel.message = "This unencrypted package contains your private library and files. Choose a new backup name."
-        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        guard await panel.nxRun() == .OK, let destination = panel.url else { return nil }
         let access = destination.startAccessingSecurityScopedResource()
         defer { if access { destination.stopAccessingSecurityScopedResource() } }
+        var created: String?
         await perform {
             try await self.commitDrafts()
             let settings = LibraryBackupSettings(defaults: self.defaults)
@@ -60,7 +74,9 @@ final class LibraryMaintenance {
                 try LibraryBackupPackage.write(snapshot, to: destination) { try MediaStore.shared.readFile(filename: $0) }
             }.value
             self.status = "Backup created: \(destination.lastPathComponent)"
+            created = destination.lastPathComponent
         }
+        return created
     }
 
     /// Takes today's snapshot soon after launch if it's due, and again as each
@@ -123,7 +139,7 @@ final class LibraryMaintenance {
         panel.allowedContentTypes = [Self.backupType]
         panel.allowsMultipleSelection = false
         panel.prompt = "Preview Backup"
-        guard panel.runModal() == .OK, let source = panel.url else { return }
+        guard await panel.nxRun() == .OK, let source = panel.url else { return }
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }
         await perform {
@@ -135,6 +151,7 @@ final class LibraryMaintenance {
 
     func confirmRestore() async {
         guard let preview else { return }
+        isRestoreCancelled = false
         await perform {
             try await self.commitDrafts()
             let reader = try BackupSnapshotReader(schema: AppPersistence.schema)
@@ -142,12 +159,26 @@ final class LibraryMaintenance {
             let prepared = try await Task.detached(priority: .userInitiated) {
                 try storage.prepare(preview.snapshot, using: reader)
             }.value
+            // Cancelled while it was being prepared: its staged copy goes,
+            // and the library in use stays as it is.
+            guard !self.isRestoreCancelled else {
+                try? FileManager.default.removeItem(at: storage.generationDirectory(prepared.generation))
+                self.status = "Restore cancelled. Your current library is unchanged."
+                return
+            }
             try storage.queue(prepared)
             self.hasPendingRestore = true
             self.quitsAfterPreviewDismissal = true
             self.preview = nil
             self.status = "Restore is prepared. Open Openlist again after it quits to finish."
         }
+    }
+
+    /// The preview's Cancel. While a restore is being prepared, it can't be
+    /// stopped part way, so it's dropped once it's ready instead of queued.
+    func cancelPreview() {
+        if isBusy { isRestoreCancelled = true }
+        preview = nil
     }
 
     /// A nil binding starts sheet dismissal; only onDismiss confirms that the

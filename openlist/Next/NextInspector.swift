@@ -883,6 +883,9 @@ struct NextInspector: View {
         }
         .buttonStyle(.plain)
         .disabled(task.isCompleted)
+        // Why it's off, or does nothing, under the pointer.
+        .help(task.isCompleted ? "Reopen this task to start working on it"
+              : working ? "Working on this task. Pause or finish it in the toolbar." : "")
     }
 }
 

@@ -210,7 +210,7 @@ struct AppCommands: Commands {
             // Both skip completed tasks, so they're off when every target is done.
             Button("Plan for Today") { act { env.workbench.plan($0) } }
                 .disabled(!plans)
-            Button("Find a Slot") { act { $0.forEach(env.workbench.fit) } }
+            Button("Find a Slot") { act { env.workbench.fit($0) } }
                 .disabled(!plans)
             Button("Start Working") { act { env.workbench.startWork($0[0]) } }
                 .disabled(workTask(single) == nil)

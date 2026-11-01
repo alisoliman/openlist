@@ -113,7 +113,7 @@ private struct NXTodayPage: View {
             groups.append(NXGroup(id: "planned", title: "Planned for today", icon: "calendar.badge.clock", color: NX.ink(0.45),
                                   rows: planned.map(\.block), rowDepths: depths(planned), taskCount: count(planned),
                                   actionLabel: "Fit into calendar") {
-                for id in ids where isUnplaced(id) { workbench.fit(id) }
+                workbench.fit(ids.filter(isUnplaced))
             })
         }
         if !starred.isEmpty {
@@ -290,8 +290,12 @@ struct NextListScreen: View {
 
 /// The list's cover above its header, while it has one on show.
 private struct NXListCover: View {
+    @Environment(\.displayScale) private var displayScale
     let list: TaskList
     @State private var image: NSImage?
+    /// Counts the cover's bytes arriving for a file already named, as from
+    /// iCloud, so the image is read again.
+    @State private var revision = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -313,12 +317,40 @@ private struct NXListCover: View {
                     .accessibilityLabel("List cover: \(list.coverMetadata?.displayName ?? list.displayTitle)")
             }
         }
-        .task(id: list.coverFilename) { load() }
-        .onChange(of: list.coverData) { _, _ in load() }
+        .task(id: "\(list.coverFilename ?? "")@\(coverPixels)#\(revision)") { await load() }
+        .onChange(of: list.coverData) { _, _ in revision += 1 }
     }
 
-    private func load() {
-        image = list.coverFilename.flatMap { MediaStore.shared.image(named: $0, data: list.coverData) }
+    /// The longest side the cover is drawn, in pixels: filling the widest the
+    /// page gets, 140pt tall, in the cover's own shape.
+    private var coverPixels: Int {
+        let width = NXPageMeasure.reading
+        guard let metadata = list.coverMetadata, metadata.pixelWidth > 0, metadata.pixelHeight > 0 else {
+            return Int((width * 2 * displayScale).rounded(.up))
+        }
+        let pixelWidth = CGFloat(metadata.pixelWidth), pixelHeight = CGFloat(metadata.pixelHeight)
+        let fill = max(width / pixelWidth, 140 / pixelHeight)
+        return Int((max(pixelWidth, pixelHeight) * fill * displayScale).rounded(.up))
+    }
+
+    /// Decodes the cover at the size it's drawn, off the main thread, as a
+    /// photo of up to 40 megapixels would otherwise hold up opening the list.
+    private func load() async {
+        guard let filename = list.coverFilename else {
+            image = nil
+            return
+        }
+        let pixels = coverPixels
+        if let cached = MediaStore.shared.cachedThumbnail(named: filename, maxPixelSize: pixels) {
+            image = cached
+            return
+        }
+        let data = list.coverData
+        let decoded = await Task.detached(priority: .userInitiated) {
+            MediaStore.shared.thumbnail(named: filename, data: data, maxPixelSize: pixels)
+        }.value
+        guard !Task.isCancelled else { return }
+        image = decoded
     }
 }
 
@@ -372,8 +404,10 @@ private struct NXListOptions: View {
     @ViewBuilder
     private var coverItems: some View {
         Button(list.coverFilename == nil ? "Add Cover from File…" : "Replace Cover from File…") {
-            guard let source = Self.chooseCoverImage(for: list) else { return }
-            perform { try env.workbench.setCover(of: list, from: source) }
+            Task {
+                guard let source = await Self.chooseCoverImage(for: list) else { return }
+                perform { try env.workbench.setCover(of: list, from: source) }
+            }
         }
         if list.coverFilename != nil {
             Picker("Cover Display", selection: Binding(get: { list.coverPresentation }, set: { presentation in
@@ -394,7 +428,7 @@ private struct NXListOptions: View {
     }
 
     /// Asks for the image a list's cover should show.
-    private static func chooseCoverImage(for list: TaskList) -> URL? {
+    private static func chooseCoverImage(for list: TaskList) async -> URL? {
         let panel = NSOpenPanel()
         panel.title = list.coverFilename == nil ? "Add list cover" : "Replace list cover"
         panel.prompt = "Choose image"
@@ -402,7 +436,7 @@ private struct NXListOptions: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Choose an image up to 20 MB and 40 megapixels. Openlist keeps its own copy."
-        guard panel.runModal() == .OK else { return nil }
+        guard await panel.nxRun() == .OK else { return nil }
         return panel.url
     }
 }

@@ -303,7 +303,7 @@ extension Store {
             context.processPendingChanges()
             pendingCompletionCycleIDs = previousCompletionCycles
             pendingReopenedCycleIDs = previousReopenedCycles
-            persistenceError = "The completion could not be restored. \(error.localizedDescription)"
+            reportRolledBack("The completion could not be restored. \(error.localizedDescription)")
             return false
         }
         change.isApplied = !undoing

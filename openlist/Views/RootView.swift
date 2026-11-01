@@ -241,9 +241,22 @@ struct RootView: View {
 /// that changed nothing passes in the tray instead; see `Store.refuse`.
 struct NXStatusNotices: View {
     @Environment(AppEnvironment.self) private var env
+    /// The iCloud warning last dismissed, by `syncWarning`'s key. It stays away,
+    /// launch after launch, until a different one shows or iCloud works again.
+    @AppStorage("notices.dismissedSyncWarning", store: ReviewSession.defaults) private var dismissedSyncWarning = ""
 
     var body: some View {
         VStack(spacing: 0) {
+            // An export taking a while counts what it has written, with a way
+            // to stop it; Settings' row counts Export every list itself.
+            if let export = env.workbench.export, export.isShown, !(export.isEveryList && env.navigator.route == .settings) {
+                NXNoticeCard(icon: "square.and.arrow.up", message: export.progress) {
+                    ProgressView().controlSize(.small).padding(.trailing, 4)
+                    Button("Cancel") { export.cancel() }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
+            }
             if let notice = env.store.editorNotice {
                 NXNoticeCard(icon: "info.circle", message: notice) {
                     Button("Dismiss") { env.store.editorNotice = nil }
@@ -259,22 +272,83 @@ struct NXStatusNotices: View {
                 .nxNoticePlacement()
             }
             if let error = env.store.persistenceError {
-                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
-                    Button("Retry saving") { env.store.save() }
-                        .buttonStyle(NXPanelButtonStyle(kind: .link))
+                // Saving again helps only a save that failed with its changes
+                // still waiting. A change that failed and was put back left
+                // nothing to save: Retry there would only clear the card,
+                // the change still not made.
+                if env.store.persistenceErrorIsRetryable, env.store.hasUnsavedChanges {
+                    NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
+                        Button("Retry saving") { env.store.save() }
+                            .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    }
+                    .nxNoticePlacement()
+                } else {
+                    NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: error) {
+                        Button("Dismiss") { env.store.persistenceError = nil }
+                            .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                    }
+                    .nxNoticePlacement()
+                }
+            }
+            if let library = env.libraryMaintenance, let error = library.snapshotError, !library.isSnapshotErrorDismissed {
+                // Snapshots are taken unasked, so a failing one would
+                // otherwise go unseen while the backups grow old.
+                NXNoticeCard(icon: "externaldrive.badge.exclamationmark", tone: .warning, message: error) {
+                    Button("Show in Settings") {
+                        library.revealsSnapshotSetting = true
+                        env.workbench.go(.settings)
+                    }
+                    .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    Button("Dismiss") { library.isSnapshotErrorDismissed = true }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
                 }
                 .nxNoticePlacement()
             }
-            if let warning = syncWarning {
-                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
-                    .nxNoticePlacement()
+            if let warning = syncWarning, warning.key != dismissedSyncWarning {
+                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning.message) {
+                    switch warning.account {
+                    case .signedOut?, .restricted?:
+                        Button("Open System Settings") { openAccountSettings() }
+                            .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    case .failed?, .temporarilyUnavailable?:
+                        Button("Check again") { env.sync.checkAccount() }
+                            .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    default:
+                        EmptyView()
+                    }
+                    Button("Dismiss") { dismissedSyncWarning = warning.key }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
             }
+        }
+        .onChange(of: syncWarning?.key) { _, key in
+            // A different warning shows, and so does one that comes back once
+            // iCloud has worked again. While the account is being checked,
+            // as at launch, nothing is known yet.
+            guard !dismissedSyncWarning.isEmpty, key != dismissedSyncWarning,
+                  key != nil || env.sync.state.account != .checking else { return }
+            dismissedSyncWarning = ""
         }
     }
 
-    private var syncWarning: String? {
-        env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
-            ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
+    /// Why iCloud isn't syncing, as the card says it, with the account's
+    /// state when that's the reason, for what can be done about it. `key`
+    /// names it for Dismiss: the state's title, which stays put while its
+    /// details change, or else the message itself.
+    private var syncWarning: (key: String, message: String, account: ICloudSyncState.Account?)? {
+        if let message = env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError {
+            return (message, message, nil)
+        }
+        let state = env.sync.state
+        return state.hasProblem ? (state.title, state.detail, state.account) : nil
+    }
+
+    /// System Settings at the Apple Account, where iCloud is signed into and
+    /// turned on for Openlist.
+    private func openAccountSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

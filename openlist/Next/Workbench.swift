@@ -182,6 +182,14 @@ final class Workbench {
     var searchIncludesCompleted = false
     var activityDay: Date?
 
+    // MARK: Files
+
+    /// How many files each task has being copied in, once that has taken a
+    /// moment: the inspector's Files shows them as "Attaching…" meanwhile.
+    var attaching: [UUID: Int] = [:]
+    /// The Markdown export being written, with its progress and Cancel.
+    var export: NXExport?
+
     // MARK: List document
 
     /// The list document on show, for the keys and Undo that reach it from

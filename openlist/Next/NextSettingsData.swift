@@ -91,12 +91,22 @@ struct NXDataSettings: View {
     var body: some View {
         let tasks = blocks.filter(\.isTask)
         let completed = tasks.filter(\.isCompleted).count
+        let export = env.workbench.export
+        // Export every list counts its lists here, with Cancel, once it takes a moment.
+        let exporting = export.flatMap { $0.isEveryList && $0.isShown ? $0 : nil }
         NXSettingsGroup(title: "Data") {
             NXSettingRow(label: "Your data",
                          hint: "\(Self.count(lists.count, "list")) · \(Self.count(tasks.count, "task")), \(completed) completed · \(Self.count(blocks.count - tasks.count, "other line"))")
             NXSettingRow(label: "Export every list as Markdown",
-                         hint: "Writes one Markdown file per list, its images and attachments in an assets folder beside it. A list with nested lists becomes one folder holding them all. Existing files are kept.") {
-                Button("Export…") { exportAll() }
+                         hint: exporting?.progress
+                             ?? "Writes one Markdown file per list, its images and attachments in an assets folder beside it. A list with nested lists becomes one folder holding them all. Existing files are kept.") {
+                if let exporting {
+                    ProgressView().controlSize(.small)
+                    Button("Cancel") { exporting.cancel() }
+                } else {
+                    Button("Export…") { env.workbench.exportEveryList() }
+                        .disabled(export != nil)
+                }
             }
             if let library = env.libraryMaintenance {
                 NXLibraryBackupRows(library: library)
@@ -134,27 +144,6 @@ struct NXDataSettings: View {
         "\(value) \(noun)\(value == 1 ? "" : "s")"
     }
 
-    private func exportAll() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Export"
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
-
-        var exported = 0
-        do {
-            try MarkdownExporter.writeAll(store: env.store, to: folder) { exported += $0 }
-            // Said in the tray, as a list's own export is.
-            env.workbench.showTray("Exported \(Self.count(exported, "list")) as Markdown", icon: "square.and.arrow.up")
-        } catch {
-            // What needs dealing with stays in the window's notice.
-            let done = exported == 0 ? "No lists were exported."
-                : "\(Self.count(exported, "list")) \(exported == 1 ? "was" : "were") exported; the remaining lists were not."
-            env.store.actionError = "Export stopped. \(done) \(error.localizedDescription)"
-        }
-    }
-
     private func reset() {
         guard env.workbench.resetLibrary() else { return }
         // The page stays open: replacing the route with itself still clears
@@ -169,6 +158,7 @@ struct NXDataSettings: View {
 
 /// Backing up and restoring the whole library, and a restore in progress.
 private struct NXLibraryBackupRows: View {
+    @Environment(AppEnvironment.self) private var env
     @Bindable var library: LibraryMaintenance
     @State private var confirmsReturn = false
 
@@ -180,8 +170,15 @@ private struct NXLibraryBackupRows: View {
                              : failure ?? library.status
                              ?? "A complete, unencrypted package of your library, history and files. Keep it somewhere private. Markdown export remains available for readable documents.",
                          hintColor: failure != nil && !library.isBusy ? NX.redText : NX.textTertiary, selectable: true) {
+                if library.isBusy { ProgressView().controlSize(.small) }
                 HStack(spacing: 6) {
-                    Button("Back up library…") { Task { await library.exportBackup() } }
+                    Button("Back up library…") {
+                        Task {
+                            // Said in the tray too, as an export is.
+                            guard let name = await library.exportBackup() else { return }
+                            env.workbench.showTray("Backed up the library to \(NXFormat.quoted(name))", icon: "externaldrive")
+                        }
+                    }
                     Button("Restore backup…") { Task { await library.chooseBackup() } }
                 }
                 .disabled(library.isBusy || library.hasPendingRestore)
@@ -230,7 +227,8 @@ private struct NXLibraryBackupRows: View {
 /// question, what it does, a quieter `detail` if any, and Cancel beside the
 /// button that does it. Escape cancels. Return presses the button only when
 /// `returnConfirms`, for what Undo takes back; what can't be undone, as
-/// Settings' and Trash's, it presses neither.
+/// Settings' and Trash's, it presses neither, and Cancel is the prominent
+/// button there.
 struct NXConfirmationSheet: View {
     let title: String
     let message: String
@@ -262,7 +260,7 @@ struct NXConfirmationSheet: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+                    .buttonStyle(NXPanelButtonStyle(kind: isDestructive && !returnConfirms ? .primary : .secondary))
                 Button(confirm, role: isDestructive ? .destructive : nil) {
                     dismiss()
                     action()
@@ -324,16 +322,19 @@ private struct LibraryRestorePreview: View {
             }
             HStack(spacing: 6) {
                 if library.isBusy {
+                    ProgressView().controlSize(.small)
                     Text("Working with library…").font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
                 }
                 Spacer()
-                Button("Cancel", role: .cancel) { library.preview = nil }
+                // Still a way out while the restore is prepared: it's dropped
+                // then, rather than queued.
+                Button("Cancel", role: .cancel) { library.cancelPreview() }
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                     .keyboardShortcut(.cancelAction)
                 Button("Restore and quit", role: .destructive) { Task { await library.confirmRestore() } }
                     .buttonStyle(NXPanelButtonStyle(kind: .destructive))
+                    .disabled(library.isBusy)
             }
-            .disabled(library.isBusy)
         }
         .padding(24)
         .frame(width: 490)

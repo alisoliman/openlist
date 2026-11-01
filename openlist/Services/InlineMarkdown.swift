@@ -57,7 +57,7 @@ enum InlineMarkdown {
 
     /// Angle-delimited destinations allow literal parentheses. Encode characters
     /// that could terminate the destination or turn into HTML/control syntax.
-    static func destination(_ value: String) -> String {
+    nonisolated static func destination(_ value: String) -> String {
         var allowed = CharacterSet.urlFragmentAllowed
         allowed.remove(charactersIn: "<>\\\"\n\r\t ")
         allowed.insert(charactersIn: "%#")

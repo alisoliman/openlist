@@ -182,7 +182,7 @@ extension Store {
             block.selectedForDay = previousSelection
             block.deferredUntil = previousDeferral
             context.processPendingChanges()
-            persistenceError = "Work could not be started. \(error.localizedDescription)"
+            reportRolledBack("Work could not be started. \(error.localizedDescription)")
             return nil
         }
     }
@@ -197,7 +197,7 @@ extension Store {
             return true
         } catch {
             previous.restore()
-            persistenceError = "Work could not be paused. \(error.localizedDescription)"
+            reportRolledBack("Work could not be paused. \(error.localizedDescription)")
             return false
         }
     }

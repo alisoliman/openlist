@@ -3,6 +3,7 @@
 //  openlist
 //
 
+import AppKit
 import SwiftUI
 
 // MARK: - Buttons
@@ -301,5 +302,18 @@ extension View {
             .padding(.horizontal, 40)
             .padding(.top, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - File panels
+
+extension NSSavePanel {
+    /// Shows the panel as a sheet on the main window, so Quick Add and the
+    /// menu bar's Openlist stay usable while it's open, and returns how it
+    /// was closed. With no window to hold it, or one holding a sheet
+    /// already, it runs on its own.
+    func nxRun() async -> NSApplication.ModalResponse {
+        guard let window = NSApp.mainWindow, window.isVisible, window.attachedSheet == nil else { return runModal() }
+        return await beginSheetModal(for: window)
     }
 }

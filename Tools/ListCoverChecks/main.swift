@@ -58,6 +58,12 @@ if phase == "write" {
     try check(text.contains("![Cover source copy cover]") && text.contains("Hidden%20list.assets/source%20image.png"), "Hidden cover is portable in Markdown export")
     try check(Data(contentsOf: root.appendingPathComponent("Hidden list.assets/source image.png")) == bytes, "Markdown package includes actual cover bytes")
     try check(MarkdownExporter.markdown(for: copy, store: store).contains("file://"), "Clipboard export points at materialized cover")
+    let thumbnail = media.thumbnail(named: copyName, data: copy.coverData, maxPixelSize: 16)
+    try check(thumbnail.map { $0.size == NSSize(width: 16, height: 8) } == true
+        && media.cachedThumbnail(named: copyName, maxPixelSize: 16) === thumbnail,
+        "A cover decodes no larger than it's drawn, in its own shape, and is kept for the next draw")
+    try check(media.thumbnail(named: copyName, maxPixelSize: 1_000)?.size == NSSize(width: 64, height: 32),
+        "Drawn larger than it is, a cover's file decodes at its own size")
     try store.setListCover(list, from: replacement)
     try check(!files().contains(originalName) && media.readFile(filename: copyName) == bytes, "Replacement cleans only the old unreferenced import")
     let replaced = store.listCoverState(list)

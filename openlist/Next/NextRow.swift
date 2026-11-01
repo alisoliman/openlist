@@ -865,7 +865,7 @@ struct NXTaskMenu: View {
         let plans = workbench.canPlan(tasks)
         Button("Plan for Today", systemImage: "calendar.badge.clock") { workbench.plan(ids) }
             .disabled(!plans)
-        Button("Find a Slot", systemImage: "sparkles") { ids.forEach(workbench.fit) }
+        Button("Find a Slot", systemImage: "sparkles") { workbench.fit(ids) }
             .disabled(!plans)
         // Star toggles, so it reads every target as Task ▸ does: all starred unstars them.
         let unstars = !tasks.isEmpty && tasks.allSatisfy(\.isStarred)

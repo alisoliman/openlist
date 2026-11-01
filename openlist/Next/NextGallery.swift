@@ -13,6 +13,9 @@ import SwiftUI
 struct NextListsGallery: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextLibrary) private var library
+    /// Every line in the lists, for the cards' previews in document order:
+    /// one query the gallery shares, not two fetches per card as it draws.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
 
     private struct Shelf: Identifiable {
         static let otherID = "other"
@@ -55,6 +58,7 @@ struct NextListsGallery: View {
 
     var body: some View {
         let shelves = shelves
+        let lines = Dictionary(grouping: blocks) { $0.listID }
         NXPage(measure: nil) {
             NXScreenHeader(tile: .icon("square.2.layers.3d.fill"), color: NX.lists, title: "Lists", subtitle: subtitle(shelves))
             VStack(alignment: .leading, spacing: 0) {
@@ -72,7 +76,7 @@ struct NextListsGallery: View {
                         LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 14) {
                             ForEach(shelf.lists) { list in
                                 let tasks = library.tasks(in: list.id)
-                                NXListCard(list: list, tasks: tasks, peek: peek(list, tasks: tasks),
+                                NXListCard(list: list, tasks: tasks, peek: peek(tasks, lines: lines[list.id] ?? []),
                                            path: library.hierarchy.ancestors(of: list.id).map(\.displayTitle).joined(separator: " › "))
                             }
                             // Each section ends with a place to start another list in it.
@@ -92,13 +96,14 @@ struct NextListsGallery: View {
     private static let columns = [GridItem(.adaptive(minimum: 230), spacing: 14)]
 
     /// The first three open tasks, subtasks included as the design's card
-    /// takes them, in the list's document order. Worked out here, once per
-    /// library change, so hovering a card never fetches.
-    private func peek(_ list: TaskList, tasks: [Block]) -> [Block] {
+    /// takes them, in the list's document order, from the list's `lines`.
+    /// Worked out here, once per library change, so hovering a card never
+    /// works it out again.
+    private func peek(_ tasks: [Block], lines: [Block]) -> [Block] {
         let open = tasks.filter { !$0.isCompleted }
         guard open.count > 1 else { return open }
         let ids = Set(open.map(\.id))
-        var ordered = BlockTree.flatten(env.store.blocks(inList: list.id), respectCollapse: false)
+        var ordered = BlockTree.flatten(lines, respectCollapse: false)
             .map(\.block).filter { ids.contains($0.id) }
         // Tasks the outline could not reach still belong on the card.
         let seen = Set(ordered.map(\.id))
@@ -286,7 +291,14 @@ struct NextTrashScreen: View {
                 }
                 // Only a read that worked can say it's empty; the notice says why one didn't.
                 if rows.isEmpty {
-                    NXDashedEmpty(text: unreadable ? "Trash could not be read." : "Trash is empty.").padding(.top, 6)
+                    VStack(spacing: 12) {
+                        NXDashedEmpty(text: unreadable ? "Trash could not be read." : "Trash is empty.")
+                        if unreadable {
+                            Button("Try again", action: reload)
+                                .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+                        }
+                    }
+                    .padding(.top, 6)
                 }
             }
             .padding(.top, 18)

@@ -160,25 +160,41 @@ enum WindowID {
 private struct LibraryFailureView: View {
     let message: String
     let storage: LibraryRestoreStorage
+    /// Why the way out just chosen couldn't be prepared, said here under the
+    /// reason rather than in an alert after the one that asked.
+    @State private var recoveryError: String?
 
     var body: some View {
+        // A restore still waiting to finish is what failed, before it
+        // touched the library in use.
+        let unfinished = (try? storage.canCancelPending()) == true
+        let returning = unfinished && (try? storage.pending())?.destinationGeneration == nil
         VStack(spacing: 14) {
             Image(systemName: "externaldrive.badge.exclamationmark")
                 .font(.system(size: 34))
                 .foregroundStyle(NX.ink(0.4))
                 .accessibilityHidden(true)
-            NXPanelTitle("Your saved data could not be opened")
+            NXPanelTitle(!unfinished ? "Your saved data could not be opened"
+                : returning ? "The return to your original library couldn’t finish" : "The restore couldn’t finish")
                 .multilineTextAlignment(.center)
-            Text("Your existing database has not been replaced. Check available disk space and file permissions, then restart Openlist.\n\n\(message)")
+            Text(unfinished
+                 ? "Your current library is unchanged. Cancel the pending restore to keep using it, or quit and open Openlist again to try once more.\n\n\(message)"
+                 : "Your existing database has not been replaced. Check available disk space and file permissions, then restart Openlist.\n\n\(message)")
                 .font(.system(size: 12.5))
                 .foregroundStyle(NX.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 460)
                 .textSelection(.enabled)
+            if let recoveryError {
+                NXSheetError(recoveryError)
+                    .frame(maxWidth: 460)
+                    .textSelection(.enabled)
+            }
             HStack(spacing: 8) {
-                if (try? storage.canCancelPending()) == true {
+                if unfinished {
                     Button("Cancel pending restore and quit") {
+                        recoveryError = nil
                         do { try storage.cancelPending(); ApplicationQuit.request() }
                         catch { showRecoveryError(error) }
                     }
@@ -186,6 +202,7 @@ private struct LibraryFailureView: View {
                 }
                 if (try? storage.selection())?.generation != nil {
                     Button("Return to original and quit") {
+                        recoveryError = nil
                         let alert = NSAlert()
                         alert.messageText = "Return to the original library?"
                         alert.informativeText = "Open Openlist again after it quits. The original library will be verified before opening; this restored library's files will be retained for recovery."
@@ -209,9 +226,6 @@ private struct LibraryFailureView: View {
     }
 
     private func showRecoveryError(_ error: Error) {
-        let alert = NSAlert()
-        alert.messageText = "Recovery could not be prepared"
-        alert.informativeText = error.localizedDescription
-        alert.runModal()
+        recoveryError = "Recovery could not be prepared. \(error.localizedDescription)"
     }
 }

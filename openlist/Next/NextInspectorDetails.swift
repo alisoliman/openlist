@@ -92,10 +92,11 @@ struct NXInspectorPlan: View {
             HStack(spacing: 8) {
                 NXCapsTitle(text: "Plan for today")
                 Spacer(minLength: 6)
-                // Planning skips completed tasks, so the switch fades.
+                // Planning skips completed tasks, so the switch fades, and says why.
                 NXToggle(isOn: workbench.isPlanned(task), label: "Plan for today") { workbench.plan([task.id]) }
                     .disabled(task.isCompleted)
                     .opacity(task.isCompleted ? 0.45 : 1)
+                    .help(task.isCompleted ? "Reopen this task to plan it" : "Plan for today (P)")
             }
             HStack(spacing: 10) {
                 Image(systemName: "clock")
@@ -545,20 +546,33 @@ struct NXInspectorParentCrumb: View {
 // MARK: - Files
 
 /// Files kept with the task. The design has none, so the section shows only
-/// once there are some; the footer's paperclip attaches them, and files
-/// dropped anywhere on the panel are attached too.
+/// once there are some, or some are being copied in; the footer's paperclip
+/// attaches them, and files dropped anywhere on the panel are attached too.
 struct NXInspectorFiles: View {
     @Environment(AppEnvironment.self) private var env
     let task: Block
 
     var body: some View {
         let attachments = env.store.attachments(for: task.id)
-        if !attachments.isEmpty {
+        let attaching = env.workbench.attaching[task.id] ?? 0
+        if !attachments.isEmpty || attaching > 0 {
             VStack(alignment: .leading, spacing: 4) {
                 NXCapsTitle(text: "Files")
                     .padding(.bottom, 4)
                 ForEach(attachments) { attachment in
                     AttachmentRow(attachment: attachment) { env.workbench.removeAttachment(attachment) }
+                }
+                if attaching > 0 {
+                    // Where the files will show, at a row's height.
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small).frame(width: 28, height: 28)
+                        Text(attaching == 1 ? "Attaching…" : "Attaching \(attaching) files…")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(NX.textTertiary)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
@@ -571,11 +585,14 @@ struct NXTaskFiles {
     let workbench: Workbench
 
     func choose(for block: Block) {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        guard panel.runModal() == .OK else { return }
-        workbench.attachFiles(panel.urls, to: block.id)
+        let id = block.id
+        Task {
+            let panel = NSOpenPanel()
+            panel.allowsMultipleSelection = true
+            panel.canChooseDirectories = false
+            guard await panel.nxRun() == .OK else { return }
+            workbench.attachFiles(panel.urls, to: id)
+        }
     }
 
     func drop(_ providers: [NSItemProvider], on blockID: UUID) -> Bool {
