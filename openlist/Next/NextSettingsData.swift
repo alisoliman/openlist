@@ -158,6 +158,7 @@ struct NXDataSettings: View {
 
 /// Backing up and restoring the whole library, and a restore in progress.
 private struct NXLibraryBackupRows: View {
+    @Environment(AppEnvironment.self) private var env
     @Bindable var library: LibraryMaintenance
     @State private var confirmsReturn = false
 
@@ -169,8 +170,15 @@ private struct NXLibraryBackupRows: View {
                              : failure ?? library.status
                              ?? "A complete, unencrypted package of your library, history and files. Keep it somewhere private. Markdown export remains available for readable documents.",
                          hintColor: failure != nil && !library.isBusy ? NX.redText : NX.textTertiary, selectable: true) {
+                if library.isBusy { ProgressView().controlSize(.small) }
                 HStack(spacing: 6) {
-                    Button("Back up library…") { Task { await library.exportBackup() } }
+                    Button("Back up library…") {
+                        Task {
+                            // Said in the tray too, as an export is.
+                            guard let name = await library.exportBackup() else { return }
+                            env.workbench.showTray("Backed up the library to \(NXFormat.quoted(name))", icon: "externaldrive")
+                        }
+                    }
                     Button("Restore backup…") { Task { await library.chooseBackup() } }
                 }
                 .disabled(library.isBusy || library.hasPendingRestore)
@@ -313,16 +321,19 @@ private struct LibraryRestorePreview: View {
             }
             HStack(spacing: 6) {
                 if library.isBusy {
+                    ProgressView().controlSize(.small)
                     Text("Working with library…").font(.system(size: 11.5)).foregroundStyle(NX.textTertiary)
                 }
                 Spacer()
-                Button("Cancel", role: .cancel) { library.preview = nil }
+                // Still a way out while the restore is prepared: it's dropped
+                // then, rather than queued.
+                Button("Cancel", role: .cancel) { library.cancelPreview() }
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
                     .keyboardShortcut(.cancelAction)
                 Button("Restore and quit", role: .destructive) { Task { await library.confirmRestore() } }
                     .buttonStyle(NXPanelButtonStyle(kind: .destructive))
+                    .disabled(library.isBusy)
             }
-            .disabled(library.isBusy)
         }
         .padding(24)
         .frame(width: 490)
