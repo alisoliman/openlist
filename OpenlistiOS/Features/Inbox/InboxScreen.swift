@@ -58,7 +58,7 @@ struct InboxScreen: View {
                     .padding(.top, OLMetrics.headerGap)
                     .accessibilityIdentifier("inbox.reviewKept")
                 }
-                OLCardRows(captures) { task, separator in
+                OLCardRows(captures, lazy: true) { task, separator in
                     InboxRow(task: task, separator: separator, now: now)
                 }
                 .padding(.top, OLMetrics.cardGap)

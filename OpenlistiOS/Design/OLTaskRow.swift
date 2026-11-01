@@ -405,9 +405,9 @@ struct OLCardRows<Item: Identifiable, Row: View>: View {
     @ViewBuilder var row: (Item, _ separator: OLSeparator) -> Row
     var depth: (Item) -> Int = { _ in 0 }
     /// Builds only the rows on screen, for cards that can hold every open
-    /// task (Lists' Tasks view, Find, Select). A screen of short cards, as
-    /// Today's, stays eager, so its first layout is exact and the page opens
-    /// at its top.
+    /// task (Lists' Tasks view, Find, Select, the Inbox) or every done one
+    /// (a list's done fold). A screen of short cards, as Today's, stays
+    /// eager, so its first layout is exact and the page opens at its top.
     var lazy = false
 
     init(_ items: [Item], lazy: Bool = false, depth: @escaping (Item) -> Int = { _ in 0 },

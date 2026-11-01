@@ -89,7 +89,7 @@ struct ListPageScreen: View {
             if !page.completed.isEmpty {
                 OLFold("done", count: page.completed.count,
                        isExpanded: Binding(get: { doneOpen }, set: { showsDone = $0 })) {
-                    OLCardRows(page.completed) { task, separator in
+                    OLCardRows(page.completed, lazy: true) { task, separator in
                         PhoneTaskRow(task: task, context: .list, separator: separator)
                     }
                 }

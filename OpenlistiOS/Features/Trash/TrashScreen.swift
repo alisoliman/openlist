@@ -35,7 +35,8 @@ struct TrashScreen: View {
                     .padding(.top, 40)
                     .accessibilityIdentifier("trash.empty")
             } else {
-                VStack(spacing: 0) {
+                // Built as they scroll in: Trash keeps everything until it's emptied.
+                LazyVStack(spacing: 0) {
                     ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                         row(entry, now: now)
                             .overlay(alignment: .top) { OLSeparatorLine(separator: index == 0 ? .none : .plain) }
