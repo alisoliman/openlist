@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 
 /// Swipe actions for card rows, including Inbox's own wording. A short right
-/// swipe exposes two 44-point icon targets; continuing right arms Today.
+/// swipe exposes two 44-point icon targets; continuing right arms Today. A
+/// short left swipe exposes Trash; continuing left arms it.
 struct PhoneTaskSwipe: ViewModifier {
     let task: Block
     @Environment(PhoneEnvironment.self) private var env
@@ -99,15 +100,23 @@ struct PhoneTaskSwipe: ViewModifier {
         } else if offset < 0 {
             HStack {
                 Spacer(minLength: 0)
-                circleButton("Move to Trash", symbol: "trash", ink: OL.onDanger, fill: OL.danger) {
-                    close()
-                    env.actions.trash([task])
+                if armed == .trash {
+                    Label("Trash", systemImage: "trash.fill")
+                        .font(OLFont.meta)
+                        .foregroundStyle(OL.onDanger)
+                        .padding(.trailing, 6)
+                        .accessibilityHidden(true)
+                } else {
+                    circleButton("Move to Trash", symbol: "trash", ink: OL.onDanger, fill: OL.danger) {
+                        close()
+                        env.actions.trash([task])
+                    }
+                    .accessibilityIdentifier("task.swipe.delete")
                 }
-                .accessibilityIdentifier("task.swipe.delete")
             }
             .padding(.trailing, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(OL.dangerSoft)
+            .background(armed == .trash ? OL.danger : OL.dangerSoft)
         }
     }
 
@@ -170,7 +179,7 @@ struct PhoneTaskSwipe: ViewModifier {
         }
     }
 
-    private func drag(_ state: UIGestureRecognizer.State, translation: CGFloat) {
+    private func drag(_ state: UIGestureRecognizer.State, translation: CGFloat, velocity: CGFloat) {
         switch state {
         case .began:
             origin = offset
@@ -183,7 +192,8 @@ struct PhoneTaskSwipe: ViewModifier {
             if nextArmed != armed, nextArmed != nil { env.haptics.play(.selection) }
             armed = nextArmed
         case .ended:
-            let result = TaskSwipeMotion.result(translation: translation, origin: origin, width: width, allowsToday: allowsToday)
+            let result = TaskSwipeMotion.result(translation: translation, origin: origin, width: width,
+                                                allowsToday: allowsToday, velocity: velocity)
             armed = nil
             switch result {
             case .today:
