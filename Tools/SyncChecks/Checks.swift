@@ -381,6 +381,23 @@ import SwiftData
         check(ICloudError.message(for: offline).contains("retry automatically"), "Network timeouts explain automatic retry")
         let unauthorized = NSError(domain: CKErrorDomain, code: CKError.Code.missingEntitlement.rawValue)
         check(ICloudError.message(for: unauthorized).contains("signing profile"), "Missing capabilities explain the signing requirement")
+        let busy = NSError(domain: CKErrorDomain, code: CKError.Code.partialFailure.rawValue, userInfo: [
+            CKPartialErrorsByItemIDKey: ["fixture": NSError(domain: CKErrorDomain, code: CKError.Code.zoneBusy.rawValue)]
+        ])
+        let unreachable = NSError(domain: CKErrorDomain, code: CKError.Code.networkUnavailable.rawValue)
+        check(ICloudError.isTransient(offline) && ICloudError.isTransient(busy) && ICloudError.isTransient(unreachable),
+              "Being offline, or iCloud being busy, is retried by CloudKit rather than reported")
+        check(!ICloudError.isTransient(wrapped) && !ICloudError.isTransient(unauthorized),
+              "A full iCloud or a build without the capability still needs attention")
+        var waiting = ICloudSyncState()
+        waiting.account = .available
+        waiting.finish(.upload, id: UUID(), at: Date(timeIntervalSince1970: 5), error: nil)
+        waiting.finish(.upload, id: UUID(), at: Date(timeIntervalSince1970: 6), error: ICloudError.message(for: unreachable), isTransient: true)
+        check(!waiting.hasProblem && waiting.title == "iCloud available" && waiting.lastUpload == Date(timeIntervalSince1970: 5),
+              "An upload that failed offline raises no warning and isn't counted as a transfer")
+        waiting.finish(.upload, id: UUID(), at: Date(timeIntervalSince1970: 7), error: "iCloud storage is full")
+        waiting.finish(.upload, id: UUID(), at: Date(timeIntervalSince1970: 8), error: ICloudError.message(for: busy), isTransient: true)
+        check(waiting.hasProblem && waiting.detail.contains("storage is full"), "A later attempt that failed only for now leaves a real failure reported")
     }
 
     @MainActor static func validateConcurrentTreeChanges() {

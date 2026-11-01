@@ -102,6 +102,7 @@ struct NextSettingsScreen: View {
                             }
                     }
                 }
+                .id(NXSettingsReveal.library)
                 // Native additions follow the design's groups.
                 NXSettingsGroup(title: "Appearance") {
                     NXSettingMenu(label: "Appearance", hint: "Light, dark or follow the system", value: settings.appearance.title,
@@ -145,6 +146,7 @@ struct NextSettingsScreen: View {
             .frame(maxWidth: 620, alignment: .leading)
             .padding(.top, 20)
         }
+        .modifier(NXSettingsReveal())
     }
 
     private func toggle(_ detail: NXSettingsDetail) {
@@ -218,6 +220,25 @@ struct NextSettingsScreen: View {
 private enum NXSettingsDetail: Hashable {
     case hours(AvailabilityCategory)
     case iCloud
+}
+
+/// Brings the Library group into view as Settings opens from the snapshot
+/// notice's Show in Settings, its snapshot row saying what failed.
+private struct NXSettingsReveal: ViewModifier {
+    static let library = "settings.library"
+    @Environment(AppEnvironment.self) private var env
+
+    func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            content.task(id: env.libraryMaintenance?.revealsSnapshotSetting) {
+                guard let maintenance = env.libraryMaintenance, maintenance.revealsSnapshotSetting else { return }
+                maintenance.revealsSnapshotSetting = false
+                // Once the page has laid out, as a list's reveal waits for it.
+                await Task.yield()
+                proxy.scrollTo(Self.library, anchor: .top)
+            }
+        }
+    }
 }
 
 /// "Mon–Fri 09:00–17:00" for a weekly availability profile.

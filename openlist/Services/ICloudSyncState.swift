@@ -86,9 +86,13 @@ nonisolated struct ICloudSyncState {
         activeOperations[id] = operation
     }
 
-    mutating func finish(_ operation: Operation, id: UUID, at date: Date, error: String?) {
+    /// A transfer ended. One that failed only for now, `isTransient` as
+    /// offline or while iCloud is busy, CloudKit tries again by itself: it's
+    /// neither a failure to report nor a transfer made.
+    mutating func finish(_ operation: Operation, id: UUID, at date: Date, error: String?, isTransient: Bool = false) {
         guard isEnabled, completedOperations.insert(id).inserted else { return }
         activeOperations.removeValue(forKey: id)
+        guard !isTransient else { return }
         failures[operation] = error
         guard error == nil else { return }
         switch operation {

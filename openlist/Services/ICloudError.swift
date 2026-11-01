@@ -36,6 +36,27 @@ nonisolated enum ICloudError {
         return useful.localizedFailureReason ?? useful.localizedDescription
     }
 
+    /// Whether CloudKit tries again by itself, as it does offline or while
+    /// iCloud is busy or briefly down: the errors `message(for:)` says will
+    /// retry automatically. A full iCloud or a signed-out account needs the
+    /// person instead.
+    static func isTransient(_ error: Error) -> Bool {
+        for error in nestedErrors(error as NSError, depth: 0) {
+            if error.domain == CKErrorDomain, let code = CKError.Code(rawValue: error.code) {
+                switch code {
+                case .networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited, .zoneBusy:
+                    return true
+                case .quotaExceeded, .notAuthenticated, .badContainer, .missingEntitlement, .permissionFailure:
+                    return false
+                default:
+                    break
+                }
+            }
+            if error.domain == NSURLErrorDomain { return true }
+        }
+        return false
+    }
+
     private static func nestedErrors(_ error: NSError, depth: Int) -> [NSError] {
         guard depth < 8 else { return [error] }
         var children: [NSError] = []

@@ -22,7 +22,15 @@ final class LibraryMaintenance {
     var pendingQuitError: String? { hasPendingRestore ? store.persistenceError : nil }
     let snapshots = LibrarySnapshots(directory: LibrarySnapshots.defaultDirectory)
     /// Why the last daily snapshot failed, until one is written.
-    var snapshotError: String?
+    var snapshotError: String? {
+        didSet { if snapshotError != oldValue { isSnapshotErrorDismissed = false } }
+    }
+    /// The window's notice of `snapshotError` was dismissed. A different
+    /// reason shows it again.
+    var isSnapshotErrorDismissed = false
+    /// Asked for by that notice's Show in Settings: Settings brings the
+    /// snapshot row into view as it opens.
+    var revealsSnapshotSetting = false
     @ObservationIgnored private var quitsAfterPreviewDismissal = false
     @ObservationIgnored private var quitTask: Task<Void, Never>?
     @ObservationIgnored private weak var settings: AppSettings?

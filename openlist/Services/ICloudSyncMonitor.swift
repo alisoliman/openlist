@@ -92,8 +92,11 @@ final class ICloudSyncMonitor {
                 }
             } catch {
                 guard !Task.isCancelled, let self else { return }
-                state.account = .failed(ICloudError.message(for: error))
                 logger.error("iCloud account check failed: \(error.localizedDescription)")
+                // Offline, or with iCloud busy, the account is as it was: it's
+                // checked again as Openlist comes back to the front.
+                guard !ICloudError.isTransient(error) else { return }
+                state.account = .failed(ICloudError.message(for: error))
             }
         }
     }
@@ -104,7 +107,7 @@ final class ICloudSyncMonitor {
             state.begin(event.operation, id: event.identifier)
             return
         }
-        state.finish(event.operation, id: event.identifier, at: endDate, error: event.error)
+        state.finish(event.operation, id: event.identifier, at: endDate, error: event.error, isTransient: event.isTransient)
         if let error = event.error { logger.error("iCloud operation failed: \(error)") }
         if event.operation == .download, event.error == nil { scheduleRemoteRefresh() }
     }
@@ -115,6 +118,8 @@ final class ICloudSyncMonitor {
         let startDate: Date
         let endDate: Date?
         let error: String?
+        /// The failure is one CloudKit tries again by itself, like being offline.
+        let isTransient: Bool
 
         init?(_ event: NSPersistentCloudKitContainer.Event) {
             switch event.type {
@@ -128,6 +133,7 @@ final class ICloudSyncMonitor {
             endDate = event.endDate
             error = event.succeeded || event.endDate == nil
                 ? nil : (event.error.map { ICloudError.message(for: $0) } ?? "The iCloud operation did not finish successfully.")
+            isTransient = error != nil && event.error.map(ICloudError.isTransient) == true
         }
     }
 
