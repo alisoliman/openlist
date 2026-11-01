@@ -7,7 +7,11 @@ struct AttachmentRow: View {
     let onDelete: () -> Void
 
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.displayScale) private var displayScale
     @State private var isHovering = false
+    /// An image's thumbnail, decoded off the main thread for the file and
+    /// size in `key`; nil when it couldn't be read.
+    @State private var thumbnail: (key: String, image: NSImage?)?
 
     var body: some View {
         if attachment.modelContext != nil, !attachment.isDeleted {
@@ -15,14 +19,35 @@ struct AttachmentRow: View {
         }
     }
 
+    /// The thumbnail's longest side, in pixels: enough to fill its 28pt
+    /// square from an image up to three times as wide as it's tall.
+    private var thumbnailPixels: Int { Int((28 * 3 * displayScale).rounded(.up)) }
+
+    private var thumbnailKey: String? {
+        attachment.isImage ? "\(attachment.filename)@\(thumbnailPixels)" : nil
+    }
+
+    /// The thumbnail drawn: decoded already for this key, or kept from
+    /// before, so hovering, or the task opening again, decodes nothing.
+    private var thumbnailImage: NSImage? {
+        guard attachment.isImage else { return nil }
+        if let thumbnail, thumbnail.key == thumbnailKey { return thumbnail.image }
+        return MediaStore.shared.cachedThumbnail(named: attachment.filename, maxPixelSize: thumbnailPixels)
+    }
+
     private var liveContent: some View {
         HStack(spacing: 8) {
-            if attachment.isImage, let image = MediaStore.shared.image(named: attachment.filename, data: attachment.contentData) {
+            if let image = thumbnailImage {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 28, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else if attachment.isImage, thumbnail?.key != thumbnailKey {
+                // The thumbnail's square while it's decoded.
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(NX.ink(0.06))
+                    .frame(width: 28, height: 28)
             } else {
                 Image(systemName: "doc")
                     .font(.system(size: 13, weight: .medium))
@@ -58,6 +83,23 @@ struct AttachmentRow: View {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture(count: 2, perform: openAttachment)
+        .task(id: thumbnailKey) { await loadThumbnail() }
+    }
+
+    /// Decodes an image's thumbnail at the size it's drawn, off the main thread.
+    private func loadThumbnail() async {
+        guard let key = thumbnailKey else { return }
+        let filename = attachment.filename, pixels = thumbnailPixels
+        if let image = MediaStore.shared.cachedThumbnail(named: filename, maxPixelSize: pixels) {
+            thumbnail = (key, image)
+            return
+        }
+        let data = attachment.contentData
+        let image = await Task.detached(priority: .userInitiated) {
+            MediaStore.shared.thumbnail(named: filename, data: data, maxPixelSize: pixels)
+        }.value
+        guard !Task.isCancelled else { return }
+        thumbnail = (key, image)
     }
 
     /// A file that won't open says so in the window's notice.

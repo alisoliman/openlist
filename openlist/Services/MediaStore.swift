@@ -32,6 +32,14 @@ nonisolated final class MediaStore: @unchecked Sendable {
     private let locationLock = NSLock()
     private var directory: URL { locationLock.withLock { selectedDirectory ?? originalDirectory } }
     private let queue = DispatchQueue(label: "com.openlist.mediastore")
+    /// Images decoded at the size they're drawn, by file name, which is
+    /// unique to its contents, and size: a document's photos, file
+    /// thumbnails and list covers, the oldest let go first.
+    private let thumbnails: NSCache<NSString, PlatformImage> = {
+        let cache = NSCache<NSString, PlatformImage>()
+        cache.totalCostLimit = 96 << 20
+        return cache
+    }()
 
     static var defaultDirectory: URL {
         let base = FileManager.default
@@ -216,6 +224,43 @@ nonisolated final class MediaStore: @unchecked Sendable {
     func image(named filename: String, data: Data? = nil) -> PlatformImage? {
         if let data { return PlatformImage(data: data) }
         return Self.loadImage(at: url(for: filename))
+    }
+
+    /// `filename`'s image decoded no larger than `maxPixelSize` on its longer
+    /// side, from `data` when there is some, else from its file, as `image`
+    /// reads it: a photo drawn small costs a small image's memory, and is
+    /// quicker to decode. Still slow for a large photo, so call it off the
+    /// main thread. What it decoded before, `cachedThumbnail` hands back at once.
+    func thumbnail(named filename: String, data: Data? = nil, maxPixelSize: Int) -> PlatformImage? {
+        let key = Self.thumbnailKey(filename, maxPixelSize)
+        if let image = thumbnails.object(forKey: key) { return image }
+        let source = if let data { CGImageSourceCreateWithData(data as CFData, nil) }
+            else { CGImageSourceCreateWithURL(url(for: filename) as CFURL, nil) }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixelSize),
+        ]
+        // What ImageIO can't scale, like a vector image, is drawn as it is.
+        guard let source, let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return image(named: filename, data: data)
+        }
+        #if os(macOS)
+        let image = NSImage(cgImage: decoded, size: .zero)
+        #else
+        let image = UIImage(cgImage: decoded)
+        #endif
+        thumbnails.setObject(image, forKey: key, cost: decoded.bytesPerRow * decoded.height)
+        return image
+    }
+
+    func cachedThumbnail(named filename: String, maxPixelSize: Int) -> PlatformImage? {
+        thumbnails.object(forKey: Self.thumbnailKey(filename, maxPixelSize))
+    }
+
+    private static func thumbnailKey(_ filename: String, _ maxPixelSize: Int) -> NSString {
+        "\(filename)@\(maxPixelSize)" as NSString
     }
 
     private static func loadImage(at url: URL) -> PlatformImage? {
