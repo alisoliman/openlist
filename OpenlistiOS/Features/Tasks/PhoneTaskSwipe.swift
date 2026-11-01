@@ -28,12 +28,15 @@ struct PhoneTaskSwipe: ViewModifier {
                 // accidentally opening or completing the task underneath.
                 .overlay {
                     if offset != 0 {
-                        Button("Close task actions") { close() }
-                            .foregroundStyle(.clear)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(.rect)
-                            .accessibilityIdentifier("task.swipe.close")
-                            .offset(x: offset)
+                        Button { close() } label: {
+                            Color.clear
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Close task actions")
+                        .accessibilityIdentifier("task.swipe.close")
+                        .offset(x: offset)
                     }
                 }
         }
@@ -96,16 +99,10 @@ struct PhoneTaskSwipe: ViewModifier {
         } else if offset < 0 {
             HStack {
                 Spacer(minLength: 0)
-                Button("Move to Trash", systemImage: "trash") {
+                circleButton("Move to Trash", symbol: "trash", ink: OL.onDanger, fill: OL.danger) {
                     close()
                     env.actions.trash([task])
                 }
-                .labelStyle(.iconOnly)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(OL.onDanger)
-                .frame(width: 44, height: 44)
-                .background(OL.danger, in: .circle)
-                .buttonStyle(.plain)
                 .accessibilityIdentifier("task.swipe.delete")
             }
             .padding(.trailing, 10)
@@ -116,16 +113,26 @@ struct PhoneTaskSwipe: ViewModifier {
 
     private func actionButton(_ action: TaskSwipeAction, slot: String) -> some View {
         let symbol = action == .star && task.isStarred ? "star.fill" : action == .complete && completed ? "arrow.uturn.backward" : action.symbol
-        return Button(actionTitle(action), systemImage: symbol) { perform(action) }
-            .labelStyle(.iconOnly)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(action == .star ? OL.todayText : OL.accentText)
-            .frame(width: 44, height: 44)
-            .background(OL.surface, in: .circle)
-            .buttonStyle(.plain)
+        return circleButton(actionTitle(action), symbol: symbol, ink: action == .star ? OL.todayText : OL.accentText,
+                            fill: OL.surface) { perform(action) }
             .disabled(!isAvailable(action))
             .opacity(isAvailable(action) ? 1 : 0.4)
             .accessibilityIdentifier("task.swipe.\(slot)")
+    }
+
+    /// A revealed action: its glyph on a 44 pt disc, all of which is the target.
+    private func circleButton(_ title: String, symbol: String, ink: Color, fill: Color,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(ink)
+                .frame(width: 44, height: 44)
+                .background(fill, in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private func actionTitle(_ action: TaskSwipeAction) -> String {

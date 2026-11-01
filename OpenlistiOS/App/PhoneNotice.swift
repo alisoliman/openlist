@@ -64,13 +64,17 @@ struct PhoneNoticeBanner: View {
                         if notice.clears == nil { hidden = notice.text }
                         env.dismiss(notice)
                     } label: {
+                        // A 44 pt target around the 32 pt button, which keeps
+                        // its size in the layout.
                         Image(systemName: "xmark")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(OL.muted)
                             .frame(width: 32, height: 32)
+                            .padding(6)
                             .contentShape(.rect)
                     }
                     .buttonStyle(OLPressStyle())
+                    .padding(-6)
                     .accessibilityLabel("Dismiss")
                 }
                 .padding(.leading, 16)

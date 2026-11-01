@@ -234,13 +234,20 @@ struct OLSearchField<Tokens: View>: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(OL.muted)
+                .allowsHitTesting(false)
                 .accessibilityHidden(true)
             tokens
             field
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
-        .background(OL.sunken, in: .capsule)
+        .background {
+            // A tap anywhere in the capsule focuses the field, not only on
+            // its line of text.
+            Capsule().fill(OL.sunken)
+                .onTapGesture { focus?.wrappedValue = true }
+                .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder private var field: some View {

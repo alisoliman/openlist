@@ -158,31 +158,37 @@ struct OLNowCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // The tile and the card's padding are the open target's too; the
+        // play button keeps its own.
         HStack(spacing: 12) {
-            if !dynamicTypeSize.isAccessibilitySize {
-                Image(systemName: state == .paused ? "pause.fill" : "play.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(OL.ink)
-                .frame(width: 42, height: 48)
-                .background(OL.sunken, in: .rect(cornerRadius: 12))
-                .accessibilityHidden(true)
-            }
             Button(action: open) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(state == .paused ? "Paused" : eyebrow)
-                        .font(OLFont.meta.weight(.semibold))
-                        .foregroundStyle(state == .paused ? OL.todayText : OL.accentText)
-                    Text(title)
-                        .font(OLFont.rowTitleStrong)
+                HStack(spacing: 12) {
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Image(systemName: state == .paused ? "pause.fill" : "play.fill")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(OL.ink)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                        .multilineTextAlignment(.leading)
-                    Text(detail)
-                        .font(OLFont.meta)
-                        .foregroundStyle(OL.muted)
-                        .contentTransition(.numericText(countsDown: true))
+                        .frame(width: 42, height: 48)
+                        .background(OL.sunken, in: .rect(cornerRadius: 12))
+                        .accessibilityHidden(true)
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(state == .paused ? "Paused" : eyebrow)
+                            .font(OLFont.meta.weight(.semibold))
+                            .foregroundStyle(state == .paused ? OL.todayText : OL.accentText)
+                        Text(title)
+                            .font(OLFont.rowTitleStrong)
+                            .foregroundStyle(OL.ink)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .multilineTextAlignment(.leading)
+                        Text(detail)
+                            .font(OLFont.meta)
+                            .foregroundStyle(OL.muted)
+                            .contentTransition(.numericText(countsDown: true))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 14)
+                .padding(.leading, 16)
                 .contentShape(.rect)
             }
             .buttonStyle(OLRowPressStyle())
@@ -192,8 +198,6 @@ struct OLNowCard: View {
                          label: state == .working ? "Open Working" : state == .paused ? "Resume" : "Start working",
                          kind: .accent, iconSize: 16, action: play)
         }
-        .padding(.vertical, 14)
-        .padding(.leading, 16)
         .padding(.trailing, 14)
         .olCard()
     }

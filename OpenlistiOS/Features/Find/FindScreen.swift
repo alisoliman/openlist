@@ -43,12 +43,9 @@ struct FindScreen: View {
             OLSearchField(text: $text, prompt: tokens.isEmpty ? "Find a task, note or #label" : "Add words or filters",
                           focus: $isFocused) {
                 ForEach(tokens, id: \.self) { token in
-                    Button { remove(token) } label: {
-                        OLChip(token, style: .token, tint: Self.tint(of: token, in: language))
-                    }
-                    .buttonStyle(OLPressStyle())
-                    .accessibilityLabel("\(token), filter")
-                    .accessibilityHint("Removes it")
+                    OLChipButton(OLChip(token, style: .token, tint: Self.tint(of: token, in: language))) { remove(token) }
+                        .accessibilityLabel("\(token), filter")
+                        .accessibilityHint("Removes it")
                 }
             }
             .padding(.top, OLMetrics.headerGap)

@@ -191,6 +191,9 @@ struct OLButtonStyle: ButtonStyle {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func makeBody(configuration: Configuration) -> some View {
+        // A 44 pt target around the 36 pt capsule (Add, Set, Save), which
+        // keeps its own height in the layout, as `OLChipButton` does.
+        let slack = max(0, (44 - size.height) / 2)
         configuration.label
             .font(size.font)
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
@@ -209,7 +212,9 @@ struct OLButtonStyle: ButtonStyle {
                     Capsule(style: .continuous).fill(background)
                 }
             }
-            .contentShape(.capsule)
+            .padding(.vertical, slack)
+            .contentShape(.rect)
+            .padding(.vertical, -slack)
             .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed && !style.reduceMotion ? 0.97 : 1)
             .animation(style.animation(OLStyle.press), value: configuration.isPressed)

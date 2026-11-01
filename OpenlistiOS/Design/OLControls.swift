@@ -361,9 +361,13 @@ struct OLViewToggle: View {
                             .matchedGeometryEffect(id: "pill", in: namespace)
                     }
                 }
-                .contentShape(.capsule)
+                // A 44 pt target around the 32 pt segment, which keeps its
+                // height in the layout.
+                .padding(.vertical, 6)
+                .contentShape(.rect)
         }
         .buttonStyle(OLPressStyle(scale: 0.94))
+        .padding(.vertical, -6)
         .accessibilityLabel(label)
         .accessibilityAddTraits(mode == selection ? .isSelected : [])
         .accessibilityIdentifier(identifier ?? "view.\(label.lowercased())")

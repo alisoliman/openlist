@@ -262,7 +262,6 @@ private struct PlanRow: View {
                 HStack(spacing: 8) {
                     ForEach(tasks) { task in chip(task) }
                 }
-                .padding(.vertical, 4)
                 .padding(.horizontal, 2)
             }
             .scrollIndicators(.hidden)
@@ -274,7 +273,10 @@ private struct PlanRow: View {
     private func chip(_ task: Block) -> some View {
         let minutes = env.actions.planMinutes(for: task)
         return Button { env.navigator.open(.taskDetail(task.id)) } label: {
+            // The row's room above and below the 34 pt chip is its target too.
             PlanChip(title: task.displayTitle, minutes: minutes)
+                .padding(.vertical, 5)
+                .contentShape(.rect)
         }
         .buttonStyle(OLPressStyle(scale: 0.96))
         .onDrag {
