@@ -120,11 +120,11 @@ struct PhoneTaskSwipe: ViewModifier {
         }
     }
 
+    /// A shortcut that can't apply stays dimmed but tappable, and says why.
     private func actionButton(_ action: TaskSwipeAction, slot: String) -> some View {
         let symbol = action == .star && task.isStarred ? "star.fill" : action == .complete && completed ? "arrow.uturn.backward" : action.symbol
         return circleButton(actionTitle(action), symbol: symbol, ink: action == .star ? OL.todayText : OL.accentText,
                             fill: OL.surface) { perform(action) }
-            .disabled(!isAvailable(action))
             .opacity(isAvailable(action) ? 1 : 0.4)
             .accessibilityIdentifier("task.swipe.\(slot)")
     }
@@ -158,8 +158,24 @@ struct PhoneTaskSwipe: ViewModifier {
         }
     }
 
+    /// Why `action`, or with nil Today, can't apply to the task now, said for
+    /// 3 s in the tray: no other list, the task done, or its list archived.
+    private func explainUnavailable(_ action: TaskSwipeAction?) {
+        let reason: String
+        if action == .moveToList {
+            reason = "There’s no other list to move it to"
+        } else if completed {
+            reason = "“\(task.displayTitle)” is done"
+        } else if let list = library.list(task.listID), !library.hierarchy.activeIDs.contains(list.id) {
+            reason = "“\(list.displayTitle)” is archived"
+        } else {
+            reason = "“\(task.displayTitle)” can’t be planned now"
+        }
+        env.tray.show(reason, icon: "exclamationmark.circle", tone: .neutral, seconds: 3)
+    }
+
     private func perform(_ action: TaskSwipeAction) {
-        guard isAvailable(action) else { return }
+        guard isAvailable(action) else { return explainUnavailable(action) }
         close()
         switch action {
         case .moveToList:
@@ -204,6 +220,10 @@ struct PhoneTaskSwipe: ViewModifier {
                 env.actions.trash([task])
             case .shortcuts:
                 settle(at: TaskSwipeMotion.shortcutsWidth)
+                // A full swipe that can't add to Today says why rather than nothing.
+                if !allowsToday, TaskSwipeMotion.result(translation: translation, origin: origin, width: width) == .today {
+                    explainUnavailable(nil)
+                }
             case .delete:
                 settle(at: -TaskSwipeMotion.deleteWidth)
             case .closed:
