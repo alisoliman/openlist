@@ -12,19 +12,21 @@ import SwiftUI
 ///
 /// A non-activating panel takes typing without making Openlist the active
 /// app, so the main window stays where it is and focus goes back to the app
-/// you were in once the panel closes. Escape, ⌘W and Return close it and are
-/// done with the draft. Clicking or switching away closes it too, but keeps
-/// what was typed for the next Quick Add for a few minutes, as Spotlight
-/// keeps its query.
+/// you were in once the panel closes. Return closes it, done with the draft.
+/// Escape, ⌘W and clicking or switching away close it too, but keep what was
+/// typed for the next Quick Add for a few minutes, as Spotlight keeps its
+/// query, all selected, so typing over it starts afresh.
 @MainActor
 final class QuickCapturePanel: NSObject, NSWindowDelegate {
     static let shared = QuickCapturePanel()
 
     /// How a card closes, which decides what happens to its draft and to focus.
     enum Dismissal {
-        /// Escape, ⌘W, or Return adding the task: the draft is done with.
+        /// Return adding the task, or Escape and ⌘W with nothing typed: the
+        /// draft is done with.
         case finished
-        /// A click around the card: the draft waits, and focus goes back.
+        /// Escape, ⌘W or a click around the card: the draft waits, and focus
+        /// goes back.
         case dismissed
         /// Another window or app took the keyboard: the draft waits, and
         /// focus stays where it went.
@@ -65,7 +67,6 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
     private var observers: [NSObjectProtocol] = []
     private var menuObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
-    private var responderObservation: NSKeyValueObservation?
     /// Ordering the panel out resigns its key status, which would close it again.
     private var isClosing = false
 
@@ -117,11 +118,12 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
             return
         }
         let draft: QuickCaptureDraft
+        // A draft put aside comes back all selected, as the field takes the
+        // keys, so typing replaces it, as the window's capture brings its own back.
         if let kept = self.draft,
            (request ?? QuickCaptureRequest()).keepsDraft(hasDraft: kept.hasCaptureDraft, keptUntil: keptUntil, now: .now) {
             if let request, !request.listens { kept.apply(request) }
             draft = kept
-            if !kept.captureText.isEmpty { caretToEnd(in: panel) }
         } else {
             draft = QuickCaptureDraft(store: env.store, settings: env.settings, request: request ?? QuickCaptureRequest())
         }
@@ -168,21 +170,6 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         draft.voice.toggle(for: draft, lists: env.store.allLists(), labels: env.store.allLabels()) { [weak self, weak draft] outcome in
             guard let self, let draft, self.draft === draft, self.panel?.isVisible == true else { return }
             draft.complete(outcome, workbench: env.workbench, keepOpen: false, automatically: true) { [weak self] in self?.close($0) }
-        }
-    }
-
-    /// A field selects all its text as it takes focus. A resumed draft puts
-    /// the caret after it instead, so pasting or typing adds to it.
-    private func caretToEnd(in panel: NSPanel) {
-        responderObservation = panel.observe(\.firstResponder, options: [.new]) { [weak self] panel, _ in
-            MainActor.assumeIsolated {
-                guard let editor = panel.firstResponder as? NSTextView, editor.isFieldEditor else { return }
-                // Once the field has made its own selection.
-                DispatchQueue.main.async {
-                    self?.responderObservation = nil
-                    editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
-                }
-            }
         }
     }
 
@@ -270,7 +257,6 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
         if dismissal == .finished { draft?.voice.cancel() }
         draft?.endPresentation()
         topLeft = nil
-        responderObservation = nil
         if dismissal == .finished {
             draft = nil
             keptUntil = nil

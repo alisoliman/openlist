@@ -1044,10 +1044,10 @@ extension Workbench {
         if listens { toggleVoice() }
     }
 
-    /// Closes capture. Escape and a saved task are done with the draft; a
-    /// click away, or search or the palette taking its place, `keepsDraft`
-    /// for the next capture on this page for a few minutes, as Quick Add
-    /// keeps its own.
+    /// Closes capture. A saved task is done with the draft; Escape, a click
+    /// away, or search or the palette taking its place, `keepsDraft` for the
+    /// next capture on this page for a few minutes, as Quick Add keeps its
+    /// own, tasks heard by voice included.
     func closeCapture(keepsDraft: Bool = false) {
         if keepsDraft, voice.isActive {
             voice.preserveForReview()

@@ -19,6 +19,10 @@ struct DueDatePicker: View {
     @State private var includesTime = false
     @State private var timeValue: Date = .now
     @State private var typedPhrase = ""
+    /// The phrase's place among what the popover's Done and a click away set.
+    @State private var phraseID = UUID()
+    /// A due time typed as Custom…, set with the phrase.
+    @State private var typedTime: NXPendingCustomValue?
 
     private var calendar: Calendar { env.settings.calendar }
 
@@ -38,6 +42,7 @@ struct DueDatePicker: View {
             }
 
             CalendarMonthPicker(selection: block.dueDate, calendar: calendar) { date in
+                typedPhrase = ""
                 selectedDate = date
                 apply()
             }
@@ -71,6 +76,14 @@ struct DueDatePicker: View {
         }
         .onAppear(perform: load)
         .onChange(of: block.dueDate) { _, _ in load() }
+        .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
+        // A phrase typed and not yet set is set by Done and by a click away,
+        // as Return sets it, with a time typed as Custom… after it. Done
+        // beeps on one that isn't a date.
+        .transformPreference(NXPendingCustomValueKey.self) { pending in
+            guard !typedPhrase.isEmpty else { return }
+            pending = NXPendingCustomValue(id: phraseID) { commitPhrase() && (typedTime?.commit() ?? true) }
+        }
     }
 
     // MARK: - Natural language entry
@@ -110,11 +123,19 @@ struct DueDatePicker: View {
     }
 
     private func applyTypedPhrase() {
+        if !commitPhrase() { NSSound.beep() }
+    }
+
+    /// Sets the typed phrase's date, as one change, and clears the field;
+    /// false, changing nothing, while it isn't a date.
+    private func commitPhrase() -> Bool {
+        guard !typedPhrase.isEmpty else { return true }
         let parsed = DateParser.parse(typedPhrase)
-        guard let date = parsed.date else { return }
+        guard let date = parsed.date else { return false }
         env.workbench.setDue(block.id, date: date, includesTime: parsed.includesTime, recurrence: parsed.recurrence)
         typedPhrase = ""
         load()
+        return true
     }
 
     // MARK: - Presets
@@ -141,6 +162,7 @@ struct DueDatePicker: View {
             // not the red it keeps for deleting things, on while there's none.
             let none = block.dueDate == nil
             NXInspectorPill(isOn: none) {
+                typedPhrase = ""
                 env.workbench.schedule([block.id], offset: nil)
                 load()
             } label: {
@@ -158,6 +180,8 @@ struct DueDatePicker: View {
                             action: @escaping () -> Void) -> some View {
         let isOn = day.flatMap { day in block.dueDate.map { calendar.isDate($0, inSameDayAs: day) } } ?? false
         return NXInspectorPill(isOn: isOn) {
+            // A day picked another way replaces the phrase typed for one.
+            typedPhrase = ""
             action()
             load()
         } label: {

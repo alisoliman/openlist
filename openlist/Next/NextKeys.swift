@@ -178,9 +178,10 @@ final class NextKeyHandler {
             if isEditingText && overlays.editsSidebarField() { return false }
             let voice = workbench.voice
             if isEnter && !flags.contains(.command) {
-                // While listening, Return is done speaking.
+                // While listening, Return is done speaking; while what was
+                // said is read, it skips Apple Intelligence.
                 if voice.isActive {
-                    if voice.phase == .listening { voice.stop() }
+                    if voice.phase == .listening { voice.stop() } else { voice.skipReadingForReview() }
                     return true
                 }
                 _ = workbench.createFromCapture(keepOpen: flags.contains(.shift))
@@ -190,14 +191,17 @@ final class NextKeyHandler {
                 workbench.cycleCaptureDestination(by: flags.contains(.shift) ? -1 : 1, among: library.lists.map(\.id))
                 return true
             }
-            // Escape stops listening, then puts away the tasks heard, then closes.
+            // Escape skips the reading, keeping what was said, or stops
+            // listening; otherwise it closes the card, its draft and the
+            // tasks heard put aside for the next capture on this page, as a
+            // click away puts them.
             if key == Key.escape {
-                if voice.isActive {
+                if voice.phase == .understanding {
+                    voice.skipReadingForReview()
+                } else if voice.isActive {
                     voice.cancel()
-                } else if !workbench.spokenTasks.isEmpty {
-                    workbench.spokenTasks = []
                 } else {
-                    workbench.closeCapture()
+                    workbench.closeCapture(keepsDraft: true)
                 }
                 return true
             }

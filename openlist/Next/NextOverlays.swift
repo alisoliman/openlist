@@ -533,10 +533,17 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
     }
 
+    /// What Return and Escape do now, as each phase takes them.
     private var hint: String {
-        if voice?.isActive == true { return "↩ done · esc cancel" }
+        if let voice, voice.isActive {
+            switch voice.phase {
+            case .listening: return "↩ done · esc cancel"
+            case .understanding: return voice.canSkipReading ? "↩ skip" : ""
+            default: return "esc cancel"
+            }
+        }
         let heard = draft.spokenTasks.count
-        if heard > 0 { return "↩ add \(heard == 1 ? "task" : "\(heard) tasks") · esc leave out" }
+        if heard > 0 { return "↩ add \(heard == 1 ? "task" : "\(heard) tasks") · esc close" }
         return voice == nil ? "⇥ destination · ↩ add · ⇧↩ add another" : "⇥ destination · ↩ add · ⌥⌘V speak"
     }
 
@@ -676,17 +683,20 @@ private struct NXVoicePanel: View {
                 }
             }
 
+            // Done while listening; while what was said is read, Skip takes
+            // it the plain way at once, as Return and Escape do.
+            let reading = voice.phase == .understanding
             Button(action: stop) {
-                Image(systemName: voice.phase == .listening ? "stop.circle.fill" : "xmark.circle.fill")
+                Image(systemName: voice.phase == .listening ? "stop.circle.fill" : reading ? "forward.end.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 17))
                     .foregroundStyle(voice.phase == .listening ? style.accent : NX.ink(0.3))
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(voice.phase == .understanding)
-            .help(voice.phase == .listening ? "Done (↩)" : "Stop")
-            .accessibilityLabel(voice.phase == .listening ? "Done speaking" : "Stop")
+            .disabled(reading && !voice.canSkipReading)
+            .help(voice.phase == .listening ? "Done (↩)" : reading ? "Skip Apple Intelligence" : "Stop")
+            .accessibilityLabel(voice.phase == .listening ? "Done speaking" : reading ? "Skip Apple Intelligence" : "Stop")
         }
         .padding(EdgeInsets(top: 16, leading: 18, bottom: 14, trailing: 18))
         .accessibilityElement(children: .contain)
@@ -718,6 +728,17 @@ private struct NXVoicePanel: View {
         default:
             Text("Listening · pause when you’re done")
         }
+    }
+}
+
+extension VoiceCapture {
+    /// Return or Escape while Apple Intelligence reads what was said, in the
+    /// window's capture or Quick Add's: the words are taken the plain way at
+    /// once and wait for review, as the card's Skip takes them.
+    func skipReadingForReview() {
+        guard canSkipReading else { return }
+        preserveForReview()
+        skipReading()
     }
 }
 
