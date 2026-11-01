@@ -227,7 +227,8 @@ private struct NXLibraryBackupRows: View {
 /// question, what it does, a quieter `detail` if any, and Cancel beside the
 /// button that does it. Escape cancels. Return presses the button only when
 /// `returnConfirms`, for what Undo takes back; what can't be undone, as
-/// Settings' and Trash's, it presses neither.
+/// Settings' and Trash's, it presses neither, and Cancel is the prominent
+/// button there.
 struct NXConfirmationSheet: View {
     let title: String
     let message: String
@@ -259,7 +260,7 @@ struct NXConfirmationSheet: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                    .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+                    .buttonStyle(NXPanelButtonStyle(kind: isDestructive && !returnConfirms ? .primary : .secondary))
                 Button(confirm, role: isDestructive ? .destructive : nil) {
                     dismiss()
                     action()
