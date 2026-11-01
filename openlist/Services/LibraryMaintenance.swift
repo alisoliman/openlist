@@ -55,7 +55,7 @@ final class LibraryMaintenance {
         panel.allowedContentTypes = [Self.backupType]
         panel.allowsOtherFileTypes = false
         panel.message = "This unencrypted package contains your private library and files. Choose a new backup name."
-        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        guard await panel.nxRun() == .OK, let destination = panel.url else { return }
         let access = destination.startAccessingSecurityScopedResource()
         defer { if access { destination.stopAccessingSecurityScopedResource() } }
         await perform {
@@ -131,7 +131,7 @@ final class LibraryMaintenance {
         panel.allowedContentTypes = [Self.backupType]
         panel.allowsMultipleSelection = false
         panel.prompt = "Preview Backup"
-        guard panel.runModal() == .OK, let source = panel.url else { return }
+        guard await panel.nxRun() == .OK, let source = panel.url else { return }
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }
         await perform {

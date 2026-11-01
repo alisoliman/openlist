@@ -398,8 +398,10 @@ private struct NXListOptions: View {
     @ViewBuilder
     private var coverItems: some View {
         Button(list.coverFilename == nil ? "Add Cover from File…" : "Replace Cover from File…") {
-            guard let source = Self.chooseCoverImage(for: list) else { return }
-            perform { try env.workbench.setCover(of: list, from: source) }
+            Task {
+                guard let source = await Self.chooseCoverImage(for: list) else { return }
+                perform { try env.workbench.setCover(of: list, from: source) }
+            }
         }
         if list.coverFilename != nil {
             Picker("Cover Display", selection: Binding(get: { list.coverPresentation }, set: { presentation in
@@ -420,7 +422,7 @@ private struct NXListOptions: View {
     }
 
     /// Asks for the image a list's cover should show.
-    private static func chooseCoverImage(for list: TaskList) -> URL? {
+    private static func chooseCoverImage(for list: TaskList) async -> URL? {
         let panel = NSOpenPanel()
         panel.title = list.coverFilename == nil ? "Add list cover" : "Replace list cover"
         panel.prompt = "Choose image"
@@ -428,7 +430,7 @@ private struct NXListOptions: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Choose an image up to 20 MB and 40 megapixels. Openlist keeps its own copy."
-        guard panel.runModal() == .OK else { return nil }
+        guard await panel.nxRun() == .OK else { return nil }
         return panel.url
     }
 }
