@@ -39,6 +39,9 @@ final class PhoneNavigator {
     /// The Settings sheet's own stack: Activity and Trash push inside it.
     var settingsPath: [PhoneRoute] = []
     var cover: PhoneCover?
+    /// The cards Triage deals while it's up, which its switch changes: the
+    /// Inbox's, or the lists' tasks with no date.
+    var triageMode: TriageMode = .inbox
     /// The system Inbox, which the Inbox tab shows. Set once the store is ready
     /// and again after every sync: another device's Inbox can win the merge.
     var inboxListID: UUID?
@@ -115,7 +118,7 @@ final class PhoneNavigator {
 
     /// The screen on show, modals included.
     var visibleRoute: PhoneRoute {
-        if let cover { return cover == .working ? .working : .triage }
+        if let cover { return cover == .working ? .working : .triage(triageMode) }
         switch sheet {
         case .settings: return settingsPath.last ?? .settings
         case let .capture(request): return .capture(request)
@@ -192,6 +195,8 @@ final class PhoneNavigator {
                 present(sheet: captureSheet(route))
             }
         case .fullScreenCover:
+            // Triage already up switches to the cards asked for.
+            if case let .triage(mode) = route { triageMode = mode }
             present(cover: route == .working ? .working : .triage)
         case .settingsStack:
             if case .settings = sheet {
@@ -241,10 +246,11 @@ final class PhoneNavigator {
             dismissModals()
             tab = route.home
             setPath([route], for: tab)
-        case .triage:
+        case let .triage(mode):
             // Whatever is up closes first, inside present(cover:).
             tab = .inbox
             inboxPath = []
+            triageMode = mode
             present(cover: .triage)
         case .working:
             present(cover: .working)

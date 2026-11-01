@@ -234,6 +234,66 @@ struct ScreenLogicTests {
         #expect(!phone.env.actions.file(task, to: nil, due: nil), "Nothing picked, nothing filed")
     }
 
+    // MARK: Triage without a date
+
+    /// No date deals the lists' open tasks with no day, in the lists' order:
+    /// not the Inbox's, not Draft Q3 OKRs, planned for today, nor a subtask
+    /// its open parent's card carries.
+    @Test func noDateDealsTheListsUndatedTasksInTheirOrder() throws {
+        let phone = try TestPhone(seeded: true)
+        let lib = try library(phone)
+        let queue = lib.undatedQueue(blocks: try blocks(phone), kept: [], closing: [])
+        #expect(queue.map(\.displayTitle) == ["Book the ryokan", "Finish The Overstory", "Start Piranesi",
+                                              "Share the OKR draft with leads"])
+        #expect(lib.undatedCount(kept: [], closing: []) == 4)
+        #expect(phone.env.triage(for: .undated) === phone.env.undatedTriage)
+        #expect(phone.env.triage(for: .inbox) === phone.env.triage)
+        // The card names where each one is.
+        #expect(ListsTaskOverview.source(of: try #require(queue.first), in: lib) == "Weekend in Kyoto")
+    }
+
+    /// A day from a No date card dates it in one step, which takes it off the
+    /// pass; Undo puts it back. Later sets a card aside until it's reviewed
+    /// again, and Already done leaves the pass as it dwells.
+    @Test func noDateDatesACardInOneStepWithUndo() throws {
+        let phone = try TestPhone(seeded: true)
+        let session = phone.env.undatedTriage
+        func queue() throws -> [Block] {
+            try library(phone).undatedQueue(blocks: try blocks(phone), triage: session, closing: phone.env.actions.closing)
+        }
+        session.begin()
+        let ryokan = try #require(phone.task("Book the ryokan"))
+        let kyoto = ryokan.listID
+        let tomorrow = PhoneDay.tomorrow.date(now: phone.env.now, calendar: phone.env.settings.calendar)
+        #expect(phone.env.actions.file(ryokan, to: nil, due: tomorrow))
+        session.finish(ryokan.id)
+        #expect(phone.env.tray.message?.text == "“Book the ryokan” due tomorrow")
+        #expect(ryokan.listID == kyoto && ryokan.dueDate.map { CompactText.dayOffset(from: phone.env.now, to: $0) } == 1)
+        #expect(try queue().first?.displayTitle == "Finish The Overstory")
+        #expect(session.reviewed(queue: try queue()) == 1)
+        // Undo: no date again, so back on the pass and out of the count.
+        phone.env.tray.performAction()
+        #expect(ryokan.dueDate == nil)
+        #expect(try queue().first?.displayTitle == "Book the ryokan")
+        #expect(session.reviewed(queue: try queue()) == 0)
+        // Later: aside for this session, in No date's pass only.
+        session.keep(ryokan.id)
+        #expect(try queue().first?.displayTitle == "Finish The Overstory")
+        #expect(try library(phone).undatedCount(triage: session, closing: []) == 3)
+        #expect(phone.env.triage.kept { _ in nil }.isEmpty)
+        // Done: off the pass while it dwells, and once it's written.
+        let overstory = try #require(phone.task("Finish The Overstory"))
+        phone.env.actions.complete([overstory])
+        session.finish(overstory.id)
+        #expect(try queue().first?.displayTitle == "Start Piranesi")
+        phone.env.actions.settleAll()
+        #expect(overstory.isCompleted)
+        #expect(try queue().map(\.displayTitle) == ["Start Piranesi", "Share the OKR draft with leads"])
+        #expect(session.reviewed(queue: try queue()) == 2)
+        session.reviewKept()
+        #expect(try queue().first?.displayTitle == "Book the ryokan")
+    }
+
     // MARK: Capture
 
     @Test func aCaptureAddsWithUndo() throws {

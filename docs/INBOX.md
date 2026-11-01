@@ -28,6 +28,19 @@ the Inbox as its document instead, with its notes and headings; this Mac
 remembers that choice, and the widget's Triage link opens triage for that visit
 only.
 
+## iPhone
+
+The iPhone's Inbox opens triage from **Triage one by one**: a card at a time,
+each with **Delete**, **Already done** and **Later**. A switch at the top picks
+the pass. **Inbox** takes each capture, oldest first: pick a list, a day or
+both, and **Next** files it in one step. **No date** takes the open tasks in
+your lists that have no due date and aren't planned or deferred to a day, in the
+lists' order, a subtask going with its open parent. A day's chip, or the date
+picker's **Set**, dates a No date card at once, with Undo in the tray. **Later**
+skips a card until triage goes over what it kept or the app relaunches. Under
+the captures, **N without a date in your lists** opens the No date pass, also
+once the Inbox is empty.
+
 ## Compatibility
 
 The old independent selected-task queue and its Add/Remove commands are removed.

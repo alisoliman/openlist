@@ -3,33 +3,45 @@
 //  OpenlistiOS
 //
 
+import SwiftData
 import SwiftUI
 
-/// Triage (mockup 08), a full-screen cover: the Inbox one card at a time,
-/// oldest first. Pick a list to move it to, a day for it, or both, then Next
-/// files it in one step: a day alone leaves it in the Inbox. Delete sends it
-/// to Trash, ✓ marks it done, Later sets it aside for now. Each is one step
-/// with Undo in the tray.
+/// Triage (mockup 08), a full-screen cover dealing one card at a time from
+/// the pass its switch picks. The Inbox, oldest first: pick a list to move it
+/// to, a day for it, or both, then Next files it in one step: a day alone
+/// leaves it in the Inbox. No date: the lists' tasks with no day yet, in the
+/// lists' order, where a day's chip dates the card at once. Either way Delete
+/// sends it to Trash, ✓ marks it done, Later sets it aside for now. Each is
+/// one step with Undo in the tray.
 struct TriageScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.olStyle) private var style
+    /// The documents' blocks, for the lists' order No date deals in.
+    @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
     @State private var picksDate = false
     /// The list and day picked on the card on show, for Next.
     @State private var draft = TriageDraft()
     /// The card on show, so a date picked for one never lands on the next.
     @State private var shownCard: UUID?
+    /// The day picked for a No date card, given once the picker has gone:
+    /// the next card mustn't come in under a sheet still closing.
+    @State private var pickedDay: (id: UUID, date: Date, includesTime: Bool)?
 
     var body: some View {
-        let navigator = env.navigator
-        let session = env.triage
-        let queue = library.inboxQueue(triage: session, closing: env.actions.closing)
+        @Bindable var navigator = env.navigator
+        let mode = navigator.triageMode
+        let session = env.triage(for: mode)
+        let queue = switch mode {
+        case .inbox: library.inboxQueue(triage: session, closing: env.actions.closing)
+        case .undated: library.undatedQueue(blocks: blocks, triage: session, closing: env.actions.closing)
+        }
         let reviewed = session.reviewed(queue: queue)
         let total = reviewed + queue.count
         let card = queue.first
         // A card with many lists, or at large text sizes, scrolls; the
         // finished state fills the screen.
-        OLScreen(identifier: PhoneRoute.triage.screenIdentifier, scrolls: card != nil) {
+        OLScreen(identifier: PhoneRoute.triage(mode).screenIdentifier, scrolls: card != nil) {
             OLTopBar {
                 OLIconButton("xmark", label: "Close triage", kind: .bare, iconSize: 22) { navigator.dismissCover() }
                     .accessibilityIdentifier("triage.close")
@@ -45,28 +57,36 @@ struct TriageScreen: View {
                 }
             }
         } content: {
+            OLViewPicker("Triage", options: TriageMode.allCases.map { pass in
+                OLViewPicker.Option(value: pass, title: pass.title, symbol: pass.symbol, identifier: "triage.mode.\(pass.rawValue)")
+            }, selection: $navigator.triageMode)
+                .padding(.top, 6)
             OLProgressBar(value: total == 0 ? 1 : Double(reviewed) / Double(total), tint: OL.info,
                           turnsGreenWhenFull: false)
-                .padding(.top, 6)
+                .padding(.top, 16)
             if let card {
-                TriageCard(task: card, now: env.now, draft: $draft, picksDate: $picksDate)
-                    .id(card.id)
-                    // With Reduce Motion the next card fades in rather than sliding.
-                    .transition(style.reduceMotion ? .opacity
-                                : .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
-                    .padding(.top, 24)
+                Group {
+                    switch mode {
+                    case .inbox:
+                        TriageCard(task: card, now: env.now, draft: $draft, picksDate: $picksDate)
+                    case .undated:
+                        UndatedTriageCard(task: card, now: env.now, picksDate: $picksDate) { date(card, on: $0) }
+                    }
+                }
+                .id(card.id)
+                // With Reduce Motion the next card fades in rather than sliding.
+                .transition(style.reduceMotion ? .opacity
+                            : .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                .padding(.top, 24)
                 Spacer(minLength: 0)
             } else {
-                OLEmptyState(symbol: "checkmark", tint: OL.successText, fill: OL.successSoft, title: "Inbox triaged",
-                             message: reviewed == 0 ? "Nothing is waiting in the Inbox."
-                                : "\(reviewed) reviewed this session.",
-                             actionTitle: "Back to Inbox") { navigator.dismissCover() }
+                finished(mode, reviewed: reviewed)
                     .frame(maxHeight: .infinity)
             }
         }
         .scrollBounceBehavior(.basedOnSize)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let card { buttons(card) }
+            if let card { buttons(card, mode: mode) }
         }
         .animation(style.fading(.snappy(duration: 0.3)), value: card?.id)
         .animation(style.fading(.snappy(duration: 0.2)), value: draft)
@@ -74,41 +94,54 @@ struct TriageScreen: View {
             draft = TriageDraft()
             shownCard = id
         }
-        .sheet(isPresented: $picksDate) {
+        .sheet(isPresented: $picksDate, onDismiss: datePicked) {
             if let card {
                 let id = card.id
-                DuePickerSheet(date: pickerDate(for: card), includesTime: draft.timed ?? card.includesTime,
-                               now: env.now, clears: false) { date, timed in
-                    guard shownCard == id else { return }
-                    draft.due = date
-                    draft.timed = date == nil ? nil : timed
+                switch mode {
+                case .inbox:
+                    DuePickerSheet(date: pickerDate(for: card), includesTime: draft.timed ?? card.includesTime,
+                                   now: env.now, clears: false) { date, timed in
+                        guard shownCard == id else { return }
+                        draft.due = date
+                        draft.timed = date == nil ? nil : timed
+                    }
+                case .undated:
+                    DuePickerSheet(date: nil, includesTime: false, now: env.now, clears: false) { date, timed in
+                        guard shownCard == id, let date else { return }
+                        pickedDay = (id, date, timed)
+                    }
                 }
             }
         }
-        .onAppear { session.begin() }
+        .onAppear {
+            env.triage.begin()
+            env.undatedTriage.begin()
+        }
     }
 
-    private func buttons(_ task: Block) -> some View {
-        OLActionDock {
+    private func buttons(_ task: Block, mode: TriageMode) -> some View {
+        let session = env.triage(for: mode)
+        return OLActionDock {
             OLIconButton("trash", label: "Delete", kind: .bad, size: .large) {
-                if env.actions.trash([task]) { env.triage.finish(task.id) }
+                if env.actions.trash([task]) { session.finish(task.id) }
             }
             .accessibilityIdentifier("triage.delete")
             OLIconButton("checkmark", label: "Already done", kind: .ok, size: .large) {
                 let due = task.recurrence != nil ? task.dueDate : nil
                 let repeats = task.recurrence != nil
                 env.actions.complete([task])
-                // A repeat rolls to its next date and stays in the Inbox: set
-                // it aside once it has, as the Mac's triage does, so the next
+                // A repeat rolls to its next date and stays open: set it
+                // aside once it has, as the Mac's triage does, so the next
                 // card comes, and Undo brings it back.
-                if let due { env.triage.rollOn(task.id, from: due) }
-                else if repeats { env.triage.keep(task.id) }
-                else { env.triage.finish(task.id) }
+                if let due { session.rollOn(task.id, from: due) }
+                else if repeats { session.keep(task.id) }
+                else { session.finish(task.id) }
             }
             .accessibilityIdentifier("triage.done")
             Spacer(minLength: 0)
-            if draft.isEmpty {
-                Button("Later") { env.triage.keep(task.id) }
+            // No date's days date the card as they're tapped, so it never needs Next.
+            if mode == .undated || draft.isEmpty {
+                Button("Later") { session.keep(task.id) }
                     .buttonStyle(.ol(.ink, size: .large))
                     .accessibilityIdentifier("triage.later")
             } else {
@@ -117,6 +150,33 @@ struct TriageScreen: View {
                     .accessibilityIdentifier("triage.next")
                     .accessibilityHint(draft.summary(list: draft.listID.flatMap { env.store.list(id: $0) }, now: env.now,
                                                      calendar: env.settings.calendar))
+            }
+        }
+    }
+
+    /// The pass done: how many it reviewed, and for No date, the tasks it
+    /// set aside to go over again.
+    @ViewBuilder private func finished(_ mode: TriageMode, reviewed: Int) -> some View {
+        let navigator = env.navigator
+        switch mode {
+        case .inbox:
+            OLEmptyState(symbol: "checkmark", tint: OL.successText, fill: OL.successSoft, title: "Inbox triaged",
+                         message: reviewed == 0 ? "Nothing is waiting in the Inbox."
+                            : "\(reviewed) reviewed this session.",
+                         actionTitle: "Back to Inbox") { navigator.dismissCover() }
+        case .undated:
+            // With none left on the pass, what's still undated was set aside.
+            let kept = library.undatedCount(kept: [], closing: env.actions.closing)
+            if reviewed == 0, kept == 0 {
+                OLEmptyState(symbol: "checkmark", tint: OL.successText, fill: OL.successSoft, title: "Nothing without a date",
+                             message: "Every open task in your lists has a day.",
+                             actionTitle: "Back to Inbox") { navigator.dismissCover() }
+            } else {
+                OLEmptyState(symbol: "checkmark", tint: OL.successText, fill: OL.successSoft, title: "All triaged",
+                             message: reviewed == 0 ? "\(kept) set aside for later." : "\(reviewed) reviewed this session.",
+                             actionTitle: kept > 0 ? "Review what you kept" : "Back to Inbox") {
+                    if kept > 0 { env.undatedTriage.reviewKept() } else { navigator.dismissCover() }
+                }
             }
         }
     }
@@ -134,6 +194,22 @@ struct TriageScreen: View {
         } else if let due = env.store.block(id: task.id)?.dueDate ?? draft.due {
             env.triage.schedule(task.id, due: due)
         }
+    }
+
+    /// Gives a No date card its day as one step: it leaves the pass, and the
+    /// tray's Undo brings it back.
+    private func date(_ task: Block, on day: Date, includesTime: Bool? = nil) {
+        guard env.actions.file(task, to: nil, due: day, includesTime: includesTime) else { return }
+        env.haptics.play(.selection)
+        env.undatedTriage.finish(task.id)
+    }
+
+    /// Dates the No date card the picker was opened on, once it has gone.
+    private func datePicked() {
+        guard let picked = pickedDay else { return }
+        pickedDay = nil
+        guard let task = env.store.block(id: picked.id) else { return }
+        date(task, on: picked.date, includesTime: picked.includesTime)
     }
 
     /// Where the picker opens: the day picked, at the card's own time when
@@ -231,5 +307,55 @@ private struct TriageCard: View {
     private func pickedLabel(calendar: Calendar) -> String {
         guard let due = draft.due else { return "" }
         return CompactText.captureWhen(due, includesTime: draft.timed ?? false, now: now, calendar: calendar)
+    }
+}
+
+/// A No date card: the task, its list and how long it has waited, and the
+/// days it can have. A day's chip, or the picker's Set, dates it at once.
+private struct UndatedTriageCard: View {
+    let task: Block
+    let now: Date
+    @Binding var picksDate: Bool
+    let date: (Date) -> Void
+    @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
+
+    var body: some View {
+        let calendar = env.settings.calendar
+        let list = library.list(task.listID)
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("No date").olCaps().foregroundStyle(OL.infoText)
+                Text(task.displayTitle)
+                    .font(OLFont.triageTitle)
+                    .foregroundStyle(OL.ink)
+                    .padding(.top, 8)
+                    .accessibilityAddTraits(.isHeader)
+                // "🏡 Home · added 4 days ago": a nested list by its path.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if let list { OLListGlyph(icon: list.icon, accent: list.accent.color, size: 13) }
+                    Text([ListsTaskOverview.source(of: task, in: library), CompactText.added(task.createdAt, now: now)]
+                        .compactMap(\.self).joined(separator: " · "))
+                }
+                .font(OLFont.meta)
+                .foregroundStyle(OL.muted)
+                .padding(.top, 6)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                OLGroupHeader("When").padding(.horizontal, -4)
+                OLFlowLayout {
+                    ForEach(PhoneDay.allCases) { day in
+                        OLChipButton(OLChip(day.title)) { date(day.date(now: now, calendar: calendar)) }
+                            .accessibilityHint("Dates it and shows the next task")
+                    }
+                    OLChipButton(OLChip("", icon: .calendar)) { picksDate = true }
+                        .accessibilityLabel("Pick a date")
+                }
+            }
+        }
+        .padding(.vertical, 20)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .olCard()
     }
 }

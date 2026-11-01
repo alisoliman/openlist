@@ -51,6 +51,28 @@ struct CaptureRequest: Hashable, Identifiable {
     }
 }
 
+/// What triage deals: the Inbox, to file and date, or the tasks in the lists
+/// that have no date yet.
+enum TriageMode: String, CaseIterable, Identifiable, Hashable {
+    case inbox, undated
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .inbox: "Inbox"
+        case .undated: "No date"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .inbox: "tray"
+        case .undated: "calendar"
+        }
+    }
+}
+
 /// Every screen of the iPhone app, and how each is presented.
 enum PhoneRoute: Hashable, Identifiable {
     case today
@@ -60,7 +82,8 @@ enum PhoneRoute: Hashable, Identifiable {
     case activity
     case taskDetail(UUID)
     case inbox
-    case triage
+    /// Triage, opening on the cards of one mode: the Inbox's or No date's.
+    case triage(TriageMode)
     case lists
     case list(UUID)
     /// Find, starting from `query` ("" for none, "#travel" from a label chip).

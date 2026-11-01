@@ -93,7 +93,7 @@ final class PhoneLinkRouter {
         case .inbox:
             navigator.show(.inbox)
         case .triage:
-            navigator.show(.triage)
+            navigator.show(.triage(.inbox))
         case .today:
             navigator.show(.today)
         case .calendar:

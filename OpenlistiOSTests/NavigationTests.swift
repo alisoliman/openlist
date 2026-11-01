@@ -42,7 +42,7 @@ struct NavigationTests {
 
     static let id = UUID()
     static let allRoutes: [PhoneRoute] = [
-        .today, .timeline, .activity, .taskDetail(id), .inbox, .triage, .lists, .list(id), .find(""),
+        .today, .timeline, .activity, .taskDetail(id), .inbox, .triage(.inbox), .lists, .list(id), .find(""),
         .settings, .trash, .working, .capture(CaptureRequest()), .work,
     ]
 
@@ -155,7 +155,7 @@ struct NavigationTests {
         #expect(navigator.cover == .working)
         #expect(navigator.visibleRoute == .working)
         navigator.dismissCover()
-        navigator.open(.triage)
+        navigator.open(.triage(.inbox))
         #expect(navigator.cover == .triage)
         // Opening a screen from a cover closes it first.
         navigator.open(.taskDetail(Self.id))
@@ -205,9 +205,31 @@ struct NavigationTests {
         #expect(navigator.tab == .inbox)
         #expect(navigator.inboxPath == [.taskDetail(Self.id)])
 
-        navigator.show(.triage)
+        navigator.show(.triage(.inbox))
         #expect(navigator.tab == .inbox)
         #expect(navigator.cover == .triage)
+    }
+
+    /// Triage opens on the pass asked for, and asked for the other while
+    /// it's up, switches to it in place.
+    @Test func triageOpensOnEitherPass() {
+        let navigator = PhoneNavigator()
+        navigator.open(.triage(.undated))
+        #expect(navigator.cover == .triage)
+        #expect(navigator.visibleRoute == .triage(.undated))
+        navigator.open(.triage(.inbox))
+        #expect(navigator.cover == .triage)
+        #expect(navigator.visibleRoute == .triage(.inbox))
+        // The switch on screen sets the mode, which the route follows.
+        navigator.triageMode = .undated
+        #expect(navigator.visibleRoute == .triage(.undated))
+        navigator.dismissCover()
+        navigator.select(.lists)
+        navigator.show(.triage(.undated))
+        #expect(navigator.tab == .inbox)
+        #expect(navigator.cover == .triage && navigator.triageMode == .undated)
+        #expect(PhoneRoute.triage(.undated).presentation == .fullScreenCover)
+        #expect(PhoneRoute.triage(.undated).screenIdentifier == PhoneRoute.triage(.inbox).screenIdentifier)
     }
 
     @Test func repairFollowsMergesAndDropsWhatsGone() {
@@ -249,8 +271,10 @@ struct NavigationTests {
         #expect(navigator.visibleRoute == .inbox)
         #expect(links.receive(WidgetLink.activity.url))
         #expect(navigator.visibleRoute == .activity)
+        // The widget's Triage is the Inbox's, whichever pass was last on show.
+        navigator.triageMode = .undated
         #expect(links.receive(WidgetLink.triage.url))
-        #expect(navigator.cover == .triage)
+        #expect(navigator.cover == .triage && navigator.triageMode == .inbox)
 
         let kyoto = try #require(phone.list("Weekend in Kyoto"))
         #expect(links.receive(WidgetLink.list(kyoto.id).url))

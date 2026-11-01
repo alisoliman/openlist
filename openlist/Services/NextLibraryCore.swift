@@ -155,6 +155,26 @@ extension NextLibrary {
             .sorted { $0.createdAt < $1.createdAt }
     }
 
+    /// Tasks in the lists still waiting for a day, in the order the lists
+    /// show them: open, with no due date, not planned for a day or deferred
+    /// to one, not `kept` for later and not `closing` in their completion
+    /// dwell. The Inbox's tasks are its own queue's, and a subtask goes with
+    /// the open task above it, as there. `blocks` are the documents'
+    /// non-trashed blocks, for that order.
+    func undatedQueue(blocks: [Block], kept: Set<UUID>, closing: Set<UUID>) -> [Block] {
+        tasksInOutlineOrder(blocks: blocks).filter { waitsForADay($0) && !kept.contains($0.id) && !closing.contains($0.id) }
+    }
+
+    /// How many tasks `undatedQueue` deals, without putting them in order.
+    func undatedCount(kept: Set<UUID>, closing: Set<UUID>) -> Int {
+        open.count { waitsForADay($0) && !kept.contains($0.id) && !closing.contains($0.id) }
+    }
+
+    /// An open task in the lists with no day, and no open task above it.
+    private func waitsForADay(_ task: Block) -> Bool {
+        !task.isCompleted && task.dueDate == nil && task.selectedForDay == nil && !isInbox(task) && !isUnderOpenTask(task)
+    }
+
     /// Every task in the order the lists show it: lists in sidebar order,
     /// each in its document's order under the list's Sort, as its page draws
     /// it. `blocks` are the documents' non-trashed blocks, for that order.

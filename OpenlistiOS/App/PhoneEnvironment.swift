@@ -45,6 +45,8 @@ final class PhoneEnvironment {
     let clock: AppClock
     /// The Inbox's triage pass: what it set aside and how far it's got.
     let triage = TriageSession()
+    /// The pass through the lists' tasks with no date, kept the same way.
+    let undatedTriage = TriageSession()
     /// This device's library identity, which item links carry.
     let libraryID: UUID?
 
@@ -292,10 +294,11 @@ final class PhoneEnvironment {
     #if DEBUG
     /// A review session's `OpenlistOpenRoute`: the screen to open at launch,
     /// for screenshots and UI tests. A tab ("inbox", "lists", "timeline"),
-    /// a modal ("settings", "trash", "capture", "voice", "working", "triage"),
-    /// "activity", "find:#travel", or a list or task by its title
-    /// ("list:Weekend in Kyoto", "task:Draft Q3 OKRs"). `OpenlistShowTray`
-    /// puts its text in the tray, with Undo, for a screenshot of it.
+    /// a modal ("settings", "trash", "capture", "voice", "working", "triage",
+    /// "triage:undated"), "activity", "find:#travel", or a list or task by
+    /// its title ("list:Weekend in Kyoto", "task:Draft Q3 OKRs").
+    /// `OpenlistShowTray` puts its text in the tray, with Undo, for a
+    /// screenshot of it.
     private func openLaunchRoute(_ environment: [String: String] = ProcessInfo.processInfo.environment) {
         guard ReviewSession.identifier != nil else { return }
         if let text = environment["OpenlistShowTray"], !text.isEmpty {
@@ -310,7 +313,7 @@ final class PhoneEnvironment {
         case "work": navigator.show(.work)
         case "activity": navigator.show(.activity)
         case "inbox": navigator.show(.inbox)
-        case "triage": navigator.show(.triage)
+        case "triage": navigator.show(.triage(TriageMode(rawValue: name) ?? .inbox))
         case "lists": navigator.show(.lists)
         case "find": navigator.show(.find(name))
         case "settings": navigator.open(.settings)

@@ -9,6 +9,8 @@ import Observation
 /// One pass through the Inbox, one card at a time, as the Mac's triage card
 /// keeps it: the cards dealt with since triage opened, and those set aside
 /// (Later, or scheduled and left in the Inbox) until the app next launches.
+/// No date's pass through the lists' undated tasks is kept the same way; a
+/// card it dates leaves that queue on its own.
 ///
 /// What a card's step did is read back from the tasks rather than counted:
 /// taken back by the tray's Undo, a card is on the queue again and no longer
@@ -25,7 +27,7 @@ final class TriageSession {
     private(set) var scheduled: [UUID: Date] = [:]
     /// Repeats marked done, which roll on in the Inbox: the date each had.
     private(set) var rolled: [UUID: Date] = [:]
-    /// Filed, done or deleted from the card.
+    /// Filed, done or deleted from the card, or dated from No date's.
     private(set) var finished: Set<UUID> = []
     /// What triage has dealt with since it opened.
     private var dealt: Set<UUID> = []
@@ -33,13 +35,13 @@ final class TriageSession {
     /// Triage opening: the count starts over; what was set aside stays aside.
     func begin() { dealt = [] }
 
-    /// A card filed, done or deleted.
+    /// A card filed, done or deleted, or dated from No date's.
     func finish(_ id: UUID) {
         finished.insert(id)
         dealt.insert(id)
     }
 
-    /// A card left in the Inbox for later.
+    /// A card set aside for later: left in the Inbox, or without a date.
     func keep(_ id: UUID) {
         later.insert(id)
         dealt.insert(id)
@@ -81,7 +83,31 @@ final class TriageSession {
 extension NextLibrary {
     /// The Inbox's queue as this triage pass leaves it.
     func inboxQueue(triage: TriageSession, closing: Set<UUID>) -> [Block] {
-        let kept = triage.kept { id in tasks.first { $0.id == id }?.dueDate }
-        return inboxQueue(kept: kept, closing: closing)
+        inboxQueue(kept: kept(by: triage), closing: closing)
+    }
+
+    /// The lists' undated tasks as No date's pass leaves them, in the lists'
+    /// order; `blocks` are the documents' non-trashed blocks.
+    func undatedQueue(blocks: [Block], triage: TriageSession, closing: Set<UUID>) -> [Block] {
+        undatedQueue(blocks: blocks, kept: kept(by: triage), closing: closing)
+    }
+
+    /// How many cards No date's pass has left.
+    func undatedCount(triage: TriageSession, closing: Set<UUID>) -> Int {
+        undatedCount(kept: kept(by: triage), closing: closing)
+    }
+
+    private func kept(by triage: TriageSession) -> Set<UUID> {
+        triage.kept { id in tasks.first { $0.id == id }?.dueDate }
+    }
+}
+
+extension PhoneEnvironment {
+    /// The pass dealing `mode`'s cards.
+    func triage(for mode: TriageMode) -> TriageSession {
+        switch mode {
+        case .inbox: triage
+        case .undated: undatedTriage
+        }
     }
 }

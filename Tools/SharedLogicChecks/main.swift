@@ -1,8 +1,9 @@
 // Checks the UI-free logic the Mac screens and the iOS companion share:
-// Today's set and orders, the Inbox triage queue, the task query language,
-// the atomic capture and its draft, a list page's rows, and the phone's
-// compact wording. Where logic moved out of a Mac view, a copy of the view's
-// old code stands beside it, so the Mac is shown to draw exactly what it did.
+// Today's set and orders, the Inbox and No date triage queues, the task
+// query language, the atomic capture and its draft, a list page's rows, and
+// the phone's compact wording. Where logic moved out of a Mac view, a copy
+// of the view's old code stands beside it, so the Mac is shown to draw
+// exactly what it did.
 
 import Foundation
 import Observation
@@ -285,6 +286,39 @@ do {
     check(sorted.outline([home]).map(\.depth) == [0, 1] && sorted.outline([home]).last?.id == child.id,
           "A nested list follows its parent, one level down")
     check(sorted.destinations.allSatisfy { !$0.isSystemInbox } && sorted.inbox?.id == inbox.id, "Inbox is never a destination")
+}
+
+// MARK: - Tasks without a date
+
+do {
+    let store = try makeStore()
+    let inbox = store.inboxList()!
+    let home = store.createList(title: "Home")
+    let errands = store.createList(title: "Errands")
+    func task(_ title: String, in list: TaskList, parent: Block? = nil, _ configure: (Block) -> Void = { _ in }) -> Block {
+        let block = store.appendBlock(kind: .task, text: title, to: DocumentContext(listID: list.id, rootBlockID: parent?.id))
+        configure(block)
+        return block
+    }
+    _ = task("Captured", in: inbox)
+    let paint = task("Pick a paint colour", in: home)
+    _ = task("Ask about primer", in: home, parent: paint)
+    _ = task("Fix the gate", in: home) { $0.dueDate = at(2) }
+    _ = task("Planned for today", in: home) { $0.selectedForDay = calendar.startOfDay(for: now) }
+    store.deferTask(task("Deferred to next week", in: home), to: at(6))
+    let done = task("Done already", in: home) { $0.isCompleted = true; $0.completedAt = at(-1) }
+    let orphan = task("Under a done task", in: home, parent: done)
+    let starred = task("Starred, no date", in: errands) { $0.isStarred = true }
+    let stamps = task("Buy stamps", in: errands)
+    store.save()
+    let library = try makeLibrary(store)
+    let blocks = try store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil }))
+    check(titles(library.undatedQueue(blocks: blocks, kept: [], closing: [])) == titles([paint, orphan, starred, stamps]),
+          "No date deals the lists' open tasks with no day in the lists' order: not the Inbox's, dated, planned or deferred ones, nor a subtask its open parent carries")
+    check(titles(library.undatedQueue(blocks: blocks, kept: [paint.id], closing: [stamps.id])) == titles([orphan, starred]),
+          "Kept tasks and tasks still closing leave No date's queue")
+    check(library.undatedCount(kept: [], closing: []) == 4 && library.undatedCount(kept: [paint.id], closing: [stamps.id]) == 2,
+          "No date's count is its queue's, unordered")
 }
 
 // MARK: - Task query
@@ -630,6 +664,8 @@ do {
     check(words == ["4 days ago", "5 hours ago", "2 hours ago", "1 hour ago", "yesterday", "2 days ago", "12 minutes ago",
                     "1 minute ago", "just now"], "Ago in words, in the same hours and days as the age")
     check(CompactText.captured(ago(4 * 86_400), now: wednesday) == "Captured 4 days ago", "The triage card's line")
+    check(CompactText.added(ago(4 * 86_400), now: wednesday) == "added 4 days ago"
+          && CompactText.added(ago(30 * 3600), now: wednesday) == "added yesterday", "No date's card line, after the list")
     var london = tokyo
     london.locale = Locale(identifier: "en_GB")
     check(CompactText.day(day(10, 2), now: wednesday, calendar: london) == "Fri 2 \(london.shortMonthSymbols[9])"
