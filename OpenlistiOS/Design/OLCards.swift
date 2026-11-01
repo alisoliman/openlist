@@ -205,6 +205,27 @@ struct OLNowCard: View {
 
 // MARK: - C28 Empty state
 
+/// What a screen shows while its content is still on its way: a native
+/// spinner and a line of text, where its empty state would be.
+struct OLLoadingState: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text(title)
+                .font(OLFont.note)
+                .foregroundStyle(OL.muted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 40)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// A screen with nothing to show (`Today is clear`): a 56 pt disc with the
 /// screen's glyph, a serif title, a line of text and an action. A
 /// `checkmark` is the design's own tick, 24 pt at a 2.4 stroke.

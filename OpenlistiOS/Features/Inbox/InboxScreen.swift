@@ -38,10 +38,15 @@ struct InboxScreen: View {
         } content: {
             OLHeader("Inbox")
             if captures.isEmpty {
-                OLEmptyState(symbol: "tray", tint: OL.infoText, title: "Inbox is empty",
-                             message: "What you capture lands here, to file or schedule later.",
-                             actionTitle: "Capture something") { navigator.open(.capture(CaptureRequest())) }
-                    .frame(maxHeight: .infinity)
+                if env.awaitsFirstImport(library) {
+                    OLLoadingState("Getting your lists from iCloud…")
+                        .frame(maxHeight: .infinity)
+                } else {
+                    OLEmptyState(symbol: "tray", tint: OL.infoText, title: "Inbox is empty",
+                                 message: "What you capture lands here, to file or schedule later.",
+                                 actionTitle: "Capture something") { navigator.open(.capture(CaptureRequest())) }
+                        .frame(maxHeight: .infinity)
+                }
             } else {
                 if toTriage > 0 || kept == 0 {
                     Button("Triage one by one") { navigator.open(.triage(.inbox)) }

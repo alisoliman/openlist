@@ -63,10 +63,14 @@ struct ListPageScreen: View {
                      topSpacing: 14)
             if page.rows.isEmpty && page.completed.isEmpty && children.isEmpty {
                 let archived = list?.isEffectivelyArchived == true
+                // Archived, it offers its way back; a list archived with its
+                // parent comes back with the parent, as on the Mac.
+                let unarchives = archived && list?.isArchived == true
                 OLEmptyState(symbol: "checklist", tint: list?.accent.color ?? OL.accentText, title: "Nothing here yet",
                              message: archived ? "This list is archived." : "Tasks you add to this list show here.",
-                             actionTitle: archived ? nil : "Add a task") {
-                    navigator.open(.capture(CaptureRequest(listID: listID)))
+                             actionTitle: archived ? (unarchives ? "Unarchive" : nil) : "Add a task") {
+                    if !archived { navigator.open(.capture(CaptureRequest(listID: listID))) }
+                    else if let list { env.actions.setArchived(false, for: list) }
                 }
                 .padding(.top, 60)
             }
@@ -99,9 +103,8 @@ struct ListPageScreen: View {
                 OLGroup("Lists") {
                     OLListGrid {
                         ForEach(children) { child in
-                            let open = library.openCount(in: child.id)
                             OLListCard(title: child.displayTitle, icon: child.icon, accent: child.accent,
-                                       detail: open == 0 ? "All done" : "\(open) open") {
+                                       detail: library.cardDetail(for: child)) {
                                 navigator.open(.list(child.id))
                             }
                         }
