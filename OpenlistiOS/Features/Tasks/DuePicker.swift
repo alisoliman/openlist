@@ -43,8 +43,39 @@ enum PhoneDay: CaseIterable, Identifiable {
 /// and Clear. Set hands back the date and whether it has a time.
 struct DuePickerSheet: View {
     let title: String
+    let date: Date?
+    let includesTime: Bool
+    let now: Date
+    let clears: Bool
     let onSet: (_ date: Date?, _ includesTime: Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+
+    init(title: String = "Due date", date: Date?, includesTime: Bool, now: Date, clears: Bool = true,
+         onSet: @escaping (_ date: Date?, _ includesTime: Bool) -> Void) {
+        self.title = title
+        self.date = date
+        self.includesTime = includesTime
+        self.now = now
+        self.clears = clears
+        self.onSet = onSet
+    }
+
+    var body: some View {
+        DuePickerForm(title: title, date: date, includesTime: includesTime, now: now, clears: clears,
+                      close: { dismiss() }, onSet: onSet)
+            .padding(.bottom, 16)
+            .presentationDetents([.large])
+            .olSheet()
+    }
+}
+
+/// The due date picker itself, in its sheet or in place of a sheet's own
+/// content (Capture's), so a sheet never opens over another. `close` puts it
+/// away after Cancel, Set or Clear.
+struct DuePickerForm: View {
+    let title: String
+    let close: () -> Void
+    let onSet: (_ date: Date?, _ includesTime: Bool) -> Void
     @Environment(\.appClock) private var clock
     @Environment(\.calendar) private var calendar
     @State private var date: Date
@@ -53,8 +84,9 @@ struct DuePickerSheet: View {
     private let clears: Bool
 
     init(title: String = "Due date", date: Date?, includesTime: Bool, now: Date, clears: Bool = true,
-         onSet: @escaping (_ date: Date?, _ includesTime: Bool) -> Void) {
+         close: @escaping () -> Void, onSet: @escaping (_ date: Date?, _ includesTime: Bool) -> Void) {
         self.title = title
+        self.close = close
         self.onSet = onSet
         self.clears = clears && date != nil
         _date = State(initialValue: date ?? now)
@@ -63,9 +95,9 @@ struct DuePickerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            OLSheetHeader(confirmTitle: "Set", cancel: { dismiss() }) {
+            OLSheetHeader(confirmTitle: "Set", cancel: close) {
                 onSet(includesTime ? date : calendar.startOfDay(for: date), includesTime)
-                dismiss()
+                close()
             }
             Text(title).font(OLFont.groupHeader).foregroundStyle(OL.muted).padding(.top, 6)
             OLFlowLayout {
@@ -95,7 +127,7 @@ struct DuePickerSheet: View {
             if clears {
                 Button("Clear date") {
                     onSet(nil, false)
-                    dismiss()
+                    close()
                 }
                 .buttonStyle(.olLink())
                 .frame(maxWidth: .infinity)
@@ -104,9 +136,7 @@ struct DuePickerSheet: View {
         }
         .padding(.horizontal, OLMetrics.gutter)
         .padding(.top, 8)
-        .padding(.bottom, 16)
-        .presentationDetents([.large])
-        .olSheet()
+        .accessibilityAction(.escape, close)
     }
 
     private func pick(_ day: Date) {

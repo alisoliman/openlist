@@ -9,6 +9,7 @@ import UIKit
 
 /// The shell every screen sits in: a navigation stack per tab, the floating
 /// dock, the tray, and the sheets and covers on top, over the live library.
+/// Where it all is is the scene's to keep (`PhoneNavigator.Place`).
 struct PhoneRootView: View {
     var body: some View {
         PhoneLibraryHost { PhoneShell() }
@@ -24,6 +25,9 @@ private struct PhoneShell: View {
     /// The keyboard is up: the dock goes behind it, as a tab bar does,
     /// rather than riding above it and taking the rows' room.
     @State private var isKeyboardUp = false
+    /// Where the phone was, for the system to put back if it ends the app in
+    /// the background.
+    @SceneStorage("phone.place") private var savedPlace: Data?
 
     var body: some View {
         @Bindable var navigator = env.navigator
@@ -36,6 +40,7 @@ private struct PhoneShell: View {
                         // The dock's room, which the inset on the TabView below
                         // doesn't pass to its tabs: a page's end scrolls clear of it.
                         .environment(\.olDockRoom, showsDock ? OLMetrics.dockHeight - dockDrop : 0)
+                        .environment(\.olScrollToTop, navigator.scrollToTopRequests(for: tab))
                 }
             }
         }
@@ -54,6 +59,7 @@ private struct PhoneShell: View {
                 .padding(.bottom, trayLift(showsDock: showsDock, screenBar: navigator.showsScreenBar && !isKeyboardUp))
         }
         .overlay(alignment: .top) { PhoneNoticeBanner() }
+        .background { KeyboardShortcuts() }
         .background {
             // The home indicator's inset, never the keyboard's.
             GeometryReader { proxy in
@@ -68,20 +74,11 @@ private struct PhoneShell: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardUp = false
         }
-        // Capture is a sheet; Settings covers the screen, a page of its own
-        // with no dock, as the design draws it, though the navigator keeps it
-        // with the sheets (its own stack, closed by Done).
-        .sheet(item: Binding(get: { navigator.sheet == .settings ? nil : navigator.sheet },
-                             set: { if navigator.sheet != .settings { navigator.sheet = $0 } })) { sheet in
+        // Capture and Settings are sheets: a task to finish, and options to
+        // set, over the screen they came from. Settings has its own stack and
+        // keeps every change as it's made, so a swipe down loses nothing.
+        .sheet(item: $navigator.sheet) { sheet in
             PhoneSheetContent(sheet: sheet)
-                .environment(env)
-                .environment(\.phoneLibrary, library)
-                .environment(\.olStyle, style)
-                .environment(\.appClock, env.clock)
-        }
-        .fullScreenCover(isPresented: Binding(get: { navigator.sheet == .settings },
-                                              set: { if !$0, navigator.sheet == .settings { navigator.sheet = nil } })) {
-            PhoneSheetContent(sheet: .settings)
                 .environment(env)
                 .environment(\.phoneLibrary, library)
                 .environment(\.olStyle, style)
@@ -105,9 +102,10 @@ private struct PhoneShell: View {
         .preferredColorScheme(env.settings.appearance.colorScheme)
         .onAppear {
             env.actions.sceneUndoManager = undoManager
-            env.links.windowReady(true)
+            env.windowAppeared(restoring: savedPlace)
         }
         .onChange(of: undoManager) { _, manager in env.actions.sceneUndoManager = manager }
+        .onChange(of: navigator.place) { _, place in savedPlace = try? JSONEncoder().encode(place) }
     }
 
     private var style: OLStyle {
@@ -169,6 +167,7 @@ struct PhoneScreen: View {
         case .timeline: TimelineScreen()
         case .activity: ActivityScreen()
         case let .taskDetail(id): TaskDetailScreen(taskID: id)
+        case let .taskHistory(id): TaskHistoryScreen(taskID: id)
         case .inbox: InboxScreen()
         case .triage: TriageScreen()
         case .lists: ListsScreen()
@@ -177,6 +176,7 @@ struct PhoneScreen: View {
         case let .find(query): FindScreen(query: query)
         case .settings: SettingsScreen()
         case .trash: TrashScreen()
+        case .planHours: PlanHoursScreen()
         case .working: WorkingScreen()
         case let .capture(request): CaptureScreen(request: request)
         }
@@ -196,24 +196,64 @@ private struct PhoneSheetContent: View {
                     .navigationDestination(for: PhoneRoute.self) { PhoneScreen(route: $0) }
             }
             .overlay(alignment: .bottom) { TrayHost(announces: true).padding(.bottom, 0) }
+            .overlay(alignment: .top) { PhoneNoticeBanner() }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         case let .capture(request):
-            CaptureScreen(request: request)
+            CaptureScreen(request: request, draft: env.navigator.captureDraft,
+                          spoken: env.navigator.capturedSpoken)
                 .olSheet()
         }
     }
 }
 
+/// A cover's screen, with its own stack: a task opened from Working pushes
+/// over the timer, and Back comes back to it.
 private struct PhoneCoverContent: View {
     let cover: PhoneCover
+    @Environment(PhoneEnvironment.self) private var env
 
     var body: some View {
-        Group {
-            switch cover {
-            case .working: WorkingScreen()
-            case .triage: TriageScreen()
+        @Bindable var navigator = env.navigator
+        NavigationStack(path: $navigator.coverPath) {
+            Group {
+                switch cover {
+                case .working: WorkingScreen()
+                case .triage: TriageScreen()
+                }
             }
+            .navigationDestination(for: PhoneRoute.self) { PhoneScreen(route: $0) }
         }
         .overlay(alignment: .bottom) { TrayHost(announces: true).padding(.bottom, OLMetrics.trayAboveScreenBar) }
+        .overlay(alignment: .top) { PhoneNoticeBanner() }
+    }
+}
+
+/// A hardware keyboard's way round: ⌘1–⌘4 for the tabs, ⌘N for a new task,
+/// ⌘F for Find and ⌘, for Settings, as the dock and Lists offer them. They
+/// stand down while a sheet or cover is up, whose own keys (Esc, ⌘↩) work,
+/// and while a mode such as Select has the dock's place.
+private struct KeyboardShortcuts: View {
+    @Environment(PhoneEnvironment.self) private var env
+
+    var body: some View {
+        let navigator = env.navigator
+        ZStack {
+            ForEach(Array(PhoneTab.allCases.enumerated()), id: \.element) { index, tab in
+                Button(tab.title) { navigator.select(tab) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+            }
+            Button("New task") { navigator.open(.capture(navigator.captureRequest)) }
+                .keyboardShortcut("n")
+            Button("Find") { navigator.open(.find("")) }
+                .keyboardShortcut("f")
+            Button("Settings") { navigator.open(.settings) }
+                .keyboardShortcut(",")
+        }
+        .disabled(navigator.sheet != nil || navigator.cover != nil || !navigator.dockHiders.isEmpty)
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

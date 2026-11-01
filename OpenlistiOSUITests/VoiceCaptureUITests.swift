@@ -28,8 +28,7 @@ final class VoiceCaptureUITests: XCTestCase {
         app.buttons["capture.voiceDone"].tap()
         XCTAssertTrue(app.textFields["capture.field"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields["capture.field"].value as? String, "Water the ferns")
-        app.screen("screen.capture").buttons["Cancel"].tap()
-        app.waitForScreenToClose("screen.capture")
+        app.discardCapture()
         assertInboxCount("6 to triage", app: app)
     }
 
@@ -95,7 +94,7 @@ final class VoiceCaptureUITests: XCTestCase {
         app.buttons["capture.voiceDone"].tap()
         XCTAssertTrue(app.screen("capture.heard").waitForExistence(timeout: 5))
         XCTAssertTrue(app.screen("screen.capture").buttons["Add 2"].isEnabled)
-        app.screen("screen.capture").buttons["Cancel"].tap()
+        app.discardCapture()
         assertInboxCount("6 to triage", app: app)
     }
 
@@ -129,7 +128,7 @@ final class VoiceCaptureUITests: XCTestCase {
         app.screen("screen.capture").buttons["Add"].tap()
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         XCTAssertEqual(field.value as? String, "Keep typing this task")
-        app.screen("screen.capture").buttons["Cancel"].tap()
+        app.discardCapture()
         assertInboxCount("7 to triage", app: app)
         XCTAssertTrue(app.buttons["Water the ferns"].exists)
         XCTAssertFalse(app.buttons["Keep typing this task"].exists)

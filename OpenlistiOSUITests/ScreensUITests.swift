@@ -221,7 +221,7 @@ final class ScreensUITests: XCTestCase {
     }
 
     /// A swipe down, often meant only to lower the keyboard, keeps a draft;
-    /// Cancel still closes the sheet and discards it.
+    /// Cancel asks, and Discard closes the sheet and throws it away.
     @MainActor
     func testCaptureSwipeDownKeepsDraft() {
         let app = launch(environment: ["OpenlistOpenRoute": "inbox"])
@@ -235,8 +235,7 @@ final class ScreensUITests: XCTestCase {
         top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 480)))
         XCTAssertFalse(sheet.waitForNonExistence(timeout: 2), "A swipe down must not discard a typed draft")
         XCTAssertEqual(field.value as? String, "Water the balcony plants")
-        sheet.buttons["Cancel"].tap()
-        app.waitForScreenToClose("screen.capture")
+        app.discardCapture()
         XCTAssertFalse(app.buttons["Water the balcony plants"].exists)
     }
 
@@ -560,15 +559,19 @@ final class ScreensUITests: XCTestCase {
         snap(app, "detail-estimate")
     }
 
-    /// History goes to Activity, as the design links it.
+    /// History is the task's own, with all activity a step on.
     @MainActor
     func testTaskDetailHistoryOpensActivity() {
         let app = launch()
         app.buttons["Write interview feedback for Priya"].tap()
         app.waitForScreen("screen.taskDetail")
         app.buttons["detail.history"].tap()
+        app.waitForScreen("screen.taskHistory")
+        app.buttons["history.activity"].tap()
         app.waitForScreen("screen.activity")
-        app.buttons["Back to Task"].tap()
+        app.buttons["Back to History"].tap()
+        app.waitForScreen("screen.taskHistory")
+        app.buttons["Back to Write interview feedback for Priya"].tap()
         app.waitForScreen("screen.taskDetail")
     }
 

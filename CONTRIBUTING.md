@@ -196,6 +196,7 @@ screenshots (`xcrun simctl launch` passes them as `SIMCTL_CHILD_<name>`):
 | `OpenlistVoiceRecording` | A recording's path, which voice capture listens to in place of the microphone (the Mac's Dev and Debug builds too) |
 | `OpenlistVoiceFixture` | Offline voice UX fixture: shows Listening until Done/Return, then reads each newline-separated task without a microphone, permission prompt or model (Debug/Dev review sessions only) |
 | `OpenlistComponentGallery=1` | Opens the design components' gallery (`OpenlistGalleryPage` 0–4 shows one part); Settings links to it too |
+| `OpenlistRestoresPlace=1` | Puts back the place the scene saved, as release builds do after the system ends the app in the background (review sessions otherwise start where their launch variables say) |
 
 The app's code is in `OpenlistiOS/`: `App/` (entry, `PhoneEnvironment`,
 navigation, the actions coordinator and tray), `Design/` (the `OL` components;

@@ -13,18 +13,27 @@ import SwiftUI
 ///
 /// The system navigation bar is hidden: the design draws its top bar in the
 /// content, where it scrolls with the page. Swiping back still works
-/// (`Platform/SwipeBack.swift`).
+/// (`Platform/SwipeBack.swift`), and so does VoiceOver's escape gesture: it
+/// goes back, or closes the sheet or cover the screen is in, unless the
+/// screen says what escape does (`escape`).
 struct OLScreen<TopBar: View, Content: View>: View {
     var identifier: String?
     var scrolls = true
+    var escape: (() -> Void)?
     @ViewBuilder var topBar: TopBar
     @ViewBuilder var content: Content
     @Environment(\.olDockRoom) private var dockRoom
+    @Environment(\.olScrollToTop) private var scrollToTop
+    @Environment(\.olStyle) private var style
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.dismiss) private var dismiss
+    @State private var position = ScrollPosition(edge: .top)
 
-    init(identifier: String? = nil, scrolls: Bool = true,
+    init(identifier: String? = nil, scrolls: Bool = true, escape: (() -> Void)? = nil,
          @ViewBuilder topBar: () -> TopBar, @ViewBuilder content: () -> Content) {
         self.identifier = identifier
         self.scrolls = scrolls
+        self.escape = escape
         self.topBar = topBar()
         self.content = content()
     }
@@ -35,7 +44,12 @@ struct OLScreen<TopBar: View, Content: View>: View {
                 ScrollView {
                     column
                 }
+                .scrollPosition($position)
                 .scrollDismissesKeyboard(.interactively)
+                // The tab on show tapped again at its root, as a tab bar does.
+                .onChange(of: scrollToTop) {
+                    withAnimation(style.animation(.snappy(duration: 0.35))) { position.scrollTo(edge: .top) }
+                }
             } else {
                 column.frame(maxHeight: .infinity, alignment: .top)
             }
@@ -44,6 +58,9 @@ struct OLScreen<TopBar: View, Content: View>: View {
         .background(OL.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .modifier(ScreenIdentifier(identifier: identifier))
+        .accessibilityAction(.escape) {
+            if let escape { escape() } else if isPresented { dismiss() }
+        }
     }
 
     private var column: some View {
@@ -60,8 +77,8 @@ struct OLScreen<TopBar: View, Content: View>: View {
 }
 
 extension OLScreen where TopBar == EmptyView {
-    init(identifier: String? = nil, scrolls: Bool = true, @ViewBuilder content: () -> Content) {
-        self.init(identifier: identifier, scrolls: scrolls, topBar: { EmptyView() }, content: content)
+    init(identifier: String? = nil, scrolls: Bool = true, escape: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.init(identifier: identifier, scrolls: scrolls, escape: escape, topBar: { EmptyView() }, content: content)
     }
 }
 
@@ -96,6 +113,8 @@ extension EnvironmentValues {
     /// here rather than as the root's inset, which a tab's navigation stack
     /// doesn't pass on to its scroll views.
     @Entry var olDockRoom: CGFloat = 0
+    /// Changes each time the tab's root page is asked to scroll to its top.
+    @Entry var olScrollToTop = 0
 }
 
 private struct ScreenIdentifier: ViewModifier {
@@ -160,10 +179,15 @@ struct OLEyebrow: View {
     }
 }
 
-/// "< Today" (`.back`): the previous screen's title in the accent text.
+/// "< Today" (`.back`): the previous screen's title in the accent text, or
+/// "Back" for a title too long for the bar, as UIKit shortens it; VoiceOver
+/// always hears where it goes.
 struct OLBackButton: View {
     let title: String
     let action: () -> Void
+
+    /// The longest title the bar shows in full beside a screen's own buttons.
+    static let longestTitle = 20
 
     init(_ title: String, action: @escaping () -> Void) {
         self.title = title
@@ -176,7 +200,8 @@ struct OLBackButton: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 20, weight: .medium))
                     .frame(width: 22, height: 22)
-                Text(title)
+                Text(title.count > Self.longestTitle ? "Back" : title)
+                    .lineLimit(1)
             }
             .font(OLFont.link)
             .foregroundStyle(OL.accentText)
@@ -318,14 +343,17 @@ struct OLGroupAction: View {
     }
 
     var body: some View {
-        // A 44 pt target that leaves the header its 20 pt line.
-        Button(title, action: action)
-            .font(OLFont.groupHeader.weight(.medium))
-            .foregroundStyle(OL.accentText)
-            .buttonStyle(OLPressStyle())
-            .padding(.vertical, 12)
-            .contentShape(.rect)
-            .padding(.vertical, -12)
+        // A 44 pt target that leaves the header its 20 pt line: a button
+        // takes taps within its label, so the room is the label's.
+        Button(action: action) {
+            Text(title)
+                .padding(.vertical, 12)
+                .contentShape(.rect)
+        }
+        .font(OLFont.groupHeader.weight(.medium))
+        .foregroundStyle(OL.accentText)
+        .buttonStyle(OLPressStyle())
+        .padding(.vertical, -12)
     }
 }
 

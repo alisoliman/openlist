@@ -200,7 +200,8 @@ struct OLBulkBar: View {
 // MARK: - C23 Sheet chrome
 
 /// The capture sheet's top: Cancel and a primary button under the grabber
-/// the system draws. Present with `.olSheet()`.
+/// the system draws. Present with `.olSheet()`. With a keyboard, Esc cancels
+/// and ⌘↩ confirms; Return stays the field's.
 struct OLSheetHeader: View {
     var cancelTitle = "Cancel"
     let confirmTitle: String
@@ -211,9 +212,11 @@ struct OLSheetHeader: View {
     var body: some View {
         HStack {
             Button(cancelTitle, action: cancel).buttonStyle(.olLink())
+                .keyboardShortcut(.cancelAction)
             Spacer()
             Button(confirmTitle, action: confirm)
                 .buttonStyle(.ol(.primary, size: .small))
+                .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canConfirm)
                 // Back in to the gutter the Cancel link reaches out of.
                 .padding(.trailing, 10)
@@ -245,6 +248,9 @@ struct OLTrayView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.olStyle) private var style
     @State private var drained = false
+    /// How far it's being swiped down, which it follows; let go short of
+    /// dismissing, it settles back.
+    @GestureState(resetTransaction: Transaction(animation: .snappy(duration: 0.25))) private var pull: CGFloat = 0
 
     var body: some View {
         // The message and its button, as the design's tray: no glyph; the
@@ -288,11 +294,17 @@ struct OLTrayView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .background { RoundedRectangle(cornerRadius: 18, style: .continuous).fill(OL.ink).olShadow(.float) }
-        .gesture(DragGesture(minimumDistance: 12).onEnded { value in
-            if value.translation.height > 20 { dismiss() }
-        })
+        // It goes down with the finger, a little up against it, and a flick
+        // down sends it off however short.
+        .offset(y: pull > 0 ? pull : pull / 4)
+        .gesture(DragGesture(minimumDistance: 12)
+            .updating($pull) { value, pull, _ in pull = value.translation.height }
+            .onEnded { value in
+                if value.translation.height > 20 || value.predictedEndTranslation.height > 60 { dismiss() }
+            })
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityAction(.escape, dismiss)
         .accessibilityIdentifier("tray")
         .onAppear {
             if announces { AccessibilityNotification.Announcement(message.text).post() }

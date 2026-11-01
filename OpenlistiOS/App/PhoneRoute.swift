@@ -6,7 +6,7 @@
 import Foundation
 
 /// The dock's four tabs, each with its own navigation stack.
-enum PhoneTab: String, CaseIterable, Identifiable, Hashable {
+enum PhoneTab: String, CaseIterable, Identifiable, Hashable, Codable {
     case today, inbox, lists, work
 
     var id: String { rawValue }
@@ -33,7 +33,7 @@ enum PhoneTab: String, CaseIterable, Identifiable, Hashable {
 /// What the Capture sheet starts with: a list (the Inbox when nil), whether
 /// a task typed without a date is due today, and whether it starts listening
 /// for tasks to be said.
-struct CaptureRequest: Hashable, Identifiable {
+struct CaptureRequest: Hashable, Identifiable, Codable {
     var listID: UUID?
     var dueToday = false
     var listens = false
@@ -53,7 +53,7 @@ struct CaptureRequest: Hashable, Identifiable {
 
 /// What triage deals: the Inbox, to file and date, or the tasks in the lists
 /// that have no date yet.
-enum TriageMode: String, CaseIterable, Identifiable, Hashable {
+enum TriageMode: String, CaseIterable, Identifiable, Hashable, Codable {
     case inbox, undated
 
     var id: String { rawValue }
@@ -74,13 +74,15 @@ enum TriageMode: String, CaseIterable, Identifiable, Hashable {
 }
 
 /// Every screen of the iPhone app, and how each is presented.
-enum PhoneRoute: Hashable, Identifiable {
+enum PhoneRoute: Hashable, Identifiable, Codable {
     case today
     case work
     /// Today's day as a timeline, in Today's place (the calendar toggle).
     case timeline
     case activity
     case taskDetail(UUID)
+    /// A task's own history, pushed from its page.
+    case taskHistory(UUID)
     case inbox
     /// Triage, opening on the cards of one mode: the Inbox's or No date's.
     case triage(TriageMode)
@@ -90,6 +92,8 @@ enum PhoneRoute: Hashable, Identifiable {
     case find(String)
     case settings
     case trash
+    /// The hours planning fills, pushed inside Settings.
+    case planHours
     case working
     case capture(CaptureRequest)
 
@@ -100,12 +104,13 @@ enum PhoneRoute: Hashable, Identifiable {
         case tab(PhoneTab)
         /// Shown in its tab's root in place of another: the timeline in Today's.
         case mode(PhoneTab)
-        /// Pushed on the current navigation stack, a tab's or the Settings sheet's.
+        /// Pushed on the stack in front: a tab's, the Settings sheet's, or a
+        /// cover's.
         case push
-        /// Over everything: Settings, with its own stack, covering the screen,
-        /// and Capture, a sheet.
+        /// A sheet over everything: Settings, with its own stack, and Capture.
         case sheet
-        /// Covers the dock and tabs: Working, Triage.
+        /// Covers the dock and tabs: Working, Triage, each a mode with its
+        /// own stack.
         case fullScreenCover
         /// Pushed inside the Settings sheet, opening it first if needed.
         case settingsStack
@@ -118,20 +123,20 @@ enum PhoneRoute: Hashable, Identifiable {
         case .lists: .tab(.lists)
         case .work: .tab(.work)
         case .timeline: .mode(.today)
-        case .activity, .taskDetail, .list, .find: .push
+        case .activity, .taskDetail, .taskHistory, .list, .find: .push
         case .settings, .capture: .sheet
         case .working, .triage: .fullScreenCover
-        case .trash: .settingsStack
+        case .trash, .planHours: .settingsStack
         }
     }
 
     /// The tab a link lands the screen on when nothing else decides.
     var home: PhoneTab {
         switch self {
-        case .today, .timeline, .activity, .working, .taskDetail: .today
+        case .today, .timeline, .activity, .working, .taskDetail, .taskHistory: .today
         case .work: .work
         case .inbox, .triage: .inbox
-        case .lists, .list, .find, .settings, .trash: .lists
+        case .lists, .list, .find, .settings, .trash, .planHours: .lists
         case .capture: .today
         }
     }
@@ -144,6 +149,7 @@ enum PhoneRoute: Hashable, Identifiable {
         case .timeline: "screen.timeline"
         case .activity: "screen.activity"
         case .taskDetail: "screen.taskDetail"
+        case .taskHistory: "screen.taskHistory"
         case .inbox: "screen.inbox"
         case .triage: "screen.triage"
         case .lists: "screen.lists"
@@ -151,6 +157,7 @@ enum PhoneRoute: Hashable, Identifiable {
         case .find: "screen.find"
         case .settings: "screen.settings"
         case .trash: "screen.trash"
+        case .planHours: "screen.planHours"
         case .working: "screen.working"
         case .capture: "screen.capture"
         }
@@ -158,7 +165,7 @@ enum PhoneRoute: Hashable, Identifiable {
 }
 
 /// A sheet on the root.
-enum PhoneSheet: Identifiable, Hashable {
+enum PhoneSheet: Identifiable, Hashable, Codable {
     case settings
     case capture(CaptureRequest)
 
@@ -171,7 +178,7 @@ enum PhoneSheet: Identifiable, Hashable {
 }
 
 /// A full-screen cover on the root.
-enum PhoneCover: String, Identifiable, Hashable {
+enum PhoneCover: String, Identifiable, Hashable, Codable {
     case working, triage
     var id: String { rawValue }
 }
