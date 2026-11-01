@@ -7,7 +7,8 @@ import SwiftUI
 
 /// The Inbox (mockup 07): what's still to triage, newest first, each with how
 /// long ago it came in, and Triage one by one. Ticking one dwells with Undo,
-/// a date offers other days, and the rest of a row opens it.
+/// a date offers other days, and the rest of a row opens it. Under them, the
+/// lists' tasks without a date open triage's No date pass.
 struct InboxScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
@@ -24,6 +25,10 @@ struct InboxScreen: View {
         let toTriage = library.inboxQueue(triage: env.triage, closing: env.actions.closing).count
         let kept = library.keptInbox(kept: env.triage.kept { id in library.tasks.first { $0.id == id }?.dueDate })
             .count { !env.actions.isClosing($0.id) }
+        // What No date would deal now; once all of it is set aside, what it
+        // would deal again.
+        let undatedLeft = library.undatedCount(triage: env.undatedTriage, closing: env.actions.closing)
+        let undated = undatedLeft > 0 ? undatedLeft : library.undatedCount(kept: [], closing: env.actions.closing)
         return OLScreen(identifier: PhoneRoute.inbox.screenIdentifier, scrolls: !captures.isEmpty) {
             OLTopBar {
                 OLEyebrow(toTriage == 0 ? "All triaged" : "\(toTriage) to triage", color: OL.infoText)
@@ -40,7 +45,7 @@ struct InboxScreen: View {
                     .frame(maxHeight: .infinity)
             } else {
                 if toTriage > 0 || kept == 0 {
-                    Button("Triage one by one") { navigator.open(.triage) }
+                    Button("Triage one by one") { navigator.open(.triage(.inbox)) }
                         .buttonStyle(.ol(.primary, block: true))
                         .padding(.top, OLMetrics.headerGap)
                         .accessibilityIdentifier("inbox.triage")
@@ -48,7 +53,7 @@ struct InboxScreen: View {
                     // Everything left was set aside this session: go over it again.
                     Button("Review what you kept") {
                         env.triage.reviewKept()
-                        navigator.open(.triage)
+                        navigator.open(.triage(.inbox))
                     }
                     .buttonStyle(.ol(.neutral, block: true))
                     .padding(.top, OLMetrics.headerGap)
@@ -58,6 +63,16 @@ struct InboxScreen: View {
                     InboxRow(task: task, separator: separator, now: now)
                 }
                 .padding(.top, OLMetrics.cardGap)
+            }
+            if undated > 0 {
+                // Not the captures above, which have no date either.
+                OLLinkRow("without a date in your lists", count: undated) {
+                    // Everything left was set aside this session: go over it again.
+                    if undatedLeft == 0 { env.undatedTriage.reviewKept() }
+                    navigator.open(.triage(.undated))
+                }
+                .accessibilityHint("Triages them one by one")
+                .accessibilityIdentifier("inbox.undated")
             }
         }
     }

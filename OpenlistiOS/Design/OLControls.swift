@@ -226,6 +226,63 @@ extension View {
     func olToggle() -> some View { tint(OL.success) }
 }
 
+// MARK: - View picker
+
+/// A quiet, full-width switch between a screen's views, with a complete
+/// 44-point target for each: Lists' Cards and Tasks, Triage's Inbox and No
+/// date. Each view's glyph goes before its name, except at accessibility
+/// text sizes.
+struct OLViewPicker<Value: Hashable>: View {
+    struct Option {
+        let value: Value
+        let title: String
+        let symbol: String
+        /// For UI tests: "lists.view.cards".
+        let identifier: String
+    }
+
+    /// What VoiceOver calls the switch: "Lists view".
+    let label: String
+    let options: [Option]
+    @Binding var selection: Value
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(_ label: String, options: [Option], selection: Binding<Value>) {
+        self.label = label
+        self.options = options
+        _selection = selection
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(options, id: \.value) { option in
+                let isOn = selection == option.value
+                Button {
+                    selection = option.value
+                } label: {
+                    HStack(spacing: 6) {
+                        if !dynamicTypeSize.isAccessibilitySize { Image(systemName: option.symbol) }
+                        Text(option.title)
+                    }
+                        .font(OLFont.segment)
+                        .foregroundStyle(isOn ? OL.ink : OL.muted)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(isOn ? OL.surface : .clear, in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isOn ? .isSelected : [])
+                .accessibilityIdentifier(option.identifier)
+            }
+        }
+        .padding(3)
+        .background(OL.sunken, in: .capsule)
+        .olFeedback(.selection, trigger: selection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+    }
+}
+
 // MARK: - View toggle
 
 /// A page's two views, List and Calendar: their glyphs in a `sunken`

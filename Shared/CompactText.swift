@@ -150,5 +150,8 @@ nonisolated enum CompactText {
     /// The triage card's line: "Captured 4 days ago", "Captured just now".
     static func captured(_ date: Date, now: Date) -> String { "Captured \(ago(date, now: now))" }
 
+    /// A No date card's age beside its list: "added 4 days ago".
+    static func added(_ date: Date, now: Date) -> String { "added \(ago(date, now: now))" }
+
     private static func count(_ value: Int, _ unit: String) -> String { "\(value) \(unit)\(value == 1 ? "" : "s")" }
 }

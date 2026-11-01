@@ -1,8 +1,8 @@
 #!/bin/bash
 # The UI-free logic the Mac screens and the iOS companion share (Today's set,
-# the Inbox queue, the task query language, capture, list page rows and the
-# phone's compact wording), with the app targets' concurrency settings. The
-# same files type-check for iOS in run-ios-core-checks.sh.
+# the Inbox and No date queues, the task query language, capture, list page
+# rows and the phone's compact wording), with the app targets' concurrency
+# settings. The same files type-check for iOS in run-ios-core-checks.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)

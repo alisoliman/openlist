@@ -307,6 +307,95 @@ final class ScreensUITests: XCTestCase {
         app.waitForScreen("screen.inbox")
     }
 
+    /// No date deals the lists' tasks without a day, one tap a card: a day
+    /// dates it, with Undo; Later skips it until it's reviewed again. The
+    /// switch goes back to the Inbox's cards.
+    @MainActor
+    func testTriageTasksWithoutADate() {
+        let app = launch()
+        app.dock("inbox").tap()
+        app.waitForScreen("screen.inbox")
+        let undated = app.buttons["inbox.undated"]
+        XCTAssertTrue(undated.waitForExistence(timeout: 5))
+        XCTAssertEqual(undated.label, "4 without a date in your lists")
+        // Under the captures, clear of the dock.
+        app.screen("screen.inbox").swipeUp()
+        undated.tap()
+        app.waitForScreen("screen.triage")
+        XCTAssertTrue(app.buttons["triage.mode.undated"].isSelected)
+        XCTAssertFalse(app.buttons["triage.mode.inbox"].isSelected)
+        let position = app.staticTexts["triage.position"]
+        XCTAssertEqual(position.label, "1 of 4")
+        XCTAssertTrue(app.staticTexts["Book the ryokan"].exists)
+        XCTAssertFalse(app.staticTexts["Move to"].exists, "No date only asks when")
+        snap(app, "triage-undated")
+        // A day's chip dates the card at once; Undo brings it back.
+        app.buttons["Tomorrow"].tap()
+        XCTAssertTrue(app.screen("tray").staticTexts["“Book the ryokan” due tomorrow"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Finish The Overstory"].waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "2 of 4")
+        // The shell's tray is behind the cover too: Undo on the cover's.
+        let undo = app.buttons.matching(identifier: "tray.action").allElementsBoundByIndex.first(where: \.isHittable)
+        XCTAssertNotNil(undo)
+        undo?.tap()
+        XCTAssertTrue(app.staticTexts["Book the ryokan"].waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "1 of 4")
+        app.buttons["triage.later"].tap()
+        XCTAssertTrue(app.staticTexts["Finish The Overstory"].waitForExistence(timeout: 5))
+        // The picker's day, once it's set.
+        app.buttons["Pick a date"].tap()
+        app.buttons["Set"].tap()
+        XCTAssertTrue(app.screen("tray").staticTexts["“Finish The Overstory” due today"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Start Piranesi"].waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "3 of 4")
+        app.buttons["triage.done"].tap()
+        XCTAssertTrue(app.staticTexts["Share the OKR draft with leads"].waitForExistence(timeout: 5))
+        app.buttons["triage.delete"].tap()
+        XCTAssertTrue(app.staticTexts["All triaged"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["4 reviewed this session."].exists)
+        snap(app, "triage-undated-done")
+        // What Later set aside comes round again.
+        app.buttons["Review what you kept"].tap()
+        XCTAssertTrue(app.staticTexts["Book the ryokan"].waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "4 of 4")
+        // The Inbox's pass, on the switch.
+        app.buttons["triage.mode.inbox"].tap()
+        XCTAssertTrue(app.staticTexts["Gift ideas for Mika’s birthday"].waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "1 of 6")
+        XCTAssertTrue(app.staticTexts["Move to"].exists)
+        app.buttons["triage.close"].tap()
+        app.waitForScreen("screen.inbox")
+        XCTAssertEqual(app.buttons["inbox.undated"].label, "1 without a date in your lists")
+    }
+
+    /// With the Inbox emptied, No date is still a tap away from it.
+    @MainActor
+    func testNoDateFromAnEmptyInbox() {
+        let app = launch(environment: ["OpenlistOpenRoute": "triage"])
+        app.waitForScreen("screen.triage", timeout: 20)
+        let position = app.staticTexts["triage.position"]
+        for index in 1...6 {
+            let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "\(index) of 6"), object: position)
+            XCTAssertEqual(XCTWaiter().wait(for: [shown], timeout: 5), .completed, "Card \(index) of 6")
+            app.buttons["triage.delete"].tap()
+        }
+        XCTAssertTrue(app.staticTexts["Inbox triaged"].waitForExistence(timeout: 5))
+        app.buttons["Back to Inbox"].tap()
+        app.waitForScreen("screen.inbox")
+        XCTAssertTrue(app.staticTexts["Inbox is empty"].waitForExistence(timeout: 5))
+        let undated = app.buttons["inbox.undated"]
+        XCTAssertTrue(undated.waitForExistence(timeout: 5))
+        XCTAssertTrue(undated.isHittable)
+        snap(app, "inbox-empty-undated")
+        undated.tap()
+        app.waitForScreen("screen.triage")
+        XCTAssertTrue(app.buttons["triage.mode.undated"].isSelected)
+        XCTAssertTrue(app.staticTexts["Book the ryokan"].waitForExistence(timeout: 5))
+        app.buttons["triage.mode.inbox"].tap()
+        XCTAssertTrue(app.staticTexts["Inbox triaged"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Nothing is waiting in the Inbox."].exists)
+    }
+
     // MARK: Lists
 
     @MainActor
