@@ -293,26 +293,32 @@ struct OLTimeline: View {
     }
 
     @ViewBuilder private func block(_ item: OLTimelineItem) -> some View {
-        let button = Button { open(item) } label: {
+        // Done work and meetings open nothing, so they're drawn, not buttons.
+        if item.kind == .done || item.kind == .event {
             OLTimelineBlock(item: item)
-        }
-        .buttonStyle(OLRowPressStyle())
-        .disabled(item.kind == .done || item.kind == .event)
-        .accessibilityLabel(Self.spoken(item, calendar: calendar))
-        if let drag, item.movable {
-            button
-                .onDrag { drag(item) } preview: {
-                    OLTimelineBlock(item: item).frame(width: 220, height: 22)
-                }
-                .accessibilityHint("Drag to another time")
-                .accessibilityActions {
-                    if let nudge, item.placementID != nil {
-                        Button("Move 15 minutes earlier") { nudge(item, -15) }
-                        Button("Move 15 minutes later") { nudge(item, 15) }
-                    }
-                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Self.spoken(item, calendar: calendar))
         } else {
-            button
+            let button = Button { open(item) } label: {
+                OLTimelineBlock(item: item)
+            }
+            .buttonStyle(OLRowPressStyle())
+            .accessibilityLabel(Self.spoken(item, calendar: calendar))
+            if let drag, item.movable {
+                button
+                    .onDrag { drag(item) } preview: {
+                        OLTimelineBlock(item: item).frame(width: 220, height: 22)
+                    }
+                    .accessibilityHint("Drag to another time")
+                    .accessibilityActions {
+                        if let nudge, item.placementID != nil {
+                            Button("Move 15 minutes earlier") { nudge(item, -15) }
+                            Button("Move 15 minutes later") { nudge(item, 15) }
+                        }
+                    }
+            } else {
+                button
+            }
         }
     }
 

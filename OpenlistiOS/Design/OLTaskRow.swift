@@ -385,10 +385,12 @@ struct OLSeparatorLine: View {
     }
 }
 
-/// A row's press: it dims, and doesn't shrink.
+/// A row's press: it dims, and doesn't shrink. Disabled, it dims to 0.4.
 struct OLRowPressStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
+        configuration.label.opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
     }
 }
 

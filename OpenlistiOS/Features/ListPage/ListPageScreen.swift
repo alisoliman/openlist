@@ -39,9 +39,22 @@ struct ListPageScreen: View {
                 OLTopBar {
                     OLBackButton(env.backTitle(for: .list(listID))) { navigator.pop() }
                 } trailing: {
+                    let nothingToSelect = document.selectableTasks.isEmpty
                     OLIconButton("checkmark.circle", label: "Select tasks", kind: .bare, iconSize: 22) { isSelecting = true }
-                        .disabled(document.selectableTasks.isEmpty)
+                        .disabled(nothingToSelect)
+                        .accessibilityHint(nothingToSelect ? "No open tasks to select" : "")
                         .accessibilityIdentifier("list.select")
+                        // Dimmed, it still answers a tap with why.
+                        .overlay {
+                            if nothingToSelect {
+                                Color.clear
+                                    .contentShape(.rect)
+                                    .onTapGesture {
+                                        env.tray.show("No open tasks to select", icon: "checkmark.circle", tone: .neutral, seconds: 3)
+                                    }
+                                    .accessibilityHidden(true)
+                            }
+                        }
                     if let list { menu(list) }
                 }
             }

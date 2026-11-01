@@ -7,15 +7,17 @@ import SwiftUI
 
 /// Every tappable surface's press: 0.94 and a touch lighter, over 150 ms,
 /// or just the lightening under Reduce motion. The design defines no pressed
-/// states; this is the iPhone's answer to the Mac's hover.
+/// states; this is the iPhone's answer to the Mac's hover. Disabled, it dims
+/// to 0.4, as a text link does.
 struct OLPressStyle: ButtonStyle {
     var scale: CGFloat = 0.94
     @Environment(\.olStyle) private var style
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed && !style.reduceMotion ? scale : 1)
-            .opacity(configuration.isPressed ? 0.85 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
             .animation(style.animation(OLStyle.press), value: configuration.isPressed)
     }
 }
