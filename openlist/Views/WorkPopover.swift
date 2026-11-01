@@ -11,7 +11,7 @@ struct WorkPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Text(choosingTask ? "Choose a task" : "Work")
+                Text(choosingTask ? "Choose a task" : movingBlock != nil ? "Move planned work" : "Work")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(NX.ink)
                 Spacer(minLength: 8)
@@ -20,7 +20,9 @@ struct WorkPopover: View {
                 }
                 .buttonStyle(NXHoverButtonStyle(radius: 6, padding: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4),
                                                 foreground: NX.ink(0.45), hoverForeground: NX.ink))
-                .keyboardShortcut(.cancelAction)
+                // While a move is picked, Esc is its Cancel, back to the work.
+                .keyboardShortcut(movingBlock == nil ? .cancelAction : nil)
+                .help(movingBlock == nil ? "Close (Esc)" : "Close")
                 .accessibilityLabel("Close work details")
             }
             if let notice = env.calendar.notice {
@@ -44,6 +46,10 @@ struct WorkPopover: View {
                     env.calendar.selectWork(reference)
                     choosingTask = false
                 }
+            } else if let movingBlock {
+                // In the panel, as Choose a task is, rather than a sheet over it,
+                // which a click in the window would take away with it.
+                WorkMovePicker(block: movingBlock, showsTitle: false) { self.movingBlock = nil }
             } else if let summary = env.calendar.workCompletion {
                 WorkCompletionView(summary: summary, chooseNext: chooseTask)
             } else if let task = env.calendar.selectedWorkTask {
@@ -99,7 +105,6 @@ struct WorkPopover: View {
         .fixedSize(horizontal: false, vertical: true)
         .presentationBackground(NX.card)
         .tint(style.accent)
-        .sheet(item: $movingBlock) { WorkMovePicker(block: $0).environment(env).environment(\.nextStyle, style) }
         .onChange(of: env.calendar.workSelection) { _, _ in movingBlock = nil }
     }
 

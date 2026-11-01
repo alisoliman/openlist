@@ -218,6 +218,13 @@ extension Workbench {
         namingSectionID = id
     }
 
+    /// The palette's Rename section…: its name field opens in the sidebar,
+    /// shown again if it was hidden, as File ▸ New Section's does.
+    func renameSectionInSidebar(_ id: UUID) {
+        if !showsSidebar { toggleSidebar() }
+        namingSectionID = id
+    }
+
     /// A section's Delete, as one change the tray can undo: its lists stay in
     /// the sidebar under "Other lists", and Undo files them back where they sat.
     func deleteSection(_ section: SidebarSection) {

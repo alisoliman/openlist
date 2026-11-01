@@ -157,9 +157,9 @@ struct NXDataSettings: View {
 
     private func reset() {
         guard env.workbench.resetLibrary() else { return }
-        // The page stays open: replacing the route with itself still closes the
-        // inspector and selection on tasks that are gone. A list's or label's
-        // screen goes with them.
+        // The page stays open: replacing the route with itself still clears
+        // the selection of tasks that are gone, as the reset has closed the
+        // inspector. A list's or label's screen goes with them.
         switch env.navigator.route {
         case .list, .label: env.navigator.replace(with: .today)
         case let route: env.navigator.replace(with: route)

@@ -246,10 +246,11 @@ struct MenuBarTaskRow: View {
     }
 
     /// As a search hit opens a task: on its list's screen, the Inbox's being
-    /// triage, focused and in the inspector.
+    /// triage, focused and in the inspector, over a window cleared for it.
     private func open() {
         openWindow(id: WindowID.main)
         NSApp.activate(ignoringOtherApps: true)
+        env.prepareForArrival()
         let workbench = env.workbench
         let id = block.id
         if let list = env.store.list(id: block.listID) { workbench.go(workbench.route(for: list)) }

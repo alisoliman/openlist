@@ -93,7 +93,8 @@ struct NXListMenu<Options: View>: View {
         }
         .pickerStyle(.inline)
         Divider()
-        Button("Edit Hours in Settings…") { workbench.go(.settings) }
+        // Opens the list's own hours there, in view.
+        Button("Edit Hours in Settings…") { workbench.editHours(workbench.hours(for: list)) }
     }
 
     /// The list's document on the clipboard, as Export writes it, said in the tray.

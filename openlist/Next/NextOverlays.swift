@@ -1149,10 +1149,9 @@ enum NXPalette {
             NXCommand(id: "new", icon: "plus.circle", label: "New task", key: "N") { workbench.openCapture() },
             NXCommand(id: "search", icon: "magnifyingglass", label: "Search", key: "/") { env.navigator.isSearchOpen = true },
             NXCommand(id: "undo", icon: "arrow.uturn.backward", label: "Undo last change", key: "⌘Z") { workbench.undoLast() },
-            // The sheet leaves the page as it was, so focus goes back where it
-            // was, as Help ▸ Keyboard Shortcuts leaves it.
+            // A window of its own beside this one, so focus stays where it was.
             NXCommand(id: "shortcuts", icon: "keyboard", label: "Keyboard shortcuts", key: "⌘/") {
-                env.navigator.isShortcutSheetOpen = true
+                env.showShortcuts()
             },
         ]
         all += nav.map { route, icon, label, key in
@@ -1161,6 +1160,22 @@ enum NXPalette {
         all += library.destinations.map { list in
             NXCommand(id: "open-\(list.id)", icon: "square.2.layers.3d", label: "Open \(list.displayTitle)", navigates: true) {
                 workbench.go(.list(list.id))
+            }
+        }
+        // And each label's page, as each list's.
+        all += library.labels.map { label in
+            NXCommand(id: "open-label-\(label.id)", icon: "tag", label: "Open #\(label.name)", navigates: true) {
+                workbench.go(.label(label.id))
+            }
+        }
+        // A section's name and its removal, which the sidebar offers only on a right-click.
+        for section in library.sections {
+            let name = NXFormat.quoted(section.displayTitle)
+            all.append(NXCommand(id: "rename-section-\(section.id)", icon: "pencil", label: "Rename section \(name)…",
+                                 navigates: true) { workbench.renameSectionInSidebar(section.id) })
+            if !section.isDefault {
+                all.append(NXCommand(id: "delete-section-\(section.id)", icon: "folder.badge.minus", label: "Delete section \(name)",
+                                     tone: NX.redText) { workbench.deleteSection(section) })
             }
         }
         let filtered = all.enumerated().filter { _, command in

@@ -1,15 +1,23 @@
 import SwiftUI
 
-/// The Work panel's Move planned time…: the block's slot at another time,
-/// saved as Plan saves one, with the tray and Undo.
+/// The Work panel's and a calendar block's Move planned time…: the block's
+/// slot at another time, saved as Plan saves one, with the tray and Undo.
+/// With `plans`, Not planned yet's Plan at…: the task given a slot at the
+/// time picked, as a drop on the calendar gives it one. It draws no chrome
+/// of its own: the Work panel shows it in place, and a sheet frames it.
 struct WorkMovePicker: View {
     let block: PlannedBlock
+    /// Plans the block's task at the time picked, rather than moving a slot it has.
+    var plans = false
+    /// Its own title, which the Work panel's header gives it instead.
+    var showsTitle = true
+    /// Cancel, or the move made: the panel goes back to the work, the sheet away.
+    let done: () -> Void
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
-    @Environment(\.dismiss) private var dismiss
     @State private var date = Date.now
     @State private var overlaps: [WorkMoveOverlap] = []
-    /// That the calendar changed under the sheet, which asks for another look.
+    /// That the calendar changed under the picker, which asks for another look.
     @State private var feedback: String?
     /// Why the move wasn't saved, drawn as a failure.
     @State private var saveError: String?
@@ -21,7 +29,7 @@ struct WorkMovePicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                NXPanelTitle("Move planned work")
+                if showsTitle { NXPanelTitle(plans ? "Plan a time" : "Move planned work") }
                 Text(env.store.block(id: block.taskID)?.displayTitle ?? "Task")
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(NX.textTertiary)
@@ -53,22 +61,30 @@ struct WorkMovePicker: View {
             HStack(spacing: 8) {
                 Spacer()
                 // Esc while a custom start time is typed puts the pill back,
-                // as the field's own Escape does, and leaves the sheet open.
-                Button("Cancel", role: .cancel) { dismiss() }
+                // as the field's own Escape does, and leaves the picker open.
+                Button("Cancel", role: .cancel, action: done)
                     .keyboardShortcut(typedTime == nil ? .cancelAction : nil)
                     .buttonStyle(NXPanelButtonStyle(kind: .secondary))
-                Button(overlaps.isEmpty ? "Move" : "Move anyway", action: confirm)
+                Button(confirmTitle, action: confirm)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(NXPanelButtonStyle(kind: .primary))
             }
         }
-        .padding(24).frame(width: 400)
-        .presentationBackground(NX.card)
         .tint(style.accent)
         .onAppear { date = max(.now, block.start); refresh() }
         .onChange(of: date) { _, _ in refresh() }
         .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
     }
+
+    private var confirmTitle: String {
+        switch (plans, overlaps.isEmpty) {
+        case (true, true): "Plan"
+        case (true, false): "Plan anyway"
+        case (false, true): "Move"
+        case (false, false): "Move anyway"
+        }
+    }
+
     private func refresh() { overlaps = env.calendar.moveOverlaps(block, to: date); feedback = nil; saveError = nil }
     private func confirm() {
         // Return in the time field, or a click here while typing, moves the
@@ -81,11 +97,11 @@ struct WorkMovePicker: View {
         guard current == overlaps else {
             overlaps = current
             saveError = nil
-            feedback = "The calendar changed. Review what this time overlaps before moving."
+            feedback = "The calendar changed. Review what this time overlaps before \(plans ? "planning" : "moving")."
             return
         }
-        env.workbench.movePlacement(block, to: date)
-        if env.store.persistenceError == nil { dismiss() }
+        if plans { env.workbench.plan(block.taskID, at: date) } else { env.workbench.movePlacement(block, to: date) }
+        if env.store.persistenceError == nil { done() }
         else { feedback = nil; saveError = env.store.persistenceError }
     }
 }

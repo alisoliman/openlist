@@ -61,12 +61,13 @@ final class NextKeyHandler {
         }
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self else { return event }
-            MainActor.assumeIsolated {
+            let stepped = MainActor.assumeIsolated {
                 // Any click answers a G chord by letting it go.
                 if self.env.workbench.gPressedAt != nil { self.env.workbench.endGoChord() }
                 if event.type == .leftMouseDown { self.releaseForeignFocus(for: event) }
+                return event.type == .otherMouseDown && self.stepHistory(for: event)
             }
-            return event
+            return stepped ? nil : event
         }
         // So does the window or Openlist going to the background, whose keys
         // this monitor no longer sees, and a menu.
@@ -379,6 +380,19 @@ final class NextKeyHandler {
         window.makeFirstResponder(nil)
     }
 
+    /// A mouse's back and forward buttons step through the history, as ⌘[
+    /// and ⌘] do, and stand down where those do: over capture or a sheet.
+    private func stepHistory(for event: NSEvent) -> Bool {
+        guard event.buttonNumber == 3 || event.buttonNumber == 4, let window = view?.window, event.window === window,
+              window.attachedSheet == nil, NSApp.modalWindow == nil, !env.workbench.captureOpen else { return false }
+        if event.buttonNumber == 3 {
+            if env.workbench.canGoBack { env.workbench.goBack() }
+        } else if env.navigator.canGoForward {
+            env.navigator.goForward()
+        }
+        return true
+    }
+
     // MARK: Single keys
 
     private func handleSingleKey(key: UInt16, chars: String, shift: Bool) -> Bool {
@@ -461,6 +475,11 @@ final class NextKeyHandler {
             // With nothing else to let go, a line a search hit or link
             // revealed ends in place, as the design's search leaves nothing behind.
             else if workbench.focusID == nil, navigator.contentReveal != nil { navigator.finishReveal() }
+            // Settings is a page of its own: Esc leaves it for where it was
+            // opened from, or Today.
+            else if navigator.route == .settings {
+                if navigator.canGoBack { navigator.goBack() } else { workbench.go(.today) }
+            }
             else { workbench.focusID = nil }
             return true
         default:

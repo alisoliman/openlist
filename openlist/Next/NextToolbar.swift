@@ -11,30 +11,48 @@ import SwiftUI
 struct NextToolbar: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
+    @Environment(\.nextLibrary) private var library
     @Environment(\.nxTrafficLightsInset) private var trafficLightsInset
     let crumb: String
     /// Widths of the back-and-crumb and button groups, which the notch keeps clear of.
     @State private var leadingWidth: CGFloat = 0
     @State private var trailingWidth: CGFloat = 0
+    /// Where the notch hangs in the bar, for the Work panel's arrow to point at.
+    @State private var notchFrame: CGRect?
 
     private var workbench: Workbench { env.workbench }
+    private nonisolated static let space = "toolbar"
 
     var body: some View {
         @Bindable var calendar = env.calendar
         let working = workbench.workTask != nil
+        // Named for where it goes, as a Back button names the page before.
+        let back = workbench.backRoute.flatMap { NXCrumb.name(of: $0, library: library) }
         HStack(spacing: 6) {
             HStack(spacing: 6) {
-                Button { env.navigator.goBack(); workbench.focusID = nil; workbench.selection = [] } label: {
+                // With the sidebar hidden, the way to show it again by pointer.
+                if !workbench.showsSidebar {
+                    Button { workbench.toggleSidebar() } label: {
+                        Image(systemName: "sidebar.left").font(.system(size: 13, weight: .medium))
+                            .frame(width: 17, height: 17)
+                    }
+                    .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.06), radius: 6,
+                                                    padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
+                                                    foreground: NX.ink(0.6)))
+                    .help("Show Sidebar (⌃⌘S)")
+                    .accessibilityLabel("Show Sidebar")
+                }
+                Button { workbench.goBack() } label: {
                     Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
                         .frame(width: 17, height: 17)
                 }
                 // No hover fill, as the design's: only its colour says whether it can go back.
                 .buttonStyle(NXHoverButtonStyle(hover: .clear, radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                                foreground: env.navigator.canGoBack ? NX.ink(0.6) : NX.ink(0.2)))
-                .disabled(!env.navigator.canGoBack)
-                .help("Back (⌘[)")
-                .accessibilityLabel("Back")
+                                                foreground: workbench.canGoBack ? NX.ink(0.6) : NX.ink(0.2)))
+                .disabled(!workbench.canGoBack)
+                .help(back.map { "Back to \($0) (⌘[)" } ?? "Back (⌘[)")
+                .accessibilityLabel(back.map { "Back to \($0)" } ?? "Back")
 
                 // While you work the crumb gives the notch its room past 200 pt.
                 // It keeps its first 80 pt however narrow the bar.
@@ -105,12 +123,19 @@ struct NextToolbar: View {
                 // setting; it goes at once when the work ends, and the labels
                 // beside it change at once, as the design's do.
                 if working {
-                    NXWorkNotch().transition(.asymmetric(insertion: style.slide(.move(edge: .top)).animation(NX.ease(420)),
-                                                         removal: .identity))
+                    NXWorkNotch()
+                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(Self.space)) }) { notchFrame = $0 }
+                        .onDisappear { notchFrame = nil }
+                        .transition(.asymmetric(insertion: style.slide(.move(edge: .top)).animation(NX.ease(420)),
+                                                removal: .identity))
                 }
             }
         }
-        .popover(isPresented: $calendar.isWorkPanelPresented, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
+        .coordinateSpace(.named(Self.space))
+        // The panel's arrow points at the notch it opens from, or at the
+        // bar's middle while there's no work to hang one.
+        .popover(isPresented: $calendar.isWorkPanelPresented,
+                 attachmentAnchor: notchFrame.map { .rect(.rect($0)) } ?? .point(.bottom), arrowEdge: .bottom) {
             WorkPopover().environment(env).environment(\.nextStyle, style)
         }
         // Asked for as the window opened, as Work ▸ Show Work does with it

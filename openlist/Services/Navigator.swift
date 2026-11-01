@@ -23,24 +23,86 @@ enum AppRoute: Hashable {
         if case let .list(id) = self { return id }
         return nil
     }
+
+    /// How the route is saved for the next launch to open on: nil for
+    /// Settings, which a launch never opens on.
+    var savedValue: String? {
+        switch self {
+        case .inbox: "inbox"
+        case .today: "today"
+        case .calendar: "calendar"
+        case .activity: "activity"
+        case .tasks: "tasks"
+        case .lists: "lists"
+        case .trash: "trash"
+        case .settings: nil
+        case let .list(id): "list:\(id.uuidString)"
+        case let .label(id): "label:\(id.uuidString)"
+        }
+    }
+
+    init?(savedValue: String) {
+        let parts = savedValue.split(separator: ":", maxSplits: 1).map(String.init)
+        switch (parts.first, parts.count == 2 ? UUID(uuidString: parts[1]) : nil) {
+        case ("inbox", nil): self = .inbox
+        case ("today", nil): self = .today
+        case ("calendar", nil): self = .calendar
+        case ("activity", nil): self = .activity
+        case ("tasks", nil): self = .tasks
+        case ("lists", nil): self = .lists
+        case ("trash", nil): self = .trash
+        case let ("list", id?): self = .list(id)
+        case let ("label", id?): self = .label(id)
+        default: return nil
+        }
+    }
 }
 
 /// Drives which view is on screen, plus the back/forward history behind ⌘[ and ⌘].
 @Observable
 @MainActor
 final class Navigator {
-    private(set) var route: AppRoute = .today
+    private(set) var route: AppRoute = .today {
+        // Settings has no saved value, so a launch opens where Settings was opened from.
+        didSet { if route != oldValue, let saved = route.savedValue { defaults?.set(saved, forKey: Self.routeKey) } }
+    }
 
     private var listViewModes: [UUID: ListViewMode] = [:]
     @ObservationIgnored private let defaults: UserDefaults?
     private static let listViewModesKey = "listViewModes"
+    private static let routeKey = "route"
+    private static let openTaskKey = "openTaskID"
+
+    /// Where this Mac last left the window: the page, and the task the
+    /// inspector showed. Read as the navigator is made, and only read: the
+    /// launch opens on them once the library says they're still there
+    /// (`launchPlace`), on Today until then.
+    let launchRoute: AppRoute?
+    let launchTaskID: UUID?
 
     init(defaults: UserDefaults? = nil) {
         self.defaults = defaults
+        launchRoute = defaults?.string(forKey: Self.routeKey).flatMap(AppRoute.init(savedValue:))
+        launchTaskID = defaults?.string(forKey: Self.openTaskKey).flatMap(UUID.init(uuidString:))
         for (id, raw) in defaults?.dictionary(forKey: Self.listViewModesKey) ?? [:] {
             if let id = UUID(uuidString: id), let raw = raw as? String,
                let mode = ListViewMode(rawValue: raw) { listViewModes[id] = mode }
         }
+    }
+
+    /// The page and task a launch opens on: where this Mac left them, as far
+    /// as the library still has them. `list` follows a list merged into
+    /// another and says nil for one gone or in Trash; `label` does the same
+    /// for a label, and `isTask` says whether the task is still there. A
+    /// page that's gone opens Today; a task that's gone, no inspector.
+    func launchPlace(list: (UUID) -> UUID?, label: (UUID) -> UUID?, isTask: (UUID) -> Bool) -> (route: AppRoute, taskID: UUID?) {
+        let route: AppRoute = switch launchRoute {
+        case let .list(id)?: list(id).map { self.route(showing: $0) } ?? .today
+        case let .label(id)?: label(id).map(AppRoute.label) ?? .today
+        case let saved?: saved
+        case nil: .today
+        }
+        return (route, launchTaskID.flatMap { isTask($0) ? $0 : nil })
     }
 
     /// The system Inbox list, so `.inbox` follows that list's presentation.
@@ -135,7 +197,9 @@ final class Navigator {
     var documentOwnsEditorCommands: Bool { documentListID != nil }
 
     /// The task the inspector shows, if any.
-    var openTaskID: UUID?
+    var openTaskID: UUID? {
+        didSet { if openTaskID != oldValue { defaults?.set(openTaskID?.uuidString, forKey: Self.openTaskKey) } }
+    }
 
     /// Blocks selected in the current document: the line being written, or
     /// the line a reveal lands on. The document's menu commands act on them.
@@ -161,7 +225,6 @@ final class Navigator {
     // Overlays.
     var isCommandPaletteOpen = false
     var isSearchOpen = false
-    var isShortcutSheetOpen = false
 
     /// Reusable exact-content navigation, retained only while viewing its page.
     private(set) var contentReveal: ContentReveal?
@@ -243,6 +306,10 @@ final class Navigator {
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
 
+    /// The pages Back and Forward go to, for the controls to name them.
+    var backRoute: AppRoute? { backStack.last?.route }
+    var forwardRoute: AppRoute? { forwardStack.last?.route }
+
     /// Navigates, pushing the current route onto the back stack. The open task
     /// stays open, as it does going Back and Forward: the inspector belongs to
     /// the window, not to the screen.
@@ -282,15 +349,31 @@ final class Navigator {
     }
 
     /// Replaces the current route without disturbing history — used when the
-    /// list you are viewing is deleted underneath you.
+    /// list you are viewing is deleted underneath you. The inspector stays,
+    /// as it does going anywhere else: what took its task away closes it.
     func replace(with newRoute: AppRoute) {
         route = newRoute
         startVisit(returning: nil)
         revealedDocumentListID = nil
         isTriageVisit = false
         contentReveal = nil
-        openTaskID = nil
         clearSelection()
+    }
+
+    /// Takes the pages `exists` says are gone out of the history, as after
+    /// Delete everything, so Back and Forward never land on one. A visit
+    /// left beside another of the same page joins it, and neither side
+    /// starts with the page on show.
+    func pruneHistory(keeping exists: (AppRoute) -> Bool) {
+        func pruned(_ visits: [Visit]) -> [Visit] {
+            visits.filter { exists($0.route) }.reduce(into: []) { kept, visit in
+                if kept.last?.route != visit.route { kept.append(visit) }
+            }
+        }
+        backStack = pruned(backStack)
+        forwardStack = pruned(forwardStack)
+        while backStack.last?.route == route { backStack.removeLast() }
+        while forwardStack.last?.route == route { forwardStack.removeLast() }
     }
 
     /// Retarget both the visible route and history so Back/Forward cannot open

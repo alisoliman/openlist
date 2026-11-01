@@ -212,6 +212,10 @@ struct NextListScreen: View {
         let archived = library.archived.contains { $0.id == list.id }
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXListCover(list: list)
+            // A nested list's way up, as the details' "Subtask of" leads to the task above.
+            if let parent = library.hierarchy.parent(of: list.id) {
+                NXParentListLink(parent: parent)
+            }
             NXScreenHeader(tile: .list(list), color: list.nxColor, title: list.displayTitle,
                            subtitle: "\(open.count) open" + (section.isEmpty ? "" : " · \(section)")
                                + (archived ? " · Archived" : ""),
@@ -496,6 +500,45 @@ private struct NXListDescription: View {
         let summary = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         if summary != list.summary { env.workbench.setListDescription(list.id, to: summary) }
         selection = nil
+    }
+}
+
+/// The list a nested list sits in, over its header, as the details' "Subtask
+/// of" sits over a subtask's title. A click opens it.
+private struct NXParentListLink: View {
+    @Environment(AppEnvironment.self) private var env
+    let parent: TaskList
+    @State private var hovering = false
+
+    var body: some View {
+        let workbench = env.workbench
+        Button { workbench.go(workbench.route(for: parent)) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 14, height: 14)
+                Text("In")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .fixedSize()
+                Text(parent.displayTitle)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .foregroundStyle(hovering ? NX.ink : NX.textTertiary)
+            .padding(.top, 5)
+            .padding(.bottom, 5)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .background(NX.ink(hovering ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Its hover shows at once, as the design's style-hover.
+        .onHover { hovering = $0 }
+        .accessibilityLabel("In \(parent.displayTitle)")
+        .padding(.bottom, 12)
     }
 }
 

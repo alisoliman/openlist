@@ -199,7 +199,7 @@ check(scrolling.scrollOffset(for: .inbox) == nil && scrolling.takeScrollRestorat
       "A page that replaces a deleted one starts at the top")
 
 // The inspector belongs to the window: it stays open across screens and
-// presentations, and closes only when the route is replaced.
+// presentations, a route replaced included; only its task going closes it.
 let inspecting = Navigator()
 let inspected = UUID(), inspectedListID = UUID()
 inspecting.openTask(inspected)
@@ -218,7 +218,7 @@ inspecting.go(to: .inbox)
 inspecting.setListViewMode(.document, for: inspectingInbox)
 check(inspecting.openTaskID == inspected, "The Inbox's document is the Next document too, so the inspector stays")
 inspecting.replace(with: .today)
-check(inspecting.openTaskID == nil, "Stepping off a deleted list closes the inspector")
+check(inspecting.openTaskID == inspected, "Stepping off a deleted list keeps a task from elsewhere in the inspector")
 
 // A reminder, a link or a search hit on Inbox content lands on the Inbox, as
 // everywhere else, never on the Inbox drawn as an ordinary list page.
@@ -319,5 +319,64 @@ let revisited = Navigator(defaults: visitDefaults)
 revisited.inboxListID = revealInbox.id
 check(visiting.listViewMode(for: revealInbox.id) == .document && revisited.listViewMode(for: revealInbox.id) == .document,
       "Leaving it keeps the Inbox's saved Document, on show and after relaunch")
+
+// Where this Mac left the window, the page, never Settings, and the task the
+// inspector showed, is read as a navigator is made, and opened by the launch
+// only as far as the library still has it.
+let placeSuite = "openlist-place-checks-\(UUID().uuidString)"
+let placeDefaults = UserDefaults(suiteName: placeSuite)!
+defer { placeDefaults.removePersistentDomain(forName: placeSuite) }
+let leaving = Navigator(defaults: placeDefaults)
+let placeList = UUID(), placeTask = UUID(), placeLabel = UUID()
+leaving.go(to: .list(placeList))
+leaving.openTask(placeTask)
+leaving.go(to: .settings)
+let relaunching = Navigator(defaults: placeDefaults)
+check(relaunching.route == .today && relaunching.openTaskID == nil,
+      "A navigator starts on Today with no inspector, whatever the last one showed")
+check(relaunching.launchRoute == .list(placeList) && relaunching.launchTaskID == placeTask,
+      "Settings is never saved: the launch opens where Settings was opened from")
+let stillThere = relaunching.launchPlace(list: { $0 }, label: { $0 }, isTask: { $0 == placeTask })
+check(stillThere.route == .list(placeList) && stillThere.taskID == placeTask, "A list and a task still there open again")
+let mergedInto = UUID()
+check(relaunching.launchPlace(list: { _ in mergedInto }, label: { $0 }, isTask: { _ in true }).route == .list(mergedInto),
+      "A list merged into another since opens the one it went into")
+relaunching.inboxListID = mergedInto
+check(relaunching.launchPlace(list: { _ in mergedInto }, label: { $0 }, isTask: { _ in true }).route == .inbox,
+      "A list merged into the Inbox opens the Inbox")
+let goneSince = relaunching.launchPlace(list: { _ in nil }, label: { $0 }, isTask: { _ in false })
+check(goneSince.route == .today && goneSince.taskID == nil,
+      "A list gone or in Trash opens Today, and a task gone or no longer a task, no inspector")
+leaving.go(to: .label(placeLabel))
+leaving.closeTask()
+let labelled = Navigator(defaults: placeDefaults)
+check(labelled.launchPlace(list: { $0 }, label: { $0 }, isTask: { _ in true }).route == .label(placeLabel) && labelled.launchTaskID == nil,
+      "A label's page opens again, and an inspector closed stays closed")
+check(labelled.launchPlace(list: { $0 }, label: { _ in nil }, isTask: { _ in true }).route == .today,
+      "A label merged or deleted since opens Today, not a page saying it's gone")
+for route in [AppRoute.inbox, .today, .calendar, .activity, .tasks, .lists, .trash, .list(UUID()), .label(UUID())] {
+    check(route.savedValue.flatMap(AppRoute.init(savedValue:)) == route, "\(route) reads back as itself")
+}
+check(AppRoute.settings.savedValue == nil && AppRoute(savedValue: "settings") == nil && AppRoute(savedValue: "list:nonsense") == nil,
+      "Settings, and anything unreadable, is never a place to open on")
+
+// Delete everything takes the pages it took away out of the history, so
+// Back never lands on one, and Back names where it goes.
+let pruning = Navigator()
+let deletedList = UUID(), keptList = UUID(), deletedLabel = UUID()
+for route in [AppRoute.list(deletedList), .today, .list(keptList), .label(deletedLabel), .settings] { pruning.go(to: route) }
+check(pruning.backRoute == .label(deletedLabel) && pruning.forwardRoute == nil, "Back's page is the one before")
+pruning.pruneHistory { $0 != .list(deletedList) && $0 != .label(deletedLabel) }
+check(pruning.backRoute == .list(keptList), "The pages taken away leave the history")
+pruning.goBack()
+check(pruning.route == .list(keptList) && pruning.backRoute == .today && pruning.forwardRoute == .settings,
+      "Visits of one page left side by side join")
+pruning.goBack()
+check(pruning.route == .today && !pruning.canGoBack, "and what's left goes back in order")
+let edged = Navigator()
+edged.go(to: .list(deletedList))
+edged.go(to: .today)
+edged.pruneHistory { $0 != .list(deletedList) }
+check(!edged.canGoBack, "Back never goes to the page already on show")
 
 print("\(checks) Inbox navigation checks passed")
