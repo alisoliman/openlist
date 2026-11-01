@@ -23,8 +23,7 @@ struct InboxScreen: View {
         let navigator = env.navigator
         let captures = Self.captures(in: library, closing: env.actions.closing)
         let toTriage = library.inboxQueue(triage: env.triage, closing: env.actions.closing).count
-        let kept = library.keptInbox(kept: env.triage.kept { id in library.tasks.first { $0.id == id }?.dueDate })
-            .count { !env.actions.isClosing($0.id) }
+        let kept = library.keptInbox(kept: library.kept(by: env.triage)).count { !env.actions.isClosing($0.id) }
         // What No date would deal now; once all of it is set aside, what it
         // would deal again.
         let undatedLeft = library.undatedCount(triage: env.undatedTriage, closing: env.actions.closing)

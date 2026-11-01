@@ -5,12 +5,28 @@ import SwiftUI
 /// screen as their source lists. A completed row stays through its Undo dwell.
 struct ListsTasksView: View {
     @Binding var selectedLists: Set<UUID>
-    @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
 
     var body: some View {
-        let tasks = ListsTaskOverview.tasks(in: library, blocks: blocks, selectedLists: selectedLists)
+        // Ordered here, where no tick is read, so a row's dwell doesn't walk
+        // every outline again.
+        ListsTasksGroup(tasks: ListsTaskOverview.tasks(in: library, blocks: blocks, selectedLists: selectedLists),
+                        selectedLists: $selectedLists)
+            .onChange(of: library.lists.map(\.id), initial: true) { _, ids in
+                selectedLists.formIntersection(ids)
+            }
+    }
+}
+
+/// The open count, the lists filter and the rows, over tasks already in order.
+private struct ListsTasksGroup: View {
+    let tasks: [Block]
+    @Binding var selectedLists: Set<UUID>
+    @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
+
+    var body: some View {
         let openCount = tasks.count { !env.actions.isClosing($0.id) }
         OLGroup("\(openCount) open", topSpacing: 14) {
             Menu {
@@ -60,9 +76,6 @@ struct ListsTasksView: View {
                 }
                 .accessibilityIdentifier("lists.tasks")
             }
-        }
-        .onChange(of: library.lists.map(\.id), initial: true) { _, ids in
-            selectedLists.formIntersection(ids)
         }
     }
 

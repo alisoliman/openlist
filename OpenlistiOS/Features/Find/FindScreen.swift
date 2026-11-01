@@ -14,9 +14,60 @@ import SwiftUI
 /// when they're due, each with its list.
 struct FindScreen: View {
     let query: String
-    @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
+
+    static let filters = ["today", "overdue", "starred", "done"]
+
+    var body: some View {
+        // Ordered here, out of typing's way, so a keystroke filters the tasks
+        // without walking every outline again.
+        FindPage(query: query, pool: library.tasksInOutlineOrder(blocks: blocks))
+    }
+
+    static func tint(of token: String, in language: TaskQuery) -> Color {
+        switch language.vocab.first(where: { $0.word == token })?.kind {
+        case .label: OL.teal
+        case .date: OL.accentText
+        case .flag: OL.todayText
+        case .status: OL.successText
+        case .list, nil: OL.ink
+        }
+    }
+
+    // MARK: Results
+
+    /// The query's tasks, open first: late, then by due date, then undated
+    /// in the lists' order; done ones after, most recently done first.
+    static func results(for query: String, language: TaskQuery, library: NextLibrary, blocks: [Block], now: Date,
+                        calendar: Calendar) -> [Block] {
+        results(for: query, language: language, pool: library.tasksInOutlineOrder(blocks: blocks), now: now,
+                calendar: calendar)
+    }
+
+    /// The same from `pool`, every task already in the lists' order.
+    static func results(for query: String, language: TaskQuery, pool: [Block], now: Date, calendar: Calendar) -> [Block] {
+        let found = language.apply(query, to: pool, now: now, calendar: calendar, searchesNotes: true)
+        let place = Dictionary(pool.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let open = found.filter { !$0.isCompleted }.sorted { lhs, rhs in
+            switch (lhs.dueDate, rhs.dueDate) {
+            case let (left?, right?) where left != right: left < right
+            case (_?, nil): true
+            case (nil, _?): false
+            default: (place[lhs.id] ?? 0) < (place[rhs.id] ?? 0)
+            }
+        }
+        return open + found.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
+    }
+}
+
+/// Find's field, its filters and what they find in `pool`.
+private struct FindPage: View {
+    let query: String
+    /// Every task in the lists' order.
+    let pool: [Block]
+    @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
     /// The words the field shows as chips, in the order they came.
     @State private var tokens: [String] = []
     /// The common filters on, which light their chips under the field
@@ -27,15 +78,13 @@ struct FindScreen: View {
     @State private var didStart = false
     @FocusState private var isFocused: Bool
 
-    static let filters = ["today", "overdue", "starred", "done"]
-
     var body: some View {
         let navigator = env.navigator
         let language = library.findQuery
         let full = (tokens + filters + [text]).joined(separator: " ")
         let isEmpty = full.trimmingCharacters(in: .whitespaces).isEmpty
-        let results = isEmpty ? [] : Self.results(for: full, language: language, library: library, blocks: blocks,
-                                                 now: env.now, calendar: env.settings.calendar)
+        let results = isEmpty ? [] : FindScreen.results(for: full, language: language, pool: pool,
+                                                       now: env.now, calendar: env.settings.calendar)
         OLScreen(identifier: PhoneRoute.find(query).screenIdentifier) {
             OLTopBar { OLBackButton(env.backTitle(for: .find(query))) { navigator.pop() } }
         } content: {
@@ -43,7 +92,7 @@ struct FindScreen: View {
             OLSearchField(text: $text, prompt: tokens.isEmpty ? "Find a task, note or #label" : "Add words or filters",
                           focus: $isFocused) {
                 ForEach(tokens, id: \.self) { token in
-                    OLChipButton(OLChip(token, style: .token, tint: Self.tint(of: token, in: language))) { remove(token) }
+                    OLChipButton(OLChip(token, style: .token, tint: FindScreen.tint(of: token, in: language))) { remove(token) }
                         .accessibilityLabel("\(token), filter")
                         .accessibilityHint("Removes it")
                 }
@@ -53,7 +102,7 @@ struct FindScreen: View {
             .onSubmit { absorb(text + " ", language: language) }
             .accessibilityIdentifier("find.field")
             OLFlowLayout {
-                ForEach(Self.filters, id: \.self) { word in
+                ForEach(FindScreen.filters, id: \.self) { word in
                     OLChipButton(OLChip(word, style: filters.contains(word) ? .on : .plain, small: true)) { toggle(word) }
                         .accessibilityIdentifier("find.filter.\(word)")
                 }
@@ -101,7 +150,7 @@ struct FindScreen: View {
         var moved = false
         for word in typed[..<lastSpace].split(whereSeparator: \.isWhitespace).map(String.init) {
             let lower = word.lowercased()
-            if Self.filters.contains(lower) {
+            if FindScreen.filters.contains(lower) {
                 // A common filter typed lights its chip.
                 if !filters.contains(lower) { filters.append(lower) }
                 moved = true
@@ -122,35 +171,5 @@ struct FindScreen: View {
 
     private func remove(_ token: String) {
         tokens.removeAll { $0 == token }
-    }
-
-    static func tint(of token: String, in language: TaskQuery) -> Color {
-        switch language.vocab.first(where: { $0.word == token })?.kind {
-        case .label: OL.teal
-        case .date: OL.accentText
-        case .flag: OL.todayText
-        case .status: OL.successText
-        case .list, nil: OL.ink
-        }
-    }
-
-    // MARK: Results
-
-    /// The query's tasks, open first: late, then by due date, then undated
-    /// in the lists' order; done ones after, most recently done first.
-    static func results(for query: String, language: TaskQuery, library: NextLibrary, blocks: [Block], now: Date,
-                        calendar: Calendar) -> [Block] {
-        let pool = library.tasksInOutlineOrder(blocks: blocks)
-        let found = language.apply(query, to: pool, now: now, calendar: calendar, searchesNotes: true)
-        let place = Dictionary(pool.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let open = found.filter { !$0.isCompleted }.sorted { lhs, rhs in
-            switch (lhs.dueDate, rhs.dueDate) {
-            case let (left?, right?) where left != right: left < right
-            case (_?, nil): true
-            case (nil, _?): false
-            default: (place[lhs.id] ?? 0) < (place[rhs.id] ?? 0)
-            }
-        }
-        return open + found.filter(\.isCompleted).sorted(by: Block.byCompletionDate)
     }
 }
