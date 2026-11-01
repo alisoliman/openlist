@@ -59,7 +59,9 @@ struct ListPageScreen: View {
                 }
             }
         } content: {
-            OLHeader(list?.displayTitle ?? "List", sub: page.openCount == 0 ? "All done" : "\(page.openCount) open",
+            // "Empty" with no tasks at all, as its card says, not "All done".
+            OLHeader(list?.displayTitle ?? "List",
+                     sub: page.openCount > 0 ? "\(page.openCount) open" : library.tasks(in: listID).isEmpty ? "Empty" : "All done",
                      topSpacing: 14)
             if page.rows.isEmpty && page.completed.isEmpty && children.isEmpty {
                 let archived = list?.isEffectivelyArchived == true

@@ -158,8 +158,9 @@ struct PhoneTaskSwipe: ViewModifier {
         }
     }
 
-    /// Why `action`, or with nil Today, can't apply to the task now, said for
-    /// 3 s in the tray: no other list, the task done, or its list archived.
+    /// Says for 3 s in the tray why `action` can't apply to the task now, or
+    /// with nil why Today can't have it: there's no other list, the task is
+    /// done, or its list is archived.
     private func explainUnavailable(_ action: TaskSwipeAction?) {
         let reason: String
         if action == .moveToList {
