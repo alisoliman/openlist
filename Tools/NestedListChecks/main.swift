@@ -113,9 +113,15 @@ if phase == "write" {
     let rejecting = Store(context: context, commitContext: { _ in throw CocoaError(.fileWriteOutOfSpace) })
     try check(!rejecting.moveList(child, under: other.id) && BackupTaskList(child) == beforeMove,
         "A rejected move preserves the same live model's parent and all fields")
+    try check(rejecting.persistenceError != nil && !rejecting.persistenceErrorIsRetryable,
+        "A rejected move, put back as it was, offers no save to retry")
     try check(rejecting.createChildList(in: parent) == nil && store.listHierarchy().children(of: parent.id).count == 1,
         "A rejected child creation leaves no phantom owned document")
+    rejecting.markOpened(other)
+    try check(rejecting.persistenceError != nil && rejecting.persistenceErrorIsRetryable && rejecting.hasUnsavedChanges,
+        "A save that failed with its change still in place has it to retry")
     try store.persistChanges()
+    try check(!store.hasUnsavedChanges, "Retrying that save writes it")
     try check(!rejecting.trashList(parent) && child.trashID == nil && parent.trashID == nil && image.trashID == nil,
         "A rejected parent deletion restores child documents, blocks and media")
     try store.persistChanges()
