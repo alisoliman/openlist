@@ -123,6 +123,29 @@ struct PhoneActionsTests {
         #expect(task.priority == .high)
     }
 
+    /// Icon & colour: each pick is one step, whose Undo puts back only its own
+    /// change, and a pick the list already has is none.
+    @Test func appearanceHasUndo() throws {
+        let phone = try TestPhone(seeded: true)
+        let kyoto = try #require(phone.list("Weekend in Kyoto"))
+        phone.env.actions.setAppearance(icon: "🦊", for: kyoto)
+        #expect(kyoto.icon == "🦊")
+        #expect(phone.env.tray.message?.text == "Icon changed to 🦊")
+        phone.env.tray.performAction()
+        #expect(kyoto.icon == "🗻")
+
+        phone.env.actions.setAppearance(icon: "🦊", for: kyoto)
+        phone.env.actions.setAppearance(accent: .teal, for: kyoto)
+        #expect(kyoto.accent == .teal)
+        #expect(phone.env.tray.message?.text == "Colour changed to Teal")
+        phone.env.tray.performAction()
+        #expect(kyoto.accent == .violet)
+        #expect(kyoto.icon == "🦊")
+
+        phone.env.actions.setAppearance(icon: "🦊", accent: .violet, for: kyoto)
+        #expect(phone.env.tray.message == nil)
+    }
+
     @Test func aWidgetTickSettlesAtOnce() throws {
         let phone = try TestPhone(seeded: true)
         let task = try #require(phone.task("Start Piranesi"))
