@@ -12,6 +12,9 @@ import SwiftUI
 struct TrashScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @State private var entries: [TrashEntry] = []
+    /// Trash couldn't be read: it says so, with Try Again, rather than look
+    /// empty.
+    @State private var unreadable = false
 
     var body: some View {
         let navigator = env.navigator
@@ -19,8 +22,12 @@ struct TrashScreen: View {
         OLScreen(identifier: PhoneRoute.trash.screenIdentifier) {
             OLTopBar { OLBackButton(env.backTitle(for: .trash)) { navigator.pop() } }
         } content: {
-            OLHeader("Trash", sub: "\(entries.count) \(entries.count == 1 ? "item" : "items") · hold × to erase one for good")
-            if entries.isEmpty {
+            OLHeader("Trash", sub: unreadable ? nil : "\(entries.count) \(entries.count == 1 ? "item" : "items") · hold × to erase one for good")
+            if unreadable {
+                OLLoadFailure("Trash could not be read.", retry: reload)
+                    .padding(.top, 40)
+                    .accessibilityIdentifier("trash.unreadable")
+            } else if entries.isEmpty {
                 Text("Trash is empty.")
                     .font(OLFont.note)
                     .foregroundStyle(OL.muted)
@@ -128,6 +135,11 @@ struct TrashScreen: View {
     }
 
     private func reload() {
-        entries = (try? env.store.trashEntries()) ?? []
+        do {
+            entries = try env.store.trashEntries()
+            unreadable = false
+        } catch {
+            unreadable = true
+        }
     }
 }

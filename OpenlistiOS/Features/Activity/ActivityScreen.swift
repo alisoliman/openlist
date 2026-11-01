@@ -14,6 +14,9 @@ struct ActivityScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @State private var heatmap: ActivityHeatmap?
     @State private var heatmapCache = ActivityHeatmapCache()
+    /// The saved history couldn't be read: the page says so, with Try
+    /// Again, rather than look as if nothing was done.
+    @State private var unreadable = false
     @State private var changes: [ActivityChange] = []
     /// The picked day; nil for today.
     @State private var day: Date?
@@ -32,6 +35,10 @@ struct ActivityScreen: View {
                 ActivityGrid(heatmap: heatmap, today: today, selection: selected, calendar: calendar) { day = $0 == today ? nil : $0 }
                     .padding(.top, OLMetrics.headerGap)
                 dayGroup(heatmap: heatmap, day: selected, today: today, now: now)
+            } else if unreadable {
+                OLLoadFailure("Saved activity could not be read.", retry: reload)
+                    .padding(.top, 40)
+                    .accessibilityIdentifier("activity.unreadable")
             }
             if !changes.isEmpty {
                 OLGroup("Recent changes") {
@@ -156,9 +163,11 @@ struct ActivityScreen: View {
         // Saves that leave the completion history alone keep the heatmap.
         do {
             if try heatmapCache.refresh(store: env.store, now: now, calendar: env.settings.calendar) { heatmap = heatmapCache.heatmap }
+            unreadable = false
         } catch {
             heatmapCache = ActivityHeatmapCache()
             heatmap = nil
+            unreadable = true
         }
         changes = ActivityChange.recent(in: env.store, now: now)
     }

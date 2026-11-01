@@ -258,3 +258,28 @@ struct OLEmptyState: View {
         }
     }
 }
+
+/// What couldn't be read, in the place of what a screen would show: why, in
+/// a line, and Try Again. Never an empty state, which would say there's
+/// nothing there.
+struct OLLoadFailure: View {
+    let message: String
+    let retry: () -> Void
+
+    init(_ message: String, retry: @escaping () -> Void) {
+        self.message = message
+        self.retry = retry
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(message)
+                .font(OLFont.note)
+                .foregroundStyle(OL.muted)
+                .multilineTextAlignment(.center)
+            Button("Try Again", action: retry).buttonStyle(.olLink())
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+}
