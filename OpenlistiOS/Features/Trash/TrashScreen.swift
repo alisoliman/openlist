@@ -121,6 +121,8 @@ struct TrashScreen: View {
         } else {
             env.tray.show(env.store.trashError ?? "That could not be erased.", icon: "exclamationmark.circle",
                           tone: .danger, seconds: 5)
+            // Said once, here: the notice would say it again.
+            env.store.trashError = nil
         }
         reload()
     }
