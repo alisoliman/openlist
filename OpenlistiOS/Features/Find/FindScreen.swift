@@ -90,7 +90,7 @@ private struct FindPage: View {
         } content: {
             OLHeader("Find")
             OLSearchField(text: $text, prompt: tokens.isEmpty ? "Find a task, note or #label" : "Add words or filters",
-                          focus: $isFocused) {
+                          focus: $isFocused, clearTokens: tokens.isEmpty ? nil : { tokens = [] }) {
                 ForEach(tokens, id: \.self) { token in
                     OLChipButton(OLChip(token, style: .token, tint: FindScreen.tint(of: token, in: language))) { remove(token) }
                         .accessibilityLabel("\(token), filter")
@@ -114,18 +114,15 @@ private struct FindPage: View {
                     .foregroundStyle(OL.muted)
                     .padding(.horizontal, 4)
                     .padding(.top, OLMetrics.groupGap)
+            } else if results.isEmpty {
+                noResults(for: full.trimmingCharacters(in: .whitespaces), language: language)
+                    .padding(.top, OLMetrics.groupGap)
+                    .accessibilityIdentifier("find.noResults")
             } else {
                 OLGroup("\(results.count) \(results.count == 1 ? "task" : "tasks")") {
-                    if !results.isEmpty {
-                        OLCardRows(results, lazy: true) { task, separator in
-                            PhoneTaskRow(task: task, context: .list, subtitle: library.list(task.listID)?.displayTitle,
-                                         separator: separator)
-                        }
-                    } else {
-                        Text("Nothing matches.")
-                            .font(OLFont.note)
-                            .foregroundStyle(OL.muted)
-                            .padding(.horizontal, 4)
+                    OLCardRows(results, lazy: true) { task, separator in
+                        PhoneTaskRow(task: task, context: .list, subtitle: library.list(task.listID)?.displayTitle,
+                                     separator: separator)
                     }
                 }
                 .accessibilityIdentifier("find.results")
@@ -137,6 +134,35 @@ private struct FindPage: View {
             absorb(query.hasSuffix(" ") || query.isEmpty ? query : query + " ", language: language)
             if query.isEmpty { isFocused = true }
         }
+    }
+
+    // MARK: No results
+
+    /// Nothing found, with the ways on: the done tasks it leaves out, when
+    /// some would match, and an empty search to start again.
+    private func noResults(for query: String, language: TaskQuery) -> some View {
+        let done = filters.contains("done") ? 0
+            : FindScreen.results(for: query + " done", language: language, pool: pool, now: env.now,
+                                 calendar: env.settings.calendar).count
+        return ContentUnavailableView {
+            Label("No results for “\(query)”", systemImage: "magnifyingglass")
+        } description: {
+            Text(done == 0 ? "Check the spelling or try a new search."
+                 : "\(done) done \(done == 1 ? "task matches" : "tasks match").")
+        } actions: {
+            if done > 0 {
+                Button("Include done tasks") { filters.append("done") }
+            }
+            Button("Clear search", action: clear)
+        }
+    }
+
+    /// Starts over: no chips, no filters, nothing typed, and the field ready.
+    private func clear() {
+        tokens = []
+        filters = []
+        text = ""
+        isFocused = true
     }
 
     // MARK: The field
