@@ -156,6 +156,26 @@ do {
         check(false, "failed document write must throw")
     } catch { check(true, "failed document write surfaces an error") }
     check(!manager.fileExists(atPath: root.appendingPathComponent("invalid.assets").path), "failed document write removes only newly exported assets")
+
+    // Each file copied is counted, and the count can stop the export part way.
+    var counted: [Int] = []
+    try MarkdownExportPackage.write(to: root.appendingPathComponent("Counted.md"), assets: assets, render: { _ in "counted" }) {
+        counted.append($0)
+    }
+    check(counted == [1, 2, 3], "export counts each file it copies, once", "\(counted)")
+    let beforeStop = try manager.contentsOfDirectory(atPath: root.path).sorted()
+    do {
+        try MarkdownExportPackage.write(to: root.appendingPathComponent("Stopped.md"), assets: assets, render: { _ in "stopped" }) {
+            if $0 == 2 { throw CancellationError() }
+        }
+        check(false, "a stopped export must not finish")
+    } catch { check(error is CancellationError, "a stopped export says it was stopped") }
+    do {
+        try MarkdownExportPackage.writeFolder(to: root.appendingPathComponent("Stopped folder"), assets: assets,
+                                              render: { _ in ["Stopped.md": "stopped"] }) { _ in throw CancellationError() }
+        check(false, "a stopped folder export must not finish")
+    } catch { check(error is CancellationError, "a stopped folder export says it was stopped") }
+    check(try manager.contentsOfDirectory(atPath: root.path).sorted() == beforeStop, "a stopped export leaves nothing behind")
     check(MarkdownExportPackage.safeFilename("../List:Name\n") == "-List-Name-", "unsafe display title sanitized")
     let longName = MarkdownExportPackage.safeFilename(String(repeating: "日本語👩🏽‍💻", count: 50) + ".pdf")
     check(longName.utf8.count <= 180 && longName.hasSuffix(".pdf"), "long Unicode attachment names keep extension within filesystem byte limit")

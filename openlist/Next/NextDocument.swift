@@ -1109,7 +1109,17 @@ private struct NXDocumentImage: View {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(NX.ink(0.035))
                     .frame(height: 80)
-                    .overlay(Image(systemName: "photo").foregroundStyle(NX.ink(0.3)))
+                    .overlay {
+                        if editor.attachingImages.contains(block.id) {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Attaching…").font(.system(size: 12)).foregroundStyle(NX.textTertiary)
+                            }
+                            .accessibilityElement(children: .combine)
+                        } else {
+                            Image(systemName: "photo").foregroundStyle(NX.ink(0.3))
+                        }
+                    }
             }
             caption
         }

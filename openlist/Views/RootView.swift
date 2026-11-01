@@ -222,6 +222,16 @@ struct NXStatusNotices: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // An export taking a while counts what it has written, with a way
+            // to stop it; Settings' row counts Export every list itself.
+            if let export = env.workbench.export, export.isShown, !(export.isEveryList && env.navigator.route == .settings) {
+                NXNoticeCard(icon: "square.and.arrow.up", message: export.progress) {
+                    ProgressView().controlSize(.small).padding(.trailing, 4)
+                    Button("Cancel") { export.cancel() }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
+            }
             if let notice = env.store.editorNotice {
                 NXNoticeCard(icon: "info.circle", message: notice) {
                     Button("Dismiss") { env.store.editorNotice = nil }

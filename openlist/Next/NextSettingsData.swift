@@ -91,12 +91,22 @@ struct NXDataSettings: View {
     var body: some View {
         let tasks = blocks.filter(\.isTask)
         let completed = tasks.filter(\.isCompleted).count
+        let export = env.workbench.export
+        // Export every list counts its lists here, with Cancel, once it takes a moment.
+        let exporting = export.flatMap { $0.isEveryList && $0.isShown ? $0 : nil }
         NXSettingsGroup(title: "Data") {
             NXSettingRow(label: "Your data",
                          hint: "\(Self.count(lists.count, "list")) · \(Self.count(tasks.count, "task")), \(completed) completed · \(Self.count(blocks.count - tasks.count, "other line"))")
             NXSettingRow(label: "Export every list as Markdown",
-                         hint: "Writes one Markdown file per list, its images and attachments in an assets folder beside it. A list with nested lists becomes one folder holding them all. Existing files are kept.") {
-                Button("Export…") { exportAll() }
+                         hint: exporting?.progress
+                             ?? "Writes one Markdown file per list, its images and attachments in an assets folder beside it. A list with nested lists becomes one folder holding them all. Existing files are kept.") {
+                if let exporting {
+                    ProgressView().controlSize(.small)
+                    Button("Cancel") { exporting.cancel() }
+                } else {
+                    Button("Export…") { env.workbench.exportEveryList() }
+                        .disabled(export != nil)
+                }
             }
             if let library = env.libraryMaintenance {
                 NXLibraryBackupRows(library: library)
@@ -132,27 +142,6 @@ struct NXDataSettings: View {
     /// "1 list", "3 lists".
     private static func count(_ value: Int, _ noun: String) -> String {
         "\(value) \(noun)\(value == 1 ? "" : "s")"
-    }
-
-    private func exportAll() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Export"
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
-
-        var exported = 0
-        do {
-            try MarkdownExporter.writeAll(store: env.store, to: folder) { exported += $0 }
-            // Said in the tray, as a list's own export is.
-            env.workbench.showTray("Exported \(Self.count(exported, "list")) as Markdown", icon: "square.and.arrow.up")
-        } catch {
-            // What needs dealing with stays in the window's notice.
-            let done = exported == 0 ? "No lists were exported."
-                : "\(Self.count(exported, "list")) \(exported == 1 ? "was" : "were") exported; the remaining lists were not."
-            env.store.actionError = "Export stopped. \(done) \(error.localizedDescription)"
-        }
     }
 
     private func reset() {

@@ -239,6 +239,9 @@ final class OutlineEditor {
 
     private(set) var focus = EditorFocus()
     private(set) var slash: SlashState?
+    /// Image lines whose file is still being copied in, past a moment, which
+    /// show "Attaching…" meanwhile.
+    private(set) var attachingImages: Set<UUID> = []
     /// This document's scope in the navigator's row selection.
     let selectionScopeID = UUID()
 
@@ -404,7 +407,7 @@ final class OutlineEditor {
         case .image:
             env.store.changeKind(block, to: .image)
             env.store.save()
-            presentImagePicker(for: block)
+            Task { await presentImagePicker(for: block) }
 
         default:
             convert(block, to: kind)
@@ -413,21 +416,50 @@ final class OutlineEditor {
         }
     }
 
-    private func presentImagePicker(for block: Block) {
+    /// Asks for the image an image line shows, in a sheet on the window when
+    /// there is one. The file is read and copied in off the main thread,
+    /// so a large one holds nothing up, its line saying "Attaching…" once
+    /// it takes a moment. A line given no image turns back into text.
+    private func presentImagePicker(for block: Block) async {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
 
-        guard panel.runModal() == .OK, let url = panel.url else {
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.mainWindow, window.isVisible, window.attachedSheet == nil {
+            response = await panel.beginSheetModal(for: window)
+        } else {
+            response = panel.runModal()
+        }
+        guard response == .OK, let url = panel.url else {
+            guard block.modelContext != nil, !block.isDeleted else { return }
             env.store.changeKind(block, to: .paragraph)
             env.store.save()
             focus.request(block.id, caret: 0)
             return
         }
 
+        let id = block.id
+        // Only past a moment, so a small image never flashes it.
+        let shown = Task { () -> Bool in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return false }
+            attachingImages.insert(id)
+            return true
+        }
+        let imported = await Task.detached(priority: .userInitiated) {
+            Result { try MediaStore.shared.importFile(at: url) }
+        }.value
+        shown.cancel()
+        if await shown.value { attachingImages.remove(id) }
+        // A line taken away meanwhile leaves its image to no one.
+        guard block.modelContext != nil, !block.isDeleted else {
+            if case let .success(media) = imported { MediaStore.shared.delete(filename: media.filename) }
+            return
+        }
         do {
-            let media = try MediaStore.shared.importFile(at: url)
+            let media = try imported.get()
             block.mediaFilename = media.filename
             block.mediaData = media.data
             block.mediaWidth = media.pixelSize.width
@@ -435,7 +467,8 @@ final class OutlineEditor {
             block.mediaCaption = ""
             let paragraph = env.store.insertBlock(kind: .paragraph, after: block)
             env.store.save()
-            focus.request(paragraph.id, caret: 0)
+            // The caret goes on under the image, unless it has gone elsewhere meanwhile.
+            if focus.blockID == id || focus.blockID == nil { focus.request(paragraph.id, caret: 0) }
         } catch {
             env.store.changeKind(block, to: .paragraph)
             env.store.save()

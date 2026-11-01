@@ -2,9 +2,12 @@ import Foundation
 
 /// Writes a Markdown file and its portable sibling assets folder. Media is
 /// staged first; a failed copy never replaces an existing Markdown document.
-/// Existing asset folders and unrelated files are never overwritten.
-enum MarkdownExportPackage {
-    struct Asset {
+/// Existing asset folders and unrelated files are never overwritten. Off the
+/// main actor, so copying a large file holds nothing up: `copied` hears how
+/// many files are in after each, and throwing from it stops the export with
+/// nothing left behind.
+nonisolated enum MarkdownExportPackage {
+    struct Asset: Sendable {
         var key: String
         var source: URL
         var preferredFilename: String
@@ -13,7 +16,8 @@ enum MarkdownExportPackage {
     static func write(
         to destination: URL,
         assets: [Asset],
-        render: ([String: String]) -> String
+        render: ([String: String]) -> String,
+        copied: (Int) throws -> Void = { _ in }
     ) throws {
         let manager = FileManager.default
         let parent = destination.deletingLastPathComponent()
@@ -35,6 +39,7 @@ enum MarkdownExportPackage {
                     let name = availableFilename(base, used: &used)
                     try manager.copyItem(at: asset.source, to: stage.appendingPathComponent(name))
                     paths[asset.key] = assetsDirectory.lastPathComponent + "/" + name
+                    try copied(paths.count)
                 }
                 // Moving the whole directory prevents partially copied assets
                 // from appearing in a successful export.
@@ -51,7 +56,8 @@ enum MarkdownExportPackage {
     /// Publish an owned document tree as one atomic folder. Every file links
     /// within this folder; shared asset filenames are assigned only once.
     static func writeFolder(to destination: URL, assets: [Asset],
-                            render: ([String: String]) -> [String: String]) throws {
+                            render: ([String: String]) -> [String: String],
+                            copied: (Int) throws -> Void = { _ in }) throws {
         let manager = FileManager.default
         guard !manager.fileExists(atPath: destination.path) else {
             throw CocoaError(.fileWriteFileExists)
@@ -67,6 +73,7 @@ enum MarkdownExportPackage {
                 let name = availableFilename(safeFilename(asset.preferredFilename), used: &used)
                 try manager.copyItem(at: asset.source, to: folder.appendingPathComponent(name))
                 paths[asset.key] = "assets/" + name
+                try copied(paths.count)
             }
         }
         for (name, markdown) in render(paths) {

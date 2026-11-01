@@ -162,7 +162,7 @@ nonisolated final class MediaStore: @unchecked Sendable {
             let destination = try checkedURL(for: filename)
             if let data {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                if (try? Data(contentsOf: destination)) != data {
+                if !Self.file(at: destination, holds: data) {
                     try data.write(to: destination, options: .atomic)
                 }
             } else if !FileManager.default.fileExists(atPath: destination.path) {
@@ -170,6 +170,14 @@ nonisolated final class MediaStore: @unchecked Sendable {
             }
             return destination
         }
+    }
+
+    /// Whether the file at `url` holds exactly `data`. Sizes are compared
+    /// first, so a file that can't match is never read, and one that might
+    /// is mapped rather than read into memory whole.
+    private static func file(at url: URL, holds data: Data) -> Bool {
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size == data.count else { return false }
+        return (try? Data(contentsOf: url, options: .mappedIfSafe)) == data
     }
 
     private func checkedURL(for filename: String) throws -> URL {

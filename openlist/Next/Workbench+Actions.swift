@@ -419,21 +419,63 @@ extension Workbench {
     /// one change the tray can undo, as taking one off is: Undo takes them
     /// off again. Those that can't be read are named in one red card,
     /// however many, and only the files kept are counted; with none kept,
-    /// nothing changes.
+    /// nothing changes. They're read and copied in off the main thread, so a
+    /// large one holds nothing up, and one taking a moment shows in Files as
+    /// "Attaching…" meanwhile. A file too large for library backups is kept
+    /// all the same, and the tray says so.
     func attachFiles(_ urls: [URL], to taskID: UUID) {
         guard !urls.isEmpty else { return }
         document?.commitLine()
-        guard let task = store.block(id: taskID) else { return }
+        guard store.block(id: taskID) != nil else { return }
+        // Only past a moment, so a small file never flashes it.
+        let shown = Task { () -> Bool in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return false }
+            attaching[taskID, default: 0] += urls.count
+            return true
+        }
+        Task {
+            let imported = await Task.detached(priority: .userInitiated) {
+                urls.map { url in (name: url.lastPathComponent, media: Result { try MediaStore.shared.importFile(at: url) }) }
+            }.value
+            shown.cancel()
+            if await shown.value {
+                let left = (attaching[taskID] ?? 0) - urls.count
+                attaching[taskID] = left > 0 ? left : nil
+            }
+            keep(imported, on: taskID)
+        }
+    }
+
+    /// The files `attachFiles` copied in, kept with the task as one change.
+    private func keep(_ imported: [(name: String, media: Result<ImportedMedia, Error>)], on taskID: UUID) {
         var kept: [ImportedMedia] = []
         var failures: [(name: String, error: Error)] = []
-        for url in urls {
-            do { kept.append(try MediaStore.shared.importFile(at: url)) } catch { failures.append((url.lastPathComponent, error)) }
+        for file in imported {
+            switch file.media {
+            case let .success(media): kept.append(media)
+            case let .failure(error): failures.append((file.name, error))
+            }
         }
         if let notice = NXFormat.attachFailures(failures) { store.actionError = notice }
         guard !kept.isEmpty else { return }
+        // Gone while its files were copied in, the task leaves them to no one.
+        guard let task = store.block(id: taskID) else {
+            for media in kept { MediaStore.shared.delete(filename: media.filename) }
+            return
+        }
         let label = NXFormat.attached(kept.map(\.displayName), to: describe([task]))
+        // Library backups refuse a file past their limit, which is better
+        // heard now, as it's kept, than when the next backup fails.
+        let tooLarge = kept.contains { $0.byteCount > LibraryBackupPackage.maximumMediaBytes }
+        var registered = false
         store.addAttachments(kept, to: task, name: label, undoManager: undoManager) {
-            self.snap(label, icon: "paperclip", tone: .accent, ids: [taskID])
+            registered = true
+            self.snap(label, icon: "paperclip", tone: .accent, ids: [taskID], showsTray: !tooLarge)
+        }
+        if tooLarge {
+            showTray("\(label) · Backups can’t include files over \(LibraryBackupPackage.maximumMediaBytes >> 20) MB",
+                     icon: "exclamationmark.triangle", tone: .amber, undoable: registered)
         }
     }
 
