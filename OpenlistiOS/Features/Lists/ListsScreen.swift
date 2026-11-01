@@ -36,6 +36,9 @@ struct ListsScreen: View {
                 .padding(.top, 16)
             if mode == .tasks {
                 ListsTasksView(selectedLists: $selectedLists)
+            } else if env.awaitsFirstImport(library) {
+                OLLoadingState("Getting your lists from iCloud…")
+                    .padding(.top, 60)
             } else {
                 OLListGrid {
                     ForEach(lists) { list in
@@ -74,13 +77,12 @@ struct ListsScreen: View {
             Button("Create") {
                 if let list = env.actions.createList(named: newName) { navigator.open(.list(list.id)) }
             }
+            .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 
     private func card(_ list: TaskList) -> some View {
-        let open = library.openCount(in: list.id)
-        return OLListCard(title: list.displayTitle, icon: list.icon, accent: list.accent,
-                          detail: open == 0 ? "All done" : "\(open) open") {
+        OLListCard(title: list.displayTitle, icon: list.icon, accent: list.accent, detail: library.cardDetail(for: list)) {
             env.navigator.open(.list(list.id))
         }
         .contextMenu { ListMenuItems(list: list) }
@@ -96,4 +98,24 @@ extension NextLibrary {
 
     /// Find's language over this library: its lists, labels and "done".
     var findQuery: TaskQuery { TaskQuery(lists: lists, labels: labels, readsStatus: true) }
+
+    /// A list card's line: "7 open", "All done" once its tasks are, or
+    /// "Empty" with none at all.
+    func cardDetail(for list: TaskList) -> String {
+        let open = openCount(in: list.id)
+        if open > 0 { return "\(open) open" }
+        return tasks(in: list.id).isEmpty ? "Empty" : "All done"
+    }
+
+    /// Nothing in it yet but the Inbox every library starts with.
+    var isEmptyLibrary: Bool { tasks.isEmpty && archived.isEmpty && lists.allSatisfy(\.isSystemInbox) }
+}
+
+extension PhoneEnvironment {
+    /// The first iCloud import still on its way to a library with nothing in
+    /// it yet. Screens say so rather than look empty, and offer nothing to
+    /// make meanwhile, which would be there twice once the import lands.
+    func awaitsFirstImport(_ library: NextLibrary) -> Bool {
+        sync.state.isAwaitingFirstImport && library.isEmptyLibrary
+    }
 }

@@ -7,15 +7,17 @@ import SwiftUI
 
 /// Every tappable surface's press: 0.94 and a touch lighter, over 150 ms,
 /// or just the lightening under Reduce motion. The design defines no pressed
-/// states; this is the iPhone's answer to the Mac's hover.
+/// states; this is the iPhone's answer to the Mac's hover. Disabled, it dims
+/// to 0.4, as a text link does.
 struct OLPressStyle: ButtonStyle {
     var scale: CGFloat = 0.94
     @Environment(\.olStyle) private var style
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed && !style.reduceMotion ? scale : 1)
-            .opacity(configuration.isPressed ? 0.85 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
             .animation(style.animation(OLStyle.press), value: configuration.isPressed)
     }
 }
@@ -189,6 +191,9 @@ struct OLButtonStyle: ButtonStyle {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func makeBody(configuration: Configuration) -> some View {
+        // A 44 pt target around the 36 pt capsule (Add, Set, Save), which
+        // keeps its own height in the layout, as `OLChipButton` does.
+        let slack = max(0, (44 - size.height) / 2)
         configuration.label
             .font(size.font)
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
@@ -207,7 +212,9 @@ struct OLButtonStyle: ButtonStyle {
                     Capsule(style: .continuous).fill(background)
                 }
             }
-            .contentShape(.capsule)
+            .padding(.vertical, slack)
+            .contentShape(.rect)
+            .padding(.vertical, -slack)
             .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed && !style.reduceMotion ? 0.97 : 1)
             .animation(style.animation(OLStyle.press), value: configuration.isPressed)

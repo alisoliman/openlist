@@ -5,12 +5,28 @@ import SwiftUI
 /// screen as their source lists. A completed row stays through its Undo dwell.
 struct ListsTasksView: View {
     @Binding var selectedLists: Set<UUID>
-    @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Query(filter: #Predicate<Block> { $0.trashID == nil }) private var blocks: [Block]
 
     var body: some View {
-        let tasks = ListsTaskOverview.tasks(in: library, blocks: blocks, selectedLists: selectedLists)
+        // Ordered here, where no tick is read, so a row's dwell doesn't walk
+        // every outline again.
+        ListsTasksGroup(tasks: ListsTaskOverview.tasks(in: library, blocks: blocks, selectedLists: selectedLists),
+                        selectedLists: $selectedLists)
+            .onChange(of: library.lists.map(\.id), initial: true) { _, ids in
+                selectedLists.formIntersection(ids)
+            }
+    }
+}
+
+/// The open count, the lists filter and the rows, over tasks already in order.
+private struct ListsTasksGroup: View {
+    let tasks: [Block]
+    @Binding var selectedLists: Set<UUID>
+    @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
+
+    var body: some View {
         let openCount = tasks.count { !env.actions.isClosing($0.id) }
         OLGroup("\(openCount) open", topSpacing: 14) {
             Menu {
@@ -45,7 +61,10 @@ struct ListsTasksView: View {
             .accessibilityHint("Choose one or more lists")
             .accessibilityIdentifier("lists.filter")
         } content: {
-            if tasks.isEmpty {
+            if tasks.isEmpty, env.awaitsFirstImport(library) {
+                OLLoadingState("Getting your lists from iCloud…")
+                    .padding(.top, 40)
+            } else if tasks.isEmpty {
                 OLEmptyState(symbol: "checkmark", tint: OL.successText, title: "All caught up",
                              message: selectedLists.isEmpty ? "No open tasks across your lists." : "No open tasks in these lists.",
                              actionTitle: selectedLists.isEmpty ? "Add a task" : "Show all lists") {
@@ -60,9 +79,6 @@ struct ListsTasksView: View {
                 }
                 .accessibilityIdentifier("lists.tasks")
             }
-        }
-        .onChange(of: library.lists.map(\.id), initial: true) { _, ids in
-            selectedLists.formIntersection(ids)
         }
     }
 

@@ -170,10 +170,11 @@ struct PhoneDueMenu: View {
             }
             Button("Clear due date", systemImage: "xmark", role: .destructive) { actions.schedule([task], on: nil) }
         } label: {
-            // A 44 pt target around the date, as the row asks of its control.
+            // The date at the top of a 44 pt target, at least as wide, as the
+            // row asks of its control: it reaches down, clear of the title.
             OLTrailingView(trailing)
                 .padding(.horizontal, 10)
-                .frame(minHeight: 44)
+                .frame(minWidth: 44, minHeight: 44, alignment: .top)
                 .contentShape(.rect)
         }
         .buttonStyle(OLRowPressStyle())

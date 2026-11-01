@@ -12,6 +12,9 @@ import SwiftUI
 struct TrashScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @State private var entries: [TrashEntry] = []
+    /// Trash couldn't be read: it says so, with Try Again, rather than look
+    /// empty.
+    @State private var unreadable = false
 
     var body: some View {
         let navigator = env.navigator
@@ -19,8 +22,12 @@ struct TrashScreen: View {
         OLScreen(identifier: PhoneRoute.trash.screenIdentifier) {
             OLTopBar { OLBackButton(env.backTitle(for: .trash)) { navigator.pop() } }
         } content: {
-            OLHeader("Trash", sub: "\(entries.count) \(entries.count == 1 ? "item" : "items") · hold × to erase one for good")
-            if entries.isEmpty {
+            OLHeader("Trash", sub: unreadable ? nil : "\(entries.count) \(entries.count == 1 ? "item" : "items") · hold × to erase one for good")
+            if unreadable {
+                OLLoadFailure("Trash could not be read.", retry: reload)
+                    .padding(.top, 40)
+                    .accessibilityIdentifier("trash.unreadable")
+            } else if entries.isEmpty {
                 Text("Trash is empty.")
                     .font(OLFont.note)
                     .foregroundStyle(OL.muted)
@@ -28,7 +35,8 @@ struct TrashScreen: View {
                     .padding(.top, 40)
                     .accessibilityIdentifier("trash.empty")
             } else {
-                VStack(spacing: 0) {
+                // Built as they scroll in: Trash keeps everything until it's emptied.
+                LazyVStack(spacing: 0) {
                     ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                         row(entry, now: now)
                             .overlay(alignment: .top) { OLSeparatorLine(separator: index == 0 ? .none : .plain) }
@@ -41,7 +49,9 @@ struct TrashScreen: View {
                     .foregroundStyle(OL.danger)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(OL.dangerSoft, in: .capsule)
-                    .olHold(Capsule()) { erase(entries.map(\.id), all: true) }
+                    .olHold(Capsule(), confirmation: "Erase everything in Trash for good?", confirmTitle: "Empty Trash") {
+                        erase(entries.map(\.id), all: true)
+                    }
                     .padding(.top, OLMetrics.cardGap)
                     .accessibilityLabel("Empty Trash")
                     .accessibilityHint("Erases everything in Trash for good")
@@ -74,7 +84,11 @@ struct TrashScreen: View {
                 .foregroundStyle(OL.muted)
                 .frame(width: 44, height: 44)
                 .contentShape(.circle)
-                .olHold(Circle()) { erase([entry.id], all: false) }
+                // A plain tap asks rather than doing nothing.
+                .olHold(Circle(), confirmation: "Erase “\(entry.title.isEmpty ? "Untitled" : entry.title)” for good?",
+                        confirmTitle: "Erase", asksOnTap: true) {
+                    erase([entry.id], all: false)
+                }
                 .accessibilityLabel("Hold to erase \(entry.title)")
                 .accessibilityHint("Erases it for good")
         }
@@ -115,11 +129,18 @@ struct TrashScreen: View {
         } else {
             env.tray.show(env.store.trashError ?? "That could not be erased.", icon: "exclamationmark.circle",
                           tone: .danger, seconds: 5)
+            // Said once, here: the notice would say it again.
+            env.store.trashError = nil
         }
         reload()
     }
 
     private func reload() {
-        entries = (try? env.store.trashEntries()) ?? []
+        do {
+            entries = try env.store.trashEntries()
+            unreadable = false
+        } catch {
+            unreadable = true
+        }
     }
 }

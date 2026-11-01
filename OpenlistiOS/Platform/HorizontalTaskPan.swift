@@ -4,7 +4,9 @@ import UIKit
 /// Recognizes horizontal motion only. A vertical drag fails before beginning,
 /// leaving the enclosing native scroll view and edge-back gesture in charge.
 struct HorizontalTaskPan: UIGestureRecognizerRepresentable {
-    let changed: (UIGestureRecognizer.State, CGFloat) -> Void
+    /// The pan's state, how far it has moved across and how fast, in points
+    /// a second.
+    let changed: (UIGestureRecognizer.State, _ translation: CGFloat, _ velocity: CGFloat) -> Void
 
     func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
 
@@ -16,7 +18,7 @@ struct HorizontalTaskPan: UIGestureRecognizerRepresentable {
     }
 
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        changed(recognizer.state, recognizer.translation(in: recognizer.view).x)
+        changed(recognizer.state, recognizer.translation(in: recognizer.view).x, recognizer.velocity(in: recognizer.view).x)
     }
 
     /// UIKit asks after the finger has already moved. Recover the original

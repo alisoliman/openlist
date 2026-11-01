@@ -158,31 +158,37 @@ struct OLNowCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // The tile and the card's padding are the open target's too; the
+        // play button keeps its own.
         HStack(spacing: 12) {
-            if !dynamicTypeSize.isAccessibilitySize {
-                Image(systemName: state == .paused ? "pause.fill" : "play.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(OL.ink)
-                .frame(width: 42, height: 48)
-                .background(OL.sunken, in: .rect(cornerRadius: 12))
-                .accessibilityHidden(true)
-            }
             Button(action: open) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(state == .paused ? "Paused" : eyebrow)
-                        .font(OLFont.meta.weight(.semibold))
-                        .foregroundStyle(state == .paused ? OL.todayText : OL.accentText)
-                    Text(title)
-                        .font(OLFont.rowTitleStrong)
+                HStack(spacing: 12) {
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Image(systemName: state == .paused ? "pause.fill" : "play.fill")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(OL.ink)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                        .multilineTextAlignment(.leading)
-                    Text(detail)
-                        .font(OLFont.meta)
-                        .foregroundStyle(OL.muted)
-                        .contentTransition(.numericText(countsDown: true))
+                        .frame(width: 42, height: 48)
+                        .background(OL.sunken, in: .rect(cornerRadius: 12))
+                        .accessibilityHidden(true)
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(state == .paused ? "Paused" : eyebrow)
+                            .font(OLFont.meta.weight(.semibold))
+                            .foregroundStyle(state == .paused ? OL.todayText : OL.accentText)
+                        Text(title)
+                            .font(OLFont.rowTitleStrong)
+                            .foregroundStyle(OL.ink)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .multilineTextAlignment(.leading)
+                        Text(detail)
+                            .font(OLFont.meta)
+                            .foregroundStyle(OL.muted)
+                            .contentTransition(.numericText(countsDown: true))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 14)
+                .padding(.leading, 16)
                 .contentShape(.rect)
             }
             .buttonStyle(OLRowPressStyle())
@@ -192,14 +198,33 @@ struct OLNowCard: View {
                          label: state == .working ? "Open Working" : state == .paused ? "Resume" : "Start working",
                          kind: .accent, iconSize: 16, action: play)
         }
-        .padding(.vertical, 14)
-        .padding(.leading, 16)
         .padding(.trailing, 14)
         .olCard()
     }
 }
 
 // MARK: - C28 Empty state
+
+/// What a screen shows while its content is still on its way: a native
+/// spinner and a line of text, where its empty state would be.
+struct OLLoadingState: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text(title)
+                .font(OLFont.note)
+                .foregroundStyle(OL.muted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 40)
+        .accessibilityElement(children: .combine)
+    }
+}
 
 /// A screen with nothing to show (`Today is clear`): a 56 pt disc with the
 /// screen's glyph, a serif title, a line of text and an action. A
@@ -252,5 +277,30 @@ struct OLEmptyState: View {
                 .font(.system(size: 22, weight: .medium))
                 .foregroundStyle(tint)
         }
+    }
+}
+
+/// What couldn't be read, in the place of what a screen would show: why, in
+/// a line, and Try Again. Never an empty state, which would say there's
+/// nothing there.
+struct OLLoadFailure: View {
+    let message: String
+    let retry: () -> Void
+
+    init(_ message: String, retry: @escaping () -> Void) {
+        self.message = message
+        self.retry = retry
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(message)
+                .font(OLFont.note)
+                .foregroundStyle(OL.muted)
+                .multilineTextAlignment(.center)
+            Button("Try Again", action: retry).buttonStyle(.olLink())
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
     }
 }

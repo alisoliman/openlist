@@ -211,7 +211,8 @@ struct OLFieldRow<Value: View>: View {
 // MARK: - C19 Search field
 
 /// The search field (`.field`): a 44 pt `sunken` capsule with a magnifier.
-/// On Lists it's a button to Find; on Find, a live field with token chips.
+/// On Lists it's a button to Find; on Find, a live field with token chips,
+/// and a clear button while it holds anything.
 struct OLSearchField<Tokens: View>: View {
     @Binding var text: String
     var prompt = "Find a task, note or #label"
@@ -219,13 +220,17 @@ struct OLSearchField<Tokens: View>: View {
     var label = "Find tasks"
     @ViewBuilder var tokens: Tokens
     var focus: FocusState<Bool>.Binding?
+    /// Empties the chips, while the field holds any; the clear button then
+    /// shows with no text too, and empties both.
+    var clearTokens: (() -> Void)?
 
     init(text: Binding<String>, prompt: String = "Find a task, note or #label", label: String = "Find tasks",
-         focus: FocusState<Bool>.Binding? = nil, @ViewBuilder tokens: () -> Tokens) {
+         focus: FocusState<Bool>.Binding? = nil, clearTokens: (() -> Void)? = nil, @ViewBuilder tokens: () -> Tokens) {
         _text = text
         self.prompt = prompt
         self.label = label
         self.focus = focus
+        self.clearTokens = clearTokens
         self.tokens = tokens()
     }
 
@@ -234,13 +239,38 @@ struct OLSearchField<Tokens: View>: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(OL.muted)
+                .allowsHitTesting(false)
                 .accessibilityHidden(true)
             tokens
             field
+            if !text.isEmpty || clearTokens != nil {
+                Button {
+                    text = ""
+                    clearTokens?()
+                    focus?.wrappedValue = true
+                } label: {
+                    // A 44 pt target over the capsule's end around the glyph,
+                    // which keeps its own width in the layout.
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(OL.muted)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(OLPressStyle())
+                .padding(.horizontal, -14)
+                .accessibilityLabel("Clear")
+            }
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
-        .background(OL.sunken, in: .capsule)
+        .background {
+            // A tap anywhere in the capsule focuses the field, not only on
+            // its line of text.
+            Capsule().fill(OL.sunken)
+                .onTapGesture { focus?.wrappedValue = true }
+                .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder private var field: some View {

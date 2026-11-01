@@ -81,6 +81,15 @@ nonisolated struct ICloudSyncState {
         }
     }
 
+    /// Sync is on and nothing has come down from iCloud yet: no download
+    /// has finished or failed, nor setup failed, and the account is being
+    /// checked or is there. An empty library then is likely the other
+    /// devices' still on its way.
+    var isAwaitingFirstImport: Bool {
+        guard isEnabled, lastDownload == nil, failures[.download] == nil, failures[.setup] == nil else { return false }
+        return account == .checking || account == .available
+    }
+
     mutating func begin(_ operation: Operation, id: UUID) {
         guard isEnabled, !completedOperations.contains(id) else { return }
         activeOperations[id] = operation

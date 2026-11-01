@@ -37,14 +37,15 @@ private struct TimelinePage: View {
 
     var body: some View {
         // At accessibility sizes the page scrolls, and the card is a fixed
-        // window onto the day, rather than a sliver under the header.
+        // window onto the day, rather than a sliver under the header. Work
+        // is arranged as Today, so neither nests a tall scroller in its page.
         let fills = !typeSize.isAccessibilitySize
         let navigator = env.navigator
         let calendar = env.settings.calendar
         let today = calendar.startOfDay(for: now)
         let day = forWork ? today : navigator.timelineDay.map { calendar.startOfDay(for: $0) } ?? today
         let schedule = TimelineSchedule(env: env, library: library, day: day, now: now)
-        OLScreen(identifier: forWork ? PhoneRoute.work.screenIdentifier : PhoneRoute.timeline.screenIdentifier, scrolls: forWork || !fills) {
+        OLScreen(identifier: forWork ? PhoneRoute.work.screenIdentifier : PhoneRoute.timeline.screenIdentifier, scrolls: !fills) {
             OLTopBar {
                 OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
             } trailing: {
@@ -80,19 +81,14 @@ private struct TimelinePage: View {
                         .accessibilityIdentifier("timeline.toPlan")
                 }
             } content: {
-                if !forWork, !schedule.toPlan.isEmpty {
+                if !schedule.toPlan.isEmpty {
                     PlanRow(tasks: schedule.toPlan, planning: planning, canFit: day == today)
                 }
                 TimelineCard(schedule: schedule, day: day, now: now, planning: planning) { open($0) }
-                    .frame(height: forWork || !fills ? 560 : nil)
-                    .frame(maxHeight: fills && !forWork ? .infinity : nil)
+                    .frame(height: fills ? nil : 560)
+                    .frame(maxHeight: fills ? .infinity : nil)
             }
-            .frame(maxHeight: fills && !forWork ? .infinity : nil, alignment: .top)
-            if forWork, !schedule.toPlan.isEmpty {
-                OLGroup("Not scheduled") {
-                    PlanRow(tasks: schedule.toPlan, planning: planning, canFit: true)
-                }
-            }
+            .frame(maxHeight: fills ? .infinity : nil, alignment: .top)
         }
     }
 
@@ -262,7 +258,6 @@ private struct PlanRow: View {
                 HStack(spacing: 8) {
                     ForEach(tasks) { task in chip(task) }
                 }
-                .padding(.vertical, 4)
                 .padding(.horizontal, 2)
             }
             .scrollIndicators(.hidden)
@@ -274,7 +269,10 @@ private struct PlanRow: View {
     private func chip(_ task: Block) -> some View {
         let minutes = env.actions.planMinutes(for: task)
         return Button { env.navigator.open(.taskDetail(task.id)) } label: {
+            // The row's room above and below the 34 pt chip is its target too.
             PlanChip(title: task.displayTitle, minutes: minutes)
+                .padding(.vertical, 5)
+                .contentShape(.rect)
         }
         .buttonStyle(OLPressStyle(scale: 0.96))
         .onDrag {
@@ -333,7 +331,7 @@ private struct TimelineCard: View {
                        hourHeight: hourHeight, calendar: calendar, day: day, ghost: ghost(calendar: calendar),
                        dragging: planning.landing == nil ? nil : planning.lifted?.id,
                        drag: takesDrops ? { lift($0) } : nil, nudge: takesDrops ? { nudge($0, by: $1) } : nil,
-                       open: open)
+                       unplace: takesDrops ? { unplace($0) } : nil, open: open)
         }
         .scrollIndicators(.hidden)
         .scrollPosition($planning.position)
@@ -390,6 +388,11 @@ private struct TimelineCard: View {
     private func nudge(_ item: OLTimelineItem, by minutes: Int) {
         guard let id = item.taskID, let task = env.store.block(id: id) else { return }
         env.actions.place(task, at: item.start.addingTimeInterval(TimeInterval(minutes * 60)), placementID: item.placementID)
+    }
+
+    private func unplace(_ item: OLTimelineItem) {
+        guard let id = item.taskID, let task = env.store.block(id: id) else { return }
+        env.actions.unplace(task)
     }
 
     /// Places the lifted task where it was shown landing, else at the
