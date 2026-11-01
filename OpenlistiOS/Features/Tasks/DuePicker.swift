@@ -136,6 +136,7 @@ struct DuePickerForm: View {
         }
         .padding(.horizontal, OLMetrics.gutter)
         .padding(.top, 8)
+        .accessibilityElement(children: .contain)
         .accessibilityAction(.escape, close)
     }
 

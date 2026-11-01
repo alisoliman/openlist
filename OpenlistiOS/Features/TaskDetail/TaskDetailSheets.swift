@@ -71,6 +71,7 @@ struct LabelPickerSheet: View {
         .padding(.horizontal, OLMetrics.gutter)
         .presentationDetents([.medium, .large])
         .olSheet()
+        .accessibilityElement(children: .contain)
         .accessibilityAction(.escape) { dismiss() }
         .onDisappear(perform: addNew)
     }
@@ -215,6 +216,7 @@ struct PlanAtSheet: View {
         .padding(.bottom, 16)
         .presentationDetents([.large])
         .olSheet()
+        .accessibilityElement(children: .contain)
         .accessibilityAction(.escape) { dismiss() }
         .onAppear { start = Self.nextQuarterHour(after: env.now, calendar: env.settings.calendar) }
     }

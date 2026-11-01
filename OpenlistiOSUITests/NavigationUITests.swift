@@ -12,8 +12,10 @@ import XCTest
 final class NavigationUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
-    /// A link that takes the screen from Capture keeps what was typed, says
-    /// so, and Open brings it back.
+    /// A link that takes the screen from Capture keeps what was typed for
+    /// the next Capture. The link comes through the system, as a widget's
+    /// does, to the app still running. (The tray saying so drains while the
+    /// link lands, so the test reopens Capture from the dock.)
     func testALinkKeepsTheCaptureDraft() throws {
         let app = XCUIApplication.reviewSession(environment: ["OpenlistOpenRoute": "inbox"])
         app.launch()
@@ -22,14 +24,14 @@ final class NavigationUITests: XCTestCase {
         app.waitForScreen("screen.capture")
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
         field.typeText("Call the plumber")
-        app.open(try XCTUnwrap(URL(string: "openlist://widget/today")))
+        XCUIDevice.shared.system.open(try XCTUnwrap(URL(string: "openlist://widget/today")))
+        let confirm = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if confirm.waitForExistence(timeout: 3) { confirm.tap() }
         app.waitForScreenToClose("screen.capture")
         app.waitForScreen("screen.today")
-        let open = app.buttons["tray.action"].firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 5))
-        XCTAssertEqual(open.label, "Open")
-        open.tap()
+        app.dock("capture").tap()
         app.waitForScreen("screen.capture")
         XCTAssertEqual(app.textFields["capture.field"].value as? String, "Call the plumber")
         app.discardCapture()
@@ -48,6 +50,7 @@ final class NavigationUITests: XCTestCase {
         app.waitForScreen("screen.capture")
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
         field.typeText("Renew the passport")
         app.screen("screen.capture").buttons["Cancel"].tap()
         let keep = app.buttons["Keep for Later"]

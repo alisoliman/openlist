@@ -253,6 +253,8 @@ private struct KeyboardShortcuts: View {
         .disabled(navigator.sheet != nil || navigator.cover != nil || !navigator.dockHiders.isEmpty)
         .opacity(0)
         .allowsHitTesting(false)
+        // Keys only: VoiceOver reaches all of these on screen already.
+        .accessibilityElement(children: .ignore)
         .accessibilityHidden(true)
     }
 }

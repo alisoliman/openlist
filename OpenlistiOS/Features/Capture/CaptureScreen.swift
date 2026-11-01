@@ -63,8 +63,6 @@ struct CaptureScreen: View {
                     setDueDate(date, includesTime: timed)
                 }
                 .padding(.bottom, 20)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("capture.duePicker")
                 .transition(.opacity)
             } else {
                 capture(parse, snapshot: snapshot)
