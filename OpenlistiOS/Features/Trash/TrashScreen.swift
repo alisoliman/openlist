@@ -41,7 +41,9 @@ struct TrashScreen: View {
                     .foregroundStyle(OL.danger)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(OL.dangerSoft, in: .capsule)
-                    .olHold(Capsule()) { erase(entries.map(\.id), all: true) }
+                    .olHold(Capsule(), confirmation: "Erase everything in Trash for good?", confirmTitle: "Empty Trash") {
+                        erase(entries.map(\.id), all: true)
+                    }
                     .padding(.top, OLMetrics.cardGap)
                     .accessibilityLabel("Empty Trash")
                     .accessibilityHint("Erases everything in Trash for good")
@@ -74,7 +76,11 @@ struct TrashScreen: View {
                 .foregroundStyle(OL.muted)
                 .frame(width: 44, height: 44)
                 .contentShape(.circle)
-                .olHold(Circle()) { erase([entry.id], all: false) }
+                // A plain tap asks rather than doing nothing.
+                .olHold(Circle(), confirmation: "Erase “\(entry.title.isEmpty ? "Untitled" : entry.title)” for good?",
+                        confirmTitle: "Erase", asksOnTap: true) {
+                    erase([entry.id], all: false)
+                }
                 .accessibilityLabel("Hold to erase \(entry.title)")
                 .accessibilityHint("Erases it for good")
         }
