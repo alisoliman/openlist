@@ -108,19 +108,32 @@ struct OLListHeaderBand<TopBar: View>: View {
     let icon: String
     var accent: ListAccent = .graphite
     var isInbox = false
+    /// Makes the tile a button, which opens the list's Icon & colour.
+    var editAppearance: (() -> Void)?
     @ViewBuilder var topBar: TopBar
 
-    init(icon: String, accent: ListAccent = .graphite, isInbox: Bool = false, @ViewBuilder topBar: () -> TopBar) {
+    init(icon: String, accent: ListAccent = .graphite, isInbox: Bool = false, editAppearance: (() -> Void)? = nil,
+         @ViewBuilder topBar: () -> TopBar) {
         self.icon = icon
         self.accent = accent
         self.isInbox = isInbox
+        self.editAppearance = editAppearance
         self.topBar = topBar()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             topBar
-            OLTile(icon: icon, accent: accent.color, size: 60, raised: true)
+            let tile = OLTile(icon: icon, accent: accent.color, size: 60, raised: true)
+            if let editAppearance {
+                Button(action: editAppearance) { tile }
+                    .buttonStyle(OLPressStyle())
+                    .accessibilityLabel("Icon & colour")
+                    .accessibilityValue(ListIcon.isSymbolName(icon) ? "" : icon)
+                    .accessibilityIdentifier("list.icon")
+            } else {
+                tile
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .top) {

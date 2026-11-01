@@ -477,6 +477,25 @@ final class PhoneActions {
         }
     }
 
+    /// Icon & colour: the emoji or colour a list shows, each pick one step
+    /// with Undo, as on the Mac.
+    func setAppearance(icon: String? = nil, accent: ListAccent? = nil, for list: TaskList) {
+        let icon = icon == list.icon ? nil : icon
+        let accent = accent == list.accent ? nil : accent
+        guard icon != nil || accent != nil else { return }
+        let before = (icon: list.icon, accent: list.accent)
+        let text = icon.map { "Icon changed to \($0)" } ?? "Colour changed to \(accent?.title ?? "")"
+        perform(text, icon: icon == nil ? "paintpalette" : "face.smiling", tone: .accent) { [store] changes in
+            store.setAppearance(icon: icon, accent: accent, for: list)
+            changes.registerUndo(withTarget: store) { store in
+                MainActor.assumeIsolated {
+                    store.setAppearance(icon: icon.map { _ in before.icon }, accent: accent.map { _ in before.accent }, for: list)
+                }
+            }
+            return true
+        }
+    }
+
     func setArchived(_ archived: Bool, for list: TaskList) {
         let title = list.displayTitle
         perform(archived ? "Archived “\(title)”" : "Unarchived “\(title)”", icon: "archivebox", tone: .accent) { [store] changes in

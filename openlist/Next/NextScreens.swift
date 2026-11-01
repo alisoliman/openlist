@@ -200,6 +200,8 @@ struct NextListScreen: View {
     /// standing in for "Untitled list".
     @State private var naming = false
     @State private var describing = false
+    /// Icon & Colour, open beneath the list's tile.
+    @State private var appearanceOpen = false
 
     var body: some View {
         let workbench = env.workbench
@@ -220,7 +222,8 @@ struct NextListScreen: View {
                                                                            value: naming ? "" : list.title,
                                                                            placeholder: "Untitled list") { name in
                                workbench.renameList(list.id, to: name)
-                           }) {
+                           },
+                           appearance: list.isSystemInbox ? nil : $appearanceOpen) {
                 // A list archived through its parent unarchives with the parent.
                 if list.isArchived {
                     Button("Unarchive") { workbench.setArchived(false, for: list) }
@@ -230,7 +233,7 @@ struct NextListScreen: View {
                         .font(.system(size: 12, weight: .medium))
                         .fixedSize()
                 }
-                NXListOptions(list: list) { describing = true }
+                NXListOptions(list: list, editAppearance: { appearanceOpen = true }) { describing = true }
             }
             NXListDescription(list: list, editing: $describing)
             NXChildLists(list: list)
@@ -324,9 +327,10 @@ private struct NXListCover: View {
 private struct NXListOptions: View {
     @Environment(AppEnvironment.self) private var env
     let list: TaskList
+    /// Opens Icon & Colour beneath the list's tile.
+    let editAppearance: () -> Void
     /// Starts the description under the header, or writes the one there.
     let describe: () -> Void
-    @State private var appearanceOpen = false
 
     var body: some View {
         Menu {
@@ -342,7 +346,8 @@ private struct NXListOptions: View {
                     ForEach(TaskList.CompletedVisibility.allCases) { Text($0.title).tag($0) }
                 }
                 Divider()
-                Button("Icon & Colour…") { appearanceOpen = true }
+                // The Inbox keeps its own icon and colour.
+                if !list.isSystemInbox { Button("Icon & Colour…", action: editAppearance) }
                 Button(list.summary.isEmpty ? "Add Description" : "Edit Description", action: describe)
                 Menu("Cover") { coverItems }
             }
@@ -357,9 +362,6 @@ private struct NXListOptions: View {
         .fixedSize()
         .help("List options")
         .accessibilityLabel("List options")
-        .popover(isPresented: $appearanceOpen, arrowEdge: .bottom) {
-            ListAppearancePicker(list: list).environment(env)
-        }
     }
 
     /// The cover's own choices: a local image, how it shows, and removing it.

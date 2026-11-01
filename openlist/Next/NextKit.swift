@@ -291,22 +291,18 @@ struct NXScreenHeader<Trailing: View>: View {
     var progress: (done: Int, total: Int)?
     /// Makes the title editable in place.
     var rename: NXTitleRename?
+    /// Makes a list's tile open its Icon & Colour.
+    var appearance: Binding<Bool>?
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         NXHeaderFlow(gap: 12) {
             HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    // A quiet tile: the symbol carries the screen's colour.
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NX.ink(0.05))
-                    switch tile {
-                    case let .icon(name):
-                        Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
-                    case let .list(list):
-                        NXListGlyph(list: list, size: 24)
-                    }
+                if case let .list(list) = tile, let appearance {
+                    ListAppearanceTile(list: list, isPresented: appearance) { tileView }
+                } else {
+                    tileView
                 }
-                .frame(width: 44, height: 44)
 
                 VStack(alignment: .leading, spacing: 5) {
                     if let rename {
@@ -329,6 +325,20 @@ struct NXScreenHeader<Trailing: View>: View {
             }
             trailing()
         }
+    }
+
+    private var tileView: some View {
+        ZStack {
+            // A quiet tile: the symbol carries the screen's colour.
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NX.ink(0.05))
+            switch tile {
+            case let .icon(name):
+                Image(systemName: name).font(.system(size: 19, weight: .semibold)).foregroundStyle(color)
+            case let .list(list):
+                NXListGlyph(list: list, size: 24)
+            }
+        }
+        .frame(width: 44, height: 44)
     }
 }
 
