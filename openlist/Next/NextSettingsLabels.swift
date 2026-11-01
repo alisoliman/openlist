@@ -127,6 +127,7 @@ private struct NXLabelSettingsRow: View {
             .buttonStyle(NXHoverButtonStyle(hover: .clear, radius: 6,
                                             padding: EdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5),
                                             foreground: NX.ink(0.4), hoverForeground: NX.redText))
+            .help("Delete label")
             .accessibilityLabel("Delete label \(label.name)")
         }
         .onAppear {

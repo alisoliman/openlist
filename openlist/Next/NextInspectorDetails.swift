@@ -92,10 +92,11 @@ struct NXInspectorPlan: View {
             HStack(spacing: 8) {
                 NXCapsTitle(text: "Plan for today")
                 Spacer(minLength: 6)
-                // Planning skips completed tasks, so the switch fades.
+                // Planning skips completed tasks, so the switch fades, and says why.
                 NXToggle(isOn: workbench.isPlanned(task), label: "Plan for today") { workbench.plan([task.id]) }
                     .disabled(task.isCompleted)
                     .opacity(task.isCompleted ? 0.45 : 1)
+                    .help(task.isCompleted ? "Reopen this task to plan it" : "Plan for today (P)")
             }
             HStack(spacing: 10) {
                 Image(systemName: "clock")
