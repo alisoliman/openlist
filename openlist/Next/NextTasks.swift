@@ -132,7 +132,7 @@ extension NextTasksScreen {
             return NXGroup(id: "none", rows: [], showHead: false, emptyText: "No tasks in your lists. Press N to capture one.")
         }
         if library.open.isEmpty && (workbench.tasksStatus == .open || !filtered) {
-            return NXGroup(id: "none", rows: [], showHead: false, emptyText: "Everything is done. Nothing is open.")
+            return NXGroup(id: "none", rows: [], showHead: false, emptyText: "Everything is done. Press N to capture what’s next.")
         }
         guard !library.open.isEmpty else {
             return NXGroup(id: "none", rows: [], showHead: false, emptyText: "Nothing matches these filters.")

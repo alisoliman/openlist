@@ -288,7 +288,14 @@ struct NextTrashScreen: View {
                 }
                 // Only a read that worked can say it's empty; the notice says why one didn't.
                 if rows.isEmpty {
-                    NXDashedEmpty(text: unreadable ? "Trash could not be read." : "Trash is empty.").padding(.top, 6)
+                    VStack(spacing: 12) {
+                        NXDashedEmpty(text: unreadable ? "Trash could not be read." : "Trash is empty.")
+                        if unreadable {
+                            Button("Try again", action: reload)
+                                .buttonStyle(NXPanelButtonStyle(kind: .secondary))
+                        }
+                    }
+                    .padding(.top, 6)
                 }
             }
             .padding(.top, 18)
