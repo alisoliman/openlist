@@ -2776,4 +2776,58 @@ check(store.block(id: captionRow.id) == nil && captionImage.mediaCaption == "Sen
 moveUndo.undo()
 check(captionImage.mediaCaption.isEmpty, "Then the caption")
 
+// Backspace at the start of a line right after a divider or image, with no
+// kind to turn or level to lift, takes that line away, a step of its own,
+// the caret staying where it is.
+let ruleList = store.createList(title: "Rules")
+let ruleDocument = DocumentContext(listID: ruleList.id)
+let ruleEditor = OutlineEditor(env: outlineEnv, document: ruleDocument)
+let ruleUndo = UndoManager()
+ruleUndo.groupsByEvent = false
+ruleEditor.windowUndoManager = { ruleUndo }
+var ruleRecorded: [OutlineEdit] = []
+ruleEditor.hooks.didRecordEdit = { edit, _ in ruleRecorded.append(edit) }
+func ruleRows() -> [BlockRow] { ruleEditor.visibleRows(in: store.blocks(inList: ruleList.id)) }
+func ruleBackspace(_ block: Block) -> Bool {
+    ruleUndo.beginUndoGrouping()
+    defer { ruleUndo.endUndoGrouping() }
+    return ruleEditor.actions(for: ruleRows().first { $0.id == block.id }!).onBackspaceAtStart(store.attributedContent(of: block))
+}
+let rulePack = store.appendBlock(kind: .task, text: "Pack", to: ruleDocument)
+let rule = store.appendBlock(kind: .divider, to: ruleDocument)
+let ruleLeave = store.appendBlock(kind: .task, text: "Leave", to: ruleDocument)
+let rulePhoto = store.appendBlock(kind: .image, to: ruleDocument)
+let ruleHeading = store.appendBlock(kind: .heading2, text: "After", to: ruleDocument)
+store.save()
+check(ruleBackspace(ruleLeave) && store.block(id: rule.id) == nil && ruleLeave.text == "Leave"
+        && ruleRows().map(\.id) == [rulePack.id, ruleLeave.id, rulePhoto.id, ruleHeading.id]
+        && ruleRecorded == [.deleted(rule.id)] && ruleEditor.focus.blockID == ruleLeave.id && ruleEditor.focus.caret == 0,
+    "Backspace at the start of a task after a divider takes the divider away, as one step, the caret staying put")
+ruleUndo.undo()
+check(ruleRows().map(\.id) == [rulePack.id, rule.id, ruleLeave.id, rulePhoto.id, ruleHeading.id] && ruleLeave.text == "Leave",
+    "Undo puts the divider back")
+check(ruleBackspace(ruleHeading) && ruleHeading.kind == .paragraph && store.block(id: rulePhoto.id) != nil,
+    "A heading after an image turns into text first, as Backspace turns any heading")
+check(ruleBackspace(ruleHeading) && store.block(id: rulePhoto.id) == nil && ruleHeading.text == "After",
+    "Then the image above goes")
+check(ruleBackspace(rulePack) && ruleRows().first?.id == rulePack.id && rulePack.text == "Pack",
+    "With nothing above, the first line stays as it is")
+
+// ← and → on a focused task fold away the lines under it and show them again.
+let foldList = store.createList(title: "Folds")
+let foldDocument = DocumentContext(listID: foldList.id)
+let foldEditor = OutlineEditor(env: outlineEnv, document: foldDocument)
+let foldParent = store.appendBlock(kind: .task, text: "Trip", to: foldDocument)
+_ = store.insertChild(kind: .task, text: "Tickets", of: foldParent, at: .last)
+let foldLeaf = store.appendBlock(kind: .task, text: "Water the plants", to: foldDocument)
+store.save()
+foldEditor.setFolded(foldParent.id, true)
+check(foldParent.isCollapsed, "← folds the lines under a task away")
+foldEditor.setFolded(foldParent.id, true)
+check(foldParent.isCollapsed, "and again leaves it folded")
+foldEditor.setFolded(foldParent.id, false)
+check(!foldParent.isCollapsed, "→ shows them again")
+foldEditor.setFolded(foldLeaf.id, true)
+check(!foldLeaf.isCollapsed, "A task with nothing under it has nothing to fold")
+
 print("✅ \(checks) editor/store checks passed")

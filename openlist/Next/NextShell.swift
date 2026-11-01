@@ -47,6 +47,15 @@ struct NextShell: View {
         .background(NX.paper)
         .background { NextKeyMonitorHost(library: library, overlays: overlays) }
         .background { NXWindowChromeHost(chrome: chrome) }
+        // The window's name, which VoiceOver, the Window menu and Mission
+        // Control read: the crumb, as the toolbar shows it.
+        .navigationTitle(NXCrumb.title(env: env, library: library))
+        // File ▸ Empty Trash…'s question, as Trash's Hold to empty Trash asks it.
+        .sheet(isPresented: Bindable(env).confirmsEmptyingTrash) {
+            NXConfirmationSheet(title: "Erase everything in Trash?", message: "This can’t be undone.",
+                                confirm: "Empty Trash", action: emptyTrash)
+                .environment(env)
+        }
         .onGeometryChange(for: CGFloat.self, of: \.size.width) {
             width = $0
             room.windowWidth = $0
@@ -57,6 +66,8 @@ struct NextShell: View {
             adaptSidebar()
         }
         .onChange(of: env.workbench.isTaskPageOpen) { adaptSidebar() }
+        // Shown by hand where there's room anyway, it folds for room again later.
+        .onChange(of: env.workbench.isSidebarKeptOverRoom) { adaptSidebar() }
         .onChange(of: env.navigator.searchActivation) { landReveal() }
         // Back/Forward, reveals and deletions change the route without `go`.
         .onChange(of: env.navigator.route) { env.workbench.routeDidChange() }
@@ -71,6 +82,13 @@ struct NextShell: View {
         let library = NextLibrary(lists: allLists, sections: sections, labels: labels, tasks: tasks)
         env.workbench.drawnLists = library.lists
         return library
+    }
+
+    /// Everything in Trash erased, once confirmed, as Trash's Hold to empty
+    /// Trash erases it; the notice says why when Trash can't be read.
+    private func emptyTrash() {
+        do { env.workbench.erase(try env.store.trashEntries().map(\.id)) }
+        catch { env.store.trashError = "Trash could not be read. \(error.localizedDescription)" }
     }
 
     /// A reminder, a link or a search hit that opens a task lands as the
@@ -93,16 +111,19 @@ struct NextShell: View {
     /// page would be narrower than the inspector, under 956pt, where past its
     /// 40pt margins rows show less than 280pt, and comes back 120pt wider,
     /// so a resize doesn't flip it. View ▸ Hide Sidebar is separate, so this
-    /// never shows a sidebar the user hid. The task opened out as a page
-    /// takes the pane's room rather than squeezing it.
+    /// never shows a sidebar the user hid, and one the user showed again
+    /// stays, until the inspector closes or there's room. The task opened
+    /// out as a page takes the pane's room rather than squeezing it.
     private func adaptSidebar() {
         let workbench = env.workbench
         let inspecting = !workbench.isTaskPageOpen && env.navigator.openTaskID.flatMap { env.store.block(id: $0) }
             .map { $0.isTask && $0.trashID == nil } ?? false
         let page = width - 236 - 360
+        let roomy = !inspecting || page >= 480
+        if roomy, workbench.isSidebarKeptOverRoom { workbench.isSidebarKeptOverRoom = false }
         var folded = workbench.isSidebarFoldedForRoom
-        if inspecting && page < 360 { folded = true }
-        else if !inspecting || page >= 480 { folded = false }
+        if inspecting && page < 360 && !workbench.isSidebarKeptOverRoom { folded = true }
+        else if roomy { folded = false }
         guard folded != workbench.isSidebarFoldedForRoom else { return }
         if folded { endSidebarEditing() }
         withAnimation(workbench.style.ease(280)) { workbench.isSidebarFoldedForRoom = folded }
@@ -128,7 +149,7 @@ private struct NextMain: View {
         let paged = inspected != nil && workbench.isTaskPageOpen
         VStack(spacing: 0) {
             // The page ends the crumb with the task it shows.
-            NextToolbar(crumb: paged ? crumb + " › " + (inspected?.displayTitle ?? "") : crumb)
+            NextToolbar(crumb: NXCrumb.text(for: env.navigator.route, library: library, task: paged ? inspected : nil))
             // The inspector takes the right of the window under the toolbar,
             // and the page gives it the room instead of going under it.
             HStack(spacing: 0) {
@@ -137,12 +158,14 @@ private struct NextMain: View {
                         NextNotices()
                         ZStack {
                             // Opened out, the task takes the screen's place, which
-                            // stays laid out and scrolled underneath for its return.
+                            // stays laid out and scrolled underneath for its return,
+                            // and out of Tab's way, so no key lands in what can't be seen.
                             NextRoutedScreen()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                 .clipped()
                                 .opacity(paged ? 0 : 1)
                                 .allowsHitTesting(!paged)
+                                .disabled(paged)
                                 .accessibilityHidden(paged)
                             if paged, let inspected {
                                 NextInspector(task: inspected, isPage: true)
@@ -166,24 +189,50 @@ private struct NextMain: View {
         // Opening and closing slide; moving from one task to the next is instant.
         .animation(style.ease(300), value: inspected != nil)
     }
+}
 
-    private var crumb: String {
-        switch env.navigator.route {
+/// Where the window is, in words: the toolbar's crumb and the window's name.
+enum NXCrumb {
+    /// The page on show, after the section and the lists it's nested in,
+    /// and the task opened out over it.
+    @MainActor
+    static func text(for route: AppRoute, library: NextLibrary, task: Block? = nil) -> String {
+        let page: String = switch route {
         case let .list(id):
-            guard let list = library.list(id) else { return "Lists" }
-            let section = library.sectionTitle(for: list)
-            return section.isEmpty ? list.displayTitle : "\(section) › \(list.displayTitle)"
-        case let .label(id):
-            guard let label = library.label(id) else { return "Labels" }
-            return "Labels › #\(label.name)"
-        case .inbox: return "Inbox"
-        case .today: return "Today"
-        case .calendar: return "Calendar"
-        case .tasks: return "Tasks"
-        case .lists: return "Lists"
-        case .activity: return "Activity"
-        case .trash: return "Trash"
-        case .settings: return "Settings"
+            if let list = library.list(id) {
+                ([library.sectionTitle(for: list)] + library.hierarchy.ancestors(of: id).map(\.displayTitle) + [list.displayTitle])
+                    .filter { !$0.isEmpty }.joined(separator: " › ")
+            } else {
+                "Lists"
+            }
+        case let .label(id): library.label(id).map { "Labels › #\($0.name)" } ?? "Labels"
+        default: name(of: route, library: library) ?? ""
+        }
+        return task.map { page + " › " + $0.displayTitle } ?? page
+    }
+
+    /// The window's name: the crumb, the task opened out included.
+    @MainActor
+    static func title(env: AppEnvironment, library: NextLibrary) -> String {
+        let task = env.workbench.isTaskPageOpen ? env.navigator.openTaskID.flatMap { env.store.block(id: $0) } : nil
+        return text(for: env.navigator.route, library: library, task: task.flatMap { $0.isTask && $0.trashID == nil ? $0 : nil })
+    }
+
+    /// A page's own name, as Back names where it goes; nil for a list or
+    /// label that's gone.
+    @MainActor
+    static func name(of route: AppRoute, library: NextLibrary) -> String? {
+        switch route {
+        case let .list(id): library.list(id)?.displayTitle
+        case let .label(id): library.label(id).map { "#\($0.name)" }
+        case .inbox: "Inbox"
+        case .today: "Today"
+        case .calendar: "Calendar"
+        case .tasks: "Tasks"
+        case .lists: "Lists"
+        case .activity: "Activity"
+        case .trash: "Trash"
+        case .settings: "Settings"
         }
     }
 }
@@ -339,6 +388,12 @@ struct NXPage<Content: View>: View {
             }
             .onChange(of: rowIDs) { old, ids in
                 workbench.visibleIDs = ids
+                // The focused row leaving, done once its dwell ends, moved to
+                // another list or folded away, hands the focus to the row
+                // beside it, so J and K go on from there, not from the top.
+                if let id = workbench.focusID, old.contains(id), !ids.contains(id) {
+                    workbench.focusID = Workbench.neighbour(of: id, leaving: Set(old).subtracting(ids), in: old)
+                }
                 // A row focused before it was drawn, like a line just added,
                 // comes into view once it is.
                 guard let id = workbench.focusID, ids.contains(id), !old.contains(id) else { return }

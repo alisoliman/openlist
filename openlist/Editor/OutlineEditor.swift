@@ -784,7 +784,9 @@ final class OutlineEditor {
     /// The design's Backspace at the start of a line. An empty line goes and
     /// the caret ends the line above, or starts the one below at the top;
     /// a heading or list item turns into text; a nested line steps out.
-    /// Lines never merge.
+    /// Lines never merge. With none of that to do, a divider or image right
+    /// above goes instead, as a step of its own, the caret staying put: the
+    /// keyboard's way to remove a line that takes no caret.
     private func handleBackspace(block: Block, content: NSAttributedString) -> Bool {
         if content.length == 0 {
             let current = rows
@@ -809,6 +811,12 @@ final class OutlineEditor {
         if changed {
             env.store.save()
             focus.request(block.id, caret: 0)
+        } else {
+            let current = rows
+            if let index = current.firstIndex(where: { $0.id == block.id }), index > 0, current[index - 1].block.kind.isVoid {
+                deleteLine(current[index - 1].id)
+                focus.request(block.id, caret: 0)
+            }
         }
         // Nothing to do still takes the key, so AppKit doesn't beep.
         return true
@@ -851,6 +859,18 @@ final class OutlineEditor {
 
     /// Whether `id` is one of the rows on show.
     func shows(_ id: UUID) -> Bool { rows.contains { $0.id == id } }
+
+    /// ← and → on a focused task: fold away the lines under it, or show them,
+    /// as an outline's arrows do, when it has lines its chevron folds. One a
+    /// reveal shows open folds back, as its chevron folds it.
+    func setFolded(_ id: UUID, _ folded: Bool) {
+        guard let row = rows.first(where: { $0.id == id }), row.block.isTask else { return }
+        // Showing only tasks, its chevron folds only the tasks under it.
+        let folds = tasksOnly ? BlockTree.descendants(of: id, in: blocks).contains(where: \.isTask) : row.hasChildren
+        let shownOpen = !row.block.isCollapsed || reveal?.ancestorIDs.contains(id) == true
+        guard folds, shownOpen == folded else { return }
+        actions(for: row).onToggleCollapse()
+    }
 
     /// The nearest task on show after `id`, or before it, for keys that step
     /// through tasks from a line that isn't one.

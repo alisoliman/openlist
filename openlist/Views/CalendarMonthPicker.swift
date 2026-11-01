@@ -69,6 +69,7 @@ struct CalendarMonthPicker: View {
                 .frame(width: 16, height: 16)
         }
         .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
+        .help(title)
         .accessibilityLabel(title)
     }
 

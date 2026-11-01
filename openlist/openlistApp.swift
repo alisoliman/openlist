@@ -126,6 +126,19 @@ struct openlistApp: App {
             }
         }
         .menuBarExtraStyle(.window)
+
+        // Beside the main window rather than over it, so a key can be tried
+        // while its line is read; Help ▸ and ⌘/ show and hide it.
+        UtilityWindow("Keyboard Shortcuts", id: WindowID.shortcuts) {
+            if let env {
+                ShortcutsSheet()
+                    .environment(env)
+                    .preferredColorScheme(env.settings.appearance.colorScheme)
+            }
+        }
+        .commandsRemoved()
+        .defaultSize(width: 820, height: 640)
+        .windowResizability(.contentSize)
     }
 
     private var menuBarBinding: Binding<Bool> {
@@ -138,6 +151,7 @@ struct openlistApp: App {
 
 enum WindowID {
     static let main = "main"
+    static let shortcuts = "shortcuts"
 }
 
 /// The window when the library can't open: no shell, tray or notices, just

@@ -389,15 +389,16 @@ private struct NXTasksQueryBar: View {
                     workbench.tasksQuery = ""
                     fieldFocused = true
                 } label: {
-                    // The design's 14 pt icon box.
+                    // The design's 14 pt icon box, in a 20 pt target.
                     Image(systemName: "xmark").font(.system(size: 10.5, weight: .semibold))
                         .frame(width: 14, height: 14)
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 5,
-                                                padding: EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2),
+                                                padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
                                                 foreground: NX.ink(0.4), hoverForeground: NX.ink))
                 // Shows and goes at once, as the design's.
                 .transition(.identity)
+                .help("Clear filter (Esc)")
                 .accessibilityLabel("Clear filter")
             }
         }

@@ -89,10 +89,14 @@ struct NXInspectorText: NSViewRepresentable {
 final class NXInspectorFields {
     private weak var title: NXInspectorTextView?
     private weak var note: NXInspectorTextView?
+    /// The title of the details on show, beside the screen or as its page.
+    private static weak var shownTitle: NXInspectorTextView?
 
     fileprivate func register(_ view: NXInspectorTextView) {
         switch view.role {
-        case .title: title = view
+        case .title:
+            title = view
+            Self.shownTitle = view
         case .note: note = view
         }
     }
@@ -105,8 +109,19 @@ final class NXInspectorFields {
     /// Puts the caret at the end of the title or the note, as the design's
     /// ⇧Tab puts it at the end of the line the note is under.
     func write(_ role: NXInspectorText.Role) {
-        guard let view = role == .title ? title : note, let window = view.window,
-              window.makeFirstResponder(view) else { return }
+        guard let view = role == .title ? title : note else { return }
+        Self.write(view)
+    }
+
+    /// Return on the row of the task the details show: the caret goes to
+    /// the end of their title.
+    static func writeShownTitle() {
+        guard let shownTitle else { return }
+        write(shownTitle)
+    }
+
+    private static func write(_ view: NXInspectorTextView) {
+        guard let window = view.window, window.makeFirstResponder(view) else { return }
         view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
     }
 }
@@ -518,9 +533,9 @@ final class NXInspectorTextView: NSTextView {
         // on to the note. ⇧Tab goes back from the note to the title, as the
         // design's goes back to the note's line.
         case #selector(insertTab(_:)):
-            if role == .title, let onSwitch { onSwitch() } else { finish() }
+            if role == .title, let onSwitch { onSwitch() } else { leave(forward: true) }
         case #selector(insertBacktab(_:)):
-            if role == .note, let onSwitch { onSwitch() } else { finish() }
+            if role == .note, let onSwitch { onSwitch() } else { leave(forward: false) }
         // Every line break finishes the title, as Return submits an input.
         // In the note, Return goes on to a list's next item.
         case #selector(insertNewline(_:)), #selector(insertNewlineIgnoringFieldEditor(_:)),
@@ -558,6 +573,15 @@ final class NXInspectorTextView: NSTextView {
     }
 
     private func finish() { window?.makeFirstResponder(nil) }
+
+    /// Tab out of the note, or ⇧Tab out of the title: with Keyboard
+    /// navigation on, on to the next control or back to the one before, as
+    /// Tab leaves a textarea; otherwise the edit finishes.
+    private func leave(forward: Bool) {
+        guard NSApp.isFullKeyboardAccessEnabled, let window else { return finish() }
+        if forward { window.selectNextKeyView(self) } else { window.selectPreviousKeyView(self) }
+        if window.firstResponder === self { finish() }
+    }
 
     /// Return on a list item starts the next, with the same bullet, the
     /// number after or an open box; on an empty one it takes the bullet off,

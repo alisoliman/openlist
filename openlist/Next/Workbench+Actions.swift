@@ -606,7 +606,11 @@ extension Workbench {
         separateUndoStep()
         beginTrash(taskIDs, label: "Moved \(describe(tasks)) to Trash")
         selection = []
-        focusID = nil
+        // The focus goes on to the row beside, so the next J or K goes on
+        // from there rather than from the top.
+        if let focusID, taskIDs.contains(focusID) {
+            self.focusID = Self.neighbour(of: focusID, leaving: Set(taskIDs), in: visibleIDs)
+        }
         if let open = navigator.openTaskID, taskIDs.contains(open) { navigator.closeTask() }
     }
 
@@ -1044,10 +1048,10 @@ extension Workbench {
         if listens { toggleVoice() }
     }
 
-    /// Closes capture. Escape and a saved task are done with the draft; a
-    /// click away, or search or the palette taking its place, `keepsDraft`
-    /// for the next capture on this page for a few minutes, as Quick Add
-    /// keeps its own.
+    /// Closes capture. A saved task is done with the draft; Escape, a click
+    /// away, or search or the palette taking its place, `keepsDraft` for the
+    /// next capture on this page for a few minutes, as Quick Add keeps its
+    /// own, tasks heard by voice included.
     func closeCapture(keepsDraft: Bool = false) {
         if keepsDraft, voice.isActive {
             voice.preserveForReview()

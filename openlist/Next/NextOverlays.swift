@@ -14,6 +14,8 @@ final class NXOverlayState {
     @ObservationIgnored let search = SearchSession()
     /// Why the chosen result can't open, shown until the search changes.
     var searchUnavailable: String?
+    /// Which of the search card's two stops has the keyboard, which Tab moves.
+    var searchFocus: NXSearchFocus = .field
     /// The search Return was pressed on before its results arrived, with no
     /// listed row chosen: its first result opens once it's in.
     @ObservationIgnored var pendingSearchOpen: SearchOptions?
@@ -132,10 +134,16 @@ struct NextOverlays: View {
             workbench.searchQuery = ""
             workbench.searchIndex = 0
             workbench.searchIncludesCompleted = false
+            overlays.searchFocus = .field
             navigator.isCommandPaletteOpen = false
             if workbench.captureOpen { workbench.closeCapture(keepsDraft: true) }
         }
     }
+}
+
+/// The search card's two stops, between which Tab moves.
+enum NXSearchFocus: Hashable {
+    case field, completed
 }
 
 /// The dim backdrop (click closes) and the popping card.
@@ -533,10 +541,17 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
     }
 
+    /// What Return and Escape do now, as each phase takes them.
     private var hint: String {
-        if voice?.isActive == true { return "↩ done · esc cancel" }
+        if let voice, voice.isActive {
+            switch voice.phase {
+            case .listening: return "↩ done · esc cancel"
+            case .understanding: return voice.canSkipReading ? "↩ skip" : ""
+            default: return "esc cancel"
+            }
+        }
         let heard = draft.spokenTasks.count
-        if heard > 0 { return "↩ add \(heard == 1 ? "task" : "\(heard) tasks") · esc leave out" }
+        if heard > 0 { return "↩ add \(heard == 1 ? "task" : "\(heard) tasks") · esc close" }
         return voice == nil ? "⇥ destination · ↩ add · ⇧↩ add another" : "⇥ destination · ↩ add · ⌥⌘V speak"
     }
 
@@ -676,17 +691,20 @@ private struct NXVoicePanel: View {
                 }
             }
 
+            // Done while listening; while what was said is read, Skip takes
+            // it the plain way at once, as Return and Escape do.
+            let reading = voice.phase == .understanding
             Button(action: stop) {
-                Image(systemName: voice.phase == .listening ? "stop.circle.fill" : "xmark.circle.fill")
+                Image(systemName: voice.phase == .listening ? "stop.circle.fill" : reading ? "forward.end.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 17))
                     .foregroundStyle(voice.phase == .listening ? style.accent : NX.ink(0.3))
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(voice.phase == .understanding)
-            .help(voice.phase == .listening ? "Done (↩)" : "Stop")
-            .accessibilityLabel(voice.phase == .listening ? "Done speaking" : "Stop")
+            .disabled(reading && !voice.canSkipReading)
+            .help(voice.phase == .listening ? "Done (↩)" : reading ? "Skip Apple Intelligence" : "Stop")
+            .accessibilityLabel(voice.phase == .listening ? "Done speaking" : reading ? "Skip Apple Intelligence" : "Stop")
         }
         .padding(EdgeInsets(top: 16, leading: 18, bottom: 14, trailing: 18))
         .accessibilityElement(children: .contain)
@@ -718,6 +736,17 @@ private struct NXVoicePanel: View {
         default:
             Text("Listening · pause when you’re done")
         }
+    }
+}
+
+extension VoiceCapture {
+    /// Return or Escape while Apple Intelligence reads what was said, in the
+    /// window's capture or Quick Add's: the words are taken the plain way at
+    /// once and wait for review, as the card's Skip takes them.
+    func skipReadingForReview() {
+        guard canSkipReading else { return }
+        preserveForReview()
+        skipReading()
     }
 }
 
@@ -876,6 +905,8 @@ private struct NXSearchCard: View {
     let overlays: NXOverlayState
     /// The result the pointer just moved the highlight to.
     @State private var pointedID: SearchDestination?
+    /// The field, or Include completed once Tab has gone to it.
+    @FocusState private var focus: NXSearchFocus?
 
     var body: some View {
         @Bindable var workbench = env.workbench
@@ -883,6 +914,7 @@ private struct NXSearchCard: View {
         let options = NXSearch.options(workbench)
         let hits = NXSearch.hits(session, workbench: workbench)
         let index = min(workbench.searchIndex, max(0, hits.count - 1))
+        let includes = workbench.searchIncludesCompleted
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").font(.system(size: 16)).foregroundStyle(NX.ink(0.4))
@@ -890,20 +922,33 @@ private struct NXSearchCard: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 15.5))
                     .foregroundStyle(NX.ink)
-                    .modifier(NXAutofocus())
+                    .focused($focus, equals: .field)
                     .onChange(of: workbench.searchQuery) { _, _ in workbench.searchIndex = 0 }
-                Button("Include completed") { workbench.searchIncludesCompleted.toggle() }
-                    .buttonStyle(.plain)
+                // The design's on/off pill. A stop Tab reaches whatever the
+                // Keyboard navigation setting, where Space turns it; a click
+                // turns it and leaves the keys with the field.
+                Text("Include completed")
                     .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(workbench.searchIncludesCompleted ? Color.white : NX.textTertiary)
+                    .foregroundStyle(includes ? Color.white : NX.textTertiary)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
-                    .background(workbench.searchIncludesCompleted ? style.accent : NX.ink(0.06),
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(includes ? style.accent : NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .fixedSize()
-                    // The design's on/off pill.
-                    .accessibilityAddTraits(.isToggle)
-                    .accessibilityValue(workbench.searchIncludesCompleted ? "On" : "Off")
+                    .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(Rectangle())
+                    .focusable()
+                    .focused($focus, equals: .completed)
+                    .onTapGesture {
+                        workbench.searchIncludesCompleted.toggle()
+                        focus = .field
+                    }
+                    .onKeyPress(.space) {
+                        workbench.searchIncludesCompleted.toggle()
+                        return .handled
+                    }
+                    .accessibilityAddTraits([.isButton, .isToggle])
+                    .accessibilityValue(includes ? "On" : "Off")
+                    .accessibilityAction { workbench.searchIncludesCompleted.toggle() }
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
@@ -953,6 +998,12 @@ private struct NXSearchCard: View {
             session.cancel()
             overlays.pendingSearchOpen = nil
         }
+        // The caret in the field once the card is on screen, or the focus can
+        // miss it; then wherever Tab, or a click, puts the keys.
+        .onAppear { DispatchQueue.main.async { focus = .field } }
+        .onChange(of: overlays.searchFocus) { _, stop in focus = stop }
+        // Focus that went nowhere is the field's, for the keys typed next.
+        .onChange(of: focus) { _, stop in overlays.searchFocus = stop ?? .field }
     }
 
     /// Describes the listed results; "Searching…" only once a search is slow.
@@ -1128,10 +1179,9 @@ enum NXPalette {
             NXCommand(id: "new", icon: "plus.circle", label: "New task", key: "N") { workbench.openCapture() },
             NXCommand(id: "search", icon: "magnifyingglass", label: "Search", key: "/") { env.navigator.isSearchOpen = true },
             NXCommand(id: "undo", icon: "arrow.uturn.backward", label: "Undo last change", key: "⌘Z") { workbench.undoLast() },
-            // The sheet leaves the page as it was, so focus goes back where it
-            // was, as Help ▸ Keyboard Shortcuts leaves it.
+            // A window of its own beside this one, so focus stays where it was.
             NXCommand(id: "shortcuts", icon: "keyboard", label: "Keyboard shortcuts", key: "⌘/") {
-                env.navigator.isShortcutSheetOpen = true
+                env.showShortcuts()
             },
         ]
         all += nav.map { route, icon, label, key in
@@ -1140,6 +1190,22 @@ enum NXPalette {
         all += library.destinations.map { list in
             NXCommand(id: "open-\(list.id)", icon: "square.2.layers.3d", label: "Open \(list.displayTitle)", navigates: true) {
                 workbench.go(.list(list.id))
+            }
+        }
+        // And each label's page, as each list's.
+        all += library.labels.map { label in
+            NXCommand(id: "open-label-\(label.id)", icon: "tag", label: "Open #\(label.name)", navigates: true) {
+                workbench.go(.label(label.id))
+            }
+        }
+        // A section's name and its removal, which the sidebar offers only on a right-click.
+        for section in library.sections {
+            let name = NXFormat.quoted(section.displayTitle)
+            all.append(NXCommand(id: "rename-section-\(section.id)", icon: "pencil", label: "Rename section \(name)…",
+                                 navigates: true) { workbench.renameSectionInSidebar(section.id) })
+            if !section.isDefault {
+                all.append(NXCommand(id: "delete-section-\(section.id)", icon: "folder.badge.minus", label: "Delete section \(name)",
+                                     tone: NX.redText) { workbench.deleteSection(section) })
             }
         }
         let filtered = all.enumerated().filter { _, command in

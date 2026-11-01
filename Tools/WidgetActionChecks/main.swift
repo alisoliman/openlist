@@ -393,6 +393,8 @@ check(navigator.route == .inbox && navigator.listViewMode(for: inbox.id) == .tas
       "Triage opens the Inbox's cards, even when the Inbox was a document")
 check(Navigator(defaults: defaults).listViewMode(for: inbox.id) == .document,
       "for this visit only: the Inbox's saved presentation stays a document")
+check(Navigator(defaults: defaults).route == .today && Navigator(defaults: defaults).launchRoute == .inbox,
+      "a new navigator starts on Today, where bootstrap puts it, with the page left on kept for the launch to restore")
 open(.today)
 open(.inbox)
 check(navigator.documentListID == inbox.id, "so the Inbox opens as its document again next time")
@@ -442,9 +444,12 @@ check(navigator.route == .list(home.id) && navigator.openTaskID == tucked.id
 open(.task(trashed.id))
 check(navigator.route == .list(home.id) && navigator.openTaskID == tucked.id && unavailable == 2,
       "a task in Trash leaves the window where it is, and says so")
-navigator.isShortcutSheetOpen = true
+var cleared = 0
+router.prepare = { cleared += 1 }
 open(.today)
-check(navigator.route == .today && !navigator.isShortcutSheetOpen, "navigating closes the shortcut sheet")
+check(navigator.route == .today && cleared == 1, "navigating clears the window first: overlays, capture, the Work panel and sheets")
+open(.task(trashed.id))
+check(cleared == 1, "a link that can't open leaves the window as it is")
 
 let activationsBeforeCapture = activations
 open(.capture(listID: nil))
@@ -456,7 +461,7 @@ check(captures.last == QuickCaptureRequest(dueToday: true),
       "New task on the Today widget captures into the Inbox, a task with no date of its own due today")
 open(.capture(listID: inbox.id))
 check(captures.last == QuickCaptureRequest(listID: inbox.id), "Add to Inbox starts the card on the Inbox")
-check(navigator.route == .today && activations == activationsBeforeCapture,
+check(navigator.route == .today && activations == activationsBeforeCapture && cleared == 1,
       "capture leaves the main window where it was, and Openlist in the background")
 router.windowReady(false)
 open(.capture(listID: nil))

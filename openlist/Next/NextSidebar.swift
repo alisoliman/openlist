@@ -513,8 +513,9 @@ struct NextSidebar: View {
     }
 }
 
-/// A sidebar row with the raised "current" look and a hover wash. To
-/// VoiceOver it's one button named `title`, unless a rename field is open.
+/// A sidebar row with the raised "current" look and a hover wash: a button,
+/// which Tab reaches with Keyboard navigation on. To VoiceOver it's one
+/// button named `title`, unless a rename field is open in it.
 private struct NXSidebarRow<Content: View>: View {
     @Environment(\.nextStyle) private var style
     let on: Bool
@@ -533,6 +534,24 @@ private struct NXSidebarRow<Content: View>: View {
     @State private var hovering = false
 
     var body: some View {
+        Group {
+            // A name being written takes the clicks inside it.
+            if isEditing {
+                row
+            } else {
+                Button(action: action) { row }
+                    .buttonStyle(NXBareButtonStyle(radius: 8))
+            }
+        }
+        .nxHelp(isEditing ? nil : help)
+        .accessibilityElement(children: isEditing ? .contain : .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { action() }
+    }
+
+    private var row: some View {
         HStack(spacing: 9) { content() }
             .frame(height: height)
             .padding(.horizontal, 8)
@@ -552,13 +571,6 @@ private struct NXSidebarRow<Content: View>: View {
             }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
-            .onTapGesture(perform: action)
-            .nxHelp(isEditing ? nil : help)
-            .accessibilityElement(children: isEditing ? .contain : .ignore)
-            .accessibilityLabel(title)
-            .accessibilityValue(value)
-            .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-            .accessibilityAction { action() }
     }
 
 }

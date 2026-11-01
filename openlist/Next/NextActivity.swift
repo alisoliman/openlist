@@ -126,6 +126,8 @@ private struct NXHeatmapCard: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     let heatmap: ActivityHeatmap
+    /// The day the grid's one stop is on: the day picked, which the arrows move.
+    @FocusState private var focusedDay: Date?
 
     var body: some View {
         let calendar = heatmap.calendar
@@ -160,8 +162,10 @@ private struct NXHeatmapCard: View {
                         ForEach(0..<7, id: \.self) { row in
                             let index = week * 7 + row
                             let day = index < heatmap.days.count ? heatmap.days[index] : nil
-                            NXHeatCell(day: day, selected: day?.id == selected, isToday: day?.id == today) {
+                            NXHeatCell(day: day, selected: day?.id == selected, isToday: day?.id == today, focus: $focusedDay) {
                                 env.workbench.activityDay = day?.id
+                            } step: { days in
+                                step(from: selected, by: days)
                             }
                         }
                     }
@@ -201,6 +205,17 @@ private struct NXHeatmapCard: View {
         return "\(total) \(total == 1 ? "completion" : "completions") · \(streak)-day streak"
     }
 
+    /// The arrows on the grid: the day picked moves a day up or down its
+    /// week's column, or a week either side, and the stop goes with it.
+    /// Nothing past the first day or today.
+    private func step(from day: Date, by days: Int) {
+        guard let target = heatmap.calendar.date(byAdding: .day, value: days, to: day),
+              heatmap.days.contains(where: { $0.id == target }) else { return }
+        env.workbench.activityDay = target
+        // Once the day picked is the grid's stop.
+        DispatchQueue.main.async { focusedDay = target }
+    }
+
     private func weekdaySymbol(_ row: Int) -> String {
         let calendar = heatmap.calendar
         let symbols = calendar.shortWeekdaySymbols
@@ -225,7 +240,10 @@ private struct NXHeatCell: View {
     let day: ActivityHeatmapDay?
     let selected: Bool
     let isToday: Bool
+    var focus: FocusState<Date?>.Binding
     let action: () -> Void
+    /// An arrow pressed on the cell picked, by how many days it moves.
+    let step: (Int) -> Void
 
     var body: some View {
         let count = day?.count
@@ -249,7 +267,17 @@ private struct NXHeatCell: View {
             .animation(NX.cssEase(500), value: count)
             .animation(NX.cssEase(150), value: selected)
             .contentShape(shape)
+            .contentShape(.focusEffect, shape.inset(by: -2))
             .onTapGesture { if day != nil { action() } }
+            // One stop for the whole grid, on the day picked, as a calendar's
+            // grid is: Tab lands there, and the arrows move through the days.
+            // A day to come is never one.
+            .focusable(selected && day != nil)
+            .focused(focus, equals: day?.id ?? .distantFuture)
+            .onKeyPress(.leftArrow) { step(-7); return .handled }
+            .onKeyPress(.rightArrow) { step(7); return .handled }
+            .onKeyPress(.upArrow) { step(-1); return .handled }
+            .onKeyPress(.downArrow) { step(1); return .handled }
             .accessibilityElement()
             .accessibilityLabel(day?.accessibilityDescription ?? "Future day")
             .accessibilityAddTraits(day == nil ? [] : [.isButton])

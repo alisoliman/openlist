@@ -5,7 +5,7 @@ import SwiftUI
 /// Quick Add's card: the main window's capture card on its own, floating in
 /// `QuickCapturePanel`. Return adds the task and closes, Shift-Return adds it
 /// and keeps the card for the next, Tab steps the destination and Escape
-/// closes, as they do in the main window.
+/// closes, keeping a draft, as they do in the main window.
 struct QuickCaptureView: View {
     @Environment(AppEnvironment.self) private var env
     @Query(filter: TaskList.availablePredicate) private var allLists: [TaskList]
@@ -70,10 +70,11 @@ struct QuickCaptureView: View {
     private func handle(_ key: QuickCaptureKey, lists: [TaskList], labels: [TaskLabel]) {
         let voice = draft.voice
         switch key {
-        // While listening, Return is done speaking.
+        // While listening, Return is done speaking; while what was said is
+        // read, it skips Apple Intelligence.
         case let .add(keepOpen):
             if voice.isActive {
-                if voice.phase == .listening { voice.stop() }
+                if voice.phase == .listening { voice.stop() } else { voice.skipReadingForReview() }
             } else {
                 add(keepOpen: keepOpen)
             }
@@ -84,14 +85,16 @@ struct QuickCaptureView: View {
                 guard let draft, let workbench else { return }
                 draft.complete(outcome, workbench: workbench, keepOpen: false, automatically: true, close: close)
             }
-        // Escape stops listening, then puts away the tasks heard, then closes.
+        // Escape skips the reading, keeping what was said, or stops
+        // listening; otherwise it closes the card, its draft and the tasks
+        // heard kept for the next Quick Add, as a click away keeps them.
         case .close:
-            if voice.isActive {
+            if voice.phase == .understanding {
+                voice.skipReadingForReview()
+            } else if voice.isActive {
                 voice.cancel()
-            } else if !draft.spokenTasks.isEmpty {
-                draft.spokenTasks = []
             } else {
-                close(.finished)
+                close(draft.hasCaptureDraft ? .dismissed : .finished)
             }
         }
     }

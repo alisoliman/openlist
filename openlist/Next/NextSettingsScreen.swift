@@ -56,20 +56,33 @@ struct NextSettingsScreen: View {
                                   value: "\(settings.undoDwellSeconds) s",
                                   entries: nxChoices([2, 3, 5, 8], selection: $settings.undoDwellSeconds) { "\($0) seconds" })
                 }
-                NXSettingsGroup(title: "Calendar") {
-                    let preferences = env.calendar.preferences
-                    ForEach(AvailabilityCategory.allCases) { category in
-                        let detail = NXSettingsDetail.hours(category)
-                        NXSettingValue(label: "\(category.title) hours", hint: "Planning uses these for \(category.title) lists",
-                                       value: NXHours.summary(preferences.profile(for: category), calendar: settings.calendar),
-                                       isExpanded: expanded == detail) { toggle(detail) }
-                        if expanded == detail { NXHoursEditor(category: category) }
+                // A list's Edit Hours in Settings… lands on its hours, open and in view.
+                ScrollViewReader { proxy in
+                    NXSettingsGroup(title: "Calendar") {
+                        let preferences = env.calendar.preferences
+                        ForEach(AvailabilityCategory.allCases) { category in
+                            let detail = NXSettingsDetail.hours(category)
+                            NXSettingValue(label: "\(category.title) hours", hint: "Planning uses these for \(category.title) lists",
+                                           value: NXHours.summary(preferences.profile(for: category), calendar: settings.calendar),
+                                           isExpanded: expanded == detail) { toggle(detail) }
+                                .id(detail)
+                            if expanded == detail { NXHoursEditor(category: category) }
+                        }
+                        NXSettingMenu(label: "Default estimate", hint: "For tasks without their own",
+                                      value: Self.estimate(env.workbench.defaultEstimate),
+                                      entries: nxChoices(nxPresets([15, 30, 45, 60, 90], including: env.workbench.defaultEstimate),
+                                                         selection: defaultEstimate, title: Self.estimate),
+                                      custom: customEstimate)
                     }
-                    NXSettingMenu(label: "Default estimate", hint: "For tasks without their own",
-                                  value: Self.estimate(env.workbench.defaultEstimate),
-                                  entries: nxChoices(nxPresets([15, 30, 45, 60, 90], including: env.workbench.defaultEstimate),
-                                                     selection: defaultEstimate, title: Self.estimate),
-                                  custom: customEstimate)
+                    .onChange(of: env.workbench.settingsHours, initial: true) { _, category in
+                        guard let category else { return }
+                        env.workbench.settingsHours = nil
+                        expanded = .hours(category)
+                        // Once the hours have laid out under their row.
+                        DispatchQueue.main.async {
+                            withAnimation(style.ease(240)) { proxy.scrollTo(NXSettingsDetail.hours(category), anchor: .top) }
+                        }
+                    }
                 }
                 NXSettingsGroup(title: "Library") {
                     let sync = env.sync.state

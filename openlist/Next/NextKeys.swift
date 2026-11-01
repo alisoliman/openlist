@@ -46,6 +46,8 @@ final class NextKeyHandler {
     private var backgroundObservers: [NSObjectProtocol] = []
     /// Keys pressed while the list document moves its caret, in order.
     private var heldKeys: [NSEvent] = []
+    /// Whether an action key with nothing to act on has said how to focus a row.
+    private var hintedFocus = false
 
     init(env: AppEnvironment, library: NextLibrary, overlays: NXOverlayState) {
         self.env = env
@@ -61,12 +63,13 @@ final class NextKeyHandler {
         }
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self else { return event }
-            MainActor.assumeIsolated {
+            let stepped = MainActor.assumeIsolated {
                 // Any click answers a G chord by letting it go.
                 if self.env.workbench.gPressedAt != nil { self.env.workbench.endGoChord() }
                 if event.type == .leftMouseDown { self.releaseForeignFocus(for: event) }
+                return event.type == .otherMouseDown && self.stepHistory(for: event)
             }
-            return event
+            return stepped ? nil : event
         }
         // So does the window or Openlist going to the background, whose keys
         // this monitor no longer sees, and a menu.
@@ -178,9 +181,10 @@ final class NextKeyHandler {
             if isEditingText && overlays.editsSidebarField() { return false }
             let voice = workbench.voice
             if isEnter && !flags.contains(.command) {
-                // While listening, Return is done speaking.
+                // While listening, Return is done speaking; while what was
+                // said is read, it skips Apple Intelligence.
                 if voice.isActive {
-                    if voice.phase == .listening { voice.stop() }
+                    if voice.phase == .listening { voice.stop() } else { voice.skipReadingForReview() }
                     return true
                 }
                 _ = workbench.createFromCapture(keepOpen: flags.contains(.shift))
@@ -190,14 +194,17 @@ final class NextKeyHandler {
                 workbench.cycleCaptureDestination(by: flags.contains(.shift) ? -1 : 1, among: library.lists.map(\.id))
                 return true
             }
-            // Escape stops listening, then puts away the tasks heard, then closes.
+            // Escape skips the reading, keeping what was said, or stops
+            // listening; otherwise it closes the card, its draft and the
+            // tasks heard put aside for the next capture on this page, as a
+            // click away puts them.
             if key == Key.escape {
-                if voice.isActive {
+                if voice.phase == .understanding {
+                    voice.skipReadingForReview()
+                } else if voice.isActive {
                     voice.cancel()
-                } else if !workbench.spokenTasks.isEmpty {
-                    workbench.spokenTasks = []
                 } else {
-                    workbench.closeCapture()
+                    workbench.closeCapture(keepsDraft: true)
                 }
                 return true
             }
@@ -218,6 +225,18 @@ final class NextKeyHandler {
                 overlays.pendingSearchOpen = NXSearch.options(workbench)
                 return true
             }
+            // Tab and ⇧Tab go between the field and Include completed, the
+            // card's two stops, and never on behind it.
+            if key == Key.tab {
+                overlays.searchFocus = overlays.searchFocus == .field ? .completed : .field
+                return true
+            }
+            // On Include completed, Space turns it, and typing waits for Tab
+            // back to the field rather than reach nothing.
+            if overlays.searchFocus == .completed, key != Key.space, flags.isEmpty || flags == .shift,
+               !isEnter, key != Key.up, key != Key.down, key != Key.escape {
+                return true
+            }
             return handleList(key, index: \.searchIndex, items: { NXSearch.hits(overlays.search, workbench: workbench) },
                               run: { NXSearch.open($0, env: env, library: library, overlays: overlays) },
                               close: { navigator.isSearchOpen = false })
@@ -227,10 +246,12 @@ final class NextKeyHandler {
         if workbench.tasksQueryFocused && isEditingText && navigator.route == .tasks {
             guard !isComposing, flags.isEmpty || flags == .shift else { return false }
             switch key {
-            // Tab never leaves the field; without Shift it takes the completion, if there is one.
+            // Tab takes the completion, if there is one; otherwise Tab and ⇧Tab
+            // leave the field, as they leave any other.
             case Key.tab:
                 let ghost = TaskQuery(library: library).parse(workbench.tasksQuery).ghost
-                if flags.isEmpty, !ghost.isEmpty { workbench.tasksQuery += ghost + " " }
+                guard flags.isEmpty, !ghost.isEmpty else { return false }
+                workbench.tasksQuery += ghost + " "
                 return true
             case Key.escape:
                 if workbench.tasksQuery.isEmpty { blurQuery(window) } else { workbench.tasksQuery = "" }
@@ -375,6 +396,19 @@ final class NextKeyHandler {
         window.makeFirstResponder(nil)
     }
 
+    /// A mouse's back and forward buttons step through the history, as ⌘[
+    /// and ⌘] do, and stand down where those do: over capture or a sheet.
+    private func stepHistory(for event: NSEvent) -> Bool {
+        guard event.buttonNumber == 3 || event.buttonNumber == 4, let window = view?.window, event.window === window,
+              window.attachedSheet == nil, NSApp.modalWindow == nil, !env.workbench.captureOpen else { return false }
+        if event.buttonNumber == 3 {
+            if env.workbench.canGoBack { env.workbench.goBack() }
+        } else if env.navigator.canGoForward {
+            env.navigator.goForward()
+        }
+        return true
+    }
+
     // MARK: Single keys
 
     private func handleSingleKey(key: UInt16, chars: String, shift: Bool) -> Bool {
@@ -430,7 +464,24 @@ final class NextKeyHandler {
             // A list document's heading or text, left with Escape, has no
             // details: Return writes it again.
             if workbench.focusID == nil, workbench.selection.isEmpty, workbench.document?.resumeEditing() == true { return true }
+            // A row already open in the details is written in: in its line in
+            // the list on show, else in the details' title.
+            if let id = workbench.focusID, id == navigator.openTaskID, workbench.selection.isEmpty {
+                if !workbench.isTaskPageOpen, let document = workbench.document, document.shows(id) {
+                    document.edit(id)
+                } else {
+                    NXInspectorFields.writeShownTitle()
+                }
+                return true
+            }
             if let id = workbench.focusID ?? workbench.targetIDs.first { workbench.inspect(id) }
+            return true
+        case Key.left, Key.right:
+            // ← folds away the lines under the focused row in a list, and →
+            // shows them, as an outline's arrows do. Elsewhere they go on to
+            // the screen.
+            guard let id = workbench.focusID, let document = workbench.document, document.shows(id) else { return false }
+            document.setFolded(id, key == Key.left)
             return true
         case Key.tab where workbench.document != nil && (workbench.focusID != nil || !workbench.selection.isEmpty):
             // Tab and ⇧Tab nest and lift the focused rows, as they do the line
@@ -457,6 +508,11 @@ final class NextKeyHandler {
             // With nothing else to let go, a line a search hit or link
             // revealed ends in place, as the design's search leaves nothing behind.
             else if workbench.focusID == nil, navigator.contentReveal != nil { navigator.finishReveal() }
+            // Settings is a page of its own: Esc leaves it for where it was
+            // opened from, or Today.
+            else if navigator.route == .settings {
+                if navigator.canGoBack { navigator.goBack() } else { workbench.go(.today) }
+            }
             else { workbench.focusID = nil }
             return true
         default:
@@ -472,6 +528,8 @@ final class NextKeyHandler {
             if let id = workbench.focusID {
                 workbench.toggleSelection(id)
                 announce((workbench.selection.contains(id) ? "Selected" : "Deselected") + ", \(selectedCount)")
+            } else {
+                hintFocus()
             }
             return true
         default:
@@ -479,9 +537,15 @@ final class NextKeyHandler {
         }
 
         // Shift doesn't stop an action key, as in the design; other
-        // ⇧-letters pass through. Each action ignores an empty target list.
+        // ⇧-letters pass through. With no target to act on, the first says
+        // how to focus one.
         let ids = workbench.targetIDs
-        if key == Key.delete || key == Key.forwardDelete {
+        let isTrash = key == Key.delete || key == Key.forwardDelete
+        if ids.isEmpty, isTrash || Self.rowActions.contains(chars) {
+            hintFocus()
+            return true
+        }
+        if isTrash {
             workbench.trash(ids)
             return true
         }
@@ -511,6 +575,14 @@ final class NextKeyHandler {
             return false
         }
         return true
+    }
+
+    /// The first action key that finds no row to act on says how to focus
+    /// one, on a screen with rows; after that the keys stay quiet.
+    private func hintFocus() {
+        guard !hintedFocus, !env.workbench.visibleIDs.isEmpty else { return }
+        hintedFocus = true
+        env.workbench.showTray("Press J or K to focus a task first", icon: "keyboard")
     }
 
     // MARK: VoiceOver
@@ -549,4 +621,7 @@ final class NextKeyHandler {
 
     /// The design's letter keys besides J/K: x, the row actions, N and G.
     private static let actionKeys: Set<String> = ["x", "e", "t", "m", "f", "p", "d", "n", "g"]
+
+    /// The letters that act on the focused, selected or inspected tasks.
+    private static let rowActions: Set<String> = ["e", "t", "m", "f", "p", "d"]
 }

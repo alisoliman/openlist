@@ -6,10 +6,10 @@
 import SwiftUI
 
 /// ⌘/ — the full keyboard reference: the Next single keys first, then
-/// writing in a list, formatting and the menu commands.
+/// writing in a list, formatting and the menu commands. A window of its own
+/// beside the main one, so a key can be tried while its line is read.
 struct ShortcutsSheet: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
 
     private struct Shortcut: Identifiable {
         var id: String { keys + action }
@@ -31,6 +31,7 @@ struct ShortcutsSheet: View {
         Group(title: "Everywhere", shortcuts: [
             Shortcut(keys: "N", action: "New task"),
             Shortcut(keys: "/  ⌘F", action: "Search"),
+            Shortcut(keys: "⇥", action: "In search, go to Include completed and back"),
             Shortcut(keys: "G then I T C A L H", action: "Go to Inbox, Today, Calendar, Tasks, Lists, Activity"),
             Shortcut(keys: "⌘K", action: "Actions: every action and place"),
             Shortcut(keys: "⌘Z", action: "Undo the latest change"),
@@ -38,7 +39,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⌘[  ⌘]", action: "Back, forward"),
             Shortcut(keys: "⌃⌘S", action: "Hide or show the sidebar"),
             Shortcut(keys: "⌘,", action: "Settings"),
-            Shortcut(keys: "⌘/", action: "This list of shortcuts"),
+            Shortcut(keys: "⌘/", action: "Show or hide this list of shortcuts"),
         ]),
         Group(title: "Rows", shortcuts: [
             Shortcut(keys: "J K  ↑ ↓", action: "Move focus"),
@@ -47,7 +48,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "⇧ click", action: "Select the rows from the focused one to it"),
             Shortcut(keys: "X", action: "Select or deselect the focused row"),
             Shortcut(keys: "⌘A", action: "Select every visible row"),
-            Shortcut(keys: "↩", action: "Open details"),
+            Shortcut(keys: "↩", action: "Open details; again, write in the task"),
             Shortcut(keys: "E", action: "Mark as done"),
             Shortcut(keys: "T  M", action: "Due today, tomorrow"),
             Shortcut(keys: "P", action: "Plan for today, or unplan"),
@@ -55,7 +56,8 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "D  ⌫", action: "Move to Trash"),
             Shortcut(keys: "Space", action: "Show or hide the note, in a list"),
             Shortcut(keys: "⇥  ⇧⇥", action: "Nest or lift the rows, in a list"),
-            Shortcut(keys: "Esc", action: "Collapse or close details, clear selection or focus"),
+            Shortcut(keys: "←  →", action: "Fold or unfold a task's subtasks, in a list"),
+            Shortcut(keys: "Esc", action: "Collapse or close details, clear selection or focus, leave Settings"),
         ]),
         Group(title: "Inbox triage", shortcuts: [
             Shortcut(keys: "1–9", action: "File into a list"),
@@ -70,9 +72,10 @@ struct ShortcutsSheet: View {
             Shortcut(keys: "↩", action: "Add"),
             Shortcut(keys: "⇧↩", action: "Add another"),
             Shortcut(keys: "⇥ ⇧⇥", action: "Change destination"),
-            Shortcut(keys: "Esc", action: "Cancel capture"),
+            Shortcut(keys: "Esc", action: "Close capture; the draft waits for the next"),
             Shortcut(keys: "⇧⌥Space", action: "Quick add from anywhere"),
             Shortcut(keys: "⌥⌘V", action: "Say tasks, or stop listening"),
+            Shortcut(keys: "↩  Esc", action: "While reading what was said, skip Apple Intelligence"),
             Shortcut(keys: env.settings.voiceCaptureShortcut.display,
                      action: "Voice Quick Add from anywhere (opt-in in Settings)"),
             Shortcut(keys: "friday 6pm", action: "Due date and time", readsDates: true),
@@ -134,30 +137,16 @@ struct ShortcutsSheet: View {
     var body: some View {
         let style = env.workbench.style
         VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    NXPanelTitle("Keyboard shortcuts")
-                    // As in the design, the single keys stand down while a line or field has the caret.
-                    Text("Single keys work when you’re not writing. Esc stops writing.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(NX.textTertiary)
-                }
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .icon))
-                .accessibilityLabel("Close keyboard shortcuts")
-                .keyboardShortcut(.escape, modifiers: [])
-            }
-            .padding(.horizontal, 22)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
-            .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+            // Under the window's own title. As in the design, the single keys
+            // stand down while a line or field has the caret.
+            Text("Single keys work when you’re not writing. Esc stops writing.")
+                .font(.system(size: 12))
+                .foregroundStyle(NX.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 22)
+                .padding(.top, 14)
+                .padding(.bottom, 14)
+                .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
 
             ScrollView {
                 LazyVGrid(
@@ -197,8 +186,8 @@ struct ShortcutsSheet: View {
             }
         }
         .frame(minWidth: 640, idealWidth: 820, maxWidth: 900, minHeight: 420, idealHeight: 640, maxHeight: 760)
-        .presentationBackground(NX.card)
-        // Presented from the window, outside the Next shell's style.
+        .background(NX.card)
+        // A window of its own, outside the Next shell's style.
         .environment(\.nextStyle, style)
     }
 }

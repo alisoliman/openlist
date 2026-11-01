@@ -10,8 +10,8 @@ struct TaskSchedulePicker: View {
     @State private var section: DetailPicker
     /// The section's height as last laid out; nil until it first is.
     @State private var contentHeight: CGFloat?
-    /// A due time still being typed as Custom…, which Done sets first. The
-    /// reminder's keeps to its section, where only Set reminder sets it.
+    /// What's staged and not yet set, which Done and a click away set first:
+    /// a due phrase or time typed, or the reminder's day and time picked.
     @State private var typedValue: NXPendingCustomValue?
     private static let maximumHeight: CGFloat = 510
     @Environment(AppEnvironment.self) private var env
@@ -85,10 +85,15 @@ struct TaskSchedulePicker: View {
         .tint(style.accent)
         .environment(\.calendar, env.settings.calendar)
         .onPreferenceChange(NXPendingCustomValueKey.self) { typedValue = $0 }
+        // A click away keeps what was staged, as Done does, with no Cancel
+        // to have asked for it to go.
+        .onDisappear { _ = typedValue?.commit() }
     }
 
-    /// Closing while a time is still being typed keeps what was typed, as
-    /// leaving its field does, where closing the popover may not get to it.
+    /// Closing while something is staged keeps it, as leaving its field
+    /// does, where closing the popover may not get to it. Done beeps, and
+    /// stays, on what can't be set: text that isn't a date or a time, or a
+    /// reminder time that has passed.
     private func done() {
         if let typedValue {
             guard typedValue.commit() else { NSSound.beep(); return }
