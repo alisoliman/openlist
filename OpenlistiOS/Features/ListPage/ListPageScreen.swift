@@ -115,6 +115,7 @@ struct ListPageScreen: View {
             TextField("Name", text: $name)
             Button("Cancel", role: .cancel) {}
             Button("Rename") { if let list { env.actions.rename(list, to: name) } }
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .alert("New list inside", isPresented: $namesChild) {
             TextField("Name", text: $name)
@@ -122,6 +123,7 @@ struct ListPageScreen: View {
             Button("Create") {
                 if let list, let child = env.actions.createList(named: name, under: list) { navigator.open(.list(child.id)) }
             }
+            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .confirmationDialog("Move “\(list?.displayTitle ?? "")” to Trash?", isPresented: $confirmsTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {

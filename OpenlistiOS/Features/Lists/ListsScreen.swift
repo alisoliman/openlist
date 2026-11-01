@@ -74,6 +74,7 @@ struct ListsScreen: View {
             Button("Create") {
                 if let list = env.actions.createList(named: newName) { navigator.open(.list(list.id)) }
             }
+            .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 
