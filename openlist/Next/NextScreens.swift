@@ -113,7 +113,7 @@ private struct NXTodayPage: View {
             groups.append(NXGroup(id: "planned", title: "Planned for today", icon: "calendar.badge.clock", color: NX.ink(0.45),
                                   rows: planned.map(\.block), rowDepths: depths(planned), taskCount: count(planned),
                                   actionLabel: "Fit into calendar") {
-                for id in ids where isUnplaced(id) { workbench.fit(id) }
+                workbench.fit(ids.filter(isUnplaced))
             })
         }
         if !starred.isEmpty {

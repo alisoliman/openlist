@@ -1150,12 +1150,75 @@ extension Workbench {
         case let .found(slot):
             place(task, start: slot.start, end: slot.end, dayOffset: NXFormat.dayOffset(slot.start, now: now))
         case let .none(reach):
-            let week = switch reach {
-            case .thisWeek: "this week"
-            case .nextWeek: "this week or next"
-            case let .weekFrom(day): "in the week from \(NXFormat.dueLabel(day))"
+            showTray("No free slot \(Self.searched(reach)) — try a shorter estimate", icon: "calendar.badge.exclamationmark", tone: .neutral)
+        }
+    }
+
+    /// Fits each task in turn, each slot taken before the next is looked for,
+    /// as one change: one Undo takes every slot back, and one tray says what
+    /// was planned and how many found no slot, in amber when some didn't.
+    /// One task is fitted as `fit(_:)` fits it.
+    func fit(_ ids: [UUID]) {
+        var seen: Set<UUID> = []
+        let tasks = ids.filter { seen.insert($0).inserted }.compactMap { store.block(id: $0) }.filter { !$0.isCompleted }
+        guard tasks.count > 1 else {
+            if let task = tasks.first { fit(task.id) }
+            return
+        }
+        let now = Date.now
+        var placed: [(id: UUID, occurrenceID: UUID, previous: [PlacementSpan], spans: [PlacementSpan])] = []
+        var missed: [(title: String, reach: PlanSlot.Reach)] = []
+        for task in tasks {
+            let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
+            switch calendar.freeSlot(for: task, minutes: minutes, weekCalendar: settings.calendar, now: now) {
+            case let .found(slot):
+                let previous = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+                    .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+                let spans = [PlacementSpan(start: slot.start, end: slot.end, isPinned: true)]
+                setPlacements(of: task.id, occurrenceID: task.occurrenceID, to: spans)
+                // The next task's slot keeps clear of this one.
+                calendar.replan()
+                placed.append((task.id, task.occurrenceID, previous, spans))
+            case let .none(reach):
+                missed.append((task.displayTitle, reach))
             }
-            showTray("No free slot \(week) — try a shorter estimate", icon: "calendar.badge.exclamationmark", tone: .neutral)
+        }
+        // Where Fit looked, when it looked as far for every task it missed.
+        let reaches = missed.map(\.reach)
+        let looked = reaches.dropFirst().allSatisfy { $0 == reaches.first } ? reaches.first.map { " " + Self.searched($0) } ?? "" : ""
+        guard let first = placed.min(by: { ($0.spans.first?.start ?? now) < ($1.spans.first?.start ?? now) }),
+              let start = first.spans.first?.start else {
+            showTray("No free slot\(looked) for \(missed.count) tasks — try shorter estimates",
+                     icon: "calendar.badge.exclamationmark", tone: .neutral)
+            return
+        }
+        var label = "Planned \(placed.count) tasks"
+        if placed.count == 1, let task = tasks.first(where: { $0.id == first.id }) {
+            let day = NXFormat.dayOffset(start, now: now) == 0 ? "Today" : NXFormat.dueLabel(start)
+            label = "Planned \(NXFormat.quoted(task.displayTitle)) · \(day) \(NXFormat.clock(start))"
+        }
+        if !missed.isEmpty {
+            label += " · \(missed.count == 1 ? NXFormat.quoted(missed[0].title) : "\(missed.count)") had no free slot\(looked)"
+        }
+        registerUndo(label, undo: { workbench in
+            for task in placed { workbench.setPlacements(of: task.id, occurrenceID: task.occurrenceID, to: task.previous) }
+            workbench.calendar.replan()
+        }, redo: { workbench in
+            for task in placed { workbench.setPlacements(of: task.id, occurrenceID: task.occurrenceID, to: task.spans) }
+            workbench.calendar.replan()
+        })
+        snap(label, icon: "sparkles", tone: missed.isEmpty ? .accent : .amber, ids: placed.map(\.id),
+             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar, day: start))
+        revealOnCalendar(start)
+        flashBlock(first.id)
+    }
+
+    /// How far Fit looked for a slot it didn't find, as its tray says it.
+    private static func searched(_ reach: PlanSlot.Reach) -> String {
+        switch reach {
+        case .thisWeek: "this week"
+        case .nextWeek: "this week or next"
+        case let .weekFrom(day): "in the week from \(NXFormat.dueLabel(day))"
         }
     }
 

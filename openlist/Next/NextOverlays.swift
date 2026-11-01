@@ -1103,7 +1103,7 @@ enum NXPalette {
             NXCommand(id: "plan", icon: "calendar.badge.clock", label: "Plan for today", key: "P", needsTarget: true,
                       run: act { workbench.plan($0) }),
             NXCommand(id: "fit", icon: "sparkles", label: "Find a slot in the calendar", needsTarget: true,
-                      run: act { $0.forEach { workbench.fit($0) } }),
+                      run: act { workbench.fit($0) }),
             NXCommand(id: "work", icon: "play.fill", label: "Start working", needsTarget: true,
                       run: act { workbench.startWork($0[0]) }),
             NXCommand(id: "star", icon: "star", label: "Star", key: "F", needsTarget: true,
