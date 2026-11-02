@@ -10,6 +10,7 @@ import SwiftUI
 /// tasks as its document orders them with subtasks under their task, the
 /// done ones folded under "N done", and lists nested in it. The check-circle
 /// selects many (mockup 11); the menu renames, sorts, archives or trashes it.
+/// The glyph, like the menu's Icon & colour, changes the list's icon and colour.
 struct ListPageScreen: View {
     let listID: UUID
     @Environment(PhoneEnvironment.self) private var env
@@ -21,6 +22,7 @@ struct ListPageScreen: View {
     @State private var name = ""
     @State private var namesChild = false
     @State private var confirmsTrash = false
+    @State private var editsAppearance = false
 
     init(listID: UUID) {
         self.listID = listID
@@ -35,7 +37,8 @@ struct ListPageScreen: View {
         let children = list.map(library.children(of:)) ?? []
         let doneOpen = showsDone ?? list?.showsCompleted(default: env.settings.showsCompletedTasks) ?? false
         OLScreen(identifier: PhoneRoute.list(listID).screenIdentifier) {
-            OLListHeaderBand(icon: list?.icon ?? "📋", accent: list?.accent ?? .graphite, isInbox: list?.isSystemInbox == true) {
+            OLListHeaderBand(icon: list?.icon ?? "📋", accent: list?.accent ?? .graphite, isInbox: list?.isSystemInbox == true,
+                             editAppearance: list?.isSystemInbox == false ? { editsAppearance = true } : nil) {
                 OLTopBar {
                     OLBackButton(env.backTitle(for: .list(listID))) { navigator.pop() }
                 } trailing: {
@@ -130,6 +133,9 @@ struct ListPageScreen: View {
             }
             .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .sheet(isPresented: $editsAppearance) {
+            if let list { ListAppearanceSheet(list: list) }
+        }
         .confirmationDialog("Move “\(list?.displayTitle ?? "")” to Trash?", isPresented: $confirmsTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {
                 if let list, env.actions.trashList(list) { navigator.pop() }
@@ -142,6 +148,7 @@ struct ListPageScreen: View {
             renaming = false
             namesChild = false
             confirmsTrash = false
+            editsAppearance = false
         }
         .onAppear { list.map(env.store.markOpened) }
     }
@@ -153,6 +160,7 @@ struct ListPageScreen: View {
                     name = list.title
                     renaming = true
                 }
+                Button("Icon & colour", systemImage: "face.smiling") { editsAppearance = true }
             }
             Picker(selection: Binding(get: { list.sorting }, set: { env.store.setSorting($0, for: list) })) {
                 ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }

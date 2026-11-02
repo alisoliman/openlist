@@ -620,6 +620,19 @@ do {
     }
 }
 
+// MARK: - List icons
+
+do {
+    check(ListIcon.suggestions.count == 30 && Set(ListIcon.suggestions).count == 30
+          && ListIcon.suggestions.allSatisfy { ListIcon.emoji(in: $0) == $0 },
+          "Icon & Colour offers thirty different emoji, each one its own icon")
+    check(ListIcon.emoji(in: "🦊") == "🦊" && ListIcon.emoji(in: "fox 🦊🐻") == "🦊", "The first emoji given is the icon")
+    check(["✈️", "🏋️", "1️⃣", "🇯🇵", "👩🏽‍💻", "☕"].allSatisfy { ListIcon.emoji(in: $0) == $0 },
+          "Selector, keycap, flag, skin tone and joined sequences stay whole")
+    check(["", " ", "a", "Garden", "7", "#", "©", "→", "✈", "♥\u{FE0E}"].allSatisfy { ListIcon.emoji(in: $0) == nil },
+          "Letters, digits and symbols drawn as text are no icon")
+}
+
 // MARK: - Compact wording
 
 do {
