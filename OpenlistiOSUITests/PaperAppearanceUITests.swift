@@ -161,7 +161,9 @@ final class PaperAppearanceUITests: XCTestCase {
                 snapshot(app, "paper-xxxl-working-next")
                 next.tap()
                 app.waitForScreen("screen.taskDetail")
-                XCTAssertEqual(app.textFields["detail.title"].value as? String, "Write interview feedback for Priya")
+                // It opens over Working, whose task's page is still under the cover.
+                let title = app.textFields.matching(identifier: "detail.title").allElementsBoundByIndex.first { $0.isHittable }
+                XCTAssertEqual(title?.value as? String, "Write interview feedback for Priya")
             }
             if route == "settings" {
                 let first = app.buttons["settings.swipe.first"]

@@ -423,9 +423,14 @@ final class Workbench {
     var targetIDs: [UUID] {
         if !selection.isEmpty { return selectedVisibleIDs }
         if let focusID { return [focusID] }
-        if let openID = navigator.openTaskID { return [openID] }
+        if let openID = inspectedTaskID { return [openID] }
         return []
     }
+
+    /// The task whose details are on show: the open one, except on Settings,
+    /// a page of its own, which the details make room for until it's left.
+    /// They come back beside the next screen, still open.
+    var inspectedTaskID: UUID? { navigator.route == .settings ? nil : navigator.openTaskID }
 
     var targetTasks: [Block] { targetIDs.compactMap { store.block(id: $0) }.filter(\.isTask) }
 
@@ -517,7 +522,7 @@ final class Workbench {
     /// beside the screen. A line being written in the list it covers lets
     /// go first, so the keys don't type into what can't be seen.
     func toggleTaskPage() {
-        guard navigator.openTaskID != nil || isTaskPageOpen else { return }
+        guard inspectedTaskID != nil || isTaskPageOpen else { return }
         NXDocumentEditing.end()
         selection = []
         isTaskPageOpen.toggle()

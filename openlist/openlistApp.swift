@@ -134,6 +134,8 @@ struct openlistApp: App {
                 ShortcutsSheet()
                     .environment(env)
                     .preferredColorScheme(env.settings.appearance.colorScheme)
+                    .onAppear { env.isShowingShortcuts = true }
+                    .onDisappear { env.isShowingShortcuts = false }
             }
         }
         .commandsRemoved()

@@ -312,21 +312,30 @@ func nxPresets(_ presets: [Int], including value: Int) -> [Int] {
 // MARK: - Groups and rows
 
 /// The design's settings card: a caps title over rows on a white card. Its
-/// buttons are value pills unless they choose their own style.
+/// buttons are value pills unless they choose their own style. A hairline
+/// parts each row from the one above; the first has the card's edge.
 struct NXSettingsGroup<Content: View>: View {
     let title: String
     /// A note under the card, in the rows' hint type.
     var footer: String?
     @ViewBuilder var content: Content
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             NXCapsTitle(text: title).padding(.horizontal, 4).padding(.bottom, 8)
-            VStack(spacing: 0) { content }
+            VStack(spacing: 0) {
+                Group(subviews: content) { rows in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        row.environment(\.nxSettingLineDivides, index > 0)
+                    }
+                }
+            }
                 .buttonStyle(NXSettingButtonStyle())
                 .background(NX.card)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(NX.ink(0.12), lineWidth: 1 / displayScale))
             if let footer {
                 let leading = NXSettingType.hintLeading
                 Text(footer)
@@ -343,8 +352,12 @@ struct NXSettingsGroup<Content: View>: View {
 }
 
 /// One line of a settings card: the design's padding, top hairline and hover.
+/// The hairline is one device pixel, as AppKit draws its separators: half a
+/// point rounds to nothing on some rows of a 1x display and not on others.
 struct NXSettingLine<Content: View>: View {
     @ViewBuilder var content: Content
+    @Environment(\.nxSettingLineDivides) private var divides
+    @Environment(\.displayScale) private var displayScale
     @State private var hovering = false
 
     var body: some View {
@@ -354,7 +367,9 @@ struct NXSettingLine<Content: View>: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(hovering ? NX.ink(0.02) : .clear)
-            .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
+            .overlay(alignment: .top) {
+                if divides { Rectangle().fill(NX.ink(0.06)).frame(height: 1 / displayScale) }
+            }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
     }
@@ -364,12 +379,23 @@ private struct NXSettingLineTintsKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct NXSettingLineDividesKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 extension EnvironmentValues {
     /// Set within a settings line, whose own hover tint stands for its pills'
     /// and buttons', as the design's row does for its value pill.
     var nxSettingLineTints: Bool {
         get { self[NXSettingLineTintsKey.self] }
         set { self[NXSettingLineTintsKey.self] = newValue }
+    }
+
+    /// Whether a settings line draws the hairline above it: not the card's
+    /// first, whose top is the card's edge.
+    var nxSettingLineDivides: Bool {
+        get { self[NXSettingLineDividesKey.self] }
+        set { self[NXSettingLineDividesKey.self] = newValue }
     }
 }
 
@@ -488,12 +514,16 @@ struct NXSettingToggle: View {
 /// The design's value pill: `500 12px/1`, `6px 9px`, radius 7 on ink 0.05.
 /// In a settings line it has no hover of its own, as the design's: the line
 /// tints instead. Elsewhere, as in a details panel or a popover, it darkens.
+/// What it does shows at its end, as AppKit's controls show it: a pop-up
+/// menu's up-and-down chevrons, or details' chevron that turns as they open.
 struct NXValuePill: View {
     @Environment(\.nxSettingLineTints) private var lineTints
     let text: String
     var swatch: Color?
     /// Shows a chevron that turns up while the row's details are open.
     var isExpanded: Bool?
+    /// Pops up a menu of values, as a pop-up button does.
+    var popsUp = false
     var monospacedDigits = false
     var hovering = false
 
@@ -510,6 +540,11 @@ struct NXValuePill: View {
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(NX.ink(0.4))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
+            } else if popsUp {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(NX.ink(0.4))
+                    .accessibilityHidden(true)
             }
         }
         // The design's `12px/1` line box, so the pill is 24pt tall.
@@ -525,6 +560,19 @@ struct NXValuePill: View {
 
 private extension Text {
     func monospacedDigit(_ enabled: Bool) -> Text { enabled ? monospacedDigit() : self }
+}
+
+/// A value a row only reports, like a server's state: the pill's type with
+/// no pill, so it isn't taken for something to press.
+struct NXSettingStatus: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(NX.textSecondary)
+            .lineLimit(1)
+    }
 }
 
 struct NXSettingValue: View {
@@ -770,7 +818,7 @@ struct NXSettingMenu: View {
             }
         } else {
             NXSettingRow(label: label, hint: hint, hintColor: hintColor) {
-                Button(action: popUp) { NXValuePill(text: value, swatch: swatch) }
+                Button(action: popUp) { NXValuePill(text: value, swatch: swatch, popsUp: true) }
                     .buttonStyle(NXBareButtonStyle())
                     .background { NXMenuAnchorView(anchor: anchor) }
             }
@@ -812,7 +860,8 @@ struct NXPopUpPill: View {
             NXCustomValueField(custom: custom, text: $customText)
         } else {
             Button(action: popUp) {
-                NXValuePill(text: value, swatch: swatch, monospacedDigits: monospacedDigits, hovering: hovering && isEnabled)
+                NXValuePill(text: value, swatch: swatch, popsUp: true, monospacedDigits: monospacedDigits,
+                            hovering: hovering && isEnabled)
             }
             .buttonStyle(NXBareButtonStyle())
             .background { NXMenuAnchorView(anchor: anchor) }

@@ -86,6 +86,8 @@ final class AppEnvironment {
     /// window included.
     @ObservationIgnored var openMainWindow: () -> Void = {}
     @ObservationIgnored var showShortcuts: () -> Void = {}
+    /// Whether Keyboard Shortcuts is open, which Help names Show or Hide.
+    var isShowingShortcuts = false
 
     init(context: ModelContext, sync: ICloudSyncMonitor,
          libraryID: UUID? = nil, libraryStorage: LibraryRestoreStorage? = nil, libraryStartup: LibraryRestoreStorage.Startup? = nil) {

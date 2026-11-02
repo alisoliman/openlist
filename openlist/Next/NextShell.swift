@@ -66,6 +66,8 @@ struct NextShell: View {
             adaptSidebar()
         }
         .onChange(of: env.workbench.isTaskPageOpen) { adaptSidebar() }
+        // Settings has the details' room while it's open.
+        .onChange(of: env.navigator.route == .settings) { adaptSidebar() }
         // Shown by hand where there's room anyway, it folds for room again later.
         .onChange(of: env.workbench.isSidebarKeptOverRoom) { adaptSidebar() }
         .onChange(of: env.navigator.searchActivation) { landReveal() }
@@ -116,7 +118,7 @@ struct NextShell: View {
     /// out as a page takes the pane's room rather than squeezing it.
     private func adaptSidebar() {
         let workbench = env.workbench
-        let inspecting = !workbench.isTaskPageOpen && env.navigator.openTaskID.flatMap { env.store.block(id: $0) }
+        let inspecting = !workbench.isTaskPageOpen && workbench.inspectedTaskID.flatMap { env.store.block(id: $0) }
             .map { $0.isTask && $0.trashID == nil } ?? false
         let page = width - 236 - 360
         let roomy = !inspecting || page >= 480
@@ -145,7 +147,7 @@ private struct NextMain: View {
     private var workbench: Workbench { env.workbench }
 
     var body: some View {
-        let inspected = env.navigator.openTaskID.flatMap { env.store.block(id: $0) }.flatMap { $0.isTask && $0.trashID == nil ? $0 : nil }
+        let inspected = workbench.inspectedTaskID.flatMap { env.store.block(id: $0) }.flatMap { $0.isTask && $0.trashID == nil ? $0 : nil }
         let paged = inspected != nil && workbench.isTaskPageOpen
         VStack(spacing: 0) {
             // The page ends the crumb with the task it shows.
@@ -214,7 +216,7 @@ enum NXCrumb {
     /// The window's name: the crumb, the task opened out included.
     @MainActor
     static func title(env: AppEnvironment, library: NextLibrary) -> String {
-        let task = env.workbench.isTaskPageOpen ? env.navigator.openTaskID.flatMap { env.store.block(id: $0) } : nil
+        let task = env.workbench.isTaskPageOpen ? env.workbench.inspectedTaskID.flatMap { env.store.block(id: $0) } : nil
         return text(for: env.navigator.route, library: library, task: task.flatMap { $0.isTask && $0.trashID == nil ? $0 : nil })
     }
 
@@ -432,7 +434,7 @@ struct NXPage<Content: View>: View {
         let workbench = env.workbench
         workbench.focusID = nil
         workbench.tasksQueryFocused = false
-        if env.navigator.openTaskID != nil { env.navigator.closeTask() }
+        if workbench.inspectedTaskID != nil { env.navigator.closeTask() }
         NSApp.keyWindow?.makeFirstResponder(nil)
     }
 }
