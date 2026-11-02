@@ -13,6 +13,32 @@ extension Block {
     }
 }
 
+/// Tonight: the evening of a day, from 18:00, the hour capture reads
+/// "evening" as. Choosing Tonight dates a task today at that hour, and
+/// Today keeps the tasks due then apart from the day's own.
+enum Tonight {
+    static let hour = 18
+
+    /// The time Tonight dates a task from `now`: 18:00, or once that has
+    /// passed the next whole hour, as long as that is still today; nil
+    /// after the day's last.
+    static func time(now: Date, calendar: Calendar = .current) -> Date? {
+        let today = calendar.startOfDay(for: now)
+        guard let evening = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: now) else { return nil }
+        guard now >= evening else { return evening }
+        let hour = calendar.component(.hour, from: now) + 1
+        guard let next = calendar.date(byAdding: .hour, value: hour, to: today),
+              calendar.isDate(next, inSameDayAs: now) else { return nil }
+        return next
+    }
+
+    /// Whether a due date is tonight's, its day's evening: a time of its own
+    /// at 18:00 or later.
+    static func contains(_ due: Date, includesTime: Bool, calendar: Calendar = .current) -> Bool {
+        includesTime && calendar.component(.hour, from: due) >= hour
+    }
+}
+
 /// Today's tasks: overdue, due today, planned for today and starred, open or
 /// still in their completion dwell, and those done today. The rules read
 /// plain task fields, so the Mac's Today and the phone's show the same set
@@ -31,18 +57,21 @@ struct TodayAgenda {
     /// Due on an earlier day. By day, as the design: a timed task whose time
     /// has passed today is still due today.
     private(set) var overdue: [Block] = []
+    /// Due today, before the evening or at no time.
     private(set) var due: [Block] = []
+    /// Due today at 18:00 or later (`Tonight`).
+    private(set) var tonight: [Block] = []
     /// Planned for today with no due date, or one after today.
     private(set) var planned: [Block] = []
     /// Starred with no due date, or one after today, and not planned.
     private(set) var starred: [Block] = []
     /// Completed today, most recently first.
     private(set) var doneToday: [Block] = []
-    /// Overdue, due today and planned for today as one run, in the agenda's
-    /// order: the phone's untitled card above Starred.
+    /// Overdue, due today, tonight and planned for today as one run, in the
+    /// agenda's order: the phone's untitled card above Starred.
     private(set) var scheduled: [Block] = []
 
-    var openCount: Int { overdue.count + due.count + planned.count + starred.count }
+    var openCount: Int { overdue.count + due.count + tonight.count + planned.count + starred.count }
     /// Done today out of everything Today holds, as the header's progress
     /// and the "N done today" row count it.
     var progress: (done: Int, total: Int) { (doneToday.count, doneToday.count + openCount) }
@@ -76,14 +105,20 @@ struct TodayAgenda {
             }
             let day = offset(task)
             if let day, day < 0 { overdue.append(task) }
-            if day == 0 { due.append(task) }
+            if day == 0, let date = task.dueDate {
+                if Tonight.contains(date, includesTime: task.includesTime, calendar: calendar) {
+                    tonight.append(task)
+                } else {
+                    due.append(task)
+                }
+            }
             if (day ?? 1) > 0 {
                 if isPlanned(task) { planned.append(task) } else if task.isStarred { starred.append(task) }
             }
         }
         doneToday.sort(by: Block.byCompletionDate)
         guard order == .schedule else {
-            scheduled = overdue + due + planned
+            scheduled = overdue + due + tonight + planned
             return
         }
         let position = Dictionary(tasks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -104,9 +139,10 @@ struct TodayAgenda {
         }
         overdue.sort { (offset($0) ?? 0, place($0)) < (offset($1) ?? 0, place($1)) }
         due.sort(by: byTime)
+        tonight.sort(by: byTime)
         planned.sort(by: byTime)
         starred.sort(by: byTime)
-        scheduled = overdue + (due + planned).sorted(by: byTime)
+        scheduled = overdue + (due + tonight + planned).sorted(by: byTime)
     }
 }
 
@@ -115,6 +151,7 @@ struct TodayAgenda {
 struct TodayAgendaRows {
     var overdue: [BlockRow]
     var due: [BlockRow]
+    var tonight: [BlockRow]
     var planned: [BlockRow]
     var starred: [BlockRow]
     var doneToday: [BlockRow]
@@ -154,7 +191,7 @@ extension TodayAgenda {
             return result
         }
 
-        let openIDs = Set((overdue + due + planned + starred).map(\.id))
+        let openIDs = Set((overdue + due + tonight + planned + starred).map(\.id))
         let openRoots = roots(in: openIDs)
         var drawn: Set<UUID> = []
         func expanding(_ tasks: [Block]) -> [BlockRow] {
@@ -172,6 +209,7 @@ extension TodayAgenda {
 
         let overdueRows = expanding(overdue)
         let dueRows = expanding(due)
+        let tonightRows = expanding(tonight)
         let plannedRows = expanding(planned)
         let starredRows = expanding(starred)
 
@@ -195,7 +233,7 @@ extension TodayAgenda {
                 doneRows.append(row)
             }
         }
-        return TodayAgendaRows(overdue: overdueRows, due: dueRows, planned: plannedRows,
+        return TodayAgendaRows(overdue: overdueRows, due: dueRows, tonight: tonightRows, planned: plannedRows,
                                starred: starredRows, doneToday: doneRows)
     }
 }

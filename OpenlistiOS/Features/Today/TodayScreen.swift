@@ -7,7 +7,7 @@ import SwiftData
 import SwiftUI
 
 /// The paper companion's day: progress, the current work, and quiet cards
-/// separating overdue, due, planned and starred tasks.
+/// separating overdue, due, planned, tonight's and starred tasks.
 struct TodayScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
@@ -81,6 +81,8 @@ private struct TodayPage: View {
                           tasks: agenda.due, slots: slots, nowID: work.task?.id)
                 taskGroup("Planned", symbol: "calendar", color: OL.ink,
                           tasks: agenda.planned, slots: slots, nowID: work.task?.id)
+                taskGroup("Tonight", symbol: "moon.fill", color: OL.ink,
+                          tasks: agenda.tonight, slots: slots, nowID: work.task?.id)
                 taskGroup("Starred", symbol: "star.fill", color: OL.today,
                           tasks: agenda.starred, slots: slots, nowID: work.task?.id)
                 if !agenda.doneToday.isEmpty {

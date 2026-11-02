@@ -187,6 +187,9 @@ private struct TaskDetailPage: View {
                 Button("Due date…", systemImage: "calendar") { sheet = .due }
                 ForEach([PhoneDay.today, .tomorrow, .nextWeek]) { day in
                     Button(day.title) { env.actions.schedule([task], on: day.date(now: now, calendar: calendar)) }
+                    if day == .today, Tonight.time(now: now, calendar: calendar) != nil {
+                        Button("Tonight") { env.actions.scheduleTonight([task]) }
+                    }
                 }
                 let placed = !env.store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }.isEmpty
                 if !task.isCompleted {

@@ -95,8 +95,9 @@ do {
     let agenda = TodayAgenda(tasks: tasks, closing: [closing.id], now: now)
     check(titles(agenda.overdue) == titles([tap, retro, nishiki, starLate]),
           "Overdue is every task due on an earlier day, starred or not, in the order given")
-    check(titles(agenda.due) == titles([planters, deposit, scorecard, filters, earlier, closing, subtask]),
+    check(titles(agenda.due) == titles([planters, scorecard, filters, earlier, closing, subtask]),
           "Due today goes by day, so a time already past today is still due today; subtasks count too")
+    check(titles(agenda.tonight) == titles([deposit]), "A task due today at 18:00 or later is Tonight's, not Due today's")
     check(titles(agenda.planned) == titles([feedback, carried, starPlanned]),
           "Planned is picked for today or an earlier day, with no due date or a later one")
     check(!agenda.planned.contains { $0.id == tomorrowPlan.id } && !agenda.due.contains { $0.id == later.id },
@@ -105,7 +106,7 @@ do {
     check(titles(agenda.doneToday) == titles([closing, standup, kasuga]), "Done today is most recently done first")
     check(!agenda.doneToday.contains { $0.id == yesterday.id }, "A task done yesterday isn't done today")
     check(agenda.progress == (3, 3 + 16) && agenda.openCount == 16 && !agenda.isClear, "Progress counts done today out of all of Today")
-    check(titles(agenda.scheduled) == titles(agenda.overdue + agenda.due + agenda.planned),
+    check(titles(agenda.scheduled) == titles(agenda.overdue + agenda.due + agenda.tonight + agenda.planned),
           "In outline order the run above Starred is the groups one after another")
     check(!TodayAgenda(tasks: tasks, now: now).due.contains { $0.id == closing.id },
           "A done task out of its dwell leaves the open groups")
@@ -132,7 +133,11 @@ do {
         }
         let old = legacyToday(tasks, closing: [closing.id: true], isPlanned: plannedOn, now: moment)
         let new = TodayAgenda(tasks: tasks, closing: [closing.id], now: moment)
-        check(titles(new.overdue) == titles(old.overdue) && titles(new.due) == titles(old.due)
+        // Tonight is the old Due today's evening, split out.
+        let oldTonight = old.due.filter { Tonight.contains($0.dueDate!, includesTime: $0.includesTime) }
+        check(titles(new.overdue) == titles(old.overdue)
+              && titles(new.due) == titles(old.due.filter { task in !oldTonight.contains { $0.id == task.id } })
+              && titles(new.tonight) == titles(oldTonight)
               && titles(new.planned) == titles(old.planned) && titles(new.starred) == titles(old.starred)
               && titles(new.doneToday) == titles(old.done) && new.progress == old.progress && new.isClear == old.clear,
               "TodayAgenda draws the Mac's Today exactly as NXTodayPage did")
@@ -141,6 +146,14 @@ do {
         check(titles(custom.planned) == titles(customOld.planned) && titles(custom.starred) == titles(customOld.starred),
               "The workbench's own planned rule decides Planned")
     }
+    // Tonight from the morning is 18:00; through the evening the next whole
+    // hour; nothing once 23:00 has begun. 17:59 is still the day, 18:00 tonight.
+    check(Tonight.time(now: now) == at(0, 18) && Tonight.time(now: at(0, 17, 59)) == at(0, 18)
+          && Tonight.time(now: at(0, 18)) == at(0, 19) && Tonight.time(now: at(0, 21, 40)) == at(0, 22)
+          && Tonight.time(now: at(0, 23)) == nil, "Tonight is 18:00, or the next hour that's still today")
+    check(Tonight.contains(at(0, 18), includesTime: true) && !Tonight.contains(at(0, 17, 59), includesTime: true)
+          && !Tonight.contains(at(0, 0), includesTime: false) && Tonight.contains(at(0, 23, 30), includesTime: true),
+          "Tonight holds timed tasks from 18:00, never untimed ones")
     check(carried.isPlanned(on: now) && feedback.isPlanned(on: now) && !tomorrowPlan.isPlanned(on: now)
           && tomorrowPlan.isPlanned(on: at(1)) && !ryokan.isPlanned(on: now),
           "A task is planned from the day it was picked for")
@@ -217,7 +230,7 @@ do {
           "Done roots keep completion order and done descendants keep outline order, nesting only beneath displayed done ancestors")
     check(!rows.doneToday.contains { [doneInline.id, closing.id, openBetween.id, yesterday.id].contains($0.id) },
           "Completed today doesn't repeat inline or closing tasks or expand unrelated open and older completed descendants")
-    let allRows = rows.overdue + rows.due + rows.planned + rows.starred + rows.doneToday
+    let allRows = rows.overdue + rows.due + rows.tonight + rows.planned + rows.starred + rows.doneToday
     check(Set(allRows.map(\.id)).count == allRows.count, "Each task appears at most once across all Today display groups")
     check(agenda.openCount == 10 && agenda.progress == (7, 17)
           && agenda.due.map(\.id) == [dueChild, independent, early].map(\.id)
@@ -229,7 +242,7 @@ do {
     check(scheduled.due.map(\.id) == [early, earlyChild, independent, independentChild].map(\.id),
           "Schedule order sorts roots by their time while each root keeps its subtree together")
     let empty = TodayAgenda(tasks: [], now: now).nestedRows(in: [])
-    check(empty.overdue.isEmpty && empty.due.isEmpty && empty.planned.isEmpty && empty.starred.isEmpty && empty.doneToday.isEmpty,
+    check(empty.overdue.isEmpty && empty.due.isEmpty && empty.tonight.isEmpty && empty.planned.isEmpty && empty.starred.isEmpty && empty.doneToday.isEmpty,
           "An empty outline produces empty nested groups")
 }
 

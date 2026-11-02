@@ -103,6 +103,12 @@ struct DuePickerForm: View {
             OLFlowLayout {
                 ForEach(PhoneDay.allCases) { day in
                     OLChipButton(OLChip(day.title, small: true)) { pick(day.date(now: clock.now, calendar: calendar)) }
+                    if day == .today, let tonight = Tonight.time(now: clock.now, calendar: calendar) {
+                        OLChipButton(OLChip("Tonight", small: true)) {
+                            date = tonight
+                            includesTime = true
+                        }
+                    }
                 }
             }
             .padding(.top, 10)
@@ -167,6 +173,9 @@ struct PhoneDueMenu: View {
             Button("Due date…", systemImage: "calendar") { picksDate = true }
             ForEach([PhoneDay.today, .tomorrow, .nextWeek]) { day in
                 Button(day.title) { actions.schedule([task], on: day.date(now: now, calendar: calendar)) }
+                if day == .today, Tonight.time(now: now, calendar: calendar) != nil {
+                    Button("Tonight") { actions.scheduleTonight([task]) }
+                }
             }
             Button("Clear due date", systemImage: "xmark", role: .destructive) { actions.schedule([task], on: nil) }
         } label: {

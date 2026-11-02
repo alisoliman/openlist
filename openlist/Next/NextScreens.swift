@@ -87,12 +87,13 @@ private struct NXTodayPage: View {
         let agenda = TodayAgenda(tasks: outline.map(\.block), closing: Set(workbench.closing.keys), now: now,
                                  isPlanned: workbench.isPlanned)
         let nested = agenda.nestedRows(in: outline)
-        let (overdue, due, planned, starred, doneToday) = (nested.overdue, nested.due, nested.planned, nested.starred,
-                                                         nested.doneToday)
+        let (overdue, due, tonight, planned, starred, doneToday) = (nested.overdue, nested.due, nested.tonight, nested.planned,
+                                                                  nested.starred, nested.doneToday)
         func depths(_ rows: [BlockRow]) -> [UUID: Int] {
             Dictionary(rows.map { ($0.id, $0.depth) }, uniquingKeysWith: { first, _ in first })
         }
-        let agendaIDs = Set((agenda.overdue + agenda.due + agenda.planned + agenda.starred + agenda.doneToday).map(\.id))
+        let agendaIDs = Set((agenda.overdue + agenda.due + agenda.tonight + agenda.planned + agenda.starred
+                                + agenda.doneToday).map(\.id))
         func count(_ rows: [BlockRow]) -> Int { rows.count { agendaIDs.contains($0.id) } }
 
         var groups: [NXGroup] = []
@@ -115,6 +116,10 @@ private struct NXTodayPage: View {
                                   actionLabel: "Fit into calendar") {
                 workbench.fit(ids.filter(isUnplaced))
             })
+        }
+        if !tonight.isEmpty {
+            groups.append(NXGroup(id: "tonight", title: "Tonight", icon: "moon", color: NX.ink(0.45),
+                                  rows: tonight.map(\.block), rowDepths: depths(tonight), taskCount: count(tonight)))
         }
         if !starred.isEmpty {
             groups.append(NXGroup(id: "starred", title: "Starred", icon: "star.fill", color: NX.ink(0.45),

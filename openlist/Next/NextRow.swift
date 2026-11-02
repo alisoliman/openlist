@@ -859,6 +859,8 @@ struct NXTaskMenu: View {
             }
         }
         Button("Due Today", systemImage: "calendar") { workbench.schedule(ids, offset: 0) }
+        Button("Due Tonight", systemImage: "moon") { workbench.scheduleTonight(ids) }
+            .disabled(Tonight.time(now: .now) == nil)
         Button("Due Tomorrow", systemImage: "sun.horizon") { workbench.schedule(ids, offset: 1) }
         // Both skip completed tasks, so they're off when every target is done,
         // as the inspector's plan switch and Task ▸'s items are.

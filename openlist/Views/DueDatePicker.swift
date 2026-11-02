@@ -143,8 +143,13 @@ struct DueDatePicker: View {
     private var presets: some View {
         NXFlow(spacing: 4) {
             // As the inspector's pills: a timed task keeps its time.
-            presetPill("Today", symbol: "sun.max", detail: shortWeekday(0), day: day(0)) {
+            presetPill("Today", symbol: "sun.max", detail: shortWeekday(0), day: day(0), isOn: isDue(day(0)) && !isTonight) {
                 env.workbench.schedule([block.id], offset: 0)
+            }
+            if let tonight = Tonight.time(now: .now, calendar: calendar) {
+                presetPill("Tonight", symbol: "moon", detail: NXFormat.clock(tonight), day: tonight, isOn: isDue(tonight) && isTonight) {
+                    env.workbench.scheduleTonight([block.id])
+                }
             }
             presetPill("Tomorrow", symbol: "sun.horizon", detail: shortWeekday(1), day: day(1)) {
                 env.workbench.schedule([block.id], offset: 1)
@@ -176,9 +181,9 @@ struct DueDatePicker: View {
         }
     }
 
-    private func presetPill(_ title: String, symbol: String, detail: String, day: Date?,
+    private func presetPill(_ title: String, symbol: String, detail: String, day: Date?, isOn: Bool? = nil,
                             action: @escaping () -> Void) -> some View {
-        let isOn = day.flatMap { day in block.dueDate.map { calendar.isDate($0, inSameDayAs: day) } } ?? false
+        let isOn = isOn ?? isDue(day)
         return NXInspectorPill(isOn: isOn) {
             // A day picked another way replaces the phrase typed for one.
             typedPhrase = ""
@@ -192,6 +197,15 @@ struct DueDatePicker: View {
         }
         .accessibilityValue(detail)
         .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    /// Whether the task is due on `day`'s day.
+    private func isDue(_ day: Date?) -> Bool {
+        day.flatMap { day in block.dueDate.map { calendar.isDate($0, inSameDayAs: day) } } ?? false
+    }
+
+    private var isTonight: Bool {
+        block.dueDate.map { Tonight.contains($0, includesTime: block.includesTime, calendar: calendar) } ?? false
     }
 
     private func day(_ offset: Int) -> Date? {

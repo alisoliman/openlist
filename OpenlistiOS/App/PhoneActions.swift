@@ -778,6 +778,15 @@ final class PhoneActions {
         edit(open, text, icon: "calendar") { task in setDue(date, includesTime: includesTime, for: task) }
     }
 
+    /// Dates tasks tonight (`Tonight.time`): "“X” due tonight" with Undo.
+    /// Nothing once the day's last hour has begun.
+    func scheduleTonight(_ tasks: [Block]) {
+        let open = tasks.filter { $0.isTask && !$0.isCompleted }
+        guard !open.isEmpty, let time = Tonight.time(now: clock.now, calendar: settings.calendar) else { return }
+        let what = open.count == 1 ? "“\(open[0].displayTitle)”" : "\(open.count) tasks"
+        schedule(open, on: time, includesTime: true, label: "\(what) due tonight")
+    }
+
     /// Gives a task a day, or clears it. A timed task keeps its clock when
     /// only the day is given.
     private func setDue(_ date: Date?, includesTime: Bool?, for task: Block) {

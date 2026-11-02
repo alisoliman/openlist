@@ -85,6 +85,8 @@ struct ScreenLogicTests {
             "Draft Q3 OKRs", "Write interview feedback for Priya", "Update the design role scorecard",
             "Order new water filters", "Pay the ryokan deposit", "Ask Mika to water the planters",
         ])
+        #expect(agenda.tonight.map(\.displayTitle) == ["Pay the ryokan deposit"])
+        #expect(!agenda.due.contains { $0.displayTitle == "Pay the ryokan deposit" })
         #expect(agenda.starred.map(\.displayTitle) == ["Book the ryokan", "Finish The Overstory"])
         #expect(agenda.progress == (2, 13))
     }
