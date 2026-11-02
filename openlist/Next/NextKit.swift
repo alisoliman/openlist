@@ -27,6 +27,8 @@ struct NXChipModel: Identifiable {
     /// A task's date or due time: on a row or the triage card, a click on it
     /// opens the Schedule popover (`NXScheduleChip`).
     var schedules = false
+    /// A capture chip's typed words, which a click on it keeps as text.
+    var raw: String?
 }
 
 /// When a task row's chip plays chipIn, as each of the design's row chips

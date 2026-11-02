@@ -84,12 +84,12 @@ struct SelectMode: ViewModifier {
             // In the dock's place.
             .offset(y: dockDrop)
         }
-        .confirmationDialog("Move \(picked.count == 1 ? "1 task" : "\(picked.count) tasks") to", isPresented: $picksList,
-                            titleVisibility: .visible) {
-            ForEach(library.lists.filter { list in picked.contains { $0.listID != list.id } }) { list in
-                Button("\(list.isSystemInbox ? "📥" : list.icon) \(list.displayTitle)") {
-                    finish { env.actions.move(picked, to: list) }
-                }
+        .sheet(isPresented: $picksList) {
+            // Every list but the one they're all in already, found by name.
+            let shared = Set(picked.map(\.listID))
+            ListPickerSheet(title: "Move \(picked.count == 1 ? "1 task" : "\(picked.count) tasks") to",
+                            excluding: shared.count == 1 ? Set(shared.compactMap(\.self)) : []) { list in
+                finish { env.actions.move(picked, to: list) }
             }
         }
     }

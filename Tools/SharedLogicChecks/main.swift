@@ -334,6 +334,82 @@ do {
           "No date's count is its queue's, unordered")
 }
 
+// MARK: - Snoozed
+
+do {
+    let store = try makeStore()
+    let inbox = store.inboxList()!
+    let home = store.createList(title: "Home")
+    func task(_ title: String, in list: TaskList, created: Date) -> Block {
+        let block = store.appendBlock(kind: .task, text: title, to: DocumentContext(listID: list.id))
+        block.createdAt = created
+        return block
+    }
+    let passport = task("Renew the passport", in: inbox, created: at(-3))
+    let gift = task("Gift ideas", in: inbox, created: at(-2))
+    let rug = task("Measure for the rug", in: inbox, created: at(-1))
+    let fence = task("Paint the fence", in: home, created: at(-1))
+    store.save()
+    store.snooze(passport, until: at(5, 15))
+    store.snooze(rug, until: at(2))
+    store.snooze(fence, until: at(3))
+    check(passport.deferredUntil == calendar.startOfDay(for: at(5)) && passport.selectedForDay == nil,
+          "Snooze waits for the start of its day without planning the task for it")
+    let library = try makeLibrary(store)
+    check(titles(library.inboxQueue(kept: [], closing: [], now: now)) == titles([gift]),
+          "Snoozed tasks leave triage's queue")
+    check(titles(library.snoozedInbox(now: now)) == titles([rug, passport]), "Snoozed Inbox tasks, the soonest back first")
+    check(titles(library.keptInbox(kept: [gift.id, rug.id], now: now)) == titles([gift]), "A snoozed task isn't kept for later as well")
+    check(titles(library.inboxQueue(kept: [], closing: [], now: at(2, 8))) == titles([gift, rug]),
+          "A snoozed task is back on its day's morning, in its place")
+    check(library.undatedCount(kept: [], closing: [], now: now) == 0 && library.undatedCount(kept: [], closing: [], now: at(3)) == 1,
+          "No date leaves a snoozed task alone until its day too")
+    check(InboxPolicy.isSnoozed(passport, now: now) && !InboxPolicy.isSnoozed(passport, now: at(5)) && !InboxPolicy.isSnoozed(gift, now: now),
+          "Snoozed means waiting for a day still ahead")
+    store.clearDeferral(passport, now: now)
+    let cleared = try makeLibrary(store)
+    check(titles(cleared.inboxQueue(kept: [], closing: [], now: now)) == titles([passport, gift]),
+          "Clearing the snooze brings the task back at once")
+}
+
+// MARK: - Filing suggestions
+
+do {
+    let store = try makeStore()
+    let inbox = store.inboxList()!
+    let groceries = store.createList(title: "Groceries")
+    let garden = store.createList(title: "Garden")
+    let work = store.createList(title: "Work")
+    func task(_ title: String, in list: TaskList) -> Block {
+        store.appendBlock(kind: .task, text: title, to: DocumentContext(listID: list.id))
+    }
+    for title in ["Oat milk", "Sourdough bread", "Eggs and milk", "Berries for breakfast"] { _ = task(title, in: groceries) }
+    for title in ["Prune the roses", "Water the tomatoes", "Buy tomato seeds"] { _ = task(title, in: garden) }
+    for title in ["Quarterly report draft", "Email the report to Priya", "Book the team offsite"] { _ = task(title, in: work) }
+    let milk = task("Buy almond milk", in: inbox)
+    let repot = task("Repot the tomato plants", in: inbox)
+    let beds = task("Weed the garden beds", in: inbox)
+    let deck = task("Update the report deck", in: inbox)
+    let bank = task("Call the bank", in: inbox)
+    let tie = task("Bread and roses", in: inbox)
+    let strawberry = task("Strawberries", in: inbox)
+    store.save()
+    let library = try makeLibrary(store)
+    check(library.suggestedDestination(for: milk)?.id == groceries.id, "A word the list's tasks use suggests it")
+    check(library.suggestedDestination(for: repot)?.id == garden.id, "Plurals and singulars match")
+    check(library.suggestedDestination(for: beds)?.id == garden.id, "A list's own name in the title suggests it")
+    check(library.suggestedDestination(for: deck)?.id == work.id, "Rarer shared words decide it")
+    check(library.suggestedDestination(for: bank) == nil, "Nothing in common, nothing suggested")
+    check(library.suggestedDestination(for: tie) == nil, "Two lists as likely, neither is suggested")
+    check(library.suggestedDestination(for: strawberry) == nil, "One word not used elsewhere suggests nothing")
+    let priya = task("Coffee with Priya", in: inbox)
+    store.save()
+    let withPriya = try makeLibrary(store)
+    check(withPriya.suggestedDestination(for: priya) == nil, "One word in common, once, says too little")
+    check(NextLibrary.filingWords(in: "Buy the Berries & tomatoes, 2 boxes") == ["buy", "berry", "tomato", "box"],
+          "Filing words are folded, singular and without the little ones")
+}
+
 // MARK: - Task query
 
 do {
@@ -423,6 +499,8 @@ final class PhoneDraft: NXCaptureDraft {
     var captureForToday = false
     var captureLabelID: UUID?
     var spokenTasks: [SpokenTask] = []
+    var captureNote = ""
+    var captureAssist = CaptureAssist()
 
     init(store: Store, settings: AppSettings) {
         self.store = store
@@ -502,6 +580,109 @@ do {
     check(draft.captureListID == kyoto.id, "From a list no longer offered, Shift-Tab starts at the last")
     draft.cycleCaptureDestination(by: 1, among: ids)
     check(draft.captureListID == ids[0], "Tab wraps round to Inbox")
+}
+
+// MARK: - Capture extras
+
+do {
+    let store = try makeStore()
+    let inbox = store.inboxList()!
+    let groceries = store.createList(title: "Groceries")
+    let japan = store.createList(title: "Japan trip")
+    _ = store.findOrCreateLabel(named: "travel")
+    _ = store.findOrCreateLabel(named: "errands")
+    _ = store.findOrCreateLabel(named: "deep work")
+    store.save()
+    let suite = "SharedLogicChecks-extras-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let draft = PhoneDraft(store: store, settings: AppSettings(defaults: defaults))
+
+    // An @ token files the task where it says, and a pick takes its place.
+    draft.captureText = "Oat milk @Groceries"
+    check(draft.captureDestinationID(draft.captureParse()) == groceries.id, "An @ token decides where Return files")
+    guard case let .saved(oats, _) = draft.addCapture() else { preconditionFailure("The draft saves") }
+    check(oats.listID == groceries.id && oats.text == "Oat milk", "The task goes to the token's list, without the token")
+    draft.captureText = "Book flights @Japan trip"
+    draft.chooseCaptureDestination(groceries.id)
+    check(draft.captureText == "Book flights" && draft.captureListID == groceries.id, "Picking a list takes the token out of the text")
+    draft.captureText = "Book flights @Japan trip"
+    draft.cycleCaptureDestination(by: 1, among: [inbox.id, groceries.id, japan.id])
+    check(draft.captureText == "Book flights" && draft.captureListID == inbox.id, "Tab steps on from the token's list")
+
+    // Suggestions for what's being typed, and taking one.
+    draft.captureText = "Buy oats @gro"
+    guard let lists = draft.captureCompletion() else { preconditionFailure("A list is suggested") }
+    check(lists.kind == .list && lists.options.map(\.name) == ["Groceries"] && lists.options[0].listID == groceries.id,
+          "@ suggests the lists whose names start so")
+    draft.complete(with: lists.options[0], in: lists)
+    check(draft.captureText == "Buy oats @Groceries " && draft.captureCompletion() == nil, "Taking one spells it out, ready for the next word")
+    draft.captureText = "Book @trip"
+    check(draft.captureCompletion()?.options.map(\.name) == ["Japan trip"], "A later word of a name matches too")
+    draft.captureText = "Book @Japan "
+    check(draft.captureCompletion()?.options.map(\.name) == ["Japan trip"], "A name's space can be typed")
+    draft.captureText = "Pack #tr"
+    check(draft.captureCompletion()?.options.map(\.name) == ["travel"] && draft.captureCompletion()?.kind == .label,
+          "# suggests labels")
+    draft.captureText = "Pack #"
+    check(draft.captureCompletion()?.options.map(\.name) == ["travel", "errands"], "A bare # lists the labels that can be typed")
+    draft.captureText = "Pack #travel"
+    check(draft.captureCompletion() == nil, "A label typed in full suggests nothing, so Return adds the task")
+    draft.captureText = "Pack #tr"
+    draft.dismissCompletion()
+    check(draft.captureCompletion() == nil, "Escape puts the suggestions away")
+    draft.captureText = "Pack #tra"
+    check(draft.captureCompletion() != nil, "Typing brings them back")
+    draft.captureText = "Email bob@gro"
+    check(draft.captureCompletion() == nil, "An address suggests nothing")
+    let three = CaptureCompletion.typing("@", lists: [(UUID(), "A"), (UUID(), "B"), (UUID(), "C")], labels: [])!
+    draft.captureAssist.completionIndex = 0
+    draft.moveCompletion(by: 5, in: three)
+    check(draft.captureAssist.completionIndex == 2 && draft.highlightedOption(in: three)?.name == "C", "↓ stops at the last")
+
+    // Keep as text, and the note.
+    draft.captureText = "Buy sun cream"
+    check(draft.captureParse().schedule != nil, "Sun reads as Sunday")
+    draft.keepAsText("sun")
+    check(draft.captureParse().schedule == nil && draft.captureParse().title == "Buy sun cream", "Kept as text, it stays in the title")
+    draft.captureNote = "SPF 50, the one in the blue tube  \n"
+    guard case let .saved(cream, _) = draft.addCapture() else { preconditionFailure("The draft saves") }
+    check(cream.text == "Buy sun cream" && cream.dueDate == nil && cream.note == "SPF 50, the one in the blue tube",
+          "The task keeps its words, and its note")
+    draft.clearCaptureText()
+    check(draft.captureText.isEmpty && draft.captureNote.isEmpty && draft.captureAssist == CaptureAssist(),
+          "Clearing the draft lets the note and kept words go")
+    draft.captureNote = "Just a note"
+    check(draft.hasCaptureDraft, "A note alone is a draft to keep")
+    draft.captureNote = ""
+
+    // A pasted list waits as rows; a single line is words.
+    draft.captureText = "half typed"
+    check(draft.takePasted("- [ ] Milk\n- [x] Bread\n2. Eggs tomorrow @Groceries\n\n* Call mum #family\n☐ Stamps"),
+          "Lines become rows")
+    check(draft.spokenTasks.map(\.snapshot.title) == ["Milk", "Eggs", "Call mum", "Stamps"] && draft.captureText == "half typed",
+          "Bullets, numbers and boxes go, done items are left out, and the typed text stays")
+    check(draft.spokenTasks[1].listID == groceries.id && draft.spokenTasks[1].snapshot.date != nil
+          && draft.spokenTasks[2].snapshot.labels == ["family"], "Each line is read for its own tokens")
+    check(!draft.takePasted("Just the one line") && draft.spokenTasks.count == 4, "A single line pastes as words")
+    check(CaptureLines.tasks(in: "one\n\n  \n") == nil && CaptureLines.tasks(in: "1) one\r\n2) two") == ["one", "two"],
+          "Blank lines don't count, and any line ending splits")
+    guard case let .savedSeveral(rows, _, failure) = draft.addCapture() else { preconditionFailure("Rows save together") }
+    check(failure == nil && rows.map(\.text) == ["Milk", "Eggs", "Call mum", "Stamps"]
+          && rows.map(\.listID) == [inbox.id, groceries.id, inbox.id, inbox.id] && draft.captureText == "half typed",
+          "Return adds the rows, each where it says, and leaves the typed text")
+
+    // While rows wait, the list picked is lit and taken, not the typed text's token.
+    draft.captureText = "Typed @Japan trip"
+    draft.captureListID = inbox.id
+    check(draft.litCaptureDestinationID == japan.id, "With no rows, the token's list is lit")
+    _ = draft.takePasted("Plates\nCups")
+    check(draft.litCaptureDestinationID == inbox.id, "With rows, the list they go to is lit")
+    draft.chooseCaptureDestination(groceries.id)
+    check(draft.captureText == "Typed @Japan trip" && draft.captureListID == groceries.id,
+          "Picking a list for the rows leaves the typed text's token alone")
+    guard case let .savedSeveral(dishes, _, _) = draft.addCapture() else { preconditionFailure("Rows save together") }
+    check(dishes.allSatisfy { $0.listID == groceries.id }, "The rows go where the lit list says")
 }
 
 // MARK: - List page rows

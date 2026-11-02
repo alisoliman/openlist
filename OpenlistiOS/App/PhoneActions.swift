@@ -799,6 +799,39 @@ final class PhoneActions {
         store.setDueDate(day, includesTime: timed, for: task)
     }
 
+    /// Snoozes tasks until `day`: out of triage, its count and No date until
+    /// that morning, when they come back by themselves on every device:
+    /// "Snoozed “X” until Mon 28" with Undo.
+    func snooze(_ tasks: [Block], until day: Date) {
+        let open = tasks.filter { $0.isTask && !$0.isCompleted }
+        guard !open.isEmpty else { return }
+        let what = open.count == 1 ? "“\(open[0].displayTitle)”" : "\(open.count) tasks"
+        let when = CompactText.day(day, now: clock.now, calendar: settings.calendar).lowercasedDay
+        edit(open, "Snoozed \(what) until \(when)", icon: "moon.zzz") { store.snooze($0, until: day) }
+    }
+
+    /// Triage's edit line written over a task as one step: a new title, and
+    /// the repeat, labels, priority and estimate it names, "Edited “X”" with
+    /// Undo, which takes back a label it made too. A line that would change
+    /// nothing does nothing.
+    @discardableResult
+    func write(_ snapshot: CaptureSnapshot, over task: Block) -> Bool {
+        guard task.isTask, task.trashID == nil, let listID = task.listID else { return false }
+        let labels = Set(store.labels(for: task).map { $0.name.lowercased() })
+        let unchanged = (snapshot.title.isEmpty || snapshot.title == task.text) && snapshot.date == nil
+            && snapshot.recurrence == nil && snapshot.labels.allSatisfy { labels.contains($0.lowercased()) }
+            && (snapshot.priority == .none || snapshot.priority == task.priority)
+            && (snapshot.estimateMinutes == 0 || snapshot.estimateMinutes == task.schedulingEstimateMinutes)
+        guard !unchanged else { return true }
+        NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
+        let text = "Edited “\(snapshot.title.isEmpty ? task.displayTitle : snapshot.title)”"
+        return perform(text, icon: "pencil", tone: .accent) { [store] changes in
+            store.undoableEditorEdit(in: listID, name: text, undoManager: changes, includingNewLabels: true) {
+                store.applyCapture(snapshot, to: task)
+            }
+        } failure: { "“\(task.displayTitle)” couldn’t be changed." }
+    }
+
     /// Files a task from triage in one step: into `list` and due `date`,
     /// either or both, "Moved “X” to Home, due tomorrow" with one Undo.
     @discardableResult

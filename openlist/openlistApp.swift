@@ -56,6 +56,9 @@ struct openlistApp: App {
                 environment.bootstrap()
                 environment.libraryMaintenance?.startDailySnapshots(settings: environment.settings)
                 QuickCapturePanel.shared.installHotKeys(settings: environment.settings)
+                // Services ▸ Add to Openlist, from any app.
+                NSApp.servicesProvider = CaptureService.shared
+                NSUpdateDynamicServices()
             }
             applicationDelegate.hasPendingNotifications = { NotificationService.shared.reminders.isRefreshing }
             applicationDelegate.finishPendingNotifications = { await NotificationService.shared.reminders.drainForTermination() }

@@ -17,7 +17,6 @@ struct PhoneTaskSwipe: ViewModifier {
 
     private var completed: Bool { task.isCompleted || env.actions.isClosing(task.id) }
     private var allowsToday: Bool { env.actions.canAddToToday(task, hierarchy: library.hierarchy) }
-    private var destinations: [TaskList] { library.lists.filter { $0.id != task.listID } }
 
     func body(content: Content) -> some View {
         ZStack(alignment: .leading) {
@@ -70,11 +69,11 @@ struct PhoneTaskSwipe: ViewModifier {
         .onDisappear {
             if env.openSwipeTaskID == task.id { env.openSwipeTaskID = nil }
         }
-        .confirmationDialog("Move task to", isPresented: $picksList, titleVisibility: .visible) {
-            ForEach(destinations) { list in
-                Button(library.hierarchy.path(for: list.id)) {
-                    env.actions.move([task], to: list)
-                }
+        // Every list, found by name, the one triage would suggest first.
+        .sheet(isPresented: $picksList) {
+            ListPickerSheet(title: "Move to", excluding: Set([task.listID].compactMap(\.self)),
+                            suggested: library.suggestedDestination(for: task)) { list in
+                env.actions.move([task], to: list)
             }
         }
         // Somewhere else taking the screen takes the question with it.
@@ -154,7 +153,7 @@ struct PhoneTaskSwipe: ViewModifier {
 
     private func isAvailable(_ action: TaskSwipeAction) -> Bool {
         switch action {
-        case .moveToList: !destinations.isEmpty
+        case .moveToList: library.lists.contains { $0.id != task.listID }
         case .tomorrow, .startWorking: allowsToday
         case .star, .complete: true
         }

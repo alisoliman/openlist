@@ -272,14 +272,16 @@ struct NXInspectorPlanOptions: View {
         // which the calendar never draws; the slot line says where the task is.
         VStack(alignment: .leading, spacing: 8) {
             if let deferred = task.deferredUntil {
+                // Snoozed from triage, which plans nothing, or deferred work.
+                let snoozed = task.selectedForDay == nil
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.uturn.forward").font(.system(size: 10.5, weight: .semibold))
-                    Text("Deferred until \(NXFormat.dueLabel(deferred))")
+                    Image(systemName: snoozed ? "moon.zzz" : "arrow.uturn.forward").font(.system(size: 10.5, weight: .semibold))
+                    Text("\(snoozed ? "Snoozed" : "Deferred") until \(NXFormat.dueLabel(deferred))")
                     Spacer(minLength: 6)
                     Button("Clear") { env.workbench.clearDeferral(task.id) }
                         .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
                         .padding(.trailing, -5)
-                        .accessibilityLabel("Clear task deferral")
+                        .accessibilityLabel(snoozed ? "Stop snoozing" : "Clear task deferral")
                 }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(NX.textTertiary)

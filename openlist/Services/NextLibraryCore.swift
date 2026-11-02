@@ -140,19 +140,28 @@ extension NextLibrary {
     }
 
     /// Inbox tasks waiting for a decision, oldest first: open, not `kept`
-    /// for later and not `closing` in their completion dwell. A subtask goes
-    /// with the open task above it, whose card carries it; one under done
-    /// tasks only is a card of its own, or triage could never reach it.
-    func inboxQueue(kept: Set<UUID>, closing: Set<UUID>) -> [Block] {
+    /// for later, not snoozed past `now`'s day and not `closing` in their
+    /// completion dwell. A subtask goes with the open task above it, whose
+    /// card carries it; one under done tasks only is a card of its own, or
+    /// triage could never reach it.
+    func inboxQueue(kept: Set<UUID>, closing: Set<UUID>, now: Date = .now) -> [Block] {
         tasks.filter { isInbox($0) && !$0.isCompleted && !kept.contains($0.id) && !closing.contains($0.id) }
-            .filter { !isUnderOpenTask($0) }
+            .filter { !isUnderOpenTask($0) && !InboxPolicy.isSnoozed($0, now: now) }
             .sorted { $0.createdAt < $1.createdAt }
     }
 
-    /// Open Inbox tasks set aside for later, oldest first.
-    func keptInbox(kept: Set<UUID>) -> [Block] {
-        tasks.filter { isInbox($0) && !$0.isCompleted && kept.contains($0.id) }
+    /// Open Inbox tasks set aside for later, oldest first; snoozed ones are
+    /// `snoozedInbox`'s.
+    func keptInbox(kept: Set<UUID>, now: Date = .now) -> [Block] {
+        tasks.filter { isInbox($0) && !$0.isCompleted && kept.contains($0.id) && !InboxPolicy.isSnoozed($0, now: now) }
             .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Inbox tasks snoozed past `now`'s day, the soonest back first. A
+    /// subtask goes with the open task above it, as in the queue.
+    func snoozedInbox(now: Date = .now) -> [Block] {
+        tasks.filter { isInbox($0) && !$0.isCompleted && !isUnderOpenTask($0) && InboxPolicy.isSnoozed($0, now: now) }
+            .sorted { ($0.deferredUntil ?? .distantFuture, $0.createdAt) < ($1.deferredUntil ?? .distantFuture, $1.createdAt) }
     }
 
     /// Tasks in the lists still waiting for a day, in the order the lists
@@ -161,18 +170,22 @@ extension NextLibrary {
     /// dwell. The Inbox's tasks are its own queue's, and a subtask goes with
     /// the open task above it, as there. `blocks` are the documents'
     /// non-trashed blocks, for that order.
-    func undatedQueue(blocks: [Block], kept: Set<UUID>, closing: Set<UUID>) -> [Block] {
-        tasksInOutlineOrder(blocks: blocks).filter { waitsForADay($0) && !kept.contains($0.id) && !closing.contains($0.id) }
+    func undatedQueue(blocks: [Block], kept: Set<UUID>, closing: Set<UUID>, now: Date = .now) -> [Block] {
+        tasksInOutlineOrder(blocks: blocks).filter {
+            waitsForADay($0, now: now) && !kept.contains($0.id) && !closing.contains($0.id)
+        }
     }
 
     /// How many tasks `undatedQueue` deals, without putting them in order.
-    func undatedCount(kept: Set<UUID>, closing: Set<UUID>) -> Int {
-        open.count { waitsForADay($0) && !kept.contains($0.id) && !closing.contains($0.id) }
+    func undatedCount(kept: Set<UUID>, closing: Set<UUID>, now: Date = .now) -> Int {
+        open.count { waitsForADay($0, now: now) && !kept.contains($0.id) && !closing.contains($0.id) }
     }
 
-    /// An open task in the lists with no day, and no open task above it.
-    private func waitsForADay(_ task: Block) -> Bool {
+    /// An open task in the lists with no day, not snoozed to one, and no
+    /// open task above it.
+    private func waitsForADay(_ task: Block, now: Date) -> Bool {
         !task.isCompleted && task.dueDate == nil && task.selectedForDay == nil && !isInbox(task) && !isUnderOpenTask(task)
+            && !InboxPolicy.isSnoozed(task, now: now)
     }
 
     /// Every task in the order the lists show it: lists in sidebar order,
@@ -200,4 +213,71 @@ extension NextLibrary {
             }
         }
     }
+}
+
+// MARK: - Filing suggestions
+
+extension NextLibrary {
+    /// The list `task` most likely belongs in, which triage offers first: the
+    /// one whose name its title says, else the one whose tasks share most of
+    /// its words, a word few lists use counting for more than a common one.
+    /// Nil when no list stands out, or the title says too little to tell.
+    func suggestedDestination(for task: Block) -> TaskList? {
+        let words = Set(Self.filingWords(in: task.displayTitle))
+        let candidates = destinations.filter { $0.id != task.listID }
+        guard !words.isEmpty, candidates.count > 1 else { return nil }
+        var shared: [UUID: [String: Int]] = [:]
+        var named: [UUID: Int] = [:]
+        var listsUsing: [String: Int] = [:]
+        for list in candidates {
+            var counts: [String: Int] = [:]
+            // The newest few hundred say enough about a long list.
+            for other in tasks(in: list.id).suffix(400) where other.id != task.id {
+                for word in Set(Self.filingWords(in: other.displayTitle)) where words.contains(word) { counts[word, default: 0] += 1 }
+            }
+            shared[list.id] = counts
+            named[list.id] = Set(Self.filingWords(in: list.displayTitle)).intersection(words).count
+            for word in counts.keys { listsUsing[word, default: 0] += 1 }
+        }
+        let scores = candidates.map { list -> (list: TaskList, score: Double) in
+            let content = (shared[list.id] ?? [:]).reduce(0.0) { sum, entry in
+                sum + Double(min(3, entry.value)) / Double(max(1, listsUsing[entry.key] ?? 1))
+            }
+            return (list, Double(named[list.id] ?? 0) * 2 + content)
+        }
+        .filter { $0.score > 0 }
+        .sorted { $0.score > $1.score }
+        // Two words in common, a word two of its tasks use, or its name: one
+        // word once, like a person's name, says too little.
+        guard let best = scores.first, best.score >= 2, scores.count == 1 || best.score > scores[1].score * 1.25 else { return nil }
+        return best.list
+    }
+
+    /// The words of `text` that say what it's about: folded, singular, and
+    /// without the little words every title has.
+    static func filingWords(in text: String) -> [String] {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { $0.count >= 3 && !$0.allSatisfy(\.isNumber) && !filingStopWords.contains($0) }
+            .map(singular)
+    }
+
+    /// An English plural's singular, near enough to match the two:
+    /// "berries" "berry", "tomatoes" "tomato", "boxes" "box", "seeds" "seed".
+    private static func singular(_ word: String) -> String {
+        guard word.count > 3, word.hasSuffix("s") else { return word }
+        if word.hasSuffix("ies"), word.count > 4 { return String(word.dropLast(3)) + "y" }
+        if ["oes", "ches", "shes", "xes", "zes", "sses"].contains(where: word.hasSuffix) { return String(word.dropLast(2)) }
+        if ["ss", "us", "is"].contains(where: word.hasSuffix) { return word }
+        return String(word.dropLast())
+    }
+
+    private static let filingStopWords: Set<String> = [
+        "the", "and", "for", "with", "from", "about", "into", "onto", "this", "that", "these", "those", "your", "our",
+        "their", "his", "her", "its", "are", "was", "were", "been", "have", "has", "had", "will", "can", "could",
+        "should", "would", "out", "off", "over", "under", "then", "than", "too", "very", "just", "not", "all", "any",
+        "some", "more", "most", "new", "get", "got", "make", "made", "take", "put", "set", "use", "via", "per",
+        "next", "week", "today", "tomorrow", "tonight", "day", "days", "back", "again", "also", "need", "needs", "todo",
+    ]
 }

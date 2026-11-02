@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the iOS app, widget and both test bundles unsigned, runs the unit and
+# Builds the iOS app, widget, share extension and both test bundles unsigned, runs the unit and
 # UI tests on a throwaway iOS 27 simulator, then checks the built bundles. No
 # Apple account, signing or iCloud: the build is local-only
 # (ICLOUD_CONTAINER_ENVIRONMENT is empty) and tests run in review sessions.
@@ -93,8 +93,18 @@ winfo = plistlib.loads((widget / 'Info.plist').read_bytes())
 require(winfo['CFBundleIdentifier'] == 'solimanali.openlist.ios.widget', 'widget identifier')
 require(winfo['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension', 'WidgetKit extension')
 require((widget / 'InstrumentSerif-Regular.ttf').is_file() and (widget / 'PrivacyInfo.xcprivacy').is_file(), 'widget resources')
+share = app / 'PlugIns/OpenlistiOSShare.appex'
+sinfo = plistlib.loads((share / 'Info.plist').read_bytes())
+require(sinfo['CFBundleIdentifier'] == 'solimanali.openlist.ios.share', 'share extension identifier')
+require(sinfo['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.share-services', 'Share sheet extension')
+require(sinfo['NSExtension']['NSExtensionPrincipalClass'] == 'OpenlistiOSShare.ShareViewController', 'share extension entry point')
+rule = sinfo['NSExtension']['NSExtensionAttributes']['NSExtensionActivationRule']
+require(rule.get('NSExtensionActivationSupportsText') is True and rule.get('NSExtensionActivationSupportsWebURLWithMaxCount') == 1,
+        'shares text and a web link')
+require((share / 'PrivacyInfo.xcprivacy').is_file(), 'share extension privacy manifest')
 # build-for-testing also copies the hosted unit tests into PlugIns.
-require([p.name for p in (app / 'PlugIns').glob('*.appex')] == ['OpenlistiOSWidget.appex'], 'only the widget is embedded')
+require(sorted(p.name for p in (app / 'PlugIns').glob('*.appex')) == ['OpenlistiOSShare.appex', 'OpenlistiOSWidget.appex'],
+        'only the widget and the share extension are embedded')
 again = f' ({retried} on a second run)' if retried else ''
-print(f'{passed} iOS tests passed{again}; verified the iPhone-only iOS 27 app and its embedded widget')
+print(f'{passed} iOS tests passed{again}; verified the iPhone-only iOS 27 app, its widget and its share extension')
 PY

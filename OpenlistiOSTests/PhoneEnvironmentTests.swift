@@ -27,6 +27,33 @@ struct PhoneEnvironmentTests {
         #expect(phone.navigator.inboxListID == phone.store.inboxList()?.id)
     }
 
+    /// What the share extension leaves in the App Group is filed as typed
+    /// capture files it, link as the note, once, with one Undo for all.
+    @Test func sharesAreFiledIntoTheInboxOnce() throws {
+        let phone = try TestPhone(seeded: true)
+        let container = FileManager.default.temporaryDirectory.appendingPathComponent("SharedCaptures-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: container) }
+        try SharedCaptures.append([SharedCapture(text: "Read the ryokan guide", note: "https://example.com/ryokan")],
+                                  container: container)
+        try SharedCaptures.append([SharedCapture(text: "Pack the rail pass @Weekend in Kyoto #travel"),
+                                   SharedCapture(text: "", note: "https://example.com/onsen")], container: container)
+        let inbox = try #require(phone.store.inboxList())
+        let before = phone.store.blocks(inList: inbox.id).count
+        phone.env.takeSharedCaptures(container: container)
+        let guide = try #require(phone.task("Read the ryokan guide"))
+        #expect(guide.listID == inbox.id && guide.note == "https://example.com/ryokan")
+        let pass = try #require(phone.task("Pack the rail pass"))
+        #expect(pass.listID == phone.list("Weekend in Kyoto")?.id && phone.store.labels(for: pass).map(\.name) == ["travel"])
+        #expect(phone.task("https://example.com/onsen")?.listID == inbox.id, "A link alone goes by its address")
+        #expect(phone.store.blocks(inList: inbox.id).count == before + 2)
+        #expect(SharedCaptures.takeAll(container: container).isEmpty, "Each share is filed once")
+        phone.env.takeSharedCaptures(container: container)
+        #expect(phone.store.blocks(inList: inbox.id).count == before + 2)
+        phone.env.actions.undoLatest()
+        #expect(phone.task("Read the ryokan guide") == nil && phone.task("Pack the rail pass") == nil, "One Undo takes them all back")
+    }
+
     @Test func seedsOnlyAnEmptyLibraryOnce() throws {
         let phone = try TestPhone(seeded: true)
         #expect(phone.env.settings.hasSeededSampleData)

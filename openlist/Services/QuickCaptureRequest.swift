@@ -15,6 +15,10 @@ struct QuickCaptureRequest: Equatable {
     var dueToday = false
     /// Starts listening for tasks to be said, as the Say Tasks control does.
     var listens = false
+    /// Words another app shared, through Services or the Share sheet, and
+    /// a note to go with them, such as the link they came from.
+    var text: String?
+    var note: String?
 
     func shouldStartListening(hasDraft: Bool, isActive: Bool) -> Bool {
         listens && !hasDraft && !isActive

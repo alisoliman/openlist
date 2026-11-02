@@ -197,6 +197,78 @@ check(chipsTyped("Call mum 6pm", forToday: true) == [false, true], "Capture for 
 check(chipsTyped("Call mum today", forToday: true) == [true] && chipsTyped("Call mum 9am") == [true, true],
       "A typed day, and the day a typed time saves, come from typing")
 
+// An `@` names a list, the longest name it can be: it's tinted, filed into
+// and left out of the title. A name nobody has, or an address, stays text.
+let japanID = UUID(), japanTripID = UUID(), homeID = UUID(), todayListID = UUID()
+let namedLists = [(id: japanID, name: "Japan"), (id: japanTripID, name: "Japan trip"), (id: homeID, name: "Home")]
+func listed(_ text: String, literals: Set<String> = []) -> CaptureParse {
+    CaptureParse(text, reference: captureReference, lists: namedLists, literals: literals)
+}
+let flights = listed("Book flights @Japan trip friday")
+check(flights.listID == japanTripID && flights.listName == "Japan trip" && flights.title == "Book flights"
+      && kinds(flights) == ["list:@Japan trip", "date:friday"], "An @ token names the longest list it can")
+check(listed("Book flights @japan").listID == japanID && listed("Book flights @JAPAN TRIP").listID == japanTripID,
+      "A list's name is matched whatever its case")
+check(listed("Email bob@home.com").listID == nil && listed("Email bob@home.com").title == "Email bob@home.com",
+      "An address isn't a list")
+check(listed("Tidy @Homework").listID == nil && listed("Tidy @Homework").title == "Tidy @Homework",
+      "A name runs to a space, the end or punctuation")
+check(listed("Fix the tap @Home, first thing").listID == homeID && listed("Fix the tap @Home, first thing").title == "Fix the tap, first thing",
+      "Punctuation ends a name, and keeps its place in the title")
+check(listed("Buy milk to @Home").title == "Buy milk" && listed("Buy milk to @Home #errands").title == "Buy milk",
+      "A dangling to before a list ending the line goes with it")
+check(listed("Log in @Home").title == "Log in" && listed("Go to @Home depot").title == "Go to depot",
+      "Words that aren't a joiner before the list stay")
+let twoLists = listed("Plan @Home and @Japan")
+check(twoLists.listID == homeID && twoLists.title == "Plan and @Japan", "Only the first list token counts")
+let todayList = CaptureParse("Standup notes @Today", reference: captureReference, lists: [(id: todayListID, name: "Today")])
+check(todayList.listID == todayListID && todayList.schedule == nil, "A list's name is never read as a date")
+check(CaptureParse("Book flights @Japan trip").listID == nil, "Without lists to name, @ is text")
+let listChips = flights.chips(for: flights.snapshot(), forToday: false, now: captureReference)
+check(listChips.map(\.kind) == [.list, .day] && listChips[0].label == "Japan trip" && listChips[0].raw == "@Japan trip",
+      "The list token has its chip, in the order typed")
+
+// A token kept as text is read as plain words wherever it's typed.
+let sunCream = listed("Buy sun cream")
+check(sunCream.schedule != nil && sunCream.title == "Buy cream", "A weekday's short name is read as a day")
+let keptSun = listed("Buy sun cream", literals: [CaptureParse.literal("sun")])
+check(keptSun.schedule == nil && keptSun.title == "Buy sun cream" && keptSun.marks.isEmpty, "Kept as text, it stays in the title")
+check(listed("Buy SUN cream and sun hat", literals: ["sun"]).schedule == nil, "Every time it's typed, whatever its case")
+check(listed("Order sun cream friday", literals: ["sun"]).schedule.map { NXFormat.dayOffset($0.date!, now: captureReference) } == 2,
+      "Other dates are still read")
+let keptTime = listed("Call at 6pm tomorrow", literals: [CaptureParse.literal("6pm")])
+check(keptTime.schedule?.includesTime == false && keptTime.title == "Call at 6pm", "A time kept as text leaves the day")
+let keptLabel = listed("Fix #42 crash", literals: ["#42"])
+check(keptLabel.labels.isEmpty && keptLabel.title == "Fix #42 crash", "A label kept as text is words")
+let keptPriority = listed("Say !high to Mika", literals: ["!high"])
+check(keptPriority.priority == nil && keptPriority.title == "Say !high to Mika", "So is a priority")
+let keptList = listed("Tidy @Home office", literals: [CaptureParse.literal("@Home")])
+check(keptList.listID == nil && keptList.title == "Tidy @Home office", "And a list")
+let designChips = design.chips(for: design.snapshot(), forToday: false, now: captureReference)
+check(designChips.map(\.raw) == ["friday", "6pm", "#travel", "~15m"], "Each typed chip knows the words that brought it")
+let todayChips = CaptureParse("Call mum 6pm", reference: captureReference).chips(
+    for: CaptureParse("Call mum 6pm", reference: captureReference).snapshot(dueToday: true), forToday: true, now: captureReference)
+check(todayChips.first?.raw == nil, "Today, which nothing typed, has no words to keep")
+
+// A capture's note goes with it, without trailing space.
+var noted = CaptureSnapshot(title: "Read the article")
+noted.note = "https://example.com/story\n\n  "
+let withNote = try store.saveCapture(noted, destinationID: nil)
+check(withNote.note == "https://example.com/story", "A capture saves its note")
+
+// A capture line over an existing task: a title replaces it, what it names
+// joins or replaces it, and what it doesn't name stays.
+let existing = try store.saveCapture(CaptureSnapshot(title: "Old title", priority: .low), destinationID: nil)
+check(store.applyCapture(CaptureParse("Book the ryokan friday #travel ~30m", reference: captureReference).snapshot(), to: existing),
+      "Applying a line reports a change")
+check(existing.text == "Book the ryokan" && existing.dueDate.map { NXFormat.dayOffset($0, now: captureReference) } == 2
+      && store.labels(for: existing).map(\.name) == ["travel"] && existing.schedulingEstimateMinutes == 30 && existing.priority == .low,
+      "Title, day, label and estimate are written; the priority it didn't name stays")
+check(store.applyCapture(CaptureParse("!high", reference: captureReference).snapshot(), to: existing)
+      && existing.text == "Book the ryokan" && existing.priority == .high, "Tokens alone only add to the task")
+check(!store.applyCapture(CaptureParse("#travel", reference: captureReference).snapshot(), to: existing),
+      "A line that changes nothing says so")
+
 // Undoing a capture erases the task outright: no Trash entry and no history.
 let undoList = store.createList(title: "Undo target")
 let captured = try store.saveCapture(CaptureParse("Book ryokan tomorrow #travel").snapshot(), destinationID: undoList.id)

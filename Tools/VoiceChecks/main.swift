@@ -200,6 +200,8 @@ final class Draft: NXCaptureDraft {
     var captureForToday = false
     var captureLabelID: UUID?
     var spokenTasks: [SpokenTask] = []
+    var captureNote = ""
+    var captureAssist = CaptureAssist()
 
     init(store: Store, settings: AppSettings) {
         self.store = store

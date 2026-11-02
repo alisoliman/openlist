@@ -279,6 +279,17 @@ extension Workbench {
         selection = []
     }
 
+    /// S on rows, and the row menu's Snooze: each task waits out of the
+    /// Inbox's queue and No date until `day`, then comes back by itself.
+    func snooze(_ ids: [UUID], until day: Date) {
+        let tasks = tasks(ids).filter { !$0.isCompleted }
+        guard !tasks.isEmpty else { return }
+        edit(tasks, label: "Snoozed \(describe(tasks)) until \(NXFormat.dueInSentence(day))", icon: "moon.zzz", tone: .accent) { task in
+            store.snooze(task, until: day)
+        }
+        selection = []
+    }
+
     // The plan card's Clear, like its Defer work (`deferWork`, with the
     // calendar's slots below), is a native extra that changes what plan
     // does, so it snaps as plan does, with its tray, Undo and chip flash.
@@ -987,7 +998,7 @@ extension Workbench {
         if navigator.documentListID == block.listID, document?.document.listID == block.listID {
             document?.unfold(toShow: block.id)
         }
-        if keepOpen { captureText = "" } else { closeCapture() }
+        if keepOpen { clearCaptureText() } else { closeCapture() }
         return block
     }
 
@@ -1095,6 +1106,10 @@ extension Workbench {
         else if case let .label(id) = navigator.route { captureLabelID = id } else { captureLabelID = nil }
         captureText = stash?.text ?? ""
         spokenTasks = stash?.spokenTasks ?? []
+        captureNote = stash?.note ?? ""
+        // The title has the keyboard again, whatever had it when it was put aside.
+        captureAssist = stash?.assist ?? CaptureAssist()
+        captureAssist.focusesNote = false
         navigator.isCommandPaletteOpen = false
         navigator.isSearchOpen = false
         withAnimation(style.spring(260)) { captureOpen = true }
@@ -1113,10 +1128,11 @@ extension Workbench {
         }
         stashedCapture = keepsDraft && hasCaptureDraft
             ? StashedCapture(text: captureText, listID: captureListID, forToday: captureForToday, labelID: captureLabelID,
-                             route: navigator.route, at: .now, spokenTasks: spokenTasks)
+                             route: navigator.route, at: .now, spokenTasks: spokenTasks, note: captureNote,
+                             assist: captureAssist)
             : nil
         captureOpen = false
-        captureText = ""
+        clearCaptureText()
         captureNotice = nil
         voice.cancel()
         spokenTasks = []
@@ -1132,8 +1148,20 @@ extension Workbench {
 
     // MARK: Inbox triage
 
-    func triage(_ task: Block, action: TriageExit, listID: UUID? = nil, offset: Int? = nil) {
+    /// One step of the triage card: filed into `listID`, with the day ⇧
+    /// picked on the card if there is one; dated `offset` days on and left in
+    /// the Inbox; kept for later; done; discarded; or snoozed `until` a day.
+    /// `edit`, from the card's edit line, is written over the task first, in
+    /// the same step.
+    func triage(_ task: Block, action: TriageExit, listID: UUID? = nil, offset: Int? = nil, until day: Date? = nil,
+                edit: CaptureSnapshot? = nil) {
         guard triageExit == nil else { return }
+        // A click on the card while its edit line is open takes the edit too.
+        let edit = edit ?? pendingTriageEdit(for: task)
+        // A day the edit line names wins over one picked on the card.
+        let picked = action == .left && edit?.date == nil ? triagePickedDay : nil
+        triagePickedDay = nil
+        triageEdit = nil
         withAnimation(style.standard(230)) { triageExit = action }
         let id = task.id
         let delay = Int(ms(230))
@@ -1141,21 +1169,31 @@ extension Workbench {
             try? await Task.sleep(for: .milliseconds(delay))
             guard let self, let task = self.store.block(id: id) else { self?.triageExit = nil; return }
             let logged = self.latestBatch
+            if let edit { self.writeEditLine(edit, over: task) }
             // Whether the card stays in Inbox, so the stack has to skip it.
             var keeps = false
             switch action {
             case .left:
-                if let listID { self.move([id], to: listID) }
+                if let listID {
+                    if let picked { self.file(task, into: listID, offset: picked) } else { self.move([id], to: listID) }
+                }
             case .up:
-                let label = "\(NXFormat.quoted(task.displayTitle)) → \(NXFormat.dueLabel(NXFormat.day(offset: offset ?? 0))) · still in Inbox"
-                self.edit([task], label: label, icon: "calendar", tone: .accent) { task in
-                    let due = self.dueDate(for: task, offset: offset ?? 0)
-                    self.store.setDueDate(due.date, includesTime: due.includesTime, for: task)
+                // With no day of its own, the edit line's day dated it.
+                if let offset {
+                    let label = "\(NXFormat.quoted(task.displayTitle)) → \(NXFormat.dueLabel(NXFormat.day(offset: offset))) · still in Inbox"
+                    self.edit([task], label: label, icon: "calendar", tone: .accent) { task in
+                        let due = self.dueDate(for: task, offset: offset)
+                        self.store.setDueDate(due.date, includesTime: due.includesTime, for: task)
+                    }
                 }
                 keeps = true
             case .right:
                 self.snap("Kept \(NXFormat.quoted(task.displayTitle)) for later", icon: "clock", tone: .neutral, ids: [id])
                 keeps = true
+            case .snooze:
+                guard let day else { break }
+                let label = "Snoozed \(NXFormat.quoted(task.displayTitle)) until \(NXFormat.dueInSentence(day))"
+                self.edit([task], label: label, icon: "moon.zzz", tone: .accent) { self.store.snooze($0, until: day) }
             case .done:
                 // A repeat rolls to its next date and stays in Inbox.
                 keeps = task.recurrence != nil
@@ -1178,6 +1216,98 @@ extension Workbench {
             }
             withAnimation(self.style.spring(320)) { self.triageExit = nil }
         }
+    }
+
+    /// The days Snooze offers, with the keys for the first and third, as
+    /// the Store gives them (`Store.snoozeDays`).
+    static func snoozeDays(now: Date = .now) -> [(title: String, key: String, day: Date)] {
+        let keys = ["S", "", "⇧S", ""]
+        return Store.snoozeDays(from: now, calendar: NXFormat.calendar).enumerated().map { index, option in
+            (option.title, keys.indices.contains(index) ? keys[index] : "", option.day)
+        }
+    }
+
+    /// R on the triage card: its edit line opens on the task's title, for a
+    /// new title and tokens to write over it.
+    func beginTriageEdit(_ task: Block) {
+        triagePickedDay = nil
+        triageEdit = TriageEditLine(taskID: task.id, text: task.displayTitle)
+    }
+
+    /// What the card's open edit line on `task` says, as a capture snapshot.
+    private func pendingTriageEdit(for task: Block) -> CaptureSnapshot? {
+        guard let line = triageEdit, line.taskID == task.id, line.text != task.displayTitle else { return nil }
+        let lists = store.allLists().filter { !$0.isEffectivelyArchived }.map { ($0.id, $0.displayTitle) }
+        return CaptureParse(line.text, parsesDates: settings.parsesNaturalLanguageDates, lists: lists).snapshot()
+    }
+
+    /// Return on the card's edit line. A line naming a list files the card
+    /// there, and one naming a day dates it and leaves it in the Inbox, as
+    /// the card's keys would, with everything else it says; otherwise it's
+    /// written over the task and the card stays, to file or date next.
+    func commitTriageEdit(_ task: Block) {
+        guard let line = triageEdit, line.taskID == task.id else { return }
+        let lists = store.allLists().filter { !$0.isEffectivelyArchived }.map { ($0.id, $0.displayTitle) }
+        let parse = CaptureParse(line.text, parsesDates: settings.parsesNaturalLanguageDates, lists: lists)
+        let snapshot = parse.snapshot()
+        if let listID = parse.listID, listID != task.listID {
+            triage(task, action: .left, listID: listID, edit: snapshot)
+        } else if snapshot.date != nil {
+            triage(task, action: .up, edit: snapshot)
+        } else {
+            triageEdit = nil
+            writeEditLine(snapshot, over: task)
+        }
+    }
+
+    /// L on the triage card: the palette lists every list, to file the card
+    /// into whichever its name is typed for.
+    func fileFromPalette(_ task: Block) {
+        paletteFilesTaskID = task.id
+        paletteQuery = ""
+        paletteIndex = 0
+        navigator.isSearchOpen = false
+        navigator.isCommandPaletteOpen = true
+    }
+
+    /// The edit line written over its task as one step, logged as an edit:
+    /// the title it typed, and the day, repeat, labels, priority and
+    /// estimate it named.
+    private func writeEditLine(_ snapshot: CaptureSnapshot, over task: Block) {
+        guard let listID = task.listID else { return }
+        let id = task.id
+        let label = "Edited \(NXFormat.quoted(snapshot.title.isEmpty ? task.displayTitle : snapshot.title))"
+        _ = store.undoableEditorEdit(in: listID, name: label, undoManager: undoManager, includingNewLabels: true,
+                                     didRegister: { self.logEdit(label, ids: [id]) }) {
+            store.applyCapture(snapshot, to: task)
+        }
+        flash(\.freshChip, [id], for: 700)
+    }
+
+    /// A triage card filed into `listID` due the day `offset` from today, a
+    /// timed task keeping its time, as one step with one tray: the move and
+    /// the day undo together.
+    private func file(_ task: Block, into listID: UUID, offset: Int) {
+        document?.commitLine()
+        guard let list = store.list(id: listID) else { return }
+        let id = task.id
+        let before = [TaskFields(task)]
+        do {
+            _ = try store.moveSelection([id], to: listID, undoManager: undoManager)
+        } catch {
+            if error is BulkActionError { store.refuse(error.localizedDescription) }
+            else { store.actionError = error.localizedDescription }
+            return
+        }
+        let due = dueDate(for: task, offset: offset)
+        store.batch { store.setDueDate(due.date, includesTime: due.includesTime, for: task) }
+        let after = [TaskFields(task)]
+        let label = "Moved \(describe([task])) to \(list.displayTitle), due \(NXFormat.dueInSentence(due.date))"
+        registerUndo(label, undo: { $0.restore(before, over: after) }, redo: { $0.restore(after, over: before) })
+        snap(label, icon: "folder", tone: .accent, ids: [id],
+             destination: TrayDestination(label: "Open \(list.displayTitle)", route: route(for: list)))
+        flash(\.freshChip, [id], for: 700)
+        pulse(list: listID)
     }
 
     /// Counts a triaged card, in the same Undo entry as the change it made.

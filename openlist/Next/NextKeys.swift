@@ -180,6 +180,42 @@ final class NextKeyHandler {
             // sidebar beside it keeps its own.
             if isEditingText && overlays.editsSidebarField() { return false }
             let voice = workbench.voice
+            // ⌘V with more than one line copied: a task a line, as rows to
+            // add together; ⇧⌘V pastes them into the field as one line.
+            if chars == "v", flags == .command || flags == [.command, .shift], !voice.isActive,
+               !workbench.captureAssist.focusesNote, let pasted = NSPasteboard.general.string(forType: .string),
+               CaptureLines.tasks(in: pasted) != nil {
+                if flags == .command {
+                    workbench.takePasted(pasted)
+                } else {
+                    (responder as? NSTextView)?.insertText(Self.oneLine(pasted), replacementRange: (responder as? NSTextView)?.selectedRange() ?? NSRange(location: NSNotFound, length: 0))
+                }
+                return true
+            }
+            // ⌥↩ opens the note line, and goes between it and the title.
+            if isEnter && flags == .option && !voice.isActive && workbench.spokenTasks.isEmpty {
+                workbench.captureAssist.writesNote = true
+                workbench.captureAssist.focusesNote.toggle()
+                return true
+            }
+            // The token being typed has its suggestions: ↑ and ↓ move through
+            // them, Tab and Return take one, and Escape puts them away.
+            if !voice.isActive, workbench.spokenTasks.isEmpty, !workbench.captureAssist.focusesNote,
+               flags.isEmpty || flags == .shift, let completion = workbench.captureCompletion() {
+                switch key {
+                case Key.up, Key.down:
+                    workbench.moveCompletion(by: key == Key.down ? 1 : -1, in: completion)
+                    return true
+                case Key.tab, Key.enter, Key.keypadEnter:
+                    if let option = workbench.highlightedOption(in: completion) { workbench.complete(with: option, in: completion) }
+                    return true
+                case Key.escape:
+                    workbench.dismissCompletion()
+                    return true
+                default:
+                    break
+                }
+            }
             if isEnter && !flags.contains(.command) {
                 // While listening, Return is done speaking; while what was
                 // said is read, it skips Apple Intelligence.
@@ -299,8 +335,16 @@ final class NextKeyHandler {
         // A held key repeats only the keys that move. An action repeated would
         // act again on whatever the last left focused, as a held Backspace
         // would trash the inspected task once its empty line had gone.
-        if event.isARepeat, Self.unrepeated.contains(key) || Self.actionKeys.contains(chars) || chars == "/" { return true }
+        if event.isARepeat, Self.unrepeated.contains(key) || Self.actionKeys.contains(chars) || chars == "/" || Int(chars) != nil {
+            return true
+        }
         return handleSingleKey(key: key, chars: chars, shift: flags == .shift)
+    }
+
+    /// Lines pasted as one: each line's words, a space between.
+    static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     /// Keys whose repeats the single-key map ignores.
@@ -433,20 +477,31 @@ final class NextKeyHandler {
         // document has no card.
         if navigator.route == .inbox, !navigator.documentOwnsEditorCommands, workbench.focusID == nil,
            let task = library.inboxQueue(workbench).first {
-            if let digit = Int(chars), (1...9).contains(digit) {
-                let destinations = library.destinations
-                guard digit <= destinations.count else { return true }
-                workbench.triage(task, action: .left, listID: destinations[digit - 1].id)
+            // 1–9 file into the lists the card numbers, 0 into the one it suggests.
+            if let digit = Int(chars), (0...9).contains(digit) {
+                let target = digit == 0 ? library.suggestedDestination(for: task)
+                    : library.destinations.indices.contains(digit - 1) ? library.destinations[digit - 1] : nil
+                if let target { workbench.triage(task, action: .left, listID: target.id) }
                 return true
             }
+            let snooze = Workbench.snoozeDays()
             switch (key, chars) {
-            case (_, "t"): workbench.triage(task, action: .up, offset: 0); return true
-            case (_, "m"): workbench.triage(task, action: .up, offset: 1); return true
+            // ⇧T and ⇧M pick the day for the list the card is filed into next.
+            case (_, "t"), (_, "m"):
+                let offset = chars == "t" ? 0 : 1
+                if shift { workbench.triagePickedDay = workbench.triagePickedDay == offset ? nil : offset }
+                else { workbench.triage(task, action: .up, offset: offset) }
+                return true
+            case (_, "s"): workbench.triage(task, action: .snooze, until: snooze[shift ? 2 : 0].day); return true
+            case (_, "r"): workbench.beginTriageEdit(task); return true
+            case (_, "l"): workbench.fileFromPalette(task); return true
             case (Key.right, _): workbench.triage(task, action: .right); return true
             case (_, "e"): workbench.triage(task, action: .done); return true
             case (_, "d"): workbench.triage(task, action: .down); return true
             // Like the card's Details button: no focus, so triage keys still work once it closes.
             case (Key.enter, _), (Key.keypadEnter, _): navigator.openTask(task.id); return true
+            // A picked day goes before anything else Escape would close.
+            case (Key.escape, _) where workbench.triagePickedDay != nil: workbench.triagePickedDay = nil; return true
             default: break
             }
         }
@@ -541,6 +596,14 @@ final class NextKeyHandler {
         // how to focus one.
         let ids = workbench.targetIDs
         let isTrash = key == Key.delete || key == Key.forwardDelete
+        // On the Inbox, 1–9 file the focused or selected rows into the lists
+        // the triage card numbers, as they file the card.
+        if navigator.route == .inbox, let digit = Int(chars), (1...9).contains(digit) {
+            let destinations = library.destinations
+            if ids.isEmpty { hintFocus() }
+            else if digit <= destinations.count { workbench.move(ids, to: destinations[digit - 1].id) }
+            return true
+        }
         if ids.isEmpty, isTrash || Self.rowActions.contains(chars) {
             hintFocus()
             return true
@@ -556,6 +619,11 @@ final class NextKeyHandler {
         case "f": workbench.star(ids)
         case "p": workbench.plan(ids)
         case "d": workbench.trash(ids)
+        // On the Inbox, snoozed until tomorrow, or with ⇧ until next week:
+        // elsewhere a task's day or plan already says when it's for.
+        case "s":
+            guard navigator.route == .inbox else { return true }
+            if ids.isEmpty { hintFocus() } else { workbench.snooze(ids, until: Workbench.snoozeDays()[shift ? 2 : 0].day) }
         default: return false
         }
         return true
@@ -620,7 +688,7 @@ final class NextKeyHandler {
     ]
 
     /// The design's letter keys besides J/K: x, the row actions, N and G.
-    private static let actionKeys: Set<String> = ["x", "e", "t", "m", "f", "p", "d", "n", "g"]
+    private static let actionKeys: Set<String> = ["x", "e", "t", "m", "f", "p", "d", "s", "n", "g", "r", "l"]
 
     /// The letters that act on the focused, selected or inspected tasks.
     private static let rowActions: Set<String> = ["e", "t", "m", "f", "p", "d"]

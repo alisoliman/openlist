@@ -7,13 +7,16 @@ import SwiftUI
 import UIKit
 
 /// The Capture sheet (mockup 06): a field that tints the date, time, repeat,
-/// estimate, priority and labels as they're typed, chips for what Add saves,
-/// and the list it goes to. Add saves it at once, with Undo in the tray.
-/// The mic listens for tasks said instead: one lands in the field to edit,
-/// several wait as rows, each with the list, day and labels said with it.
-/// What's typed outlives the sheet: something else taking the screen keeps
-/// it for the next Capture (`PhoneNavigator.captureDraft`), and Cancel asks
-/// before throwing it away.
+/// estimate, priority, labels and `@list` as they're typed, suggesting the
+/// list or label being typed, chips for what Add saves, a note, and the list
+/// it goes to. Add saves it at once and closes, with Undo in the tray; Return
+/// saves it and clears the field for the next, aimed at the same list. A
+/// chip's menu keeps its words as text. The mic listens for tasks said
+/// instead, and lines pasted at once are a task each: one lands in the field
+/// to edit, several wait as rows, each with the list, day and labels said or
+/// typed with it. What's typed outlives the sheet: something else taking the
+/// screen keeps it for the next Capture (`PhoneNavigator.captureDraft`), and
+/// Cancel asks before throwing it away.
 struct CaptureScreen: View {
     let request: CaptureRequest
     @Environment(PhoneEnvironment.self) private var env
@@ -37,13 +40,28 @@ struct CaptureScreen: View {
     /// Why the last Add failed, shown in the sheet: the window's tray is
     /// under it, out of sight.
     @State private var saveError: String?
+    /// The note under the task, which Add saves with it, and whether its
+    /// line is open.
+    @State private var note = ""
+    @State private var writesNote = false
+    /// Tokens kept as text: plain words wherever they're typed.
+    @State private var literals: Set<String> = []
+    /// What Return just added, said in the sheet with its Undo, as the
+    /// sheet stays for the next task.
+    @State private var added: String?
+    /// Lines last taken as rows, and when: the field sends a paste again
+    /// while it catches up with the text it kept, and it's taken once.
+    @State private var takenPaste: (text: String, at: Date)?
     @FocusState private var isFocused: Bool
+    @FocusState private var noteFocused: Bool
 
     init(request: CaptureRequest, draft: CaptureDraft? = nil, spoken: [SpokenTask] = []) {
         self.request = request
         _listID = State(initialValue: draft.map(\.listID) ?? request.listID)
         _text = State(initialValue: draft?.text ?? "")
         _dueDate = State(initialValue: draft?.dueDate ?? .automatic)
+        _note = State(initialValue: draft?.note ?? "")
+        _writesNote = State(initialValue: !(draft?.note ?? "").isEmpty)
         _spoken = State(initialValue: spoken)
         #if DEBUG
         // A review session's `OpenlistCaptureText`, typed in for a screenshot.
@@ -54,7 +72,7 @@ struct CaptureScreen: View {
     }
 
     var body: some View {
-        let parse = CaptureParse(text, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)
+        let parse = parse(text)
         let snapshot = snapshot(parse)
         Group {
             if showsDuePicker {
@@ -122,10 +140,12 @@ struct CaptureScreen: View {
     /// The field, its chips and the lists, or what voice heard.
     private func capture(_ parse: CaptureParse, snapshot: CaptureSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            OLSheetHeader(confirmTitle: spoken.count > 1 ? "Add \(spoken.count)" : "Add",
-                          canConfirm: !voice.isActive && (!spoken.isEmpty || !parse.title.isEmpty),
+            // With nothing typed after Return added some, Done closes.
+            let done = spoken.isEmpty && parse.title.isEmpty && added != nil && !hasDraft
+            OLSheetHeader(confirmTitle: done ? "Done" : spoken.count > 1 ? "Add \(spoken.count)" : "Add",
+                          canConfirm: !voice.isActive && (done || !spoken.isEmpty || !parse.title.isEmpty),
                           cancel: cancel,
-                          confirm: { spoken.isEmpty ? add(snapshot) : addSpoken() })
+                          confirm: { done ? finish() : spoken.isEmpty ? add(parse) : addSpoken() })
             if voice.isActive {
                 CaptureVoicePanel(voice: voice, stop: toggleVoice)
                     .padding(.top, 10)
@@ -135,20 +155,69 @@ struct CaptureScreen: View {
             } else {
                 HStack(alignment: .top, spacing: 8) {
                     field(parse)
+                    OLIconButton("text.alignleft", label: writesNote ? "Note" : "Add a note", kind: .bare, iconSize: 18) {
+                        writesNote = true
+                        noteFocused = true
+                    }
+                    .accessibilityIdentifier("capture.addNote")
                     OLIconButton("mic", label: "Say tasks", action: toggleVoice)
                         .accessibilityHint("Listens for one or more tasks, with their dates, lists and labels.")
                         .accessibilityIdentifier("capture.voice")
                 }
                 .padding(.top, 10)
+                if let completion = completion {
+                    suggestions(completion)
+                        .padding(.top, 8)
+                }
+                if writesNote {
+                    TextField("Note", text: $note, prompt: Text("Note").foregroundStyle(OL.muted), axis: .vertical)
+                        .font(OLFont.meta)
+                        .foregroundStyle(OL.ink)
+                        .lineLimit(1...4)
+                        .focused($noteFocused)
+                        .padding(.top, 8)
+                        .accessibilityIdentifier("capture.note")
+                }
                 let chips = chips(parse, snapshot: snapshot)
-                let details = [dateLabel(snapshot)].compactMap { $0 } + chips.map(\.label)
+                let details = [dateLabel(snapshot)].compactMap { $0 } + chips.map(\.chip.label)
                 OLFlowLayout {
-                    dueDateControl(snapshot)
-                    ForEach(chips, id: \.label) { chip in chip }
+                    dueDateControl(snapshot, parse: parse)
+                    ForEach(chips, id: \.chip.label) { chip in
+                        if let raw = chip.raw {
+                            // A token read wrongly goes back to being words.
+                            Menu {
+                                Button("Keep “\(raw)” as text", systemImage: "textformat") { keepAsText(raw) }
+                            } label: {
+                                chip.chip.frame(minHeight: 44).contentShape(.rect)
+                            }
+                            .buttonStyle(OLPressStyle(scale: 0.96))
+                            .accessibilityHint("Keeps “\(raw)” as text in the title")
+                        } else {
+                            chip.chip
+                        }
+                    }
                 }
                 .padding(.top, 10)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(details.isEmpty ? "Task details" : "Saves as \(details.joined(separator: ", "))")
+                if let added {
+                    HStack(spacing: 8) {
+                        Label(added, systemImage: "checkmark.circle.fill")
+                            .font(OLFont.meta)
+                            .foregroundStyle(OL.successText)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("capture.added")
+                        Spacer(minLength: 4)
+                        Button("Undo") {
+                            env.actions.undoLatest()
+                            self.added = nil
+                        }
+                        .buttonStyle(.olLink(small: true))
+                        .accessibilityLabel("Undo, take back what was added")
+                        .accessibilityIdentifier("capture.undoAdded")
+                    }
+                    .padding(.top, 10)
+                }
             }
             if case let .failed(failure) = voice.phase {
                 CaptureVoiceFailure(failure: failure)
@@ -306,12 +375,13 @@ struct CaptureScreen: View {
     }
 
     private var hasDraft: Bool {
-        !text.isEmpty || !spoken.isEmpty
+        !text.isEmpty || !spoken.isEmpty || !note.isEmpty
     }
 
     /// What's typed, as the navigator keeps it while Capture is away.
     private var draft: CaptureDraft? {
-        text.isEmpty ? nil : CaptureDraft(text: text, listID: listID, dueDate: dueDate)
+        text.isEmpty && note.isEmpty ? nil
+            : CaptureDraft(text: text, listID: listID, dueDate: dueDate, note: note.isEmpty ? nil : note)
     }
 
     /// Cancel: closes at once with nothing to lose, else asks first.
@@ -366,7 +436,21 @@ struct CaptureScreen: View {
             tinted(parse)
                 .accessibilityHidden(true)
             TextField("New task", text: Binding(get: { text }, set: { typed in
-                let next = CaptureParse(typed, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)
+                var typed = typed
+                // Lines pasted at once are a task each, waiting as rows, and the
+                // field stays as it was; one line pasted with its break is words.
+                if let paste = Self.insertion(from: text, to: typed), paste.text.count > 1,
+                   paste.text.contains(where: \.isNewline) {
+                    if let lines = CaptureLines.tasks(in: paste.text) {
+                        if let taken = takenPaste, taken.text == typed, Date.now.timeIntervalSince(taken.at) < 1 { return }
+                        takenPaste = (typed, .now)
+                        takePasted(lines)
+                        return
+                    }
+                    let words = paste.text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+                    typed = paste.before + words.filter { !$0.isEmpty }.joined(separator: " ") + paste.after
+                }
+                let next = self.parse(typed)
                 dueDate = dueDate.afterEditing(from: parse, to: next)
                 // Typing clears a failed Add's reason; the field's own tidying
                 // of Return, which runs the Add, doesn't.
@@ -377,13 +461,14 @@ struct CaptureScreen: View {
                 .foregroundStyle(text.isEmpty ? OL.ink : .clear)
                 .tint(OL.accent)
                 .focused($isFocused)
-                .submitLabel(.done)
-                .onSubmit { add(snapshot(parse)) }
-                // A field that wraps takes Return as a new line; here it adds.
+                .submitLabel(.next)
+                .onSubmit { add(parse, keepsOpen: true) }
+                // A field that wraps takes Return as a new line; here it adds,
+                // and clears the field for the next task.
                 .onChange(of: text) { _, typed in
                     guard typed.contains("\n") else { return }
                     text = typed.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
-                    add(snapshot(CaptureParse(text, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)))
+                    add(self.parse(text), keepsOpen: true)
                 }
                 .accessibilityIdentifier("capture.field")
         }
@@ -414,7 +499,7 @@ struct CaptureScreen: View {
 
     static func tone(_ kind: CaptureParse.Kind) -> Color {
         switch kind {
-        case .date, .time, .repeatRule: OL.accentText
+        case .date, .time, .repeatRule, .list: OL.accentText
         case .estimate: OL.muted
         case .label: OL.teal
         case .priority: OL.danger
@@ -423,9 +508,76 @@ struct CaptureScreen: View {
 
     // MARK: What Add saves
 
-    /// Add and Return save the same date the calendar chip previews.
+    /// Add and Return save the same date the calendar chip previews, and the note.
     private func snapshot(_ parse: CaptureParse) -> CaptureSnapshot {
-        dueDate.snapshot(parse, dueToday: request.dueToday, now: env.now, calendar: env.settings.calendar)
+        var snapshot = dueDate.snapshot(parse, dueToday: request.dueToday, now: env.now, calendar: env.settings.calendar)
+        snapshot.note = note
+        return snapshot
+    }
+
+    /// The text read as the field tints it and Add saves it: its dates while
+    /// Settings reads them, an `@` naming a list, and the words kept as text.
+    private func parse(_ text: String) -> CaptureParse {
+        CaptureParse(text, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now,
+                     lists: library.lists.map { ($0.id, $0.displayTitle) }, literals: literals)
+    }
+
+    /// "Keep as text" in a token's menu.
+    private func keepAsText(_ raw: String) {
+        literals.insert(CaptureParse.literal(raw))
+        env.haptics.play(.selection)
+    }
+
+    /// What was inserted between `old` and `new`, with the text before and
+    /// after it: the change between their common start and end, or nil when
+    /// text only went.
+    static func insertion(from old: String, to new: String) -> (before: String, text: String, after: String)? {
+        guard new.count > old.count else { return nil }
+        let start = zip(old, new).prefix { $0 == $1 }.count
+        let end = zip(old.reversed(), new.reversed()).prefix { $0 == $1 }.count
+        let tail = min(end, old.count - start)
+        let inserted = new.dropFirst(start).dropLast(tail)
+        guard !inserted.isEmpty else { return nil }
+        return (String(new.prefix(start)), String(inserted), String(new.suffix(tail)))
+    }
+
+    /// Lines pasted as rows, each read for its own tokens, `@` list included.
+    private func takePasted(_ lines: [String]) {
+        let lists = library.lists.map { ($0.id, $0.displayTitle) }
+        spoken += lines.map { line in
+            let parse = CaptureParse(line, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now, lists: lists)
+            return SpokenTask(snapshot: parse.snapshot(), listID: parse.listID)
+        }.filter { !$0.snapshot.title.isEmpty }
+        saveError = nil
+        env.haptics.play(.selection)
+    }
+
+    // MARK: Suggestions
+
+    /// The `@list` or `#label` being typed, with what it could be.
+    private var completion: CaptureCompletion? {
+        CaptureCompletion.typing(text, lists: library.lists.map { ($0.id, $0.displayTitle) },
+                                 labels: library.labels.map(\.name))
+    }
+
+    /// The lists or labels the token could be, under the field: a tap
+    /// spells it out, ready for the next word.
+    private func suggestions(_ completion: CaptureCompletion) -> some View {
+        OLChipScroller {
+            ForEach(completion.options) { option in
+                let list = library.list(option.listID)
+                OLChipButton(OLChip(option.name, glyph: list.map { $0.isSystemInbox ? "📥" : $0.icon },
+                                    small: true, tint: list == nil ? OL.teal : nil)) {
+                    text = completion.completing(text, with: option)
+                    env.haptics.play(.selection)
+                }
+                .accessibilityLabel((completion.kind == .list ? "List " : "Label ") + option.name)
+                .accessibilityHint("Completes what you're typing")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Suggestions")
+        .accessibilityIdentifier("capture.suggestions")
     }
 
     private func dateLabel(_ snapshot: CaptureSnapshot) -> String? {
@@ -436,8 +588,10 @@ struct CaptureScreen: View {
 
     /// The date stays a single editable chip, with quick days and the same
     /// calendar/time picker as Task detail. Its touch target is 44 points.
-    private func dueDateControl(_ snapshot: CaptureSnapshot) -> some View {
-        Menu {
+    private func dueDateControl(_ snapshot: CaptureSnapshot, parse: CaptureParse) -> some View {
+        // The words a typed date was read from, which can go back to being words.
+        let typed = dueDate == .automatic ? parse.marks.filter { [.date, .time, .repeatRule].contains($0.kind) } : []
+        return Menu {
             Section {
                 ForEach(PhoneDay.allCases) { day in
                     Button(day.title) {
@@ -462,6 +616,13 @@ struct CaptureScreen: View {
             if snapshot.date != nil {
                 Button("Clear date", systemImage: "xmark") { setDueDate(nil, includesTime: false) }
             }
+            if !typed.isEmpty {
+                Section {
+                    ForEach(typed, id: \.raw) { mark in
+                        Button("Keep “\(mark.raw)” as text", systemImage: "textformat") { keepAsText(mark.raw) }
+                    }
+                }
+            }
         } label: {
             OLChip(dateLabel(snapshot) ?? "Due date", icon: .calendar, small: true,
                    tint: snapshot.date == nil ? OL.muted : OL.accentText)
@@ -480,25 +641,39 @@ struct CaptureScreen: View {
         env.haptics.play(.selection)
     }
 
-    /// The other saved metadata, in typed order, alongside the calendar chip.
-    private func chips(_ parse: CaptureParse, snapshot: CaptureSnapshot) -> [OLChip] {
-        var chips: [OLChip] = []
+    /// The other saved metadata, in typed order, alongside the calendar chip,
+    /// each with the words typed for it, which its menu keeps as text. A
+    /// label nobody has yet says Add makes it.
+    private func chips(_ parse: CaptureParse, snapshot: CaptureSnapshot) -> [(chip: OLChip, raw: String?)] {
+        var chips: [(chip: OLChip, raw: String?)] = []
+        func has(_ label: String) -> Bool { chips.contains { $0.chip.label == label } }
         for mark in parse.marks {
             switch mark.kind {
             case .date, .time: break
             case .repeatRule:
-                if let rule = snapshot.recurrence { chips.append(OLChip(rule.displayText, symbol: "repeat", small: true, tint: OL.accentText)) }
+                if let rule = snapshot.recurrence {
+                    chips.append((OLChip(rule.displayText, symbol: "repeat", small: true, tint: OL.accentText), mark.raw))
+                }
             case .estimate:
-                if snapshot.estimateMinutes > 0, !chips.contains(where: { $0.label.hasSuffix(" min") }) {
-                    chips.append(OLChip(CompactText.estimate(snapshot.estimateMinutes), small: true))
+                if snapshot.estimateMinutes > 0, !chips.contains(where: { $0.chip.label.hasSuffix(" min") }) {
+                    chips.append((OLChip(CompactText.estimate(snapshot.estimateMinutes), small: true), mark.raw))
                 }
             case .priority:
-                if snapshot.priority != .none, !chips.contains(where: { $0.label == snapshot.priority.title }) {
-                    chips.append(OLChip(snapshot.priority.title, symbol: "exclamationmark", small: true, tint: OL.danger))
+                if snapshot.priority != .none, !has(snapshot.priority.title) {
+                    chips.append((OLChip(snapshot.priority.title, symbol: "exclamationmark", small: true, tint: OL.danger), mark.raw))
                 }
             case .label:
-                let name = "#" + String(mark.raw.dropFirst()).lowercased()
-                if !chips.contains(where: { $0.label == name }) { chips.append(OLChip(name, small: true, tint: OL.teal)) }
+                let name = String(mark.raw.dropFirst())
+                let known = library.labels.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+                let label = known ? "#" + name.lowercased() : "New #" + name.lowercased()
+                if !has(label) {
+                    chips.append((OLChip(label, symbol: known ? nil : "plus", small: true, tint: known ? OL.teal : OL.muted),
+                                  mark.raw))
+                }
+            case .list:
+                if let list = library.list(parse.listID) {
+                    chips.append((OLChip(list.displayTitle, glyph: list.isSystemInbox ? "📥" : list.icon, small: true), mark.raw))
+                }
             }
         }
         return chips
@@ -507,12 +682,12 @@ struct CaptureScreen: View {
     // MARK: Destinations
 
     private var destinations: some View {
-        let chosen = destination?.id
+        let chosen = spoken.isEmpty ? destination(parse(text))?.id : destination?.id
         return OLChipScroller {
             ForEach(library.lists) { list in
                 OLChipButton(OLChip(list.displayTitle, glyph: list.isSystemInbox ? "📥" : list.icon,
                                     style: list.id == chosen ? .on : .plain)) {
-                    listID = list.id
+                    choose(list)
                 }
                 .accessibilityAddTraits(list.id == chosen ? .isSelected : [])
             }
@@ -525,12 +700,45 @@ struct CaptureScreen: View {
         library.lists.first { $0.id == listID } ?? library.inbox
     }
 
-    private func add(_ snapshot: CaptureSnapshot) {
+    /// Where the typed task goes: the list its `@` token names, else the picked one.
+    private func destination(_ parse: CaptureParse) -> TaskList? {
+        library.list(parse.listID) ?? destination
+    }
+
+    /// A list's chip: the task goes there, and an `@` token naming another
+    /// gives way, its words leaving the text. While rows wait, the typed
+    /// text is out of sight and kept as it is.
+    private func choose(_ list: TaskList) {
+        if spoken.isEmpty, let token = parse(text).first(.list) {
+            var typed = text
+            typed.removeSubrange(token.range)
+            text = typed.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+        }
+        listID = list.id
+    }
+
+    /// Adds the typed task. Add closes the sheet; Return clears it for the
+    /// next task, aimed at the same list, and says what it added there.
+    private func add(_ parse: CaptureParse, keepsOpen: Bool = false) {
+        let snapshot = snapshot(parse)
         guard !snapshot.title.isEmpty else { return }
+        let target = destination(parse)
         do {
-            let block = try env.store.saveCapture(snapshot, destinationID: destination?.id)
+            let block = try env.store.saveCapture(snapshot, destinationID: target?.id)
             env.actions.reportCapture(block)
-            finish()
+            guard keepsOpen else { return finish() }
+            added = "Added “\(block.displayTitle)” to \(target?.displayTitle ?? "Inbox")"
+            AccessibilityNotification.Announcement(added ?? "").post()
+            listID = target?.id ?? listID
+            text = ""
+            note = ""
+            writesNote = false
+            literals = []
+            dueDate = .automatic
+            env.navigator.captureDraft = nil
+            noteFocused = false
+            isFocused = true
         } catch {
             failed("Task wasn’t added. \(error.localizedDescription)")
         }

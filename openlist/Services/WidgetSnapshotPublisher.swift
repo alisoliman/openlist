@@ -295,7 +295,10 @@ final class WidgetSnapshotPublisher {
             // Triage takes what the Inbox badge counts: a subtask goes with the
             // open task above it, whose card carries it; one under done tasks
             // only is a card of its own.
-            if inbox.includes(task), !isUnderOpenTask(task) { waiting.append(task) }
+            // A task snoozed from triage waits out of it until its day.
+            if inbox.includes(task), !isUnderOpenTask(task), !InboxPolicy.isSnoozed(task, now: now, calendar: calendar) {
+                waiting.append(task)
+            }
 
             guard let due = task.dueDate else { continue }
             // By day, as the app's Today: a timed task whose time has passed

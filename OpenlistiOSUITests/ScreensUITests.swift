@@ -137,10 +137,15 @@ final class ScreensUITests: XCTestCase {
         field.typeText("Buy yen for the trip fri 6pm ~15m #travel")
         XCTAssertTrue(app.element(beginningWith: "Saves as Fri 25, 18:00, 15 min, #travel").waitForExistence(timeout: 5))
         snap(app, "capture")
-        // Return adds, as the Done key says.
+        // Return adds and clears the field for the next task; Done closes.
         field.typeText("\n")
+        let added = app.screen("capture.added")
+        XCTAssertTrue(added.waitForExistence(timeout: 5))
+        XCTAssertTrue(added.label.contains("Added “Buy yen for the trip” to Inbox"))
+        // An empty field reads its placeholder.
+        XCTAssertEqual(field.value as? String, "New task")
+        app.screen("screen.capture").buttons["Done"].tap()
         app.waitForScreenToClose("screen.capture")
-        XCTAssertTrue(app.screen("tray").staticTexts["Added to Inbox"].waitForExistence(timeout: 5))
         app.dock("inbox").tap()
         app.waitForScreen("screen.inbox")
         XCTAssertTrue(app.staticTexts["7 to triage"].waitForExistence(timeout: 5))
@@ -216,6 +221,8 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "Book studio fri 6pm ~30m #travel")
         field.tap()
         field.typeText("\n")
+        XCTAssertTrue(app.screen("capture.added").waitForExistence(timeout: 5), "Return adds and keeps Capture for the next")
+        app.screen("screen.capture").buttons["Done"].tap()
         app.waitForScreenToClose("screen.capture")
         XCTAssertTrue(app.buttons["Book studio"].waitForExistence(timeout: 5))
         app.buttons["Book studio"].tap()

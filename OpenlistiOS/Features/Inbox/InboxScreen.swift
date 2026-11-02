@@ -7,11 +7,14 @@ import SwiftUI
 
 /// The Inbox (mockup 07): what's still to triage, newest first, each with how
 /// long ago it came in, and Triage one by one. Ticking one dwells with Undo,
-/// a date offers other days, and the rest of a row opens it. Under them, the
-/// lists' tasks without a date open triage's No date pass.
+/// a date offers other days, and the rest of a row opens it. Select picks
+/// several to file, date or clear at once. What's snoozed waits at the end,
+/// each with the day it's back. Under them, the lists' tasks without a date
+/// open triage's No date pass.
 struct InboxScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
+    @State private var isSelecting = false
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { _ in
@@ -21,23 +24,31 @@ struct InboxScreen: View {
 
     private func page(now: Date) -> some View {
         let navigator = env.navigator
-        let captures = Self.captures(in: library, closing: env.actions.closing)
-        let toTriage = library.inboxQueue(triage: env.triage, closing: env.actions.closing).count
-        let kept = library.keptInbox(kept: library.kept(by: env.triage)).count { !env.actions.isClosing($0.id) }
+        let captures = Self.captures(in: library, closing: env.actions.closing, now: now)
+        let snoozed = library.snoozedInbox(now: now)
+        let toTriage = library.inboxQueue(triage: env.triage, closing: env.actions.closing, now: now).count
+        let kept = library.keptInbox(kept: library.kept(by: env.triage), now: now).count { !env.actions.isClosing($0.id) }
         // What No date would deal now; once all of it is set aside, what it
         // would deal again.
-        let undatedLeft = library.undatedCount(triage: env.undatedTriage, closing: env.actions.closing)
-        let undated = undatedLeft > 0 ? undatedLeft : library.undatedCount(kept: [], closing: env.actions.closing)
-        return OLScreen(identifier: PhoneRoute.inbox.screenIdentifier, scrolls: !captures.isEmpty) {
+        let undatedLeft = library.undatedCount(triage: env.undatedTriage, closing: env.actions.closing, now: now)
+        let undated = undatedLeft > 0 ? undatedLeft : library.undatedCount(kept: [], closing: env.actions.closing, now: now)
+        let selectable = (captures + snoozed).filter { !$0.isCompleted }
+        return OLScreen(identifier: PhoneRoute.inbox.screenIdentifier, scrolls: !captures.isEmpty || !snoozed.isEmpty) {
             OLTopBar {
                 OLEyebrow(toTriage == 0 ? "All triaged" : "\(toTriage) to triage", color: OL.infoText)
             } trailing: {
-                OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
-                    .accessibilityIdentifier("inbox.settings")
+                HStack(spacing: 4) {
+                    OLIconButton("checkmark.circle", label: "Select tasks", kind: .bare, iconSize: 22) { isSelecting = true }
+                        .disabled(selectable.isEmpty)
+                        .accessibilityHint(selectable.isEmpty ? "No open tasks to select" : "")
+                        .accessibilityIdentifier("inbox.select")
+                    OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
+                        .accessibilityIdentifier("inbox.settings")
+                }
             }
         } content: {
             OLHeader("Inbox")
-            if captures.isEmpty {
+            if captures.isEmpty && snoozed.isEmpty {
                 if env.awaitsFirstImport(library) {
                     OLLoadingState("Getting your lists from iCloud…")
                         .frame(maxHeight: .infinity)
@@ -52,6 +63,7 @@ struct InboxScreen: View {
                     Button("Triage one by one") { navigator.open(.triage(.inbox)) }
                         .buttonStyle(.ol(.primary, block: true))
                         .padding(.top, OLMetrics.headerGap)
+                        .disabled(toTriage == 0 && captures.isEmpty)
                         .accessibilityIdentifier("inbox.triage")
                 } else {
                     // Everything left was set aside this session: go over it again.
@@ -63,10 +75,21 @@ struct InboxScreen: View {
                     .padding(.top, OLMetrics.headerGap)
                     .accessibilityIdentifier("inbox.reviewKept")
                 }
-                OLCardRows(captures, lazy: true) { task, separator in
-                    InboxRow(task: task, separator: separator, now: now)
+                if !captures.isEmpty {
+                    OLCardRows(captures, lazy: true) { task, separator in
+                        InboxRow(task: task, separator: separator, now: now)
+                    }
+                    .padding(.top, OLMetrics.cardGap)
                 }
-                .padding(.top, OLMetrics.cardGap)
+                if !snoozed.isEmpty {
+                    // Back by themselves on their day.
+                    OLGroup("Snoozed") {
+                        OLCardRows(snoozed, lazy: true) { task, separator in
+                            InboxRow(task: task, separator: separator, now: now)
+                        }
+                    }
+                    .accessibilityIdentifier("inbox.snoozed")
+                }
             }
             if undated > 0 {
                 // Not the captures above, which have no date either.
@@ -79,13 +102,16 @@ struct InboxScreen: View {
                 .accessibilityIdentifier("inbox.undated")
             }
         }
+        .modifier(SelectMode(isSelecting: $isSelecting, listTitle: "Inbox", tasks: selectable))
     }
 
-    /// Open Inbox tasks and those dwelling, newest first; a subtask goes with
-    /// the open task above it, as its card does in triage.
-    static func captures(in library: NextLibrary, closing: Set<UUID>) -> [Block] {
+    /// Open Inbox tasks and those dwelling, newest first, without what's
+    /// snoozed past `now`'s day; a subtask goes with the open task above it,
+    /// as its card does in triage.
+    static func captures(in library: NextLibrary, closing: Set<UUID>, now: Date = .now) -> [Block] {
         library.tasks
             .filter { library.isInbox($0) && (!$0.isCompleted || closing.contains($0.id)) && !library.isUnderOpenTask($0) }
+            .filter { !InboxPolicy.isSnoozed($0, now: now) }
             .sorted { $0.createdAt > $1.createdAt }
     }
 }
@@ -109,9 +135,14 @@ private struct InboxRow: View {
             .phoneTaskSwipe(task)
     }
 
-    /// Its age, or its date once it has one.
+    /// The day it's back while snoozed, else its date once it has one, else its age.
     private var trailing: OLTrailing {
-        if let due = CompactText.due(task.dueDate, includesTime: task.includesTime, now: now, calendar: env.settings.calendar) {
+        let calendar = env.settings.calendar
+        if let until = task.deferredUntil, InboxPolicy.isSnoozed(task, now: now, calendar: calendar) {
+            let day = CompactText.day(until, now: now, calendar: calendar)
+            return OLTrailing(text: day, symbol: "moon.zzz", accessibilityLabel: "Snoozed until \(day)")
+        }
+        if let due = CompactText.due(task.dueDate, includesTime: task.includesTime, now: now, calendar: calendar) {
             return .due(due)
         }
         return .text(CompactText.age(of: task.createdAt, now: now))

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Type-checks every Swift file the iOS app and widget compile, exactly as the
+# Type-checks every Swift file the iOS app, widget and share extension compile, exactly as the
 # project assigns them (Tools/ios-sources.py), against the iOS simulator SDK
 # with the targets' own concurrency settings, in each configuration's
 # compilation conditions. Catches a macOS-side edit that breaks iOS (an AppKit
@@ -37,7 +37,7 @@ FLAGS=(-typecheck -sdk "$SDK" -target arm64-apple-ios27.0-simulator -parse-as-li
     -swift-version 6 -default-isolation MainActor
     -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault
     -enable-upcoming-feature MemberImportVisibility)
-for target in OpenlistiOS OpenlistiOSWidget; do
+for target in OpenlistiOS OpenlistiOSWidget OpenlistiOSShare; do
     SOURCES=()
     while IFS= read -r file; do SOURCES+=("$file"); done < <(python3 -B Tools/ios-sources.py "$target")
     [[ ${#SOURCES[@]} -gt 0 ]] || { echo "No sources for $target" >&2; exit 1; }

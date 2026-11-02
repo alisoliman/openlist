@@ -279,6 +279,7 @@ final class PhoneEnvironment {
             widgetCommands.listenForSignals()
         }
         widgetCommands.drainQueue(now: clock.now)
+        takeSharedCaptures()
         liveActivity?.sync()
         #if DEBUG
         openLaunchRoute()
@@ -396,9 +397,38 @@ final class PhoneEnvironment {
         store.refreshAllReminders()
         NotificationService.shared.reminders.refresh()
         widgetCommands.drainQueue(now: clock.now)
+        takeSharedCaptures()
         widgetPublisher.refreshNow(now: clock.now)
         liveActivity?.sync()
         notify(.becameActive)
+    }
+
+    /// What the Share sheet's Add to Openlist left while the app was away,
+    /// filed as typed capture files it: into the Inbox, or the list an `@`
+    /// in the words names, with its day, labels and the rest, and the link
+    /// as the note. One tray, with Undo, says it. A share that couldn't be
+    /// saved waits for the next time.
+    func takeSharedCaptures(container: URL? = AppGroup.containerURL) {
+        let shared = SharedCaptures.takeAll(container: container)
+        guard !shared.isEmpty else { return }
+        let lists = store.allLists().filter { !$0.isEffectivelyArchived }.map { ($0.id, $0.displayTitle) }
+        var saved: [Block] = [], unsaved: [SharedCapture] = []
+        for capture in shared {
+            // A link alone goes by its address.
+            let words = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parse = CaptureParse(words.isEmpty ? capture.note : words, parsesDates: settings.parsesNaturalLanguageDates,
+                                     reference: clock.now, lists: lists)
+            var snapshot = parse.snapshot()
+            if !words.isEmpty { snapshot.note = capture.note }
+            guard !snapshot.title.isEmpty else { continue }
+            do {
+                saved.append(try store.saveCapture(snapshot, destinationID: parse.listID ?? store.inboxList()?.id))
+            } catch {
+                unsaved.append(capture)
+            }
+        }
+        if !unsaved.isEmpty { try? SharedCaptures.append(unsaved, container: container) }
+        actions.reportCapture(saved)
     }
 
     /// The scene is leaving the front. iOS may suspend or end the app without

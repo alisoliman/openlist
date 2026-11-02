@@ -56,6 +56,32 @@ extension Store {
         save()
     }
 
+    /// The days Snooze offers from `now`: tomorrow, the coming Saturday (the
+    /// next one at the weekend), next week's Monday and a month on.
+    static func snoozeDays(from now: Date = .now, calendar: Calendar = .current) -> [(title: String, day: Date)] {
+        let today = calendar.startOfDay(for: now)
+        func later(_ days: Int) -> Date { calendar.date(byAdding: .day, value: days, to: today) ?? today }
+        // Saturday is weekday 7; from a weekend, the next one.
+        let weekday = calendar.component(.weekday, from: today)
+        return [
+            ("Tomorrow", later(1)),
+            ("This weekend", later(weekday == 7 ? 7 : 7 - weekday)),
+            ("Next week", nextWeekDay(from: now, calendar: calendar)),
+            ("In a month", calendar.date(byAdding: .month, value: 1, to: today) ?? later(30)),
+        ]
+    }
+
+    /// Triage's Snooze: the task waits until `day`, out of the Inbox's queue
+    /// and counts, and comes back that morning. Unlike Defer work it isn't
+    /// planned for the day, so it doesn't land on Today as well; Clear in the
+    /// inspector, or planning it, ends the wait (`clearDeferral`).
+    func snooze(_ block: Block, until day: Date) {
+        guard block.isTask, !block.isCompleted else { return }
+        block.deferredUntil = Calendar.current.startOfDay(for: day)
+        block.touch()
+        save()
+    }
+
     /// Ends a deferral: the task no longer waits for its day. The day it was
     /// selected for goes with it while still ahead; once that day has come
     /// the task stays selected, as it's planned for today by then.
