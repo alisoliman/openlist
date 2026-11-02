@@ -11,6 +11,9 @@ import UIKit
 /// and the list it goes to. Add saves it at once, with Undo in the tray.
 /// The mic listens for tasks said instead: one lands in the field to edit,
 /// several wait as rows, each with the list, day and labels said with it.
+/// What's typed outlives the sheet: something else taking the screen keeps
+/// it for the next Capture (`PhoneNavigator.captureDraft`), and Cancel asks
+/// before throwing it away.
 struct CaptureScreen: View {
     let request: CaptureRequest
     @Environment(PhoneEnvironment.self) private var env
@@ -20,8 +23,12 @@ struct CaptureScreen: View {
     @State private var text = ""
     @State private var listID: UUID?
     @State private var dueDate = CaptureDueDate.automatic
+    /// The date picker, shown in the sheet in place of the field.
     @State private var showsDuePicker = false
     @State private var resumesTyping = false
+    @State private var confirmsDiscard = false
+    /// Added or discarded: nothing is left to keep for later.
+    @State private var isFinished = false
     @State private var height: CGFloat = 236
     @State private var voice = VoiceCapture()
     @State private var hasAppeared = false
@@ -32,9 +39,12 @@ struct CaptureScreen: View {
     @State private var saveError: String?
     @FocusState private var isFocused: Bool
 
-    init(request: CaptureRequest) {
+    init(request: CaptureRequest, draft: CaptureDraft? = nil, spoken: [SpokenTask] = []) {
         self.request = request
-        _listID = State(initialValue: request.listID)
+        _listID = State(initialValue: draft.map(\.listID) ?? request.listID)
+        _text = State(initialValue: draft?.text ?? "")
+        _dueDate = State(initialValue: draft?.dueDate ?? .automatic)
+        _spoken = State(initialValue: spoken)
         #if DEBUG
         // A review session's `OpenlistCaptureText`, typed in for a screenshot.
         if ReviewSession.identifier != nil, let typed = ProcessInfo.processInfo.environment["OpenlistCaptureText"] {
@@ -46,6 +56,71 @@ struct CaptureScreen: View {
     var body: some View {
         let parse = CaptureParse(text, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now)
         let snapshot = snapshot(parse)
+        Group {
+            if showsDuePicker {
+                DuePickerForm(date: snapshot.date, includesTime: snapshot.includesTime, now: env.now,
+                              close: closeDuePicker) { date, timed in
+                    setDueDate(date, includesTime: timed)
+                }
+                .padding(.bottom, 20)
+                .transition(.opacity)
+            } else {
+                capture(parse, snapshot: snapshot)
+                    .transition(.opacity)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self, of: \.size.height) { height = $0 }
+        .presentationDetents([.height(height)])
+        // A swipe down, often meant only to lower the keyboard, would throw
+        // away what's typed or heard; Cancel asks first.
+        .interactiveDismissDisabled(hasDraft || voice.isActive || showsDuePicker)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("New task")
+        .accessibilityIdentifier(PhoneRoute.capture(request).screenIdentifier)
+        .accessibilityAction(.escape) { showsDuePicker ? closeDuePicker() : cancel() }
+        .onAppear {
+            guard !hasAppeared else { return }
+            hasAppeared = true
+            if request.listens || env.navigator.captureListenRequestID == request.id {
+                env.navigator.captureListenRequestID = nil
+                startVoice()
+            } else {
+                isFocused = true
+            }
+        }
+        .onChange(of: env.navigator.captureListenRequestID) {
+            guard env.navigator.captureListenRequestID == request.id else { return }
+            env.navigator.captureListenRequestID = nil
+            startVoice()
+        }
+        .onChange(of: draft, initial: true) { _, draft in env.navigator.captureDraft = draft }
+        .onChange(of: spoken.map(\.id)) { env.navigator.capturedSpoken = spoken }
+        .onDisappear {
+            voice.cancel()
+            keptDraft()
+        }
+        // Leaving the app ends listening with what was said so far.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { voice.sceneDepartedActive(isBackground: phase == .background) }
+        }
+        .onChange(of: voice.phase) { _, phase in
+            if phase == .listening { env.haptics.play(.selection) }
+        }
+        .onChange(of: text) { voice.dismissFailure() }
+        .confirmationDialog(spoken.count > 1 ? "Discard these \(spoken.count) tasks?" : "Discard this task?",
+                            isPresented: $confirmsDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive, action: discard)
+            Button("Keep for Later", action: close)
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Keep it for later, and it’s back the next time you add a task.")
+        }
+        .animation(style.animation(.snappy(duration: 0.25)), value: voice.isActive)
+        .animation(style.fading(.snappy(duration: 0.25)), value: showsDuePicker)
+    }
+
+    /// The field, its chips and the lists, or what voice heard.
+    private func capture(_ parse: CaptureParse, snapshot: CaptureSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             OLSheetHeader(confirmTitle: spoken.count > 1 ? "Add \(spoken.count)" : "Add",
                           canConfirm: !voice.isActive && (!spoken.isEmpty || !parse.title.isEmpty),
@@ -93,46 +168,11 @@ struct CaptureScreen: View {
         .padding(.top, 8)
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onGeometryChange(for: CGFloat.self, of: \.size.height) { height = $0 }
-        .presentationDetents([.height(height)])
-        // A swipe down, often meant only to lower the keyboard, would throw
-        // away what's typed or heard; Cancel still does, deliberately.
-        .interactiveDismissDisabled(hasDraft || voice.isActive)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("New task")
-        .accessibilityIdentifier(PhoneRoute.capture(request).screenIdentifier)
-        .onAppear {
-            guard !hasAppeared else { return }
-            hasAppeared = true
-            if request.listens || env.navigator.captureListenRequestID == request.id {
-                env.navigator.captureListenRequestID = nil
-                startVoice()
-            } else {
-                isFocused = true
-            }
-        }
-        .onChange(of: env.navigator.captureListenRequestID) {
-            guard env.navigator.captureListenRequestID == request.id else { return }
-            env.navigator.captureListenRequestID = nil
-            startVoice()
-        }
-        .onDisappear { voice.cancel() }
-        // Leaving the app ends listening with what was said so far.
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { voice.sceneDepartedActive(isBackground: phase == .background) }
-        }
-        .onChange(of: voice.phase) { _, phase in
-            if phase == .listening { env.haptics.play(.selection) }
-        }
-        .onChange(of: text) { voice.dismissFailure() }
-        .sheet(isPresented: $showsDuePicker, onDismiss: { isFocused = resumesTyping }) {
-            DuePickerSheet(date: snapshot.date, includesTime: snapshot.includesTime, now: env.now) { date, timed in
-                setDueDate(date, includesTime: timed)
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("capture.duePicker")
-        }
-        .animation(style.animation(.snappy(duration: 0.25)), value: voice.isActive)
+    }
+
+    private func closeDuePicker() {
+        showsDuePicker = false
+        isFocused = resumesTyping
     }
 
     // MARK: Voice
@@ -145,7 +185,7 @@ struct CaptureScreen: View {
         case .preparing:
             voice.cancel()
         case .understanding:
-            break
+            voice.skipReading()
         case .idle, .failed:
             startVoice()
         }
@@ -259,7 +299,7 @@ struct CaptureScreen: View {
         spoken = result.unsaved
         if !result.saved.isEmpty { env.actions.reportCapture(result.saved) }
         guard let error = result.error else {
-            if text.isEmpty { cancel() } else { isFocused = true }
+            if text.isEmpty { finish() } else { isFocused = true }
             return
         }
         failed("“\(result.unsaved[0].snapshot.title)” wasn’t added. \(error.localizedDescription)")
@@ -269,9 +309,46 @@ struct CaptureScreen: View {
         !text.isEmpty || !spoken.isEmpty
     }
 
+    /// What's typed, as the navigator keeps it while Capture is away.
+    private var draft: CaptureDraft? {
+        text.isEmpty ? nil : CaptureDraft(text: text, listID: listID, dueDate: dueDate)
+    }
+
+    /// Cancel: closes at once with nothing to lose, else asks first.
     private func cancel() {
+        if hasDraft { confirmsDiscard = true } else { discard() }
+    }
+
+    /// Throws away what's typed or heard, and closes.
+    private func discard() {
+        voice.cancel()
+        finish()
+    }
+
+    /// Closes with nothing kept: all added, or discarded.
+    private func finish() {
+        isFinished = true
+        env.navigator.captureDraft = nil
+        env.navigator.capturedSpoken = []
+        env.navigator.dismissSheet()
+    }
+
+    /// Closes, keeping whatever is typed or heard for the next Capture.
+    private func close() {
         voice.cancel()
         env.navigator.dismissSheet()
+    }
+
+    /// Closed with a draft by anything but Add or Discard: says it's kept,
+    /// with the way back to it.
+    private func keptDraft() {
+        guard hasDraft, !isFinished else { return }
+        let navigator = env.navigator
+        let listID = listID
+        env.tray.show("Kept what you were writing", icon: "square.and.pencil", tone: .neutral, seconds: 6,
+                      actionTitle: "Open") {
+            navigator.open(.capture(CaptureRequest(listID: listID)))
+        }
     }
 
     private func failed(_ message: String) {
@@ -450,7 +527,7 @@ struct CaptureScreen: View {
         do {
             let block = try env.store.saveCapture(snapshot, destinationID: destination?.id)
             env.actions.reportCapture(block)
-            env.navigator.dismissSheet()
+            finish()
         } catch {
             failed("Task wasn’t added. \(error.localizedDescription)")
         }
@@ -479,9 +556,15 @@ private struct CaptureVoicePanel: View {
                     Circle()
                         .fill(OL.accentSoft)
                         .frame(width: 30 + 16 * swell, height: 30 + 16 * swell)
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(OL.accent)
+                    if voice.phase == .understanding {
+                        // Reading can take a while; the mic gives way to
+                        // something visibly at work.
+                        ProgressView().tint(OL.accent)
+                    } else {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(OL.accent)
+                    }
                 }
                 .frame(width: 46, height: 46)
                 .animation(style.animation(.linear(duration: 0.08)), value: swell)
@@ -495,9 +578,11 @@ private struct CaptureVoicePanel: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Button(voice.phase == .listening ? "Done" : "Stop", action: stop)
+                // While Apple Intelligence reads, Skip takes the words as they
+                // were said rather than waiting up to 15 seconds.
+                Button(voice.phase == .listening ? "Done" : voice.phase == .understanding ? "Skip" : "Stop", action: stop)
                     .buttonStyle(.ol(.primary, size: .small))
-                    .disabled(voice.phase == .understanding)
+                    .accessibilityHint(voice.phase == .understanding ? "Adds what you said without Apple Intelligence." : "")
                     .accessibilityIdentifier("capture.voiceDone")
             }
         }

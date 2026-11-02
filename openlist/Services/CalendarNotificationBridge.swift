@@ -22,6 +22,9 @@ final class CalendarNotificationBridge {
     /// Opens the main window again if it was closed, as a reminder's click
     /// does: the Calendar and the inspector a click opens are that window's.
     var openMainWindow: (() -> Void)?
+    /// Clears the window before the Calendar shows there, as every arrival
+    /// from outside it does. The app installs it.
+    var prepare: () -> Void = {}
     private var updateTask: Task<Void, Never>?
     private var lastPostedID: String?
     private var deliveredStarts: Set<String> = Set(ReviewSession.defaults.stringArray(forKey: "work.deliveredStarts") ?? [])
@@ -85,12 +88,12 @@ final class CalendarNotificationBridge {
         service.removeCalendarNudge(identifier: identifier)
         guard action != UNNotificationDismissActionIdentifier else { return }
         if action == UNNotificationDefaultActionIdentifier || action == NotificationService.calendarOpenPlanAction {
-            // In the main window, over whatever was up there, as a reminder
-            // lands: the task opens as its block on the Calendar opens it.
+            // In the main window, cleared first, as a reminder lands: the
+            // task opens as its block on the Calendar opens it.
             openMainWindow?()
+            prepare()
             // On the slot's day, whichever range the Calendar was stepped or moved to.
             workbench.showOnCalendar(slotOf: taskID, occurrenceID: occurrenceID)
-            workbench.navigator.isShortcutSheetOpen = false
             if let task = store.block(id: taskID), task.occurrenceID == occurrenceID {
                 workbench.focusID = nil
                 workbench.navigator.openTask(taskID)

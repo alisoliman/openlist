@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "apple-design-interaction": {
+      "source": "s1gmamale1/apple-design-skills",
+      "sourceType": "github",
+      "skillPath": "skills/apple-design-interaction/SKILL.md",
+      "computedHash": "a761c77c3c5f50d03c17baf727e892edda656deea27dbe8485a26b1a2e003218"
+    },
     "emil-design-eng": {
       "source": "emilkowalski/skills",
       "sourceType": "github",

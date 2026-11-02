@@ -59,7 +59,7 @@ struct NextInboxScreen: View {
                 if let task = queue.first {
                     NXTriageCard(task: task, remaining: queue.count, now: now)
                 } else {
-                    NXTriageEmpty()
+                    NXTriageEmpty(hasKept: !kept.isEmpty)
                 }
             }
             .padding(.top, 22)
@@ -397,34 +397,37 @@ private struct NXTriageDay: View {
 
     var body: some View {
         let date = NXFormat.day(offset: offset, now: now)
-        // Both labels take the design's line-height 1 box, so the tile is its
+        // A button, which Tab reaches with Keyboard navigation on. Both
+        // labels take the design's line-height 1 box, so the tile is its
         // 52.5pt: 8 + 9.5 + 4 + 16 + 4 + 4 + 7.
-        VStack(spacing: 4) {
-            Text(offset == 0 ? "Today" : offset == 1 ? "Tmrw" : date.formatted(.dateTime.weekday(.abbreviated)))
-                .font(.system(size: 9.5, weight: .semibold))
-                .kerning(0.38)
-                .textCase(.uppercase)
-                .foregroundStyle(NX.textTertiary)
-                .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
-            Text("\(Calendar.current.component(.day, from: date))")
-                .font(.system(size: 16, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(NX.ink)
-                .padding(.vertical, (16 - NX.lineHeight(16)) / 2)
-            HStack(spacing: 2) {
-                ForEach(0..<min(load, 4), id: \.self) { _ in
-                    Circle().fill(load >= 3 ? NX.red : NX.ink(0.3)).frame(width: 4, height: 4)
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text(offset == 0 ? "Today" : offset == 1 ? "Tmrw" : date.formatted(.dateTime.weekday(.abbreviated)))
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .kerning(0.38)
+                    .textCase(.uppercase)
+                    .foregroundStyle(NX.textTertiary)
+                    .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
+                Text("\(Calendar.current.component(.day, from: date))")
+                    .font(.system(size: 16, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(NX.ink)
+                    .padding(.vertical, (16 - NX.lineHeight(16)) / 2)
+                HStack(spacing: 2) {
+                    ForEach(0..<min(load, 4), id: \.self) { _ in
+                        Circle().fill(load >= 3 ? NX.red : NX.ink(0.3)).frame(width: 4, height: 4)
+                    }
                 }
+                .frame(height: 4)
             }
-            .frame(height: 4)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+            .padding(.bottom, 7)
+            .background(hovering ? NX.ink(0.05) : NX.ink(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
-        .padding(.bottom, 7)
-        .background(hovering ? NX.ink(0.05) : NX.ink(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .contentShape(Rectangle())
+        .buttonStyle(NXBareButtonStyle(radius: 9))
         .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Schedule for " + (offset == 0 ? "today" : offset == 1 ? "tomorrow"
             : date.formatted(.dateTime.weekday(.wide).day().month(.wide))))
@@ -436,19 +439,27 @@ private struct NXTriageDay: View {
 
 private struct NXTriageEmpty: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextLibrary) private var library
+    /// Tasks kept for later this session are still in the Inbox.
+    let hasKept: Bool
 
     var body: some View {
         let workbench = env.workbench
+        // Nothing triaged and nothing kept, as on a first run, is just empty.
+        let untouched = workbench.reviewed == 0 && !hasKept
         // The summary's 13/1.45 over a 16pt line: 2.85pt between lines, half
         // of it above the first and below the last.
         let summaryLeading = 13 * 1.45 - NX.lineHeight(13)
         HStack(spacing: 18) {
-            Circle().fill(NX.green.opacity(0.12))
+            Circle().fill(untouched ? NX.ink(0.05) : NX.green.opacity(0.12))
                 .frame(width: 48, height: 48)
-                .overlay(Image(systemName: "checkmark").font(.system(size: 22, weight: .bold)).foregroundStyle(NX.greenText))
+                .overlay(Image(systemName: untouched ? "tray" : "checkmark")
+                    .font(.system(size: 22, weight: untouched ? .medium : .bold))
+                    .foregroundStyle(untouched ? NX.ink(0.4) : NX.greenText))
             VStack(alignment: .leading, spacing: 4) {
-                Text("Inbox triaged").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
-                Text("\(workbench.reviewed) reviewed this session.")
+                Text(untouched ? "Inbox is empty" : "Inbox triaged")
+                    .font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
+                Text(untouched ? "Tasks you capture land here, ready to sort into lists." : "\(workbench.reviewed) reviewed this session.")
                     .font(.system(size: 13))
                     .lineSpacing(summaryLeading)
                     .foregroundStyle(NX.textSecondary)
@@ -456,19 +467,24 @@ private struct NXTriageEmpty: View {
                     .padding(.vertical, summaryLeading / 2)
             }
             Spacer(minLength: 8)
-            // Always offered, as in the design; with nothing kept it just starts the count again.
+            // Kept tasks come back for review; with none kept, a new task goes in.
             // The design's 600 12/1, so the button is its 28pt: 8 + 12 + 8.
             Button {
-                workbench.kept = []
-                workbench.reviewed = 0
+                if hasKept {
+                    workbench.kept = []
+                    workbench.reviewed = 0
+                } else {
+                    workbench.openCapture(listID: library.inbox?.id, forToday: false)
+                }
             } label: {
-                Text("Review kept tasks")
+                Text(hasKept ? "Review kept tasks" : "New task")
                     .font(.system(size: 12, weight: .semibold))
                     .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
                                             foreground: NX.textSecondary))
+            .help(hasKept ? "" : "New task (N)")
         }
         .padding(.vertical, 34)
         .padding(.horizontal, 28)

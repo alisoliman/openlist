@@ -61,7 +61,14 @@ final class Store {
     var editorMediaBackups: [String: Data] = [:]
     /// Structural Undo may remove the task currently open in the inspector.
     @ObservationIgnored var onEditorBlocksRemoved: ((Set<UUID>) -> Void)?
-    var persistenceError: String?
+    var persistenceError: String? {
+        didSet { persistenceErrorIsRetryable = persistenceError != nil }
+    }
+    /// Whether saving again can mend `persistenceError`: a save that failed
+    /// with its changes still waiting. A change that failed and was rolled
+    /// back, reported with ``reportRolledBack(_:)``, leaves nothing a save
+    /// would bring back.
+    private(set) var persistenceErrorIsRetryable = false
     var editorNotice: String?
     /// Why the last export, Copy as Markdown, cover change, image or file,
     /// Duplicate, move, Copy Content and Subtasks or paste failed. It stays,
@@ -162,7 +169,7 @@ final class Store {
             pendingActivity.removeAll()
             if child.modelContext != nil { context.delete(child) }
             context.processPendingChanges()
-            persistenceError = "The child list could not be created. \(error.localizedDescription)"
+            reportRolledBack("The child list could not be created. \(error.localizedDescription)")
             return nil
         }
     }
@@ -185,7 +192,7 @@ final class Store {
             context.rollback()
             list.parentListID = previous
             list.updatedAt = updated
-            persistenceError = "The list could not be moved. \(error.localizedDescription)"
+            reportRolledBack("The list could not be moved. \(error.localizedDescription)")
             return false
         }
     }
@@ -431,6 +438,19 @@ final class Store {
         }
     }
 
+    /// Whether a save has anything to write: what a failed save leaves to try
+    /// again.
+    var hasUnsavedChanges: Bool {
+        context.hasChanges || !pendingActivity.isEmpty || lineHistory.hasEnded
+    }
+
+    /// Reports a change that failed and was put back as it was: shown as a
+    /// failed save is, but with nothing for saving again to redo.
+    func reportRolledBack(_ message: String) {
+        persistenceError = message
+        persistenceErrorIsRetryable = false
+    }
+
     /// External callers must acknowledge a write only after it reaches disk.
     /// Unlike `save()`, this propagates failures so an MCP mutation can roll back.
     /// `announcing: false` skips `onDidSave`, for a write nothing downstream
@@ -445,7 +465,7 @@ final class Store {
                 context.delete(event)
             }
         }
-        if context.hasChanges || !pendingActivity.isEmpty || lineHistory.hasEnded {
+        if hasUnsavedChanges {
             context.processPendingChanges()
             let staged = try stagedTaskActivity() + stagedLegacyActivity()
             // One save is one change, a task each: Changes shows its history
@@ -564,7 +584,7 @@ final class Store {
             persistenceError = nil
             onDidSave?()
         } catch {
-            persistenceError = "Activity history could not be cleared. \(error.localizedDescription)"
+            reportRolledBack("Activity history could not be cleared. \(error.localizedDescription)")
         }
     }
 

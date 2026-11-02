@@ -81,14 +81,27 @@ nonisolated struct ICloudSyncState {
         }
     }
 
+    /// Sync is on and nothing has come down from iCloud yet: no download
+    /// has finished or failed, nor setup failed, and the account is being
+    /// checked or is there. An empty library then is likely the other
+    /// devices' still on its way.
+    var isAwaitingFirstImport: Bool {
+        guard isEnabled, lastDownload == nil, failures[.download] == nil, failures[.setup] == nil else { return false }
+        return account == .checking || account == .available
+    }
+
     mutating func begin(_ operation: Operation, id: UUID) {
         guard isEnabled, !completedOperations.contains(id) else { return }
         activeOperations[id] = operation
     }
 
-    mutating func finish(_ operation: Operation, id: UUID, at date: Date, error: String?) {
+    /// A transfer ended. One that failed only for now, `isTransient` as
+    /// offline or while iCloud is busy, CloudKit tries again by itself: it's
+    /// neither a failure to report nor a transfer made.
+    mutating func finish(_ operation: Operation, id: UUID, at date: Date, error: String?, isTransient: Bool = false) {
         guard isEnabled, completedOperations.insert(id).inserted else { return }
         activeOperations.removeValue(forKey: id)
+        guard !isTransient else { return }
         failures[operation] = error
         guard error == nil else { return }
         switch operation {

@@ -11,8 +11,14 @@ struct AppCommands: Commands {
     let env: AppEnvironment
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some Commands {
+        // Installed here, which SwiftUI builds as the app starts, whether or
+        // not a window opens: a reminder or nudge clicked in a session whose
+        // window never appeared opens it, and the palette opens Keyboard
+        // Shortcuts.
+        let _ = installOpeners()
         // Each Task item reads the same targets, so resolve them once per update:
         // a single target on its own, more in one fetch, for the titles.
         let targets = taskTargetIDs
@@ -24,15 +30,18 @@ struct AppCommands: Commands {
         // What acts on the window stands down over an open capture, as the
         // design's keys do, rather than close it and drop the draft or change
         // the page under it: Settings…, New List and New Section, Export,
-        // Search, the View items, the Work items and Keyboard Shortcuts are
-        // off while the window is key, and from elsewhere those that show
-        // something there only bring the window and its draft forward.
+        // Search, the View items and the Work items are off while the window
+        // is key, and from elsewhere those that show something there only
+        // bring the window and its draft forward. Under a sheet they stand
+        // down too, New Task… and Actions… with them, so nothing changes
+        // behind the question the sheet asks.
         let keepsCapture = env.isMainWindowKey && env.workbench.captureOpen
+        let waits = keepsCapture || env.mainWindowHasSheet
 
         CommandMenu("Work") {
             // With the window closed, its toolbar shows the panel once it's up.
             Button("Show Work") { besideCapture { env.calendar.showWork(); env.showsWorkPanelOnOpen = true } }
-                .disabled(keepsCapture)
+                .disabled(waits)
             // As Task ▸ Start Working, the palette's and the row menu's: the
             // notch shows the work, and a failure the tray.
             Button("Start Selected Task") { act { env.workbench.startWork($0[0]) } }
@@ -44,39 +53,41 @@ struct AppCommands: Commands {
                 env.calendar.isWorkPanelPresented = false
                 env.workbench.stopWork()
             }
-                .disabled(keepsCapture || env.workbench.workTask == nil)
+                .disabled(waits || env.workbench.workTask == nil)
             // As the notch's ⏸ and ▶: in place, a failure in the tray.
             Button(env.workbench.isWorkPaused ? "Resume Task" : "Pause Task") { env.workbench.toggleWorkPause() }
-                .disabled(keepsCapture || env.workbench.workTask == nil)
+                .disabled(waits || env.workbench.workTask == nil)
             Button("Complete Current Task") {
                 env.calendar.isWorkPanelPresented = false
                 env.workbench.finishWork()
             }
-                .disabled(keepsCapture || env.workbench.workTask == nil)
+                .disabled(waits || env.workbench.workTask == nil)
         }
         // Openlist ▸ Settings… opens the Settings page in the main window;
         // there is no Settings window.
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { showSettings() }
                 .keyboardShortcut(",", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
         }
         // File ▸ replaces the template "New Window" with task and list creation.
         CommandGroup(replacing: .newItem) {
             Button("New Task…") { inMainWindow { env.presentTaskCapture() } }
                 .keyboardShortcut("n", modifiers: .command)
+                .disabled(env.mainWindowHasSheet)
 
             // Open capture takes ⌥⌘V itself, to stop listening.
             Button("New Tasks by Voice…") { inMainWindow { env.presentVoiceCapture() } }
                 .keyboardShortcut("v", modifiers: [.command, .option])
+                .disabled(env.mainWindowHasSheet)
 
             Button("New List") { besideCapture(newList) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(keepsCapture)
+                .disabled(waits)
 
             Button("New Section") { besideCapture { env.workbench.createSection() } }
                 .keyboardShortcut("n", modifiers: [.command, .option])
-                .disabled(keepsCapture)
+                .disabled(waits)
 
             Divider()
 
@@ -95,7 +106,11 @@ struct AppCommands: Commands {
             Divider()
             Button("Export List as Markdown…") { exportCurrentList() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(!env.isMainWindowKey || keepsCapture || shownListID == nil)
+                .disabled(!env.isMainWindowKey || waits || shownListID == nil)
+            // Trash's Hold to empty Trash, for the keyboard, asking first as
+            // its VoiceOver action does. Off with nothing in Trash.
+            Button("Empty Trash…") { besideCapture { env.confirmsEmptyingTrash = true } }
+                .disabled(waits || !hasTrash)
         }
 
         // Edit ▸ find.
@@ -103,11 +118,12 @@ struct AppCommands: Commands {
             Divider()
             Button("Search") { besideCapture { env.navigator.isSearchOpen = true } }
                 .keyboardShortcut("f", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
 
             // The palette, named as the toolbar names it.
             Button("Actions…") { inMainWindow { env.navigator.isCommandPaletteOpen = true } }
                 .keyboardShortcut("k", modifiers: .command)
+                .disabled(env.mainWindowHasSheet)
         }
 
         // Format ▸ inline styling. These actions travel the responder chain to
@@ -169,11 +185,11 @@ struct AppCommands: Commands {
             // The open task over the whole main pane, and back beside the
             // screen; with none open, the one target opens there.
             Button(env.workbench.isTaskPageOpen ? "Collapse Details" : "Expand Details") {
-                if env.navigator.openTaskID == nil, let single { env.workbench.inspect(single.id) }
+                if env.workbench.inspectedTaskID == nil, let single { env.workbench.inspect(single.id) }
                 env.workbench.toggleTaskPage()
             }
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
-                .disabled(!env.isMainWindowKey || keepsCapture || (env.navigator.openTaskID == nil && single == nil))
+                .disabled(!env.isMainWindowKey || keepsCapture || (env.workbench.inspectedTaskID == nil && single == nil))
 
             Divider()
 
@@ -195,13 +211,17 @@ struct AppCommands: Commands {
             // Both skip completed tasks, so they're off when every target is done.
             Button("Plan for Today") { act { env.workbench.plan($0) } }
                 .disabled(!plans)
-            Button("Find a Slot") { act { $0.forEach(env.workbench.fit) } }
+            Button("Find a Slot") { act { env.workbench.fit($0) } }
                 .disabled(!plans)
             Button("Start Working") { act { env.workbench.startWork($0[0]) } }
                 .disabled(workTask(single) == nil)
             // As the row menu's, for the inspected task too, whose row may be
-            // on no screen: the keyboard's way to it with no pointer.
+            // on no screen: the keyboard's way to them with no pointer.
             Button("Copy Link") { act { env.copyLink(to: .task($0[0])) } }
+                .disabled(single == nil)
+            Button("Copy Text") { act { env.workbench.copyText($0[0]) } }
+                .disabled(single == nil)
+            Button("Copy Content and Subtasks") { act { env.workbench.copyContent($0[0]) } }
                 .disabled(single == nil)
 
             Divider()
@@ -227,6 +247,13 @@ struct AppCommands: Commands {
 
             Divider()
 
+            Button("Duplicate") { act { env.workbench.duplicate($0[0]) } }
+                .disabled(single == nil)
+            Button("Use as Template…") { act { env.templateCopyRequest = TemplateCopyRequest(source: .task($0[0])) } }
+                .disabled(single == nil)
+
+            Divider()
+
             // Deliberately no key equivalent: AppKit matches menu shortcuts
             // before the text view sees the event, so ⌘⌫ here would delete the
             // task instead of the line the user was editing.
@@ -238,55 +265,65 @@ struct AppCommands: Commands {
         CommandGroup(before: .sidebar) {
             Button("Inbox") { besideCapture { env.workbench.go(.inbox) } }
                 .keyboardShortcut("1", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
             Button("Today") { besideCapture { env.workbench.go(.today) } }
                 .keyboardShortcut("2", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
             Button("Calendar") { besideCapture { env.workbench.go(.calendar) } }
                 .keyboardShortcut("3", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
             Button("Tasks") { besideCapture { env.workbench.go(.tasks) } }
                 .keyboardShortcut("4", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
             Button("Lists") { besideCapture { env.workbench.go(.lists) } }
                 .keyboardShortcut("5", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
             Button("Activity") { besideCapture { env.workbench.go(.activity) } }
                 .keyboardShortcut("6", modifiers: .command)
-                .disabled(keepsCapture)
+                .disabled(waits)
             Button("Trash") { besideCapture { env.workbench.go(.trash) } }
-                .disabled(keepsCapture)
+                .disabled(waits)
 
             Divider()
 
-            Button("Back") { besideCapture { env.navigator.goBack() } }
+            // The task opened out as a page goes back beside its screen first.
+            Button("Back") { besideCapture { env.workbench.goBack() } }
                 .keyboardShortcut("[", modifiers: .command)
-                .disabled(keepsCapture || !env.navigator.canGoBack)
+                .disabled(waits || !env.workbench.canGoBack)
             Button("Forward") { besideCapture { env.navigator.goForward() } }
                 .keyboardShortcut("]", modifiers: .command)
-                .disabled(keepsCapture || !env.navigator.canGoForward)
+                .disabled(waits || !env.navigator.canGoForward)
 
             Divider()
 
             Button(env.workbench.showsSidebar ? "Hide Sidebar" : "Show Sidebar") { besideCapture { env.workbench.toggleSidebar() } }
                 .keyboardShortcut("s", modifiers: [.control, .command])
-                .disabled(keepsCapture)
+                .disabled(waits)
 
             Divider()
 
             Button("Expand All") { env.send(.expandAll) }
-                .disabled(!hasDocumentContext || keepsCapture)
+                .disabled(!hasDocumentContext || waits)
             Button("Collapse All") { env.send(.collapseAll) }
-                .disabled(!hasDocumentContext || keepsCapture)
+                .disabled(!hasDocumentContext || waits)
 
             Divider()
         }
 
+        // A reference to keep beside the window, which ⌘/ shows and hides.
         CommandGroup(replacing: .help) {
-            Button("Keyboard Shortcuts") { besideCapture { env.navigator.isShortcutSheetOpen = true } }
-                .keyboardShortcut("/", modifiers: .command)
-                .disabled(keepsCapture)
+            Button(env.isShowingShortcuts ? "Hide Keyboard Shortcuts" : "Show Keyboard Shortcuts") {
+                if env.isShowingShortcuts { dismissWindow(id: WindowID.shortcuts) } else { openWindow(id: WindowID.shortcuts) }
+            }
+            .keyboardShortcut("/", modifiers: .command)
         }
+    }
+
+    /// The main window's opener, for a reminder or nudge clicked with the
+    /// window closed, and Keyboard Shortcuts', for the palette.
+    private func installOpeners() {
+        env.openMainWindow = { [openWindow] in openWindow(id: WindowID.main) }
+        env.showShortcuts = { [openWindow] in openWindow(id: WindowID.shortcuts) }
     }
 
     /// What the Task menu acts on, only while the main window is key: the
@@ -296,7 +333,7 @@ struct AppCommands: Commands {
     /// line being written first.
     private var taskTargetIDs: [UUID] {
         guard env.isMainWindowKey, !env.workbench.captureOpen, !env.navigator.isCommandPaletteOpen,
-              !env.navigator.isSearchOpen, !env.navigator.isShortcutSheetOpen else { return [] }
+              !env.navigator.isSearchOpen, !env.mainWindowHasSheet else { return [] }
         guard let active = env.activeDocument else { return env.workbench.targetIDs }
         // Only the document that claimed them runs the commands.
         guard let document = env.workbench.document, document.document == active else { return [] }
@@ -345,6 +382,17 @@ struct AppCommands: Commands {
     /// command, though it stays the active one.
     private var hasDocumentContext: Bool {
         env.isMainWindowKey && env.activeDocument != nil && env.navigator.documentOwnsEditorCommands
+    }
+
+    /// Whether anything is in Trash, a trashed task or list, read in a count
+    /// that stops at the first.
+    private var hasTrash: Bool {
+        var blocks = FetchDescriptor<Block>(predicate: #Predicate { $0.trashID != nil })
+        blocks.fetchLimit = 1
+        var lists = FetchDescriptor<TaskList>(predicate: #Predicate { $0.trashID != nil })
+        lists.fetchLimit = 1
+        let context = env.store.context
+        return ((try? context.fetchCount(blocks)) ?? 0) + ((try? context.fetchCount(lists)) ?? 0) > 0
     }
 
     // MARK: - Actions

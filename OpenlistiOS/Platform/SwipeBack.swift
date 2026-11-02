@@ -19,7 +19,20 @@ extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
 
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         // Not mid-push or mid-pop: a swipe that starts during a transition
-        // leaves the stack frozen.
-        gestureRecognizer !== interactivePopGestureRecognizer || (viewControllers.count > 1 && transitionCoordinator == nil)
+        // leaves the stack frozen. Nor while a mode over the page is up,
+        // which a swipe would take away with the page under it.
+        gestureRecognizer !== interactivePopGestureRecognizer
+            || (viewControllers.count > 1 && transitionCoordinator == nil && SwipeBack.suspensions.isEmpty)
+    }
+}
+
+/// Modes drawn over a pushed page (Select's), during which swiping back is
+/// off: their own Done ends them, and only then does the page go back.
+@MainActor
+enum SwipeBack {
+    private(set) static var suspensions: Set<UUID> = []
+
+    static func suspend(_ suspended: Bool, for token: UUID) {
+        if suspended { suspensions.insert(token) } else { suspensions.remove(token) }
     }
 }

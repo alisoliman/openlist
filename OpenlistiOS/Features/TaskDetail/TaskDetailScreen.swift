@@ -9,8 +9,8 @@ import UIKit
 
 /// Task detail (mockup 12), pushed: the task's title and note to edit, When,
 /// Priority, List and Labels, Plan for today and its estimate, its subtasks,
-/// History (Activity), and Trash and Start working where the dock would be. Every change
-/// but typing is one step with Undo in the tray.
+/// its History, and Trash and Start working where the dock would be. Every
+/// change but typing is one step with Undo in the tray.
 struct TaskDetailScreen: View {
     let taskID: UUID
     @Environment(PhoneEnvironment.self) private var env
@@ -23,7 +23,8 @@ struct TaskDetailScreen: View {
                 OLTopBar { OLBackButton(env.backTitle(for: .taskDetail(taskID))) { env.navigator.pop() } }
             } content: {
                 OLEmptyState(symbol: "questionmark", tint: OL.muted, title: "This task is gone",
-                             message: "It was moved to Trash or deleted on another device.")
+                             message: "It was moved to Trash or deleted on another device.",
+                             actionTitle: "Open Trash") { env.navigator.open(.trash) }
                     .padding(.top, 80)
             }
         }
@@ -47,7 +48,7 @@ private struct TaskDetailPage: View {
     private enum Field: Hashable { case title, note, subtask }
 
     private enum DetailSheet: String, Identifiable {
-        case due, labels, history
+        case due, labels, planAt
         var id: String { rawValue }
     }
 
@@ -61,6 +62,13 @@ private struct TaskDetailPage: View {
             OLTopBar {
                 OLBackButton(env.backTitle(for: .taskDetail(task.id))) { navigator.pop() }
             } trailing: {
+                // The title ends with Return, the note doesn't: Done is the
+                // way out of either that the keyboard doesn't hide.
+                if focus == .title || focus == .note {
+                    Button("Done") { focus = nil }
+                        .buttonStyle(.olLink(strong: true))
+                        .accessibilityIdentifier("detail.doneEditing")
+                }
                 OLIconButton(task.isStarred ? "star.fill" : "star", label: task.isStarred ? "Unstar" : "Star", kind: .bare,
                              iconSize: 22, tint: task.isStarred ? OL.today : OL.muted) {
                     actions.edit([task], task.isStarred ? "Unstarred “\(task.displayTitle)”" : "Starred “\(task.displayTitle)”",
@@ -114,17 +122,21 @@ private struct TaskDetailPage: View {
                 .font(OLFont.note)
                 .foregroundStyle(OL.muted)
                 .focused($focus, equals: .note)
-                .padding(.leading, 42)
-                .padding(.top, 10)
                 .accessibilityIdentifier("detail.note")
+                // The empty note is one short line: the room around it, to the
+                // fields below, takes the tap too.
+                .padding(.leading, 42)
+                .padding(.vertical, 10)
+                .contentShape(.rect)
+                .onTapGesture { focus = .note }
+                .padding(.bottom, -10)
             fields(now: now)
                 .padding(.top, 24)
             plan
                 .padding(.top, OLMetrics.cardGap)
             subtasks
-            // History goes to Activity, as the design links it; this task's
-            // own history is in the ⋯ menu.
-            OLLinkRow("History", topSpacing: 16) { env.navigator.open(.activity) }
+            // This task's history, with all activity a step on from it.
+            OLLinkRow("History", topSpacing: 16) { env.navigator.open(.taskHistory(task.id)) }
                 .accessibilityIdentifier("detail.history")
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -140,9 +152,11 @@ private struct TaskDetailPage: View {
                     actions.schedule([task], on: date, includesTime: timed)
                 }
             case .labels: LabelPickerSheet(task: task)
-            case .history: TaskHistorySheet(task: task)
+            case .planAt: PlanAtSheet(task: task)
             }
         }
+        // Somewhere else taking the screen takes this page's sheet with it.
+        .onChange(of: navigator.arrivals) { sheet = nil }
         .onAppear {
             title.reset(to: task.text)
             note.reset(to: task.note)
@@ -179,6 +193,8 @@ private struct TaskDetailPage: View {
                     Button(placed ? "Move to another slot" : "Find a slot", systemImage: "calendar.badge.plus") {
                         env.actions.fit([task])
                     }
+                    // A time of one's own, as dragging onto the timeline gives.
+                    Button("Plan at a time…", systemImage: "clock") { sheet = .planAt }
                 }
                 if placed {
                     Button("Take off the calendar", systemImage: "calendar.badge.minus") { env.actions.unplace(task) }
@@ -270,14 +286,26 @@ private struct TaskDetailPage: View {
         let planned = task.isPlanned(on: now, calendar: env.settings.calendar)
         let defaultEstimate = max(5, Int(env.calendar.preferences.defaultEstimateMinutes))
         return VStack(spacing: 0) {
+            let blocked = !planned && !env.actions.canAddToToday(task, hierarchy: library.hierarchy)
             OLSettingsRow("Plan for today") {
                 Toggle("Plan for today", isOn: Binding(get: { planned }, set: { plan in
                     TaskDetailContext.setPlanned(plan, for: task, in: env)
                 }))
                 .labelsHidden()
                 .olToggle()
-                .disabled(!planned && !env.actions.canAddToToday(task, hierarchy: library.hierarchy))
+                .disabled(blocked)
+                .accessibilityHint(blocked ? planBlockedReason : "")
                 .accessibilityIdentifier("detail.plan")
+            }
+            // Off with no way to turn it on says why.
+            if blocked {
+                Text(planBlockedReason)
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+                    .accessibilityHidden(true)
             }
             // Five minutes to eight hours, or where a longer one made on the Mac is.
             let estimate = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
@@ -289,6 +317,13 @@ private struct TaskDetailPage: View {
                 .disabled(task.isCompleted)
         }
         .olCard()
+    }
+
+    /// Why a task can't go on Today: it's done, or its list is archived.
+    private var planBlockedReason: String {
+        if task.isCompleted || env.actions.isClosing(task.id) { return "Reopen it to plan it for today." }
+        if let list = env.store.list(id: task.listID) { return "Unarchive “\(list.displayTitle)” to plan its tasks." }
+        return "Only open tasks in active lists go on Today."
     }
 
     // MARK: Subtasks
@@ -358,6 +393,7 @@ private struct TaskDetailPage: View {
                         .font(.system(size: 26))
                         .foregroundStyle(OL.accent)
                         .frame(width: 44, height: 44)
+                        .contentShape(.circle)
                 }
                 .buttonStyle(OLPressStyle(scale: 0.9))
                 .accessibilityLabel("Add subtask")
@@ -416,7 +452,7 @@ private struct TaskDetailPage: View {
         let working = env.calendar.activeSession?.taskID == task.id
         return OLActionDock(dropsLikeTheDock: true) {
             OLIconButton("trash", label: "Move to Trash", kind: .raised, size: .large) {
-                if env.actions.trash([task]) { env.navigator.pop() }
+                if env.actions.trash([task]) { env.navigator.closeTrashedPage(of: task.id) }
             }
             .accessibilityIdentifier("detail.trash")
             if done {
@@ -465,7 +501,7 @@ private struct TaskDetailPage: View {
             if !task.isCompleted {
                 Button("Add subtask", systemImage: "text.badge.plus", action: startSubtask)
             }
-            Button("Task history", systemImage: "clock.arrow.circlepath") { sheet = .history }
+            Button("Task history", systemImage: "clock.arrow.circlepath") { env.navigator.open(.taskHistory(task.id)) }
             Button("Duplicate", systemImage: "plus.square.on.square", action: duplicate)
             if let libraryID = env.libraryID {
                 Button("Copy link", systemImage: "link") {
@@ -475,7 +511,7 @@ private struct TaskDetailPage: View {
             }
             Divider()
             Button("Move to Trash", systemImage: "trash", role: .destructive) {
-                if env.actions.trash([task]) { env.navigator.pop() }
+                if env.actions.trash([task]) { env.navigator.closeTrashedPage(of: task.id) }
             }
         } label: {
             Image(systemName: "ellipsis")

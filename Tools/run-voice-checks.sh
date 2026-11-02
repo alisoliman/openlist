@@ -21,6 +21,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -DDEBUG \
   openlist/Services/VoiceCapture.swift openlist/Next/NextFormat.swift \
   openlist/Services/QuickCaptureRequest.swift openlist/Services/QuickCaptureHotKey.swift Tools/VoiceChecks/ShortcutChecks.swift \
   OpenlistiOS/Design/CapturePress.swift Tools/VoiceChecks/GestureChecks.swift \
-  OpenlistiOS/App/PhoneRoute.swift OpenlistiOS/App/PhoneNavigator.swift Tools/VoiceChecks/PhoneEntryChecks.swift \
+  OpenlistiOS/App/PhoneRoute.swift OpenlistiOS/App/PhoneNavigator.swift OpenlistiOS/Features/Capture/CaptureDueDate.swift \
+  Tools/VoiceChecks/PhoneEntryChecks.swift \
   Tools/EditorChecks/Support.swift Tools/VoiceChecks/CompletionChecks.swift Tools/VoiceChecks/SessionChecks.swift Tools/VoiceChecks/AdjudicationChecks.swift Tools/VoiceChecks/main.swift
 "$OUT/voice-checks"

@@ -56,11 +56,19 @@ private struct TodayPage: View {
             }
             TodayProgressHeader(done: agenda.progress.done, total: agenda.progress.total)
             if agenda.isClear && work.task == nil {
-                OLEmptyState(symbol: "sun.max", title: "Today is clear", message: clearMessage(done: agenda.doneToday.count),
-                             actionTitle: "Look at tomorrow") {
-                    navigator.openTimeline(on: calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)))
+                if env.awaitsFirstImport(library) {
+                    OLLoadingState("Getting your lists from iCloud…")
+                        .frame(maxHeight: .infinity)
+                } else {
+                    // With no task anywhere, tomorrow is no help: the way on is a first one.
+                    let first = library.tasks.isEmpty
+                    OLEmptyState(symbol: "sun.max", title: "Today is clear", message: clearMessage(done: agenda.doneToday.count),
+                                 actionTitle: first ? "Add a task" : "Look at tomorrow") {
+                        if first { navigator.open(.capture(CaptureRequest(dueToday: true))) }
+                        else { navigator.openTimeline(on: calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))) }
+                    }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity)
             } else {
                 if let card = work.card {
                     OLNowCard(eyebrow: card.eyebrow, title: card.title, detail: card.detail, state: card.state,

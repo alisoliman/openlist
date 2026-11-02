@@ -44,6 +44,7 @@ struct TriageScreen: View {
         OLScreen(identifier: PhoneRoute.triage(mode).screenIdentifier, scrolls: card != nil) {
             OLTopBar {
                 OLIconButton("xmark", label: "Close triage", kind: .bare, iconSize: 22) { navigator.dismissCover() }
+                    .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("triage.close")
             } trailing: {
                 // "1 of 6" as it goes, and "6 of 6" once it's done.

@@ -7,7 +7,7 @@ import Foundation
 
 /// A date picked in Capture, distinct from leaving the typed date (or
 /// Today's default) alone. Clearing explicitly keeps an undated task undated.
-enum CaptureDueDate: Equatable {
+enum CaptureDueDate: Equatable, Codable {
     case automatic
     case chosen(Date, includesTime: Bool)
     case cleared

@@ -92,10 +92,11 @@ struct NXInspectorPlan: View {
             HStack(spacing: 8) {
                 NXCapsTitle(text: "Plan for today")
                 Spacer(minLength: 6)
-                // Planning skips completed tasks, so the switch fades.
+                // Planning skips completed tasks, so the switch fades, and says why.
                 NXToggle(isOn: workbench.isPlanned(task), label: "Plan for today") { workbench.plan([task.id]) }
                     .disabled(task.isCompleted)
                     .opacity(task.isCompleted ? 0.45 : 1)
+                    .help(task.isCompleted ? "Reopen this task to plan it" : "Plan for today (P)")
             }
             HStack(spacing: 10) {
                 Image(systemName: "clock")
@@ -190,6 +191,9 @@ struct NXDurationField: View {
     @State private var draft: String?
     @State private var hovering = false
     @FocusState private var focused: Bool
+    /// The duration's button, which Return and Esc in the field hand the
+    /// keys back to, where Keyboard navigation lets a button have them.
+    @FocusState private var buttonFocused: Bool
 
     private var shown: String { DurationText.text(for: minutes) }
 
@@ -200,9 +204,12 @@ struct NXDurationField: View {
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .onSubmit {
-                        if !commit() { NSSound.beep() }
+                        if commit() { returnFocus() } else { NSSound.beep() }
                     }
-                    .onExitCommand { draft = nil }
+                    .onExitCommand {
+                        draft = nil
+                        returnFocus()
+                    }
                     .onChange(of: focused) { _, now in
                         if !now, !commit() { draft = nil }
                     }
@@ -214,6 +221,7 @@ struct NXDurationField: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focused($buttonFocused)
                 .help("Type a duration")
             }
         }
@@ -241,6 +249,11 @@ struct NXDurationField: View {
         if typed != minutes { onCommit(typed) }
         self.draft = nil
         return true
+    }
+
+    /// Once the button is back in the field's place.
+    private func returnFocus() {
+        DispatchQueue.main.async { buttonFocused = true }
     }
 }
 
@@ -433,19 +446,27 @@ private struct NXInspectorSubtaskRow: View {
             NXCheckbox(filled: filled, closing: closing, priority: .none, title: task.displayTitle, size: 15, pops: false) {
                 workbench.toggle(task.id)
             }
-            // 400 13/1.3.
-            Text(task.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                .font(.system(size: 13))
-                .foregroundStyle(filled ? NX.textTertiary : NX.ink)
-                .strikethrough(filled, color: NX.textTertiary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .padding(.vertical, (13 * 1.3 - NX.lineHeight(13)) / 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(NX.ink(0.3))
-                .frame(width: 14, height: 14)
+            // The rest of the row opens it, a button Tab reaches with
+            // Keyboard navigation on.
+            Button { workbench.inspect(task.id) } label: {
+                HStack(spacing: 9) {
+                    // 400 13/1.3.
+                    Text(task.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.system(size: 13))
+                        .foregroundStyle(filled ? NX.textTertiary : NX.ink)
+                        .strikethrough(filled, color: NX.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.vertical, (13 * 1.3 - NX.lineHeight(13)) / 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(NX.ink(0.3))
+                        .frame(width: 14, height: 14)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(NXBareButtonStyle(radius: 6))
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
@@ -525,20 +546,33 @@ struct NXInspectorParentCrumb: View {
 // MARK: - Files
 
 /// Files kept with the task. The design has none, so the section shows only
-/// once there are some; the footer's paperclip attaches them, and files
-/// dropped anywhere on the panel are attached too.
+/// once there are some, or some are being copied in; the footer's paperclip
+/// attaches them, and files dropped anywhere on the panel are attached too.
 struct NXInspectorFiles: View {
     @Environment(AppEnvironment.self) private var env
     let task: Block
 
     var body: some View {
         let attachments = env.store.attachments(for: task.id)
-        if !attachments.isEmpty {
+        let attaching = env.workbench.attaching[task.id] ?? 0
+        if !attachments.isEmpty || attaching > 0 {
             VStack(alignment: .leading, spacing: 4) {
                 NXCapsTitle(text: "Files")
                     .padding(.bottom, 4)
                 ForEach(attachments) { attachment in
                     AttachmentRow(attachment: attachment) { env.workbench.removeAttachment(attachment) }
+                }
+                if attaching > 0 {
+                    // Where the files will show, at a row's height.
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small).frame(width: 28, height: 28)
+                        Text(attaching == 1 ? "Attaching…" : "Attaching \(attaching) files…")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(NX.textTertiary)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
@@ -551,11 +585,14 @@ struct NXTaskFiles {
     let workbench: Workbench
 
     func choose(for block: Block) {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        guard panel.runModal() == .OK else { return }
-        workbench.attachFiles(panel.urls, to: block.id)
+        let id = block.id
+        Task {
+            let panel = NSOpenPanel()
+            panel.allowsMultipleSelection = true
+            panel.canChooseDirectories = false
+            guard await panel.nxRun() == .OK else { return }
+            workbench.attachFiles(panel.urls, to: id)
+        }
     }
 
     func drop(_ providers: [NSItemProvider], on blockID: UUID) -> Bool {

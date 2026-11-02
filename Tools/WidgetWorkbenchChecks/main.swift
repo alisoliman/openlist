@@ -109,7 +109,35 @@ check(workbench.log.first?.taskID == report.id && workbench.canUndo, "logged and
 workbench.undoLast()
 check(!report.isCompleted && workbench.workTask?.id == report.id, "Undo reopens it and offers the work to resume again")
 
+// MARK: - Fit into calendar, several at once
+
+// The window's own step, as Today's Fit into calendar and Find a Slot on a
+// selection take it, not a widget's.
+let errands = ["Book the dentist", "Renew the passport", "Order paint"].map { task($0) }
+let marathons = ["Repaint the house", "Sort the attic"].map { task($0) }
+// Longer than any day's hours, so no week has a slot for them.
+for long in marathons { long.schedulingEstimateMinutes = 1_000 }
+store.save()
+workbench.separateUndoStep()
+let fitted = workbench.log.count
+workbench.fit((errands + marathons).map(\.id))
+let slots = errands.compactMap { store.placements(taskID: $0.id).first }
+check(slots.count == errands.count && marathons.allSatisfy { store.placements(taskID: $0.id).isEmpty },
+      "Fit plans each task with a free slot and leaves those without one")
+check(!slots.contains { slot in slots.contains { $0.id != slot.id && $0.start < slot.end && slot.start < $0.end } },
+      "each task takes a slot of its own, clear of the others'")
+check(workbench.tray?.text.hasPrefix("Planned 3 tasks · 2 had no free slot") == true && workbench.tray?.tone == .amber
+      && workbench.tray?.undoable == true, "one tray says how many were planned and how many found no slot, in amber, with Undo")
+check(workbench.log.count == fitted + errands.count && Set(workbench.log.prefix(errands.count).map(\.batch)).count == 1,
+      "the change log lists it as one change")
+check(workbench.canUndo && undoManager.undoActionName == workbench.tray?.text, "and the window's Undo is for all of it")
+workbench.undoLast()
+check(errands.allSatisfy { store.placements(taskID: $0.id).isEmpty }, "one Undo takes every slot back")
+undoManager.redo()
+check(errands.allSatisfy { !store.placements(taskID: $0.id).isEmpty }, "and Redo puts them all back")
+
 try await runWorkbenchAdjudicationChecks()
 try await runVoiceWorkbenchChecks()
+runWindowWorkbenchChecks()
 
 print("✅ \(checks) widget workbench checks passed")

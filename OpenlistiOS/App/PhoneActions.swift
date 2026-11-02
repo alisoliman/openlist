@@ -133,6 +133,10 @@ final class PhoneActions {
         }
         if batch.resume != nil { calendar.dismissResume() }
         write(rolls, in: batch)
+        // A repeat rolled on in memory only isn't reported done: the notice
+        // says the save failed, with Try Again. Ticks still dwelling keep
+        // their tray, and Undo.
+        if batch.pending.isEmpty, store.persistenceError != nil { return haptics.play(.error) }
         let text = label ?? completionLabel(rolls: rolls, closes: closes)
         let icon = !rolls.isEmpty && closes.isEmpty ? "repeat" : "checkmark.circle"
         batch.trayID = tray.show(text, icon: icon, tone: .success, seconds: traySeconds) { [weak self, batch] in
@@ -164,7 +168,7 @@ final class PhoneActions {
         } catch {
             completionUndoTarget = nil
             changes.endUndoGrouping()
-            return fail(store.actionError ?? "The task could not be reopened. \(error.localizedDescription)")
+            return fail(takeError(\.actionError) ?? "The task could not be reopened. \(error.localizedDescription)")
         }
         completionUndoTarget = nil
         changes.endUndoGrouping()
@@ -356,8 +360,8 @@ final class PhoneActions {
         let text = label ?? (tasks.count == 1 ? "Moved “\(tasks[0].displayTitle)” to Trash" : "Moved \(tasks.count) items to Trash")
         return perform(text, icon: "trash", tone: .danger) { [store] changes in
             store.trashBlocks(tasks, undoManager: changes)
-        } failure: { [store] in
-            store.trashError ?? "That could not be moved to Trash."
+        } failure: {
+            takeError(\.trashError) ?? "That could not be moved to Trash."
         }
     }
 
@@ -375,7 +379,7 @@ final class PhoneActions {
             do {
                 return try !store.moveSelection(tasks.map(\.id), to: list.id, undoManager: changes).isEmpty
             } catch {
-                failure = store.actionError ?? "That could not be moved. \(error.localizedDescription)"
+                failure = takeError(\.actionError) ?? "That could not be moved. \(error.localizedDescription)"
                 return false
             }
         } failure: { failure }
@@ -397,7 +401,7 @@ final class PhoneActions {
             if let data = list.trashMetadataData { metadata[list.id] = data }
         }
         guard let recoveries = store.restoreTrashRecoveries(ids: ids) else {
-            fail(store.trashError ?? "That could not be restored; it remains in Trash.")
+            fail(takeError(\.trashError) ?? "That could not be restored; it remains in Trash.")
             return false
         }
         let changes = Self.makeUndoManager()
@@ -447,7 +451,8 @@ final class PhoneActions {
         let list: TaskList
         if let parent {
             guard let child = store.createChildList(in: parent) else {
-                fail(store.persistenceError ?? "That list could not be made here.")
+                // A failed save is the notice's to say, with Try Again.
+                if store.persistenceError == nil { fail("That list could not be made here.") } else { haptics.play(.error) }
                 return nil
             }
             store.rename(child, to: name)
@@ -519,8 +524,8 @@ final class PhoneActions {
                 MainActor.assumeIsolated { _ = store.restoreTrashRecoveries(ids: [id]) }
             }
             return true
-        } failure: { [store] in
-            store.trashError ?? "That list could not be moved to Trash."
+        } failure: {
+            takeError(\.trashError) ?? "That list could not be moved to Trash."
         }
     }
 
@@ -546,8 +551,8 @@ final class PhoneActions {
             }
         }
         changes.endUndoGrouping()
-        report(blocks.count == 1 ? "Added to \(place)" : "Added \(blocks.count) tasks to \(place)",
-               icon: "plus.circle", tone: .accent, changes: changes)
+        guard report(blocks.count == 1 ? "Added to \(place)" : "Added \(blocks.count) tasks to \(place)",
+                     icon: "plus.circle", tone: .accent, changes: changes) else { return }
         haptics.play(.success)
     }
 
@@ -725,20 +730,30 @@ final class PhoneActions {
     }
 
     /// The tray for an action done, with Undo when it recorded any, which
-    /// shake-to-undo offers too.
-    private func report(_ text: String, icon: String?, tone: TrayMessage.Tone, changes: UndoManager) {
+    /// shake-to-undo offers too. A change made but not saved isn't reported
+    /// done: the notice says the save failed, with Try Again. Returns
+    /// whether it was reported.
+    @discardableResult
+    private func report(_ text: String, icon: String?, tone: TrayMessage.Tone, changes: UndoManager) -> Bool {
+        guard store.persistenceError == nil else {
+            haptics.play(.error)
+            return false
+        }
         tray.show(text, icon: icon, tone: tone, seconds: max(5, traySeconds),
                   action: changes.canUndo ? { [weak self] in self?.undo(changes) } : nil)
         if changes.canUndo { offerToScene(text) { [weak self] in self?.undo(changes) } }
+        return true
     }
 
     /// Changes fields of `tasks` in one save, with Undo that restores only the
     /// fields this step changed: star, due date, plan for today, labels…
+    /// A change the save failed to keep is left to the notice, as `report`'s.
     func edit(_ tasks: [Block], _ text: String?, icon: String? = nil, _ change: (Block) -> Void) {
         let tasks = tasks.filter(\.isTask)
         guard !tasks.isEmpty else { return }
         let before = tasks.map(TaskFields.init)
         store.batch { for task in tasks { change(task) } }
+        guard store.persistenceError == nil else { return haptics.play(.error) }
         let after = tasks.compactMap { store.block(id: $0.id) }.map(TaskFields.init)
         let changes = Self.makeUndoManager()
         changes.beginUndoGrouping()
@@ -797,7 +812,7 @@ final class PhoneActions {
                 do {
                     guard try !store.moveSelection([task.id], to: list.id, undoManager: changes).isEmpty else { return false }
                 } catch {
-                    failure = store.actionError ?? "That could not be moved. \(error.localizedDescription)"
+                    failure = takeError(\.actionError) ?? "That could not be moved. \(error.localizedDescription)"
                     return false
                 }
             }
@@ -850,6 +865,13 @@ final class PhoneActions {
     private func fail(_ message: String) {
         tray.show(message, icon: "exclamationmark.circle", tone: .danger, seconds: 5)
         haptics.play(.error)
+    }
+
+    /// A refusal the Store left for its notice, taken for the tray instead,
+    /// so one failure is said once.
+    private func takeError(_ error: ReferenceWritableKeyPath<Store, String?>) -> String? {
+        defer { store[keyPath: error] = nil }
+        return store[keyPath: error]
     }
 
     // MARK: Helpers

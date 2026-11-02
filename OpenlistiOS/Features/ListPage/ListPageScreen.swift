@@ -42,21 +42,40 @@ struct ListPageScreen: View {
                 OLTopBar {
                     OLBackButton(env.backTitle(for: .list(listID))) { navigator.pop() }
                 } trailing: {
+                    let nothingToSelect = document.selectableTasks.isEmpty
                     OLIconButton("checkmark.circle", label: "Select tasks", kind: .bare, iconSize: 22) { isSelecting = true }
-                        .disabled(document.selectableTasks.isEmpty)
+                        .disabled(nothingToSelect)
+                        .accessibilityHint(nothingToSelect ? "No open tasks to select" : "")
                         .accessibilityIdentifier("list.select")
+                        // Dimmed, it still answers a tap with why.
+                        .overlay {
+                            if nothingToSelect {
+                                Color.clear
+                                    .contentShape(.rect)
+                                    .onTapGesture {
+                                        env.tray.show("No open tasks to select", icon: "checkmark.circle", tone: .neutral, seconds: 3)
+                                    }
+                                    .accessibilityHidden(true)
+                            }
+                        }
                     if let list { menu(list) }
                 }
             }
         } content: {
-            OLHeader(list?.displayTitle ?? "List", sub: page.openCount == 0 ? "All done" : "\(page.openCount) open",
+            // "Empty" with no tasks at all, as its card says, not "All done".
+            OLHeader(list?.displayTitle ?? "List",
+                     sub: page.openCount > 0 ? "\(page.openCount) open" : library.tasks(in: listID).isEmpty ? "Empty" : "All done",
                      topSpacing: 14)
             if page.rows.isEmpty && page.completed.isEmpty && children.isEmpty {
                 let archived = list?.isEffectivelyArchived == true
+                // Archived, it offers its way back; a list archived with its
+                // parent comes back with the parent, as on the Mac.
+                let unarchives = archived && list?.isArchived == true
                 OLEmptyState(symbol: "checklist", tint: list?.accent.color ?? OL.accentText, title: "Nothing here yet",
                              message: archived ? "This list is archived." : "Tasks you add to this list show here.",
-                             actionTitle: archived ? nil : "Add a task") {
-                    navigator.open(.capture(CaptureRequest(listID: listID)))
+                             actionTitle: archived ? (unarchives ? "Unarchive" : nil) : "Add a task") {
+                    if !archived { navigator.open(.capture(CaptureRequest(listID: listID))) }
+                    else if let list { env.actions.setArchived(false, for: list) }
                 }
                 .padding(.top, 60)
             }
@@ -79,7 +98,7 @@ struct ListPageScreen: View {
             if !page.completed.isEmpty {
                 OLFold("done", count: page.completed.count,
                        isExpanded: Binding(get: { doneOpen }, set: { showsDone = $0 })) {
-                    OLCardRows(page.completed) { task, separator in
+                    OLCardRows(page.completed, lazy: true) { task, separator in
                         PhoneTaskRow(task: task, context: .list, separator: separator)
                     }
                 }
@@ -89,9 +108,8 @@ struct ListPageScreen: View {
                 OLGroup("Lists") {
                     OLListGrid {
                         ForEach(children) { child in
-                            let open = library.openCount(in: child.id)
                             OLListCard(title: child.displayTitle, icon: child.icon, accent: child.accent,
-                                       detail: open == 0 ? "All done" : "\(open) open") {
+                                       detail: library.cardDetail(for: child)) {
                                 navigator.open(.list(child.id))
                             }
                         }
@@ -105,6 +123,7 @@ struct ListPageScreen: View {
             TextField("Name", text: $name)
             Button("Cancel", role: .cancel) {}
             Button("Rename") { if let list { env.actions.rename(list, to: name) } }
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .alert("New list inside", isPresented: $namesChild) {
             TextField("Name", text: $name)
@@ -112,6 +131,7 @@ struct ListPageScreen: View {
             Button("Create") {
                 if let list, let child = env.actions.createList(named: name, under: list) { navigator.open(.list(child.id)) }
             }
+            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .sheet(isPresented: $editsAppearance) {
             if let list { ListAppearanceSheet(list: list) }
@@ -122,6 +142,13 @@ struct ListPageScreen: View {
             }
         } message: {
             Text("Its tasks go with it. You can put it back from Trash.")
+        }
+        // Somewhere else taking the screen takes its questions with it.
+        .onChange(of: env.navigator.arrivals) {
+            renaming = false
+            namesChild = false
+            confirmsTrash = false
+            editsAppearance = false
         }
         .onAppear { list.map(env.store.markOpened) }
     }

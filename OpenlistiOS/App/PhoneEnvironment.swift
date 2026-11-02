@@ -58,6 +58,9 @@ final class PhoneEnvironment {
     private(set) var hasBootstrapped = false
     /// Whether the scene is in front.
     private(set) var isActive = false
+    /// Whether the window has shown, its saved place put back: links wait
+    /// for it, so one that launched the app lands on top of that place.
+    private(set) var hasShownWindow = false
     /// How many remote changes have been merged in, for diagnostics and tests.
     private(set) var remoteChangeCount = 0
     /// How many times the app has saved on its way to the background.
@@ -142,11 +145,13 @@ final class PhoneEnvironment {
             calendar.storeDidChange(now: clock.now)
             liveActivity?.sync()
         }
-        // An Undo can take away the list or task a screen is on.
+        // An Undo can take away the list or task a screen is on, or bring
+        // back the task whose page closed as it went to Trash.
         actions.afterUndo = { [weak self] in
             guard let self else { return }
-            navigator.repair(list: { [store] in store.list(id: $0)?.id },
-                             taskExists: { [store] in store.block(id: $0).map { $0.isTask && $0.trashID == nil } ?? false })
+            let taskExists: (UUID) -> Bool = { [store] in store.block(id: $0).map { $0.isTask && $0.trashID == nil } ?? false }
+            navigator.repair(list: { [store] in store.list(id: $0)?.id }, taskExists: taskExists)
+            navigator.reopenTrashedPage(taskExists: taskExists)
         }
         store.onEditorBlocksRemoved = { [weak self] ids in
             guard let self else { return }
@@ -356,9 +361,27 @@ final class PhoneEnvironment {
         navigator.inboxListID = store.inboxList()?.id
         calendar.storeDidChange(now: clock.now)
         widgetPublisher.refreshNow(now: clock.now)
+        let shown = navigator.visibleRoute
         navigator.repair(list: { [store] in store.list(id: $0)?.id },
                          taskExists: { [store] in store.block(id: $0).map { $0.isTask && $0.trashID == nil } ?? false })
+        // A page that closed under the user says why, rather than a merged
+        // list's, which follows the list it merged into.
+        if navigator.visibleRoute != shown, let gone = removedPage(shown) {
+            tray.show("The \(gone) you had open was removed on another device.", icon: "icloud", tone: .neutral, seconds: 5)
+        }
         notify(.remoteChange)
+    }
+
+    /// What `route` showed, if that's gone from the library: "task" or "list".
+    private func removedPage(_ route: PhoneRoute) -> String? {
+        switch route {
+        case let .taskDetail(id), let .taskHistory(id):
+            store.block(id: id).map { $0.isTask && $0.trashID == nil } == true ? nil : "task"
+        case let .list(id):
+            store.list(id: id) == nil ? "list" : nil
+        default:
+            nil
+        }
     }
 
     // MARK: Scene phases
@@ -368,7 +391,7 @@ final class PhoneEnvironment {
     /// (The sync monitor checks the account and imports on its own.)
     func sceneBecameActive() {
         isActive = true
-        links.windowReady(true)
+        if hasShownWindow { links.windowReady(true) }
         guard hasBootstrapped else { return }
         store.refreshAllReminders()
         NotificationService.shared.reminders.refresh()
@@ -423,13 +446,43 @@ final class PhoneEnvironment {
         }
     }
 
+    // MARK: Restoring
+
+    /// The window is on screen: the place its scene saved is put back, unless
+    /// something (a launch route) already moved the phone, then links that
+    /// came meanwhile open on top of it. Review sessions start where their
+    /// launch variables say, unless `OpenlistRestoresPlace=1` asks to check
+    /// restoring.
+    func windowAppeared(restoring saved: Data?) {
+        if !hasShownWindow, let saved, restoresPlaces, navigator.isAtLaunch,
+           let place = try? JSONDecoder().decode(PhoneNavigator.Place.self, from: saved) {
+            bootstrap()
+            navigator.restore(place, today: settings.calendar.startOfDay(for: now),
+                              hasWork: PhoneWork(env: self, now: now).task != nil)
+            navigator.repair(list: { [store] in store.list(id: $0)?.id },
+                             taskExists: { [store] in store.block(id: $0).map { $0.isTask && $0.trashID == nil } ?? false })
+        }
+        hasShownWindow = true
+        links.windowReady(true)
+    }
+
+    private var restoresPlaces: Bool {
+        guard ReviewSession.identifier != nil else { return true }
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["OpenlistRestoresPlace"] == "1"
+        #else
+        return false
+        #endif
+    }
+
     /// A screen's name, as its back link and VoiceOver say it.
     func title(of route: PhoneRoute) -> String {
         switch route {
         case .today, .timeline: "Today"
         case .work: "Work"
         case .activity: "Activity"
-        case .taskDetail: "Task"
+        case let .taskDetail(id): store.block(id: id)?.displayTitle ?? "Task"
+        case .taskHistory: "History"
         case .inbox: "Inbox"
         case .triage: "Triage"
         case .lists: "Lists"
@@ -437,6 +490,7 @@ final class PhoneEnvironment {
         case .find: "Find"
         case .settings: "Settings"
         case .trash: "Trash"
+        case .planHours: "Plan hours"
         case .working: "Working"
         case .capture: "New task"
         }

@@ -2,7 +2,6 @@
 import AppKit
 #endif
 import Foundation
-import UniformTypeIdentifiers
 
 /// Renders list documents with stored formatting and portable media references.
 enum MarkdownExporter {
@@ -21,44 +20,103 @@ enum MarkdownExporter {
 
     @MainActor
     static func write(list: TaskList, store: Store, to destination: URL) throws {
+        try prepare(list: list, store: store, to: destination).publish()
+    }
+
+    /// The list's export, gathered on the main actor: the files it copies
+    /// and its Markdown, written with a placeholder for each file's link,
+    /// which `Prepared.publish` fills in once it knows where the file went.
+    /// A list with nested lists is a folder of linked documents.
+    @MainActor
+    static func prepare(list: TaskList, store: Store, to destination: URL) throws -> Prepared {
         let hierarchy = store.listHierarchy()
         let documents = hierarchy.subtree(of: list.id)
         if documents.count <= 1 {
-            try MarkdownExportPackage.write(to: destination, assets: assets(for: list, store: store)) { paths in
-                render(list: list, store: store) { paths[$0] ?? $0 }
-            }
-            return
+            let assets = try assets(for: list, store: store)
+            let placeholders = Prepared.placeholders(for: assets)
+            return Prepared(destination: destination, assets: assets, placeholders: placeholders,
+                            document: render(list: list, store: store) { placeholders[$0] ?? $0 }, documents: [:])
         }
         let names = Dictionary(uniqueKeysWithValues: documents.map {
             ($0.id, MarkdownExportPackage.safeFilename($0.displayTitle) + "-" + $0.id.uuidString + ".md")
         })
-        try MarkdownExportPackage.writeFolder(to: destination,
-            assets: documents.flatMap { try assets(for: $0, store: store) }) { paths in
-            Dictionary(uniqueKeysWithValues: documents.map { document in
-                var navigation = ""
-                if let parent = hierarchy.parent(of: document.id), let filename = names[parent.id] {
-                    navigation += "Parent: [\(InlineMarkdown.escape(parent.displayTitle))](\(InlineMarkdown.destination(filename)))\n\n"
-                }
-                let children = hierarchy.children(of: document.id).filter { names[$0.id] != nil }
-                if !children.isEmpty {
-                    navigation += "Child lists:\n" + children.map {
-                        "- [\(InlineMarkdown.escape($0.displayTitle))](\(InlineMarkdown.destination(names[$0.id]!)))"
-                    }.joined(separator: "\n") + "\n\n"
-                }
-                return (names[document.id]!, navigation + render(list: document, store: store) { paths[$0] ?? $0 })
-            })
+        let assets = try documents.flatMap { try assets(for: $0, store: store) }
+        let placeholders = Prepared.placeholders(for: assets)
+        let markdown = Dictionary(uniqueKeysWithValues: documents.map { document in
+            var navigation = ""
+            if let parent = hierarchy.parent(of: document.id), let filename = names[parent.id] {
+                navigation += "Parent: [\(InlineMarkdown.escape(parent.displayTitle))](\(InlineMarkdown.destination(filename)))\n\n"
+            }
+            let children = hierarchy.children(of: document.id).filter { names[$0.id] != nil }
+            if !children.isEmpty {
+                navigation += "Child lists:\n" + children.map {
+                    "- [\(InlineMarkdown.escape($0.displayTitle))](\(InlineMarkdown.destination(names[$0.id]!)))"
+                }.joined(separator: "\n") + "\n\n"
+            }
+            return (names[document.id]!, navigation + render(list: document, store: store) { placeholders[$0] ?? $0 })
+        })
+        return Prepared(destination: destination, assets: assets, placeholders: placeholders, document: nil, documents: markdown)
+    }
+
+    /// A list's export ready to write anywhere, the main actor included:
+    /// where it goes, the files it copies, and its Markdown, one document or
+    /// a folder of them by file name.
+    nonisolated struct Prepared: Sendable {
+        let destination: URL
+        let assets: [MarkdownExportPackage.Asset]
+        /// What stands for each file's link in the Markdown, by its asset key.
+        let placeholders: [String: String]
+        /// The one document, or nil for a folder of `documents`.
+        let document: String?
+        let documents: [String: String]
+
+        /// How many files it copies, which `publish` counts.
+        var fileCount: Int { placeholders.count }
+
+        /// Copies the files and writes the Markdown. `copied` hears how many
+        /// files are in after each; throwing from it stops the export, with
+        /// nothing left behind.
+        func publish(copied: (Int) throws -> Void = { _ in }) throws {
+            if let document {
+                try MarkdownExportPackage.write(to: destination, assets: assets, render: { fill(document, $0) }, copied: copied)
+            } else {
+                try MarkdownExportPackage.writeFolder(to: destination, assets: assets,
+                    render: { paths in documents.mapValues { fill($0, paths) } }, copied: copied)
+            }
+        }
+
+        /// `markdown` with each file's placeholder turned into a link to where it went.
+        private func fill(_ markdown: String, _ paths: [String: String]) -> String {
+            placeholders.reduce(markdown) { text, file in
+                text.replacingOccurrences(of: InlineMarkdown.destination(file.value),
+                                          with: InlineMarkdown.destination(paths[file.key] ?? file.key))
+            }
+        }
+
+        /// A placeholder for each file, unique to this export, so no text
+        /// written in a list can be mistaken for one.
+        fileprivate static func placeholders(for assets: [MarkdownExportPackage.Asset]) -> [String: String] {
+            Dictionary(assets.map { ($0.key, "openlist-export-file-" + UUID().uuidString) }, uniquingKeysWith: { first, _ in first })
         }
     }
 
-    /// Settings' Export every list: each top-level list in `folder`, as its
-    /// own Export writes it, so a list with nested lists is one folder holding
-    /// them all and none is written twice. `wrote` hears how many lists each
-    /// write took, so a failure part way can say how many were exported.
+    /// The lists Settings' Export every list writes: each top-level list,
+    /// with how many lists its own Export writes, itself and those nested in
+    /// it, so a list with nested lists is one folder holding them all and
+    /// none is written twice.
+    @MainActor
+    static func everyList(store: Store) -> [(list: TaskList, documents: Int)] {
+        let hierarchy = store.listHierarchy()
+        return store.allLists(includeArchived: true).filter { hierarchy.parent(of: $0.id) == nil }
+            .map { ($0, hierarchy.subtree(of: $0.id).count) }
+    }
+
+    /// Settings' Export every list, at once: each of `everyList` in `folder`,
+    /// as its own Export writes it. `wrote` hears how many lists each write
+    /// took, so a failure part way can say how many were exported.
     @MainActor
     static func writeAll(store: Store, to folder: URL, wrote: (Int) -> Void = { _ in }) throws {
-        let hierarchy = store.listHierarchy()
-        for list in store.allLists(includeArchived: true) where hierarchy.parent(of: list.id) == nil {
-            let documents = hierarchy.subtree(of: list.id).count
+        for (list, documents) in everyList(store: store) {
             try write(list: list, store: store, to: destination(for: list, in: folder, documents: documents))
             wrote(documents)
         }
@@ -67,7 +125,7 @@ enum MarkdownExporter {
     /// Where a list's export goes in `folder`: "List.md", or a "List" folder
     /// when it has nested lists, a new name beside what's there.
     @MainActor
-    private static func destination(for list: TaskList, in folder: URL, documents: Int) -> URL {
+    static func destination(for list: TaskList, in folder: URL, documents: Int) -> URL {
         let name = MarkdownExportPackage.safeFilename(list.displayTitle)
         return MarkdownExportPackage.availableURL(in: folder, filename: documents > 1 ? name : name + ".md")
     }
@@ -186,50 +244,7 @@ enum MarkdownExporter {
     }
 
     #if os(macOS)
-    // MARK: - Save panel
-
-    /// Asks where, then writes the list's export there. `true` once it's
-    /// written; a failure says why in the window's notice.
-    @MainActor
-    @discardableResult
-    static func presentSavePanel(for list: TaskList, store: Store) -> Bool {
-        let documents = store.listHierarchy().subtree(of: list.id)
-        let blocks = documents.flatMap { store.blocks(inList: $0.id) }
-        let hasMedia = list.coverFilename != nil || blocks.contains { $0.mediaFilename != nil || !store.attachments(for: $0.id).isEmpty }
-        let filename = "\(MarkdownExportPackage.safeFilename(list.displayTitle)).md"
-        let url: URL
-        if hasMedia || documents.count > 1 {
-            // A save-panel grant covers the selected file, not an arbitrary
-            // sibling assets folder. Select its parent to grant the sandbox
-            // access to both parts of this portable export.
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = true
-            panel.canChooseFiles = false
-            panel.canCreateDirectories = true
-            panel.title = "Export \(list.displayTitle)"
-            panel.prompt = "Export"
-            panel.message = documents.count > 1
-                ? "Choose where to export a folder holding one Markdown file for this list and one for each list nested in it, linked together, with their shared assets. Existing files are kept."
-                : "Choose a folder for \(filename) and its images and attachments. Keep the Markdown file and assets folder together when sharing. Existing files are kept."
-            guard panel.runModal() == .OK, let folder = panel.url else { return false }
-            url = destination(for: list, in: folder, documents: documents.count)
-        } else {
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-            panel.nameFieldStringValue = filename
-            panel.canCreateDirectories = true
-            panel.title = "Export \(list.displayTitle)"
-            guard panel.runModal() == .OK, let destination = panel.url else { return false }
-            url = destination
-        }
-        do {
-            try write(list: list, store: store, to: url)
-            return true
-        } catch {
-            store.actionError = "“\(list.displayTitle)” could not be exported. \(error.localizedDescription)"
-            return false
-        }
-    }
+    // MARK: - Clipboard
 
     /// Puts the list's document on the clipboard as the Markdown Export
     /// writes for it. `false`, after saying why in the window's notice, when

@@ -39,6 +39,15 @@ final class VoiceCapture {
     private var failure: VoiceCaptureFailure?
     @ObservationIgnored private var interpreter: VoiceTaskInterpreter?
     @ObservationIgnored private var session = VoiceCaptureSession()
+    /// What's being read, so Skip can take it the plain way instead.
+    @ObservationIgnored private var reading: Reading?
+
+    private struct Reading {
+        var run: Int
+        var transcript: String
+        var vocabulary: SpokenCapture.Vocabulary
+        var now: Date
+    }
 
     var generation: Int { session.generation }
 
@@ -94,6 +103,24 @@ final class VoiceCapture {
         listener.stop()
     }
 
+    /// Whether Skip can take what was said without waiting for Apple
+    /// Intelligence, which can take up to 15 seconds.
+    var canSkipReading: Bool { isUnderstanding && reading != nil }
+
+    /// Takes what was said now, read the way it is without Apple Intelligence
+    /// (one task, with the list, labels, priority, duration and date said),
+    /// rather than waiting for the model. What it then makes of it is dropped.
+    /// The tasks wait for review, even where they'd be saved at once: Skip
+    /// isn't an Add.
+    func skipReading() {
+        guard isUnderstanding, let reading else { return }
+        session.requireReview()
+        finish(VoiceTaskInterpreter.Result(tasks: SpokenCapture.fallback(reading.transcript, vocabulary: reading.vocabulary,
+                                                                         reference: reading.now),
+                                           usedIntelligence: false),
+               run: reading.run)
+    }
+
     func applicationResignedActive() {
         switch listener.state {
         case .preparing:
@@ -126,6 +153,7 @@ final class VoiceCapture {
         listener.onStop = nil
         onHeard = nil
         interpreter = nil
+        reading = nil
         isUnderstanding = false
         failure = nil
         filledField = false
@@ -152,12 +180,20 @@ final class VoiceCapture {
                 SpokenCapture.fallback($0, vocabulary: vocabulary, reference: now)
             }, usedIntelligence: false)
         } else {
+            reading = Reading(run: run, transcript: transcript, vocabulary: vocabulary, now: now)
             result = await (interpreter ?? VoiceTaskInterpreter()).interpret(transcript, vocabulary: vocabulary, reference: now)
         }
         #else
+        reading = Reading(run: run, transcript: transcript, vocabulary: vocabulary, now: now)
         result = await (interpreter ?? VoiceTaskInterpreter()).interpret(transcript, vocabulary: vocabulary, reference: now)
         #endif
+        // Skipped meanwhile: the run is over and this reading is dropped.
+        finish(result, run: run)
+    }
+
+    private func finish(_ result: VoiceTaskInterpreter.Result, run: Int) {
         guard session.isCurrent(run: run) else { return }
+        reading = nil
         isUnderstanding = false
         usedIntelligence = result.usedIntelligence
         guard let mode = session.complete(run: run, hasTasks: !result.tasks.isEmpty) else {
@@ -173,13 +209,14 @@ extension VoiceCapture {
     /// Voice capture's one control, a capture card's mic and ⌥⌘V alike:
     /// starts listening for `draft`, whose capture takes what's heard, read
     /// against `lists` and `labels`; while listening, stops and reads what
-    /// was said; while getting ready, stops.
+    /// was said; while reading it, skips Apple Intelligence; while getting
+    /// ready, stops.
     func toggle<Draft: NXCaptureDraft>(for draft: Draft, lists: [TaskList], labels: [TaskLabel],
                                      onSave: ((NXCaptureOutcome) -> Void)? = nil) {
         switch phase {
         case .listening: stop()
         case .preparing: cancel()
-        case .understanding: break
+        case .understanding: skipReading()
         case .idle, .failed:
             onHeard = { [weak self, weak draft] heard in
                 guard let self, let draft else { return }

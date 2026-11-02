@@ -12,6 +12,9 @@ final class LocalLinkNavigation {
     @ObservationIgnored private var pending: [URL] = []
     @ObservationIgnored private var resolve: ((LocalLink.Target) throws -> ContentReveal)?
     @ObservationIgnored private var isWindowReady = false
+    /// Clears the window before the link's item shows there, as every
+    /// arrival from outside it does. The app installs it.
+    @ObservationIgnored var prepare: () -> Void = {}
     var error: LocalLinkError?
 
     init(libraryID: UUID?, navigator: Navigator) {
@@ -52,9 +55,9 @@ final class LocalLinkNavigation {
                 guard link.libraryID == libraryID else { throw LocalLinkError.wrongLibrary }
                 let reveal = try resolve(link.target)
                 error = nil
+                prepare()
                 navigator.isSearchOpen = false
                 navigator.isCommandPaletteOpen = false
-                navigator.isShortcutSheetOpen = false
                 navigator.reveal(reveal)
             } catch {
                 self.error = error as? LocalLinkError ?? .targetUnavailable

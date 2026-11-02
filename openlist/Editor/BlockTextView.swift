@@ -147,6 +147,7 @@ struct BlockTextView: NSViewRepresentable {
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
+        view.acceptsKeyboard = context.environment.isEnabled
         applyAccent(to: view)
         return view
     }
@@ -156,6 +157,7 @@ struct BlockTextView: NSViewRepresentable {
         view.placeholderString = placeholder
         view.isSlashMenuOpen = isSlashMenuOpen
         view.slashMenuCommand = onSlashCommand
+        view.acceptsKeyboard = context.environment.isEnabled
         applyAccent(to: view)
         if view.textContainerInset.height != verticalInset {
             view.textContainerInset = NSSize(width: 0, height: verticalInset)
@@ -601,6 +603,11 @@ final class BlockNSTextView: NSTextView {
     /// Set by the outline while the `/` menu is visible so key handling defers to it.
     var isSlashMenuOpen = false
     var slashMenuCommand: ((SlashMenuCommand) -> Void)?
+    /// Off under a disabled view, as the screen under a task opened out as a
+    /// page is: the line takes no keyboard there, from Tab or anything else.
+    var acceptsKeyboard = true
+
+    override var acceptsFirstResponder: Bool { acceptsKeyboard && super.acceptsFirstResponder }
 
     private var cachedHeight: (width: CGFloat, height: CGFloat)?
     private var geometryUpdatePending = false

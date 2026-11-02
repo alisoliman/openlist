@@ -102,7 +102,7 @@ extension Store {
             context.rollback()
             if section.modelContext != nil { context.delete(section) }
             context.processPendingChanges()
-            persistenceError = "The section could not be restored. \(error.localizedDescription)"
+            reportRolledBack("The section could not be restored. \(error.localizedDescription)")
             return false
         }
         // Deleting it left each of them unfiled, still pinned where it was.

@@ -10,13 +10,18 @@ import SwiftUI
 /// CloudKit container, the Mac does, in the same order: the sync monitor
 /// first, so early CloudKit setup errors are seen; then the container; then
 /// the environment, which the delegate bootstraps at launch. A library that
-/// can't open shows why and never an empty one in its place.
+/// can't open shows why, with Try Again, and never an empty one in its place.
 @main
 struct OpenlistiOSApp: App {
     @UIApplicationDelegateAdaptor(PhoneAppDelegate.self) private var delegate
     @Environment(\.scenePhase) private var scenePhase
-    private let container: ModelContainer?
-    private let startupError: String?
+    private let sync: ICloudSyncMonitor
+    /// Why iCloud is off before the store is opened, which each attempt to
+    /// open it starts from.
+    private let iCloudUnavailableReason: String?
+    @State private var container: ModelContainer?
+    @State private var startupError: String?
+    @State private var failedRetries = 0
     @State private var env: PhoneEnvironment?
 
     init() {
@@ -25,22 +30,15 @@ struct OpenlistiOSApp: App {
         // CloudKit-backed store without complaint, then crashes at CKContainer.
         let reason = ICloudConfiguration.unavailableReason
         let sync = ICloudSyncMonitor(unavailableReason: reason)
-        do {
-            let loaded = try AppPersistence.open(at: StoreLocation.storeURL, iCloudUnavailableReason: reason)
-            container = loaded.container
-            startupError = nil
-            sync.state.unavailableReason = loaded.iCloudUnavailableReason
-            if reason == nil { sync.startupWarning = loaded.iCloudUnavailableReason }
-            // The Store and @Query share the main context: views hand their
-            // models to mutations, so saving another context would lose edits.
-            let environment = PhoneEnvironment(context: loaded.container.mainContext, sync: sync,
-                                               libraryID: try? LibraryIdentity.read(at: StoreLocation.storeURL))
-            _env = State(initialValue: environment)
-            delegate.onDidLaunch = { [weak environment] in environment?.bootstrap() }
-        } catch {
-            container = nil
-            startupError = error.localizedDescription
-            _env = State(initialValue: nil)
+        self.sync = sync
+        iCloudUnavailableReason = reason
+        switch Self.open(sync: sync, iCloudUnavailableReason: reason) {
+        case let .success(library):
+            _container = State(initialValue: library.container)
+            _env = State(initialValue: library.env)
+            delegate.onDidLaunch = { [weak environment = library.env] in environment?.bootstrap() }
+        case let .failure(error):
+            _startupError = State(initialValue: error.localizedDescription)
         }
         delegate.sync = sync
     }
@@ -58,7 +56,7 @@ struct OpenlistiOSApp: App {
                         env.openLink(url) ? .handled : .systemAction
                     })
             } else {
-                LibraryFailureScreen(message: startupError ?? "")
+                LibraryFailureScreen(message: startupError ?? "", failedRetries: failedRetries, retry: retry)
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -68,6 +66,38 @@ struct OpenlistiOSApp: App {
             case .background: env?.sceneWillResignActive(toBackground: true)
             @unknown default: break
             }
+        }
+    }
+
+    /// Opens the store and the environment over it, the way launch does.
+    private static func open(sync: ICloudSyncMonitor, iCloudUnavailableReason reason: String?)
+        -> Result<(container: ModelContainer, env: PhoneEnvironment), Error> {
+        do {
+            let loaded = try AppPersistence.open(at: StoreLocation.storeURL, iCloudUnavailableReason: reason)
+            sync.state.unavailableReason = loaded.iCloudUnavailableReason
+            if reason == nil { sync.startupWarning = loaded.iCloudUnavailableReason }
+            // The Store and @Query share the main context: views hand their
+            // models to mutations, so saving another context would lose edits.
+            let environment = PhoneEnvironment(context: loaded.container.mainContext, sync: sync,
+                                               libraryID: try? LibraryIdentity.read(at: StoreLocation.storeURL))
+            return .success((loaded.container, environment))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Opens the library again from its failure screen. Only a library that
+    /// opens replaces the screen, which the root then bootstraps; otherwise
+    /// the screen stays, saying why now.
+    private func retry() {
+        switch Self.open(sync: sync, iCloudUnavailableReason: iCloudUnavailableReason) {
+        case let .success(library):
+            container = library.container
+            env = library.env
+            startupError = nil
+        case let .failure(error):
+            startupError = error.localizedDescription
+            failedRetries += 1
         }
     }
 }

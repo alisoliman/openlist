@@ -419,21 +419,63 @@ extension Workbench {
     /// one change the tray can undo, as taking one off is: Undo takes them
     /// off again. Those that can't be read are named in one red card,
     /// however many, and only the files kept are counted; with none kept,
-    /// nothing changes.
+    /// nothing changes. They're read and copied in off the main thread, so a
+    /// large one holds nothing up, and one taking a moment shows in Files as
+    /// "Attaching…" meanwhile. A file too large for library backups is kept
+    /// all the same, and the tray says so.
     func attachFiles(_ urls: [URL], to taskID: UUID) {
         guard !urls.isEmpty else { return }
         document?.commitLine()
-        guard let task = store.block(id: taskID) else { return }
+        guard store.block(id: taskID) != nil else { return }
+        // Only past a moment, so a small file never flashes it.
+        let shown = Task { () -> Bool in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return false }
+            attaching[taskID, default: 0] += urls.count
+            return true
+        }
+        Task {
+            let imported = await Task.detached(priority: .userInitiated) {
+                urls.map { url in (name: url.lastPathComponent, media: Result { try MediaStore.shared.importFile(at: url) }) }
+            }.value
+            shown.cancel()
+            if await shown.value {
+                let left = (attaching[taskID] ?? 0) - urls.count
+                attaching[taskID] = left > 0 ? left : nil
+            }
+            keep(imported, on: taskID)
+        }
+    }
+
+    /// The files `attachFiles` copied in, kept with the task as one change.
+    private func keep(_ imported: [(name: String, media: Result<ImportedMedia, Error>)], on taskID: UUID) {
         var kept: [ImportedMedia] = []
         var failures: [(name: String, error: Error)] = []
-        for url in urls {
-            do { kept.append(try MediaStore.shared.importFile(at: url)) } catch { failures.append((url.lastPathComponent, error)) }
+        for file in imported {
+            switch file.media {
+            case let .success(media): kept.append(media)
+            case let .failure(error): failures.append((file.name, error))
+            }
         }
         if let notice = NXFormat.attachFailures(failures) { store.actionError = notice }
         guard !kept.isEmpty else { return }
+        // Gone while its files were copied in, the task leaves them to no one.
+        guard let task = store.block(id: taskID) else {
+            for media in kept { MediaStore.shared.delete(filename: media.filename) }
+            return
+        }
         let label = NXFormat.attached(kept.map(\.displayName), to: describe([task]))
+        // Library backups refuse a file past their limit, which is better
+        // heard now, as it's kept, than when the next backup fails.
+        let tooLarge = kept.contains { $0.byteCount > LibraryBackupPackage.maximumMediaBytes }
+        var registered = false
         store.addAttachments(kept, to: task, name: label, undoManager: undoManager) {
-            self.snap(label, icon: "paperclip", tone: .accent, ids: [taskID])
+            registered = true
+            self.snap(label, icon: "paperclip", tone: .accent, ids: [taskID], showsTray: !tooLarge)
+        }
+        if tooLarge {
+            showTray("\(label) · Backups can’t include files over \(LibraryBackupPackage.maximumMediaBytes >> 20) MB",
+                     icon: "exclamationmark.triangle", tone: .amber, undoable: registered)
         }
     }
 
@@ -606,7 +648,11 @@ extension Workbench {
         separateUndoStep()
         beginTrash(taskIDs, label: "Moved \(describe(tasks)) to Trash")
         selection = []
-        focusID = nil
+        // The focus goes on to the row beside, so the next J or K goes on
+        // from there rather than from the top.
+        if let focusID, taskIDs.contains(focusID) {
+            self.focusID = Self.neighbour(of: focusID, leaving: Set(taskIDs), in: visibleIDs)
+        }
         if let open = navigator.openTaskID, taskIDs.contains(open) { navigator.closeTask() }
     }
 
@@ -1044,10 +1090,10 @@ extension Workbench {
         if listens { toggleVoice() }
     }
 
-    /// Closes capture. Escape and a saved task are done with the draft; a
-    /// click away, or search or the palette taking its place, `keepsDraft`
-    /// for the next capture on this page for a few minutes, as Quick Add
-    /// keeps its own.
+    /// Closes capture. A saved task is done with the draft; Escape, a click
+    /// away, or search or the palette taking its place, `keepsDraft` for the
+    /// next capture on this page for a few minutes, as Quick Add keeps its
+    /// own, tasks heard by voice included.
     func closeCapture(keepsDraft: Bool = false) {
         if keepsDraft, voice.isActive {
             voice.preserveForReview()
@@ -1150,12 +1196,75 @@ extension Workbench {
         case let .found(slot):
             place(task, start: slot.start, end: slot.end, dayOffset: NXFormat.dayOffset(slot.start, now: now))
         case let .none(reach):
-            let week = switch reach {
-            case .thisWeek: "this week"
-            case .nextWeek: "this week or next"
-            case let .weekFrom(day): "in the week from \(NXFormat.dueLabel(day))"
+            showTray("No free slot \(Self.searched(reach)) — try a shorter estimate", icon: "calendar.badge.exclamationmark", tone: .neutral)
+        }
+    }
+
+    /// Fits each task in turn, each slot taken before the next is looked for,
+    /// as one change: one Undo takes every slot back, and one tray says what
+    /// was planned and how many found no slot, in amber when some didn't.
+    /// One task is fitted as `fit(_:)` fits it.
+    func fit(_ ids: [UUID]) {
+        var seen: Set<UUID> = []
+        let tasks = ids.filter { seen.insert($0).inserted }.compactMap { store.block(id: $0) }.filter { !$0.isCompleted }
+        guard tasks.count > 1 else {
+            if let task = tasks.first { fit(task.id) }
+            return
+        }
+        let now = Date.now
+        var placed: [(id: UUID, occurrenceID: UUID, previous: [PlacementSpan], spans: [PlacementSpan])] = []
+        var missed: [(title: String, reach: PlanSlot.Reach)] = []
+        for task in tasks {
+            let minutes = task.schedulingEstimateMinutes > 0 ? task.schedulingEstimateMinutes : defaultEstimate
+            switch calendar.freeSlot(for: task, minutes: minutes, weekCalendar: settings.calendar, now: now) {
+            case let .found(slot):
+                let previous = store.placements(taskID: task.id).filter { $0.occurrenceID == task.occurrenceID }
+                    .map { PlacementSpan(start: $0.start, end: $0.end, isPinned: $0.isPinned) }
+                let spans = [PlacementSpan(start: slot.start, end: slot.end, isPinned: true)]
+                setPlacements(of: task.id, occurrenceID: task.occurrenceID, to: spans)
+                // The next task's slot keeps clear of this one.
+                calendar.replan()
+                placed.append((task.id, task.occurrenceID, previous, spans))
+            case let .none(reach):
+                missed.append((task.displayTitle, reach))
             }
-            showTray("No free slot \(week) — try a shorter estimate", icon: "calendar.badge.exclamationmark", tone: .neutral)
+        }
+        // Where Fit looked, when it looked as far for every task it missed.
+        let reaches = missed.map(\.reach)
+        let looked = reaches.dropFirst().allSatisfy { $0 == reaches.first } ? reaches.first.map { " " + Self.searched($0) } ?? "" : ""
+        guard let first = placed.min(by: { ($0.spans.first?.start ?? now) < ($1.spans.first?.start ?? now) }),
+              let start = first.spans.first?.start else {
+            showTray("No free slot\(looked) for \(missed.count) tasks — try shorter estimates",
+                     icon: "calendar.badge.exclamationmark", tone: .neutral)
+            return
+        }
+        var label = "Planned \(placed.count) tasks"
+        if placed.count == 1, let task = tasks.first(where: { $0.id == first.id }) {
+            let day = NXFormat.dayOffset(start, now: now) == 0 ? "Today" : NXFormat.dueLabel(start)
+            label = "Planned \(NXFormat.quoted(task.displayTitle)) · \(day) \(NXFormat.clock(start))"
+        }
+        if !missed.isEmpty {
+            label += " · \(missed.count == 1 ? NXFormat.quoted(missed[0].title) : "\(missed.count)") had no free slot\(looked)"
+        }
+        registerUndo(label, undo: { workbench in
+            for task in placed { workbench.setPlacements(of: task.id, occurrenceID: task.occurrenceID, to: task.previous) }
+            workbench.calendar.replan()
+        }, redo: { workbench in
+            for task in placed { workbench.setPlacements(of: task.id, occurrenceID: task.occurrenceID, to: task.spans) }
+            workbench.calendar.replan()
+        })
+        snap(label, icon: "sparkles", tone: missed.isEmpty ? .accent : .amber, ids: placed.map(\.id),
+             destination: navigator.route == .calendar ? nil : TrayDestination(label: "Show", route: .calendar, day: start))
+        revealOnCalendar(start)
+        flashBlock(first.id)
+    }
+
+    /// How far Fit looked for a slot it didn't find, as its tray says it.
+    private static func searched(_ reach: PlanSlot.Reach) -> String {
+        switch reach {
+        case .thisWeek: "this week"
+        case .nextWeek: "this week or next"
+        case let .weekFrom(day): "in the week from \(NXFormat.dueLabel(day))"
         }
     }
 

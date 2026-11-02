@@ -52,6 +52,18 @@ struct NXListMenu<Options: View>: View {
             if let rename { Button("Rename List…", action: rename).disabled(keepsCapture) }
             Button("Move List…") { env.listPendingMove = list }
                 .disabled(keepsCapture)
+            // The sidebar section it's filed in, as a drag there files it: a
+            // top-level list's, that's still in use.
+            if !archived, library.hierarchy.parent(of: list.id) == nil, !library.sections.isEmpty {
+                Menu("Section") {
+                    ForEach(library.sections, id: \.id) { section in
+                        let filed = list.isPinned && list.sectionID == section.id
+                        Toggle(section.displayTitle, isOn: Binding(get: { filed }, set: { _ in
+                            if !filed { workbench.moveList(list, toSection: section.id, above: nil) }
+                        }))
+                    }
+                }
+            }
             Button("New Child List") { workbench.createChildList(in: list) }
                 .disabled(archived)
         }
@@ -93,7 +105,8 @@ struct NXListMenu<Options: View>: View {
         }
         .pickerStyle(.inline)
         Divider()
-        Button("Edit Hours in Settings…") { workbench.go(.settings) }
+        // Opens the list's own hours there, in view.
+        Button("Edit Hours in Settings…") { workbench.editHours(workbench.hours(for: list)) }
     }
 
     /// The list's document on the clipboard, as Export writes it, said in the tray.

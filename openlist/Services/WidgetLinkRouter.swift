@@ -35,6 +35,10 @@ final class WidgetLinkRouter {
     /// Makes Openlist the active app once a link has shown its screen. The
     /// app installs it; Quick Add never calls it.
     var activate: () -> Void = {}
+    /// Clears the window before a link's screen shows there, so it lands in
+    /// sight: overlays, capture with its draft put aside, the Work panel and
+    /// any sheet. The app installs it; Quick Add never calls it.
+    var prepare: () -> Void = {}
     /// Says that a task or list link's target is gone, as an item link's
     /// notice does: a link that silently does nothing explains nothing.
     var unavailable: () -> Void = {}
@@ -115,7 +119,7 @@ final class WidgetLinkRouter {
         case .calendar, .working:
             // Up Next and Agenda: today's work, whichever range the Calendar
             // was left on. The iPhone's Live Activity's link lands there too.
-            navigator.isShortcutSheetOpen = false
+            prepare()
             screens.showOnCalendar(.now)
             activate()
         case .activity:
@@ -148,22 +152,21 @@ final class WidgetLinkRouter {
         } catch {
             return missing()
         }
+        prepare()
         navigator.isSearchOpen = false
         navigator.isCommandPaletteOpen = false
-        navigator.isShortcutSheetOpen = false
         navigator.reveal(request)
         activate()
     }
 
     /// Leaves the window where it is, and says why.
     private func missing() {
-        navigator.isShortcutSheetOpen = false
         unavailable()
         activate()
     }
 
     private func show(_ route: AppRoute) {
-        navigator.isShortcutSheetOpen = false
+        prepare()
         screens.go(route)
     }
 }

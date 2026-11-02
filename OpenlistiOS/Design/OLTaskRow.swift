@@ -207,9 +207,9 @@ struct OLTrailingView: View {
 /// value. 52 pt at least, 16 pt sides, 14 pt between. A subtask (`depth` 1)
 /// sits 36 pt in. With a subtitle (`.two`) it's 62 pt, the subtitle 13/18.
 ///
-/// The checkbox and the title are separate targets: the checkbox acts, the
-/// rest of the row opens the task. A `trailingControl` makes the trailing
-/// value a third.
+/// The checkbox and the title are separate targets: the checkbox acts, and
+/// the rest of the row, above, below and after the text too, opens the
+/// task. A `trailingControl` makes the trailing value a third.
 struct OLTaskRow<TrailingControl: View>: View {
     let title: String
     var state: OLCheck = .open
@@ -226,7 +226,8 @@ struct OLTaskRow<TrailingControl: View>: View {
     var onOpen: (() -> Void)?
     /// Drawn in the trailing value's place, outside the target that opens
     /// the task, so the value acts on its own: a due date's menu. It draws
-    /// the value itself, centred in a target of its own, 44 pt tall.
+    /// the value itself at the top of a target of its own, 44 pt tall, that
+    /// reaches down from the value rather than up over the title.
     var trailingControl: TrailingControl?
 
     /// Where the trailing value sits in the row's text, for its control.
@@ -236,19 +237,20 @@ struct OLTaskRow<TrailingControl: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // The checkbox centres on the row's text, whose padding is the open
+        // target's own.
         HStack(spacing: 14) {
             OLCheckbox(state, title: title, action: onToggle)
             content
         }
-        .padding(.vertical, subtitle == nil && trailing == nil ? 13 : 11)
         .padding(.leading, 16 + (depth > 0 ? 36 : 0))
-        .padding(.trailing, 16)
-        .frame(maxWidth: .infinity, minHeight: subtitle == nil && trailing == nil ? minHeight : twoLineHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(isHighlighted ? OL.accentSoft : .clear)
         .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
     }
 
     @ViewBuilder private var content: some View {
+        let oneLine = subtitle == nil && trailing == nil
         let label = VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(OLFont.rowTitle)
@@ -280,6 +282,9 @@ struct OLTaskRow<TrailingControl: View>: View {
                 .foregroundStyle(OL.muted)
             }
         }
+        .padding(.vertical, oneLine ? 13 : 11)
+        .padding(.trailing, 16)
+        .frame(maxWidth: .infinity, minHeight: oneLine ? minHeight : twoLineHeight, alignment: .leading)
         .contentShape(.rect)
         // The control sits over the button, not in it, covering only the
         // value it draws: the rest of the row still opens the task.
@@ -295,9 +300,9 @@ struct OLTaskRow<TrailingControl: View>: View {
                 label.accessibilityElement(children: .combine)
             }
             if let trailingControl, let trailingFrame, trailing != nil {
-                // Centred on the value it draws.
+                // On the value it draws, its target hanging below it.
                 trailingControl
-                    .frame(width: trailingFrame.width, height: trailingFrame.height)
+                    .frame(width: trailingFrame.width, height: trailingFrame.height, alignment: .top)
                     .offset(x: trailingFrame.minX, y: trailingFrame.minY)
             }
         }
@@ -385,10 +390,12 @@ struct OLSeparatorLine: View {
     }
 }
 
-/// A row's press: it dims, and doesn't shrink.
+/// A row's press: it dims, and doesn't shrink. Disabled, it dims to 0.4.
 struct OLRowPressStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
+        configuration.label.opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
     }
 }
 
@@ -398,9 +405,9 @@ struct OLCardRows<Item: Identifiable, Row: View>: View {
     @ViewBuilder var row: (Item, _ separator: OLSeparator) -> Row
     var depth: (Item) -> Int = { _ in 0 }
     /// Builds only the rows on screen, for cards that can hold every open
-    /// task (Lists' Tasks view, Find, Select). A screen of short cards, as
-    /// Today's, stays eager, so its first layout is exact and the page opens
-    /// at its top.
+    /// task (Lists' Tasks view, Find, Select, the Inbox) or every done one
+    /// (a list's done fold). A screen of short cards, as Today's, stays
+    /// eager, so its first layout is exact and the page opens at its top.
     var lazy = false
 
     init(_ items: [Item], lazy: Bool = false, depth: @escaping (Item) -> Int = { _ in 0 },

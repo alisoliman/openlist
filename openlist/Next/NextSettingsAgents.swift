@@ -30,8 +30,8 @@ struct NXAgentSettings: View {
                 .disabled(!settings.mcpEnabled)
             if case .failed(let error) = mcp.status {
                 NXSettingRow(label: "Status", hint: error, hintColor: NX.redText, selectable: true) {
-                    HStack(spacing: 6) {
-                        NXValuePill(text: mcp.statusText)
+                    HStack(spacing: 10) {
+                        NXSettingStatus(text: mcp.statusText)
                         Button("Retry") { mcp.restart() }
                     }
                 }
@@ -40,7 +40,7 @@ struct NXAgentSettings: View {
                              hint: settings.mcpEnabled
                                  ? "Keep Openlist open. Connections stay on this Mac and require a private token."
                                  : "Agents can connect while the server is on") {
-                    NXValuePill(text: mcp.statusText)
+                    NXSettingStatus(text: mcp.statusText)
                 }
             }
 

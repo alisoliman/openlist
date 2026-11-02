@@ -239,6 +239,9 @@ final class OutlineEditor {
 
     private(set) var focus = EditorFocus()
     private(set) var slash: SlashState?
+    /// Image lines whose file is still being copied in, past a moment, which
+    /// show "Attaching…" meanwhile.
+    private(set) var attachingImages: Set<UUID> = []
     /// This document's scope in the navigator's row selection.
     let selectionScopeID = UUID()
 
@@ -404,7 +407,7 @@ final class OutlineEditor {
         case .image:
             env.store.changeKind(block, to: .image)
             env.store.save()
-            presentImagePicker(for: block)
+            Task { await presentImagePicker(for: block) }
 
         default:
             convert(block, to: kind)
@@ -413,21 +416,50 @@ final class OutlineEditor {
         }
     }
 
-    private func presentImagePicker(for block: Block) {
+    /// Asks for the image an image line shows, in a sheet on the window when
+    /// there is one. The file is read and copied in off the main thread,
+    /// so a large one holds nothing up, its line saying "Attaching…" once
+    /// it takes a moment. A line given no image turns back into text.
+    private func presentImagePicker(for block: Block) async {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
 
-        guard panel.runModal() == .OK, let url = panel.url else {
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.mainWindow, window.isVisible, window.attachedSheet == nil {
+            response = await panel.beginSheetModal(for: window)
+        } else {
+            response = panel.runModal()
+        }
+        guard response == .OK, let url = panel.url else {
+            guard block.modelContext != nil, !block.isDeleted else { return }
             env.store.changeKind(block, to: .paragraph)
             env.store.save()
             focus.request(block.id, caret: 0)
             return
         }
 
+        let id = block.id
+        // Only past a moment, so a small image never flashes it.
+        let shown = Task { () -> Bool in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return false }
+            attachingImages.insert(id)
+            return true
+        }
+        let imported = await Task.detached(priority: .userInitiated) {
+            Result { try MediaStore.shared.importFile(at: url) }
+        }.value
+        shown.cancel()
+        if await shown.value { attachingImages.remove(id) }
+        // A line taken away meanwhile leaves its image to no one.
+        guard block.modelContext != nil, !block.isDeleted else {
+            if case let .success(media) = imported { MediaStore.shared.delete(filename: media.filename) }
+            return
+        }
         do {
-            let media = try MediaStore.shared.importFile(at: url)
+            let media = try imported.get()
             block.mediaFilename = media.filename
             block.mediaData = media.data
             block.mediaWidth = media.pixelSize.width
@@ -435,7 +467,8 @@ final class OutlineEditor {
             block.mediaCaption = ""
             let paragraph = env.store.insertBlock(kind: .paragraph, after: block)
             env.store.save()
-            focus.request(paragraph.id, caret: 0)
+            // The caret goes on under the image, unless it has gone elsewhere meanwhile.
+            if focus.blockID == id || focus.blockID == nil { focus.request(paragraph.id, caret: 0) }
         } catch {
             env.store.changeKind(block, to: .paragraph)
             env.store.save()
@@ -784,7 +817,9 @@ final class OutlineEditor {
     /// The design's Backspace at the start of a line. An empty line goes and
     /// the caret ends the line above, or starts the one below at the top;
     /// a heading or list item turns into text; a nested line steps out.
-    /// Lines never merge.
+    /// Lines never merge. With none of that to do, a divider or image right
+    /// above goes instead, as a step of its own, the caret staying put: the
+    /// keyboard's way to remove a line that takes no caret.
     private func handleBackspace(block: Block, content: NSAttributedString) -> Bool {
         if content.length == 0 {
             let current = rows
@@ -809,6 +844,12 @@ final class OutlineEditor {
         if changed {
             env.store.save()
             focus.request(block.id, caret: 0)
+        } else {
+            let current = rows
+            if let index = current.firstIndex(where: { $0.id == block.id }), index > 0, current[index - 1].block.kind.isVoid {
+                deleteLine(current[index - 1].id)
+                focus.request(block.id, caret: 0)
+            }
         }
         // Nothing to do still takes the key, so AppKit doesn't beep.
         return true
@@ -851,6 +892,18 @@ final class OutlineEditor {
 
     /// Whether `id` is one of the rows on show.
     func shows(_ id: UUID) -> Bool { rows.contains { $0.id == id } }
+
+    /// ← and → on a focused task: fold away the lines under it, or show them,
+    /// as an outline's arrows do, when it has lines its chevron folds. One a
+    /// reveal shows open folds back, as its chevron folds it.
+    func setFolded(_ id: UUID, _ folded: Bool) {
+        guard let row = rows.first(where: { $0.id == id }), row.block.isTask else { return }
+        // Showing only tasks, its chevron folds only the tasks under it.
+        let folds = tasksOnly ? BlockTree.descendants(of: id, in: blocks).contains(where: \.isTask) : row.hasChildren
+        let shownOpen = !row.block.isCollapsed || reveal?.ancestorIDs.contains(id) == true
+        guard folds, shownOpen == folded else { return }
+        actions(for: row).onToggleCollapse()
+    }
 
     /// The nearest task on show after `id`, or before it, for keys that step
     /// through tasks from a line that isn't one.

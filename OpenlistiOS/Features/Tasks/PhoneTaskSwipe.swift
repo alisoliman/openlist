@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 
 /// Swipe actions for card rows, including Inbox's own wording. A short right
-/// swipe exposes two 44-point icon targets; continuing right arms Today.
+/// swipe exposes two 44-point icon targets; continuing right arms Today. A
+/// short left swipe exposes Trash; continuing left arms it.
 struct PhoneTaskSwipe: ViewModifier {
     let task: Block
     @Environment(PhoneEnvironment.self) private var env
@@ -28,12 +29,15 @@ struct PhoneTaskSwipe: ViewModifier {
                 // accidentally opening or completing the task underneath.
                 .overlay {
                     if offset != 0 {
-                        Button("Close task actions") { close() }
-                            .foregroundStyle(.clear)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(.rect)
-                            .accessibilityIdentifier("task.swipe.close")
-                            .offset(x: offset)
+                        Button { close() } label: {
+                            Color.clear
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Close task actions")
+                        .accessibilityIdentifier("task.swipe.close")
+                        .offset(x: offset)
                     }
                 }
         }
@@ -73,6 +77,8 @@ struct PhoneTaskSwipe: ViewModifier {
                 }
             }
         }
+        // Somewhere else taking the screen takes the question with it.
+        .onChange(of: env.navigator.arrivals) { picksList = false }
     }
 
     @ViewBuilder private var controls: some View {
@@ -96,36 +102,48 @@ struct PhoneTaskSwipe: ViewModifier {
         } else if offset < 0 {
             HStack {
                 Spacer(minLength: 0)
-                Button("Move to Trash", systemImage: "trash") {
-                    close()
-                    env.actions.trash([task])
+                if armed == .trash {
+                    Label("Trash", systemImage: "trash.fill")
+                        .font(OLFont.meta)
+                        .foregroundStyle(OL.onDanger)
+                        .padding(.trailing, 6)
+                        .accessibilityHidden(true)
+                } else {
+                    circleButton("Move to Trash", symbol: "trash", ink: OL.onDanger, fill: OL.danger) {
+                        close()
+                        env.actions.trash([task])
+                    }
+                    .accessibilityIdentifier("task.swipe.delete")
                 }
-                .labelStyle(.iconOnly)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(OL.onDanger)
-                .frame(width: 44, height: 44)
-                .background(OL.danger, in: .circle)
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("task.swipe.delete")
             }
             .padding(.trailing, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(OL.dangerSoft)
+            .background(armed == .trash ? OL.danger : OL.dangerSoft)
         }
     }
 
+    /// A shortcut that can't apply stays dimmed but tappable, and says why.
     private func actionButton(_ action: TaskSwipeAction, slot: String) -> some View {
         let symbol = action == .star && task.isStarred ? "star.fill" : action == .complete && completed ? "arrow.uturn.backward" : action.symbol
-        return Button(actionTitle(action), systemImage: symbol) { perform(action) }
-            .labelStyle(.iconOnly)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(action == .star ? OL.todayText : OL.accentText)
-            .frame(width: 44, height: 44)
-            .background(OL.surface, in: .circle)
-            .buttonStyle(.plain)
-            .disabled(!isAvailable(action))
+        return circleButton(actionTitle(action), symbol: symbol, ink: action == .star ? OL.todayText : OL.accentText,
+                            fill: OL.surface) { perform(action) }
             .opacity(isAvailable(action) ? 1 : 0.4)
             .accessibilityIdentifier("task.swipe.\(slot)")
+    }
+
+    /// A revealed action: its glyph on a 44 pt disc, all of which is the target.
+    private func circleButton(_ title: String, symbol: String, ink: Color, fill: Color,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(ink)
+                .frame(width: 44, height: 44)
+                .background(fill, in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private func actionTitle(_ action: TaskSwipeAction) -> String {
@@ -142,8 +160,25 @@ struct PhoneTaskSwipe: ViewModifier {
         }
     }
 
+    /// Says for 3 s in the tray why `action` can't apply to the task now, or
+    /// with nil why Today can't have it: there's no other list, the task is
+    /// done, or its list is archived.
+    private func explainUnavailable(_ action: TaskSwipeAction?) {
+        let reason: String
+        if action == .moveToList {
+            reason = "There’s no other list to move it to"
+        } else if completed {
+            reason = "“\(task.displayTitle)” is done"
+        } else if let list = library.list(task.listID), !library.hierarchy.activeIDs.contains(list.id) {
+            reason = "“\(list.displayTitle)” is archived"
+        } else {
+            reason = "“\(task.displayTitle)” can’t be planned now"
+        }
+        env.tray.show(reason, icon: "exclamationmark.circle", tone: .neutral, seconds: 3)
+    }
+
     private func perform(_ action: TaskSwipeAction) {
-        guard isAvailable(action) else { return }
+        guard isAvailable(action) else { return explainUnavailable(action) }
         close()
         switch action {
         case .moveToList:
@@ -163,7 +198,7 @@ struct PhoneTaskSwipe: ViewModifier {
         }
     }
 
-    private func drag(_ state: UIGestureRecognizer.State, translation: CGFloat) {
+    private func drag(_ state: UIGestureRecognizer.State, translation: CGFloat, velocity: CGFloat) {
         switch state {
         case .began:
             origin = offset
@@ -176,7 +211,8 @@ struct PhoneTaskSwipe: ViewModifier {
             if nextArmed != armed, nextArmed != nil { env.haptics.play(.selection) }
             armed = nextArmed
         case .ended:
-            let result = TaskSwipeMotion.result(translation: translation, origin: origin, width: width, allowsToday: allowsToday)
+            let result = TaskSwipeMotion.result(translation: translation, origin: origin, width: width,
+                                                allowsToday: allowsToday, velocity: velocity)
             armed = nil
             switch result {
             case .today:
@@ -187,6 +223,10 @@ struct PhoneTaskSwipe: ViewModifier {
                 env.actions.trash([task])
             case .shortcuts:
                 settle(at: TaskSwipeMotion.shortcutsWidth)
+                // A full swipe that can't add to Today says why rather than nothing.
+                if !allowsToday, TaskSwipeMotion.result(translation: translation, origin: origin, width: width) == .today {
+                    explainUnavailable(nil)
+                }
             case .delete:
                 settle(at: -TaskSwipeMotion.deleteWidth)
             case .closed:

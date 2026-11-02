@@ -168,14 +168,17 @@ final class ScreensUITests: XCTestCase {
         snap(app, "capture-due-tomorrow")
         due.tap()
         app.buttons["Choose date & time…"].tap()
-        let picker = app.waitForScreen("capture.duePicker")
+        // The picker opens in the sheet, in place of the field.
+        let picker = app.waitForScreen("screen.capture")
+        let day = app.datePickers["duePicker.day"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
         picker.buttons["Next week"].tap()
         let includesTime = picker.switches["duePicker.includesTime"]
         XCTAssertEqual(includesTime.value as? String, "0")
         includesTime.tap()
         XCTAssertEqual(includesTime.value as? String, "1")
         picker.buttons["Set"].tap()
-        app.waitForScreenToClose("capture.duePicker")
+        XCTAssertTrue(day.waitForNonExistence(timeout: 5))
         XCTAssertEqual(due.value as? String, "Mon 28, 00:00")
         app.screen("screen.capture").buttons["Add"].tap()
         app.waitForScreenToClose("screen.capture")
@@ -203,10 +206,12 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "Book studio fri 6pm ~30m #travel")
         due.tap()
         app.buttons["Choose date & time…"].tap()
-        let picker = app.waitForScreen("capture.duePicker")
+        let picker = app.waitForScreen("screen.capture")
+        let day = app.datePickers["duePicker.day"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
         picker.buttons["Next week"].tap()
         picker.buttons["Cancel"].tap()
-        app.waitForScreenToClose("capture.duePicker")
+        XCTAssertTrue(day.waitForNonExistence(timeout: 5))
         XCTAssertEqual(due.value as? String, "Tomorrow, 18:00")
         XCTAssertEqual(field.value as? String, "Book studio fri 6pm ~30m #travel")
         field.tap()
@@ -221,7 +226,7 @@ final class ScreensUITests: XCTestCase {
     }
 
     /// A swipe down, often meant only to lower the keyboard, keeps a draft;
-    /// Cancel still closes the sheet and discards it.
+    /// Cancel asks, and Discard closes the sheet and throws it away.
     @MainActor
     func testCaptureSwipeDownKeepsDraft() {
         let app = launch(environment: ["OpenlistOpenRoute": "inbox"])
@@ -235,8 +240,7 @@ final class ScreensUITests: XCTestCase {
         top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 480)))
         XCTAssertFalse(sheet.waitForNonExistence(timeout: 2), "A swipe down must not discard a typed draft")
         XCTAssertEqual(field.value as? String, "Water the balcony plants")
-        sheet.buttons["Cancel"].tap()
-        app.waitForScreenToClose("screen.capture")
+        app.discardCapture()
         XCTAssertFalse(app.buttons["Water the balcony plants"].exists)
     }
 
@@ -560,15 +564,19 @@ final class ScreensUITests: XCTestCase {
         snap(app, "detail-estimate")
     }
 
-    /// History goes to Activity, as the design links it.
+    /// History is the task's own, with all activity a step on.
     @MainActor
     func testTaskDetailHistoryOpensActivity() {
         let app = launch()
         app.buttons["Write interview feedback for Priya"].tap()
         app.waitForScreen("screen.taskDetail")
         app.buttons["detail.history"].tap()
+        app.waitForScreen("screen.taskHistory")
+        app.buttons["history.activity"].tap()
         app.waitForScreen("screen.activity")
-        app.buttons["Back to Task"].tap()
+        app.buttons["Back to History"].tap()
+        app.waitForScreen("screen.taskHistory")
+        app.buttons["Back to Write interview feedback for Priya"].tap()
         app.waitForScreen("screen.taskDetail")
     }
 

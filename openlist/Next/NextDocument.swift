@@ -333,7 +333,7 @@ private struct NXDocumentRow: View {
         }
         .overlay(alignment: .topLeading) {
             if hasCaret {
-                NXDocumentCaret(open: !block.isCollapsed, title: block.displayTitle) {
+                NXDocumentCaret(open: !block.isCollapsed, title: block.displayTitle, keyed: block.isTask) {
                     // The line being written is left first, as the design's input blurs.
                     // The lines show or hide at once; only the chevron turns.
                     NXDocumentEditing.end()
@@ -499,6 +499,8 @@ private struct NXDocumentCaret: View {
     let open: Bool
     /// The line's title, for VoiceOver.
     let title: String
+    /// A task's, which ← and → fold from its focused row too.
+    var keyed = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -516,6 +518,7 @@ private struct NXDocumentCaret: View {
         .buttonStyle(.plain)
         .focusable(false)
         .onHover { hovering = $0 }
+        .help((open ? "Collapse" : "Expand") + (keyed ? (open ? " (←)" : " (→)") : ""))
         .accessibilityLabel("\(open ? "Collapse" : "Expand") \(NXFormat.quoted(title))")
     }
 }
@@ -610,7 +613,10 @@ private struct NXDocumentTask: View {
                 .animation(NX.cssEase(140)) {
                     $0.opacity(noteHovering ? 1 : noteOpen ? 0.9 : rowHovering || editing ? 0.5 : 0)
                 }
-                .help(noteName(open: noteOpen))
+                // Space does the same from the focused row; out of sight at
+                // rest, the button is no Tab stop.
+                .help(noteName(open: noteOpen) + (editing ? "" : " (Space)"))
+                .focusable(false)
                 .accessibilityLabel(noteName(open: noteOpen))
             }
             .onHover { rowHovering = $0 }
@@ -1071,29 +1077,40 @@ private struct NXDocumentBlock: View {
 /// click away commits it as a step of its own, and Escape leaves it as it was.
 private struct NXDocumentImage: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.displayScale) private var displayScale
     let block: Block
     let editor: OutlineEditor
     @State private var hovering = false
     @State private var editing = false
     @State private var draft = ""
     @FocusState private var focused: Bool
+    /// The image decoded off the main thread, for the file and size in `key`;
+    /// nil when it couldn't be read.
+    @State private var loaded: (key: String, image: NSImage?)?
 
-    /// Decoded images by file name, which is unique to its contents: hovering
-    /// redraws the line, and decoding reads the whole file again.
-    private static let images: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        // Roughly a few large photos' decoded pixels; older ones go first.
-        cache.totalCostLimit = 96 << 20
-        return cache
-    }()
+    /// As wide as the image is drawn: the line's measure, or its own width.
+    private var width: CGFloat { min(560, block.mediaWidth > 0 ? block.mediaWidth : 560) }
 
+    /// Its shape, when its size is known.
+    private var aspectRatio: CGFloat? {
+        block.mediaWidth > 0 && block.mediaHeight > 0 ? block.mediaWidth / block.mediaHeight : nil
+    }
+
+    /// The longest side it's drawn, in pixels: its width, or for a tall
+    /// image the height that width gives it.
+    private var drawnPixels: Int {
+        Int((width * max(1, aspectRatio.map { 1 / $0 } ?? 2) * displayScale).rounded(.up))
+    }
+
+    /// What's decoded for the line: its file at the size it's drawn.
+    private var key: String? { block.mediaFilename.map { "\($0)@\(drawnPixels)" } }
+
+    /// The image drawn: decoded already for this key, or kept from before, so
+    /// a line scrolled back into view has it at once.
     private var image: NSImage? {
         guard let filename = block.mediaFilename else { return nil }
-        if let image = Self.images.object(forKey: filename as NSString) { return image }
-        guard let image = MediaStore.shared.image(named: filename, data: block.mediaData) else { return nil }
-        let pixels = image.representations.first.map { $0.pixelsWide * $0.pixelsHigh } ?? 0
-        Self.images.setObject(image, forKey: filename as NSString, cost: max(0, pixels) * 4)
-        return image
+        if let loaded, loaded.key == key { return loaded.image }
+        return MediaStore.shared.cachedThumbnail(named: filename, maxPixelSize: drawnPixels)
     }
 
     var body: some View {
@@ -1102,14 +1119,30 @@ private struct NXDocumentImage: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: min(560, block.mediaWidth > 0 ? block.mediaWidth : 560), alignment: .leading)
+                    .frame(maxWidth: width, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
+            } else if let aspectRatio, key != nil, loaded?.key != key {
+                // Its own shape while it's decoded, so nothing below moves as it appears.
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(NX.ink(0.035))
+                    .aspectRatio(aspectRatio, contentMode: .fit)
+                    .frame(maxWidth: width, alignment: .leading)
             } else {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(NX.ink(0.035))
                     .frame(height: 80)
-                    .overlay(Image(systemName: "photo").foregroundStyle(NX.ink(0.3)))
+                    .overlay {
+                        if editor.attachingImages.contains(block.id) {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Attaching…").font(.system(size: 12)).foregroundStyle(NX.textTertiary)
+                            }
+                            .accessibilityElement(children: .combine)
+                        } else {
+                            Image(systemName: "photo").foregroundStyle(NX.ink(0.3))
+                        }
+                    }
             }
             caption
         }
@@ -1117,6 +1150,24 @@ private struct NXDocumentImage: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .task(id: key) { await load() }
+    }
+
+    /// Decodes the line's image at the size it's drawn, off the main thread:
+    /// a large photo no longer holds up scrolling to it.
+    private func load() async {
+        guard let filename = block.mediaFilename, let key else { return }
+        let pixels = drawnPixels
+        if let image = MediaStore.shared.cachedThumbnail(named: filename, maxPixelSize: pixels) {
+            loaded = (key, image)
+            return
+        }
+        let data = block.mediaData
+        let image = await Task.detached(priority: .userInitiated) {
+            MediaStore.shared.thumbnail(named: filename, data: data, maxPixelSize: pixels)
+        }.value
+        guard !Task.isCancelled else { return }
+        loaded = (key, image)
     }
 
     @ViewBuilder

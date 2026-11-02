@@ -6,20 +6,24 @@
 import SwiftUI
 
 /// Task detail's Labels: every label to tick on or off, and a new one by name.
-/// Each tick is one step with Undo in the tray.
+/// Each tick is one step with Undo in the tray. A name typed and not yet
+/// added is added as the sheet goes, however it goes.
 struct LabelPickerSheet: View {
     let task: Block
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
+    @FocusState private var naming: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Labels").font(OLFont.linkStrong)
                 Spacer()
-                Button("Done") { dismiss() }.buttonStyle(.olLink(strong: true))
+                Button("Done") { dismiss() }
+                    .buttonStyle(.olLink(strong: true))
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(.top, 14)
             ScrollView {
@@ -43,12 +47,20 @@ struct LabelPickerSheet: View {
                         TextField("New label", text: $name)
                             .font(OLFont.rowTitle)
                             .textInputAutocapitalization(.never)
+                            // A label is a name, not a word to correct.
+                            .autocorrectionDisabled()
+                            .focused($naming)
                             .submitLabel(.done)
-                            .onSubmit(addNew)
+                            .onSubmit {
+                                addNew()
+                                naming = true
+                            }
                             .accessibilityIdentifier("labels.new")
                     }
                     .padding(.horizontal, 16)
                     .frame(minHeight: 52)
+                    .contentShape(.rect)
+                    .onTapGesture { naming = true }
                     .overlay(alignment: .top) { OLSeparatorLine(separator: library.labels.isEmpty ? .none : .inset(16)) }
                 }
                 .olCard()
@@ -59,6 +71,9 @@ struct LabelPickerSheet: View {
         .padding(.horizontal, OLMetrics.gutter)
         .presentationDetents([.medium, .large])
         .olSheet()
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(.escape) { dismiss() }
+        .onDisappear(perform: addNew)
     }
 
     private func toggle(_ label: TaskLabel, isOn: Bool) {
@@ -75,66 +90,70 @@ struct LabelPickerSheet: View {
 }
 
 /// A task's saved history, newest first: what changed, the detail, and when,
-/// as the Mac's inspector lists it.
-struct TaskHistorySheet: View {
-    let task: Block
+/// as the Mac's inspector lists it, pushed from the task's page, with all
+/// activity a step on.
+struct TaskHistoryScreen: View {
+    let taskID: UUID
     @Environment(PhoneEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
     @State private var events: [ActivityEvent] = []
     @State private var limit = 50
+    /// Why the history couldn't be read, in place of saying nothing changed.
+    @State private var loadError: String?
 
     var body: some View {
+        let navigator = env.navigator
         let now = env.now
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("History").font(OLFont.linkStrong)
-                Spacer()
-                Button("Done") { dismiss() }.buttonStyle(.olLink(strong: true))
-            }
-            .padding(.top, 14)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Created \(NXFormat.moment(task.createdAt, now: now))"
-                         + (task.completedAt.map { " · Completed \(NXFormat.moment($0, now: now))" } ?? ""))
-                        .font(OLFont.meta)
+        let route = PhoneRoute.taskHistory(taskID)
+        OLScreen(identifier: route.screenIdentifier) {
+            OLTopBar { OLBackButton(env.backTitle(for: route)) { navigator.pop() } }
+        } content: {
+            if let task = env.store.block(id: taskID), task.isTask {
+                OLHeader("History", sub: task.displayTitle)
+                Text("Created \(NXFormat.moment(task.createdAt, now: now))"
+                     + (task.completedAt.map { " · Completed \(NXFormat.moment($0, now: now))" } ?? ""))
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.muted)
+                    .padding(.horizontal, 4)
+                    .padding(.top, OLMetrics.headerGap)
+                    .padding(.bottom, 8)
+                if let loadError {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(loadError).font(OLFont.note).foregroundStyle(OL.muted)
+                        Button("Try Again", action: load).buttonStyle(.olLink())
+                    }
+                    .padding(.horizontal, 4)
+                } else if events.isEmpty {
+                    Text("Nothing else has changed yet.")
+                        .font(OLFont.note)
                         .foregroundStyle(OL.muted)
                         .padding(.horizontal, 4)
-                        .padding(.bottom, 8)
-                    if events.isEmpty {
-                        Text("Nothing else has changed yet.")
-                            .font(OLFont.note)
-                            .foregroundStyle(OL.muted)
-                            .padding(.horizontal, 4)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                                row(event, now: now)
-                                    .overlay(alignment: .top) { OLSeparatorLine(separator: index == 0 ? .none : .plain) }
-                            }
-                        }
-                        .olCard()
-                        if events.count >= limit {
-                            Button("Show older") {
-                                limit += 50
-                                load()
-                            }
-                            .buttonStyle(.olLink())
-                            .frame(maxWidth: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                            row(event, now: now)
+                                .overlay(alignment: .top) { OLSeparatorLine(separator: index == 0 ? .none : .plain) }
                         }
                     }
-                    // Everything else that happened, day by day.
-                    OLLinkRow("All activity", topSpacing: 12) {
-                        dismiss()
-                        env.navigator.open(.activity)
+                    .olCard()
+                    if events.count >= limit {
+                        Button("Show older") {
+                            limit += 50
+                            load()
+                        }
+                        .buttonStyle(.olLink())
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
                     }
-                    .accessibilityIdentifier("history.activity")
                 }
-                .padding(.vertical, 12)
+                // Everything else that happened, day by day.
+                OLLinkRow("All activity", topSpacing: 12) { navigator.open(.activity) }
+                    .accessibilityIdentifier("history.activity")
+            } else {
+                OLEmptyState(symbol: "questionmark", tint: OL.muted, title: "This task is gone",
+                             message: "It was moved to Trash or deleted on another device.")
+                    .padding(.top, 80)
             }
         }
-        .padding(.horizontal, OLMetrics.gutter)
-        .presentationDetents([.medium, .large])
-        .olSheet()
         .onAppear(perform: load)
     }
 
@@ -158,6 +177,54 @@ struct TaskHistorySheet: View {
     }
 
     private func load() {
-        events = (try? env.store.taskActivity(for: task.id, limit: limit)) ?? []
+        do {
+            events = try env.store.taskActivity(for: taskID, limit: limit)
+            loadError = nil
+        } catch {
+            loadError = "This task’s history couldn’t be read. \(error.localizedDescription)"
+        }
+    }
+}
+
+/// Plan at a time: the day and time a task's slot starts, as dropping it on
+/// the timeline sets, for anyone not dragging. It runs for the task's
+/// estimate.
+struct PlanAtSheet: View {
+    let task: Block
+    @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
+    @State private var start = Date.now
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            OLSheetHeader(confirmTitle: "Plan", cancel: { dismiss() }) {
+                if env.actions.place(task, at: start) { dismiss() }
+            }
+            Text("Plan at a time").font(OLFont.groupHeader).foregroundStyle(OL.muted).padding(.top, 6)
+            DatePicker("Starts", selection: $start, in: env.now..., displayedComponents: [.date, .hourAndMinute])
+                .datePickerStyle(.graphical)
+                .tint(OL.accent)
+                .padding(.top, 6)
+                .accessibilityIdentifier("planAt.start")
+            Text("For \(CompactText.estimate(env.actions.planMinutes(for: task))), its estimate.")
+                .font(OLFont.meta)
+                .foregroundStyle(OL.muted)
+                .padding(.horizontal, 4)
+        }
+        .padding(.horizontal, OLMetrics.gutter)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+        .presentationDetents([.large])
+        .olSheet()
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(.escape) { dismiss() }
+        .onAppear { start = Self.nextQuarterHour(after: env.now, calendar: env.settings.calendar) }
+    }
+
+    /// The quarter hour after `now`: 10:40 starts at 10:45, 10:45 at 11:00.
+    static func nextQuarterHour(after now: Date, calendar: Calendar) -> Date {
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: now)
+        let minute = calendar.date(from: parts) ?? now
+        return calendar.date(byAdding: .minute, value: 15 - (parts.minute ?? 0) % 15, to: minute) ?? now
     }
 }

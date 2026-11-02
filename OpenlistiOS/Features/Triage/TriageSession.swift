@@ -97,8 +97,17 @@ extension NextLibrary {
         undatedCount(kept: kept(by: triage), closing: closing)
     }
 
-    private func kept(by triage: TriageSession) -> Set<UUID> {
-        triage.kept { id in tasks.first { $0.id == id }?.dueDate }
+    /// What `triage` keeps off its queue. The tasks' dates are looked up in
+    /// one dictionary, made only once a dated card asks, not by searching
+    /// every task for each card.
+    func kept(by triage: TriageSession) -> Set<UUID> {
+        var dueDates: [UUID: Date]?
+        return triage.kept { id in
+            let dates = dueDates ?? Dictionary(tasks.compactMap { task in task.dueDate.map { (task.id, $0) } },
+                                               uniquingKeysWith: { first, _ in first })
+            dueDates = dates
+            return dates[id]
+        }
     }
 }
 

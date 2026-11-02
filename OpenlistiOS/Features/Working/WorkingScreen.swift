@@ -33,13 +33,16 @@ private struct WorkingPage: View {
         OLScreen(identifier: PhoneRoute.working.screenIdentifier, scrolls: dynamicTypeSize.isAccessibilitySize) {
             OLTopBar {
                 OLIconButton("chevron.down", label: "Close", kind: .bare, iconSize: 22) { navigator.dismissCover() }
+                    .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("working.close")
             } trailing: {
                 if let task = work.task {
-                    // Over the tab Working came from, as the Next card opens it.
+                    // Pushed over the timer, as the Next card's task is: Back
+                    // comes back to it.
                     OLIconButton("doc.text", label: "Task details", kind: .bare, iconSize: 22) {
                         navigator.open(.taskDetail(task.id))
                     }
+                    .keyboardShortcut("i")
                 }
             }
         } content: {
@@ -50,7 +53,7 @@ private struct WorkingPage: View {
             } else {
                 OLEmptyState(symbol: "timer", tint: OL.accentText, title: "Nothing on now",
                              message: "Start a task from Today or its page, and it runs here.",
-                             actionTitle: "Back to Today") { navigator.dismissCover() }
+                             actionTitle: "Close") { navigator.dismissCover() }
                     .frame(maxHeight: .infinity)
             }
         }
@@ -190,11 +193,16 @@ private struct WorkingPage: View {
     }
 
     /// Stops recording and lets the work go, as the Mac's ✕: what ran is kept.
+    /// Undo, beside Pause where a tap can land on ✕, picks it up again.
     private func stop(_ task: Block) {
         let minutes = Int(env.calendar.trackedMinutes(for: task, now: env.now).rounded())
         env.calendar.stopWorking(now: env.now)
         env.calendar.dismissResume()
-        env.tray.show("Stopped · \(minutes) min recorded", icon: "stop.circle", tone: .neutral, seconds: 4)
+        let env = env
+        env.tray.show("Stopped · \(minutes) min recorded", icon: "stop.circle", tone: .neutral, seconds: 5) {
+            env.calendar.restoreResume(WorkTaskReference(task))
+            if env.actions.startWork(task) { env.navigator.show(.working) }
+        }
         env.haptics.play(.soft)
         env.navigator.dismissCover()
     }

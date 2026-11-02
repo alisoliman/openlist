@@ -38,7 +38,28 @@ final class PhoneNavigator {
     var captureListenRequestID: UUID?
     /// The Settings sheet's own stack: Activity and Trash push inside it.
     var settingsPath: [PhoneRoute] = []
-    var cover: PhoneCover?
+    var cover: PhoneCover? {
+        didSet { if cover != oldValue { coverPath = [] } }
+    }
+    /// The cover's own stack: a task opened from Working pushes inside it, so
+    /// Back returns to the timer rather than to the tab underneath.
+    var coverPath: [PhoneRoute] = []
+    /// What's typed in Capture and not yet added, kept while something else
+    /// takes the screen (a link, a notification, Working) so the next Capture
+    /// starts from it. Add and a confirmed Discard drop it.
+    var captureDraft: CaptureDraft?
+    /// Tasks heard and not yet added, kept with the draft while the app runs.
+    @ObservationIgnored var capturedSpoken: [SpokenTask] = []
+    /// Counts the times everything on show was put away for somewhere else (a
+    /// link, a notification, a cover), so a screen's own sheet closes too
+    /// rather than staying over a page that changed under it.
+    private(set) var arrivals = 0
+    /// Each tab's request to scroll its root page to the top, as tapping the
+    /// tab on show at its root asks.
+    private(set) var scrollsToTop: [PhoneTab: Int] = [:]
+    /// A task page closed by moving its task to Trash, until Undo brings the
+    /// task back to reopen it, where it was left.
+    @ObservationIgnored private var trashedPage: (task: UUID, tab: PhoneTab, path: [PhoneRoute])?
     /// The cards Triage deals while it's up, which its switch changes: the
     /// Inbox's, or the lists' tasks with no date.
     var triageMode: TriageMode = .inbox
@@ -99,6 +120,9 @@ final class PhoneNavigator {
 
     /// The screen under `route` in the stack it's on: what its back link names.
     func screen(below route: PhoneRoute) -> PhoneRoute {
+        if let cover, let index = coverPath.lastIndex(of: route) {
+            return index > 0 ? coverPath[index - 1] : coverRoute(cover)
+        }
         if case .settings = sheet, let index = settingsPath.lastIndex(of: route) {
             return index > 0 ? settingsPath[index - 1] : .settings
         }
@@ -118,7 +142,7 @@ final class PhoneNavigator {
 
     /// The screen on show, modals included.
     var visibleRoute: PhoneRoute {
-        if let cover { return cover == .working ? .working : .triage(triageMode) }
+        if let cover { return coverPath.last ?? coverRoute(cover) }
         switch sheet {
         case .settings: return settingsPath.last ?? .settings
         case let .capture(request): return .capture(request)
@@ -154,15 +178,22 @@ final class PhoneNavigator {
 
     // MARK: Moving
 
-    /// A dock tab. Tapping the tab on show goes back to its root, as iOS tab
-    /// bars do.
+    /// A dock tab. Tapping the tab on show goes back to its root, and at its
+    /// root to the top of the page, as iOS tab bars do.
     func select(_ tab: PhoneTab) {
         if self.tab == tab {
-            setPath([], for: tab)
+            if path(for: tab).isEmpty {
+                scrollsToTop[tab, default: 0] += 1
+            } else {
+                setPath([], for: tab)
+            }
         } else {
             self.tab = tab
         }
     }
+
+    /// How many times `tab`'s root page has been asked to scroll to its top.
+    func scrollToTopRequests(for tab: PhoneTab) -> Int { scrollsToTop[tab] ?? 0 }
 
     /// Opens `route` from the screen on show: a push goes on the stack in
     /// front (the Settings sheet's, when it's up), a tab route switches tab.
@@ -179,12 +210,13 @@ final class PhoneNavigator {
             setPath([], for: tab)
             todayMode = .timeline
         case .push:
-            if cover != nil { cover = nil }
-            if case .settings = sheet {
-                settingsPath.append(route)
+            if cover != nil {
+                coverPath = Self.pushing(route, onto: coverPath)
+            } else if case .settings = sheet {
+                settingsPath = Self.pushing(route, onto: settingsPath)
             } else {
                 if sheet != nil { sheet = nil }
-                setPath(path(for: tab) + [route], for: tab)
+                setPath(Self.pushing(route, onto: path(for: tab)), for: tab)
             }
         case .sheet:
             if route == .settings {
@@ -200,7 +232,7 @@ final class PhoneNavigator {
             present(cover: route == .working ? .working : .triage)
         case .settingsStack:
             if case .settings = sheet {
-                settingsPath.append(route)
+                settingsPath = Self.pushing(route, onto: settingsPath)
             } else {
                 settingsPath = [route]
                 present(sheet: .settings)
@@ -262,9 +294,12 @@ final class PhoneNavigator {
         }
     }
 
-    /// Goes back one screen in front: the Settings sheet's stack, or the tab's.
+    /// Goes back one screen in front: the cover's stack, the Settings sheet's,
+    /// or the tab's.
     func pop() {
-        if case .settings = sheet, !settingsPath.isEmpty {
+        if cover != nil, !coverPath.isEmpty {
+            coverPath.removeLast()
+        } else if case .settings = sheet, !settingsPath.isEmpty {
             settingsPath.removeLast()
         } else {
             var path = path(for: tab)
@@ -282,12 +317,26 @@ final class PhoneNavigator {
         pendingModal = nil
         sheet = nil
         cover = nil
+        arrivals += 1
     }
 
     /// Hides the dock while `token`'s screen is up (Select mode's bulk bar);
     /// pass false to show it again.
     func hidesDock(_ hidden: Bool, for token: UUID) {
         if hidden { dockHiders.insert(token) } else { dockHiders.remove(token) }
+    }
+
+    /// `route` on top of `path`; a screen already in it is gone back to
+    /// rather than pushed again, so links between pages (a task and its
+    /// history, Activity and a task) never pile up a stack to back out of.
+    static func pushing(_ route: PhoneRoute, onto path: [PhoneRoute]) -> [PhoneRoute] {
+        guard let index = path.lastIndex(of: route) else { return path + [route] }
+        return Array(path.prefix(through: index))
+    }
+
+    /// The screen a cover shows at its root.
+    private func coverRoute(_ cover: PhoneCover) -> PhoneRoute {
+        cover == .working ? .working : .triage(triageMode)
     }
 
     private func captureSheet(_ route: PhoneRoute) -> PhoneSheet {
@@ -305,7 +354,11 @@ final class PhoneNavigator {
     }
 
     private func present(cover newCover: PhoneCover) {
-        guard cover != newCover || pendingModal != nil else { return }
+        guard cover != newCover || pendingModal != nil else {
+            // Working asked for while it's up comes back to the timer.
+            coverPath = []
+            return
+        }
         presentOnceClosed { $0.cover = newCover }
     }
 
@@ -315,6 +368,7 @@ final class PhoneNavigator {
     private func presentOnceClosed(_ present: @escaping @MainActor (PhoneNavigator) -> Void) {
         pendingModal?.cancel()
         pendingModal = nil
+        arrivals += 1
         guard sheet != nil || cover != nil else { return present(self) }
         sheet = nil
         cover = nil
@@ -323,6 +377,98 @@ final class PhoneNavigator {
             guard !Task.isCancelled, let self else { return }
             pendingModal = nil
             present(self)
+        }
+    }
+
+    // MARK: Trash from a task's page
+
+    /// The task's page, on show, closes as its task goes to Trash; Undo, from
+    /// where it was left, opens it again.
+    func closeTrashedPage(of taskID: UUID) {
+        guard topRoute == .taskDetail(taskID) || coverPath.last == .taskDetail(taskID)
+            || (sheet == .settings && settingsPath.last == .taskDetail(taskID)) else { return }
+        pop()
+        trashedPage = cover == nil && sheet == nil ? (taskID, tab, path(for: tab)) : nil
+    }
+
+    /// After an Undo: the page closed for its task's trashing comes back if
+    /// the task did and nothing else moved since.
+    func reopenTrashedPage(taskExists: (UUID) -> Bool) {
+        guard let page = trashedPage else { return }
+        trashedPage = nil
+        guard taskExists(page.task), cover == nil, sheet == nil, tab == page.tab, path(for: tab) == page.path else { return }
+        setPath(page.path + [.taskDetail(page.task)], for: tab)
+    }
+
+    // MARK: Restoring
+
+    /// Where the phone is, as its scene keeps it to come back to after the
+    /// system has ended the app in the background: the tab and each tab's
+    /// stack, Today's view, and Settings, Capture or a cover with what they
+    /// showed. Quitting the app clears it, as the system clears a scene's
+    /// storage then.
+    struct Place: Codable, Equatable {
+        var tab: PhoneTab = .today
+        var today: [PhoneRoute] = []
+        var inbox: [PhoneRoute] = []
+        var lists: [PhoneRoute] = []
+        var work: [PhoneRoute] = []
+        var showsTimeline = false
+        var timelineDay: Date?
+        var sheet: PhoneSheet?
+        var settingsPath: [PhoneRoute] = []
+        var cover: PhoneCover?
+        var coverPath: [PhoneRoute] = []
+        var triageMode: TriageMode = .inbox
+        var captureDraft: CaptureDraft?
+    }
+
+    var place: Place {
+        Place(tab: tab, today: todayPath, inbox: inboxPath, lists: listsPath, work: workPath,
+              showsTimeline: todayMode == .timeline, timelineDay: timelineDay, sheet: sheet,
+              settingsPath: sheet == .settings ? settingsPath : [], cover: cover, coverPath: cover == nil ? [] : coverPath,
+              triageMode: triageMode, captureDraft: captureDraft)
+    }
+
+    /// Whether nothing has moved the phone since launch: Today's list, every
+    /// stack at its root and nothing on top. A place is only put back here,
+    /// never over where a launch route or a link already went.
+    var isAtLaunch: Bool {
+        tab == .today && todayMode == .list && sheet == nil && cover == nil
+            && PhoneTab.allCases.allSatisfy { path(for: $0).isEmpty }
+    }
+
+    /// Puts the phone back at `place`, keeping only what can still be shown:
+    /// each stack keeps the screens pushed there (and Settings' its own), a
+    /// browsed day that's past goes back to today, Working only comes back
+    /// while there is work, and Capture never starts listening by itself.
+    /// The caller repairs the stacks against the library afterwards.
+    func restore(_ place: Place, today: Date, hasWork: Bool) {
+        func pushed(_ path: [PhoneRoute]) -> [PhoneRoute] { path.filter { $0.presentation == .push } }
+        tab = place.tab
+        todayPath = pushed(place.today)
+        inboxPath = pushed(place.inbox)
+        listsPath = pushed(place.lists)
+        workPath = pushed(place.work)
+        todayMode = place.showsTimeline ? .timeline : .list
+        // The toggle didn't move; there's nothing to slide from.
+        switchedFrom = nil
+        timelineDay = place.timelineDay.flatMap { $0 >= today ? $0 : nil }
+        triageMode = place.triageMode
+        captureDraft = place.captureDraft
+        switch place.sheet {
+        case .settings:
+            settingsPath = place.settingsPath.filter { $0.presentation == .push || $0.presentation == .settingsStack }
+            sheet = .settings
+        case let .capture(request):
+            var request = request
+            request.listens = false
+            sheet = .capture(request)
+        case nil:
+            if let cover = place.cover, cover != .working || hasWork {
+                self.cover = cover
+                coverPath = pushed(place.coverPath)
+            }
         }
     }
 
@@ -356,6 +502,8 @@ final class PhoneNavigator {
         }
         let settings = repaired(settingsPath)
         if settings != settingsPath { settingsPath = settings }
+        let covered = repaired(coverPath)
+        if covered != coverPath { coverPath = covered }
         if case let .capture(request) = sheet, let listID = request.listID, resolveList(listID) == nil {
             // The sheet keeps what's typed; the list it started on is gone.
             var fixed = request
@@ -363,4 +511,12 @@ final class PhoneNavigator {
             sheet = .capture(fixed)
         }
     }
+}
+
+/// What Capture held when it went: the text typed, the list it was going to
+/// and a date picked for it.
+struct CaptureDraft: Codable, Equatable {
+    var text: String
+    var listID: UUID?
+    var dueDate: CaptureDueDate = .automatic
 }

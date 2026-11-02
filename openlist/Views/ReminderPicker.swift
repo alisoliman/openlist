@@ -17,6 +17,10 @@ struct ReminderPicker: View {
     @State private var typedTime: NXPendingCustomValue?
     /// Set reminder was asked for a time that has passed, which would never ring.
     @State private var refusedPast = false
+    /// "Remind me at"'s day or time was changed and not yet set, which the
+    /// popover's Done and a click away set, as Set reminder does.
+    @State private var staged = false
+    @State private var stagedID = UUID()
 
     private var calendar: Calendar { env.settings.calendar }
 
@@ -80,21 +84,13 @@ struct ReminderPicker: View {
                     }
                     NXTimePill(label: "Reminder time", minute: CalendarMonthGrid.minute(of: customDate, calendar: calendar)) { minute in
                         customDate = CalendarMonthGrid.date(customDate, atMinute: minute, calendar: calendar)
+                        staged = true
                     }
                     Spacer(minLength: 6)
                     Button("Set reminder") {
                         // A click here while typing sets the time typed, not
                         // the one the pill showed before it.
-                        if let typedTime {
-                            guard typedTime.commit() else { NSSound.beep(); return }
-                            self.typedTime = nil
-                        }
-                        guard customDate > .now else {
-                            NSSound.beep()
-                            refusedPast = true
-                            return
-                        }
-                        env.workbench.setReminder(block.id, at: customDate)
+                        if !setReminder() { NSSound.beep() }
                     }
                     .buttonStyle(NXPanelButtonStyle(kind: .primary, size: .small))
                     .disabled(typedTime == nil && customDate <= .now)
@@ -110,6 +106,7 @@ struct ReminderPicker: View {
                     CalendarMonthPicker(selection: customDate, calendar: calendar, earliest: .now) { day in
                         customDate = CalendarMonthGrid.date(day, atMinute: CalendarMonthGrid.minute(of: customDate, calendar: calendar),
                                                             calendar: calendar)
+                        staged = true
                         withAnimation(style.ease(180)) { picksDay = false }
                     }
                     .transition(.opacity)
@@ -120,15 +117,37 @@ struct ReminderPicker: View {
         }
         .onChange(of: block.reminderAt) { _, date in
             customDate = Self.upcoming(date ?? offsetDate(ReminderOffset()), calendar: calendar)
+            staged = false
         }
         .onChange(of: customDate) { refusedPast = false }
         .onAppear {
             customDate = Self.upcoming(block.reminderAt ?? offsetDate(ReminderOffset()), calendar: calendar)
         }
         .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }
-        // "Remind me at" is a draft only Set reminder sets, so the Schedule
-        // popover's Done closes over a time typed here as over a day picked.
-        .transformPreference(NXPendingCustomValueKey.self) { $0 = nil }
+        // "Remind me at", once its day or time is changed, or its time is
+        // typed, is set by the popover's Done and a click away as Set
+        // reminder sets it, in one step; Done beeps on a time that has passed.
+        .transformPreference(NXPendingCustomValueKey.self) { pending in
+            guard staged || pending != nil else { return }
+            pending = NXPendingCustomValue(id: stagedID, commit: setReminder)
+        }
+    }
+
+    /// Set reminder: the time typed first, then the reminder at the day and
+    /// time picked, as one change. False, setting nothing, for a time typed
+    /// that isn't one or one that has passed.
+    private func setReminder() -> Bool {
+        if let typedTime {
+            guard typedTime.commit() else { return false }
+            self.typedTime = nil
+        }
+        guard customDate > .now else {
+            refusedPast = true
+            return false
+        }
+        staged = false
+        env.workbench.setReminder(block.id, at: customDate)
+        return true
     }
 
     /// `date` while it's still ahead; otherwise, as for an overdue task or

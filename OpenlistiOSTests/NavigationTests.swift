@@ -43,13 +43,13 @@ struct NavigationTests {
     static let id = UUID()
     static let allRoutes: [PhoneRoute] = [
         .today, .timeline, .activity, .taskDetail(id), .inbox, .triage(.inbox), .lists, .list(id), .find(""),
-        .settings, .trash, .working, .capture(CaptureRequest()), .work,
+        .settings, .trash, .working, .capture(CaptureRequest()), .work, .taskHistory(id), .planHours,
     ]
 
     @Test func everyRouteHasItsPresentation() {
         let expected: [PhoneRoute.Presentation] = [
             .tab(.today), .mode(.today), .push, .push, .tab(.inbox), .fullScreenCover, .tab(.lists), .push, .push,
-            .sheet, .settingsStack, .fullScreenCover, .sheet, .tab(.work),
+            .sheet, .settingsStack, .fullScreenCover, .sheet, .tab(.work), .push, .settingsStack,
         ]
         #expect(Self.allRoutes.map(\.presentation) == expected)
         #expect(Set(Self.allRoutes.map(\.screenIdentifier)).count == Self.allRoutes.count)
@@ -113,9 +113,29 @@ struct NavigationTests {
         #expect(navigator.listsPath == [.list(Self.id), .find("#travel")])
         // The other tab keeps its stack.
         #expect(navigator.todayPath == [.activity])
-        // Tapping the tab on show goes back to its root.
+        // Tapping the tab on show goes back to its root, and at its root to
+        // the top of the page.
         navigator.select(.lists)
         #expect(navigator.listsPath.isEmpty)
+        #expect(navigator.scrollToTopRequests(for: .lists) == 0)
+        navigator.select(.lists)
+        #expect(navigator.scrollToTopRequests(for: .lists) == 1)
+        #expect(navigator.scrollToTopRequests(for: .today) == 0)
+    }
+
+    /// Links between pages, such as a task and its history or Activity and a
+    /// task, go back to a page already on the stack rather than piling up.
+    @Test func aScreenAlreadyOnTheStackIsGoneBackTo() {
+        let navigator = PhoneNavigator()
+        navigator.open(.activity)
+        navigator.open(.taskDetail(Self.id))
+        navigator.open(.taskHistory(Self.id))
+        navigator.open(.activity)
+        #expect(navigator.todayPath == [.activity])
+        navigator.open(.taskDetail(Self.id))
+        navigator.open(.taskDetail(Self.id))
+        #expect(navigator.todayPath == [.activity, .taskDetail(Self.id)])
+        #expect(PhoneNavigator.pushing(.find(""), onto: [.list(Self.id)]) == [.list(Self.id), .find("")])
     }
 
     @Test func taskDetailHidesTheDock() {
@@ -154,16 +174,28 @@ struct NavigationTests {
         navigator.open(.working)
         #expect(navigator.cover == .working)
         #expect(navigator.visibleRoute == .working)
+        // A screen opened from a cover pushes inside it, and Back comes back
+        // to the cover's own screen.
+        navigator.open(.taskDetail(Self.id))
+        #expect(navigator.cover == .working)
+        #expect(navigator.coverPath == [.taskDetail(Self.id)])
+        #expect(navigator.visibleRoute == .taskDetail(Self.id))
+        #expect(navigator.screen(below: .taskDetail(Self.id)) == .working)
+        #expect(navigator.todayPath.isEmpty)
+        // Working asked for again comes back to the timer.
+        navigator.open(.working)
+        #expect(navigator.cover == .working && navigator.coverPath.isEmpty)
+        navigator.open(.taskDetail(Self.id))
+        navigator.pop()
+        #expect(navigator.coverPath.isEmpty && navigator.cover == .working)
+        navigator.open(.taskDetail(Self.id))
         navigator.dismissCover()
+        #expect(navigator.coverPath.isEmpty)
         navigator.open(.triage(.inbox))
         #expect(navigator.cover == .triage)
-        // Opening a screen from a cover closes it first.
-        navigator.open(.taskDetail(Self.id))
-        #expect(navigator.cover == nil)
-        #expect(navigator.topRoute == .taskDetail(Self.id))
     }
 
-    /// A link to Working while Settings (a cover) is up waits for it to go:
+    /// A link to Working while the Settings sheet is up waits for it to go:
     /// the root presents one modal at a time.
     @Test func aCoverWaitsForTheModalOnShowToClose() async throws {
         let navigator = PhoneNavigator()
@@ -240,6 +272,114 @@ struct NavigationTests {
         navigator.repair(list: { $0 == merged ? canonical : nil }, taskExists: { $0 == Self.id })
         #expect(navigator.listsPath == [.list(canonical), .taskDetail(Self.id), .find("")])
         #expect(navigator.todayPath == [.activity])
+    }
+
+    /// Everything on show goes away for a link, a notification or a cover,
+    /// and the screens' own sheets hear it, so none stays over a page that
+    /// changed under it.
+    @Test func arrivalsAreCounted() {
+        let navigator = PhoneNavigator()
+        navigator.open(.taskDetail(Self.id))
+        let before = navigator.arrivals
+        navigator.show(.inbox)
+        #expect(navigator.arrivals > before)
+        let shown = navigator.arrivals
+        navigator.open(.taskDetail(Self.id))
+        #expect(navigator.arrivals == shown)
+    }
+
+    // MARK: Restoring
+
+    /// Where the phone was survives encoding, as the scene keeps it, and
+    /// comes back as it was.
+    @Test func aPlaceComesBackAsItWas() throws {
+        let navigator = PhoneNavigator()
+        navigator.select(.lists)
+        navigator.open(.list(Self.id))
+        navigator.open(.taskDetail(Self.id))
+        navigator.select(.today)
+        navigator.openTimeline(on: TestClock.mockupNow.addingTimeInterval(86_400))
+        navigator.captureDraft = CaptureDraft(text: "Book flights fri", listID: Self.id, dueDate: .cleared)
+        let data = try JSONEncoder().encode(navigator.place)
+
+        let restored = PhoneNavigator()
+        #expect(restored.isAtLaunch)
+        restored.restore(try JSONDecoder().decode(PhoneNavigator.Place.self, from: data),
+                         today: TestClock.calendar.startOfDay(for: TestClock.mockupNow), hasWork: false)
+        #expect(restored.tab == .today)
+        #expect(restored.todayMode == .timeline)
+        // The toggle didn't move: nothing slides in from the list.
+        #expect(restored.todaySwitchedFrom == nil)
+        #expect(restored.timelineDay == navigator.timelineDay)
+        #expect(restored.listsPath == [.list(Self.id), .taskDetail(Self.id)])
+        #expect(restored.captureDraft == navigator.captureDraft)
+        #expect(!restored.isAtLaunch)
+    }
+
+    /// Only what can still be shown comes back: screens pushed where they
+    /// belong, a day not yet past, Working while there's work, and a Capture
+    /// that waits to be asked before it listens.
+    @Test func aPlaceKeepsOnlyWhatCanStillBeShown() {
+        let today = TestClock.calendar.startOfDay(for: TestClock.mockupNow)
+        var place = PhoneNavigator.Place()
+        place.today = [.activity, .settings, .working, .taskDetail(Self.id)]
+        place.showsTimeline = true
+        place.timelineDay = today.addingTimeInterval(-86_400)
+        place.cover = .working
+        place.coverPath = [.taskDetail(Self.id)]
+        let navigator = PhoneNavigator()
+        navigator.restore(place, today: today, hasWork: false)
+        #expect(navigator.todayPath == [.activity, .taskDetail(Self.id)])
+        #expect(navigator.timelineDay == nil)
+        #expect(navigator.cover == nil && navigator.coverPath.isEmpty)
+        let working = PhoneNavigator()
+        working.restore(place, today: today, hasWork: true)
+        #expect(working.cover == .working && working.coverPath == [.taskDetail(Self.id)])
+
+        var capturing = PhoneNavigator.Place()
+        capturing.sheet = .capture(CaptureRequest(listID: Self.id, listens: true))
+        let capture = PhoneNavigator()
+        capture.restore(capturing, today: today, hasWork: false)
+        guard case let .capture(request) = capture.sheet else { Issue.record("No capture sheet"); return }
+        #expect(!request.listens && request.listID == Self.id)
+
+        var settings = PhoneNavigator.Place()
+        settings.sheet = .settings
+        settings.settingsPath = [.trash, .capture(CaptureRequest()), .planHours]
+        let set = PhoneNavigator()
+        set.restore(settings, today: today, hasWork: false)
+        #expect(set.sheet == .settings && set.settingsPath == [.trash, .planHours])
+    }
+
+    /// A review session starts where its launch variables say: the window's
+    /// appearing opens links but puts no saved place back.
+    @Test func reviewSessionsDontRestore() throws {
+        let phone = try TestPhone()
+        var place = PhoneNavigator.Place()
+        place.tab = .lists
+        phone.env.windowAppeared(restoring: try JSONEncoder().encode(place))
+        #expect(phone.navigator.tab == .today)
+        #expect(phone.env.hasShownWindow)
+    }
+
+    /// A task's page closed by sending it to Trash opens again with Undo,
+    /// unless the user has moved on.
+    @Test func undoingATrashFromItsPageReopensIt() {
+        let navigator = PhoneNavigator()
+        let list = UUID()
+        navigator.select(.lists)
+        navigator.open(.list(list))
+        navigator.open(.taskDetail(Self.id))
+        navigator.closeTrashedPage(of: Self.id)
+        #expect(navigator.listsPath == [.list(list)])
+        navigator.reopenTrashedPage(taskExists: { _ in true })
+        #expect(navigator.listsPath == [.list(list), .taskDetail(Self.id)])
+
+        navigator.closeTrashedPage(of: Self.id)
+        navigator.select(.today)
+        navigator.reopenTrashedPage(taskExists: { _ in true })
+        #expect(navigator.listsPath == [.list(list)])
+        #expect(navigator.todayPath.isEmpty)
     }
 
     /// Swipe back (Platform/SwipeBack.swift) adds its methods to UIKit's

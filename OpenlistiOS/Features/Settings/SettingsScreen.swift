@@ -7,14 +7,14 @@ import SwiftData
 import SwiftUI
 import UIKit
 
-/// Settings (mockup 15), a full page over everything, with its own stack: the task, motion and
-/// calendar settings this device keeps, Activity and Trash, and how iCloud
-/// sync stands. The rest of the options live on the Mac.
+/// Settings (mockup 15), a sheet over everything, with its own stack: the
+/// task, motion and calendar settings this device keeps (each kept as it's
+/// changed), Plan hours, Activity and Trash, and how iCloud sync stands. The
+/// rest of the options live on the Mac.
 struct SettingsScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Query(filter: #Predicate<Block> { $0.trashID != nil }) private var trashedBlocks: [Block]
     @Query(filter: #Predicate<TaskList> { $0.trashID != nil }) private var trashedLists: [TaskList]
-    @State private var editsHours = false
     @State private var syncDetail = false
 
     var body: some View {
@@ -26,6 +26,7 @@ struct SettingsScreen: View {
             } trailing: {
                 Button("Done") { navigator.dismissSheet() }
                     .buttonStyle(.olLink(strong: true))
+                    .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("settings.done")
             }
         } content: {
@@ -101,7 +102,7 @@ struct SettingsScreen: View {
                     }
                     .buttonStyle(OLRowPressStyle())
                     .accessibilityIdentifier("settings.calendarAccess")
-                    Button { editsHours = true } label: {
+                    Button { navigator.open(.planHours) } label: {
                         OLSettingsRow("Plan hours", tile: .info(icon: .stopwatch), separator: .settings) {
                             OLRowValue(PlanHours.summary(env.calendar.preferences))
                         }
@@ -157,9 +158,15 @@ struct SettingsScreen: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, OLMetrics.groupGap)
         }
-        .sheet(isPresented: $editsHours) { PlanHoursSheet() }
         .alert(env.sync.state.title, isPresented: $syncDetail) {
-            Button("OK", role: .cancel) {}
+            // A check that failed, or iCloud away for now, can be tried again.
+            switch env.sync.state.account {
+            case .failed, .temporarilyUnavailable:
+                Button("Check Again") { env.sync.checkAccount() }
+            default:
+                EmptyView()
+            }
+            Button("Done", role: .cancel) {}
         } message: {
             Text(env.sync.state.isEnabled ? env.sync.state.detail
                  : env.sync.state.unavailableReason ?? "iCloud sync is off on this iPhone.")
@@ -245,36 +252,35 @@ enum PlanHours {
 }
 
 /// Plan hours: when work and personal tasks may be planned, on the days each
-/// plans. Saved per device, as the Mac keeps its own. It edits each profile's
-/// usual hours, the ones most of its days have; days with hours of their own,
-/// and breaks, stay as they are, and a time left alone is saved as it was.
-struct PlanHoursSheet: View {
+/// plans, pushed inside Settings and kept as it's changed, as Settings' other
+/// options are. Saved per device, as the Mac keeps its own. It edits each
+/// profile's usual hours, the ones most of its days have; days with hours of
+/// their own, and breaks, stay as they are, and a time left alone is saved as
+/// it was.
+struct PlanHoursScreen: View {
     @Environment(PhoneEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
     @State private var work = PlanHoursDraft()
     @State private var personal = PlanHoursDraft()
+    /// The hours as the page found them, which every change is made from.
+    @State private var original: CalendarPreferences?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            OLSheetHeader(confirmTitle: "Save", cancel: { dismiss() }, confirm: save)
-            Text("Plan hours").font(OLFont.linkStrong).padding(.top, 10)
-            Text("Planning puts work tasks in work hours on weekdays, and personal ones in personal hours.")
-                .font(OLFont.meta)
-                .foregroundStyle(OL.muted)
-                .padding(.top, 4)
+        OLScreen(identifier: PhoneRoute.planHours.screenIdentifier) {
+            OLTopBar { OLBackButton(env.backTitle(for: .planHours)) { env.navigator.pop() } }
+        } content: {
+            OLHeader("Plan hours",
+                     sub: "Planning puts work tasks in work hours on weekdays, and personal ones in personal hours.")
             section("Work", hours: $work)
             section("Personal", hours: $personal)
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, OLMetrics.gutter)
-        .padding(.top, 8)
-        .presentationDetents([.medium])
-        .olSheet()
         .onAppear {
+            guard original == nil else { return }
             let preferences = env.calendar.preferences
+            original = preferences
             work = PlanHoursDraft(preferences.work, default: AvailabilityWindow(startMinute: 9 * 60, endMinute: 17 * 60))
             personal = PlanHoursDraft(preferences.personal, default: AvailabilityWindow(startMinute: 18 * 60, endMinute: 21 * 60))
         }
+        .onChange(of: [work.start, work.end, personal.start, personal.end]) { save() }
     }
 
     private func section(_ title: String, hours: Binding<PlanHoursDraft>) -> some View {
@@ -292,14 +298,13 @@ struct PlanHoursSheet: View {
     }
 
     private func save() {
+        guard let original else { return }
         var preferences = env.calendar.preferences
-        preferences.work = work.applied(to: preferences.work, days: Array(2...6))
-        preferences.personal = personal.applied(to: preferences.personal, days: Array(1...7))
+        preferences.work = work.applied(to: original.work, days: Array(2...6))
+        preferences.personal = personal.applied(to: original.personal, days: Array(1...7))
         if preferences != env.calendar.preferences {
             env.calendar.updatePreferences(preferences, now: env.now)
-            env.tray.show("Plan hours saved", icon: "timer", tone: .accent, seconds: 3)
         }
-        dismiss()
     }
 }
 

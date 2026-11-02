@@ -20,6 +20,7 @@ nonisolated enum AppGroup {
 /// `openlistApp.swift`'s, which holds the app's entry point.
 enum WindowID {
     static let main = "main"
+    static let shortcuts = "shortcuts"
 }
 
 /// The MCP server needs its Swift package; the settings screen reads only this.

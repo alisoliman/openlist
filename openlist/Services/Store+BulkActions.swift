@@ -253,7 +253,7 @@ extension Store {
             pendingCompletionCycleIDs = previousCompletionCycles
             pendingReopenedCycleIDs = previousReopenedCycles
             refreshAllReminders()
-            persistenceError = "The selected items could not be changed. \(error.localizedDescription)"
+            reportRolledBack("The selected items could not be changed. \(error.localizedDescription)")
             throw error
         }
     }

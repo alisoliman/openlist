@@ -10,11 +10,13 @@ import SwiftUI
 /// wiring: sheets, menu commands and the Dock badge.
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.openWindow) private var openWindow
     @State private var lastCommandToken = 0
     /// The route whose unwanted initial focus has already been cleared, so the
     /// clear happens once per navigation and never steals a later click.
     @State private var focusClearedFor: AppRoute?
+    /// Whether the window has been key yet, which hands its first text view
+    /// the keyboard as it first opens.
+    @State private var hasBeenKey = false
     @State private var hostWindow = RootWindowReference()
 
     @Query(filter: #Predicate<Block> { $0.trashID == nil && $0.kindRaw == "task" && !$0.isCompleted })
@@ -22,17 +24,13 @@ struct RootView: View {
     @Query(filter: TaskList.availablePredicate) private var allLists: [TaskList]
 
     var body: some View {
-        @Bindable var navigator = env.navigator
         @Bindable var sheets = env
 
+        // The shell names the window after the page on show.
         NextShell()
         .ignoresSafeArea()
-        .navigationTitle("Openlist")
         .sheet(item: $sheets.templateCopyRequest) { request in
             TemplateCopySheet(request: request)
-        }
-        .sheet(isPresented: $navigator.isShortcutSheetOpen) {
-            ShortcutsSheet()
         }
         .sheet(item: $sheets.listPendingMove) { list in MoveListSheet(list: list).environment(env) }
         .sheet(item: $sheets.listPendingDeletion) { list in DeleteListSheet(list: list).environment(env) }
@@ -61,10 +59,24 @@ struct RootView: View {
             // The real trigger: at launch the window is not key yet, so the
             // first responder has not been assigned when `task`/`onChange` run.
             clearInitialFocus(for: env.navigator.route)
+            if !hasBeenKey {
+                hasBeenKey = true
+                releaseUnaskedFocus(in: window)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow, isMainWindow(window) else { return }
             env.isMainWindowKey = false
+        }
+        // A sheet over the window, any of them, until it ends: what acts on
+        // the window stands down under it.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willBeginSheetNotification)) { notification in
+            guard notification.object as? NSWindow === hostWindow.window else { return }
+            env.mainWindowHasSheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndSheetNotification)) { notification in
+            guard notification.object as? NSWindow === hostWindow.window else { return }
+            env.mainWindowHasSheet = false
         }
         .onChange(of: dockBadgeCount) { _, _ in updateDockBadge() }
         .onChange(of: env.settings.showsDockBadge) { _, _ in updateDockBadge() }
@@ -75,13 +87,12 @@ struct RootView: View {
         }
         .onAppear {
             updateDockBadge()
-            env.reminderNavigation.openMainWindow = { openWindow(id: WindowID.main) }
-            env.calendarNotifications.openMainWindow = { openWindow(id: WindowID.main) }
             // ⌘L in a list document line asks in this window's link sheet.
             BlockNSTextView.linkPrompter = { env.linkPrompt = $0 }
         }
         .onDisappear {
             env.isMainWindowKey = false
+            env.mainWindowHasSheet = false
             env.reminderNavigation.windowReady(false)
             env.localLinks.windowReady(false)
             env.widgetLinks.windowReady(false)
@@ -192,9 +203,23 @@ struct RootView: View {
     /// or open task, and this route not already settled.
     private func mayClearFocus(on route: AppRoute) -> Bool {
         focusClearedFor != route
-            && !env.navigator.isSearchOpen && !env.navigator.isCommandPaletteOpen
-            && !env.navigator.isShortcutSheetOpen && !env.workbench.captureOpen
+            && !env.navigator.isSearchOpen && !env.navigator.isCommandPaletteOpen && !env.workbench.captureOpen
             && env.navigator.openTaskID == nil
+    }
+
+    /// As the window first opens, AppKit hands the keyboard to its first text
+    /// view whether or not anyone asked: a list's first line, an open note or
+    /// the details' title, on the page this Mac reopened. It lets go, so the
+    /// keys are the shell's, as wherever else the window arrives. A line a
+    /// link revealed, or the list document itself put the caret in, keeps it.
+    private func releaseUnaskedFocus(in window: NSWindow) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak window] in
+            guard let window, window === NSApp.keyWindow, window.attachedSheet == nil,
+                  env.navigator.contentReveal == nil, !env.workbench.captureOpen,
+                  let text = window.firstResponder as? NSTextView, !text.isFieldEditor else { return }
+            if text is BlockNSTextView, env.workbench.document?.focus.token != 0 { return }
+            window.makeFirstResponder(nil)
+        }
     }
 
     /// Overdue, due-today, starred and planned-for-today work — the number
@@ -216,9 +241,22 @@ struct RootView: View {
 /// that changed nothing passes in the tray instead; see `Store.refuse`.
 struct NXStatusNotices: View {
     @Environment(AppEnvironment.self) private var env
+    /// The iCloud warning last dismissed, by `syncWarning`'s key. It stays away,
+    /// launch after launch, until a different one shows or iCloud works again.
+    @AppStorage("notices.dismissedSyncWarning", store: ReviewSession.defaults) private var dismissedSyncWarning = ""
 
     var body: some View {
         VStack(spacing: 0) {
+            // An export taking a while counts what it has written, with a way
+            // to stop it; Settings' row counts Export every list itself.
+            if let export = env.workbench.export, export.isShown, !(export.isEveryList && env.navigator.route == .settings) {
+                NXNoticeCard(icon: "square.and.arrow.up", message: export.progress) {
+                    ProgressView().controlSize(.small).padding(.trailing, 4)
+                    Button("Cancel") { export.cancel() }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
+            }
             if let notice = env.store.editorNotice {
                 NXNoticeCard(icon: "info.circle", message: notice) {
                     Button("Dismiss") { env.store.editorNotice = nil }
@@ -234,22 +272,83 @@ struct NXStatusNotices: View {
                 .nxNoticePlacement()
             }
             if let error = env.store.persistenceError {
-                NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
-                    Button("Retry saving") { env.store.save() }
-                        .buttonStyle(NXPanelButtonStyle(kind: .link))
+                // Saving again helps only a save that failed with its changes
+                // still waiting. A change that failed and was put back left
+                // nothing to save: Retry there would only clear the card,
+                // the change still not made.
+                if env.store.persistenceErrorIsRetryable, env.store.hasUnsavedChanges {
+                    NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: "Changes are not saved. \(error)") {
+                        Button("Retry saving") { env.store.save() }
+                            .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    }
+                    .nxNoticePlacement()
+                } else {
+                    NXNoticeCard(icon: "exclamationmark.triangle", tone: .error, message: error) {
+                        Button("Dismiss") { env.store.persistenceError = nil }
+                            .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                    }
+                    .nxNoticePlacement()
+                }
+            }
+            if let library = env.libraryMaintenance, let error = library.snapshotError, !library.isSnapshotErrorDismissed {
+                // Snapshots are taken unasked, so a failing one would
+                // otherwise go unseen while the backups grow old.
+                NXNoticeCard(icon: "externaldrive.badge.exclamationmark", tone: .warning, message: error) {
+                    Button("Show in Settings") {
+                        library.revealsSnapshotSetting = true
+                        env.workbench.go(.settings)
+                    }
+                    .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    Button("Dismiss") { library.isSnapshotErrorDismissed = true }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
                 }
                 .nxNoticePlacement()
             }
-            if let warning = syncWarning {
-                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning) {}
-                    .nxNoticePlacement()
+            if let warning = syncWarning, warning.key != dismissedSyncWarning {
+                NXNoticeCard(icon: "icloud.slash", tone: .warning, message: warning.message) {
+                    switch warning.account {
+                    case .signedOut?, .restricted?:
+                        Button("Open System Settings") { openAccountSettings() }
+                            .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    case .failed?, .temporarilyUnavailable?:
+                        Button("Check again") { env.sync.checkAccount() }
+                            .buttonStyle(NXPanelButtonStyle(kind: .link))
+                    default:
+                        EmptyView()
+                    }
+                    Button("Dismiss") { dismissedSyncWarning = warning.key }
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet))
+                }
+                .nxNoticePlacement()
             }
+        }
+        .onChange(of: syncWarning?.key) { _, key in
+            // A different warning shows, and so does one that comes back once
+            // iCloud has worked again. While the account is being checked,
+            // as at launch, nothing is known yet.
+            guard !dismissedSyncWarning.isEmpty, key != dismissedSyncWarning,
+                  key != nil || env.sync.state.account != .checking else { return }
+            dismissedSyncWarning = ""
         }
     }
 
-    private var syncWarning: String? {
-        env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError
-            ?? (env.sync.state.hasProblem ? env.sync.state.detail : nil)
+    /// Why iCloud isn't syncing, as the card says it, with the account's
+    /// state when that's the reason, for what can be done about it. `key`
+    /// names it for Dismiss: the state's title, which stays put while its
+    /// details change, or else the message itself.
+    private var syncWarning: (key: String, message: String, account: ICloudSyncState.Account?)? {
+        if let message = env.store.syncPreparationError ?? env.sync.startupWarning ?? env.sync.pushRegistrationError {
+            return (message, message, nil)
+        }
+        let state = env.sync.state
+        return state.hasProblem ? (state.title, state.detail, state.account) : nil
+    }
+
+    /// System Settings at the Apple Account, where iCloud is signed into and
+    /// turned on for Openlist.
+    private func openAccountSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

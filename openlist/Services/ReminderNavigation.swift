@@ -7,6 +7,9 @@ import Observation
 final class ReminderNavigation {
     var unavailableMessage: String?
     @ObservationIgnored var openMainWindow: (() -> Void)?
+    /// Clears the window before the task shows there, as every arrival from
+    /// outside it does. The app installs it.
+    @ObservationIgnored var prepare: () -> Void = {}
     @ObservationIgnored private var pendingID: UUID?
     @ObservationIgnored private var resolve: ((UUID) throws -> ContentReveal)?
     @ObservationIgnored private var isWindowReady = false
@@ -36,9 +39,9 @@ final class ReminderNavigation {
         do {
             let request = try resolve(id)
             unavailableMessage = nil
+            prepare()
             navigator.isSearchOpen = false
             navigator.isCommandPaletteOpen = false
-            navigator.isShortcutSheetOpen = false
             navigator.reveal(request)
         } catch {
             unavailableMessage = "This reminder’s task is no longer available. It may have been deleted, moved out of this library, or not finished syncing."

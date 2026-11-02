@@ -17,6 +17,10 @@ struct NextActivityScreen: View {
     @State private var heatmapCache = ActivityHeatmapCache()
     @State private var history = NXSavedHistory()
     @State private var loadError: String?
+    /// How many of Earlier's rows show; Show earlier changes adds a page.
+    @State private var earlierLimit = NXChangesSection.earlierRows
+    /// The read a save asked for, held a moment so a run of saves reads once.
+    @State private var pendingRefresh: Task<Void, Never>?
 
     var body: some View {
         NXPage(measure: nil) {
@@ -51,14 +55,29 @@ struct NextActivityScreen: View {
                 }
             }
             .padding(.top, 22)
-            NXChangesSection(history: history).padding(.top, 28)
+            NXChangesSection(history: history) {
+                earlierLimit += NXChangesSection.earlierRows
+                loadEvents()
+            }
+            .padding(.top, 28)
         }
         .task { refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in refreshSoon() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in refreshSoon() }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
         .onChange(of: env.settings.firstWeekday) { refresh() }
+    }
+
+    /// Reads the page again once saves pause: typing saves at each pause and
+    /// running work every minute, and each read decodes hundreds of events.
+    private func refreshSoon() {
+        pendingRefresh?.cancel()
+        pendingRefresh = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            refresh()
+        }
     }
 
     private func refresh() {
@@ -78,29 +97,32 @@ struct NextActivityScreen: View {
     /// Saved history from this session, which Changes merges with the log,
     /// then the newest from before it for Earlier. Fetched apart so a long
     /// session never crowds Earlier out. Earlier's rows are changes, not
-    /// events, so it reads on until it has its 40, however many tasks one
-    /// change saved history for, up to a bound. Each event is decoded once,
-    /// here, and Earlier's rows are worded here, not as Changes draws.
+    /// events, so it reads on until it has its `earlierLimit`, however many
+    /// tasks one change saved history for, up to a bound. Each event is
+    /// decoded once, here, and Earlier's rows are worded here, not as Changes
+    /// draws.
     private func loadEvents() {
         let store = env.store
         let start = env.workbench.startedAt
         var saved: [NXSavedEvent] = []
         var facts: [NXSavedFact] = []
         var rows: [[Int]] = []
-        while saved.count < 4000 {
+        let bound = earlierLimit * 100
+        while saved.count < bound {
             let page = store.recentActivity(limit: 200, before: start, offset: saved.count).map(NXSavedEvent.init)
             saved += page
             facts += page.map(\.fact)
             rows = NXSavedChanges.rows(facts)
-            if page.count < 200 || rows.count > NXChangesSection.earlierRows { break }
+            if page.count < 200 || rows.count > earlierLimit { break }
         }
-        let earlier = rows.prefix(NXChangesSection.earlierRows).map { $0.map { saved[$0] } }
+        let earlier = rows.prefix(earlierLimit).map { $0.map { saved[$0] } }
         let session = store.recentActivity(limit: 200, since: start).map(NXSavedEvent.init)
         // The session's rows as they'd be with nothing the log wrote left
         // out, which only ever takes some of a row's history away.
         let sessionRows = NXSavedChanges.rows(session.map(\.fact)).map { $0.map { session[$0] } }
         let tasks = NXSavedTasks(earlier + sessionRows, store: store)
-        history = NXSavedHistory(session: session, earlier: earlier.map(tasks.item), tasks: tasks)
+        history = NXSavedHistory(session: session, earlier: earlier.map(tasks.item), tasks: tasks,
+                                 hasMoreEarlier: rows.count > earlierLimit || saved.count >= bound)
     }
 }
 
@@ -126,6 +148,8 @@ private struct NXHeatmapCard: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     let heatmap: ActivityHeatmap
+    /// The day the grid's one stop is on: the day picked, which the arrows move.
+    @FocusState private var focusedDay: Date?
 
     var body: some View {
         let calendar = heatmap.calendar
@@ -160,8 +184,10 @@ private struct NXHeatmapCard: View {
                         ForEach(0..<7, id: \.self) { row in
                             let index = week * 7 + row
                             let day = index < heatmap.days.count ? heatmap.days[index] : nil
-                            NXHeatCell(day: day, selected: day?.id == selected, isToday: day?.id == today) {
+                            NXHeatCell(day: day, selected: day?.id == selected, isToday: day?.id == today, focus: $focusedDay) {
                                 env.workbench.activityDay = day?.id
+                            } step: { days in
+                                step(from: selected, by: days)
                             }
                         }
                     }
@@ -201,6 +227,17 @@ private struct NXHeatmapCard: View {
         return "\(total) \(total == 1 ? "completion" : "completions") · \(streak)-day streak"
     }
 
+    /// The arrows on the grid: the day picked moves a day up or down its
+    /// week's column, or a week either side, and the stop goes with it.
+    /// Nothing past the first day or today.
+    private func step(from day: Date, by days: Int) {
+        guard let target = heatmap.calendar.date(byAdding: .day, value: days, to: day),
+              heatmap.days.contains(where: { $0.id == target }) else { return }
+        env.workbench.activityDay = target
+        // Once the day picked is the grid's stop.
+        DispatchQueue.main.async { focusedDay = target }
+    }
+
     private func weekdaySymbol(_ row: Int) -> String {
         let calendar = heatmap.calendar
         let symbols = calendar.shortWeekdaySymbols
@@ -225,7 +262,10 @@ private struct NXHeatCell: View {
     let day: ActivityHeatmapDay?
     let selected: Bool
     let isToday: Bool
+    var focus: FocusState<Date?>.Binding
     let action: () -> Void
+    /// An arrow pressed on the cell picked, by how many days it moves.
+    let step: (Int) -> Void
 
     var body: some View {
         let count = day?.count
@@ -249,7 +289,17 @@ private struct NXHeatCell: View {
             .animation(NX.cssEase(500), value: count)
             .animation(NX.cssEase(150), value: selected)
             .contentShape(shape)
+            .contentShape(.focusEffect, shape.inset(by: -2))
             .onTapGesture { if day != nil { action() } }
+            // One stop for the whole grid, on the day picked, as a calendar's
+            // grid is: Tab lands there, and the arrows move through the days.
+            // A day to come is never one.
+            .focusable(selected && day != nil)
+            .focused(focus, equals: day?.id ?? .distantFuture)
+            .onKeyPress(.leftArrow) { step(-7); return .handled }
+            .onKeyPress(.rightArrow) { step(7); return .handled }
+            .onKeyPress(.upArrow) { step(-1); return .handled }
+            .onKeyPress(.downArrow) { step(1); return .handled }
             .accessibilityElement()
             .accessibilityLabel(day?.accessibilityDescription ?? "Future day")
             .accessibilityAddTraits(day == nil ? [] : [.isButton])
@@ -317,7 +367,6 @@ private struct NXActivityDayPanel: View {
                     .padding(.top, 0.5)
                     .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
                     .contentShape(Rectangle())
-                    .onTapGesture { open?() }
                     // One element, which opens the task while it's there.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(title)
@@ -353,9 +402,10 @@ private struct NXDayRowOpen: ViewModifier {
 
     func body(content: Content) -> some View {
         if let open {
-            content
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { open() }
+            // A button, so Tab reaches it with keyboard navigation on and
+            // Space opens it, as a click does.
+            Button(action: open) { content }
+                .buttonStyle(NXBareButtonStyle(radius: 6))
         } else {
             content
         }
@@ -446,6 +496,8 @@ private struct NXSavedHistory {
     var session: [NXSavedEvent] = []
     var earlier: [NXSavedItem] = []
     var tasks = NXSavedTasks()
+    /// Changes older than Earlier shows.
+    var hasMoreEarlier = false
 }
 
 /// What saved rows read of their tasks, found in the library or in Trash as
@@ -637,6 +689,8 @@ private struct NXChangesSection: View {
     @Environment(\.nextLibrary) private var library
     /// Saved history, read as it loaded.
     let history: NXSavedHistory
+    /// Reads another page of Earlier.
+    let showEarlier: () -> Void
 
     static let earlierRows = 40
 
@@ -663,6 +717,12 @@ private struct NXChangesSection: View {
             VStack(alignment: .leading, spacing: 12) {
                 if !session.isEmpty { group("This session", session) }
                 if !earlier.isEmpty { group("Earlier", earlier) }
+                // Every edit is there to read on to, as the subtitle says.
+                if history.hasMoreEarlier {
+                    Button("Show earlier changes", action: showEarlier)
+                        .buttonStyle(NXPanelButtonStyle(kind: .quiet, size: .small))
+                        .padding(.leading, -5)
+                }
                 if session.isEmpty && earlier.isEmpty {
                     NXDashedEmpty(text: "Nothing has changed yet.").padding(.top, 8)
                 }
@@ -839,6 +899,8 @@ private struct NXChangeRow: View {
                 }
             }
             .accessibilityElement(children: .combine)
+            // What the tooltip says, for VoiceOver too.
+            .accessibilityHint(item.detail ?? "")
             if item.canUndo {
                 Button { env.workbench.undoLast() } label: {
                     Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .semibold))

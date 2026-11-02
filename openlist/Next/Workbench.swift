@@ -129,7 +129,14 @@ final class Workbench {
 
     // MARK: Screens
 
-    var collapsedGroups: Set<String> = []
+    /// Groups folded away this session. The sidebar's own, "Other lists" and
+    /// "Labels", stay folded on this Mac.
+    var collapsedGroups: Set<String> = [] {
+        didSet {
+            let folds = collapsedGroups.filter(Self.isSidebarGroup)
+            if folds != oldValue.filter(Self.isSidebarGroup) { defaults?.set(folds.sorted(), forKey: Self.sidebarFoldsKey) }
+        }
+    }
     /// The Completed groups' shared fold; nil until the user folds one.
     var completedFold: NXCompletedFold?
     var calendarDays = 7
@@ -151,6 +158,8 @@ final class Workbench {
     var tasksQueryFocused = false
     /// The sentence-bar menu open on Tasks, if any; Esc closes it first.
     var tasksMenu: NXTasksMenu?
+    /// The hours a list's menu asked to edit, which Settings opens in view.
+    var settingsHours: AvailabilityCategory?
     var captureOpen = false
     var captureText = ""
     /// What a capture closed by a click away held, all it was aimed at, the
@@ -172,6 +181,14 @@ final class Workbench {
     var searchIndex = 0
     var searchIncludesCompleted = false
     var activityDay: Date?
+
+    // MARK: Files
+
+    /// How many files each task has being copied in, once that has taken a
+    /// moment: the inspector's Files shows them as "Attaching…" meanwhile.
+    var attaching: [UUID: Int] = [:]
+    /// The Markdown export being written, with its progress and Cancel.
+    var export: NXExport?
 
     // MARK: List document
 
@@ -221,6 +238,9 @@ final class Workbench {
     var namingSectionID: UUID?
     @ObservationIgnored private let defaults: UserDefaults?
     private static let openNotesKey = "nextOpenNotes"
+    private static let sidebarHiddenKey = "nextSidebarHidden"
+    private static let sidebarFoldsKey = "nextSidebarFolds"
+    private static func isSidebarGroup(_ key: String) -> Bool { key.hasPrefix("sec-") }
 
     /// The inspector's Add subtask, as the design's: goes to the task's list
     /// document, opening it if needed, where the task unfolds and a new
@@ -265,19 +285,27 @@ final class Workbench {
         clearSelection()
     }
 
-    /// View ▸ Hide Sidebar. The shell also folds the sidebar away while a
-    /// narrow window shows the inspector; either one hides it.
-    var isSidebarHidden = false
+    /// View ▸ Hide Sidebar, kept on this Mac. The shell also folds the
+    /// sidebar away while a narrow window shows the inspector; either one
+    /// hides it.
+    var isSidebarHidden = false {
+        didSet { if isSidebarHidden != oldValue { defaults?.set(isSidebarHidden, forKey: Self.sidebarHiddenKey) } }
+    }
     var isSidebarFoldedForRoom = false
+    /// Shown again by hand: it stays, even where a narrow window would fold
+    /// it for room, until the details close or the window has the room again.
+    var isSidebarKeptOverRoom = false
     var showsSidebar: Bool { !isSidebarHidden && !isSidebarFoldedForRoom }
 
     func toggleSidebar() {
         withAnimation(style.ease(280)) {
             if showsSidebar {
                 isSidebarHidden = true
+                isSidebarKeptOverRoom = false
             } else {
                 isSidebarHidden = false
                 isSidebarFoldedForRoom = false
+                isSidebarKeptOverRoom = true
             }
         }
     }
@@ -342,13 +370,18 @@ final class Workbench {
     @ObservationIgnored private var visibleRoute: AppRoute?
 
     init(store: Store, navigator: Navigator, settings: AppSettings, calendar: CalendarCoordinator,
-         defaults: UserDefaults? = nil) {
+         defaults: UserDefaults? = nil, restoresSidebar: Bool = false) {
         self.store = store
         self.navigator = navigator
         self.settings = settings
         self.calendar = calendar
         self.defaults = defaults
         openNotes = Set((defaults?.stringArray(forKey: Self.openNotesKey) ?? []).compactMap(UUID.init(uuidString:)))
+        // The sidebar as this Mac left it, hidden or with its groups folded.
+        if restoresSidebar {
+            isSidebarHidden = defaults?.bool(forKey: Self.sidebarHiddenKey) ?? false
+            collapsedGroups = Set((defaults?.stringArray(forKey: Self.sidebarFoldsKey) ?? []).filter(Self.isSidebarGroup))
+        }
         watchWork()
         calendar.onMacReturn = { [weak self] in self?.macDidReturn() }
         // A refusal, like a drop the document's rules don't allow, passes in
@@ -390,9 +423,14 @@ final class Workbench {
     var targetIDs: [UUID] {
         if !selection.isEmpty { return selectedVisibleIDs }
         if let focusID { return [focusID] }
-        if let openID = navigator.openTaskID { return [openID] }
+        if let openID = inspectedTaskID { return [openID] }
         return []
     }
+
+    /// The task whose details are on show: the open one, except on Settings,
+    /// a page of its own, which the details make room for until it's left.
+    /// They come back beside the next screen, still open.
+    var inspectedTaskID: UUID? { navigator.route == .settings ? nil : navigator.openTaskID }
 
     var targetTasks: [Block] { targetIDs.compactMap { store.block(id: $0) }.filter(\.isTask) }
 
@@ -408,6 +446,12 @@ final class Workbench {
         guard navigator.route != route else { return }
         navigator.go(to: route)
         routeDidChange()
+    }
+
+    /// A list's Edit Hours in Settings…: Settings, with those hours open.
+    func editHours(_ category: AvailabilityCategory) {
+        settingsHours = category
+        go(.settings)
     }
 
     /// Resets what belongs to the screen being left. Runs for every route
@@ -478,13 +522,33 @@ final class Workbench {
     /// beside the screen. A line being written in the list it covers lets
     /// go first, so the keys don't type into what can't be seen.
     func toggleTaskPage() {
-        guard navigator.openTaskID != nil || isTaskPageOpen else { return }
+        guard inspectedTaskID != nil || isTaskPageOpen else { return }
         NXDocumentEditing.end()
         selection = []
         isTaskPageOpen.toggle()
     }
 
+    /// Back, from the toolbar, ⌘[ and View ▸ Back: the task opened out as a
+    /// page goes back beside its screen first, as the crumb reads, then the
+    /// history steps back. The inspector belongs to the window either way.
+    var canGoBack: Bool { isTaskPageOpen || navigator.canGoBack }
+
+    func goBack() {
+        if isTaskPageOpen { toggleTaskPage() } else { navigator.goBack() }
+    }
+
+    /// Where Back goes: the screen under the task page, or the page before.
+    var backRoute: AppRoute? { isTaskPageOpen ? navigator.route : navigator.backRoute }
+
     // MARK: Focus movement
+
+    /// The row the focus goes to once `leaving` rows go from `rows`, the
+    /// focused one among them: the first after it that stays, else the
+    /// nearest before it, as a list on the Mac keeps its place.
+    static func neighbour(of focus: UUID, leaving: Set<UUID>, in rows: [UUID]) -> UUID? {
+        guard let index = rows.firstIndex(of: focus) else { return nil }
+        return rows[index...].first { !leaving.contains($0) } ?? rows[..<index].last { !leaving.contains($0) }
+    }
 
     func moveFocus(by delta: Int, extending: Bool) {
         guard !visibleIDs.isEmpty else { return }
@@ -685,6 +749,15 @@ final class Workbench {
         reviewed = 0
         selection = []
         focusID = nil
+        // Nothing the inspector or the history showed is left, but the Inbox.
+        navigator.closeTask()
+        navigator.pruneHistory { [store] route in
+            switch route {
+            case let .list(id): store.list(id: id) != nil
+            case let .label(id): store.label(id: id) != nil
+            default: true
+            }
+        }
         showTray("Deleted everything for good", icon: "trash.slash", tone: .red)
         undoRevision += 1
         return true

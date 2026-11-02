@@ -113,7 +113,7 @@ private struct NXTodayPage: View {
             groups.append(NXGroup(id: "planned", title: "Planned for today", icon: "calendar.badge.clock", color: NX.ink(0.45),
                                   rows: planned.map(\.block), rowDepths: depths(planned), taskCount: count(planned),
                                   actionLabel: "Fit into calendar") {
-                for id in ids where isUnplaced(id) { workbench.fit(id) }
+                workbench.fit(ids.filter(isUnplaced))
             })
         }
         if !starred.isEmpty {
@@ -214,6 +214,10 @@ struct NextListScreen: View {
         let archived = library.archived.contains { $0.id == list.id }
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
             NXListCover(list: list)
+            // A nested list's way up, as the details' "Subtask of" leads to the task above.
+            if let parent = library.hierarchy.parent(of: list.id) {
+                NXParentListLink(parent: parent)
+            }
             NXScreenHeader(tile: .list(list), color: list.nxColor, title: list.displayTitle,
                            subtitle: "\(open.count) open" + (section.isEmpty ? "" : " · \(section)")
                                + (archived ? " · Archived" : ""),
@@ -233,7 +237,7 @@ struct NextListScreen: View {
                         .font(.system(size: 12, weight: .medium))
                         .fixedSize()
                 }
-                NXListOptions(list: list, editAppearance: { appearanceOpen = true }) { describing = true }
+                NXListOptions(list: list, rename: { renaming = true }, editAppearance: { appearanceOpen = true }) { describing = true }
             }
             NXListDescription(list: list, editing: $describing)
             NXChildLists(list: list)
@@ -289,8 +293,12 @@ struct NextListScreen: View {
 
 /// The list's cover above its header, while it has one on show.
 private struct NXListCover: View {
+    @Environment(\.displayScale) private var displayScale
     let list: TaskList
     @State private var image: NSImage?
+    /// Counts the cover's bytes arriving for a file already named, as from
+    /// iCloud, so the image is read again.
+    @State private var revision = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -312,12 +320,40 @@ private struct NXListCover: View {
                     .accessibilityLabel("List cover: \(list.coverMetadata?.displayName ?? list.displayTitle)")
             }
         }
-        .task(id: list.coverFilename) { load() }
-        .onChange(of: list.coverData) { _, _ in load() }
+        .task(id: "\(list.coverFilename ?? "")@\(coverPixels)#\(revision)") { await load() }
+        .onChange(of: list.coverData) { _, _ in revision += 1 }
     }
 
-    private func load() {
-        image = list.coverFilename.flatMap { MediaStore.shared.image(named: $0, data: list.coverData) }
+    /// The longest side the cover is drawn, in pixels: filling the widest the
+    /// page gets, 140pt tall, in the cover's own shape.
+    private var coverPixels: Int {
+        let width = NXPageMeasure.reading
+        guard let metadata = list.coverMetadata, metadata.pixelWidth > 0, metadata.pixelHeight > 0 else {
+            return Int((width * 2 * displayScale).rounded(.up))
+        }
+        let pixelWidth = CGFloat(metadata.pixelWidth), pixelHeight = CGFloat(metadata.pixelHeight)
+        let fill = max(width / pixelWidth, 140 / pixelHeight)
+        return Int((max(pixelWidth, pixelHeight) * fill * displayScale).rounded(.up))
+    }
+
+    /// Decodes the cover at the size it's drawn, off the main thread, as a
+    /// photo of up to 40 megapixels would otherwise hold up opening the list.
+    private func load() async {
+        guard let filename = list.coverFilename else {
+            image = nil
+            return
+        }
+        let pixels = coverPixels
+        if let cached = MediaStore.shared.cachedThumbnail(named: filename, maxPixelSize: pixels) {
+            image = cached
+            return
+        }
+        let data = list.coverData
+        let decoded = await Task.detached(priority: .userInitiated) {
+            MediaStore.shared.thumbnail(named: filename, data: data, maxPixelSize: pixels)
+        }.value
+        guard !Task.isCancelled else { return }
+        image = decoded
     }
 }
 
@@ -327,6 +363,8 @@ private struct NXListCover: View {
 private struct NXListOptions: View {
     @Environment(AppEnvironment.self) private var env
     let list: TaskList
+    /// Renames the list in its header, as a click on its title does.
+    let rename: () -> Void
     /// Opens Icon & Colour beneath the list's tile.
     let editAppearance: () -> Void
     /// Starts the description under the header, or writes the one there.
@@ -334,7 +372,7 @@ private struct NXListOptions: View {
 
     var body: some View {
         Menu {
-            NXListMenu(list: list, surface: .page) {
+            NXListMenu(list: list, surface: .page, rename: rename) {
                 Picker("Sort", selection: Binding(get: { list.sorting }, set: { env.workbench.setSorting($0, for: list) })) {
                     ForEach(ListSorting.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -368,8 +406,10 @@ private struct NXListOptions: View {
     @ViewBuilder
     private var coverItems: some View {
         Button(list.coverFilename == nil ? "Add Cover from File…" : "Replace Cover from File…") {
-            guard let source = Self.chooseCoverImage(for: list) else { return }
-            perform { try env.workbench.setCover(of: list, from: source) }
+            Task {
+                guard let source = await Self.chooseCoverImage(for: list) else { return }
+                perform { try env.workbench.setCover(of: list, from: source) }
+            }
         }
         if list.coverFilename != nil {
             Picker("Cover Display", selection: Binding(get: { list.coverPresentation }, set: { presentation in
@@ -390,7 +430,7 @@ private struct NXListOptions: View {
     }
 
     /// Asks for the image a list's cover should show.
-    private static func chooseCoverImage(for list: TaskList) -> URL? {
+    private static func chooseCoverImage(for list: TaskList) async -> URL? {
         let panel = NSOpenPanel()
         panel.title = list.coverFilename == nil ? "Add list cover" : "Replace list cover"
         panel.prompt = "Choose image"
@@ -398,7 +438,7 @@ private struct NXListOptions: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Choose an image up to 20 MB and 40 megapixels. Openlist keeps its own copy."
-        guard panel.runModal() == .OK else { return nil }
+        guard await panel.nxRun() == .OK else { return nil }
         return panel.url
     }
 }
@@ -501,6 +541,45 @@ private struct NXListDescription: View {
     }
 }
 
+/// The list a nested list sits in, over its header, as the details' "Subtask
+/// of" sits over a subtask's title. A click opens it.
+private struct NXParentListLink: View {
+    @Environment(AppEnvironment.self) private var env
+    let parent: TaskList
+    @State private var hovering = false
+
+    var body: some View {
+        let workbench = env.workbench
+        Button { workbench.go(workbench.route(for: parent)) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 14, height: 14)
+                Text("In")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .fixedSize()
+                Text(parent.displayTitle)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .foregroundStyle(hovering ? NX.ink : NX.textTertiary)
+            .padding(.top, 5)
+            .padding(.bottom, 5)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .background(NX.ink(hovering ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Its hover shows at once, as the design's style-hover.
+        .onHover { hovering = $0 }
+        .accessibilityLabel("In \(parent.displayTitle)")
+        .padding(.bottom, 12)
+    }
+}
+
 /// The lists nested in this one, as a compact group above its document.
 private struct NXChildLists: View {
     @Environment(\.nextLibrary) private var library
@@ -535,7 +614,7 @@ private struct NXChildLists: View {
 }
 
 /// A nested list: its glyph where a row's checkbox sits, its title and its
-/// open count. A click opens it.
+/// open count. A click opens it; Tab reaches it with Keyboard navigation on.
 private struct NXChildListRow: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
@@ -546,29 +625,31 @@ private struct NXChildListRow: View {
     var body: some View {
         let workbench = env.workbench
         let count = library.openCount(in: list.id)
-        HStack(spacing: 0) {
-            NXListGlyph(list: list, size: 13)
-                .frame(width: 26, alignment: .leading)
-            // 13.8 on the rows' 1.45 line box.
-            Text(list.displayTitle)
-                .font(.system(size: 13.8))
-                .foregroundStyle(NX.ink)
-                .lineLimit(1)
-                .padding(.vertical, max(0, 13.8 * 1.45 - NX.lineHeight(13.8)) / 2)
-            Spacer(minLength: 8)
-            if count > 0 {
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NX.textTertiary)
-                    .monospacedDigit()
+        Button { workbench.go(workbench.route(for: list)) } label: {
+            HStack(spacing: 0) {
+                NXListGlyph(list: list, size: 13)
+                    .frame(width: 26, alignment: .leading)
+                // 13.8 on the rows' 1.45 line box.
+                Text(list.displayTitle)
+                    .font(.system(size: 13.8))
+                    .foregroundStyle(NX.ink)
+                    .lineLimit(1)
+                    .padding(.vertical, max(0, 13.8 * 1.45 - NX.lineHeight(13.8)) / 2)
+                Spacer(minLength: 8)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NX.textTertiary)
+                        .monospacedDigit()
+                }
             }
+            .padding(.vertical, style.rowVerticalPadding)
+            .padding(.horizontal, 10)
+            .background(hovering ? NX.ink(0.03) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, style.rowVerticalPadding)
-        .padding(.horizontal, 10)
-        .background(hovering ? NX.ink(0.03) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .contentShape(Rectangle())
+        .buttonStyle(NXBareButtonStyle(radius: 9))
         .onHover { hovering = $0 }
-        .onTapGesture { workbench.go(workbench.route(for: list)) }
         .contextMenu { NXListMenu(list: list, surface: .childRow) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(list.displayTitle)

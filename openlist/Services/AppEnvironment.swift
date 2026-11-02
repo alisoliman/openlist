@@ -62,6 +62,8 @@ final class AppEnvironment {
     var listPendingMove: TaskList?
     /// Format ▸ Add Link…'s question, for the window's link sheet.
     var linkPrompt: LinkPrompt?
+    /// File ▸ Empty Trash… asks first, as Trash's Hold to empty Trash does.
+    var confirmsEmptyingTrash = false
 
     /// Which picker the inspector should pop open, set by ⇧⌘D / ⇧⌘L.
     var requestedPicker: DetailPicker?
@@ -75,6 +77,17 @@ final class AppEnvironment {
     /// rows, so it stays off while Quick Add or the menu bar's popover has
     /// the keyboard.
     var isMainWindowKey = false
+    /// Whether a sheet is up over the main window, waiting on an answer: the
+    /// menu items that act on the window stand down under it.
+    var mainWindowHasSheet = false
+
+    /// Opens the main window again if it was closed, and Keyboard Shortcuts'.
+    /// The app's commands install them as the app starts, a launch with no
+    /// window included.
+    @ObservationIgnored var openMainWindow: () -> Void = {}
+    @ObservationIgnored var showShortcuts: () -> Void = {}
+    /// Whether Keyboard Shortcuts is open, which Help names Show or Hide.
+    var isShowingShortcuts = false
 
     init(context: ModelContext, sync: ICloudSyncMonitor,
          libraryID: UUID? = nil, libraryStorage: LibraryRestoreStorage? = nil, libraryStartup: LibraryRestoreStorage.Startup? = nil) {
@@ -97,7 +110,7 @@ final class AppEnvironment {
         widgetPublisher = WidgetSnapshotPublisher(store: store,
             sources: .live(calendar: calendar, settings: settings, libraryID: libraryID))
         workbench = Workbench(store: store, navigator: navigator, settings: settings, calendar: calendar,
-                              defaults: ReviewSession.defaults)
+                              defaults: ReviewSession.defaults, restoresSidebar: Self.restoresPlace)
         calendarNotifications = CalendarNotificationBridge(store: store, calendar: calendar, workbench: workbench)
         widgetLinks = WidgetLinkRouter(store: store, navigator: navigator, screens: workbench)
         widgetCommands = WidgetCommandProcessor(store: store, calendar: calendar, publisher: widgetPublisher, actions: workbench)
@@ -126,6 +139,7 @@ final class AppEnvironment {
         sync.onRemoteChange = { [weak self] in self?.refreshAfterRemoteChange() }
         installNotificationDelegate()
         installWidgetActions()
+        installArrivals()
         notificationActivityObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
             object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -157,6 +171,49 @@ final class AppEnvironment {
         }
         TaskIntentHost.didAdd = { [weak self] blocks, opened in self?.workbench.didAddSpoken(blocks, opened: opened) }
         TaskIntentHost.open = { [weak self] link in _ = self?.openLink(link.url) }
+    }
+
+    /// Lets everything that arrives from outside the window, a link, a
+    /// reminder or a calendar nudge, clear the way first, and open the main
+    /// window when it was closed, through the opener the commands install.
+    private func installArrivals() {
+        widgetLinks.prepare = { [weak self] in self?.prepareForArrival() }
+        localLinks.prepare = { [weak self] in self?.prepareForArrival() }
+        reminderNavigation.prepare = { [weak self] in self?.prepareForArrival() }
+        calendarNotifications.prepare = { [weak self] in self?.prepareForArrival() }
+        reminderNavigation.openMainWindow = { [weak self] in self?.openMainWindow() }
+        calendarNotifications.openMainWindow = { [weak self] in self?.openMainWindow() }
+    }
+
+    /// Clears the window for something arriving from outside it, so it lands
+    /// where it can be seen and takes the keys: search and the palette close,
+    /// capture puts its draft aside as a click away does, the Work panel and
+    /// the Tasks bar's menu close, and a sheet waiting on an answer goes, as
+    /// its Cancel would.
+    func prepareForArrival() {
+        navigator.isSearchOpen = false
+        navigator.isCommandPaletteOpen = false
+        if workbench.captureOpen { workbench.closeCapture(keepsDraft: true) }
+        workbench.endGoChord()
+        workbench.tasksMenu = nil
+        calendar.isWorkPanelPresented = false
+        templateCopyRequest = nil
+        listPendingMove = nil
+        listPendingDeletion = nil
+        linkPrompt = nil
+        confirmsEmptyingTrash = false
+    }
+
+    /// Whether the window opens where this Mac left it. Review fixtures open
+    /// on Today, as their screenshots expect, unless OpenlistRestoresPlace=1
+    /// asks a debug build to restore, to check the restore itself.
+    static var restoresPlace: Bool {
+        guard ReviewSession.identifier != nil else { return true }
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["OpenlistRestoresPlace"] == "1"
+        #else
+        return false
+        #endif
     }
 
     /// Refreshes the widgets when something they mirror changes without a
@@ -242,7 +299,15 @@ final class AppEnvironment {
         }
         store.refreshAllReminders()
         navigator.inboxListID = store.inboxList()?.id
-        navigator.replace(with: .today)
+        // Where this Mac left the window, as far as the library still has
+        // it, before the links that launched the app go on from there, so
+        // Back returns to it.
+        let place = Self.restoresPlace
+            ? navigator.launchPlace(list: { store.list(id: $0)?.id }, label: { store.label(id: $0)?.id },
+                                    isTask: { store.block(id: $0)?.isTask == true })
+            : (route: AppRoute.today, taskID: nil)
+        navigator.replace(with: place.route)
+        if let taskID = place.taskID { navigator.openTask(taskID) }
         reminderNavigation.storeReady { [weak store] id in
             guard let store, let task = store.block(id: id), task.isTask,
                   let list = store.list(id: task.listID) else { throw ContentReveal.Unavailable.deleted }
@@ -307,6 +372,10 @@ final class AppEnvironment {
             } else {
                 navigator.replace(with: .today)
             }
+        }
+        // A label the first import took away, one the window reopened on included.
+        if case let .label(id) = navigator.route, store.label(id: id) == nil {
+            navigator.replace(with: .today)
         }
     }
 }

@@ -35,15 +35,20 @@ struct SelectMode: ViewModifier {
             .animation(style.fading(.snappy(duration: 0.3)), value: isSelecting)
             .onChange(of: isSelecting, initial: true) { _, selecting in
                 env.navigator.hidesDock(selecting, for: token)
+                SwipeBack.suspend(selecting, for: token)
                 if !selecting { selection = [] }
             }
-            .onDisappear { env.navigator.hidesDock(false, for: token) }
+            .onChange(of: env.navigator.arrivals) { isSelecting = false }
+            .onDisappear {
+                env.navigator.hidesDock(false, for: token)
+                SwipeBack.suspend(false, for: token)
+            }
     }
 
     private var page: some View {
         let picked = tasks.filter { selection.contains($0.id) }
         let allPicked = !tasks.isEmpty && picked.count == tasks.count
-        return OLScreen(identifier: "screen.select") {
+        return OLScreen(identifier: "screen.select", escape: { isSelecting = false }) {
             OLTopBar {
                 Button(allPicked ? "Select none" : "Select all") {
                     selection = allPicked ? [] : Set(tasks.map(\.id))
