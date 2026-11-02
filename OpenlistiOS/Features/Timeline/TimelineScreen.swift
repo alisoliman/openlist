@@ -269,10 +269,11 @@ private struct PlanRow: View {
     private func chip(_ task: Block) -> some View {
         let minutes = env.actions.planMinutes(for: task)
         return Button { env.navigator.open(.taskDetail(task.id)) } label: {
-            // The row's room above and below the 34 pt chip is its target too.
+            // The row's room above and below the 34 pt chip is its target
+            // too. Only taps take that room: a drag lifted by it never lands.
             PlanChip(title: task.displayTitle, minutes: minutes)
                 .padding(.vertical, 5)
-                .contentShape(.rect)
+                .contentShape(.interaction, .rect)
         }
         .buttonStyle(OLPressStyle(scale: 0.96))
         .onDrag {

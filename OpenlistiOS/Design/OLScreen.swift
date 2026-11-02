@@ -27,7 +27,6 @@ struct OLScreen<TopBar: View, Content: View>: View {
     @Environment(\.olStyle) private var style
     @Environment(\.isPresented) private var isPresented
     @Environment(\.dismiss) private var dismiss
-    @State private var position = ScrollPosition(edge: .top)
 
     init(identifier: String? = nil, scrolls: Bool = true, escape: (() -> Void)? = nil,
          @ViewBuilder topBar: () -> TopBar, @ViewBuilder content: () -> Content) {
@@ -41,14 +40,17 @@ struct OLScreen<TopBar: View, Content: View>: View {
     var body: some View {
         Group {
             if scrolls {
-                ScrollView {
-                    column
-                }
-                .scrollPosition($position)
-                .scrollDismissesKeyboard(.interactively)
-                // The tab on show tapped again at its root, as a tab bar does.
-                .onChange(of: scrollToTop) {
-                    withAnimation(style.animation(.snappy(duration: 0.35))) { position.scrollTo(edge: .top) }
+                // A reader rather than a bound position, which would redraw
+                // the page as it scrolls and break off a row's swipe.
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        column.id(Self.top)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                    // The tab on show tapped again at its root, as a tab bar does.
+                    .onChange(of: scrollToTop) {
+                        withAnimation(style.animation(.snappy(duration: 0.35))) { proxy.scrollTo(Self.top, anchor: .top) }
+                    }
                 }
             } else {
                 column.frame(maxHeight: .infinity, alignment: .top)
@@ -62,6 +64,8 @@ struct OLScreen<TopBar: View, Content: View>: View {
             if let escape { escape() } else if isPresented { dismiss() }
         }
     }
+
+    private static var top: String { "OLScreen.top" }
 
     private var column: some View {
         VStack(alignment: .leading, spacing: 0) {
