@@ -81,20 +81,21 @@ final class TriageSession {
 }
 
 extension NextLibrary {
-    /// The Inbox's queue as this triage pass leaves it.
-    func inboxQueue(triage: TriageSession, closing: Set<UUID>) -> [Block] {
-        inboxQueue(kept: kept(by: triage), closing: closing)
+    /// The Inbox's queue as this triage pass leaves it, without what's
+    /// snoozed past `now`'s day.
+    func inboxQueue(triage: TriageSession, closing: Set<UUID>, now: Date) -> [Block] {
+        inboxQueue(kept: kept(by: triage), closing: closing, now: now)
     }
 
     /// The lists' undated tasks as No date's pass leaves them, in the lists'
     /// order; `blocks` are the documents' non-trashed blocks.
-    func undatedQueue(blocks: [Block], triage: TriageSession, closing: Set<UUID>) -> [Block] {
-        undatedQueue(blocks: blocks, kept: kept(by: triage), closing: closing)
+    func undatedQueue(blocks: [Block], triage: TriageSession, closing: Set<UUID>, now: Date) -> [Block] {
+        undatedQueue(blocks: blocks, kept: kept(by: triage), closing: closing, now: now)
     }
 
     /// How many cards No date's pass has left.
-    func undatedCount(triage: TriageSession, closing: Set<UUID>) -> Int {
-        undatedCount(kept: kept(by: triage), closing: closing)
+    func undatedCount(triage: TriageSession, closing: Set<UUID>, now: Date) -> Int {
+        undatedCount(kept: kept(by: triage), closing: closing, now: now)
     }
 
     /// What `triage` keeps off its queue. The tasks' dates are looked up in

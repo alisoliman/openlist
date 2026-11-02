@@ -36,6 +36,11 @@ enum NXFormat {
         return MomentText.day(date, now: now)
     }
 
+    /// `dueLabel` within a sentence: "until tomorrow", "until Fri 25".
+    static func dueInSentence(_ date: Date, now: Date = .now) -> String {
+        MomentText.moment(date, includesTime: false, year: false, inSentence: true, now: now)
+    }
+
     /// A moment in the plan or in history, the day as `dueLabel` names it, with
     /// the year when it isn't this one, and the clock: "Today 10:00", "Fri 25
     /// 10:00", "3 Oct 2025 10:00" (`MomentText.moment`).
@@ -158,9 +163,10 @@ enum NXFormat {
 /// The capture grammar: the tokens coloured as you type are exactly the ones
 /// Return saves. Dates, times and repeat rules are whatever `DateParser` reads
 /// (none while natural-language dates are off); labels, priority and
-/// estimates are the design's tokens.
+/// estimates are the design's tokens, and `@` names one of `lists`. A token
+/// the writer said to keep as text (`literals`) is read as plain words.
 struct CaptureParse {
-    enum Kind: String { case repeatRule, date, time, label, priority, estimate }
+    enum Kind: String { case repeatRule, date, time, label, priority, estimate, list }
 
     struct Mark {
         var kind: Kind
@@ -181,6 +187,9 @@ struct CaptureParse {
     let title: String
     /// The due date, time and repeat rule read from the text; nil when there are none.
     let schedule: ParsedSchedule?
+    /// The list the first `@List` token names, and the name it goes by; nil without one.
+    let listID: UUID?
+    let listName: String?
 
     /// Labels need whitespace or the start before `#`, as in the store's capture draft,
     /// so `issue#42` and URL fragments stay plain text.
@@ -195,23 +204,39 @@ struct CaptureParse {
         (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { (kind, $0) }
     }
 
-    init(_ text: String, parsesDates: Bool = true, reference: Date = .now) {
+    /// `lists` are those an `@` token can name, by the names they show.
+    /// `literals` are tokens, as typed, to read as plain words wherever they
+    /// appear (`literal(_:)`): the writer's way out of a word read wrongly.
+    init(_ text: String, parsesDates: Bool = true, reference: Date = .now,
+         lists: [(id: UUID, name: String)] = [], literals: Set<String> = []) {
         self.text = text
         var marks: [Mark] = []
         for (kind, regex) in Self.patterns {
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let range = Range(match.range, in: text) else { continue }
                 if marks.contains(where: { $0.range.overlaps(range) }) { continue }
-                marks.append(Mark(kind: kind, range: range, raw: String(text[range])))
+                let raw = String(text[range])
+                if literals.contains(Self.literal(raw)) { continue }
+                marks.append(Mark(kind: kind, range: range, raw: raw))
             }
+        }
+        var listID: UUID?, listName: String?
+        if let found = Self.listToken(in: text, lists: lists, avoiding: marks, literals: literals) {
+            marks.append(Mark(kind: .list, range: found.range, raw: String(text[found.range])))
+            listID = found.id
+            listName = found.name
         }
         var schedule: ParsedSchedule?
         if parsesDates {
             // The tokens above are blanked with a character that is neither a
-            // word nor a space, so a date phrase can't reach into or across one.
+            // word nor a space, so a date phrase can't reach into or across
+            // one; so are the words kept as text.
             let masked = NSMutableString(string: text)
             for mark in marks {
                 let range = NSRange(mark.range, in: text)
+                masked.replaceCharacters(in: range, with: String(repeating: "\u{FFFC}", count: range.length))
+            }
+            for range in Self.literalRanges(literals, in: masked as String) {
                 masked.replaceCharacters(in: range, with: String(repeating: "\u{FFFC}", count: range.length))
             }
             let parsed = DateParser.parse(masked as String, reference: reference)
@@ -250,16 +275,69 @@ struct CaptureParse {
         var title = text
         for mark in marks.reversed() { title.removeSubrange(mark.range) }
         title = title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        // A token taken from before a comma leaves no space before it:
+        // "fix the tap @Home, first thing" is "fix the tap, first thing".
+        if !marks.isEmpty { title = title.replacingOccurrences(of: #"\s+([,;:])"#, with: "$1", options: .regularExpression) }
         // A joiner left dangling before the date (on/at/by/due) goes with it:
-        // "meet by friday" is "meet".
+        // "meet by friday" is "meet". So does one before a list ending the
+        // line: "buy milk to @Groceries" is "buy milk".
         if schedule != nil {
             title = title.replacingOccurrences(of: #"\s+(?:on|at|by|due)\s*$"#, with: "",
+                                               options: [.regularExpression, .caseInsensitive])
+        }
+        if let list = segments.firstIndex(where: { $0.kind == .list }),
+           segments[(list + 1)...].allSatisfy({ $0.kind != nil || $0.text.allSatisfy(\.isWhitespace) }) {
+            title = title.replacingOccurrences(of: #"\s+(?:to|into)\s*$"#, with: "",
                                                options: [.regularExpression, .caseInsensitive])
         }
         self.marks = marks
         self.segments = segments
         self.title = title.trimmingCharacters(in: .whitespaces)
         self.schedule = schedule
+        self.listID = listID
+        self.listName = listName
+    }
+
+    /// How a token typed as `raw` is kept among a draft's literals.
+    static func literal(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    /// Where each of `literals` stands as words of its own in `text`.
+    private static func literalRanges(_ literals: Set<String>, in text: String) -> [NSRange] {
+        literals.filter { !$0.isEmpty }.flatMap { literal in
+            let pattern = #"(?<![\p{L}\p{N}])"# + NSRegularExpression.escapedPattern(for: literal) + #"(?![\p{L}\p{N}])"#
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [NSRange]() }
+            return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).map(\.range)
+        }
+    }
+
+    /// The first `@` that names one of `lists`, after a space or the start,
+    /// the longest name it can be, so "@Japan trip" beats "@Japan": its
+    /// range, `@` and all, and the list. A name runs to a space, the end or
+    /// punctuation, so "@Home," names Home and "@Homework" doesn't.
+    private static func listToken(in text: String, lists: [(id: UUID, name: String)], avoiding marks: [Mark],
+                                  literals: Set<String>) -> (range: Range<String.Index>, id: UUID, name: String)? {
+        let names = lists.map { (id: $0.id, name: $0.name.trimmingCharacters(in: .whitespaces)) }
+            .filter { !$0.name.isEmpty }
+            .sorted { $0.name.count > $1.name.count }
+        guard !names.isEmpty else { return nil }
+        var index = text.startIndex
+        while let at = text[index...].firstIndex(of: "@") {
+            index = text.index(after: at)
+            guard at == text.startIndex || text[text.index(before: at)].isWhitespace else { continue }
+            for list in names {
+                guard let found = text.range(of: list.name, options: [.anchored, .caseInsensitive, .diacriticInsensitive],
+                                             range: index..<text.endIndex) else { continue }
+                let end = found.upperBound
+                guard end == text.endIndex || text[end].isWhitespace || ",.;:!?)".contains(text[end]) else { continue }
+                let range = at..<end
+                guard !marks.contains(where: { $0.range.overlaps(range) }),
+                      !literals.contains(literal(String(text[range]))) else { continue }
+                return (range, list.id, list.name)
+            }
+        }
+        return nil
     }
 
     func first(_ kind: Kind) -> Mark? { marks.first { $0.kind == kind } }
@@ -323,27 +401,31 @@ struct CaptureParse {
             switch mark.kind {
             case .date:
                 guard !showsDay, let date = preview.date else { continue }
-                chips.append(day(date))
+                var chip = day(date)
+                chip.raw = mark.raw
+                chips.append(chip)
                 showsDay = true
             case .time:
                 guard !showsTime, preview.includesTime, let date = preview.date else { continue }
                 impliedDay()
-                chips.append(CaptureChip(id: "time", kind: .time, label: NXFormat.clock(date)))
+                chips.append(CaptureChip(id: "time", kind: .time, label: NXFormat.clock(date), raw: mark.raw))
                 showsTime = true
             case .repeatRule:
                 guard !showsRepeat, preview.recurrence != nil else { continue }
                 impliedDay()
-                chips.append(CaptureChip(id: "repeat", kind: .repeatRule, label: mark.raw))
+                chips.append(CaptureChip(id: "repeat", kind: .repeatRule, label: mark.raw, raw: mark.raw))
                 showsRepeat = true
             case .label:
-                chips.append(CaptureChip(id: id, kind: .label, label: String(mark.raw.dropFirst())))
+                chips.append(CaptureChip(id: id, kind: .label, label: String(mark.raw.dropFirst()), raw: mark.raw))
             case .priority:
                 // The first one, which is the one Return saves.
                 guard !showsPriority, let priority else { continue }
-                chips.append(CaptureChip(id: "priority", kind: .priority(priority), label: priority.title))
+                chips.append(CaptureChip(id: "priority", kind: .priority(priority), label: priority.title, raw: mark.raw))
                 showsPriority = true
             case .estimate:
-                chips.append(CaptureChip(id: id, kind: .estimate, label: "\(mark.raw.dropFirst()) estimate"))
+                chips.append(CaptureChip(id: id, kind: .estimate, label: "\(mark.raw.dropFirst()) estimate", raw: mark.raw))
+            case .list:
+                chips.append(CaptureChip(id: "list", kind: .list, label: listName ?? String(mark.raw.dropFirst()), raw: mark.raw))
             }
         }
         if forToday, !showsDay, let date = preview.date, NXFormat.dayOffset(date, now: now) == 0 {
@@ -356,11 +438,14 @@ struct CaptureParse {
 /// One of the capture card's chips: what it says and what it stands for,
 /// which gives it its icon and tone.
 struct CaptureChip: Equatable {
-    enum Kind: Equatable { case day, time, repeatRule, label, priority(TaskPriority), estimate }
+    enum Kind: Equatable { case day, time, repeatRule, label, priority(TaskPriority), estimate, list }
     let id: String
     let kind: Kind
     let label: String
     /// Whether what was typed brings it, so it pops in as the design's typed
     /// chips do. The Today a capture for today leads with is simply there.
     var typed = true
+    /// The words typed for it, which "Keep as text" hands back to the title;
+    /// nil for a chip nothing typed brought, like Today or an implied day.
+    var raw: String?
 }

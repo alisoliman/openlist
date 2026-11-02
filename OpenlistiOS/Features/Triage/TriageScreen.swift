@@ -8,11 +8,13 @@ import SwiftUI
 
 /// Triage (mockup 08), a full-screen cover dealing one card at a time from
 /// the pass its switch picks. The Inbox, oldest first: pick a list to move it
-/// to, a day for it, or both, then Next files it in one step: a day alone
-/// leaves it in the Inbox. No date: the lists' tasks with no day yet, in the
-/// lists' order, where a day's chip dates the card at once. Either way Delete
-/// sends it to Trash, ✓ marks it done, Later sets it aside for now. Each is
-/// one step with Undo in the tray.
+/// to (the one its words point to first, every list behind More), a day for
+/// it, or both, then Next files it in one step: a day alone leaves it in the
+/// Inbox. A tap on the title edits it, tokens and all. No date: the lists'
+/// tasks with no day yet, in the lists' order, where a day's chip dates the
+/// card at once. Either way Delete sends it to Trash, ✓ marks it done,
+/// Snooze puts it away until a day, when it comes back by itself, and Later
+/// sets it aside for now. Each is one step with Undo in the tray.
 struct TriageScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
@@ -27,14 +29,20 @@ struct TriageScreen: View {
     /// The day picked for a No date card, given once the picker has gone:
     /// the next card mustn't come in under a sheet still closing.
     @State private var pickedDay: (id: UUID, date: Date, includesTime: Bool)?
+    /// More's list picker, for the Inbox card on show.
+    @State private var picksList = false
+    /// Snooze's own date picker, and the day picked there, given once it has
+    /// gone, as No date's is.
+    @State private var picksSnooze = false
+    @State private var snoozeDay: (id: UUID, date: Date)?
 
     var body: some View {
         @Bindable var navigator = env.navigator
         let mode = navigator.triageMode
         let session = env.triage(for: mode)
         let queue = switch mode {
-        case .inbox: library.inboxQueue(triage: session, closing: env.actions.closing)
-        case .undated: library.undatedQueue(blocks: blocks, triage: session, closing: env.actions.closing)
+        case .inbox: library.inboxQueue(triage: session, closing: env.actions.closing, now: env.now)
+        case .undated: library.undatedQueue(blocks: blocks, triage: session, closing: env.actions.closing, now: env.now)
         }
         let reviewed = session.reviewed(queue: queue)
         let total = reviewed + queue.count
@@ -69,12 +77,20 @@ struct TriageScreen: View {
                 Group {
                     switch mode {
                     case .inbox:
-                        TriageCard(task: card, now: env.now, draft: $draft, picksDate: $picksDate)
+                        TriageCard(task: card, now: env.now, draft: $draft, picksDate: $picksDate, picksList: $picksList)
                     case .undated:
                         UndatedTriageCard(task: card, now: env.now, picksDate: $picksDate) { date(card, on: $0) }
                     }
                 }
                 .id(card.id)
+                .sheet(isPresented: $picksList) {
+                    let id = card.id
+                    ListPickerSheet(title: "Move to", excluding: Set([card.listID].compactMap(\.self)),
+                                    suggested: library.suggestedDestination(for: card)) { list in
+                        guard shownCard == id else { return }
+                        draft.listID = list.id
+                    }
+                }
                 // With Reduce Motion the next card fades in rather than sliding.
                 .transition(style.reduceMotion ? .opacity
                             : .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
@@ -122,6 +138,7 @@ struct TriageScreen: View {
 
     private func buttons(_ task: Block, mode: TriageMode) -> some View {
         let session = env.triage(for: mode)
+        let calendar = env.settings.calendar
         return OLActionDock {
             OLIconButton("trash", label: "Delete", kind: .bad, size: .large) {
                 if env.actions.trash([task]) { session.finish(task.id) }
@@ -139,6 +156,26 @@ struct TriageScreen: View {
                 else { session.finish(task.id) }
             }
             .accessibilityIdentifier("triage.done")
+            // Away until a day, when it comes back to triage by itself.
+            Menu {
+                ForEach(Store.snoozeDays(from: env.now, calendar: calendar), id: \.title) { option in
+                    Button("\(option.title) · \(CompactText.day(option.day, now: env.now, calendar: calendar))") {
+                        snooze(task, until: option.day, session: session)
+                    }
+                }
+                Button("Pick a date…", systemImage: "calendar") { picksSnooze = true }
+            } label: {
+                Image(systemName: "moon.zzz")
+                    .font(.system(size: OLIconButton.Size.large.icon, weight: .semibold))
+                    .foregroundStyle(OL.ink)
+                    .frame(width: OLIconButton.Size.large.rawValue, height: OLIconButton.Size.large.rawValue)
+                    .background(Circle().fill(OL.sunken))
+                    .contentShape(.circle)
+            }
+            .buttonStyle(OLPressStyle())
+            .accessibilityLabel("Snooze")
+            .accessibilityHint("Puts the task away until a day, when it comes back by itself")
+            .accessibilityIdentifier("triage.snooze")
             Spacer(minLength: 0)
             // No date's days date the card as they're tapped, so it never needs Next.
             if mode == .undated || draft.isEmpty {
@@ -153,6 +190,29 @@ struct TriageScreen: View {
                                                      calendar: env.settings.calendar))
             }
         }
+        .sheet(isPresented: $picksSnooze, onDismiss: { snoozePicked(session: session) }) {
+            let id = task.id
+            DuePickerSheet(title: "Snooze until", date: nil, includesTime: false, now: env.now, clears: false) { date, _ in
+                guard shownCard == id, let date else { return }
+                snoozeDay = (id, date)
+            }
+        }
+    }
+
+    /// Snoozes the card on show: it leaves the pass, and comes back to
+    /// triage that morning; the tray's Undo brings it back now.
+    private func snooze(_ task: Block, until day: Date, session: TriageSession) {
+        env.actions.snooze([task], until: day)
+        env.haptics.play(.selection)
+        session.finish(task.id)
+    }
+
+    /// Snoozes the card the picker was opened on, once it has gone.
+    private func snoozePicked(session: TriageSession) {
+        guard let picked = snoozeDay else { return }
+        snoozeDay = nil
+        guard let task = env.store.block(id: picked.id) else { return }
+        snooze(task, until: picked.date, session: session)
     }
 
     /// The pass done: how many it reviewed, and for No date, the tasks it
@@ -167,7 +227,7 @@ struct TriageScreen: View {
                          actionTitle: "Back to Inbox") { navigator.dismissCover() }
         case .undated:
             // With none left on the pass, what's still undated was set aside.
-            let kept = library.undatedCount(kept: [], closing: env.actions.closing)
+            let kept = library.undatedCount(kept: [], closing: env.actions.closing, now: env.now)
             if reviewed == 0, kept == 0 {
                 OLEmptyState(symbol: "checkmark", tint: OL.successText, fill: OL.successSoft, title: "Nothing without a date",
                              message: "Every open task in your lists has a day.",
@@ -244,40 +304,71 @@ private struct TriageCard: View {
     let now: Date
     @Binding var draft: TriageDraft
     @Binding var picksDate: Bool
+    @Binding var picksList: Bool
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
+    /// The edit line's text while it's open, in the title's place.
+    @State private var editing: String?
+    @FocusState private var editFocused: Bool
+
+    /// The lists Move to shows as chips before More.
+    private static let shownLists = 8
 
     var body: some View {
         let calendar = env.settings.calendar
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Triage").olCaps().foregroundStyle(OL.infoText)
-                Text(task.displayTitle)
-                    .font(OLFont.triageTitle)
-                    .foregroundStyle(OL.ink)
+                TriageCardHeader(caps: "Triage", task: task)
+                if let editing {
+                    editLine(editing)
+                } else {
+                    Button { open() } label: {
+                        Text(task.displayTitle)
+                            .font(OLFont.triageTitle)
+                            .foregroundStyle(OL.ink)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
                     .padding(.top, 8)
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityHint("Edits the title, or adds a date, @list, #label, !priority or ~estimate")
+                    .accessibilityIdentifier("triage.title")
+                }
                 Text(CompactText.captured(task.createdAt, now: now))
                     .font(OLFont.meta)
                     .foregroundStyle(OL.muted)
                     .padding(.top, 6)
+                TriageContext(task: task, now: now)
             }
             VStack(alignment: .leading, spacing: 10) {
                 OLGroupHeader("Move to").padding(.horizontal, -4)
                 OLFlowLayout {
-                    ForEach(library.destinations) { list in
+                    let suggested = library.suggestedDestination(for: task)
+                    let lists = moveTargets(suggested: suggested)
+                    ForEach(lists) { list in
                         let on = draft.listID == list.id
-                        OLChipButton(OLChip(list.displayTitle, glyph: list.icon, style: on ? .on : .plain)) {
+                        let isSuggested = list.id == suggested?.id
+                        OLChipButton(OLChip(name(of: list), symbol: isSuggested ? "sparkles" : nil,
+                                            glyph: isSuggested ? nil : list.icon, style: on ? .on : .plain)) {
                             draft.listID = on ? nil : list.id
                         }
+                        .accessibilityLabel(name(of: list) + (isSuggested ? ", suggested" : ""))
                         .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                    if library.destinations.count > Self.shownLists {
+                        OLChipButton(OLChip("More", symbol: "magnifyingglass")) { picksList = true }
+                            .accessibilityLabel("More lists")
+                            .accessibilityHint("Find any list by name")
+                            .accessibilityIdentifier("triage.moreLists")
                     }
                 }
             }
             VStack(alignment: .leading, spacing: 10) {
                 OLGroupHeader("When").padding(.horizontal, -4)
                 OLFlowLayout {
-                    let presets = [PhoneDay.today, .tomorrow, .weekend]
+                    let presets = PhoneDay.allCases
                     ForEach(presets) { day in
                         let date = day.date(now: now, calendar: calendar)
                         let on = draft.timed == nil && draft.due.map { calendar.isDate($0, inSameDayAs: date) } == true
@@ -304,10 +395,146 @@ private struct TriageCard: View {
         .olCard()
     }
 
+    /// The suggested list first, then the lists in the sidebar's order, up
+    /// to `shownLists`, and the one picked from More when it's further down.
+    private func moveTargets(suggested: TaskList?) -> [TaskList] {
+        var lists = library.destinations
+        if let suggested { lists = [suggested] + lists.filter { $0.id != suggested.id } }
+        var shown = Array(lists.prefix(Self.shownLists))
+        if let picked = library.list(draft.listID), !shown.contains(where: { $0.id == picked.id }) { shown.append(picked) }
+        return shown
+    }
+
+    /// A nested list by its path, as Move to has no room to show where it is otherwise.
+    private func name(of list: TaskList) -> String {
+        library.hierarchy.parent(of: list.id) == nil ? list.displayTitle : library.hierarchy.path(for: list.id)
+    }
+
     /// "Fri 25", "Fri 25, 18:00".
     private func pickedLabel(calendar: Calendar) -> String {
         guard let due = draft.due else { return "" }
         return CompactText.captureWhen(due, includesTime: draft.timed ?? false, now: now, calendar: calendar)
+    }
+
+    // MARK: Edit line
+
+    private func open() {
+        editing = task.displayTitle
+        editFocused = true
+    }
+
+    /// The title as a capture line: a new title, and tokens. Done writes the
+    /// title, repeat, labels, priority and estimate over the task; a day it
+    /// names, and an `@` list, are picked on the card for Next.
+    private func editLine(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Title, a date, @list, #label…", text: Binding(get: { editing ?? "" }, set: { editing = $0 }),
+                      axis: .vertical)
+                .font(OLFont.triageTitle)
+                .foregroundStyle(OL.ink)
+                .focused($editFocused)
+                .submitLabel(.done)
+                .onSubmit { apply(text: editing ?? text) }
+                // A field that wraps takes Return as a new line; here it's Done.
+                .onChange(of: editing) { _, typed in
+                    guard let typed, typed.contains("\n") else { return }
+                    apply(text: typed.replacingOccurrences(of: "\n", with: " "))
+                }
+                .accessibilityIdentifier("triage.edit")
+            HStack(spacing: 16) {
+                Button("Cancel") { editing = nil }
+                    .buttonStyle(.olLink(small: true))
+                Button("Done") { apply(text: editing ?? text) }
+                    .buttonStyle(.olLink(strong: true, small: true))
+                    .accessibilityIdentifier("triage.editDone")
+            }
+        }
+        .padding(.top, 8)
+        .onAppear { editFocused = true }
+    }
+
+    private func apply(text: String) {
+        let parse = CaptureParse(text, parsesDates: env.settings.parsesNaturalLanguageDates, reference: now,
+                                 lists: library.lists.map { ($0.id, $0.displayTitle) })
+        var snapshot = parse.snapshot()
+        if let due = snapshot.date {
+            draft.due = due
+            draft.timed = snapshot.includesTime
+        }
+        if let listID = parse.listID, listID != task.listID { draft.listID = listID }
+        snapshot.date = nil
+        snapshot.includesTime = false
+        env.actions.write(snapshot, over: task)
+        editing = nil
+        editFocused = false
+    }
+}
+
+/// The top of a triage card: what pass it's on, and Details, which opens
+/// the task's page over triage, Back returning to the card.
+private struct TriageCardHeader: View {
+    let caps: String
+    let task: Block
+    @Environment(PhoneEnvironment.self) private var env
+
+    var body: some View {
+        HStack(alignment: .center) {
+            Text(caps).olCaps().foregroundStyle(OL.infoText)
+            Spacer(minLength: 8)
+            OLIconButton("info.circle", label: "Details", kind: .bare, iconSize: 18) {
+                env.navigator.open(.taskDetail(task.id))
+            }
+            .padding(.vertical, -12)
+            .padding(.trailing, -10)
+            .accessibilityHint("Opens the task's page")
+            .accessibilityIdentifier("triage.details")
+        }
+    }
+}
+
+/// What a card's task holds, so it can be filed without opening it: its
+/// note's first lines, then its day, priority, labels, subtasks and files.
+private struct TriageContext: View {
+    let task: Block
+    let now: Date
+    @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.phoneLibrary) private var library
+
+    var body: some View {
+        let facts = facts
+        if !task.note.isEmpty || !facts.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                if !task.note.isEmpty {
+                    Text(task.note)
+                        .font(OLFont.meta)
+                        .foregroundStyle(OL.ink)
+                        .lineLimit(3)
+                        .accessibilityLabel("Note: \(task.note)")
+                }
+                if !facts.isEmpty {
+                    Text(facts.joined(separator: " · "))
+                        .font(OLFont.meta)
+                        .foregroundStyle(OL.muted)
+                }
+            }
+            .padding(.top, 10)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("triage.context")
+        }
+    }
+
+    private var facts: [String] {
+        var facts: [String] = []
+        if let due = CompactText.due(task.dueDate, includesTime: task.includesTime, now: now, calendar: env.settings.calendar) {
+            facts.append(due.text)
+        }
+        if task.priority != .none { facts.append("\(task.priority.title) priority") }
+        facts += task.labelIDs.compactMap { library.label($0) }.map { "#" + $0.name }
+        let subtasks = task.listID.map { listID in library.tasks(in: listID).filter { $0.parentID == task.id } } ?? []
+        if !subtasks.isEmpty { facts.append(subtasks.count == 1 ? "1 subtask" : "\(subtasks.count) subtasks") }
+        let files = env.store.attachments(for: task.id).count
+        if files > 0 { facts.append(files == 1 ? "1 file" : "\(files) files") }
+        return facts
     }
 }
 
@@ -326,7 +553,7 @@ private struct UndatedTriageCard: View {
         let list = library.list(task.listID)
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("No date").olCaps().foregroundStyle(OL.infoText)
+                TriageCardHeader(caps: "No date", task: task)
                 Text(task.displayTitle)
                     .font(OLFont.triageTitle)
                     .foregroundStyle(OL.ink)
@@ -341,6 +568,7 @@ private struct UndatedTriageCard: View {
                 .font(OLFont.meta)
                 .foregroundStyle(OL.muted)
                 .padding(.top, 6)
+                TriageContext(task: task, now: now)
             }
             VStack(alignment: .leading, spacing: 10) {
                 OLGroupHeader("When").padding(.horizontal, -4)

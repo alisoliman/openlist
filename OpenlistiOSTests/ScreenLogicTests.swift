@@ -24,6 +24,53 @@ struct ScreenLogicTests {
         try phone.container.mainContext.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil }))
     }
 
+    // MARK: Adding and triaging
+
+    @Test func whatAPasteInsertedIsFoundAroundTheTyping() throws {
+        #expect(CaptureScreen.insertion(from: "Buy ", to: "Buy milk\neggs")?.text == "milk\neggs")
+        #expect(CaptureScreen.insertion(from: "ab", to: "a\nb")?.text == "\n")
+        #expect(CaptureScreen.insertion(from: "abc", to: "ab") == nil)
+        let middle = try #require(CaptureScreen.insertion(from: "Call  today", to: "Call Mum\nDad today"))
+        #expect(middle.before == "Call " && middle.text == "Mum\nDad" && middle.after == " today")
+    }
+
+    @Test func snoozeTakesACardOffTheQueueUntilItsDay() throws {
+        let phone = try TestPhone(seeded: true)
+        let gift = try #require(phone.task("Gift ideas for Mika’s birthday"))
+        let now = phone.env.now
+        let tomorrow = try #require(Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now)))
+        phone.env.actions.snooze([gift], until: tomorrow)
+        #expect(gift.deferredUntil == tomorrow && gift.selectedForDay == nil)
+        var lib = try library(phone)
+        #expect(!lib.inboxQueue(triage: phone.env.triage, closing: [], now: now).contains { $0.id == gift.id })
+        #expect(lib.snoozedInbox(now: now).map(\.id) == [gift.id])
+        #expect(lib.inboxQueue(triage: phone.env.triage, closing: [], now: tomorrow).contains { $0.id == gift.id },
+                "Back on its day")
+        phone.env.actions.undoLatest()
+        lib = try library(phone)
+        #expect(gift.deferredUntil == nil && lib.inboxQueue(triage: phone.env.triage, closing: [], now: now).first?.id == gift.id)
+    }
+
+    @Test func theEditLineWritesTitleAndTokensWithOneUndo() throws {
+        let phone = try TestPhone(seeded: true)
+        let gift = try #require(phone.task("Gift ideas for Mika’s birthday"))
+        let snapshot = CaptureParse("Gift ideas for Mika #travel !high ~20m", reference: phone.env.now).snapshot()
+        #expect(phone.env.actions.write(snapshot, over: gift))
+        #expect(gift.displayTitle == "Gift ideas for Mika" && gift.priority == .high && gift.schedulingEstimateMinutes == 20)
+        #expect(phone.store.labels(for: gift).map(\.name) == ["travel"])
+        phone.env.actions.undoLatest()
+        #expect(gift.displayTitle == "Gift ideas for Mika’s birthday" && gift.priority == .none && gift.labelIDs.isEmpty)
+    }
+
+    @Test func theCardSuggestsTheListItsWordsPointTo() throws {
+        let phone = try TestPhone(seeded: true)
+        let kyoto = try #require(phone.store.allLists().first { $0.displayTitle == "Weekend in Kyoto" })
+        let capture = try phone.store.saveCapture(CaptureSnapshot(title: "Book the ryokan dinner, travel day"), destinationID: nil)
+        #expect(try library(phone).suggestedDestination(for: capture)?.id == kyoto.id)
+        let gift = try #require(phone.task("Gift ideas for Mika’s birthday"))
+        #expect(try library(phone).suggestedDestination(for: gift) == nil, "One name in common says too little")
+    }
+
     // MARK: Today and the work in hand
 
     @Test func theWorkInHandIsTheFixturesSession() throws {
@@ -143,7 +190,7 @@ struct ScreenLogicTests {
         let gift = try #require(phone.task("Gift ideas for Mika’s birthday"))
         session.begin()
         session.keep(gift.id)
-        var queue = try library(phone).inboxQueue(triage: session, closing: [])
+        var queue = try library(phone).inboxQueue(triage: session, closing: [], now: phone.env.now)
         #expect(session.reviewed(queue: queue) == 1)
         #expect(queue.first?.displayTitle == "Return the library books")
         // Scheduled from the card, a task stays in the Inbox with its day.
@@ -153,21 +200,21 @@ struct ScreenLogicTests {
         #expect(books.listID == phone.store.inboxList()?.id)
         #expect(CompactText.dayOffset(from: phone.env.now, to: try #require(books.dueDate)) == 1)
         #expect(phone.env.tray.message?.text == "“Return the library books” due tomorrow")
-        queue = try library(phone).inboxQueue(triage: session, closing: [])
+        queue = try library(phone).inboxQueue(triage: session, closing: [], now: phone.env.now)
         #expect(session.reviewed(queue: queue) == 2)
         // Its Undo puts the card back on the queue, and out of the count.
         phone.env.tray.performAction()
         #expect(books.dueDate == nil)
-        queue = try library(phone).inboxQueue(triage: session, closing: [])
+        queue = try library(phone).inboxQueue(triage: session, closing: [], now: phone.env.now)
         #expect(queue.first?.displayTitle == "Return the library books")
         #expect(session.reviewed(queue: queue) == 1)
         // A card filed and then taken back is on the queue again too.
         let desk = try #require(phone.task("Look into a standing desk for the study"))
         #expect(phone.env.actions.move([desk], to: try #require(phone.list("Home"))))
         session.finish(desk.id)
-        #expect(session.reviewed(queue: try library(phone).inboxQueue(triage: session, closing: [])) == 2)
+        #expect(session.reviewed(queue: try library(phone).inboxQueue(triage: session, closing: [], now: phone.env.now)) == 2)
         phone.env.tray.performAction()
-        #expect(session.reviewed(queue: try library(phone).inboxQueue(triage: session, closing: [])) == 1)
+        #expect(session.reviewed(queue: try library(phone).inboxQueue(triage: session, closing: [], now: phone.env.now)) == 1)
         session.reviewKept()
         #expect(session.kept { _ in nil }.isEmpty)
     }
@@ -259,7 +306,7 @@ struct ScreenLogicTests {
         let phone = try TestPhone(seeded: true)
         let session = phone.env.undatedTriage
         func queue() throws -> [Block] {
-            try library(phone).undatedQueue(blocks: try blocks(phone), triage: session, closing: phone.env.actions.closing)
+            try library(phone).undatedQueue(blocks: try blocks(phone), triage: session, closing: phone.env.actions.closing, now: phone.env.now)
         }
         session.begin()
         let ryokan = try #require(phone.task("Book the ryokan"))
@@ -279,7 +326,7 @@ struct ScreenLogicTests {
         // Later: aside for this session, in No date's pass only.
         session.keep(ryokan.id)
         #expect(try queue().first?.displayTitle == "Finish The Overstory")
-        #expect(try library(phone).undatedCount(triage: session, closing: []) == 3)
+        #expect(try library(phone).undatedCount(triage: session, closing: [], now: phone.env.now) == 3)
         #expect(phone.env.triage.kept { _ in nil }.isEmpty)
         // Done: off the pass while it dwells, and once it's written.
         let overstory = try #require(phone.task("Finish The Overstory"))
@@ -790,7 +837,7 @@ struct ScreenLogicTests {
         session.begin()
         phone.env.actions.complete([gift])
         session.keep(gift.id)
-        let queue = try library(phone).inboxQueue(triage: session, closing: phone.env.actions.closing)
+        let queue = try library(phone).inboxQueue(triage: session, closing: phone.env.actions.closing, now: phone.env.now)
         #expect(queue.first?.displayTitle == "Return the library books")
         #expect(session.reviewed(queue: queue) == 1)
     }

@@ -129,9 +129,11 @@ especially when a `[[ ... ]]` condition contains command substitution.
 
 ### iPhone companion
 
-The iOS 27 app `OpenlistiOS`, its widget extension `OpenlistiOSWidget` and
-their test bundles (`OpenlistiOSTests`, Swift Testing, hosted by the app;
-`OpenlistiOSUITests`, XCUITest) share the Mac project. The app is iPhone-only
+The iOS 27 app `OpenlistiOS`, its widget extension `OpenlistiOSWidget`, its
+share extension `OpenlistiOSShare` and their test bundles (`OpenlistiOSTests`,
+Swift Testing, hosted by the app; `OpenlistiOSUITests`, XCUITest) share the Mac
+project. `python3 Tools/add-ios-targets.py` adds any of these targets a project
+is missing. The app is iPhone-only
 and portrait, and syncs with the Mac through the same CloudKit container.
 
 ```sh
@@ -177,10 +179,10 @@ isolated store, media and defaults, with iCloud and system notifications off.
 ("Openlist Dev"), the `group.solimanali.openlist.dev` App Group, the
 `openlist-dev` URL scheme and no iCloud.
 
-| | App | Widget |
-|---|---|---|
-| Debug, Release | `solimanali.openlist.ios` | `solimanali.openlist.ios.widget` |
-| Dev | `solimanali.openlist.ios.dev` | `solimanali.openlist.ios.dev.widget` |
+| | App | Widget | Share extension |
+|---|---|---|---|
+| Debug, Release | `solimanali.openlist.ios` | `solimanali.openlist.ios.widget` | `solimanali.openlist.ios.share` |
+| Dev | `solimanali.openlist.ios.dev` | `solimanali.openlist.ios.dev.widget` | `solimanali.openlist.ios.dev.share` |
 
 A review session's first launch seeds the library the iPhone mockups show
 (`OpenlistiOS/Fixtures/PhoneFixture.swift`), never outside one. Debug builds
@@ -234,11 +236,13 @@ two driven by that one variable.
 Signing is automatic with team `Y5UE64R7TQ`. Simulator builds sign to run
 locally and need no provisioning profile. Device builds need explicit App IDs
 for the app (iCloud with the CloudKit container, Push Notifications and App
-Groups) and the widget (App Groups), and the `group.solimanali.openlist` group
+Groups), the widget and the share extension (App Groups each), and the `group.solimanali.openlist` group
 registered on the team; Xcode, or `xcodebuild -allowProvisioningUpdates`, sets
 these up for a developer allowed to change the team's identifiers. iOS uses the
 `aps-environment` entitlement and `UIBackgroundModes: remote-notification`.
-Give the widget the App Group only, never CloudKit or push. The iOS entitlements
+Give the widget and the share extension the App Group only, never CloudKit or
+push: the share extension only appends to `shared-captures.json` there
+(`SharediOS/SharedCaptures.swift`), which the app files on activation. The iOS entitlements
 (`Config/OpenlistiOS*.entitlements`) never go through
 `Tools/prepare-release-signing.py`, which signs only the Mac app; iOS
 distribution is not automated yet.

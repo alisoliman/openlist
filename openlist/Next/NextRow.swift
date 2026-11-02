@@ -619,6 +619,10 @@ enum NXRowChips {
         if task.isStarred {
             chips.append(NXChipModel(id: "star", label: "", icon: "star.fill", tone: .amber, fill: true, pops: .onChange))
         }
+        // Snoozed, or deferred, to a day still ahead: when it's back.
+        if !done, let until = task.deferredUntil, InboxPolicy.isSnoozed(task, now: now) {
+            chips.append(NXChipModel(id: "snoozed", label: "Until \(NXFormat.dueLabel(until, now: now))", icon: "moon.zzz"))
+        }
         if done, let at = task.completedAt {
             chips.append(NXChipModel(id: "done", label: NXFormat.relative(at, now: now), pops: .never))
         }

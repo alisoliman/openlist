@@ -11,6 +11,7 @@
 		4D435048000000000000000B /* openlist-mcp in Embed MCP Helper */ = {isa = PBXBuildFile; fileRef = 4D4350480000000000000002 /* openlist-mcp */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		4D4350480000000000000010 /* OpenlistMCP in Frameworks */ = {isa = PBXBuildFile; productRef = 4D435048000000000000000F /* OpenlistMCP */; };
 		0A1051000000000000000040 /* OpenlistiOSWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0A1051000000000000000011 /* OpenlistiOSWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0A10510000000000000000A6 /* OpenlistiOSShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0A10510000000000000000A1 /* OpenlistiOSShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +50,13 @@
 			remoteGlobalIDString = 0A1051000000000000000020;
 			remoteInfo = OpenlistiOS;
 		};
+		0A10510000000000000000A7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 41362FCD304B659900C93862 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0A10510000000000000000A2;
+			remoteInfo = OpenlistiOSShare;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -81,6 +89,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				0A1051000000000000000040 /* OpenlistiOSWidget.appex in Embed Foundation Extensions */,
+				0A10510000000000000000A6 /* OpenlistiOSShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -95,6 +104,7 @@
 		0A1051000000000000000011 /* OpenlistiOSWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenlistiOSWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A1051000000000000000012 /* OpenlistiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenlistiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A1051000000000000000013 /* OpenlistiOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenlistiOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A10510000000000000000A1 /* OpenlistiOSShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenlistiOSShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -298,6 +308,11 @@
 			path = SharediOS;
 			sourceTree = "<group>";
 		};
+		0A10510000000000000000A0 /* OpenlistiOSShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OpenlistiOSShare;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -351,6 +366,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0A10510000000000000000A4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -363,6 +385,7 @@
 				4D4350480000000000000003 /* OpenlistMCPHelper */,
 				0A1051000000000000000001 /* OpenlistiOS */,
 				0A1051000000000000000002 /* OpenlistiOSWidget */,
+				0A10510000000000000000A0 /* OpenlistiOSShare */,
 				0A1051000000000000000005 /* SharediOS */,
 				0A1051000000000000000003 /* OpenlistiOSTests */,
 				0A1051000000000000000004 /* OpenlistiOSUITests */,
@@ -378,6 +401,7 @@
 				4D4350480000000000000002 /* openlist-mcp */,
 				0A1051000000000000000010 /* OpenlistiOS.app */,
 				0A1051000000000000000011 /* OpenlistiOSWidget.appex */,
+				0A10510000000000000000A1 /* OpenlistiOSShare.appex */,
 				0A1051000000000000000012 /* OpenlistiOSTests.xctest */,
 				0A1051000000000000000013 /* OpenlistiOSUITests.xctest */,
 			);
@@ -472,6 +496,7 @@
 			);
 			dependencies = (
 				0A1051000000000000000060 /* PBXTargetDependency */,
+				0A10510000000000000000A8 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				0A1051000000000000000001 /* OpenlistiOS */,
@@ -555,6 +580,30 @@
 			productReference = 0A1051000000000000000013 /* OpenlistiOSUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		0A10510000000000000000A2 /* OpenlistiOSShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A10510000000000000000A9 /* Build configuration list for PBXNativeTarget "OpenlistiOSShare" */;
+			buildPhases = (
+				0A10510000000000000000A3 /* Sources */,
+				0A10510000000000000000A4 /* Frameworks */,
+				0A10510000000000000000A5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0A10510000000000000000A0 /* OpenlistiOSShare */,
+				41362FF0304B659900C93862 /* Shared */,
+				0A1051000000000000000005 /* SharediOS */,
+			);
+			name = OpenlistiOSShare;
+			packageProductDependencies = (
+			);
+			productName = OpenlistiOSShare;
+			productReference = 0A10510000000000000000A1 /* OpenlistiOSShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -586,6 +635,9 @@
 						CreatedOnToolsVersion = 27.0;
 					};
 					0A1051000000000000000021 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					0A10510000000000000000A2 = {
 						CreatedOnToolsVersion = 27.0;
 					};
 					0A1051000000000000000022 = {
@@ -620,6 +672,7 @@
 				4D4350480000000000000001 /* openlist-mcp */,
 				0A1051000000000000000020 /* OpenlistiOS */,
 				0A1051000000000000000021 /* OpenlistiOSWidget */,
+				0A10510000000000000000A2 /* OpenlistiOSShare */,
 				0A1051000000000000000022 /* OpenlistiOSTests */,
 				0A1051000000000000000023 /* OpenlistiOSUITests */,
 			);
@@ -663,6 +716,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0A105100000000000000003C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0A10510000000000000000A5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -721,6 +781,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0A10510000000000000000A3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -748,6 +815,11 @@
 			isa = PBXTargetDependency;
 			target = 0A1051000000000000000020 /* OpenlistiOS */;
 			targetProxy = 0A1051000000000000000052 /* PBXContainerItemProxy */;
+		};
+		0A10510000000000000000A8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0A10510000000000000000A2 /* OpenlistiOSShare */;
+			targetProxy = 0A10510000000000000000A7 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1594,6 +1666,114 @@
 			};
 			name = Release;
 		};
+		0A10510000000000000000AA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/OpenlistiOSShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y5UE64R7TQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/OpenlistiOSShare-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Openlist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Ali Soliman. MIT License.";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = solimanali.openlist.ios.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		0A10510000000000000000AB /* Dev */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/OpenlistiOSDevShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y5UE64R7TQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/OpenlistiOSShare-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Openlist Dev";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Ali Soliman. MIT License.";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = solimanali.openlist.ios.dev.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Dev;
+		};
+		0A10510000000000000000AC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/OpenlistiOSShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y5UE64R7TQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/OpenlistiOSShare-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Openlist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Ali Soliman. MIT License.";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = solimanali.openlist.ios.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1673,6 +1853,16 @@
 				0A1051000000000000000089 /* Debug */,
 				0A105100000000000000008A /* Dev */,
 				0A105100000000000000008B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0A10510000000000000000A9 /* Build configuration list for PBXNativeTarget "OpenlistiOSShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A10510000000000000000AA /* Debug */,
+				0A10510000000000000000AB /* Dev */,
+				0A10510000000000000000AC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

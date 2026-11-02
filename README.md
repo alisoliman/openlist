@@ -10,14 +10,17 @@ and plan your day with a calendar and desktop widgets.
   images, attachments, and child lists.
 - **Task planning:** due dates, reminders, repeating tasks, labels, priorities,
   and reusable templates.
-- **Quick capture:** a global shortcut, menu bar access, and natural-language
-  dates such as “tomorrow at 6pm.”
+- **Quick capture:** a global shortcut, menu bar access, natural-language
+  dates such as “tomorrow at 6pm,” `@list` and `#label` with suggestions, notes,
+  pasted lists as a task a line, Services ▸ Add to Openlist on the Mac and the
+  Share sheet on iPhone.
 - **Voice capture:** on-device dictation and Apple Intelligence turn spoken
   requests into tasks. Review them first, or choose automatic saving per device.
   Hold the iPhone dock’s **+**, click the Mac toolbar mic, or enable the Mac’s
   configurable global voice shortcut (initially **⌃⇧⌥Space**, off by default).
-- **Daily organization:** Inbox, Today, search, and a calendar with time blocking
-  and work sessions.
+- **Daily organization:** Inbox triage that suggests where each task goes,
+  files and dates it in one step and snoozes it until a day; Today, search, and
+  a calendar with time blocking and work sessions.
 - **Desktop widgets:** tasks, quick capture, agenda, progress, and activity.
 - **Your data:** offline access, private iCloud sync in enabled builds, Markdown
   export, library backups, and restorable Trash.
@@ -77,7 +80,7 @@ contain that token. Connected AI clients may send content to their model provide
 
 ## Documentation
 
-- [Inbox](docs/INBOX.md) and [nested lists](docs/NESTED_LISTS.md)
+- [Capture](docs/CAPTURE.md), [Inbox](docs/INBOX.md) and [nested lists](docs/NESTED_LISTS.md)
 - [Calendar, planning, and work sessions](docs/ADAPTIVE_CALENDAR.md)
 - [Voice capture](docs/VOICE_CAPTURE.md)
 - [Widgets](docs/WIDGETS.md)

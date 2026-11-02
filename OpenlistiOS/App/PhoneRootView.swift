@@ -268,7 +268,7 @@ private struct DockHost: View {
     var body: some View {
         let navigator = env.navigator
         OLDock(tab: Binding(get: { navigator.tab }, set: { navigator.select($0) }),
-               inboxCount: library.inboxQueue(triage: env.triage, closing: env.actions.closing).count,
+               inboxCount: library.inboxQueue(triage: env.triage, closing: env.actions.closing, now: env.now).count,
                captureLabel: captureLabel,
                reselect: { navigator.select($0) },
                captureByVoice: {

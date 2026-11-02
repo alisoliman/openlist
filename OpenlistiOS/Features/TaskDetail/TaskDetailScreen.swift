@@ -202,6 +202,14 @@ private struct TaskDetailPage: View {
                 if task.dueDate != nil {
                     Button("Clear due date", systemImage: "xmark", role: .destructive) { env.actions.schedule([task], on: nil) }
                 }
+                // Snoozed from triage: back to it now, rather than on its day.
+                if InboxPolicy.isSnoozed(task, now: now, calendar: calendar) {
+                    Button("Stop snoozing", systemImage: "moon.zzz") {
+                        env.actions.edit([task], "Stopped snoozing “\(task.displayTitle)”", icon: "moon.zzz") { task in
+                            env.store.clearDeferral(task, now: now)
+                        }
+                    }
+                }
             } label: {
                 OLFieldRow("When") { when(now: now) }.contentShape(.rect)
             }
@@ -268,6 +276,8 @@ private struct TaskDetailPage: View {
             let due = CompactText.due(date, includesTime: task.includesTime, now: now, calendar: calendar)
             Text(CompactText.captureWhen(date, includesTime: task.includesTime, now: now, calendar: calendar))
                 .foregroundStyle(due?.tone == .late ? OL.danger : due?.tone == .today ? OL.accentText : OL.ink)
+        } else if let until = task.deferredUntil, InboxPolicy.isSnoozed(task, now: now, calendar: calendar) {
+            Text("Snoozed until \(CompactText.day(until, now: now, calendar: calendar))").foregroundStyle(OL.muted)
         } else {
             Text("None").foregroundStyle(OL.muted)
         }

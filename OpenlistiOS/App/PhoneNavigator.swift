@@ -513,10 +513,12 @@ final class PhoneNavigator {
     }
 }
 
-/// What Capture held when it went: the text typed, the list it was going to
-/// and a date picked for it.
+/// What Capture held when it went: the text typed, the list it was going to,
+/// a date picked for it and its note.
 struct CaptureDraft: Codable, Equatable {
     var text: String
     var listID: UUID?
     var dueDate: CaptureDueDate = .automatic
+    /// Optional, so a place saved before notes reads back as it was.
+    var note: String?
 }

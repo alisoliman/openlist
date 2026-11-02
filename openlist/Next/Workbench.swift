@@ -46,6 +46,15 @@ struct ChangeEntry: Identifiable, Equatable {
 /// Where a triaged card leaves the stack.
 enum TriageExit: Equatable {
     case left, up, right, done, down
+    /// Snoozed to a later day: it goes as Keep for later does.
+    case snooze
+}
+
+/// The triage card's edit line: the task it edits and what's typed, a
+/// capture line whose title and tokens are written over the task.
+struct TriageEditLine: Equatable {
+    var taskID: UUID
+    var text: String
 }
 
 /// A capture draft put aside by a click away, to come back on the same page.
@@ -57,6 +66,8 @@ struct StashedCapture {
     var route: AppRoute
     var at: Date
     var spokenTasks: [SpokenTask] = []
+    var note = ""
+    var assist = CaptureAssist()
 }
 
 /// Interaction state for the Next interface.
@@ -126,6 +137,14 @@ final class Workbench {
     var kept: Set<UUID> = []
     var reviewed = 0
     var triageExit: TriageExit?
+    /// The day, from today, ⇧ picked on the card for the list it's filed
+    /// into next; nil until then, and once the card moves on.
+    var triagePickedDay: Int?
+    /// The card's edit line, while it's open (R).
+    var triageEdit: TriageEditLine?
+    /// The task the command palette files, when L opened it from the card:
+    /// it lists the lists to file it into.
+    var paletteFilesTaskID: UUID?
 
     // MARK: Screens
 
@@ -171,8 +190,12 @@ final class Workbench {
     var captureLabelID: UUID?
     /// Why Return couldn't add the capture, on its card until the text changes.
     var captureNotice: NXCaptureNotice?
-    /// Tasks heard by voice on the capture card, which Return adds.
+    /// Tasks heard by voice on the capture card, or pasted as lines, which Return adds.
     var spokenTasks: [SpokenTask] = []
+    /// The note written under the capture's task.
+    var captureNote = ""
+    /// The capture's note line, the words it keeps as text, and its suggestions.
+    var captureAssist = CaptureAssist()
     /// The capture card's voice capture.
     let voice = VoiceCapture()
     var paletteQuery = ""

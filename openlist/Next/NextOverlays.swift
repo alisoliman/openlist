@@ -202,16 +202,25 @@ private struct NXAutofocus: ViewModifier {
                 DispatchQueue.main.async {
                     focused = true
                     guard caretAtEnd else { return }
-                    // Once the field has made its own selection.
-                    DispatchQueue.main.async {
-                        // Quick Add's panel is key without making Openlist active.
-                        let window = NSApp.windows.first(where: \.isKeyWindow)
-                        guard let editor = window?.firstResponder as? NSTextView, editor.isFieldEditor else { return }
-                        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
-                    }
+                    Self.moveCaretToEnd()
                 }
             }
-            .onChange(of: refocus) { _, _ in focused = true }
+            // Back from a chip, a suggestion or the note line, the caret goes
+            // after what's typed, where focusing the field would select it all.
+            .onChange(of: refocus) { _, _ in
+                focused = true
+                Self.moveCaretToEnd()
+            }
+    }
+
+    /// Once the field has made its own selection.
+    private static func moveCaretToEnd() {
+        DispatchQueue.main.async {
+            // Quick Add's panel is key without making Openlist active.
+            let window = NSApp.windows.first(where: \.isKeyWindow)
+            guard let editor = window?.firstResponder as? NSTextView, editor.isFieldEditor else { return }
+            editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        }
     }
 }
 
@@ -312,6 +321,11 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
     @State private var refocus = 0
     /// How far the field has scrolled its text to keep the caret in view.
     @State private var scroll: CGFloat = 0
+    /// The note line has the keyboard, which ⌥↩ moves to it and back.
+    @FocusState private var noteFocused: Bool
+    /// The typed draft is back once the rows above it were added: the caret
+    /// goes after it, rather than selecting it all for typing to replace.
+    @State private var returnsFromRows = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -344,7 +358,19 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                 .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
         }
         .frame(maxWidth: 600)
-        .onChange(of: draft.captureText) { voice?.dismissFailure() }
+        .onChange(of: draft.captureText) {
+            voice?.dismissFailure()
+            // A suggestion highlighted further down starts again from the top.
+            if draft.captureAssist.completionIndex != 0 { draft.captureAssist.completionIndex = 0 }
+        }
+        // ⌥↩ moves the keyboard between the title and the note line.
+        .onChange(of: draft.captureAssist.focusesNote) { _, toNote in
+            if toNote { noteFocused = true } else if noteFocused { noteFocused = false; refocus += 1 }
+        }
+        .onChange(of: noteFocused) { _, focused in
+            if draft.captureAssist.focusesNote != focused { draft.captureAssist.focusesNote = focused }
+        }
+        .onChange(of: draft.spokenTasks.isEmpty) { _, empty in returnsFromRows = empty && !draft.captureText.isEmpty }
         .onDisappear { if managesVoiceLifecycle { voice?.cancel() } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             if managesVoiceLifecycle { voice?.applicationResignedActive() }
@@ -363,9 +389,9 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .foregroundStyle(.clear)
-                    .modifier(NXAutofocus(refocus: refocus, caretAtEnd: voice?.filledField == true))
+                    .modifier(NXAutofocus(refocus: refocus, caretAtEnd: voice?.filledField == true || returnsFromRows))
                     .accessibilityLabel("New task")
-                    .accessibilityHint("Type the task. \(readsDates ? "A date, #label" : "A #label"), !priority or ~estimate in the text is read as you type, as in \(example).")
+                    .accessibilityHint("Type the task. \(readsDates ? "A date, #label" : "A #label"), @list, !priority or ~estimate in the text is read as you type, as in \(example).")
                     .accessibilityIdentifier("capture.title")
                     .accessibilityActions {
                         if let add {
@@ -389,6 +415,16 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             .frame(height: 24)
             .background { NXFieldScroll { scroll = $0 } }
             .clipped()
+            Button(action: toggleNote) {
+                Image(systemName: "text.alignleft")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(writesNote ? style.accent : NX.ink(0.45))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(writesNote ? "Back to the title (⌥↩)" : "Add a note (⌥↩)")
+            .accessibilityLabel(writesNote ? "Back to the title" : "Add a note")
             if voice != nil {
                 Button(action: toggleVoice) {
                     Image(systemName: "mic")
@@ -405,11 +441,49 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
         .padding(EdgeInsets(top: 16, leading: 18, bottom: 6, trailing: 18))
 
+        if let completion = draft.captureCompletion() {
+            NXCaptureSuggestions(completion: completion, highlighted: draft.highlightedOption(in: completion)) { option in
+                draft.complete(with: option, in: completion)
+                refocus += 1
+            }
+            .padding(EdgeInsets(top: 0, leading: 40, bottom: 4, trailing: 18))
+            .transition(.opacity)
+        }
+
+        if writesNote {
+            TextField("Note", text: $draft.captureNote, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(NX.textSecondary)
+                .lineLimit(1...6)
+                .focused($noteFocused)
+                .accessibilityLabel("Note")
+                .accessibilityHint("Saved under the task. Option-Return goes back to the title.")
+                .accessibilityIdentifier("capture.note")
+                .padding(EdgeInsets(top: 2, leading: 46, bottom: 4, trailing: 18))
+        }
+
         NXFlow(spacing: 6) {
-            ForEach(chips(parse)) { NXChip(chip: $0, fresh: $0.pops != .never) }
+            ForEach(chips(parse)) { chip in
+                if let raw = chip.raw {
+                    NXCaptureTokenChip(chip: chip) { draft.keepAsText(raw); refocus += 1 }
+                } else {
+                    NXChip(chip: chip, fresh: chip.pops != .never)
+                }
+            }
         }
         .frame(minHeight: 22, alignment: .leading)
         .padding(EdgeInsets(top: 6, leading: 46, bottom: 12, trailing: 18))
+    }
+
+    /// Whether the note line shows: opened, or holding a note.
+    private var writesNote: Bool { draft.captureAssist.writesNote || !draft.captureNote.isEmpty }
+
+    /// The note button and ⌥↩: opens the note line and gives it the
+    /// keyboard, or gives the keyboard back to the title.
+    private func toggleNote() {
+        draft.captureAssist.writesNote = true
+        draft.captureAssist.focusesNote.toggle()
     }
 
     // MARK: Voice
@@ -502,8 +576,10 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             .foregroundStyle(NX.textTertiary)
             .padding(.trailing, 2)
             .frame(height: 23)
+        // The list an @ token names is lit, as a pick is.
+        let lit = draft.litCaptureDestinationID
         ForEach(library.lists) { list in
-            destination(list, isOn: draft.captureListID == list.id)
+            destination(list, isOn: lit == list.id)
         }
     }
 
@@ -552,6 +628,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
         let heard = draft.spokenTasks.count
         if heard > 0 { return "↩ add \(heard == 1 ? "task" : "\(heard) tasks") · esc close" }
+        if draft.captureCompletion() != nil { return "↑↓ choose · ⇥ or ↩ complete · esc hide" }
         return voice == nil ? "⇥ destination · ↩ add · ⇧↩ add another" : "⇥ destination · ↩ add · ⌥⌘V speak"
     }
 
@@ -600,19 +677,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         return chips
     }
 
-    private func model(_ chip: CaptureChip) -> NXChipModel {
-        switch chip.kind {
-        case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent, pops: chip.typed ? .withRow : .never)
-        case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
-        case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
-        case .label:
-            NXChipModel(id: chip.id, label: chip.label, tone: labelColor(chip.label).map(NXTone.label) ?? .neutral)
-        case let .priority(priority):
-            NXChipModel(id: chip.id, label: chip.label, icon: "exclamationmark", tone: Self.priorityTone(priority),
-                        fill: priority == .high)
-        case .estimate: NXChipModel(id: chip.id, label: chip.label, icon: "timer", tone: .accent)
-        }
-    }
+    private func model(_ chip: CaptureChip) -> NXChipModel { .capture(chip, library: library) }
 
     /// A typed label's own colour, when a label by that name exists.
     private func labelColor(_ name: String) -> Color? {
@@ -620,17 +685,9 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         return library.labels.first { $0.name.lowercased() == name }?.nxColor
     }
 
-    private static func priorityTone(_ priority: TaskPriority) -> NXTone {
-        switch priority {
-        case .high: .over
-        case .medium: .amber
-        case .low, .none: .neutral
-        }
-    }
-
     private func destination(_ list: TaskList, isOn: Bool) -> some View {
         Button {
-            draft.captureListID = list.id
+            draft.chooseCaptureDestination(list.id)
             refocus += 1
         } label: {
             HStack(spacing: 4) {
@@ -649,6 +706,113 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         .accessibilityAddTraits(isOn ? .isSelected : [])
         // The design's `background 140ms ease`.
         .animation(NX.cssEase(140), value: isOn)
+    }
+}
+
+extension NXChipModel {
+    /// A capture chip as the card draws it, from what the capture grammar
+    /// read: its icon and tone, a label's own colour, and the words typed
+    /// for it, which a click keeps as text.
+    @MainActor
+    static func capture(_ chip: CaptureChip, library: NextLibrary) -> NXChipModel {
+        func labelColor(_ name: String) -> Color? {
+            let name = name.drop { $0 == "#" }.lowercased()
+            return library.labels.first { $0.name.lowercased() == name }?.nxColor
+        }
+        var model = switch chip.kind {
+        case .day: NXChipModel(id: chip.id, label: chip.label, icon: "calendar", tone: .accent, pops: chip.typed ? .withRow : .never)
+        case .time: NXChipModel(id: chip.id, label: chip.label, icon: "bell", tone: .accent)
+        case .repeatRule: NXChipModel(id: chip.id, label: chip.label, icon: "repeat", tone: .accent)
+        case .label:
+            // A label nobody has yet says Return makes it, so a slip of the
+            // keys is seen before it's a label of its own.
+            if let color = labelColor(chip.label) {
+                NXChipModel(id: chip.id, label: chip.label, tone: .label(color))
+            } else {
+                NXChipModel(id: chip.id, label: "New #\(chip.label)", icon: "plus", tone: .neutral)
+            }
+        case let .priority(priority):
+            NXChipModel(id: chip.id, label: chip.label, icon: "exclamationmark", tone: priorityTone(priority),
+                        fill: priority == .high)
+        case .estimate: NXChipModel(id: chip.id, label: chip.label, icon: "timer", tone: .accent)
+        case .list:
+            NXChipModel(id: chip.id, label: chip.label, glyph: library.lists.first { $0.displayTitle == chip.label })
+        }
+        model.raw = chip.raw
+        return model
+    }
+
+    private static func priorityTone(_ priority: TaskPriority) -> NXTone {
+        switch priority {
+        case .high: .over
+        case .medium: .amber
+        case .low, .none: .neutral
+        }
+    }
+}
+
+/// A chip a typed token brought: a click keeps its words as text, in the
+/// title, where they were read as a date, a label or a list by mistake.
+private struct NXCaptureTokenChip: View {
+    let chip: NXChipModel
+    let keepAsText: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: keepAsText) {
+            NXChip(chip: chip, fresh: chip.pops != .never)
+                // Struck through on hover: what a click takes back.
+                .overlay {
+                    if hovering {
+                        Rectangle().fill(NX.ink(0.45)).frame(height: 1).padding(.horizontal, 5)
+                    }
+                }
+                .opacity(hovering ? 0.75 : 1)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Keep “\(chip.raw ?? chip.label)” as text")
+        .accessibilityLabel(chip.label)
+        .accessibilityHint("Keeps “\(chip.raw ?? chip.label)” as text in the title")
+    }
+}
+
+/// The lists or labels the token being typed could be, under the field:
+/// ↑ and ↓ move through them, Tab or Return takes one, as a click does.
+private struct NXCaptureSuggestions: View {
+    @Environment(\.nextLibrary) private var library
+    let completion: CaptureCompletion
+    let highlighted: CaptureCompletion.Option?
+    let choose: (CaptureCompletion.Option) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(completion.options) { option in
+                Button { choose(option) } label: { row(option, isOn: option == highlighted) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(completion.kind == .list ? "Lists" : "Labels")
+    }
+
+    private func row(_ option: CaptureCompletion.Option, isOn: Bool) -> some View {
+        HStack(spacing: 7) {
+            if let list = library.list(option.listID) {
+                NXListGlyph(list: list, size: 12).frame(width: 16)
+            } else {
+                Text("#").font(.system(size: 12, weight: .semibold)).foregroundStyle(NX.textTertiary).frame(width: 16)
+            }
+            Text(option.name).font(.system(size: 13, weight: .medium)).foregroundStyle(NX.ink).lineLimit(1)
+            Spacer(minLength: 8)
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 6)
+        .background(isOn ? NX.ink(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel((completion.kind == .list ? "List " : "Label ") + option.name)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -1128,6 +1292,7 @@ enum NXPalette {
         let workbench = env.workbench
         let hasTarget = anyTarget || !workbench.targetTasks.isEmpty
         let query = workbench.paletteQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        if let card = filedCard(env) { return filing(card, query: query, workbench: workbench, library: library) }
         func act(_ body: @escaping @MainActor ([UUID]) -> Void) -> @MainActor () -> Void {
             {
                 let ids = workbench.targetTasks.map(\.id)
@@ -1160,6 +1325,15 @@ enum NXPalette {
             NXCommand(id: "star", icon: "star", label: "Star", key: "F", needsTarget: true,
                       run: act { workbench.star($0) }),
         ]
+        // Snooze is the Inbox's: elsewhere a task's day or plan says when it's for.
+        if env.navigator.route == .inbox {
+            all += [
+                NXCommand(id: "snooze", icon: "moon.zzz", label: "Snooze until tomorrow", key: "S", needsTarget: true,
+                          run: act { workbench.snooze($0, until: Workbench.snoozeDays()[0].day) }),
+                NXCommand(id: "snooze-week", icon: "moon.zzz", label: "Snooze until next week", key: "⇧S", needsTarget: true,
+                          run: act { workbench.snooze($0, until: Workbench.snoozeDays()[2].day) }),
+            ]
+        }
         all += library.lists.map { list in
             NXCommand(id: "move-\(list.id)", icon: "arrow.turn.down.right", label: "Move to \(list.displayTitle)", needsTarget: true,
                       run: act { workbench.move($0, to: list.id) })
@@ -1219,6 +1393,33 @@ enum NXPalette {
         }.map(\.element)
     }
 
+    /// The triage card L opened the palette to file, while it's still there to file.
+    @MainActor
+    static func filedCard(_ env: AppEnvironment) -> Block? {
+        env.workbench.paletteFilesTaskID.flatMap { env.store.block(id: $0) }.flatMap { $0.trashID == nil ? $0 : nil }
+    }
+
+    /// Every list the card can go to, a nested one by its path, those whose
+    /// names hold the query, the ones it starts first.
+    @MainActor
+    private static func filing(_ card: Block, query: String, workbench: Workbench, library: NextLibrary) -> [NXCommand] {
+        let commands = library.destinations.filter { $0.id != card.listID }.map { list in
+            NXCommand(id: "file-\(list.id)", icon: "arrow.turn.down.right", label: library.hierarchy.path(for: list.id)) {
+                workbench.triage(card, action: .left, listID: list.id)
+            }
+        }
+        guard !query.isEmpty else { return commands }
+        // Where in each name the query starts; names without it drop out.
+        var ranked: [(order: Int, at: Int, command: NXCommand)] = []
+        for (order, command) in commands.enumerated() {
+            let name = command.label.lowercased()
+            guard let found = name.range(of: query) else { continue }
+            ranked.append((order, name.distance(from: name.startIndex, to: found.lowerBound), command))
+        }
+        ranked.sort { $0.at == $1.at ? $0.order < $1.order : $0.at < $1.at }
+        return ranked.map(\.command)
+    }
+
     /// Closes the palette, then runs the command once the card is gone.
     @MainActor
     static func run(_ command: NXCommand, env: AppEnvironment, overlays: NXOverlayState) {
@@ -1239,11 +1440,13 @@ private struct NXPaletteCard: View {
         @Bindable var workbench = env.workbench
         let commands = NXPalette.commands(env: env, library: library)
         let index = min(workbench.paletteIndex, max(0, commands.count - 1))
-        let targets = workbench.targetTasks
+        // Filing the triage card, the card is what it acts on.
+        let card = NXPalette.filedCard(env)
+        let targets = card.map { [$0] } ?? workbench.targetTasks
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "bolt").font(.system(size: 16)).foregroundStyle(NX.ink(0.4))
-                TextField("Type an action or a place…", text: $workbench.paletteQuery)
+                Image(systemName: card == nil ? "bolt" : "arrow.turn.down.right").font(.system(size: 16)).foregroundStyle(NX.ink(0.4))
+                TextField(card == nil ? "Type an action or a place…" : "File into a list…", text: $workbench.paletteQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15.5))
                     .foregroundStyle(NX.ink)
@@ -1281,8 +1484,9 @@ private struct NXPaletteCard: View {
                     // of them is what the query names, say so rather than
                     // show an empty card.
                     let needsTask = targets.isEmpty && !NXPalette.commands(env: env, library: library, anyTarget: true).isEmpty
-                    Text(needsTask ? "“\(NXFormat.short(workbench.paletteQuery))” acts on a task. Focus or select one first."
-                                   : "No actions match “\(NXFormat.short(workbench.paletteQuery))”.")
+                    Text(card != nil ? "No list matches “\(NXFormat.short(workbench.paletteQuery))”."
+                         : needsTask ? "“\(NXFormat.short(workbench.paletteQuery))” acts on a task. Focus or select one first."
+                         : "No actions match “\(NXFormat.short(workbench.paletteQuery))”.")
                         .font(.system(size: 12.5))
                         .foregroundStyle(NX.textTertiary)
                         .frame(maxWidth: .infinity)
@@ -1295,6 +1499,8 @@ private struct NXPaletteCard: View {
         .modifier(NXAnnounceHighlight(id: commands.indices.contains(index) ? commands[index].id : nil,
                                       spoken: commands.indices.contains(index) ? commands[index].label : nil,
                                       pointed: $pointedID))
+        // Filing ends with the palette, however it closes; ⌘K opens it plain.
+        .onDisappear { workbench.paletteFilesTaskID = nil }
     }
 }
 

@@ -67,8 +67,45 @@ struct QuickCaptureView: View {
             }
     }
 
-    private func handle(_ key: QuickCaptureKey, lists: [TaskList], labels: [TaskLabel]) {
+    /// Whether the card took the key; one it didn't goes on to the field.
+    private func handle(_ key: QuickCaptureKey, lists: [TaskList], labels: [TaskLabel]) -> Bool {
         let voice = draft.voice
+        // The token being typed has its suggestions: ↑ and ↓ move through
+        // them, Tab and Return take one, and Escape puts them away.
+        if !voice.isActive, draft.spokenTasks.isEmpty, !draft.captureAssist.focusesNote,
+           let completion = draft.captureCompletion() {
+            switch key {
+            case let .move(delta):
+                draft.moveCompletion(by: delta, in: completion)
+                return true
+            case .add, .step:
+                if let option = draft.highlightedOption(in: completion) { draft.complete(with: option, in: completion) }
+                return true
+            case .close:
+                draft.dismissCompletion()
+                return true
+            default:
+                break
+            }
+        }
+        switch key {
+        case .move:
+            return false
+        // ⌥↩ opens the note line, and goes between it and the title.
+        case .note:
+            guard !voice.isActive, draft.spokenTasks.isEmpty else { return false }
+            draft.captureAssist.writesNote = true
+            draft.captureAssist.focusesNote.toggle()
+            return true
+        // More than one line copied: a task a line, as rows to add together,
+        // or with ⇧, one line for the field.
+        case let .paste(text, asOneLine):
+            guard !voice.isActive, !draft.captureAssist.focusesNote, CaptureLines.tasks(in: text) != nil else { return false }
+            if !asOneLine { draft.takePasted(text) }
+            return true
+        default:
+            break
+        }
         switch key {
         // While listening, Return is done speaking; while what was said is
         // read, it skips Apple Intelligence.
@@ -96,7 +133,10 @@ struct QuickCaptureView: View {
             } else {
                 close(draft.hasCaptureDraft ? .dismissed : .finished)
             }
+        case .move, .note, .paste:
+            break
         }
+        return true
     }
 
     /// The window's capture's Return, from the same `addCapture`: tokens
@@ -153,7 +193,7 @@ extension QuickCaptureDraft {
             close(.finished)
             return
         }
-        captureText = ""
+        clearCaptureText()
         show(NXCaptureNotice(text: added))
     }
 
@@ -194,6 +234,10 @@ final class QuickCaptureDraft: NXCaptureDraft {
     var spokenTasks: [SpokenTask] = [] {
         didSet { invalidateFeedback() }
     }
+    var captureNote = "" {
+        didSet { if captureNote != oldValue { invalidateFeedback() } }
+    }
+    var captureAssist = CaptureAssist()
     var notice: NXCaptureNotice?
     @ObservationIgnored private var noticeRevision = 0
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
@@ -258,6 +302,7 @@ final class QuickCaptureDraft: NXCaptureDraft {
         let chosen = store.list(id: request.listID).flatMap { $0.isEffectivelyArchived ? nil : $0 }
         captureListID = chosen?.id ?? store.inboxList()?.id
         dueToday = request.dueToday
+        if let text = request.text { takeShared(text, note: request.note) }
     }
 }
 
@@ -268,13 +313,19 @@ enum QuickCaptureKey {
     /// ⌥⌘V: speak tasks, or stop listening.
     case voice
     case close
+    /// ↓ or ↑, through the suggestions.
+    case move(Int)
+    /// ⌥↩: the note line, and back.
+    case note
+    /// ⌘V, or ⇧⌘V `asOneLine`, with the text copied.
+    case paste(String, asOneLine: Bool)
 }
 
-/// Return, Shift-Return, Tab, Escape, ⌥⌘V and ⌘W for the panel's card, taken
-/// before its text field sees them, as the main window's key monitor does
-/// for its capture.
+/// Return, Shift-Return, Tab, Escape, ⌥⌘V and ⌘W for the panel's card, and
+/// ↑, ↓, ⌥↩ and ⌘V where it has a use for them, taken before its text field
+/// sees them, as the main window's key monitor does for its capture.
 private struct QuickCaptureKeys: NSViewRepresentable {
-    let perform: (QuickCaptureKey) -> Void
+    let perform: (QuickCaptureKey) -> Bool
     var undo: (() -> Void)?
 
     func makeNSView(context: Context) -> NSView {
@@ -297,12 +348,12 @@ private struct QuickCaptureKeys: NSViewRepresentable {
 
     @MainActor
     final class Coordinator {
-        var perform: (QuickCaptureKey) -> Void
+        var perform: (QuickCaptureKey) -> Bool
         var undo: (() -> Void)?
         weak var view: NSView?
         private var monitor: Any?
 
-        init(perform: @escaping (QuickCaptureKey) -> Void, undo: (() -> Void)?) {
+        init(perform: @escaping (QuickCaptureKey) -> Bool, undo: (() -> Void)?) {
             self.perform = perform
             self.undo = undo
         }
@@ -330,25 +381,36 @@ private struct QuickCaptureKeys: NSViewRepresentable {
                 return true
             }
             let key: QuickCaptureKey
+            let chars = event.charactersIgnoringModifiers?.lowercased()
             switch event.keyCode {
             case 36, 76:
                 guard !flags.contains(.command) else { return false }
-                key = .add(keepOpen: flags.contains(.shift))
+                key = flags == .option ? .note : .add(keepOpen: flags.contains(.shift))
             case 48:
                 key = .step(flags.contains(.shift) ? -1 : 1)
             case 53:
                 key = .close
+            case 125, 126:
+                guard flags.isEmpty || flags == .shift else { return false }
+                key = .move(event.keyCode == 125 ? 1 : -1)
             default:
-                let chars = event.charactersIgnoringModifiers?.lowercased()
                 if flags == [.command, .option], chars == "v" {
                     key = .voice
+                } else if chars == "v", flags == .command || flags == [.command, .shift] {
+                    guard let text = NSPasteboard.general.string(forType: .string) else { return false }
+                    let oneLine = flags.contains(.shift)
+                    guard perform(.paste(text, asOneLine: oneLine)) else { return false }
+                    // ⇧⌘V: the lines go in where the caret is, as one.
+                    if oneLine, let field = window.firstResponder as? NSTextView {
+                        field.insertText(NextKeyHandler.oneLine(text), replacementRange: field.selectedRange())
+                    }
+                    return true
                 } else {
                     guard flags == .command, chars == "w" else { return false }
                     key = .close
                 }
             }
-            perform(key)
-            return true
+            return perform(key)
         }
     }
 

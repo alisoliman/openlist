@@ -8,7 +8,8 @@ import SwiftData
 
 /// What an interactive capture saves: the title, and the date, repeat,
 /// labels, priority and estimate its tokens named, as the capture card's
-/// chips previewed them. Building one never creates model records.
+/// chips previewed them, and a note written with it. Building one never
+/// creates model records.
 struct CaptureSnapshot {
     var title: String
     var date: Date?
@@ -18,6 +19,9 @@ struct CaptureSnapshot {
     var priority: TaskPriority = .none
     /// Minutes of work the task takes; 0 leaves it on each device's default.
     var estimateMinutes = 0
+    /// The note under the title, as the capture's note line or a shared
+    /// link wrote it; empty for none.
+    var note = ""
 }
 
 extension Store {
@@ -53,6 +57,8 @@ extension Store {
             block.priority = snapshot.priority
             // Within the calendar's four-week limit, as `setTaskEstimate` keeps it.
             block.schedulingEstimateMinutes = max(0, min(60 * 24 * 28, snapshot.estimateMinutes))
+            // Trailing space and blank lines go, as a note written in place commits.
+            block.note = snapshot.note.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
             log(.created, title: block.displayTitle, block: block, list: destination)
             try persistChanges()
             scheduleReminderIfNeeded(for: block)
@@ -211,5 +217,33 @@ extension Store {
         body()
         isSavingSuspended = wasSuspended
         save()
+    }
+
+    /// A capture line written over a task that already exists, as triage's
+    /// edit line writes it: a title takes the task's place, the date, repeat,
+    /// priority and estimate it names replace the task's, and its labels
+    /// join the task's. What the line doesn't name stays as it was, so a line
+    /// of tokens alone only adds to the task. One save; returns whether
+    /// anything changed.
+    @discardableResult
+    func applyCapture(_ snapshot: CaptureSnapshot, to block: Block) -> Bool {
+        guard block.isTask, block.trashID == nil else { return false }
+        func fields() -> (Date?, Bool, Data?, [UUID], Int, Int) {
+            (block.dueDate, block.includesTime, block.recurrenceData, block.labelIDs, block.priorityRaw,
+             block.schedulingEstimateMinutes)
+        }
+        let text = block.text, before = fields()
+        batch {
+            let title = snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty, title != block.text { setText(title, for: block) }
+            if let date = snapshot.date { setDueDate(date, includesTime: snapshot.includesTime, for: block) }
+            if let rule = snapshot.recurrence { setRecurrence(rule, for: block) }
+            for name in snapshot.labels {
+                if let label = findOrCreateLabel(named: name) { addLabel(label, to: block) }
+            }
+            if snapshot.priority != .none { setPriority(snapshot.priority, for: block) }
+            if snapshot.estimateMinutes > 0 { setTaskEstimate(snapshot.estimateMinutes, for: block) }
+        }
+        return text != block.text || before != fields()
     }
 }

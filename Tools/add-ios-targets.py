@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Adds the iPhone companion's targets to openlist.xcodeproj and keeps their
-shared-file membership in step with Tools/iOS/shared-sources.txt.
+shared-file membership in step with Tools/iOS/shared-sources.txt. The share
+extension (OpenlistiOSShare) came later, so a project that has the others
+gets it added on its own.
 
     python3 Tools/add-ios-targets.py           # add the targets, then sync membership
     python3 Tools/add-ios-targets.py --check   # exit 1 if the project and the seed disagree
@@ -67,6 +69,13 @@ CONFIG_IDS = {
     "tests": dict(zip(CONFIGS, (oid(0x86), oid(0x87), oid(0x88)))),
     "uitests": dict(zip(CONFIGS, (oid(0x89), oid(0x8A), oid(0x8B)))),
 }
+SHARE = "OpenlistiOSShare"
+SHARE_IDS = dict(
+    g_share=oid(0xA0), p_share=oid(0xA1), t_share=oid(0xA2),
+    s_src=oid(0xA3), s_fw=oid(0xA4), s_res=oid(0xA5),
+    embed_share=oid(0xA6), px_share=oid(0xA7), dep_share=oid(0xA8), cl_share=oid(0xA9),
+)
+CONFIG_IDS["share"] = dict(zip(CONFIGS, (oid(0xAA), oid(0xAB), oid(0xAC))))
 TARGET_IDS = {APP: IDS["t_app"], WIDGET: IDS["t_widget"]}
 EXCEPTION_IDS = {("openlist", APP): oid(0x90), ("OpenlistWidget", WIDGET): oid(0x91),
                  ("openlist", WIDGET): oid(0x92), ("OpenlistWidget", APP): oid(0x93)}
@@ -192,6 +201,24 @@ def widget_settings(name):
         "INFOPLIST_KEY_NSHumanReadableCopyright": COPYRIGHT,
         "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"],
         "PRODUCT_BUNDLE_IDENTIFIER": "solimanali.openlist.ios.dev.widget" if dev else "solimanali.openlist.ios.widget",
+        "REGISTER_APP_GROUPS": "YES",
+        "SKIP_INSTALL": "YES",
+        "SWIFT_DEFAULT_ACTOR_ISOLATION": "MainActor",
+        "SWIFT_EMIT_LOC_STRINGS": "YES",
+    })
+    return settings
+
+
+def share_settings(name):
+    dev = name == "Dev"
+    settings = dict(COMMON_IOS)
+    settings.update({
+        "CODE_SIGN_ENTITLEMENTS": f"Config/{'OpenlistiOSDevShare' if dev else 'OpenlistiOSShare'}.entitlements",
+        "INFOPLIST_FILE": "Config/OpenlistiOSShare-Info.plist",
+        "INFOPLIST_KEY_CFBundleDisplayName": "Openlist Dev" if dev else "Openlist",
+        "INFOPLIST_KEY_NSHumanReadableCopyright": COPYRIGHT,
+        "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"],
+        "PRODUCT_BUNDLE_IDENTIFIER": "solimanali.openlist.ios.dev.share" if dev else "solimanali.openlist.ios.share",
         "REGISTER_APP_GROUPS": "YES",
         "SKIP_INSTALL": "YES",
         "SWIFT_DEFAULT_ACTOR_ISOLATION": "MainActor",
@@ -368,6 +395,57 @@ def add_targets(src):
     return src
 
 
+def add_share_target(src):
+    """The share extension, embedded in the app beside its widget: it owns
+    its folder, Shared/ and SharediOS/, as the widget does, and only writes
+    shares to the App Group for the app to file."""
+    ids = SHARE_IDS
+    src = before(src, "/* End PBXFileReference section */",
+        f'\t\t{ids["p_share"]} /* {SHARE}.appex */ = {{isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = {SHARE}.appex; sourceTree = BUILT_PRODUCTS_DIR; }};\n')
+    src = before(src, "/* End PBXBuildFile section */",
+        f'\t\t{ids["embed_share"]} /* {SHARE}.appex in Embed Foundation Extensions */ = {{isa = PBXBuildFile; fileRef = {ids["p_share"]} /* {SHARE}.appex */; settings = {{ATTRIBUTES = (RemoveHeadersOnCopy, ); }}; }};\n')
+    src = once(src, f'\t\t\t\t{IDS["embed_file"]} /* {WIDGET}.appex in Embed Foundation Extensions */,\n\t\t\t);',
+               f'\t\t\t\t{IDS["embed_file"]} /* {WIDGET}.appex in Embed Foundation Extensions */,\n'
+               f'\t\t\t\t{ids["embed_share"]} /* {SHARE}.appex in Embed Foundation Extensions */,\n\t\t\t);')
+    src = before(src, "/* End PBXContainerItemProxy section */",
+        f"\t\t{ids['px_share']} /* PBXContainerItemProxy */ = {{\n\t\t\tisa = PBXContainerItemProxy;\n"
+        f"\t\t\tcontainerPortal = {PROJECT_OBJ} /* Project object */;\n\t\t\tproxyType = 1;\n"
+        f"\t\t\tremoteGlobalIDString = {ids['t_share']};\n\t\t\tremoteInfo = {SHARE};\n\t\t}};\n")
+    src = before(src, "/* End PBXTargetDependency section */",
+        f"\t\t{ids['dep_share']} /* PBXTargetDependency */ = {{\n\t\t\tisa = PBXTargetDependency;\n"
+        f"\t\t\ttarget = {ids['t_share']} /* {SHARE} */;\n\t\t\ttargetProxy = {ids['px_share']} /* PBXContainerItemProxy */;\n\t\t}};\n")
+    # The app builds its share extension, as it does its widget.
+    src = once(src, f"\t\t\t\t{IDS['dep_widget']} /* PBXTargetDependency */,\n\t\t\t);",
+               f"\t\t\t\t{IDS['dep_widget']} /* PBXTargetDependency */,\n"
+               f"\t\t\t\t{ids['dep_share']} /* PBXTargetDependency */,\n\t\t\t);")
+    src = before(src, "/* End PBXFileSystemSynchronizedRootGroup section */", sync_group(ids["g_share"], SHARE))
+    src = before(src, "/* End PBXFrameworksBuildPhase section */", phase(ids["s_fw"], "PBXFrameworksBuildPhase", "Frameworks"))
+    src = before(src, "/* End PBXResourcesBuildPhase section */", phase(ids["s_res"], "PBXResourcesBuildPhase", "Resources"))
+    src = before(src, "/* End PBXSourcesBuildPhase section */", phase(ids["s_src"], "PBXSourcesBuildPhase", "Sources"))
+    # In the navigator, after the widget's folder (a target's list names it too).
+    src = once(src, f"\t\t\t\t{IDS['g_widget']} /* {WIDGET} */,\n\t\t\t\t{IDS['g_shared_ios']} /* SharediOS */,\n"
+                    f"\t\t\t\t{IDS['g_tests']} /* {TESTS} */,\n",
+               f"\t\t\t\t{IDS['g_widget']} /* {WIDGET} */,\n\t\t\t\t{ids['g_share']} /* {SHARE} */,\n"
+               f"\t\t\t\t{IDS['g_shared_ios']} /* SharediOS */,\n\t\t\t\t{IDS['g_tests']} /* {TESTS} */,\n")
+    src = once(src, f"\t\t\t\t{IDS['p_widget']} /* {WIDGET}.appex */,\n",
+               f"\t\t\t\t{IDS['p_widget']} /* {WIDGET}.appex */,\n\t\t\t\t{ids['p_share']} /* {SHARE}.appex */,\n")
+    src = before(src, "/* End PBXNativeTarget section */",
+        native_target(ids["t_share"], SHARE, ids["cl_share"],
+                      [(ids["s_src"], "Sources"), (ids["s_fw"], "Frameworks"), (ids["s_res"], "Resources")],
+                      [], [(ids["g_share"], SHARE), (SHARED_GROUP, "Shared"), (IDS["g_shared_ios"], "SharediOS")],
+                      ids["p_share"], f"{SHARE}.appex", "com.apple.product-type.app-extension"))
+    src = once(src, f"\t\t\t\t\t{IDS['t_widget']} = {{\n\t\t\t\t\t\tCreatedOnToolsVersion = 27.0;\n\t\t\t\t\t}};\n",
+               f"\t\t\t\t\t{IDS['t_widget']} = {{\n\t\t\t\t\t\tCreatedOnToolsVersion = 27.0;\n\t\t\t\t\t}};\n"
+               f"\t\t\t\t\t{ids['t_share']} = {{\n\t\t\t\t\t\tCreatedOnToolsVersion = 27.0;\n\t\t\t\t\t}};\n")
+    src = once(src, f"\t\t\t\t{IDS['t_widget']} /* {WIDGET} */,\n\t\t\t\t{IDS['t_tests']} /* {TESTS} */,\n",
+               f"\t\t\t\t{IDS['t_widget']} /* {WIDGET} */,\n\t\t\t\t{ids['t_share']} /* {SHARE} */,\n"
+               f"\t\t\t\t{IDS['t_tests']} /* {TESTS} */,\n")
+    src = before(src, "/* End XCBuildConfiguration section */",
+                 "".join(config(CONFIG_IDS["share"][name], name, share_settings(name)) for name in CONFIGS))
+    src = before(src, "/* End XCConfigurationList section */", config_list(ids["cl_share"], SHARE, CONFIG_IDS["share"]))
+    return src
+
+
 # MARK: - Membership (every run)
 
 def exception_label(group, target):
@@ -471,11 +549,12 @@ def main():
     membership = read_manifest()
     wanted = {key: set(paths) for key, paths in membership.items()}
     has_targets = IDS["t_app"] in original
-    if has_targets and project_membership(original) == wanted:
+    has_share = SHARE_IDS["t_share"] in original
+    if has_targets and has_share and project_membership(original) == wanted:
         print("iOS targets present; their shared-file membership matches Tools/iOS/shared-sources.txt.")
         return 0
     if check:
-        if not has_targets:
+        if not has_targets or not has_share:
             print("The iOS targets are missing from the project. Run: python3 Tools/add-ios-targets.py", file=sys.stderr)
         else:
             current = project_membership(original)
@@ -490,6 +569,8 @@ def main():
                   file=sys.stderr)
         return 1
     src = original if has_targets else add_targets(original)
+    if not has_share:
+        src = add_share_target(src)
     src = sync_membership(src, membership)
     lint(src)
     PROJECT.write_text(src)
