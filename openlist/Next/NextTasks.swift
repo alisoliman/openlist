@@ -985,31 +985,35 @@ private struct NXSentenceToken: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 1) {
-            // One run, as the design's `emoji + " " + name`, the emoji at the design's size.
-            Group {
-                if let list { Text("\(NXListGlyph.text(list, size: 13)) \(label)") } else { Text(label) }
-            }
-            .font(.system(size: 13, weight: .semibold)).foregroundStyle(NX.ink).lineLimit(1)
-            // The design's 14 pt icon box, which spaces the chevron from the label and the edge.
-            Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(NX.ink(0.5))
-                .frame(width: 14, height: 14)
-        }
-        .padding(.vertical, 5)
-        .padding(.leading, 7)
-        .padding(.trailing, 4)
-        // The design's `background 140ms ease`, under the pointer and as its
-        // menu opens and closes. Only the fill eases: a pick's new label and
-        // width land at once, as the design's.
-        .background {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .animation(NX.cssEase(140)) {
-                    $0.foregroundStyle(isOpen ? NX.ink(0.07) : hovering ? NX.ink(0.06) : .clear)
+        // A button, so Tab reaches the sentence's tokens with keyboard
+        // navigation on and Space opens a token's menu, as a click does.
+        Button(action: action) {
+            HStack(spacing: 1) {
+                // One run, as the design's `emoji + " " + name`, the emoji at the design's size.
+                Group {
+                    if let list { Text("\(NXListGlyph.text(list, size: 13)) \(label)") } else { Text(label) }
                 }
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(NX.ink).lineLimit(1)
+                // The design's 14 pt icon box, which spaces the chevron from the label and the edge.
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(NX.ink(0.5))
+                    .frame(width: 14, height: 14)
+            }
+            .padding(.vertical, 5)
+            .padding(.leading, 7)
+            .padding(.trailing, 4)
+            // The design's `background 140ms ease`, under the pointer and as its
+            // menu opens and closes. Only the fill eases: a pick's new label and
+            // width land at once, as the design's.
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .animation(NX.cssEase(140)) {
+                        $0.foregroundStyle(isOpen ? NX.ink(0.07) : hovering ? NX.ink(0.06) : .clear)
+                    }
+            }
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
+        .buttonStyle(NXBareButtonStyle())
         .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(isOpen ? "Expanded" : "Collapsed")

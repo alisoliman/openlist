@@ -367,7 +367,6 @@ private struct NXActivityDayPanel: View {
                     .padding(.top, 0.5)
                     .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
                     .contentShape(Rectangle())
-                    .onTapGesture { open?() }
                     // One element, which opens the task while it's there.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(title)
@@ -403,9 +402,10 @@ private struct NXDayRowOpen: ViewModifier {
 
     func body(content: Content) -> some View {
         if let open {
-            content
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { open() }
+            // A button, so Tab reaches it with keyboard navigation on and
+            // Space opens it, as a click does.
+            Button(action: open) { content }
+                .buttonStyle(NXBareButtonStyle(radius: 6))
         } else {
             content
         }
@@ -899,6 +899,8 @@ private struct NXChangeRow: View {
                 }
             }
             .accessibilityElement(children: .combine)
+            // What the tooltip says, for VoiceOver too.
+            .accessibilityHint(item.detail ?? "")
             if item.canUndo {
                 Button { env.workbench.undoLast() } label: {
                     Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .semibold))
