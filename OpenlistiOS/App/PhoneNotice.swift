@@ -21,7 +21,11 @@ struct PhoneNotice: Equatable {
 
 extension PhoneEnvironment {
     var notice: PhoneNotice? {
-        if let text = store.persistenceError { return PhoneNotice(text: text, clears: nil, retriesSave: true) }
+        // Try Again only where saving again can mend it: a change that failed
+        // and was put back has nothing left to save.
+        if let text = store.persistenceError {
+            return PhoneNotice(text: text, clears: nil, retriesSave: store.persistenceErrorIsRetryable)
+        }
         if let text = store.actionError { return PhoneNotice(text: text, clears: .actionError) }
         if let text = store.trashError { return PhoneNotice(text: text, clears: .trashError) }
         if let text = store.editorNotice { return PhoneNotice(text: text, clears: .editorNotice) }

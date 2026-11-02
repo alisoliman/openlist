@@ -137,6 +137,12 @@ struct ListPageScreen: View {
         } message: {
             Text("Its tasks go with it. You can put it back from Trash.")
         }
+        // Somewhere else taking the screen takes its questions with it.
+        .onChange(of: env.navigator.arrivals) {
+            renaming = false
+            namesChild = false
+            confirmsTrash = false
+        }
         .onAppear { list.map(env.store.markOpened) }
     }
 

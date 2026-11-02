@@ -182,9 +182,9 @@ struct OLBulkBar: View {
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .contentShape(.rect)
                 }
+                // Disabled, the press style dims it.
                 .buttonStyle(OLPressStyle())
                 .disabled(!action.isEnabled)
-                .opacity(action.isEnabled ? 1 : 0.4)
                 .accessibilityLabel(action.label)
             }
         }

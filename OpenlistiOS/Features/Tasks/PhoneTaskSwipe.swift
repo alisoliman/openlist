@@ -77,6 +77,8 @@ struct PhoneTaskSwipe: ViewModifier {
                 }
             }
         }
+        // Somewhere else taking the screen takes the question with it.
+        .onChange(of: env.navigator.arrivals) { picksList = false }
     }
 
     @ViewBuilder private var controls: some View {

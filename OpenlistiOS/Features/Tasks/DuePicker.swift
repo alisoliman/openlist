@@ -189,5 +189,7 @@ struct PhoneDueMenu: View {
         } content: {
             DuePickerSheet(date: task.dueDate, includesTime: task.includesTime, now: now) { picked = ($0, $1) }
         }
+        // Somewhere else taking the screen takes the picker with it.
+        .onChange(of: env.navigator.arrivals) { picksDate = false }
     }
 }

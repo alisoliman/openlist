@@ -79,6 +79,8 @@ struct ListsScreen: View {
             }
             .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        // Somewhere else taking the screen takes the question with it.
+        .onChange(of: env.navigator.arrivals) { namesList = false }
     }
 
     private func card(_ list: TaskList) -> some View {
