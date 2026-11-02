@@ -133,6 +133,13 @@ struct PhoneTaskMenu: View {
                     if planned { store.deselectForToday($0) } else { store.selectForToday($0, now: now) }
                 }
             }
+            let calendar = env.settings.calendar
+            let tonight = task.dueDate.map {
+                calendar.isDate($0, inSameDayAs: now) && Tonight.contains($0, includesTime: task.includesTime, calendar: calendar)
+            } ?? false
+            if !tonight, Tonight.time(now: now, calendar: calendar) != nil {
+                Button("Tonight", systemImage: "moon") { actions.scheduleTonight([task]) }
+            }
             Button("Start working", systemImage: "play") {
                 if env.actions.startWork(task) { env.navigator.open(.working) }
             }

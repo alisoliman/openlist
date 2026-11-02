@@ -52,6 +52,20 @@ struct PhoneActionsTests {
         #expect(!task.isCompleted)
     }
 
+    /// Tonight dates a task today at 18:00, timed, so Today keeps it apart.
+    @Test func tonightDatesATaskThisEvening() throws {
+        let phone = try TestPhone(seeded: true)
+        let task = try #require(phone.task("Start Piranesi"))
+        let calendar = phone.env.settings.calendar
+        let evening = try #require(Tonight.time(now: phone.env.now, calendar: calendar))
+        phone.env.actions.scheduleTonight([task])
+        #expect(task.dueDate == evening && task.includesTime)
+        #expect(calendar.isDate(evening, inSameDayAs: phone.env.now) && calendar.component(.hour, from: evening) >= Tonight.hour)
+        #expect(phone.env.tray.message?.text == "“Start Piranesi” due tonight")
+        let agenda = TodayAgenda(tasks: [task], now: phone.env.now, calendar: calendar)
+        #expect(agenda.tonight.map(\.id) == [task.id] && agenda.due.isEmpty)
+    }
+
     @Test func undoAfterTheWriteRestoresTheTask() throws {
         let phone = try TestPhone(seeded: true)
         let task = try #require(phone.task("Start Piranesi"))

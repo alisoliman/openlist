@@ -232,6 +232,17 @@ extension Workbench {
         selection = []
     }
 
+    /// Due tonight (`Tonight.time`), timed tasks too; nothing once the day's
+    /// last hour has begun.
+    func scheduleTonight(_ ids: [UUID]) {
+        let tasks = tasks(ids)
+        guard !tasks.isEmpty, let time = Tonight.time(now: .now) else { return }
+        edit(tasks, label: "\(describe(tasks)) → Tonight \(NXFormat.clock(time))", icon: "calendar", tone: .accent) { task in
+            store.setDueDate(time, includesTime: true, for: task)
+        }
+        selection = []
+    }
+
     /// `task` moved to the day `offset` from today. A timed task keeps its time
     /// of day, as the design moves `due` and leaves `time` alone.
     private func dueDate(for task: Block, offset: Int) -> (date: Date, includesTime: Bool) {

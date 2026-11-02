@@ -196,6 +196,8 @@ struct AppCommands: Commands {
             Button("Due Today") { env.send(.setDueToday) }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(targets.isEmpty)
+            Button("Due Tonight") { act { env.workbench.scheduleTonight($0) } }
+                .disabled(targets.isEmpty || Tonight.time(now: .now) == nil)
             Button("Due Tomorrow") { act { env.workbench.schedule($0, offset: 1) } }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
                 .disabled(targets.isEmpty)

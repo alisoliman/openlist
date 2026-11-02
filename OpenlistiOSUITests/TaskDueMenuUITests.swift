@@ -84,6 +84,35 @@ final class TaskDueMenuUITests: XCTestCase {
         snapshot(app, "due-menu-inbox-moved")
     }
 
+    /// Tonight dates a task this evening, and Today keeps it in a group of
+    /// its own below the day's.
+    @MainActor
+    func testTonightMovesATaskToTodaysEvening() {
+        let app = launch("today", screen: "today")
+        let title = "Ask Mika to water the planters"
+        let row = app.buttons[title]
+        reveal(row, in: app)
+        row.press(forDuration: 1)
+        let tonight = app.buttons["Tonight"]
+        XCTAssertTrue(tonight.waitForExistence(timeout: 5), "The row's menu offers Tonight")
+        snapshot(app, "today-row-menu")
+        tonight.tap()
+        XCTAssertTrue(app.screen("tray").staticTexts["“\(title)” due tonight"].waitForExistence(timeout: 5))
+        let group = app.staticTexts["Tonight"]
+        reveal(group, in: app)
+        XCTAssertGreaterThan(row.frame.minY, group.frame.minY, "The task moved under Tonight")
+        snapshot(app, "today-tonight")
+
+        // A row elsewhere offers it in its date menu, beside Today.
+        app.terminate()
+        let list = launch("list:Weekend in Kyoto", screen: "list")
+        let due = list.buttons["task.due.Renew passports"]
+        reveal(due, in: list)
+        due.tap()
+        XCTAssertTrue(list.buttons["Tonight"].waitForExistence(timeout: 5), "The date menu offers Tonight")
+        snapshot(list, "due-menu-tonight")
+    }
+
     @MainActor
     private func launch(_ route: String, screen: String) -> XCUIApplication {
         let app = XCUIApplication.reviewSession(environment: ["OpenlistOpenRoute": route])

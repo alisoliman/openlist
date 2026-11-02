@@ -449,6 +449,9 @@ struct CaptureScreen: View {
                         }
                         setDueDate(date, includesTime: snapshot.includesTime)
                     }
+                    if day == .today, let tonight = Tonight.time(now: env.now, calendar: env.settings.calendar) {
+                        Button("Tonight") { setDueDate(tonight, includesTime: true) }
+                    }
                 }
             }
             Button("Choose date & time…", systemImage: "calendar") {
